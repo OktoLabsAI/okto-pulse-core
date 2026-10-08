@@ -4581,7 +4581,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-bug-association.json",
+        "criterion_key": "KG:KG-59",
+        "proof_pair": "dist-native-main73"
+      }
     },
     {
       "key": "KG:KG-60",

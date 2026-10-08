@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG59 qualificado; KG60 com lacuna concreta identificada
+Base54e7c040/e6ab915a limpa. Prova provenance-native-bug-temporal1 terminal0,
+main73 byte-idêntico835/896+317/403. Sem alterações de produto/SPA/teste neste turno.
+Core49358 terminal0:53pass/8.23s; Community69255 terminal0:29pass/46.03s;
+frontend native-bug-association-frontend1 terminal0:10pass. Total92 distintos.
+Prova SQL/Grafx real com certificado expirado vs integer overflow, mesmo proxy,
+sem virar causa comum; payload preserva origin_proxy/proveniência/diagnósticos.
+Receita clean-break-native-bug-association.json qualifica KG59.
+Índice94 verificadas/141 pendentes/11 N/A. Closure main73 permanece aplicável,
+oito budgets0. Todos processos terminais. Nenhum dado/runtime real modificado.
+
+KG60 NÃO concluído: §10 catálogo Q12 requer última atualização source_updated_at
+e limites honestos (não diff/as_of); tier_power.execute_natural_query ainda usa
+_batch_lookup_created_at e n.created_at (linhas1122/1344); docstring até cita sprint.
+MCP kg_power_tools.py:378 e resources/reference/tool-docs/kg.md:548/551 também
+declaram filtro por created_at. Esse tempo da projeção não prova alteração da fonte.
+Campos source_created_at/source_updated_at já existem no manifesto e
+kg/source_projection_metadata.py; não adicionar coluna/migrador para resolver.
+
+Próximo concreto KG60: reproduzir com criação antiga, updates sucessivos e created_at
+de projeção recente usando padrão de tests/test_kg_natural_query_confidence.py
+(bootstrap_board_graph/open_board_connection; provider embedding None; grafo real).
+Alinhar filtro de mudanças à última atualização da fonte, declarar base temporal e
+ausência de histórico/diff/as_of, não fazer fallback de timestamp ausente à projeção.
+Revisar falhas de leitura (helper atual engole exceções) para não anunciar vazio
+bem-sucedido quando indisponível. Atualizar docs MCP e REGENERAR tools_catalog pelo
+gerador oficial (nunca manual). Executar testes temporais/natural/catalog, construir
+par main74, instalar, byteproof/closure e qualificar só após evidência corrente.
+Nenhuma alteração de gate/autoridade planejada: consulta informativa Q12 do plano.
+
 ### 2026-10-07 — KG56/KG57/KG58: fonte, impacto e prova separados
 Base6f6e8f92/e6ab915a limpa. Byteproof provenance-native-impact-coverage1 terminal0
 main73 idêntico835/896+317/403 antes de comportamento. Sem produto/SPA alterado;

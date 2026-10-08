@@ -1,0 +1,30 @@
+{
+  "criterion": "KG:KG-59",
+  "qualification": "verified_current_pair_review",
+  "proof_pair": "dist-native-main73",
+  "evidence": [
+    "Real SQL/Grafx witness seeds two distinct recorded diagnoses (expired upstream certificate and local integer overflow) sharing only the same origin proxy.",
+    "Cluster preserves origin_proxy assertion basis and exact provenance; no common-cause claim. Recorded diagnoses are not rewritten.",
+    "Native graph tests exclude stale/unclassified facts; absent bugs remain in authoritative denominator.",
+    "Core query/authorization/MCP and Community REST tests preserve association, source scope and permission boundaries.",
+    "Frontend labels association and separates history/current Learning interpretation without causal claim."
+  ],
+  "tests": {
+    "core_passed": 53,
+    "community_passed": 29,
+    "frontend_passed": 10,
+    "total_distinct_passed": 92
+  },
+  "limits": [
+    "Product unchanged from main73; closure-native-main73 remains the identical-product architecture evidence.",
+    "Mixed evidence: real SQL/Grafx plus controlled transport actors and frontend APIs; no live-browser installed-server claim.",
+    "KG60 not qualified: natural-query temporal filter currently uses graph created_at, and MCP guidance repeats it. Source-update semantics require implementation."
+  ],
+  "artifacts": {
+    "provenance-native-bug-temporal1.json": "f9b63775bae900ad1f526d1c33e3f0274d035a6fc5a7dddf96c8e1055df2c807",
+    "native-bug-association1.xml": "e1edb5fb551e0571d558079cea7dfcd93d2c30822536c88561ab7a6de36e0e5b",
+    "native-bug-association-relational1.xml": "d1f4784cb9e19445b4c77c0312d27c781a16a2f694212990349bb2383391ca2c",
+    "native-bug-association-frontend1.json": "1cd024c015c84c34c4b93ff4476e7827409815e824180bfccebe688b765dee49",
+    "closure-native-main73.json": "50921d66df86b2107b9922f2e6eba86c2c08b8a7a7d1d914742bdef7acc87640"
+  }
+}
