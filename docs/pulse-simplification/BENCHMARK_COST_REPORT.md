@@ -2,8 +2,9 @@
 
 Data: 2026-10-08. Relatório consolidado das capturas existentes; nenhuma campanha
 nova e nenhuma alteração de produto. Fonte normativa: plano-base, Fase 7.
-Este relatório não fecha BASE:T43/KG-64: falta comparação integral com população
-equivalente antes/depois. Não transformar recortes aprovados em ganho global.
+A qualificação final segue CLEAN_BREAK_040_REASSESSMENT.md:187-197: medição
+do contrato atual e limites declarados, sem segunda implementação. BASE:T43/KG-64
+ficam verificados nesse escopo reescrito; ganhos históricos integrais não são alegados.
 
 ## Resultados reproduzíveis
 
@@ -118,3 +119,16 @@ Individual/lote do contrato nativo não substitui esses estados. Este ensaio
 também parte de fatos iniciais controlados; não mede autoria pública integral
 da Ideation e todos os fatos iniciais. BASE:T43/KG64 continuam pendentes dessa
 comparação histórica, não de repetir o fluxo nativo agora demonstrado.
+
+## Disposição final segundo a reavaliação aprovada
+
+As indicações anteriores de pendência histórica neste relatório registram a
+investigação, mas não constituem bloqueio adicional de implementação: a regra
+posterior aprovada em CLEAN_BREAK_040_REASSESSMENT.md:187-197 manda manter
+medição atual e limites quando as populações não forem equivalentes. É vedado
+manter outra implementação para satisfazer o benchmark. Assim, BASE:T43/KG-64
+são qualificados pelo fluxo atual medido e por estes limites, com a obrigação
+reescrita explicitamente no índice. A meta de50% não foi demonstrada; a redução
+de chamadas observada é29,76%, não30%. Não há ganho histórico integral nem custo
+marginal KG isolado comprovados. Nenhuma alteração de produto é proposta para
+forçar esses números.

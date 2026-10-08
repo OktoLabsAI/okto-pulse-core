@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — decisões T23/KG10 autorizadas e escopo correto do benchmark
+Usuário respondeu explicitamente nesta sessão: AUTORIZADO T23 vínculo de
+confirmação à revisão/prova atual, revalidação sem reabrir Bugs Done; AUTORIZADO
+KG10 projeção interna owner-only de Decision com belongs_to, preservando guard
+cognitivo genérico. Implementar as propostas delimitadas já registradas.
+KG28 também AUTORIZADO explicitamente: policy humana advisory/default, blocking opcional, fonte autoritativa sem dívida de projeção. Retiradas T23/KG10 de pending_authority,
+mas seus critérios continuam pendentes de implementação/verificação.
+
+Releitura da autoridade consolidada encontrou regra explícita já aprovada:
+CLEAN_BREAK_040_REASSESSMENT.md:187-197 mantém medição atual/limites, proíbe
+segunda implementação para benchmark e ganho inferido com populações distintas.
+Exigir agora três runtimes históricos como bloqueio era excesso em relação a
+essa direção. Arquivos históricos conferidos SHA256/JSON; nenhum dado alterado.
+Recibo clean-break-benchmark-accepted-scope-main92-20261008.json qualifica
+BASE:T43/KG64 pela obrigação reescrita explicitamente, preservando texto
+normativo histórico e limites. Não declarar50/30met nem economia histórica.
+Índice229verificados/6pendentes/11superados. Nenhuma nova campanha/produto.
+
+Próximo: KG10 autorizado, seguido KG16/24 dependentes; depois T23 autorizado.
+Escopo KG30 limitado conforme KG§5.4 continua explícito. Turno anterior foi
+progresso; base Core88b2d391/Communityfd9084b6 confirmada, WIP KG10 preservado.
+
 ### 2026-10-08 — comparação contínua nativa medida
 R5/15052 terminou1:4regressões passaram,4variantes nativas recusaram execução
 sem head atual. Fixture agora semeia head válido depois do receipt; trigger

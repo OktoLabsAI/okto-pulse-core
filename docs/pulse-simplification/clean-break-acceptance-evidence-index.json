@@ -7,11 +7,7 @@
     "applicable": 235,
     "superseded": 11
   },
-  "pending_authority": [
-    "BASE:T23",
-    "KG:KG-10",
-    "KG:KG-28"
-  ],
+  "pending_authority": [],
   "criteria": [
     {
       "key": "BASE:T01",
@@ -1988,15 +1984,20 @@
     },
     {
       "key": "BASE:T43",
-      "disposition": "mantido",
-      "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+      "disposition": "reescrito",
+      "obligation": "Medição do fluxo nativo atual e relatório com limites explícitos conforme CLEAN_BREAK_040_REASSESSMENT.md:187-197; não exigir segunda implementação nem inferir ganho histórico com populações diferentes.",
       "normative_text": "| T43 | Token benchmark com permissão ampla e sessões múltiplas | Ganho real capturado, gates equivalentes e payloads medidos integralmente. |",
       "source_document": "PLANO_PULSE_CODEX.md",
       "source_line": 622,
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-benchmark-accepted-scope-main92-20261008.json",
+        "criterion_key": "BASE:T43",
+        "proof_pair": "dist-native-main92"
+      }
     },
     {
       "key": "BASE:T44",
@@ -4678,15 +4679,20 @@
     },
     {
       "key": "KG:KG-64",
-      "disposition": "mantido",
-      "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+      "disposition": "reescrito",
+      "obligation": "Medição do fluxo nativo atual e relatório com limites explícitos conforme CLEAN_BREAK_040_REASSESSMENT.md:187-197; não exigir segunda implementação nem inferir ganho histórico com populações diferentes.",
       "normative_text": "| KG-64 | Benchmark antes/depois com mesmos fatos/atores | Economia real sem reduzir dados, cobertura, prova ou permissões do cenário. |",
       "source_document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
       "source_line": 675,
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-benchmark-accepted-scope-main92-20261008.json",
+        "criterion_key": "KG:KG-64",
+        "proof_pair": "dist-native-main92"
+      }
     },
     {
       "key": "KG:KG-65",
