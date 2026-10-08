@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T61/T62 projeções nativas e checkpoints
+Basefaf27853/778515c7. Turno anterior: espera verificada no handle33625;
+repoll confirmou vivo, sem reinício. Proof provenance-native-card-scenario-20261008
+terminal0 antes das campanhas:main88 byte-idêntico838/317 Python,899/403 payloads.
+DEI-T61: witnesses de cenário usam native_schema=True. Processor/Okto Grafx reais:
+normal/test/bug passam churn/replay e igualdade de multiset relacional com rebuild.
+Unlink preserva diagnóstico sem relação stale. Pré-requisito pendente não recebe
+ack; remoção converge após cenário materializado; falha no commit compensa grafo.
+Campanha native-card-scenario-20261008/session33625 terminal0:
+24pass473.04s (6 integração+18adapter). Nenhuma migração incluída.
+
+DEI-T62: schema nativo, Spec/Card em execução, checkpoint/replay store real.
+Sessão nova: velocity/funnel, cenários/conclusões/provas inalterados; rollup
+incompleto. Zero fila/ack de consolidação. Fatos semânticos dos nós e multiset
+completo de relações preservados; rebuild de SQL com checkpoint produz igualdade.
+Campanha1/session76362:1fail36.16s; fixture Done corretamente recusada.
+Corrigida fixture in_progress, sem produto. Campanha2/session8589 terminal0:
+1pass62.65s. Frontend44 anterior hash conferido, sem mudança/recontagem.
+Recibos clean-break-native-card-scenario-20261008.json e
+clean-break-native-checkpoint-projection-20261008.json; DEI-T61/T62 qualificados.
+Índice217verificados/18pendentes/11superados. Ruff/diff check verdes.
+Sem produto/SPA alterado; closure main88/oito budgets ZERO.
+Todos handles terminais. Commit/push testes/evidência; WIP KG10 preservado.
+Continuar DEI-T64, VER/KG e benchmarks fixos; BASE:T23/KG10/KG28 seguem
+decisões pendentes. Objetivo integral ativo; sem promoção/dados reais.
+
 ### 2026-10-08 — DEI-T58 fechado: autoridade nativa do skip
 Base6de9b256/dff91d18; turno anterior foi progresso. Novo proof sem colisão,
 provenance-native-skip-authority-20261008 terminal0 antes dos testes:

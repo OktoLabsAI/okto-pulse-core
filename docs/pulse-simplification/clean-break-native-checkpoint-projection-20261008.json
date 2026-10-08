@@ -1,0 +1,32 @@
+{
+  "scope": "DEI-T62 native checkpoint metrics and graph isolation",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "DEI:DEI-T62",
+  "result": {
+    "passed": 1,
+    "failed": 0,
+    "seconds": 62.65,
+    "terminal_session": 8589
+  },
+  "evidence": [
+    "Native relational schema, Card/Spec in_progress, current native execution contract and real Okto Grafx materialization.",
+    "Checkpoint and replay use the real delivery store. Fresh session computes unchanged real velocity and funnel metrics, unchanged scenario results and conclusions.",
+    "Delivery rollup stays incomplete with no implementation/test proof IDs. No consolidation is queued and processor acknowledges zero work.",
+    "Persisted graph node semantic facts and complete logical relationship multiset remain equal before/after checkpoint.",
+    "Independent clean rebuild from SQL containing the same checkpoint yields identical node semantic facts and complete logical relationship multiset."
+  ],
+  "limits": [
+    "Authority/transport is not tested here; direct store isolates projection effects. Other criteria cover authorization.",
+    "Node comparison includes logical source, layer, maturity, kind and textual facts; runtime IDs/timestamps are deliberately excluded.",
+    "First run used a Done Card and correctly refused progress; fixture corrected to current execution state, no product changes.",
+    "No frontend/product/SPA changes. Existing 44 frontend tests cover checkpoint and delivery presentation; not rerun/recounted."
+  ],
+  "artifacts": {
+    "provenance-native-card-scenario-20261008.json": "77a53d52a00fdb219e06d56b9dc0cada36b1ab9d019a752a58664a5bf2f107ad",
+    "native-checkpoint-projection-20261008.xml": "7bd7be3cc9919b1f626ac4c3df3a5ddb1f5116d550a1ce010b5025ce0536c442",
+    "native-checkpoint-projection-20261008-2.xml": "434487a86282cb30144aab7d3f6b3ab0880188d9b13194e8244b1d57730c3792",
+    "native-waiver-posture-frontend-20261008.json": "66266595670985c16ea482213f74201b2c24fbe2ad4789fc9a5e3a95ef103094",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}
