@@ -53,10 +53,10 @@ def card_verification_plan(plan: SpecExecutionPlan | None, card_id: str) -> dict
 
     This is a read projection of the existing plan. It creates no ownership,
     inheritance, test result or proof credit. A Test Card also sees the scenarios
-    explicitly allocated to itself. Legacy contracts remain unidentified here.
+    explicitly allocated to itself. An unavailable native plan stays incomplete.
     """
     if plan is None or not plan.inventory.population_complete:
-        return {"complete": False, "status": "legacy_or_unavailable", "items": []}
+        return {"complete": False, "status": "unavailable", "items": []}
     criteria = set()
     for row in plan.inventory.card_obligations(card_id):
         for contribution in row.contributions:

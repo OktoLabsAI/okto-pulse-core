@@ -32,6 +32,6 @@ def test_split_and_inherited_rule_do_not_assign_every_scenario_to_every_card():
     assert len(card_verification_plan(plan, 'tester')['items']) == 2
 
 
-def test_legacy_does_not_invent_a_verification_plan():
+def test_unavailable_native_plan_does_not_invent_verification():
     result = card_verification_plan(None, 'card')
-    assert not result['complete'] and result['status'] == 'legacy_or_unavailable'
+    assert not result['complete'] and result['status'] == 'unavailable'

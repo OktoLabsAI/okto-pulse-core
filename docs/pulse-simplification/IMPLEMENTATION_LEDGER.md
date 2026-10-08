@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — main89 remove estado legado do contexto de retomada
+Base6a5ca95a/0fdbe8fe; turno anterior foi progresso. Revisão KG16/KG24 confirma
+dependência já registrada da decisão KG10; não repetida a reprodução.
+Ao seguir AC-INT-11, encontrado resíduo produtivo em card_verification_plan:
+legacy_or_unavailable e docstring sobre contratos legados. Substituídos por
+unavailable/indisponibilidade do plano nativo; complete=False/items=[] mantidos.
+Consumidor real: Community delivery_resume_reader; nenhum ramo frontend depende
+do literal antigo. Sem alterar autoridade, gates, crédito ou tratamento de erro.
+
+Novo par dist-native-main89 construído sequencialmente, reinstalado somente no
+venv de validação. Proof provenance-native-main89/session31458 terminal0 antes
+dos testes:838/317 Python e899/403 payloads byte-idênticos.
+Core native-main89-core/session94921 terminal0:2pass4.33s.
+Community native-main89-community/session35682 terminal0:12pass30.56s.
+Frontend native-main89-frontend terminal0:4pass/successTrue.
+Closure native-main89/session13289 terminal0:okTrue, zero findings/documentation,
+oito budgets current=limit=0. Ruff/diff check verdes.
+Recibo clean-break-native-resume-contract-main89.json. Sem build SPA necessário;
+somente Core produtivo alterado. Community0fdbe8fe já publicado permanece.
+Índice220/15/11 mantido; nenhum critério marcado por evidência parcial.
+Todos handles terminais. Commit/push Core; WIP KG10 Community preservado.
+Retomar AC-INT-11 e demais critérios fixos, não refazer auditorias encerradas.
+BASE:T23/KG10/KG28 seguem decisões pendentes. Objetivo integral ativo.
+Sem promoção/dados reais; main89 é agora o par instalado de validação.
+
 ### 2026-10-08 — AC-VER-15 falha operacional e consulta parcial
 Baseb6a6303d/04cdc158; turno anterior foi progresso. Novo proof sem colisão,
 provenance-native-operational-partial-20261008 terminal0:main88 byte-idêntico
