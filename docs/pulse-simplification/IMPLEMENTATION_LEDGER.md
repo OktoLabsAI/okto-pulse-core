@@ -2,6 +2,29 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-INT-04 mesma iniciativa com revisão ampla/separada (main87)
+Base93dbd66d/d053c09d. Proof provenance-native-agent-configurations1 terminal0:
+835/317 Python e896/403 payloads byte a byte. Parametrizado mesmo fluxo
+MCP Draft→Done: agente amplo/policy off ou autor + revisor independente/enforce,
+ambos também com variante de vínculo tardio. Nova sessão MCP nas3 revisões,
+autenticador real e grants SQL. Validações/avaliações guardam reviewer correto;
+conclusões e provas continuam do autor. Teste HTTP assinado é exigido no final.
+
+agent-configurations1/session24868:4pass31.11s,2 variantes novas. Reutilizadas
+campanhas atuais de handoff10,frontend4,classificação56, hashes conferidos,
+sem reexecução/recontagem. Grants restritos/batch/self-review são comprovados
+pelo handoff; no fluxo completo preset amplo do reviewer isola identidade.
+Ruff/diff check verdes; docstring atualizada para refletir ambas configurações.
+
+Recibo clean-break-native-agent-configurations.json; AC-INT-04 qualificado.
+Índice189verificados/46pendentes/11superados. Extração de credenciais e
+origem/contexto de implementação são fixtures; HTTP/issuer/verifier reais
+in-process. Skip cognitivo/impact off/resource N/A explícitos, sem alegar
+auth instalada ou todos os gates possíveis neste fluxo.
+Sem produto/SPA alterado, closure main87 vigente, oito budgets ZERO.
+WIP KG10 preservado. Commit/push teste/evidências; sem promoção/dados reais.
+Continuar provas de entrega, convergência e eficiência pendentes no índice.
+
 ### 2026-10-08 — ADV-17/18 autoridade atual e revisão independente (main87)
 Base4632a381/d053c09d. Proof provenance-native-review-authority1 terminal0:
 835/317 Python e896/403 payloads byte a byte. Revisados integralmente testes
