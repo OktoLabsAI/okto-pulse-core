@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG42: paginação vinculada à geração comprovada
+Pagination1 (75160) terminal0:79pass/20.56s; pagination2 (72891) terminal0:
+1pass/41.09s. Total80 distintos, Ruff F/E9 verde. Nenhum processo ativo.
+Três superfícies HTTP com fatos/filtros constantes: continuidade na mesma geração,
+409 específico sem items após mudar só geração e restart na geração nova.
+Prova separada SQL/Grafx: duas gerações atuais, binding CAS persistido, reader/
+composição roteados reais, mesma revisão de fonte e conjuntos de observações;
+cursor antigo recusado e nova leitura identifica o novo binding.
+Sem produto/SPA alterados, main67 byte-idêntico antes dos testes. Sem migrador,
+conversão ou fallback legado. Limites HTTP actor/fonte controlados e fixtures SQL
+no recibo clean-break-native-generation-pagination.json; não alegar cerimônia
+inteira de recuperação ou autenticação credencial real.
+KG42 qualificado:78 verificadas/157 pendentes/11 superadas.
+Próximo: KG43, arrays/payload agregados numa única linha, conforme §6.5.
+
+### 2026-10-07 — KG42: troca real de geração em validação
+Turno anterior progresso publicado Core656f878f/Community91e6447c; worktrees
+confirmadas limpas/sincronizadas. Prova provenance-native-generation-pagination1
+terminal0 para main67 antes de comportamento (835/896+317/403).
+Teste HTTP chamado generation_change apenas trocava group_by; renomeado para
+filter_change e preservado. Novos casos cobertura/impacto/clusters trocam SOMENTE
+geração entre páginas com fatos/filtros iguais, exigem409 sem items e reinício
+na nova geração. HTTP real/use case/reducer, fontes controladas/actor injetado.
+Pagination1 (75160) terminal0:79pass/20.56s, inclui linhagem e Board KG cursor.
+Pagination2 (72891) ativo: SQL real + duas gerações Grafx com schema oficial,
+binding CAS persistido e composição roteada real; cursor da geração anterior
+deve falhar mesmo com observações idênticas. Não editar produto/reinstalar.
+Produto/frontend main67 inalterados; índice77/158/11 ainda, KG42 não qualificado.
+
 ### 2026-10-07 — KG40/KG41 comprovados sem inferir completude pela fila
 Community13753 terminal1:27pass/1fail/158.58s. Duas parametrizações reutilizavam
 grafo module-scoped e IDs; segunda falhava antes da leitura por chave duplicada.

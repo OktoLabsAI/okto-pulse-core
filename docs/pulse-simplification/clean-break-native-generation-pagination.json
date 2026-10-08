@@ -1,0 +1,39 @@
+{
+  "criteria": [
+    "KG:KG-42"
+  ],
+  "proof_pair": "dist-native-main67",
+  "product_pair": {
+    "core": "656f878f",
+    "community": "91e6447c"
+  },
+  "verified": [
+    "Coverage, impact and Bug clusters HTTP tests change only graph generation between pages, with identical facts and filters: same-generation continuation succeeds, changed-generation cursor returns 409 with a specific stale code and no items, restart observes new generation.",
+    "Preserved filter-change test under an accurate name; it was previously mislabeled as generation change.",
+    "Real SQL source and two current-schema Grafx generations, actual routing composition and persisted binding CAS: the second generation carries identical observations/source revision but rejects the old cursor; restart uses new generation.",
+    "Existing lineage transport and Board KG cursor contracts pass in the same campaign."
+  ],
+  "tests": {
+    "transport_and_board_cursor": {
+      "passed": 79,
+      "seconds": 20.56
+    },
+    "native_generation_switch": {
+      "passed": 1,
+      "seconds": 41.09
+    },
+    "distinct_passed": 80,
+    "ruff_F_E9": "passed"
+  },
+  "limits": [
+    "HTTP source services and actor context are controlled fixtures; no JWT/credential claim. Native binding/query proof is a separate integrated SQL/Grafx test.",
+    "Native switch directly exercises admitted binding CAS, not a full disaster recovery ceremony. Both generations are initialized with current schema; no old backend or data migration.",
+    "Native SQL fixture uses current metadata without a separate schema/FK certification claim.",
+    "No product/frontend changes; main67 byte proof precedes tests and prior closure remains applicable, not reexecuted."
+  ],
+  "artifacts": {
+    "provenance-native-generation-pagination1.json": "0b451108cc6c90bdb967c67cb38700b683a5e915fe8205ec497882f082c0999e",
+    "acceptance-native-generation-pagination1.xml": "5bda1e5b51fb2dc790a1a66bfc392b7f21d89e433acc99f0f3fed73cb270d7db",
+    "acceptance-native-generation-pagination2.xml": "891d6cf470abf73b02bc268818de1361a1951fbd8fcdbb57d4cb46846519b239"
+  }
+}
