@@ -2,6 +2,29 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T60 progresso/retomada com aquisição do KG indisponível
+Base1ba344a1/7a46ce68; turno anterior foi progresso. Proof novo conferido sem
+colisão, provenance-native-graph-offline-20261008 terminal0 antes da campanha:
+main88 byte-idêntico838/317 Python e899/403 payloads.
+Novo witness nativo REST/MCP injeta ConnectionError na aquisição de providers KG
+e comprova falha antes do fluxo. Checkpoint persiste; fecha sessão SQL do writer,
+retoma em sessão/store novos. Último marco e histórico permanecem, obrigações
+não ganham crédito fictício, recovery não vira verified. Whole-Spec rollup
+proibido separadamente; resume funciona e não oferece repair/rebuild. Replay
+na sessão sucessora devolve ID original. Zero aquisição de provider no fluxo.
+
+native-graph-offline-20261008/session24629 terminal0:2pass11.37s; Ruff verde.
+Outage é injeção de provider, não queda de processo/rede; processos reais intactos.
+Authorizer/SQL reais com extração de principal em fixture. Sem alegar autenticação
+instalada ou convergência de dispatcher/grafo. Recibo
+clean-break-native-graph-offline-20261008.json; DEI-T60 qualificado.
+Frontend44 e closure main88 hashes conferidos; produto/SPA sem mudanças.
+
+Índice207verificados/28pendentes/11superados. Oito budgets ZERO, handles terminais.
+Commit/push teste/evidência; WIP KG10 preservado. Sem promoção/dados reais.
+Continuar DEI-T44 e demais pendências do índice fixo; BASE:T23/KG10/KG28
+permanecem decisões pendentes. Objetivo integral ativo.
+
 ### 2026-10-08 — DEI-T24 commits divergentes e revert sem ancestralidade presumida
 Base76c1d356/3d98814d; turno anterior foi progresso. Nome de proof/recibo/campanha
 novo conferido antes de escrever. Proof provenance-native-commit-basis-20261008-1
