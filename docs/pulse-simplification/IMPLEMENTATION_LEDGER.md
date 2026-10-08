@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-INT-06 leitura restrita e contratos inertes (main87)
+Base948b71e6/3d49c4cd; proof provenance-native-restricted-read1 terminal0:
+835/317 Python e896/403 payloads byte a byte. Oito novos casos REST:
+health-only/restrito × resumo/página antiga/detalhe/reversa. Seletores de
+leitura autorizada anterior não concedem autoridade;403 sem ID/digest/
+contagem e sem SELECT de corpos protegidos. Casos existentes conferem
+escopo Board/Spec,404 não enumerável, erros seguros e paridade REST/MCP.
+
+Contrato com instrução embutida retorna como dado literal ao leitor
+autorizado; trap de socket não dispara e SQL é apenas SELECT/BEGIN.
+Sem alegar segurança de qualquer agente externo que consuma o texto.
+Paginação nativa usa offsets/digests escopados, não cursor de compatibilidade.
+
+restricted-read1/session56232:31pass60.52s; candidates1/session62935:
+4pass13.65s. Corrigido F811 preexistente no import de fixture por alias de
+módulo; candidates2/session51491:4pass13.58s. Total35 distintos, sem duplicar.
+Frontend52+29 reutilizados com hashes conferidos; diff de componentes/testes
+vazio desde campanhas. Ruff/diff check verdes; todos handles terminais.
+
+Recibo clean-break-native-restricted-read.json; AC-INT-06 qualificado.
+Índice186verificados/49pendentes/11superados. Principais controlados, sem
+alegação de auth instalada. Produto/SPA sem mudança, closure main87 vigente,
+oito budgets ZERO. WIP KG10 preservado; commit/push testes/evidências.
+Sem promoção/dados reais. Continuar autoridade, entrega e eficiência pendentes.
+
 ### 2026-10-08 — AC-VER-02 condição técnica verificável (main87)
 Base151eec4e/ecde325b; proof provenance-native-technical-condition1 terminal0:
 835/317 Python e896/403 payloads byte a byte. Novo caso REST escreve TR
