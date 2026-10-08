@@ -2,6 +2,56 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — main67 concluído: contrato histórico e ajuda de inferência removidos
+Todos handles terminais: core43328=42pass/9.09s; community7351=11pass/68.73s;
+catalog22993=5pass/5.82s; frontend41031=51pass/50.72s. Total109 distintos.
+Closure75505 terminal0; ok=true, findings/documentation_findings vazios e oito
+budgets ZERO. Catálogo gerado sem drift, não editado manualmente. Ruff/diff verdes.
+Main67 fonte/wheel/install byte-idênticos antes de comportamento; SPA79 arquivos
+verificada também pelo script oficial. Nenhum produto editado após a prova.
+Recibo clean-break-native-inference-contract-removal.json registra escopo,
+hashes,109 testes e limites. Sem migração, conversão, nova exceção ou promoção.
+KG39 continua pendente de teste explícito de não ativação de provider; preservar
+essa obrigação sem exigir saúde perfeita de componentes independentes como
+alvo adicional. Probes main66 distinguem abertura fria, participante global
+ausente e oscilação de telemetria; não justificar relaxamento de segurança.
+Índice74/161/11 permanece; próxima execução usa main67, próximo build main68.
+
+### 2026-10-07 — contrato de inferência histórica retirado; main67 em validação
+Removido BoardSettings.cognitive_llm_config, cujo comentário confirmava retenção
+histórica sem consumidor no worker autoral. Presença da chave agora recusada
+explicitamente (inclusive null), sem conversão ou remoção de dados. Testes cobrem
+schema/export sem campo e recusa de três formas antigas. Portas LLM usadas por
+outras funcionalidades não foram removidas por associação.
+Frontend build75036 terminal0:79 arquivos/78assets, tree
+4c2244e8b1a469d62d16b4de9b102c0aaf701834e6488765ae5718aa81daa69e.
+Main67 pareado construído/instalado, instalação39979 terminal0. Primeira tentativa
+usou nome de wheel Community incorreto, corrigido para okto_pulse-0.4.0.
+Prova provenance-native-main67 terminal0:835/896 Core+317/403 Community.
+Ativos: core43328 (governança/extraction/bridges), community7351 (11 casos nativos
+Learning), closure75505. Não editar produto nem reinstalar até os terminais.
+Ruff F/E9 verde. Frontend já testado51pass. Nenhuma qualificação adicionada.
+
+### 2026-10-07 — C3: ajuda de inferência antiga corrigida; frontend em build
+Turno anterior progresso publicado Coree8203779/Community4a992007; worktrees
+confirmadas limpas. Prova main66-health-profile antes dos novos probes.
+Perfil da consulta: abertura Grafx/carregamento de índices domina ~1s inicial.
+Após cache renovar, métricas e schema disponíveis; camadas funcionam sem limite
+e também em scope0.35 com leitores aquecidos. Global health recusa participante
+ausente (global_health_participant_unavailable); leitura nativa o disponibiliza.
+Probe warm (9296) terminou0: houve health healthy, seguido de oscilação de
+telemetria em leituras posteriores; não prova saúde estável. Nenhum LLM apontado
+como falha. Não relaxar deadlines ou guards nem transformar toda performance
+de health em novo requisito KG39: seu critério é ausência de LLM não bloquear
+o fluxo/ativar provider/causar falha. Prova de não ativação ainda precisa teste.
+C3 encontrou HelpPanel ainda ensinando cognitive_llm_config e inferência Learning
+já removidas. Substituído por captura autoral, proveniência, Done, replay e
+autoridade independente de revisão. Teste da tela inclui ausência de setup antigo.
+Frontend41031 terminal0:51pass em3 arquivos/50.72s (HelpPanel, KGHelp, capture API).
+Build75036 ativo; produto Python inalterado, SPA será regenerada oficialmente.
+Próximo par main67 após build terminal, instalação/prova byte a byte, smoke
+lifecycle e closure; recibo/publicação. Índice74/161/11 ainda, sem nova qualificação.
+
 ### 2026-10-07 — instalação nativa sem LLM reproduzida; deadline de health identificado
 Turno anterior de confirmação sem implementação classificado sem progresso;
 retomada verificou worktrees limpas e publicação Core47be6152/Community4a992007.

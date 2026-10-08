@@ -4260,6 +4260,8 @@ class BoardSettings(BaseModel):
             raise ValueError("min_spec_completeness_removed")
         if isinstance(value, dict) and "qa_require_role_separation" in value:
             raise ValueError("qa_require_role_separation_removed")
+        if isinstance(value, dict) and "cognitive_llm_config" in value:
+            raise ValueError("cognitive_llm_config_removed")
         return value
 
     analytics: AnalyticsSettings = Field(default_factory=AnalyticsSettings)
@@ -4389,13 +4391,6 @@ class BoardSettings(BaseModel):
     # — any status accepted without evidence; audit log records every bypass for
     # forensics.
     skip_test_evidence_global: bool = False
-    # Cognitive Extraction LLM config — opt-in (spec 3d907a87, FR7 / D5).
-    # Schema (free-form dict so it can evolve without a migration):
-    #   {"provider": "openai" | "anthropic" | ..., "model": "...",
-    #    "api_key_env": "OPENAI_API_KEY", "max_tokens": 800, "timeout_s": 30}
-    # Retained for historical experimental configuration. The authored Learning
-    # worker does not consume this field or invoke an internal summariser.
-    cognitive_llm_config: dict | None = None
 
     @field_validator("auto_derive_spec_resource_types")
     @classmethod

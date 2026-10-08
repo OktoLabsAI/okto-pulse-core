@@ -138,3 +138,22 @@ async def test_board_update_merges_partial_governance_settings_and_logs_safe_eve
             "surface": "board_patch",
             "outcome": "changed",
         }
+
+
+async def test_board_settings_no_longer_expose_retired_cognitive_inference_config():
+    from okto_pulse.core.models.schemas import BoardSettings
+
+    assert "cognitive_llm_config" not in BoardSettings.model_fields
+    assert "cognitive_llm_config" not in BoardSettings.model_json_schema()["properties"]
+    assert "cognitive_llm_config" not in BoardSettings().model_dump()
+
+
+@pytest.mark.parametrize("retired_value", [None, {}, {"provider": "openai", "model": "x"}])
+async def test_removed_cognitive_inference_settings_are_refused_without_conversion(retired_value):
+    from pydantic import ValidationError
+    from okto_pulse.core.models.schemas import BoardSettings
+
+    settings = {"cognitive_llm_config": retired_value}
+    with pytest.raises(ValidationError, match="cognitive_llm_config_removed"):
+        BoardSettings.model_validate(settings)
+    assert settings == {"cognitive_llm_config": retired_value}
