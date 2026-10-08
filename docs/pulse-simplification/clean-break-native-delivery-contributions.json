@@ -1,0 +1,60 @@
+{
+  "scope": "DEI-T13–16: exact native contribution bindings, no duplicated receipt or inferred completion",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "DEI:DEI-T13": [
+      "test_mixed_declarations_persist_and_gate_matches_rollup"
+    ],
+    "DEI:DEI-T14": [
+      "test_one_receipt_keeps_partial_and_complete_obligations_distinct",
+      "test_mixed_declarations_persist_and_gate_matches_rollup"
+    ],
+    "DEI:DEI-T15": [
+      "test_partial_is_not_credit_and_two_partials_never_accumulate_completion",
+      "test_partial_replay_does_not_upgrade_and_explicit_complete_is_new_history"
+    ],
+    "DEI:DEI-T16": [
+      "test_inline_set_is_atomic_replayable_and_staleness_is_per_binding",
+      "test_unadmitted_or_duplicate_resolved_member_rolls_back_whole_batch"
+    ]
+  },
+  "evidence": [
+    "Mixed FR partial/TR complete persist as two typed contributions sharing exactly one execution. Strengthened SQL counts assert one execution, one binding record, one event and one handler.",
+    "Card gate identifies FR missing; after Done, rollup leaves FR false and TR true. Sharing receipt never shares completion.",
+    "Two partial records remain partial through replay. A new explicit complete declaration preserves both prior partial records; no accumulation to100%.",
+    "Two Targets map to FR with both receipts and TR with only first. Persisted/recovered sets match exactly; Target-two revision invalidates FR while TR remains ready.",
+    "Foreign or duplicate resolved receipt set rolls back all execution/binding/event/handler records. Missing contribution metadata is refused without rewriting history."
+  ],
+  "tests": {
+    "core_passed": 103,
+    "community_distinct_passed": 11,
+    "distinct_backend_passed": 114,
+    "core_seconds": 7.25,
+    "community_seconds": 32.18,
+    "strengthened_case_rerun": "1 passed in9.77s; included in11, not added."
+  },
+  "frontend_review": {
+    "artifact": "native-delivery-envelope-frontend1.json",
+    "status": "Existing passing main86 campaign reused: no product/frontend changes since execution.",
+    "cases": [
+      "declares complete separately from partial for two obligations",
+      "shows a partial receipt after reload without marking implementation complete",
+      "names exact receipt sets per obligation without a Cartesian assignment",
+      "uses server readiness per binding when another receipt in the record is stale"
+    ]
+  },
+  "limits": [
+    "No runtime or frontend product change; existing main86 closure remains applicable, eight budgets ZERO.",
+    "SQL fixtures use current native contracts and actual SQLite/receipt admission; this is not installed authentication E2E.",
+    "No automatic qualification of other currentness or test-credit criteria from these partial scenarios.",
+    "No converter, old reader, authority change, promotion or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-contributions1.json": "ae8a827d473e07b1ae0e82c8adcb0b52fbf53586fc19686b15d315e0b3396896",
+    "native-delivery-contributions-core1.xml": "0d87f659a6e43a7c9665305ff9882a5cd06a4e529df7488e1c05135629ab5801",
+    "native-delivery-contributions-community1.xml": "5410210296442db7132e375483be756775913d0926b9c29ef498d80ffdfdeb0f",
+    "native-delivery-contributions-community2.xml": "b3fea8f15a241e076fa9c4a3330cff0e1247f4a67b69d031c0e2af984b278047",
+    "native-delivery-envelope-frontend1.json": "a751880c26e35030dc6efc27dfb79d81a4f937cd3ffa9d2bf7f490e31f2d146d",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

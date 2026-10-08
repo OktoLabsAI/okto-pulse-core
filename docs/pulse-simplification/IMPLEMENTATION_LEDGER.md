@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T13–16: contribuição por obrigação (main86)
+Baseb08a4f63/361647f5 conferida, WIP KG10 preservado. Revisados contratos
+tipados, testes de contribuição/receipt sets e consumidores frontend.
+Proof provenance-native-delivery-contributions1 terminal0 antes dos testes:
+835/317 Python e896/403 payloads byte a byte, par main86 inalterado.
+
+Core native-delivery-contributions-core1/session83112 terminal0:
+103pass em7.25s. Community contributions-community1/session36643 terminal0:
+11pass em32.18s. Fortalecida asserção SQL do caso misto FR/TR: exatamente
+1execução/1record/1evento/1handler para ambos os vínculos.
+Rerun dirigido contributions-community2/session88512 terminal0:1pass em9.77s,
+incluído nos11, não somado. Total114backend distintos. Ruff/diff check verdes.
+Frontend main86 já aprovado foi revisto por quatro casos específicos de
+partial/complete, seleção por obrigação e readiness; não repetido sem mudança.
+
+Recibo clean-break-native-delivery-contributions.json. DEI-T13/14/15/16
+qualificados: reuso sem cópia, FRpartial/TRcomplete distintos, dois partial
+não somam completion, dois Targets sem produto cartesiano e invalidade local.
+Índice113verificados/122pendentes/11superados. Não qualificar todos os critérios
+de currentness/teste por inferência dessas amostras.
+Nenhum runtime/SPA alterado; closure main86 vigente mantém oito budgets ZERO.
+Nenhum dado real tocado ou promoção. Todos handles terminais.
+Commit/push dos testes/evidências; continuar pelos critérios DEI pendentes.
+
 ### 2026-10-08 — Decisão DEI-T33/T41 autorizada e aplicada (main86)
 Usuário respondeu explicitamente “Autorizar o mesmo bloqueio (recomendado)”.
 A pendência de estados registrada abaixo está resolvida. Nova associação single
