@@ -2,6 +2,26 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-INT-07 lote de contexto e exceções (main87)
+Baseb8b75fb3/d22d931f; proof provenance-native-classification-batch1 terminal0:
+835/317 Python e896/403 payloads byte a byte. Dois novos casos de transporte
+REST/MCP resolvem2 candidatos em contexto, repetem pedido sem duplicação,
+consultam1 pendência exata e promovem somente essa exceção em novo pedido.
+IR prévio preservado; contagens de decisões/histórico/versão exatas.
+Classificação completa não simula avaliação semântica ou admissão de início.
+
+classification-batch1/session57765:56pass92.18s; defaults1:3pass2.94s;
+frontend/session38635:52pass. Total111 distintos; ruff/diff check verdes.
+Revisados UI de autoria/lista, replay, permissões e defaults FR/TR/OR.
+Principais controlados; frontend mocka API. Não alegar auth instalada,
+benchmark ou decisão de concorrência de outro critério. Todos handles terminais.
+
+Recibo clean-break-native-classification-batch.json; AC-INT-07 qualificado.
+Índice183verificados/52pendentes/11superados. Sem produto/SPA alterado,
+closure main87 vigente, oito budgets ZERO. WIP KG10 preservado.
+Commit/push teste/evidências; sem promoção/dados reais.
+Continuar concorrência, suficiência e demais critérios do índice fixo.
+
 ### 2026-10-08 — AC-ARQ-01/02 adoção e conclusão de refinamento (main87)
 Base7050d2d1/94fbf15a. Proof provenance-native-adoption-review1 terminal0:
 835/317 Python e896/403 payloads byte a byte. Adoção12pass25.98s/session98075:

@@ -1,0 +1,40 @@
+{
+  "scope": "AC-INT-07: batch known context, author only exceptions, equivalent authority",
+  "proof_pair": "dist-native-main87",
+  "criteria": {
+    "ARQVER:AC-INT-07": [
+      "test_context_batch_then_only_exception_preserves_exact_pending_summary",
+      "test_mixed_batch_creates_once_preserves_normative_ir_and_records_actor",
+      "test_any_denied_permission_prevents_design_body_reads_and_all_writes",
+      "test_draft_defaults_are_versioned_proposals_not_silent_writes"
+    ]
+  },
+  "evidence": [
+    "Two new transport cases exercise real REST and MCP handlers over native relational state: classify two context candidates, replay exactly once, and observe precisely one remaining pending candidate. Existing IR is untouched; version/history/decision counts prove no duplicate application.",
+    "Author then promotes only the remaining exception with current version and a distinct key. Current count becomes three and blocking count zero, but neither semantic approval nor start permission is claimed.",
+    "Existing suite verifies whole-batch permission checks before protected bodies, actor-bound replay/current authority, scoped non-enumerable reads, atomic rollback, content locks and safe REST/MCP errors.",
+    "FR/TR/OR defaults are explicit versioned proposals, not silent authoring or evidence. All three profiles checked.",
+    "Frontend witnesses verify selection across pages, mixed batch, exact retry after unknown outcome, no duplicate clicks, explicit review after conflict and complete pending counts outside the visible page."
+  ],
+  "tests": {
+    "community_passed": 56,
+    "community_seconds": 92.18,
+    "core_passed": 3,
+    "core_seconds": 2.94,
+    "frontend_passed": 52,
+    "total_distinct_passed": 111
+  },
+  "limits": [
+    "Controlled test principals exercise production handlers/UOW; this is not a newly installed authentication E2E.",
+    "Frontend API boundary is mocked; real transport and persistence behavior are independently exercised in the paired backend campaign.",
+    "No product or SPA change. Do not claim benchmarking, mid-request policy fences or stale-source multi-agent acceptance from this milestone.",
+    "Main87 source/wheel/install parity was proven before execution. Closure unchanged with eight zero budgets; no migration or promotion."
+  ],
+  "artifacts": {
+    "provenance-native-classification-batch1.json": "302ce22f95edec5ccb08a0e6d1eb42ecf8e0264033099c53ca1ffa41f53b2d28",
+    "native-classification-batch1.xml": "cb9feceabf87615520809d73395a315f5575dbc9fceb10b2386e17f13b0e9fd7",
+    "native-classification-defaults1.xml": "35f2bedca267df406254f753b786ee8d053f83b4faba3be455516b5aa912f170",
+    "native-classification-batch-frontend1.json": "ce07b583c7a65fb7beab3fbdf1b450e7fda5249b3536ee2cf7b3c43f8014f114",
+    "closure-native-main87.json": "0b9b185c7e16892769af431ffa471141244468db74ccd447dbcf6af474acbfd4"
+  }
+}
