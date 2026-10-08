@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T52 famílias de impacto não intercambiáveis
+Base459f440c/81fe17ba; turno anterior foi progresso. Proof novo sem colisão,
+provenance-native-impact-families-20261008 terminal0 antes dos testes:
+main88 byte-idêntico838/317 Python e899/403 payloads.
+Revisados recursos card_types.md/tool-docs/card.md: guideline_impact_evidence
+nomeia família semântica selada, não campo alternativo do relatório de tarefa.
+Teste nativo persiste/relê preview guideline selado no mesmo Board. Campos do
+recibo recusam schema ImpactEvidence; REST/MCP recusam ID real desse recibo como
+execução da task, sem alteração SQL. Declaração task autorizada persiste, mas
+seu ID não resolve como recibo guideline e writer CAS de adoção recusa objeto
+ImpactEvidence. Recibo selado intacto; task fica claim_only sem crédito.
+
+native-impact-families-20261008/session38278:0pass/2fail8.67s, erro de fixture:
+asdict não copia mappingproxy imutável; trocado por mapeamento dos campos.
+Campanha2/session24674 terminal0:2pass10.63s; Ruff verde. Sem produto alterado.
+Recibo clean-break-native-impact-families-20261008.json; DEI-T52 qualificado.
+Frontend3 da campanha de impacto anterior/closure hashes conferidos; reuso
+sem recontagem, nenhum componente/SPA mudou. Não alega todos fluxos de
+autorização de adoção guideline: planner/adapter reais, setup controlado.
+
+Índice211verificados/24pendentes/11superados. Main88/oito budgets ZERO;
+handles terminais. Commit/push teste/evidência; WIP KG10 preservado.
+Sem promoção/dados reais. Próximos: reabertura/fallback/waivers DEI, VER/KG
+e benchmarks do índice fixo. BASE:T23/KG10/KG28 seguem decisões pendentes.
+Objetivo integral ativo.
+
 ### 2026-10-08 — DEI-T49/T50 conflito de impacto e fato fora do plano
 Base999fa734/4860c00a; turno anterior foi progresso. Proof novo sem colisão,
 provenance-native-impact-conflict-20261008 terminal0 antes dos testes:

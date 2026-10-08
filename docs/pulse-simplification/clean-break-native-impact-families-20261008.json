@@ -1,0 +1,41 @@
+{
+  "scope": "DEI-T52 task impact claims versus sealed semantic-guideline impact family",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "DEI:DEI-T52",
+  "result": {
+    "passed": 2,
+    "failed": 0,
+    "seconds": 10.63,
+    "terminal_session": 24674
+  },
+  "evidence": [
+    "Native schema stores and reads back an actual sealed guideline impact preview for the same Board as the task.",
+    "Guideline receipt fields do not validate as the closed ImpactEvidence task block. REST/MCP refuse the real guideline receipt ID as a task execution reference with delivery_execution_set_unresolved; observed SQL models remain unchanged after commit.",
+    "REST/MCP accept a normal task impact declaration under card.conclusion.write. Its persisted record ID does not resolve as a guideline impact receipt, and the guideline CAS writer explicitly refuses the task ImpactEvidence object as an invalid adoption mutation.",
+    "Original sealed guideline receipt remains identical after both operations. Task impact remains claim_only and creates no implementation/delivery credit.",
+    "Packaged card_types.md and tool-docs/card.md describe guideline_impact_evidence as the separate sealed semantic-guideline family, not an alternative task-report field."
+  ],
+  "attempts": [
+    {
+      "campaign": "native-impact-families-20261008",
+      "passed": 0,
+      "failed": 2,
+      "seconds": 8.67,
+      "reason": "Fixture dataclasses.asdict attempted deepcopy of immutable mappingproxy before schema check; replaced with field mapping, no product change."
+    }
+  ],
+  "limits": [
+    "Guideline authority setup uses domain planner and native adapter directly. This proves sealed persistence and family separation, not all guideline-adoption authorization routes.",
+    "Task transports use explicit fixture principals with real authorization/persistence. No installed authentication claim.",
+    "Prior 3 frontend impact-panel tests reused with hash verification; no UI/source change, no rerun or additional count.",
+    "No product change, real-data operation or promotion. Installed main88 parity and closure remain applicable, eight zero budgets."
+  ],
+  "artifacts": {
+    "provenance-native-impact-families-20261008.json": "d8ca702a06d57d90317f972dd472db208c3af06f7a74e5ff319ac92e99119783",
+    "native-impact-families-20261008.xml": "dc63fd16fb669839c0c6c9d11d31c32e239ad30dca693a8374420c03b0956864",
+    "native-impact-families-20261008-2.xml": "ddf0e796cd54754c8340f28a5d2e95b942555e0596cf73a96ea77d7c6c21e1df",
+    "native-impact-conflict-frontend-20261008.json": "66d5cc1b9ce99b8af8c4b0226d1437df01ae09a7fb1cad3fe993d72f64a30814",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}
