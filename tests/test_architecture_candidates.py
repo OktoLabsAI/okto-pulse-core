@@ -133,8 +133,8 @@ def test_change_invalidates_only_the_affected_contract_digest():
     assert sum(before[key] != after[key] for key in before) == 1
 
 
-def test_missing_legacy_identity_is_an_issue_and_never_minted_on_read():
-    interface = {"name": "Legacy", "error_contract": "explicit error semantics"}
+def test_missing_native_identity_is_an_issue_and_never_minted_on_read():
+    interface = {"name": "Missing identity", "error_contract": "explicit error semantics"}
     original = deepcopy(interface)
     first = _project(_design(interface))
     second = _project(_design(interface))
@@ -181,7 +181,7 @@ def test_source_is_not_mutated_and_schema_ref_is_only_data():
     (({"id": "a", "event_schema": {"number": float("nan")}},), "architecture_contract_unresolved"),
     ((None,), "architecture_contract_unresolved"),
 ])
-def test_invalid_legacy_content_cannot_become_a_resolved_population(interfaces, code):
+def test_invalid_native_content_cannot_become_a_resolved_population(interfaces, code):
     result = _project(_design(*interfaces))
     assert not result.resolved
     assert any(issue.code == code for issue in result.issues)

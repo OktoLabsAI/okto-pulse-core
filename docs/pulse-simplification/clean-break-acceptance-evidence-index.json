@@ -6267,7 +6267,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-architecture-read.json",
+        "criterion_key": "ARQVER:AC-ARQ-03",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-04",
@@ -6614,7 +6619,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-architecture-read.json",
+        "criterion_key": "ARQVER:AC-ARQ-16",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-VER-01",
@@ -7368,7 +7378,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-architecture-read.json",
+        "criterion_key": "ARQVER:ADV-04",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:ADV-05",
@@ -7390,7 +7405,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-architecture-read.json",
+        "criterion_key": "ARQVER:ADV-05",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:ADV-06",
@@ -7412,7 +7432,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-architecture-read.json",
+        "criterion_key": "ARQVER:ADV-06",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:ADV-07",
@@ -8019,7 +8044,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-architecture-read.json",
+        "criterion_key": "ARQVER:ADV-24",
+        "proof_pair": "dist-native-main86"
+      }
     }
   ]
 }

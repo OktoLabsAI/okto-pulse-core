@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — ARQ leitura de contratos e conteúdo não confiável (main86)
+Basea29ce402/ba80ac91 conferida. Proof provenance-native-architecture-read1
+terminal0 antes da campanha:835/317 Python e896/403 payloads byte a byte.
+Revisados reader por portas, projeção de contratos e witnesses relacionais.
+Nome/protocolo não geram contrato; schema_ref/schema vazio/error string são
+preservados com limites explícitos. Fonte indisponível não vira zero candidatos.
+Leitura SQL apenas SELECT não cria identidade nem altera versão.
+REST repetido de schema_ref interno não faz DNS/socket nem grava domínio.
+Promoção conserva error string como dado; instrução de desativar gates não
+muda policy, skips, avaliações, status ou contrato de execução.
+
+Core architecture-read-core1/session79534:42pass em4.74s. Community
+architecture-read-community1/session33520:31pass em54.66s. Frontend
+ArchitectureCandidatesPanel:23pass. Total96 distintos. Ruff/diff check verdes.
+Renomeados dois testes Core de legacy para dado nativo ausente/inválido.
+Não foi removida a recusa de dados incompletos, nem criado caminho de conversão.
+
+Recibo clean-break-native-architecture-read.json. AC-ARQ-03/16,
+ADV-04/05/06/24 qualificados; índice142verificados/93pendentes/11superados.
+Não inferir todos os gates de início, classificação ou identidade/layout
+a partir desta campanha. Autenticação REST usa principal controlado na fixture.
+Nenhum produto/SPA alterado; closure main86 mantém oito budgets ZERO.
+Todos handles terminais. Commit/push Core de nomes/evidências; Community
+permanece ba80ac91 com WIP KG10 preservado. Sem promoção/dados reais.
+Retomar demais critérios ARQ/VER e DEI pendentes do índice.
+
 ### 2026-10-08 — DEI-T30/T31 e ADV-11/12: cobertura por critério e Test Card (main86)
 Base0a8d97b0/55cc513b conferida. Proof provenance-native-delivery-multicard1
 terminal0 antes da campanha:835/317 Python e896/403 payloads byte a byte.
