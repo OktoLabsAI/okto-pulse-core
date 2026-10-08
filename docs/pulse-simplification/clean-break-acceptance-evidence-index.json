@@ -4299,7 +4299,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-source-authority-impact-coverage.json",
+        "criterion_key": "KG:KG-56",
+        "proof_pair": "dist-native-main73"
+      }
     },
     {
       "key": "KG:KG-57",
@@ -4321,7 +4326,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-source-authority-impact-coverage.json",
+        "criterion_key": "KG:KG-57",
+        "proof_pair": "dist-native-main73"
+      }
     },
     {
       "key": "KG:KG-58",
@@ -4343,7 +4353,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-source-authority-impact-coverage.json",
+        "criterion_key": "KG:KG-58",
+        "proof_pair": "dist-native-main73"
+      }
     },
     {
       "key": "KG:KG-59",

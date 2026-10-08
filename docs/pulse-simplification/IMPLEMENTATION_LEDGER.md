@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG56/KG57/KG58: fonte, impacto e prova separados
+Base6f6e8f92/e6ab915a limpa. Byteproof provenance-native-impact-coverage1 terminal0
+main73 idêntico835/896+317/403 antes de comportamento. Sem produto/SPA alterado;
+não rebuildar par apenas por teste/docs. Closure main73 permanece aplicável,
+ok=true, findings/documentation vazios, oito budgets0.
+
+Novo test_frozen_spec_link_suggestions:3estados(validated/in_progress/done),
+worker+resolver sem IO não transforma sugestões em tests/implements/fallback,
+não muda fonte nem cobertura. Com3casos relacionais de vínculo traceability-only
+em Spec locked:6pass/5.96s,35600 terminal0. Esses vínculos explícitos autorizados
+continuam possíveis, sem desbloquear conteúdo; não relaxar essa semântica.
+Permissões por variante/erros MCP72564 terminal0:27pass/5.92s.
+Projeções REST97232 terminal0:30pass/8.42s. SpecModal frontend87663 terminal0:9pass.
+
+Impacto/cobertura Core35994 terminal0:88pass/12.81s; Community61663 terminal0:
+43pass/65.56s; frontend21pass. Teste nativo SQL+Grafx mostra cenário indireto
+via mesmo Card como potencial, com caminho real; nenhum acesso ao proof store.
+Ledger assinado valida crédito atual e separação vínculo estrutural vs passing,
+inclui ausência/restrição/revisão errada/reabertura/falha. UI preserva distinções.
+Total224 casos distintos. Ruff do novo teste verde. Todos processos terminais.
+
+Recibo clean-break-native-source-authority-impact-coverage.json qualifica
+KG56(SEGURANÇA DO CAMINHO READ-ONLY),KG57,KG58. Índice93 verificadas/142 pendentes/11 N/A.
+Limite §5.4 explícito: NÃO alegar implementado armazenamento/replay de hipótese
+semântica durável por esta prova; hipótese não foi criada, adotada nem projetada.
+A qualificação KG56 só demonstra não adoção normativa e autoridade/locks preservados.
+Não houve novo gate, mecanismo ou alteração de autoridade.
+Próximo: KG59 proxy compartilhado não implica mesma causa; KG60 Q12 sem diff/as_of inventado.
+Nenhuma promoção, runtime real, conversão ou exclusão de dados.
+
 ### 2026-10-07 — KG55 qualificado: isolamento Board e erro de busca (main73)
 Reprodução de race: resposta Discovery do Board anterior substituía resultado atual;
 rejeição tardia publicava erro no Board novo. native-discovery-board-race-repro3
