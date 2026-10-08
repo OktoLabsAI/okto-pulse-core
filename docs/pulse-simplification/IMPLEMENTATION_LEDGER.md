@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — orientação para instalação anterior no data home
+
+Após reinstalação local autorizada, o usuário reproduziu `serve` contra
+`~/.okto-pulse` anterior: recusa correta, mas traceback sem orientação suficiente.
+Community CLI agora apresenta StorageFormatError de init/serve com diretório,
+incompatibilidade com versões anteriores, código diagnóstico e passos para
+preservar manualmente a pasta inteira e inicializar novamente no mesmo caminho.
+Configurações de armazenamento externo são mencionadas. Nenhum conversor,
+exclusão, mudança de gate ou manipulação dos dados reais foi acrescentado.
+Não atribui corrupção/fingerprint desconhecido com certeza a uma versão antiga.
+
+Wheel Community reconstruído e reinstalado no Python313 do usuário; Core0.4.0
+mantido. Prova pré-teste:1306 payloads source/wheel/site byte-idênticos, conjuntos
+Python iguais. CLI7 testes passaram (4 subprocessos reais init/serve x home
+padrão/explícito, preservação exata do SQLite e ausência de sidecars/traceback;
+3 regressões serve). Repetição com PYTHONPATH das duas árvores:7/59.68s.
+Ruff F/E9 e diff-check passaram. Frontend não alterado. Diretório real antigo
+preservado; sua movimentação/inicialização não foi executada automaticamente.
+Closure final terminou0: ok=true, oito budgets ZERO, findings e
+documentation_findings vazios. Produto Community d26582c8.
+
 ### 2026-10-08 — C4 concluído: entrega de engenharia e handoff
 
 Escopo consolidado v1.3 + corte aprovado concluído com o limite explícito de
