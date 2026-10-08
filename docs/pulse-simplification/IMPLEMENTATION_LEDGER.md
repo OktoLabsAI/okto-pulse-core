@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — VER cobertura parcial e diamante de herança (main86)
+Base799e0aa2/400740c6 conferida. Proof provenance-native-inheritance-coverage1
+terminal0:835/317 Python e896/403 payloads byte a byte. Revisados os testes
+de shape/timeout e diamante/ciclo já verdes em native-delivery-multicard1.xml.
+Hashes do recibo anterior conferidos; XML sem failure/skip nos dois casos.
+Diff ba80ac91..HEAD vazio nos witnesses backend/DeliveryEvidencePanel.
+
+Shape passing não observa timeout: IR incompleto, gate real recusa em sessão
+nova, tentativa de atribuir prova ao timeout não observado também recusa.
+Diamante preserva caminhos distintos sem duplicar obrigação/prova; gate passa
+com cobertura real. Corrupção persistida em ciclo torna resolução e entrega
+incompletas sem reescrever payloads históricos. Não representa write autorizado.
+Frontend revisto: lacunas exatas, resultado parcial e truncamento explícito.
+Nenhum teste repetido/contado de novo; reutilizada campanha15backend+21frontend.
+
+Recibo clean-break-native-inheritance-coverage.json; AC-VER-09 e ADV-10/16
+qualificados. Índice175verificados/60pendentes/11superados. Sem produto,
+teste ou SPA alterado; closure main86 vigente e oito budgets ZERO.
+WIP KG10 preservado. Commit/push Core apenas de evidências.
+Sem promoção/dados reais. Continuar aplicabilidade e integração pendentes.
+
 ### 2026-10-08 — VER entrega técnica por relatório especializado (main86)
 Basefd470163/cc3affc0 conferida. Proof provenance-native-technical-reports1
 terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.

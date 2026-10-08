@@ -6942,7 +6942,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-inheritance-coverage.json",
+        "criterion_key": "ARQVER:AC-VER-09",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-VER-10",
@@ -7687,7 +7692,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-inheritance-coverage.json",
+        "criterion_key": "ARQVER:ADV-10",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:ADV-11",
@@ -7891,7 +7901,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-inheritance-coverage.json",
+        "criterion_key": "ARQVER:ADV-16",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:ADV-17",
