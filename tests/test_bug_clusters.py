@@ -198,3 +198,22 @@ def test_payload_budget_bounds_nested_arrays_not_only_rows(monkeypatch):
     monkeypatch.setattr(reducer, "MAX_CLUSTER_RESPONSE_BYTES", 64)
     with pytest.raises(ValueError, match="single_cluster_payload_limit"):
         project_bug_clusters(query(), state)
+
+
+def test_reopened_bug_duration_spans_creation_to_latest_done_not_recovery_episode():
+    from okto_pulse.core.kg.source_projection_metadata import latest_resolution_time
+    from okto_pulse.core.ports.consolidation import CardLifecycleTransition
+
+    created = NOW - timedelta(days=4)
+    first = CardLifecycleTransition("first", NOW - timedelta(days=3), "in_progress", "done")
+    reopened = CardLifecycleTransition("reopened", NOW - timedelta(days=2), "done", "in_progress")
+    last = CardLifecycleTransition("last", NOW - timedelta(days=1), "in_progress", "done")
+    resolved = datetime.fromisoformat(latest_resolution_time("done", (last, reopened)))
+    state = snapshot(bugs=(bug(source_created_at=created, resolved_at=resolved),
+                           bug("two", resolved_at=None)))
+    result = project_bug_clusters(query(), state)
+    assert result["items"][0]["observed_median_resolution_hours"] == 72
+    assert result["items"][0]["observed_resolution_timestamp_count"] == 1
+    assert "latest_verified_done_transition" in result["resolution_semantics"]
+    assert latest_resolution_time("in_progress", (reopened, first)) is None
+    assert latest_resolution_time("done", ()) is None

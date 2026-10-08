@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG63: duração de criação até última conclusão (main75)
+KG62 commit89032170 enviado ao remoto. Lacuna de UI: rótulo genérico
+Median resolution hours não explicitava origem nem efeito de reabertura.
+Agora o painel nomeia criação→última conclusão, inclui períodos reabertos
+e distingue de MTTR operacional; cálculo/permissões não mudaram.
+Novo teste Core prova72h incluindo reabertura, não24h do último episódio.
+Primeira fixture excedia limite de2transições e falhou; corrigida sem relaxar contrato.
+
+Frontend12pass; build21613 terminal0 e verify:frontend-dist verde.79arquivos/78assets,
+hash4df013b2db510c1c4feeb3eeecd452dad4c5c9958ff40a612eb34b564cc90a44.
+Wheels main75 construídos; install93784 terminal0; provenance-native-main75
+byte-idêntico835/896+317/403 antes de testes backend.
+Core39429 terminal0:47pass/4.93s; Community95118 terminal0:31pass/53.27s.
+SQL real prova escopo/limite/histórico desconhecido; Grafx real limpa/regrava
+resolved_at sem substituir por created_at da projeção. Total90 distintos.
+Closure16236 terminal0:ok=true, findings/documentation vazios, oito budgets0.
+Recibo clean-break-native-bug-duration.json; índice97 verificadas/138 pendentes/11 N/A.
+Nenhum runtime/dado real ou autoridade alterado. Todos handles terminais.
+
+Próximo KG65: fechar recursos/manifests/remediações sem recomendar superfície
+Sprint/manutenção removida; test_served_resources_reference_only_live_tools_and_resource_uris
+já existe em test_mcp_resources.py e deve integrar evidência corrente.
+KG64 continua pendente: benchmark corrente main68 mede custo absoluto, não comparação
+equivalente antes/depois. KG66 exige comportamento instalado fora do dev server.
+
 ### 2026-10-07 — KG62: horizonte explícito e continuação
 KG60 commit38bf412d enviado a origin/feature/v0.4.0. Par main74 permanece
 byte-idêntico, produto/SPA inalterados. Releitura §10/Q09/Q20 e KG62 confirma
