@@ -5461,7 +5461,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-multicard.json",
+        "criterion_key": "DEI:DEI-T30",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "DEI:DEI-T31",
@@ -5473,7 +5478,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-multicard.json",
+        "criterion_key": "DEI:DEI-T31",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "DEI:DEI-T32",
@@ -7546,7 +7556,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-multicard.json",
+        "criterion_key": "ARQVER:ADV-11",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:ADV-12",
@@ -7568,7 +7583,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-multicard.json",
+        "criterion_key": "ARQVER:ADV-12",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:ADV-13",

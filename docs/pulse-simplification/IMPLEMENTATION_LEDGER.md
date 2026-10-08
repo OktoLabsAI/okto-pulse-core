@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T30/T31 e ADV-11/12: cobertura por critério e Test Card (main86)
+Base0a8d97b0/55cc513b conferida. Proof provenance-native-delivery-multicard1
+terminal0 antes da campanha:835/317 Python e896/403 payloads byte a byte.
+Acrescentados dois casos SQL: Test Cards distintos fecham em conjunto a lacuna
+UI/autorização sem duplicar implementação/teste; normal Card com claim, link
+de cenário e resultado assinado continua sem autoridade de Test Card.
+Revistos casos existentes de três critérios (terceiro ausente/failed) e
+relatório assinado único com resultados distintos por observação.
+Gate real continua bloqueado até completar o critério faltante; histórico
+permanece. Alterar assinatura ou selecionar prova velha não esconde falha nova.
+
+Community multicard1/session95338:15pass em39.28s. Rerun multicard2/
+session91382:1fail em9.33s por asserção esperando erro de batch no single.
+Corrigida para erro real de admissão; multicard3/session20885:1pass em7.21s,
+incluído nos15. DEI-T33 continua pendente; não foi alegada igualdade de erros.
+Frontend DeliveryEvidencePanel:21pass. Total36 distintos. Ruff/diff check verdes.
+
+Recibo clean-break-native-delivery-multicard.json. DEI-T30/T31 e
+ARQVER:ADV-11/ADV-12 qualificados; índice136verificados/99pendentes/11superados.
+Testes usam issuers/verifiers reais para resultados HTTP e relatório assinado;
+não alegam handshake de atestação de origem a partir de fatos seedados.
+Sem produto/SPA alterado; closure main86 mantém oito budgets ZERO.
+Todos handles terminais. Commit/push de testes e evidências; WIP KG10
+preservado. Sem promoção/dados reais; seguir critérios pendentes do índice.
+
 ### 2026-10-08 — DEI-T12/T17/T18: admissão e escopo de origem (main86)
 Base7e3fcd6d/a97c4464 conferida. Proof provenance-native-delivery-origin1
 terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.

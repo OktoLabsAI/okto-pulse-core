@@ -1,0 +1,51 @@
+{
+  "scope": "DEI-T30/T31 and ARQVER ADV-11/12: authenticated per-criterion coverage across Test Cards",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "DEI:DEI-T30": [
+      "test_normal_card_claim_cannot_replace_test_card_even_with_signed_result"
+    ],
+    "DEI:DEI-T31": [
+      "test_distinct_test_cards_jointly_cover_current_implementations_without_gaps"
+    ],
+    "ARQVER:ADV-11": [
+      "test_two_of_three_passing_criteria_never_satisfy_requirement[absent]",
+      "test_two_of_three_passing_criteria_never_satisfy_requirement[failed]"
+    ],
+    "ARQVER:ADV-12": [
+      "test_one_signed_report_preserves_distinct_criterion_verdicts",
+      "keeps a mixed report partial when only its functional criterion passes"
+    ]
+  },
+  "evidence": [
+    "Added real persisted two-Test-Card flow: one Test Card observes UI, another authorization. The first result leaves the exact implementation/criterion gap; the second closes it with exactly two implementation bindings and two test bindings, preserving the first payload.",
+    "Added normal-Card refusal despite a matching scenario link, a human-readable tested claim and a real signed test result. No test binding is persisted and the criterion remains unverified.",
+    "For three required criteria, two passing and one absent or failed keep the real Spec delivery gate blocked after a fresh SQL session read. A later passing result for the third closes the gap without rewriting history.",
+    "One signed inspection report has separate functional passing and technical failing observations. Only the observed passing criterion receives credit; the technical requirement/inherited rule and aggregate remain incomplete.",
+    "Tampering with the signed mixed report removes credit, and a later applicable failure cannot be hidden by selecting the old binding.",
+    "Frontend distinguishes missing Card contributions and exact criterion gaps, keeps mixed outcomes partial, caps large gap lists without declaring omitted work complete, and labels Test Cards as authenticated outcome sources."
+  ],
+  "tests": {
+    "community_distinct_passed": 15,
+    "frontend_passed": 21,
+    "total_distinct_passed": 36,
+    "campaign1": "15 passed in 39.28s",
+    "campaign2": "1 failed in 9.33s after narrowing assertion to batch error; single-entry path correctly returns delivery_current_verified_test_and_implementation_required",
+    "campaign3": "1 passed in 7.21s with exact single-entry admission error; included in 15, not added"
+  },
+  "limits": [
+    "Source execution/receipt facts are seeded; HTTP test results and signed inspection reports use real issuers/verifiers. This is not a source attestation handshake E2E.",
+    "Card type and report claim are arranged as fixtures to exercise the actual delivery admission boundary; this receipt does not qualify all permission or lifecycle transitions.",
+    "DEI-T33 single/batch equivalence remains pending, including the distinct sanitized errors documented here.",
+    "No product/SPA modification. Same main86 proof and closure remain applicable, eight budgets zero.",
+    "No legacy converter, migration, promotion or real-data mutation."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-multicard1.json": "de21854e3c2b48a176e0cb7b6a1953768ecbb041d3930f3a3dd1cb66f6554cee",
+    "native-delivery-multicard1.xml": "7c2ceb6edd0cf6ce465f7ae7d1a3a4e4613ad320a532e957ff7a628ba7f0d0ba",
+    "native-delivery-multicard2.xml": "4d51d764f2543d45f40e3b455fa22c4433d40fabd03511fef45c34e252bd89ba",
+    "native-delivery-multicard3.xml": "64e9b77d0699301035c6a4f15959dd6487a8fd45572bf0c4e26724b30c50d34f",
+    "native-delivery-multicard-frontend1.json": "7ffd99ad80208a381ee939bb32069d54fa37fa858858cf1e78ddbd359c886b2f",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}
