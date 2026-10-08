@@ -7888,7 +7888,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-test-card-removal.json",
+        "criterion_key": "ARQVER:ADV-14",
+        "proof_pair": "dist-native-main88"
+      }
     },
     {
       "key": "ARQVER:ADV-15",

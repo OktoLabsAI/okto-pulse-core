@@ -2,6 +2,25 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — ADV-14 remoção do único Test Card
+Basefda36379/8b38e235. Revisado witness existente completo: plano nativo pronto,
+DELETE REST autorizado do único Test Card, preservação de histórico/avaliações,
+cenário sem owner, gate de prontidão recusado e move in_progress bloqueado sem
+alterar snapshot. Não inventa prova nem regra nova de invalidação de avaliações.
+native-test-card-removal1/session72757 terminal0:1pass11.39s no main88
+byte-idêntico já provado nesta sessão. Nenhum produto/teste/SPA alterado.
+Frontend29 anterior: hash conferido; diff08659ae2..HEAD vazio no componente/teste
+RequirementVerificationPanel. Revistos casos pending/missing-Test-Card/no-credit.
+Reutilização sem nova execução ou contagem.
+
+Recibo clean-break-native-test-card-removal.json; ADV-14 qualificado.
+Índice193verificados/42pendentes/11superados. Main88 closure e oito budgets ZERO.
+Todos handles terminais. Commit/push Core da evidência; Community8b38e235 já
+enviado, apenas WIP KG10 não commitado. Sem promoção/dados reais.
+Próximas pendências exatas no índice: DEI autoridade/atualidade/retomada,
+verificabilidade restante, KG e benchmarks; BASE:T23/KG10/KG28 continuam
+aguardando decisões previamente registradas. Objetivo integral permanece ativo.
+
 ### 2026-10-08 — DEI-T33 equivalência semântica single/lote unitário
 Base5cbf2e61/ef1708d4. Main88 permanece byte-idêntico, proof desta sessão
 provenance-native-association-gate1 precede campanha; nenhum produto alterado.
