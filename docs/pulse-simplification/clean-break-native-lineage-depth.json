@@ -1,0 +1,29 @@
+{
+  "criterion": "KG:KG-62",
+  "qualification": "verified_current_pair_review",
+  "proof_pair": "dist-native-main74",
+  "evidence": [
+    "Real relational fixture of six Specs and five declared dependencies returns partial horizon at depth three, frontier spec:4, then exact five-edge outgoing precedes path at depth eight.",
+    "Source read performs no writes or delivery evidence reads; lineage source completeness remains distinct from graph freshness.",
+    "Core query, authorization and MCP suites preserve bounded traversal, cycles, cursor scope, permissions and explicit unavailable endpoints.",
+    "Frontend expands depth from three to six and offers continuation from frontier; never labels exhausted horizon as complete."
+  ],
+  "tests": {
+    "core_passed": 30,
+    "community_passed": 20,
+    "frontend_passed": 11,
+    "total_distinct_passed": 61
+  },
+  "limits": [
+    "Product identical to main74; no rebuild required for evidence-only change.",
+    "Real SQL source proof, controlled transport actors and frontend API tests; no live-browser claim.",
+    "No recursive claim for unbounded graph closure or permission/gate resolution."
+  ],
+  "artifacts": {
+    "provenance-native-main74.json": "769a57b527c6ff329784312942c5ec5c059475375a5c86e671b32314989fd994",
+    "native-lineage-depth1.xml": "7927eb3eacb3a113280238757b1fcad4f7824b4c44f12675d544cd411166ace8",
+    "native-lineage-depth-relational1.xml": "62d50d4c5c70cb3d221a3d9878113551bdf2574cca500486959b738d326c3e33",
+    "native-lineage-depth-frontend1.json": "80c106e63c0e389f0ee2323e23d4a04e6358f44a13fcef16eeec6ebe370b8dee",
+    "closure-native-main74.json": "ee30665f2d4163d615fc35d82cadbc94dca845b1b3296f1802f2bf450b297071"
+  }
+}

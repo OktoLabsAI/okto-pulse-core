@@ -2,6 +2,21 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG62: horizonte explícito e continuação
+KG60 commit38bf412d enviado a origin/feature/v0.4.0. Par main74 permanece
+byte-idêntico, produto/SPA inalterados. Releitura §10/Q09/Q20 e KG62 confirma
+continuação/parcial obrigatório, sem exigir fechamento arbitrário em depth3.
+Core41036 terminal0:30pass/7.23s; Community48978 terminal0:20pass/14.14s;
+frontend native-lineage-depth-frontend1 terminal0:11pass. Total61 distintos.
+SQL real com6Specs/5dependências devolve fronteira spec:4 em depth3; expansão
+depth8 recupera caminho exato de5arestas precedes outgoing, sem escritas/proof reads.
+Frontend expande3→6 e oferece continuação da fronteira; erros/revisão/scope
+não preservam observação anterior. Não é prova livebrowser.
+Recibo clean-break-native-lineage-depth.json qualifica KG62; índice96 verificadas,
+139 pendentes/11 N/A. Closure main74 aplicável, oito budgets0.
+Todos handles deste milestone terminais; nenhum runtime/dado real alterado.
+Próximo KG63: duração até última conclusão de Bug reaberto, sem MTTR inventado.
+
 ### 2026-10-07 — KG60: janela pela última atualização da fonte (main74)
 Base89948729/e6ab915a. Repro native-temporal-source-repro1 terminal1:1 falha
 real (comparação str/datetime) no filtro que consultava created_at da projeção.
