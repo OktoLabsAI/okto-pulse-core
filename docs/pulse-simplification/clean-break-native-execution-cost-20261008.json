@@ -1,0 +1,413 @@
+{
+  "scope": "ARQVER:AC-INT-12",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main90",
+  "evidence": [
+    "Shared native initiative: first agent publicly creates simple/26-contract Specs, accepts explicit profile defaults and authors inherited BR sharing one criterion. Second authenticated agent resumes durable decisions without reclassification.",
+    "Individual and batch paths inspect the same complete contracts, preserve exact semantic decisions and expose 282 tools. Scoped authoring denial is measured, not omitted as savings.",
+    "Separate native execution scenarios measure actual public transitions through Spec Done, external GET/assertion execution, authenticated evidence admission and readback showing one proof shared by FR/BR/AC.",
+    "Four exact association replays preserve record IDs and incur zero HTTP execution calls. Six actual executions are timed and linked to their precise MCP requests, including required re-execution after semantic change.",
+    "Report groups metadata, resources, architecture, profile/reuse, execution, delivery and governance costs. No cost inferred from tool counts; every serialized request/response is retained."
+  ],
+  "results": {
+    "passed": 8,
+    "seconds": 59.14,
+    "external_executions": 6,
+    "steps": 6,
+    "assertions": 12,
+    "association_replays": 4,
+    "external_executions_during_replay": 0
+  },
+  "observed_comparison": {
+    "broad": {
+      "individual_tool_calls": 79,
+      "batch_tool_calls": 54,
+      "calls_avoided": 25,
+      "individual_tokens": 270784,
+      "batch_tokens": 261834
+    },
+    "restricted": {
+      "individual_tool_calls": 80,
+      "batch_tool_calls": 55,
+      "calls_avoided": 25,
+      "individual_tokens": 273207,
+      "batch_tokens": 261603
+    }
+  },
+  "summary": {
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[batch-broad-reader-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 8,
+        "tools/call": 54
+      },
+      "requests": 66,
+      "bytes": 1046488,
+      "tokens_cl100k_base": 261834,
+      "by_stage": {
+        "architecture_authorship_classification": {
+          "requests": 42,
+          "bytes": 310017,
+          "tokens_cl100k_base": 90142
+        },
+        "initialize": {
+          "requests": 2,
+          "bytes": 22186,
+          "tokens_cl100k_base": 5348
+        },
+        "lifecycle_and_governance": {
+          "requests": 2,
+          "bytes": 4333,
+          "tokens_cl100k_base": 1000
+        },
+        "qualification_and_criterion_reuse": {
+          "requests": 10,
+          "bytes": 55878,
+          "tokens_cl100k_base": 14050
+        },
+        "resources/read": {
+          "requests": 8,
+          "bytes": 198198,
+          "tokens_cl100k_base": 43854
+        },
+        "tools/list": {
+          "requests": 2,
+          "bytes": 455876,
+          "tokens_cl100k_base": 107440
+        }
+      }
+    },
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[batch-read-only-reader-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 8,
+        "tools/call": 55
+      },
+      "requests": 67,
+      "bytes": 1048229,
+      "tokens_cl100k_base": 261603,
+      "by_stage": {
+        "architecture_authorship_classification": {
+          "requests": 43,
+          "bytes": 311758,
+          "tokens_cl100k_base": 89928
+        },
+        "initialize": {
+          "requests": 2,
+          "bytes": 22186,
+          "tokens_cl100k_base": 5348
+        },
+        "lifecycle_and_governance": {
+          "requests": 2,
+          "bytes": 4333,
+          "tokens_cl100k_base": 996
+        },
+        "qualification_and_criterion_reuse": {
+          "requests": 10,
+          "bytes": 55878,
+          "tokens_cl100k_base": 14037
+        },
+        "resources/read": {
+          "requests": 8,
+          "bytes": 198198,
+          "tokens_cl100k_base": 43854
+        },
+        "tools/list": {
+          "requests": 2,
+          "bytes": 455876,
+          "tokens_cl100k_base": 107440
+        }
+      }
+    },
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[individual-broad-reader-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 8,
+        "tools/call": 79
+      },
+      "requests": 91,
+      "bytes": 1085198,
+      "tokens_cl100k_base": 270784,
+      "by_stage": {
+        "architecture_authorship_classification": {
+          "requests": 67,
+          "bytes": 348725,
+          "tokens_cl100k_base": 99276
+        },
+        "initialize": {
+          "requests": 2,
+          "bytes": 22186,
+          "tokens_cl100k_base": 5348
+        },
+        "lifecycle_and_governance": {
+          "requests": 2,
+          "bytes": 4333,
+          "tokens_cl100k_base": 982
+        },
+        "qualification_and_criterion_reuse": {
+          "requests": 10,
+          "bytes": 55880,
+          "tokens_cl100k_base": 13884
+        },
+        "resources/read": {
+          "requests": 8,
+          "bytes": 198198,
+          "tokens_cl100k_base": 43854
+        },
+        "tools/list": {
+          "requests": 2,
+          "bytes": 455876,
+          "tokens_cl100k_base": 107440
+        }
+      }
+    },
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[individual-read-only-reader-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 8,
+        "tools/call": 80
+      },
+      "requests": 92,
+      "bytes": 1086944,
+      "tokens_cl100k_base": 273207,
+      "by_stage": {
+        "architecture_authorship_classification": {
+          "requests": 68,
+          "bytes": 350471,
+          "tokens_cl100k_base": 101418
+        },
+        "initialize": {
+          "requests": 2,
+          "bytes": 22186,
+          "tokens_cl100k_base": 5348
+        },
+        "lifecycle_and_governance": {
+          "requests": 2,
+          "bytes": 4333,
+          "tokens_cl100k_base": 1004
+        },
+        "qualification_and_criterion_reuse": {
+          "requests": 10,
+          "bytes": 55880,
+          "tokens_cl100k_base": 14143
+        },
+        "resources/read": {
+          "requests": 8,
+          "bytes": 198198,
+          "tokens_cl100k_base": 43854
+        },
+        "tools/list": {
+          "requests": 2,
+          "bytes": 455876,
+          "tokens_cl100k_base": 107440
+        }
+      }
+    },
+    "tests/test_single_agent_spec_execution.py::test_one_agent_preserves_assessments_and_evidence_through_spec_done[False-broad-agent]": {
+      "methods": {
+        "initialize": 1,
+        "tools/list": 1,
+        "resources/read": 10,
+        "tools/call": 25
+      },
+      "requests": 37,
+      "bytes": 530994,
+      "tokens_cl100k_base": 125208,
+      "by_stage": {
+        "authenticated_execution": {
+          "requests": 1,
+          "bytes": 3989,
+          "tokens_cl100k_base": 1197
+        },
+        "delivery_records_and_resume": {
+          "requests": 9,
+          "bytes": 64750,
+          "tokens_cl100k_base": 17235
+        },
+        "initialize": {
+          "requests": 1,
+          "bytes": 11093,
+          "tokens_cl100k_base": 2674
+        },
+        "lifecycle_and_governance": {
+          "requests": 15,
+          "bytes": 22996,
+          "tokens_cl100k_base": 5728
+        },
+        "resources/read": {
+          "requests": 10,
+          "bytes": 200228,
+          "tokens_cl100k_base": 44654
+        },
+        "tools/list": {
+          "requests": 1,
+          "bytes": 227938,
+          "tokens_cl100k_base": 53720
+        }
+      }
+    },
+    "tests/test_single_agent_spec_execution.py::test_one_agent_preserves_assessments_and_evidence_through_spec_done[False-separate-reviewer]": {
+      "methods": {
+        "initialize": 4,
+        "tools/list": 4,
+        "resources/read": 28,
+        "tools/call": 25
+      },
+      "requests": 61,
+      "bytes": 1611783,
+      "tokens_cl100k_base": 375177,
+      "by_stage": {
+        "authenticated_execution": {
+          "requests": 1,
+          "bytes": 3989,
+          "tokens_cl100k_base": 1215
+        },
+        "delivery_records_and_resume": {
+          "requests": 9,
+          "bytes": 64750,
+          "tokens_cl100k_base": 17335
+        },
+        "initialize": {
+          "requests": 4,
+          "bytes": 44372,
+          "tokens_cl100k_base": 10696
+        },
+        "lifecycle_and_governance": {
+          "requests": 15,
+          "bytes": 22944,
+          "tokens_cl100k_base": 5717
+        },
+        "resources/read": {
+          "requests": 28,
+          "bytes": 563976,
+          "tokens_cl100k_base": 125334
+        },
+        "tools/list": {
+          "requests": 4,
+          "bytes": 911752,
+          "tokens_cl100k_base": 214880
+        }
+      }
+    },
+    "tests/test_single_agent_spec_execution.py::test_one_agent_preserves_assessments_and_evidence_through_spec_done[True-broad-agent]": {
+      "methods": {
+        "initialize": 1,
+        "tools/list": 1,
+        "resources/read": 10,
+        "tools/call": 28
+      },
+      "requests": 40,
+      "bytes": 539627,
+      "tokens_cl100k_base": 127704,
+      "by_stage": {
+        "authenticated_execution": {
+          "requests": 2,
+          "bytes": 8000,
+          "tokens_cl100k_base": 2417
+        },
+        "delivery_records_and_resume": {
+          "requests": 9,
+          "bytes": 64750,
+          "tokens_cl100k_base": 17245
+        },
+        "initialize": {
+          "requests": 1,
+          "bytes": 11093,
+          "tokens_cl100k_base": 2674
+        },
+        "lifecycle_and_governance": {
+          "requests": 16,
+          "bytes": 25628,
+          "tokens_cl100k_base": 6525
+        },
+        "qualification_and_criterion_reuse": {
+          "requests": 1,
+          "bytes": 1990,
+          "tokens_cl100k_base": 469
+        },
+        "resources/read": {
+          "requests": 10,
+          "bytes": 200228,
+          "tokens_cl100k_base": 44654
+        },
+        "tools/list": {
+          "requests": 1,
+          "bytes": 227938,
+          "tokens_cl100k_base": 53720
+        }
+      }
+    },
+    "tests/test_single_agent_spec_execution.py::test_one_agent_preserves_assessments_and_evidence_through_spec_done[True-separate-reviewer]": {
+      "methods": {
+        "initialize": 4,
+        "tools/list": 4,
+        "resources/read": 28,
+        "tools/call": 28
+      },
+      "requests": 64,
+      "bytes": 1620416,
+      "tokens_cl100k_base": 377705,
+      "by_stage": {
+        "authenticated_execution": {
+          "requests": 2,
+          "bytes": 8000,
+          "tokens_cl100k_base": 2427
+        },
+        "delivery_records_and_resume": {
+          "requests": 9,
+          "bytes": 64750,
+          "tokens_cl100k_base": 17395
+        },
+        "initialize": {
+          "requests": 4,
+          "bytes": 44372,
+          "tokens_cl100k_base": 10696
+        },
+        "lifecycle_and_governance": {
+          "requests": 16,
+          "bytes": 25576,
+          "tokens_cl100k_base": 6504
+        },
+        "qualification_and_criterion_reuse": {
+          "requests": 1,
+          "bytes": 1990,
+          "tokens_cl100k_base": 469
+        },
+        "resources/read": {
+          "requests": 28,
+          "bytes": 563976,
+          "tokens_cl100k_base": 125334
+        },
+        "tools/list": {
+          "requests": 4,
+          "bytes": 911752,
+          "tokens_cl100k_base": 214880
+        }
+      }
+    }
+  },
+  "artifact": {
+    "file": "benchmark-native-execution-main90-20261008.json.gz",
+    "sha256": "3113f997cff721e0875ea92ab2d67c21cfed3618339ca54954032891db238036",
+    "raw_sha256": "9fba940d0aa529316096d04cb6f49efaea38f06a4e8d1c847be26a6c23a8c302"
+  },
+  "artifacts": {
+    "provenance-native-execution-cost-20261008.json": "13ad7fe777e05c16f68da25ab657591062ded6ade3b438286b0b3b0a7e8cc2d9",
+    "native-execution-measurement90-20261008.xml": "4774d4072246a30317f7665deb5ba4824b3de2461844bbbd275d58e7cacf99ea",
+    "native-execution-measurement90-20261008.log": "85d39c2ce242e37c5371052a0e0d98f28125805dcf4fb13732e750b58d9d920a"
+  },
+  "limits": [
+    "AC-INT-12 measurement/report acceptance only. BASE:T43 and KG:KG-64 whole-flow before/after targets remain pending.",
+    "Classification/profile and execution/reuse are explicitly separate fixture segments within one capture, not one continuous initiative-to-Done execution.",
+    "Initial completed initiative/grants and execution fixture initial source facts are controlled inputs. Public authoring cost is only claimed for operations actually called.",
+    "Defaults/profile acceptance is additional measured work; no unexecuted counterfactual savings is assigned to defaults.",
+    "HTTP executor uses a real disposable ASGI application with GET/assertions, not a deployed external service. Timing is nested in request latency and must not be added twice.",
+    "Only CommunityHttpManifestExecutor is instrumented; no general claim about all executors. Token counts use cl100k_base0.14.0, not model billing.",
+    "IDs/timestamps vary, so token deltas are observed samples; exact avoided classification call count is 25 for both reader variants.",
+    "No product/frontend/SPA change, legacy runtime, release or real-data operation."
+  ]
+}

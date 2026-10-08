@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-INT-12 relatório integrado de custos e reuso
+Turno anterior foi progresso; base Core2daf34b6/Community93b15c1c conferida.
+Instrumentação measure_mcp_fixture agora mede CommunityHttpManifestExecutor,
+liga cada execução ao request MCP, outcome/assertions/steps/tempo e restaura
+o método no finally. Não presume instrumentação de outros executores.
+test_single_agent_spec_execution acrescenta replay público do relatório e
+rollup final: mesmas entries, um test_id compartilhado FR/BR/AC, todos satisfeitos;
+asserts existentes preservam exatamente3registros e autoria/revisão/histórico.
+
+Proof provenance-native-execution-cost-20261008 terminal0:main90 byte-idêntico
+838/317 Python,899/403 payloads. Campanha combinada classificação+execução
+native-execution-measurement90-20261008/session96869 terminal0:8pass59.14s;
+2warnings anyio conhecidos. Ruff/diff verdes. Seis execuções HTTP reais
+(ASGI descartável),6steps/12assertions, todas passed e ligadas ao tool correto.
+Quatro replays de associação sem execução HTTP nem novo registro.
+Paridade semântica das27decisões confirmada nas quatro variantes de autoria.
+Amplo79→54calls,270784→261834tokens;restrito80→55calls,273207→261603tokens.
+25calls de classificação evitadas, sem ocultar catálogo/resources/contratos.
+Relatório separa metadata/resources/arquitetura/perfil/execução/delivery/governança.
+
+Recibo clean-break-native-execution-cost-20261008.json e archive
+benchmark-native-execution-main90-20261008.json.gz fecham AC-INT-12 como
+aceite de medição/relatório: iniciativa simples/muitos candidatos,2agentes,
+perfis/defaults, reuso de critério/prova, permissões e custo observado.
+Classificação e execução são segmentos de fixtures distintas explicitamente
+identificados; não afirmar uma iniciativa contínua inteira até Done.
+Não inferir ganho contrafactual de defaults, billing ou50/30global.
+BASE:T43/KG64 ainda exigem comparação integral; DEI64 pacote/superfícies pendente.
+Índice226verificados/9pendentes/11superados. Universo fixo inalterado.
+Próximo: fechar relatório comparativo BASE:T43/KG64 com limites/populações
+equivalentes; DEI64/C4 depois do par final. Não repetir recortes já medidos.
+Produto/SPA inalterados; closure main90/oito budgets ZERO. Handles terminais.
+WIP KG10, decisões BASE:T23/KG10/KG28 e limite KG30 preservados.
+
 ### 2026-10-08 — custo de perfil default e reuso de critério
 Turno anterior foi progresso; base Core4a8bd9c7/Community1d2d0112 conferida,
 WIP KG10 preservado. Mesma iniciativa agora cria publicamente FR/critério,
