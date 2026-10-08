@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Ajuda guiada sem Sprint e prova instalada inicial (main81)
+Base d5d5b079/0caa358b limpa. Instalação isolada kg66-main80/venv concluída:
+120 dependências, Grafx0.0.7 local; proof91386 confirmou835/896+317/403
+byte-idênticos ANTES de init/runtime. init69567 terminal0, CLI0.4.0,
+base nova em kg66-main80/runtime-data, credencial somente em handoff privado.
+Servidor71834 bind loopback51695/51696, processo novo iniciado02:50:03UTC.
+Primeira navegação antes de readiness recebeu conexão recusada; mesmo processo
+mantido, depois ready. Playwright CLI criou Topic e Story via SPA empacotada/API
+real (POST201); reload confirmou persistência. Console sem mensagens.
+Ajuda guiada ainda dizia sprints: evidência concreta no snapshot02:51:59.
+Consolidação teve contenção de writer; inspeção SQLite read-only APÓS shutdown
+confirmou recuperação: fila e dead letter vazias, audit Story commit02:53:46,
+error_details=null. Não relaxar gate nem tratar log transitório como perda.
+Servidor71834 encerrou0, browser fechado. Nenhum runtime/dado real alterado.
+
+Corrigido registry.ts para áreas nativas, comentários obsoletos CLI Kùzu e
+acceptance legacy home. Sem alteração de semântica/autoridade. Frontend28pass;
+build78617 terminal0, verify verde79files/78assets,
+hashee5768cdcd7c8930a1f4effa2951593ee714eaa069a4cfc2cf013f85a5c5e2cf.
+Wheels81/instalação terminais0; proof52867 terminal0 byte-idêntico835/896+317/403.
+Closure61613 terminal0,ok=true; consultar recibo para oito budgets0.
+Recibo clean-break-native-guided-help-retirement.json. Índice98/137/11 inalterado.
+
+Retomada: KG66 ainda pendente — browser real foi main80, anterior ao ajuste
+de texto main81; continuar prova de contrato/comportamento do par final instalado,
+incluindo MCP/Health, sem alegar entrega total a partir de smoke de Story.
+Artefatos browser arquivados em .validation-v040/kg66-main80/browser.
+Runners initialize.py e serve_validation.py estão no diretório kg66-main80;
+stop-server existe e base já inicializada: NÃO executar init novamente nem
+reusar launcher sem preparar nova campanha/novo controle de encerramento.
+Todos handles deste registro terminais. Seguir plano fixo; KG64 comparativo e
+decisões BASE:T23/KG10/KG28 permanecem pendentes.
+
 ### 2026-10-07 — Health com contrato único; alias/rota Ladybug removidos (main80)
 Baseaca3438f/53ca6805. Removidos LEGACY_HEALTH_SCHEMA_VERSION e alias público
 schema_version=1.0. REST exige health_schema_version Literal1.3; readiness recusa
