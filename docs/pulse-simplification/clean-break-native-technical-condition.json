@@ -1,0 +1,66 @@
+{
+  "scope": "AC-VER-02: technical profile alone is not an observable verification condition",
+  "proof_pair": "dist-native-main87",
+  "criteria": {
+    "ARQVER:AC-VER-02": [
+      "test_technical_profile_without_linked_condition_cannot_start",
+      "test_semantic_review_is_distinct_from_structural_readiness[review_rejects-vague_condition]",
+      "test_semantic_review_is_distinct_from_structural_readiness[condition_corrected-vague_condition]"
+    ]
+  },
+  "evidence": [
+    "Real REST structured writers author a vague TR and unlink its terminal criterion. Readback retains explicit technical profile but reports qualification unresolved, no criterion paths, incomplete verification work and orphan criterion. Real start rejects spec_execution_plan_incomplete with snapshot unchanged.",
+    "Strengthened existing semantic witness seeds both TR and criterion as Respond rapidly. Structurally complete linkage does not count as semantic approval: the external evaluation explicitly rejects missing measurable limit, persists that rejection and blocks real start.",
+    "Correcting the observable criterion to its measurable limit and submitting an explicit external approval permits start. Scenarios remain ready without evidence; no passing proof or artificial Test Card is manufactured.",
+    "Frontend planning-versus-credit/default-authoring evidence reused unchanged; git diff08659ae2..HEAD is empty for RequirementVerificationPanel and its test, prior result hash checked."
+  ],
+  "tests": {
+    "distinct_community_passed": 7,
+    "campaigns": [
+      {
+        "name": "native-technical-condition1",
+        "passed": 6,
+        "failed": 1,
+        "seconds": 22.03
+      },
+      {
+        "name": "native-technical-condition2",
+        "passed": 0,
+        "failed": 1,
+        "seconds": 12.71
+      },
+      {
+        "name": "native-technical-condition3",
+        "passed": 0,
+        "failed": 1,
+        "seconds": 14.16
+      },
+      {
+        "name": "native-technical-condition4",
+        "passed": 1,
+        "failed": 0,
+        "seconds": 13.6
+      }
+    ],
+    "frontend": "29 previously executed cases reused without new execution/count"
+  },
+  "diagnostics": [
+    "The new structural fixture initially sent unsupported TR description. Removing it from the patch was insufficient because the shared read fixture also persisted it; canonical typed seed resolved both writer refusals.",
+    "The test initially assumed qualification_resolved meant only configured profile. Source review confirmed it also requires no resolution blockers; missing terminal path correctly makes it false. Expectation corrected, refusal/snapshot assertions retained."
+  ],
+  "limits": [
+    "External semantic judgments are supplied test inputs. Pulse enforces the result; no internal natural-language adequacy inference is claimed.",
+    "Controlled REST principal and seeded initial validation/approval; not installed auth or full lifecycle E2E.",
+    "Only AC-VER-02 is newly qualified. Proof reuse under AC-VER-11 remains pending.",
+    "No product/SPA change or migration. Main87 closure remains applicable, eight budgets zero."
+  ],
+  "artifacts": {
+    "provenance-native-technical-condition1.json": "7624ee423285729f22b907babe1e1252b25cb8477dcd1def6b178af685b5b5e1",
+    "native-technical-condition1.xml": "e9abae18601be2f7a23e0221be1e7f1db7cf408812835e2e75c2e8bf0bb310da",
+    "native-technical-condition2.xml": "f1b940a8d567a3d808ae83638dad70c36e6fe1aef0e494317069b38325851de5",
+    "native-technical-condition3.xml": "03765f0bbefaee9321caa537c702cc3f88e3b08ba07d3cf15ac19224b4961a58",
+    "native-technical-condition4.xml": "73989d2c5a3993de57c3c8f04913973190e610c4e1e7ec70ddb0c9986f4ca335",
+    "native-verification-start-frontend1.json": "c0b045da14b876273f918bb6fedd26f7ad61580f4af5a5053e20d5d82075eb04",
+    "closure-native-main87.json": "0b9b185c7e16892769af431ffa471141244468db74ccd447dbcf6af474acbfd4"
+  }
+}

@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-VER-02 condição técnica verificável (main87)
+Base151eec4e/ecde325b; proof provenance-native-technical-condition1 terminal0:
+835/317 Python e896/403 payloads byte a byte. Novo caso REST escreve TR
+vago e remove vínculo de critério; perfil technical persiste, qualificação
+fica unresolved/sem caminho e gate real recusa início sem alterar snapshot.
+Fortalecido caso semântico: TR e critério dizem Respond rapidly; avaliação
+externa rejeita falta de limite, recusa persiste e impede start. Correção
+da condição e aprovação explícita permitem start, sem run/crédito fictício.
+
+technical-condition1/session44892:6pass/1fail22.03s; condition2/session68600:
+1fail12.71s. Campo description fora do contrato estava no patch e fixture;
+corrigida preparação canônica. condition3/session59608:1fail14.16s:
+asserção confundia perfil configurado com qualification_resolved; fonte
+confirma exigência de caminho sem blockers. Corrigida expectativa, mantidas
+recusa/histórico. condition4/session23573:1pass13.60s. Total7 distintos verdes.
+Frontend29 anterior reutilizados, hash conferido e diff08659ae2..HEAD vazio
+no componente/teste. Ruff/diff check verdes; todos handles terminais.
+
+Recibo clean-break-native-technical-condition.json; AC-VER-02 qualificado.
+Índice185verificados/50pendentes/11superados. Julgamento semântico é input
+externo; principal/estado inicial controlados, sem alegação de auth instalada.
+AC-VER-11 continua pendente da prova de reutilização. Sem produto/SPA alterado,
+main87/closure vigentes, oito budgets ZERO. WIP KG10 preservado.
+Commit/push teste/evidências. Sem promoção/dados reais; continuar índice fixo.
+
 ### 2026-10-08 — AC-INT-05 classificação desatualizada (main87)
 Basebbeee546/a4413524. Proof provenance-native-classification-conflict1
 terminal0:835/317 Python e896/403 payloads byte a byte. Nova prova com
