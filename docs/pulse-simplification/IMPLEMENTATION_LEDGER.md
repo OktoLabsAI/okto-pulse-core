@@ -2,6 +2,29 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — ARQ identidade, paginação e revisão semântica (main86)
+Base5a5a44d2/301c6dc7 conferida. Proof provenance-native-architecture-review1
+terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.
+Core review-core1/session32084:34pass em4.06s. Community review-community1/
+session49277:11pass em29.35s. Frontend classifications:20pass.
+Novo caso SQL de cópia equivalente+layout preserva IDs/classificações,
+proveniência analisada original e IRs: review-community2/session58945:
+1pass em10.46s. Total66 novos distintos. Ruff/diff check verdes.
+
+Revistos witnesses main86 já executados de raízes homônimas, leitura sem
+geração de identidade e retirada real da fonte pela rota REST. Retirada não
+remove IR nem histórico, é auditada e não libera planejamento/entrega.
+Mudança semântica afeta só candidato/fragmento correspondente; paginação e
+filtros mantêm contadores globais. Revisões conflitantes não escolhem vencedor.
+Frontend apresenta contratos atuais/analisados e IRs retirados sem aprovação.
+
+Recibo clean-break-native-architecture-review.json. AC-ARQ-04/05/13/14
+e ADV-02/07 qualificados; índice156verificados/79pendentes/11superados.
+Não extrapolar estes resultados para todos os gates de início ou autenticação.
+Nenhum produto/SPA alterado; closure main86 mantém oito budgets ZERO.
+Todos handles terminais; commit/push de teste/evidências, WIP KG10 preservado.
+Sem promoção/dados reais; continuar locks, prontidão e critérios restantes.
+
 ### 2026-10-08 — ARQ classificação, proveniência e atomicidade (main86)
 Base89493da2/ba80ac91 conferida. Proof provenance-native-architecture-write1
 terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.
