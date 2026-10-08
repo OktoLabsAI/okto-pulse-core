@@ -380,9 +380,6 @@ def incomplete_test_card_completion_error(
 # Linked-scenario statuses that still BLOCK a test card from done (mirror of the
 # move_card test_card_completion gate); automated/passed are complete.
 _BLOCKING_SCENARIO_STATUSES = ("draft", "ready")
-_SCENARIO_EVIDENCE_FIELDS = (
-    "test_run_id", "output_snippet", "last_run_at", "test_file_path", "test_function",
-)
 
 
 def _scenario_evidence_present(
@@ -400,15 +397,7 @@ def _scenario_evidence_present(
 
     status = str(scenario.get("status") or "")
     if status in GATED_STATUSES:
-        candidate = scenario
-        if not isinstance(scenario.get("evidence"), dict):
-            legacy_top_level = {
-                field: scenario.get(field)
-                for field in _SCENARIO_EVIDENCE_FIELDS
-                if scenario.get(field)
-            }
-            candidate = {**scenario, "evidence": legacy_top_level or None}
-        evidence = candidate.get("evidence")
+        evidence = scenario.get("evidence")
         claims_v2 = bool(
             isinstance(evidence, dict)
             and (
@@ -418,10 +407,10 @@ def _scenario_evidence_present(
             )
         )
         if evidence_validator is not None:
-            return evidence_validator(candidate)
+            return evidence_validator(scenario)
         if claims_v2:
             return False
-        return scenario_has_required_evidence(candidate)
+        return scenario_has_required_evidence(scenario)
     return False
 
 

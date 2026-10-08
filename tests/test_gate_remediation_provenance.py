@@ -338,3 +338,35 @@ def test_operational_flow_fails_closed_for_partially_unresolved_linkage() -> Non
     assert flow["required_tool"] == "okto_pulse_link_task"
     assert flow["next_action"]["tool"] == "okto_pulse_link_task"
     assert "move the test card to done" not in flow["operator_action"].lower()
+
+
+@pytest.mark.parametrize("evidence", [None, {"verification_report": {"result": "failed"}}])
+def test_operational_flow_passes_native_scenario_without_legacy_conversion(evidence):
+    from copy import deepcopy
+
+    scenario = {
+        "id": "or-health", "title": "Observe service health", "status": "failed",
+        "evidence": evidence,
+        "test_run_id": "obsolete-run", "output_snippet": "obsolete output",
+        "last_run_at": "2026-01-01T00:00:00Z",
+    }
+    original = deepcopy(scenario)
+    observed = []
+
+    def verifier(value):
+        observed.append(value)
+        return False
+
+    flow = operational_flow_for_test_card(
+        card_id="test", board_id="board", spec_id="spec",
+        current_status="in_progress", linked_scenarios=[scenario],
+        expected_scenario_ids=["or-health"], evidence_validator=verifier,
+    )
+    assert observed == [original]
+    assert observed[0] is scenario
+    assert scenario == original
+    assert flow["would_block_done"] is True
+    assert flow["mutation_allowed"] is False
+    assert flow["next_action"]["tool"] == "okto_pulse_update_test_scenario_status"
+    assert flow["next_action"]["scenario_ids"] == ["or-health"]
+    assert "Never relabel a failure as passed" in flow["next_action"]["hint"]

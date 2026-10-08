@@ -2,6 +2,29 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — main90 elimina conversão de evidência legada no contexto
+Base52fa0473/0fdbe8fe; turno anterior foi progresso. Investigação AC-INT-11
+encontrou _scenario_evidence_present reconstruindo evidence a partir de campos
+antigos no topo do cenário. Removidos fallback legacy_top_level e constante
+exclusiva. Verificador recebe o cenário nativo original; nenhum conversor.
+Regressão cobre evidence ausente/presente, identidade do objeto, nenhuma mutação,
+bloqueio e remediação de domínio sem relabel de falha. Suites de fluxo/readiness
+preservam os controles existentes.
+
+Par dist-native-main90 construído e reinstalado no venv isolado. Proof
+provenance-native-main90/session95614 terminal0 antes dos testes:
+838/317 Python,899/403 payloads byte-idênticos.
+native-main90-core/session87696 terminal0:33pass8.33s.
+closure-native-main90/session54101 terminal0:okTrue, findings/documentation
+vazios, oito budgets current=limit=0. Ruff/diff check verdes.
+Recibo clean-break-native-evidence-context-main90.json. Sem frontend/SPA
+alterado; assinatura e shape de remediação preservados.
+Índice220/15/11 inalterado; AC-INT-11 não qualificado por teste parcial.
+Todos handles terminais; commit/push Core, Community0fdbe8fe sem alteração;
+WIP KG10 preservado. Retomar witness operacional AC-INT-11 (contexto autorizado
+e ausência de manutenção/disparo de agente em health), demais15 critérios fixos.
+BASE:T23/KG10/KG28 continuam decisões pendentes. Objetivo integral ativo.
+
 ### 2026-10-08 — main89 remove estado legado do contexto de retomada
 Base6a5ca95a/0fdbe8fe; turno anterior foi progresso. Revisão KG16/KG24 confirma
 dependência já registrada da decisão KG10; não repetida a reprodução.
