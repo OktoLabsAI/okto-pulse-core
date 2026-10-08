@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — Code Evidence Matrix com versão desatualizada na tela
+
+Reprodução REST somente leitura no Board `2fd79a82-08b2-4ecc-823a-2c820342f6b9`,
+Spec `2372d8a2-68c8-57f4-a609-d809c92d55c6`: projection full/gate com versão 2
+retorna 409 `code_investigation_subject_version_conflict`, informando versão
+atual 88; mesma consulta com 88 retorna 200. Modal passa a versão previamente
+carregada, que pode ficar antiga após alterações MCP. Antes da reprodução,
+842 arquivos Python Core e 317 Community instalados comparados byte a byte
+com as árvores src, sem diferenças; processo Pulse posterior à instalação.
+
+Correção no cliente compartilhado de projeções: apenas esse conflito tipado
+409 permite uma nova leitura, usando a versão atual do envelope autorizado.
+Valida identidade, tipo, versão solicitada e versão atual inteira positiva;
+preserva profile, context_scope e AbortSignal. Segundo conflito é propagado,
+sem loop. Não altera CAS de escrita, permissões, gates, investigação ou dados.
+Abrange Code Evidence Matrix e demais painéis consumidores dessa leitura.
+
+Validação: 48 testes frontend em api.codeTraceability e CodeTraceabilityPanels
+passaram; incluem recuperação, conflito persistente, erros não elegíveis,
+identidade divergente e cancelamento. Build TypeScript/Vite e sincronização
+de 79 arquivos frontend passaram (SHA256 da árvore
+`8495acf7dcb25f721c947fd7c06f866aff34d31c0cb942808f56a5d9ffd39566`).
+Runtime ativo preservado: este build ainda não foi reinstalado. Para retomar,
+reinstalar Community após encerramento do Pulse e verificar a aba no navegador.
+
+
 ### 2026-10-08 — teste ao vivo de boundaries no refinamento
 
 Após reinício informado pelo usuário, exercitado o runtime instalado no Board
