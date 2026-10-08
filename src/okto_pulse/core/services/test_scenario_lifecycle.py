@@ -487,11 +487,20 @@ def compute_test_scenario_semantic_sha256(
     if linked is None:
         linked_values: list[str] = []
     elif isinstance(linked, (list, tuple)):
-        linked_values = [str(item) for item in linked]
+        if any(not _non_empty_string(item) for item in linked) or len(set(linked)) != len(linked):
+            raise ValueError("scenario_criterion_scope_invalid")
+        linked_values = sorted(linked)
     else:
         raise TypeError("linked_criteria must be a list or tuple")
+    selected = []
+    for identity in linked_values:
+        matches = [item for item in (acceptance_criteria or ())
+                   if isinstance(item, Mapping) and item.get("id") == identity]
+        if len(matches) != 1:
+            raise ValueError("scenario_criterion_scope_unresolved")
+        selected.append(_semantic_acceptance_criterion(matches[0], include_verification=True))
     payload = {
-        "semantic_schema_version": 1,
+        "semantic_schema_version": 3,
         "identity": {
             "board_id": str(board_id),
             "spec_id": str(spec_id),
@@ -503,21 +512,12 @@ def compute_test_scenario_semantic_sha256(
             "when": str(plain.get("when") or ""),
             "then": str(plain.get("then") or ""),
             "linked_criteria": linked_values,
+            "verification_method": plain.get("verification_method"),
         },
-        "acceptance_criteria": [
-            _semantic_acceptance_criterion(
-                item, include_verification=plain.get("verification_method") is not None
-            )
-            for item in (acceptance_criteria or ())
-        ],
+        "acceptance_criteria": selected,
     }
-    if plain.get("verification_method") is not None:
-        # Absent/null legacy methods keep the exact V1 receipt binding. An
-        # authored method is semantic and cannot reuse a pre-method receipt.
-        # V2 also binds the authored AC profile/obligation scope: changing the
-        # claimed obligation cannot reinterpret an older execution as proof.
-        payload["semantic_schema_version"] = 2
-        payload["scenario"]["verification_method"] = plain["verification_method"]
+    # One native prospective contract: unrelated criteria and editorial metadata
+    # do not invalidate this observation; selected qualification and links do.
     digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
     return f"{EVIDENCE_V2_DIGEST_PREFIX}{digest}"
 

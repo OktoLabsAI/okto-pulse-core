@@ -1,0 +1,50 @@
+{
+  "scope": "Prospective native selective criterion applicability correction",
+  "proof_pair": "dist-native-main87",
+  "status": "implemented_targeted_tests_passed_full_criterion_pending",
+  "changes": [
+    "One native semantic schema3 binds exact linked criterion identities, text and qualification/requirement links. No method-dependent V1/V2 compatibility hashing path remains.",
+    "Missing/duplicate selected IDs and malformed scenario links are rejected; unrelated criteria do not enter the execution digest.",
+    "AC obligation binding excludes notes/locale editorial metadata; material content remains bound. Sealed historical records are not rewritten."
+  ],
+  "tests": {
+    "core": 164,
+    "community": 122,
+    "frontend": 45,
+    "total_distinct": 331,
+    "campaigns": {
+      "native-criterion-applicability-core2": "99pass15.96s",
+      "native-criterion-applicability-producers-core1": "65pass10.15s",
+      "native-criterion-applicability4": "38pass86.24s",
+      "native-criterion-applicability-producers1": "84pass56.08s"
+    },
+    "closure": "ok; no findings; eight budgets all zero",
+    "excluded_initial_runs": "Install used an incorrect Community wheel basename, so initial provenance failed. core1(98pass)/applicability3(23pass) are diagnostic only and excluded. Both handles were terminal before correct installation; all counted campaigns ran after provenance-native-main87-installed passed."
+  },
+  "evidence": [
+    "The original notes-only and other-condition SQL regressions now pass while preserving all historical ledger payloads.",
+    "Unit negatives retain invalidation on selected condition200→100, requirement-link addition and selected-set addition; missing/ambiguous exact identities fail closed.",
+    "Broader producer/consumer campaigns cover signed HTTP/report paths, delivery/multicard gates, bug cognitive context, evidence MCP boundary, execution contract, learning capture and single-agent Spec flow.",
+    "Frontend proof/method/report tests remain green; no SPA product change or rebuild required."
+  ],
+  "remaining": [
+    "AC-VER-16 remains pending governed authoring/revision witness and preservation of assessment history; raw SQL applicability alone does not complete that criterion.",
+    "Reconcile affected prior main86 evidence against main87 during final acceptance audit; do not claim all235 applicable criteria revalidated."
+  ],
+  "limits": [
+    "Fresh-install-only prospective change; no receipt migration, fallback verifier or automatic repair. Existing incompatible sealed observations are not re-signed.",
+    "No new authority/waiver. RF-VER-16 explicitly authorizes retaining proof unaffected by material change.",
+    "No promotion or real-data mutation. Tests use isolated data and controlled principals."
+  ],
+  "artifacts": {
+    "provenance-native-main87-installed.json": "18146b69d5bd3a306f29b7ed1edbdea6c5ade0df4833613c2e357a3bcf121eb6",
+    "native-criterion-applicability-core2.xml": "49426d879c84994b867e2e338f6103196725ca3b1a33729276e60078961ba93f",
+    "native-criterion-applicability-producers-core1.xml": "36674fb03cccbd4c640bc2b4afcab7e5f0f488d03c6894939d2b99c8bf0b3a92",
+    "native-criterion-applicability4.xml": "426162e4673e56284ff995d4b586e910140b64a24ef1b97312c4750196591910",
+    "native-criterion-applicability-producers1.xml": "f990a70076ac1fd21576c7fd72911ab1db1cc77ad846acdfbb96bf7933139ba8",
+    "native-criterion-applicability-frontend1.json": "21948bc23ecdf5d39e25cc9f2cbca45450f79e1b39dec9b290431d7b6a59499d",
+    "closure-native-main87.json": "0b9b185c7e16892769af431ffa471141244468db74ccd447dbcf6af474acbfd4",
+    "native-criterion-applicability-core1.xml": "e02a34b27b11393209ad208ec68f1e5ef72b7f7158b9492efe91f1f39e0a434b",
+    "native-criterion-applicability3.xml": "d5295b102125ca1ba951d0b1e7d3e322833a9a004e5200a1699bfeac1cbb3779"
+  }
+}

@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — Correção prospectiva de aplicabilidade, par main87
+Base6ce65a92/400740c6. Core agora usa um único digest nativo schema3,
+limitado a critérios ligados por identidade exata; vincula texto, perfil e links.
+Recusa identidade ausente/ambígua e links malformados. Removida bifurcação de
+hash V1/V2 por método ausente. Binding AC exclui notes/locale editoriais.
+Não reescreve receipts/digests antigos nem adiciona conversão/verifier legado.
+
+Builds main87 concluídos. Primeira instalação falhou pelo nome errado do wheel
+Community; proof falhou. As campanhas core1/session85505(98pass) e
+applicability3/session34817(23pass) não qualificam: iniciadas apesar do proof
+falho, erro de orquestração registrado. Terminaram antes da instalação correta.
+uv instalou okto_pulse_core e okto_pulse; proof main87-installed/session16278
+terminal0 provou835/317 Python e896/403 payloads byte a byte.
+
+Campanhas válidas após proof: core2/session25102,99pass15.96s;
+producers-core1/session39307,65pass10.15s; applicability4/session38006,
+38pass86.24s; producers1/session83193,84pass56.08s; frontend45pass.
+Total331 distintos. Closure main87/session35184 terminal0, sem findings,
+oito budgets ZERO. Ruff/diff check verdes. Todos handles terminais.
+
+As duas regressões SQL originais passam. Negativos cobrem limite200→100,
+novo link/critério, ID ausente/duplicado; histórico de ledger permanece.
+Produtores/consumidores ampliados incluem bug closure, MCP evidence, captura,
+contrato de execução e fluxo de Spec. Frontend método/relatório/entrega verde.
+
+Recibo clean-break-native-selective-applicability.json. AC-VER-16 ainda
+pendente do testemunho via edição governada e histórico de avaliações;
+índice permanece177/58/11. Auditar evidências main86 afetadas contra main87
+antes do fechamento final. Nenhuma alegação de todos235 revalidados.
+Commit/push produto/testes/evidências; WIP applicability passa a commitado,
+WIP KG10 permanece fora. Sem SPA alterada, promoção ou dados reais.
+Retomar edição governada e critérios de aplicabilidade ainda pendentes.
+
 ### 2026-10-08 — Gap reproduzido AC-VER-16, correção ainda não aplicada
 Base3607866c/400740c6; proof provenance-native-criterion-applicability1
 terminal0:835/317 Python e896/403 payloads byte a byte. Novo WIP Community

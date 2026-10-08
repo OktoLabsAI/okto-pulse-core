@@ -51,7 +51,8 @@ def _collection_obligations(
             "cancelled", "superseded", "deprecated", "revoked",
         }:
             continue
-        semantic = {k: v for k, v in value.items() if k not in _OPERATIONAL}
+        excluded = _OPERATIONAL | ({"notes", "locale"} if prefix == "ac" else set())
+        semantic = {k: v for k, v in value.items() if k not in excluded}
         title = str(
             value.get("title")
             or value.get("text")

@@ -115,7 +115,7 @@ def test_capability_requires_both_the_core_contract_and_concrete_verifier():
     assert supported_test_verification_methods() == frozenset({"automated_test"})
 
 
-def test_authored_method_binds_criterion_qualification_without_rewriting_legacy_hash():
+def test_native_digest_binds_selected_criterion_qualification_even_before_method_selection():
     criterion = {"id": "ac_one", "text": "Block access"}
 
     def digest(method, **metadata):
@@ -138,11 +138,34 @@ def test_authored_method_binds_criterion_qualification_without_rewriting_legacy_
             ]
         },
     ):
-        assert digest(None) == digest(None, **metadata)
+        assert digest(None) != digest(None, **metadata)
         assert digest("automated_test") != digest("automated_test", **metadata)
     assert digest("automated_test") == digest(
         "automated_test", linked_task_ids=["card"]
     )
+
+
+def test_native_digest_limits_applicability_to_exact_selected_criteria():
+    selected = {"id": "ac_one", "text": "Latency below 200 ms", "verification_profile": "technical"}
+    other = {"id": "other", "text": "An independent condition"}
+
+    def digest(criteria, **changes):
+        return compute_test_scenario_semantic_sha256(board_id="b", spec_id="s",
+            scenario=scenario(verification_method="automated_test", **changes), acceptance_criteria=criteria)
+
+    baseline = digest([selected, other])
+    assert baseline == digest([{**other, "text": "Changed independent condition"}, selected])
+    assert baseline == digest([{**selected, "notes": "Spelling corrected", "locale": "pt"}])
+    assert baseline != digest([{**selected, "text": "Latency below 100 ms"}])
+    assert baseline != digest([{**selected, "requirement_links": [
+        {"requirement_type": "technical_requirement", "requirement_id": "tr"}]}])
+    assert baseline != digest([selected, other], linked_criteria=["ac_one", "other"])
+    for criteria in ([], [other], [selected, selected]):
+        with pytest.raises(ValueError, match="scenario_criterion_scope_unresolved"):
+            digest(criteria)
+    for links in (["ac_one", "ac_one"], [0], [" "]):
+        with pytest.raises(ValueError, match="scenario_criterion_scope_invalid"):
+            digest([selected], linked_criteria=links)
 
 
 @pytest.mark.asyncio
