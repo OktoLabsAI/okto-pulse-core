@@ -1,0 +1,35 @@
+{
+  "scope": "AC-VER-06 one mixed authenticated report with criterion-specific credit",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "ARQVER:AC-VER-06",
+  "results": {
+    "backend_passed": 3,
+    "backend_seconds": 10.21,
+    "backend_session": 31136,
+    "frontend_passed": 35
+  },
+  "evidence": [
+    "Native relational schema: functional login and technical latency observations in one report with aggregate failed result, admitted by actual signed evidence issuer.",
+    "Exactly one new receipt and one test binding reference both criteria. Functional criterion receives that test ID, failed technical criterion receives none, unobserved expiry criterion receives none.",
+    "One existing Test Card also owns the planned but unexecuted expiry scenario; no artificial extra Card. Overall rollup stays blocked, stored test outcome remains failed.",
+    "Inspection, demonstration and static_analysis methods all pass the persisted witness.",
+    "Frontend DeliveryEvidencePanel mixed-result test retains partial/blocked state and missing criterion; VerificationReportSubmission preserves external authorship/observation distinctions. 35 frontend tests passed.",
+    "Reviewed actual adapter _with_effective_context -> ScopedTestFact -> effective_delivery_coverage: passing criteria are derived only after authenticated current run, while lifecycle/implementation guards and stored aggregate result remain intact."
+  ],
+  "limits": [
+    "External observed results are controlled report input; actual issuer/verifier/storage/rollup run. Does not claim an automated harness execution or authenticated REST/MCP transport.",
+    "Initial missing-consumer hypothesis was refuted: search was limited to Core and missed the existing Community consumer. No product change was warranted.",
+    "First expanded fixture lacked a scenario for unobserved criterion and correctly failed readiness. Added planned unexecuted scenario on same Test Card; no gate relaxed.",
+    "No product/frontend implementation/SPA change; main88 closure and eight zero budgets remain applicable."
+  ],
+  "artifacts": {
+    "provenance-mixed-assertion-reproduction-20261008.json": "cff15172161b9f03864e9fd150d0d0564cbdf028f3fa5b51573f07d5e1e365ee",
+    "test_mixed_assertion_reproduction_20261008.py": "76e23da74f12f587dd726316bba5e2d4daf9e1d15c1bca4600e180337c53f8d7",
+    "mixed-assertion-reproduction-20261008.xml": "e8c2bf5bf2fab696fcb6d7f1475f3e5ca30af407a6982810458f92803eb84cfb",
+    "native-mixed-verification-20261008.xml": "79952d84b00fec8046181e2baf2463ad5972870bdb67865c0f715d5dac25f4a9",
+    "native-mixed-verification-20261008-2.xml": "ae39e70f98235f30704d5cc007408483f380983fd4c09f1674f5f6e3b930e84e",
+    "native-mixed-verification-frontend-20261008.json": "efd98ff97897fc8258691b2a6331ec72bdf62359395e04ced827d6bcbdb1eeee",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

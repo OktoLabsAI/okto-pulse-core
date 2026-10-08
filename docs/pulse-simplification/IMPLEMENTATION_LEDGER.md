@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-VER-06 relatório misto e crédito por critério
+Basede4a3d56/2d14b4d7; turno anterior foi progresso. Proof novo sem colisão,
+provenance-mixed-assertion-reproduction-20261008 terminal0:main88838/317 Python,
+899/403 payloads byte-idênticos. Hipótese inicial de helper sem consumidor foi
+REFUTADA: busca limitada ao Core omitira Community._with_effective_context,
+que usa helper autenticado e passa ScopedTestFact ao effective_delivery_coverage.
+Reprodução/session5879:1fail11.87s justamente porque crédito funcional já existia;
+não é falha de produto. Nenhuma alteração de semântica/gate necessária.
+
+Witness nativo: login passa, latência falha em duas observações de um relatório
+assinado; um receipt, um binding, mesmo Test Card. Critério sem observação
+permanece sem crédito. Aggregate failed preservado e rollup bloqueado.
+Três métodos:inspection/demonstration/static_analysis.
+Campanha1/session12669:3fail12.08s; fixture sem cenário para terceiro critério
+tornava plano incompleto. Adicionado cenário pendente no mesmo Test Card.
+Campanha2/session31136 terminal0:3pass10.21s.
+Frontend native-mixed-verification-frontend-20261008 terminal0:35pass/successTrue.
+Ruff/diff check verdes. Recibo clean-break-native-mixed-verification-20261008.json.
+AC-VER-06 qualificado; índice218verificados/17pendentes/11superados.
+Sem produto/SPA alterado; main88 closure/oito budgets ZERO. Handles terminais.
+Commit/push teste/evidência; WIP KG10 preservado. Continuar VER11/13/15/18,
+INT10/11, KG e benchmarks restantes; decisões BASE:T23/KG10/KG28 preservadas.
+Objetivo integral ativo; sem promoção/dados reais.
+
 ### 2026-10-08 — DEI-T61/T62 projeções nativas e checkpoints
 Basefaf27853/778515c7. Turno anterior: espera verificada no handle33625;
 repoll confirmou vivo, sem reinício. Proof provenance-native-card-scenario-20261008
