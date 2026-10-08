@@ -2,6 +2,70 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG50/KG51 qualificados; UI Sprint retirada no main69
+KG50/51 recibo clean-break-native-health-maintenance-absence.json:416 casos
+distintos finais, inclui83front,69Core,192ausência,72observação/censo.
+Índice87 verificadas/148 pendentes/11 superadas; prova desses critérios main68.
+Main69: build frontend59952 terminal0;16 testes GlobalSearchView aprovados
+após falha de regressão esperada no botão "+ sprint".79 arquivos/78assets,
+hash0c3dcfbf8a2269ff1f15946199ade9eac1af7007ee23bbc1fddf51eb276a6508.
+verify:frontend-dist terminal0; wheels69 construídos; install31565 terminal0;
+provenance-native-main69 terminal0(835/896+317/403). Closure98686 terminal0:
+ok=true, findings/documentation_findings vazios, oito budgets0.
+Recibo clean-break-native-sprint-search-ui.json é PARCIAL KG52, não certifica Q15.
+Todos processos terminais. Nenhuma mudança Python de produto nem catálogo manual.
+Próximo: KG52 obrigação reescrita sem migração; Q15 está no catálogo Discovery
+(name uncovered_requirements) e services/discovery_executor._exec_uncovered_requirements,
+não foi localizado teste backend específico pelo binding literal. Revisar/adicionar
+prova requisitos sem Card por Spec e fontes atuais sem Sprint. KG53 já N/A.
+
+### 2026-10-07 — KG50/51 terminais; resíduo Sprint na busca corrigido
+Maintenance51127 terminal0:192pass/477.92s, sem reinício durante espera.
+Com Health(71 finais +1 censo), Core69 e Front83:416 casos finais distintos;
+três falhas iniciais de fixture antiga foram corrigidas e rerun16pass.
+Todos processos Python desta campanha terminais.
+
+KG52 investigação encontrou UI real oferecendo botão desabilitado "+ sprint"
+em GlobalSearchView, embora blockers/queries novos não dependam de Sprint.
+Regressão acrescentada ao teste existente; native-sprint-search-repro1 terminal1
+confirma botão no DOM. Retirado sprint de availableDimensions, sem substituto.
+Suite completa GlobalSearchView native-sprint-search-frontend2 terminal0.
+Build oficial frontend handle59952 ativo (tsc/vite/contract/sync).
+NÃO criar wheels antes de terminal. Próximo: verify:frontend-dist, par main69,
+instalação terminal, byteproof, closure; recibos KG50/51 com prova main68 e UI
+Sprint com prova main69, depois commits/push. KG52 ainda depende de Q15/requisitos
+sem Card por Spec e restantes fontes/estado; não qualificá-lo só pela UI.
+
+### 2026-10-07 — KG50/51: terminais confirmados e campanha CLI ainda ativa
+Core observation/catalog94563 terminal0:69pass/8.03s. Front83pass terminal0.
+Censo35033 terminal0:1pass/7.10s; artifact rerun16pass/3.08s.
+Ruff F/E9 das duas fixtures alteradas verde. Sem mudanças de produto.
+Maintenance51127 ainda VIVO no poll mais recente; verificado também processo
+pytest PID8464, parent32464,339.625s CPU user/8.453s system em352s de vida.
+Log avançou para76 pontos/37%; não é processo parado e não reiniciar.
+Log exato .validation-v040/native-maintenance-absence1.log; XML ainda pendente.
+Escopo executa REST/MCP/CLI instalados e composição removida; esperar terminal
+antes de recibo/qualificação e publicação. Demais handles todos terminais.
+Índice85/150/11 inalterado; KG50/KG51 ainda não certificados nesta campanha.
+
+### 2026-10-07 — KG50/KG51: validação em andamento e fixtures corrigidas
+Base3969d869/3a172484 limpa confirmada. Byteproof main68 terminal0:
+provenance-native-health-retirement1.json,835/896+317/403 antes dos testes.
+Frontend76954 terminal0:83pass,0fail (HealthView/Overview/CognitivePending,
+GraphControls maintenance, HelpPanel maintenanceCli), relatório JSON preservado.
+Health8632 terminal1:67pass/3fail/77.08s. Três fixtures positivas ainda usavam
+formato agregado pending_refs ou itens só com status, rejeitados pelo contrato
+atual items_from_record/from_dict. NÃO relaxado reader.
+Fixtures agora usam CognitiveConsolidationItem.to_dict; danos isolam campo inválido
+de item atual; caso aggregate_only garante recusa do formato sem items.
+Rerun native-health-artifacts2 terminal0:16pass/3.08s.
+Censo relacional repetido3x registra SQL apenas SELECT, mesmos counts/generation:
+35033 terminal0:1pass/7.10s. Sem produto/SPA alterados.
+Maintenance51127 continua VIVO (último poll com session_id, log36 pontos):
+retired_public_rebuild/exploration/CLI/composition. Core observation/catalog
+campanha iniciada neste turno; recuperar handle da ferramenta antes de retomar.
+Nenhum critério promovido enquanto falta terminal/revisão completa.
+
 ### 2026-10-07 — KG48/KG49: capacidades e custo agregado de sessões
 Base9f401914/3a172484 limpa confirmada. Prova main68 antes de campanhas:
 provenance-native-session-measurement1 terminal0 byte-idêntico835/896+317/403.

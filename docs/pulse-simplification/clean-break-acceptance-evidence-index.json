@@ -4189,7 +4189,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-health-maintenance-absence.json",
+        "criterion_key": "KG:KG-50",
+        "proof_pair": "dist-native-main68"
+      }
     },
     {
       "key": "KG:KG-51",
@@ -4201,7 +4206,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-health-maintenance-absence.json",
+        "criterion_key": "KG:KG-51",
+        "proof_pair": "dist-native-main68"
+      }
     },
     {
       "key": "KG:KG-52",
