@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T48/T51: impacto líquido e reutilização selada (main86)
+Base767521c6/e8019f11 conferida; proof provenance-native-delivery-impact1
+terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.
+Revisados compositor, identidade/base de observação, selagem e consumidores.
+Corrigidos nomes de testes que chamavam de legacy uma declaração nativa
+incompleta e um registro nativo deliberadamente danificado; não há conversão.
+
+Core impact-core1/session28789:35pass em4.83s. Community impact-community1/
+session23721:16pass em34.58s. Acrescentados três casos SQL reais de recusa:
+impacto líquido vazio, sequência bifurcada e revisão divergente do receipt.
+community2/session13729:6pass/1fail em19.37s; a recusa de vazio era correta,
+mas a asserção procurava o código na mensagem. Corrigida para error.code.
+Fortalecida preservação integral dos payloads após recusa. community3/
+session91221:7pass em19.28s. Total Community19 distintos.
+
+Frontend painéis:8pass. Execução isolada de dois casos do formulário revelou
+dependência de mocks de outro describe. Corrigido beforeEach local. Campanha
+report1:2fail; report2:4pass/7fail por title ausente na fixture de Spec;
+report3/session48000:11pass/68 fora do filtro. Nenhum frontend de produto
+alterado. Total73 distintos:35Core+19Community+19frontend. Ruff/diff check verdes.
+
+Recibo clean-break-native-delivery-impact.json; DEI-T48/T51 qualificados.
+Índice127verificados/108pendentes/11superados. DEI-T49 permanece pendente
+do escopo completo, apesar da evidência adicional de conflito de revisão.
+Histórico e claims preservados; require aceita agregado válido e selado,
+recusa vazio/ambíguo/stale sem gravação parcial. Não se alegou diff Git nem
+admissão criptográfica pelo fixture de observação aceita.
+Main86 sem mudança de produto/SPA, closure mantém oito budgets ZERO.
+Todos handles terminais. Commit/push de testes e evidências; WIP KG10
+preservado. Sem promoção/dados reais; seguir critérios pendentes do índice.
+
 ### 2026-10-08 — DEI-T63: histórico paginado e limitado (main86)
 Base3e5af827/e8019f11 conferida; WIP KG10 preservado. Fonte/instalação
 comprovadas antes da campanha em provenance-native-delivery-history1.

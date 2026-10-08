@@ -1,0 +1,63 @@
+{
+  "scope": "DEI-T48/T51: native net impact composition and sealed reuse under require",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "DEI:DEI-T48": [
+      "test_ordered_net_effect_keeps_all_history",
+      "test_same_path_in_two_repos_and_sources_never_collapses",
+      "test_persisted_net_claims_preserve_history_without_delivery_credit",
+      "test_persisted_rename_chain_does_not_merge_identical_paths_in_two_repos"
+    ],
+    "DEI:DEI-T51": [
+      "test_real_report_satisfies_require_from_selected_claims_without_manual_block",
+      "test_reuse_refuses_ambiguous_or_stale_input_without_staging_report",
+      "test_current_impact_changes_without_rewriting_report_or_delivery_verdict",
+      "test_completion_impact_policy_is_independent_of_advisory_delivery",
+      "shows the remediation and retries with sealed selection"
+    ]
+  },
+  "evidence": [
+    "Explicit base-to-result edges compose create/delete and rename chains; repository/source identities remain separate and immutable raw records retain the authored changes.",
+    "Net composition is explicitly claim_only, never an implementation proof or delivery verdict. Ambiguous chains and missing bases yield reconciliation, without guessed ancestry.",
+    "Real SQL report submission under impact_evidence_mode=require reuses selected accumulated claims without resending an impact block, seals record IDs and observation basis, and persists the report.",
+    "Added actual report-path cases: empty net, forked revision chain and observation/result mismatch are rejected with explicit codes; all selected records retain identical payloads after the refusal and no report/status mutation occurs.",
+    "Current revision, identity, revocation or head conflict invalidates the impact basis without rewriting the historical report. Off/advisory/require remain independent of advisory Delivery Evidence.",
+    "Frontend preserves report input after gate failure and retries with exact IDs/revisions/reuse_impact. Selection and net-impact panels preserve truncation, reconciliation and claim-only presentation.",
+    "Removed legacy naming from two tests: these exercise an incomplete native declaration and a deliberately damaged native record, not an older contract or conversion path."
+  ],
+  "tests": {
+    "core_distinct_passed": 35,
+    "community_distinct_passed": 19,
+    "frontend_distinct_passed": 19,
+    "total_distinct_passed": 73,
+    "campaigns": {
+      "core1": "35 passed in 4.83s",
+      "community1": "16 passed in 34.58s",
+      "community2": "6 passed, 1 failed in 19.37s; empty-net assertion incorrectly matched code against exception message",
+      "community3": "7 passed in 19.28s; includes four original cases plus three added cases, not additive to community1",
+      "frontend_panels": "8 passed",
+      "frontend_report1": "2 failed: missing mock initialization when selected alone",
+      "frontend_report2": "4 passed, 7 failed: parent Spec fixture omitted title",
+      "frontend_report3": "11 passed, 68 outside selected group skipped; final fixture is independent of prior describe execution"
+    }
+  },
+  "limits": [
+    "Source observations are accepted-fact fixtures, not a fresh cryptographic admission E2E. Report/store/domain paths exercised here are real.",
+    "The report basis confirms declared revision/identity against accepted observations, not a Git diff or ancestry proof.",
+    "The revision mismatch adds evidence for DEI-T49 but does not qualify its complete duplicate-field conflict scope; DEI-T49 remains pending.",
+    "No product or packaged SPA change; existing main86 provenance and closure remain applicable, eight budgets zero.",
+    "No legacy acceptance path, migration, promotion or real-data mutation."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-impact1.json": "8ab825b420dde45f7ef63bb8b0e1463d57847a6e5086ad334c60ac84ce03aa16",
+    "native-delivery-impact-core1.xml": "d006d704b15bba49372bafa6bb10796d1405a147fcdce4f170ed74fba9cb1159",
+    "native-delivery-impact-community1.xml": "11a5e7253f8d9d3103f222202e04229318eca5c80c2bffa92e91fcfa73e3df7a",
+    "native-delivery-impact-community2.xml": "e92c864ae04008693607e97c3608df460c89b1bcc1e8db0fee8a50b5a2b80237",
+    "native-delivery-impact-community3.xml": "e1875ad59c070db908a6e1a4b154eb2c501c9be641bbcf46098e3b212728d756",
+    "native-delivery-impact-frontend1.json": "acf6c53dae72a870b78393e0c92c0f617bca226049a12eca7466dc7a55682b21",
+    "native-delivery-impact-report-frontend1.json": "86f52b9440aad0ceff9bc502de93c9b3f971248ef4fdbe22827188ceeed6873a",
+    "native-delivery-impact-report-frontend2.json": "7b6afdfde691f98ed67e9c41a5f7e20f39a224375ddb74e866bb1a912694f8e4",
+    "native-delivery-impact-report-frontend3.json": "03988a15110d73aa79f9bd4dab050916d41dd12d9ca62bbd768f12d611b584f0",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}
