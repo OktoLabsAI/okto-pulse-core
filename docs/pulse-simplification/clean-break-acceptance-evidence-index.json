@@ -4984,7 +4984,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-origin.json",
+        "criterion_key": "DEI:DEI-T12",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "DEI:DEI-T13",
@@ -5114,7 +5119,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-origin.json",
+        "criterion_key": "DEI:DEI-T17",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "DEI:DEI-T18",
@@ -5142,7 +5152,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-origin.json",
+        "criterion_key": "DEI:DEI-T18",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "DEI:DEI-T19",

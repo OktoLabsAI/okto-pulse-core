@@ -1,0 +1,45 @@
+{
+  "scope": "DEI-T12/T17/T18: canonical origin admission and accepted snapshot reuse",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "DEI:DEI-T12": [
+      "test_origin_refusal_rolls_back_preceding_progress_in_mixed_batch",
+      "test_invalid_origin_is_not_degraded_to_progress"
+    ],
+    "DEI:DEI-T17": [
+      "test_origin_refusal_rolls_back_preceding_progress_in_mixed_batch[changed_selector]",
+      "test_origin_refusal_rolls_back_preceding_progress_in_mixed_batch[target_created_after_observation]"
+    ],
+    "DEI:DEI-T18": [
+      "test_two_targets_reuse_one_admitted_snapshot_without_new_challenge"
+    ]
+  },
+  "evidence": [
+    "Canonical mixed batch stages progress first, then refuses an implementation backed by a revoked receipt or obsolete selector scope. Outer commit after the caught error leaves zero executions, records, events and handler rows; the original receipt/revocation remains.",
+    "Added a Target after the accepted observation; same Card and file path do not permit executing that new Target using the earlier receipt. Changed Target revision is also refused.",
+    "Strengthened both obsolete-scope cases with the real resolution service and SQL adapters: CodeInvestigationSelectorScopeMismatch is raised and no resolution is persisted.",
+    "The selector digest binds Board, Card version and the complete active Target ID/revision set. Accepted receipt reuse does not infer scope from a matching path or Target name.",
+    "Two Targets covered by one admitted snapshot produce two execution rows referencing the same receipt, without adding requests or receipts; exact replay retains 2 executions, 3 bindings, 2 events and 2 handler rows.",
+    "Origin authorization, trust, allowlist and typed input remain shared with the standalone submission path; inline single and batch retain commit/rollback/replay semantics."
+  ],
+  "tests": {
+    "community_distinct_passed": 19,
+    "campaign1": "19 passed in 39.09s",
+    "campaign2": "1 passed, 2 failed in 11.72s; added resolution fixture omitted required resolved confidence, rejected before service",
+    "campaign3": "3 passed in 12.28s after adding confidence=0.99; these cases are included in the 19, not added"
+  },
+  "limits": [
+    "Observations are accepted-fact fixtures. Tests exercise real admission against their persisted scope/revocation and real origin use cases; they do not claim a fresh attestation handshake E2E.",
+    "Batch errors expose entry_index/client_ref and a sanitized cause, while the direct resolution domain error identifies selector-scope mismatch; no foreign-object details are disclosed.",
+    "No UI/product change. Current main86 frontend and closure evidence remain applicable; no new frontend run is counted.",
+    "DEI-T19 remains separate: these cases do not qualify every source/revision currentness transition.",
+    "No legacy reader, conversion, migration, promotion or real-data mutation."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-origin1.json": "962af266a651cbf6281d2f7bfa61951c1574654d16bd2822539a633f7050a78c",
+    "native-delivery-origin1.xml": "848208a3428c13d61976f651529c78fcc78b510061b6601ef36f97721dd09213",
+    "native-delivery-origin2.xml": "98e90e9e87ed36c1a9958cfd5162ff9c54cce75d3ed00e327aed4436abb455eb",
+    "native-delivery-origin3.xml": "dab985731ed639ce377ea121f75e84a646f72e2cf35ed174ded0fd38fc570916",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

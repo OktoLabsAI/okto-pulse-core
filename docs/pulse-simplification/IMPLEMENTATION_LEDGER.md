@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T12/T17/T18: admissão e escopo de origem (main86)
+Base7e3fcd6d/a97c4464 conferida. Proof provenance-native-delivery-origin1
+terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.
+Revisados selector digest, serviço de resolução/execução e writer composto.
+Acrescentado Target criado depois da observação; o receipt não ganha esse
+escopo só porque o caminho coincide. Fortalecidos casos de revisão alterada
+e Target posterior: resolução real também recusa SelectorScopeMismatch,
+sem registro de resolução. Lote misto desfaz checkpoint anterior à prova
+recusada; receipt/revogação permanecem. Snapshot com dois Targets usa um
+receipt, sem request/challenge novo; replay preserva IDs e contagens.
+
+Community origin1/session15595:19pass em39.09s. origin2/session51355:
+1pass/2fail em11.72s, fixture de resolução sem confidence obrigatório;
+corrigida para0.99. origin3/session24170:3pass em12.28s, incluídos nos19.
+Ruff/diff check verdes. Todos handles terminais.
+Recibo clean-break-native-delivery-origin.json. DEI-T12/T17/T18 qualificados;
+índice132verificados/103pendentes/11superados. DEI-T19 permanece separado.
+
+Observação aceita é fixture; não alegar handshake completo de atestação.
+Erros de lote mantêm índice/client_ref e causa sanitizada; domínio de resolução
+informa mismatch de escopo sem expor objeto de outro Board.
+Sem mudança de produto/SPA: main86 e closure vigentes, oito budgets ZERO.
+Nenhum teste frontend repetido sem mudança. Commit/push do teste e evidências;
+WIP KG10 preservado. Sem promoção/dados reais; seguir critérios pendentes.
+
 ### 2026-10-08 — DEI-T40/T47: snapshot concorrente e outcome desconhecido (main86)
 Base19d8c77f/f892cceb conferida; proof provenance-native-delivery-report1
 terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.
