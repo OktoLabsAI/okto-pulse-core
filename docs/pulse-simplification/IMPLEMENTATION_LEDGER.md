@@ -2,6 +2,63 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — Decisão DEI-T33/T41 autorizada e aplicada (main86)
+Usuário respondeu explicitamente “Autorizar o mesmo bloqueio (recomendado)”.
+A pendência de estados registrada abaixo está resolvida. Nova associação single
+implementation/test usa require_delivery_batch_state antes da admissão.
+Replay exato já concluído retorna antes; revogação humana e progress preservados.
+Sem alteração de autoridade adicional ou gate novo.
+
+Novo teste nativo cobre oito estados e preservação de replay/revogação em quatro
+estados congelados, single/batch. Campanha main86 envelope2/session81615:
+93pass/1fail em212.39s. Única falha exigia associar prova em Validation,
+comportamento substituído pela autorização. Teste agora grava in_progress,
+entra em validation, recusa nova associação e prova que conclusão usa o registro
+anterior sem deadlock. Rerun dirigido envelope3/session65674:1pass em9.48s.
+93 casos anteriores não alterados. 94 distintos Community aprovados.
+
+DEI-T09/T10: checkpoint dirty/unknown preserva source_ref/declared_revision null,
+sem crédito de implementação ou recovery verificada. Core22pass (main85
+byte-idêntico), Community14pass anterior incluídos nos94; frontend44pass
+main86 inclui21 anteriores e regressão explícita da apresentação “unknown”.
+Total160 distintos:94Community+22Core+44frontend, sem somar repetições.
+DEI-T09/T10/T41 qualificados. DEI-T33 não foi declarado integralmente qualificado:
+diferença de estado resolvida, equivalência completa ainda pendente.
+Índice109verificados/126pendentes/11superados.
+
+Main86 builds/install terminais; proof/session19132 terminal0 antes dos testes:
+835/317 Python e896/403 payloads byte a byte. Closure/session93808 terminal0:
+sem findings, oito budgets ZERO. Ruff/diff check verdes. Nenhuma alteração de
+produto entre proof/testes/closure; após falha, só a fixture foi corrigida.
+Recibo clean-break-native-delivery-state-progress.json preserva falhas anteriores,
+autorização e limites. Nenhum frontend de produto/SPA ou dado real alterado.
+Todos handles terminais. Commit/push deste incremento; WIP KG10 preservado fora.
+Retomar critérios pendentes do índice sem reabrir decisão de estados já autorizada.
+
+### 2026-10-08 — Decisão DEI-T33/T41 pendente: estados de associação
+Base5d2795c6/1104ebdf. Proof main85 provenance-native-delivery-envelope1
+terminal0 antes de reprodução. Fixture nativa completa, SQLite descartável,
+mesmo Card normal, recibo atual e mesmos atores para single/batch.
+native-delivery-envelope1/session89089 terminal1:4pass/4fail em23.32s.
+started/in_progress/done aceitam ambos; cancelled recusa ambos.
+validation/rejected/on_hold/not_started: single persiste binding novo de
+implementação, batch recusa delivery_batch_card_frozen. Recibo
+clean-break-native-delivery-envelope-review.json; reprodução fora da suite
+do repo em .validation-v040/test_delivery_envelope_characterization.py.
+
+Causa: batch e single inline chamam require_delivery_batch_state; single
+com execution_id existente não chama. O predicado da prova não verifica
+esses estados. REST/MCP compartilham esse adapter pelo caso de uso canônico.
+DEI§9.4 proíbe bypass de congelamento mas preserva preparação/exceções;
+não escolher silenciosamente entre ampliar batch ou restringir single.
+Proposta: aplicar o guard atual de batch também à nova associação single
+de implementation/test, mantendo started/in_progress/done, progress com seu
+guard próprio, revogação humana e replay exato de operação já concluída.
+BASE§10.2/10.4 exige decisão sobre o efeito real divergente do gate.
+Aguardando resposta; não houve alteração de semântica/autoridade.
+Índice106/129/11 inalterado. Os quatro casos vermelhos são reprodução,
+não aceite. Todos handles terminais; continuar DEI independente.
+
 ### 2026-10-08 — DEI-T34–39: lote nativo, rollback e retry (main85)
 Basebb5d2e20/7bea70b1; progresso anterior confirmado por commits/push e recibo.
 Revisados modelo compartilhado, resolução de refs, savepoint, fence da revisão

@@ -1,0 +1,143 @@
+{
+  "scope": "Authorized single-entry state guard; native progress without fabricated revision or completion",
+  "proof_pair": "dist-native-main86",
+  "authorization": "User explicitly answered Autorizar o mesmo bloqueio (recomendado) to the DEI-T33/T41 state-gate question on2026-10-08.",
+  "changes": [
+    "New single implementation/test associations now call existing require_delivery_batch_state before proof processing, as batch/inline do.",
+    "Exact replay returns before new-write state guard; human revocation and progress keep their own predicates.",
+    "Native full-schema parity tests cover8states;8further cases preserve replay and human revocation in four frozen states for single/batch.",
+    "Regression for pre-Done proof now records in_progress, transitions tovalidation, rejects new association there, and proves the existing proof still satisfies card completion.",
+    "Progress persistence/read tests preserve null source/revision for dirty and unknown workspaces without proof or recovery credit; frontend explicitly renders unknown and does not invent source facts."
+  ],
+  "criteria": {
+    "DEI:DEI-T09": [
+      "test_dirty_progress_durable_replay_no_credit_or_version_change",
+      "test_unknown_source_identity_remains_unknown_after_persistence",
+      "saves dirty progress without an execution receipt or final completion"
+    ],
+    "DEI:DEI-T10": [
+      "test_unknown_source_identity_remains_unknown_after_persistence",
+      "keeps unknown source facts explicit without inventing revision or locator"
+    ],
+    "DEI:DEI-T41": [
+      "test_existing_proof_single_and_batch_observe_same_state_gate",
+      "test_frozen_state_preserves_exact_replay_and_human_revocation",
+      "test_gate_accepts_chain_valid_proof_recorded_before_done",
+      "test_frozen_progress_has_no_persisted_record",
+      "test_batch_cannot_bypass_frozen_card"
+    ]
+  },
+  "tests": {
+    "current_community_distinct_passed": 94,
+    "core_unchanged_passed": 22,
+    "frontend_passed": 44,
+    "total_distinct_passed": 160,
+    "campaigns": [
+      "native-delivery-envelope2:93pass/1fail in212.39s; failure asserted now-explicitly-rejected Validation write.",
+      "native-delivery-envelope3:corrected sole failing case passed in9.48s; other93 unchanged.",
+      "native-delivery-progress-core1:22pass in4.45s on byte-identical Core main85.",
+      "native-delivery-envelope-frontend1:44pass."
+    ],
+    "earlier_evidence": [
+      "native-delivery-envelope1:4pass/4fail characterization before authorization.",
+      "native-delivery-progress1:14pass and frontend1:21pass; repeated in larger final campaigns, not added to count."
+    ]
+  },
+  "closure": {
+    "ok": true,
+    "findings": [],
+    "documentation_findings": [],
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ]
+  },
+  "limits": [
+    "DEI-T33 remains pending full single/batch equivalence qualification; its confirmed state discrepancy is resolved.",
+    "Controlled transport principals are not installed authentication E2E.",
+    "No conversion, fallback compatibility, new permission or maintenance API.",
+    "No frontend product code or embedded assets changed.",
+    "No real data/runtime touched; no promotion."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-envelope1.json": "6ec7f359de9056584b7f29d09102368c09fcc74ff6e4721a44028fc5c71299cd",
+    "provenance-native-main86.json": "98571c66a7341c80455e306987228b9001d77a36d945847724983b48d3d88bfd",
+    "native-delivery-envelope1.xml": "bfbca9cce1c463c048ab4206ac00e7685732c7a3c76f07fe6af6cc84773da557",
+    "native-delivery-envelope2.xml": "52785d8c55c42e57fd029fd4f438801ca66b742250e4e454285b5be75b03372e",
+    "native-delivery-envelope3.xml": "b4a5e57e8f6066d317f8e63280f9151b5b9ecab8bd447d0ae92b12d4d8da542a",
+    "native-delivery-progress-core1.xml": "34e6ff163922327ba269a89072a30994bd68871b37d7d030550f23ce159eaa2c",
+    "native-delivery-progress1.xml": "79abc247bace2324308b1056cf948481b6f2431ccad3f09379d927513c4aa53a",
+    "native-delivery-envelope-frontend1.json": "a751880c26e35030dc6efc27dfb79d81a4f937cd3ffa9d2bf7f490e31f2d146d",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

@@ -4902,7 +4902,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-state-progress.json",
+        "criterion_key": "DEI:DEI-T09",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "DEI:DEI-T10",
@@ -4924,7 +4929,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-state-progress.json",
+        "criterion_key": "DEI:DEI-T10",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "DEI:DEI-T11",
@@ -5422,7 +5432,13 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "pending_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-state-progress.json",
+        "criterion_key": "DEI:DEI-T33",
+        "proof_pair": "dist-native-main86",
+        "reason": "Authorized state-gate discrepancy resolved; complete single/batch parity remains to be qualified."
+      }
     },
     {
       "key": "DEI:DEI-T34",
@@ -5628,7 +5644,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-state-progress.json",
+        "criterion_key": "DEI:DEI-T41",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "DEI:DEI-T42",

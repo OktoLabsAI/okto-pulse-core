@@ -1,0 +1,38 @@
+{
+  "scope": "DEI-T33/T41 state-gate discrepancy for existing implementation receipts",
+  "proof_pair": "dist-native-main85",
+  "status": "pending_authority",
+  "result": {
+    "passed": 4,
+    "failed": 4,
+    "seconds": 23.32,
+    "single_and_batch_accept": [
+      "started",
+      "in_progress",
+      "done"
+    ],
+    "single_only_accepts": [
+      "validation",
+      "rejected",
+      "on_hold",
+      "not_started"
+    ],
+    "both_reject": [
+      "cancelled"
+    ]
+  },
+  "mechanism": "Batch and inline single use require_delivery_batch_state; single association of existing execution reaches proof admission without that state guard. Real native SQLite schema persisted a new binding in four states refused by batch.",
+  "proposal": "Apply existing batch state guard to new single implementation/test bindings, retaining started/in_progress/done, current progress guard, human revocations and exact replay. No gate relaxation or new permission.",
+  "decision_basis": "DEI9.4 preserves existing preparation and renewal exceptions; BASE10.2/10.4 requires clarification of conflicting actual gate behavior before selecting authority.",
+  "limits": [
+    "Disposable actual native schema; no product mutation.",
+    "Neither DEI-T33 nor DEI-T41 qualifies from this reproduction.",
+    "Reproduction asserts intended parity and fails explicitly, never counted as acceptance."
+  ],
+  "artifacts": {
+    "test_delivery_envelope_characterization.py": "6323298909cb5b29cdeb6269e08cfad1ff5e9332cd9d829a800b05dcba89d4c8",
+    "provenance-native-delivery-envelope1.json": "6ec7f359de9056584b7f29d09102368c09fcc74ff6e4721a44028fc5c71299cd",
+    "native-delivery-envelope1.xml": "bfbca9cce1c463c048ab4206ac00e7685732c7a3c76f07fe6af6cc84773da557",
+    "native-delivery-envelope1.log": "e33e47682288c4dab20a30afc3e0e6a661394a940d6579252389d5ca94f2f193"
+  }
+}
