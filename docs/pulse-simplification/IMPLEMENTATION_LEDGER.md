@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG48: prova parcial de agente único publicada
+Campanha native-single-agent-learning1 handle29145 terminal0:4pass/69.93s.
+Learning com mesmo reviewer e reviewer distinto; dois fluxos MCP autenticados
+de Spec até Done. Mesma identidade só avalia com permissão específica e policy
+de separação off; falta da permissão continua negada. SQL/Grafx, captura
+durável, Done, projeção, replay e ausência de ativação LLM preservados.
+Recibo clean-break-native-single-agent-progress.json explicita fronteiras
+(auth injetada no caso Learning, auth real no MCP, recibo externo de implementação
+como fixture, execução de teste HTTP assinada real). Não qualifica todas as
+capacidades por esses quatro casos. KG48 segue pendente; índice83/152/11.
+Produto main68 e SPA inalterados. Ruff F/E9 verde, todos processos terminais.
+Próximo: capacidades governadas restantes de KG48/49; diagnóstico de fonte
+nativa inválida não deve ser apagado por nome nem convertido em fonte válida.
+
+### 2026-10-07 — investigação de classificações e KG48 em validação
+Publicação main68 confirmada: Core39cae6e5/Community9209e33a; worktrees limpas.
+Turno anterior teve progresso (validação/commit/push), não bloqueio.
+Classificador source_maturity marca tipo desconhecido/status/hash ausente e o
+enumerador exclui essas linhas da materialização; não é um conversor. O nome
+legacy_unknown também cobre diagnóstico de corrupção/dados nativos inválidos.
+Preflight ainda classifica non_deterministic_sources como confirmação requerida;
+não mudar esse gate apenas por associação textual, pois atende também dados
+nativos. Registrado para revisão C4, não declarado removido nem convertido.
+A publicação do estado antigo já foi recusada no main68.
+
+KG48: teste Learning agora cobre reviewer com identidade igual à do capturador,
+separação off e permissões exatas; conserva caso independente e a negação inicial
+sem card.validation.submit. Mantém ciclo SQL/Grafx/capture/Done/projeção/replay
+com proibição de ativação LLM. Campanha native-single-agent-learning1 handle29145
+viva: inclui test_native_learning_lifecycle e test_single_agent_spec_execution.
+Prova provenance-native-single-agent1 terminal0 antes do teste, main68 íntegro.
+Ruff F/E9 verde. Sem produto/SPA alterados. Não qualificar KG48 por antecipação:
+escopo do caso não abrange sozinho todas as capacidades governadas.
+
 ### 2026-10-07 — C1/C3: publicação legada retirada e validada no main68
 Core84604 terminal0:31pass/285.30s; Community63332 terminal0:14pass/29.10s.
 45 casos distintos, sem falhas. Fonte NULL preservada após outbox/reconciliação
