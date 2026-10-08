@@ -1,0 +1,112 @@
+{
+  "scope": [
+    "BASE:T43",
+    "KG:KG-64"
+  ],
+  "status": "partial",
+  "proof_pair": "dist-native-main92",
+  "base_commits": {
+    "core": "d724f210",
+    "community": "fb599428"
+  },
+  "results": {
+    "passed": 8,
+    "seconds": 90.35,
+    "continuous_variants": 4,
+    "existing_execution_regressions": 4,
+    "exact_semantic_parity": true
+  },
+  "summary": {
+    "tests/test_native_continuous_cost.py::test_continuous_native_classification_through_done[broad-agent-individual-native_schema]": {
+      "calls": 84,
+      "requests": 97,
+      "tokens_cl100k_base": 216155,
+      "bytes": 857725,
+      "sessions": 1,
+      "methods": {
+        "initialize": 1,
+        "tools/list": 1,
+        "resources/read": 11,
+        "tools/call": 84
+      },
+      "elapsed_ms": 7510.828900180059,
+      "sql_queries": 2688
+    },
+    "tests/test_native_continuous_cost.py::test_continuous_native_classification_through_done[broad-agent-batch-native_schema]": {
+      "calls": 59,
+      "requests": 72,
+      "tokens_cl100k_base": 206413,
+      "bytes": 820575,
+      "sessions": 1,
+      "methods": {
+        "initialize": 1,
+        "tools/list": 1,
+        "resources/read": 11,
+        "tools/call": 59
+      },
+      "elapsed_ms": 5767.70029970794,
+      "sql_queries": 1988
+    },
+    "tests/test_native_continuous_cost.py::test_continuous_native_classification_through_done[separate-reviewer-individual-native_schema]": {
+      "calls": 84,
+      "requests": 121,
+      "tokens_cl100k_base": 466152,
+      "bytes": 1938514,
+      "sessions": 4,
+      "methods": {
+        "initialize": 4,
+        "tools/list": 4,
+        "resources/read": 29,
+        "tools/call": 84
+      },
+      "elapsed_ms": 10111.651899613207,
+      "sql_queries": 2688
+    },
+    "tests/test_native_continuous_cost.py::test_continuous_native_classification_through_done[separate-reviewer-batch-native_schema]": {
+      "calls": 59,
+      "requests": 96,
+      "tokens_cl100k_base": 456596,
+      "bytes": 1901364,
+      "sessions": 4,
+      "methods": {
+        "initialize": 4,
+        "tools/list": 4,
+        "resources/read": 29,
+        "tools/call": 59
+      },
+      "elapsed_ms": 6033.830899948953,
+      "sql_queries": 1988
+    }
+  },
+  "evidence": [
+    "Same Spec executes publicly authored architecture, complete candidate reads, mandatory copy to its task, individual/batch classification, Spec validation/evaluation, execution, implementation/test records, failed premature completion, permitted review, idempotent replay and final Done.",
+    "Both variants retain identical 26 semantic decisions, three record kinds/authors, reviewer identities, final states and shared FR/BR/AC proof references.",
+    "Broad policy has one session; separate reviewer policy has four sessions. All initialize/tools-list/resources-read/tool-call payloads are retained. Compare only variants with the same review policy.",
+    "Native schema enforces request-open, accepted receipt, current head and request-consumed before execution. Existing test helper corrected to seed valid lineage; no trigger disabled.",
+    "Observed call reduction is exactly 25/84 = 29.7619%, not 30%. Fixture was not enlarged to meet target.",
+    "Ruff F/E9 and diff-check pass. No product, frontend, wheel or architectural budget changed."
+  ],
+  "limits": [
+    "This compares native individual versus batch strategies from a controlled Draft starting boundary through Done; initial authored requirements/grants and external implementation receipt are controlled inputs.",
+    "Does not compare complete historical version flows or isolate marginal KG cost. KG section 13.1 requires baseline v0.3.3, simplification without KG complement and with complement; these three equivalent states remain missing.",
+    "Earlier separate-fixture limitation is resolved for this native Draft-to-Done scenario only, not for a complete public Ideation-to-Done authorship baseline.",
+    "Token counts use cl100k_base; timing is a single in-process sample, not billing or production latency. External execution time is nested in MCP and is not added twice.",
+    "Four original execution cases also passed; do not combine their population with the four comparison variants to calculate a gain."
+  ],
+  "artifact": {
+    "file": "benchmark-native-continuous-main92-20261008.json.gz",
+    "sha256": "782b2552d4f9f27be50a44375ef4a8ab4bf20327f7c807c11dec81cf62b8e830",
+    "raw_sha256": "1ae1d7356f715c84712479adf3056beb8158416cd44a3d61069b45523bd83430"
+  },
+  "artifacts_sha256": {
+    "provenance-native-continuous-main92.json": "ae42bfc06860ad54f56cb92f3b7eaea92d2597f79b3c27075cd69557f29a1fb7",
+    "native-continuous-measurement92-20261008.xml": "f628963f28a42019b0f9816f35c5ed8b622169295e6042331525e15267319219",
+    "native-continuous-measurement92-20261008.log": "df1505a95ed359e77aef6b170a840a040f8a0491e85b707d69004279cdedbb65",
+    "native-continuous-main92-20261008.xml": "8bbb293ffdf3df69797cf9dab426dc6003cee75a3a456d04c54b7183af36d71a",
+    "native-continuous-main92-20261008-r2.xml": "5bda55fad590f0e1771840ad23780071c7ae8d07e9bc0286a77bff79246a2a50",
+    "native-continuous-main92-20261008-r3.xml": "7c31e4aac7050c41ce7e3e403701ba27640644599469682b132672b5af2f9774",
+    "native-continuous-main92-20261008-r4.xml": "abff43b77026c59b088b9c1449dada017547441e4578154bda047f4d2bf42029",
+    "native-continuous-main92-20261008-r5.xml": "588a005d216abc140ec9ca28c0aaf3e321c2a37cf459c6e67883934023a7acb9",
+    "native-continuous-main92-20261008-r6.xml": "cc3f63050748b658d7e7cb4f60ab7ef9cd72b65f3136f8ff3e4d02755ecb92b1"
+  }
+}

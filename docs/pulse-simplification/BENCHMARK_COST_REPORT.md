@@ -87,3 +87,34 @@ nem alterar a população para aparentar uma comparação integral.
   somente apresentação frontend. Não atribuir retroativamente a main92 uma
   nova medição de custo. A validação instalada main92 tem recibo próprio.
 - Universos e decisões de autoridade continuam no índice de aceite e ledger.
+
+## Adendo — comparação contínua nativa (main92)
+
+A nova campanha fecha a lacuna de continuidade entre classificação e execução:
+a mesma Spec vai de Draft até Done nas quatro variantes. São 26 contratos
+inspecionados integralmente, com arquitetura copiada para a tarefa, avaliações,
+teste autenticado, recusa de fechamento prematuro, revisão e replay. O schema
+nativo permanece ativo, incluindo triggers de proveniência.
+
+| Política | Estratégia | Sessões | Calls | Tokens totais | Bytes |
+|---|---|---:|---:|---:|---:|
+| Agente amplo | Individual | 1 | 84 | 216.155 | 857.725 |
+| Agente amplo | Lote | 1 | 59 | 206.413 | 820.575 |
+| Revisor separado | Individual | 4 | 84 | 466.152 | 1.938.514 |
+| Revisor separado | Lote | 4 | 59 | 456.596 | 1.901.364 |
+
+Redução de calls: **29,76%**, abaixo da meta de 30%. Não ajustar quantidade
+de contratos para alcançar o percentual. Os resultados persistidos, decisões,
+autores, revisores e provas compartilhadas são semanticamente iguais dentro
+de cada política. Mudam IDs técnicos/versionamento próprios da atomicidade.
+
+Oito testes passaram em90,35s: quatro variantes comparáveis e quatro regressões
+originais. Captura e resultados completos em
+[recibo da comparação contínua](clean-break-native-continuous-cost-main92-20261008.json).
+
+Limite remanescente preciso: KG§13.1 pede três estados históricos equivalentes
+(baseline v0.3.3, simplificação sem complemento KG e com complemento KG).
+Individual/lote do contrato nativo não substitui esses estados. Este ensaio
+também parte de fatos iniciais controlados; não mede autoria pública integral
+da Ideation e todos os fatos iniciais. BASE:T43/KG64 continuam pendentes dessa
+comparação histórica, não de repetir o fluxo nativo agora demonstrado.

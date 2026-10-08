@@ -2,6 +2,53 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — comparação contínua nativa medida
+R5/15052 terminou1:4regressões passaram,4variantes nativas recusaram execução
+sem head atual. Fixture agora semeia head válido depois do receipt; trigger
+mantido. R6/69179 passou1/24.16s. Campanha medida51831 terminou0:
+8passed/90.35s, dois warnings anyio conhecidos. Ruff/diff-check verdes.
+Nenhum processo pendente. Produto/SPA/main92/closure zero budgets inalterados.
+
+Captura benchmark-native-continuous-main92-20261008.json.gz conserva todos
+payloads e resultados persistidos. Dentro de cada política, igualdade exata
+das26decisões semânticas, autores/revisores, estados Done,3tipos de registro e
+prova FR/BR/AC compartilhada. Amplo1sessão:84→59calls,216155→206413tokens.
+Revisor separado4sessões:84→59calls,466152→456596tokens. Redução29.7619%;
+não inflar fixture de26contratos para bater30%. Não somar tempos aninhados.
+Fonte inicial/recibo externo são fixtures explícitas, não autoria pública medida.
+
+Recibo clean-break-native-continuous-cost-main92-20261008.json e adendo
+BENCHMARK_COST_REPORT.md registram avanço e limite. BASE:T43/KG64 ainda
+pendentes: KG§13.1 pede3estados históricos equivalentes; individual/lote atual
+não é baselinev0.3.3/semKG/comKG. Próximo passo é localizar evidência histórica
+comparável existente, NÃO medir novamente estes quatro fluxos. Índice227/8/11.
+KG30 limite e decisões BASE:T23/KG10/KG28 preservados; WIP KG10 intacto.
+Commit/push dos testes+evidências autorizado. Nenhum código legado reintroduzido.
+
+### 2026-10-08 — comparador contínuo nativo em validação (WIP)
+Turno anterior foi progresso: Core d724f210/Community fb599428 confirmados,
+sem alteração prévia exceto WIP KG10. Proof provenance-native-continuous-main92
+passou antes dos testes:838/317Python,899/403payloads idênticos.
+Novo test_native_continuous_cost conecta classificação individual/lote de26
+contratos ao MESMO fluxo Draft→Done, amplo/revisor separado. Reusa invariantes
+de test_single_agent_spec_execution, sem trocar políticas/gates entre variantes.
+Arquitetura criada publicamente, contrato completo lido, cópia pública na task;
+conserva comparador semântico durável no término, não apenas contagens.
+
+Campanha1/85424:4falhas por cobertura de recurso obrigatória; acrescentada cópia
+pública para task. R2/64539:propagação recusou design sem diagrama. Fixture
+completada com diagrama/vínculos; R3/76107 isolou warnings genéricos (não findings
+estruturados). Boundaries/endpoints explicitados; structured_warnings exigidos
+vazios, warnings de aconselhamento continuam na resposta medida.
+R4/28405 passou gates iniciais e encontrou fixture de receipt incompatível com
+trigger nativo: request era semeado consumed antes da inserção do receipt.
+Helper agora insere open→receipt→consumed, preservando trigger e autoria.
+R5/15052 executa4variantes contínuas+4regressões originais; ainda pendente.
+Produto/SPA inalterados. Não promover BASE:T43/KG64 por WIP. Após terminal verde,
+medir o comparador com scripts/measure_mcp_fixture.py e preservar captura completa;
+comparação é entre estratégias nativas, não runtime antigo. Sem alegar autoria
+pública dos fatos iniciais seeded nem economia total da iniciativa antiga.
+
 ### 2026-10-08 — relatório de custo consolidado, sem nova campanha
 Milestone instalado enviado: Core77af9d5e/Communityfb599428; ambos pushes0.
 BENCHMARK_COST_REPORT.md consolida recibos main90: catálogo -2.35% tokens,
