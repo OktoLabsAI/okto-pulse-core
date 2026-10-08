@@ -6,6 +6,16 @@ version: "1.0"
 
 Full long-form documentation (args, returns, examples, enum prose) for `okto_pulse_*` tools in this family. The `tools/list` surface carries only the compact summary; read here on demand.
 
+## Entity boundaries contract
+
+`entities[].boundaries` is an ordered JSON array of non-blank strings, for example
+`["Application boundary", "Tenant data, isolated per account"]`. Each item is one
+boundary statement; commas and newlines inside an item are preserved, never split.
+Omitting the field defaults to `[]`; an empty list retains the existing authoring
+warning. Scalar text, `null`, non-string items and whitespace-only items are rejected
+by both dry-run and save. Create, update, read, snapshots and propagation use this
+same contract. There is no automatic conversion of previously authored scalar data.
+
 ## `okto_pulse_add_architecture_design`
 
 Create an Architecture Design on an ideation, refinement, spec, or card.
@@ -40,6 +50,7 @@ Args:
             "name": "Customer Portal",
             "entity_type": "web_app",
             "responsibility": "Collects checkout input and displays order status.",
+            "boundaries": ["Browser runtime", "No direct access to order storage"],
             "technologies": ["React", "Vite"]
           },
           {

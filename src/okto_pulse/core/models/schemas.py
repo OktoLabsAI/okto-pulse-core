@@ -4,7 +4,7 @@ import re
 from collections.abc import Mapping
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any, Generic, Literal, TypeAlias, TypeVar
+from typing import Annotated, Any, Generic, Literal, TypeAlias, TypeVar
 
 from pydantic import (
     AliasChoices,
@@ -12,6 +12,7 @@ from pydantic import (
     ConfigDict,
     Field,
     RootModel,
+    StringConstraints,
     computed_field,
     field_validator,
     field_serializer,
@@ -1105,6 +1106,12 @@ ArchitectureDiagramFormat = Literal[
 ]
 
 
+ArchitectureBoundaries = Annotated[
+    list[Annotated[str, StringConstraints(strict=True, min_length=1, pattern=r"\S")]],
+    Field(strict=True),
+]
+
+
 class ArchitectureEntity(BaseModel):
     """Structured architecture entity description."""
 
@@ -1112,7 +1119,7 @@ class ArchitectureEntity(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     entity_type: str | None = None
     responsibility: str | None = None
-    boundaries: str | None = None
+    boundaries: ArchitectureBoundaries = Field(default_factory=list)
     technologies: list[str] = Field(default_factory=list)
     relationships: list[str] = Field(default_factory=list)
     notes: str | None = None

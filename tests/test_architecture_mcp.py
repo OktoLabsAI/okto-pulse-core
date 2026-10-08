@@ -100,21 +100,21 @@ def _topology_entities() -> list[dict]:
             "name": "Customer Portal",
             "entity_type": "web_app",
             "responsibility": "Sends requests.",
-            "boundaries": "Browser.",
+            "boundaries": ["Browser."],
         },
         {
             "id": "entity-api",
             "name": "Pulse API",
             "entity_type": "api",
             "responsibility": "Handles requests.",
-            "boundaries": "Backend.",
+            "boundaries": ["Backend."],
         },
         {
             "id": "entity-audit",
             "name": "Audit Sink",
             "entity_type": "service",
             "responsibility": "Consumes audit records.",
-            "boundaries": "Async sink.",
+            "boundaries": ["Async sink."],
         },
     ]
 
@@ -488,6 +488,8 @@ async def test_mcp_get_architecture_schema_exposes_authoring_contract(_seed_spec
     assert "Mermaid" in " ".join(schema["root_contract"]["rules"])
     assert "mcp_server" in schema["entity_type_examples"]
     assert schema["entity_contract"]["anti_patterns"]
+    assert schema["entity_contract"]["boundaries"]["type"] == "array"
+    assert schema["entity_contract"]["boundaries"]["default"] == []
     assert "endpoint" in schema["interface_contract"]["recommended"]
     assert "participants" not in schema["interface_contract"]["recommended"]
     assert "interfaces do not own source/target" in " ".join(schema["interface_contract"]["rules"])
@@ -505,6 +507,37 @@ async def test_mcp_get_architecture_schema_exposes_authoring_contract(_seed_spec
     flow = registry_section["validation_flow_for_agents"]
     assert any("get_architecture_design_schema" in step for step in flow)
     assert any("validate" in step.lower() for step in flow)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("boundaries,valid", [
+    (["Browser, isolated", "No direct SQL"], True),
+    ([], True), ("Browser", False), (None, False), ([" "], False), (["Browser", 7], False),
+])
+async def test_mcp_boundaries_dry_run_and_save_agree(_seed_spec_card, boundaries, valid):
+    board_id, spec_id, _ = _seed_spec_card
+    entities = _topology_entities()[:2]
+    entities[0]["boundaries"] = boundaries
+    diagrams = _topology_diagrams()
+    diagrams[0]["diagram_type"] = "context"
+    diagrams[0]["adapter_payload"]["elements"].pop(2)
+    payload = dict(
+        board_id=board_id, parent_type="spec", parent_id=spec_id,
+        title="Structured boundaries", global_description="Browser invokes the backend public API.",
+        entities=entities, diagrams=diagrams,
+        interfaces=[{"id": "interface-web-api", "name": "Checkout operations", "participants": ["entity-web", "entity-api"]}],
+    )
+    checked = await _call("okto_pulse_validate_architecture_design_payload", **payload)
+    assert checked.get("valid") is valid, checked
+    saved = await _call("okto_pulse_add_architecture_design", **payload)
+    if valid:
+        assert saved.get("success") is True, saved
+        design_id = saved["architecture_design"]["id"]
+        loaded = await _call("okto_pulse_get_architecture_design", board_id=board_id, design_id=design_id)
+        assert loaded["architecture_design"]["entities"][0]["boundaries"] == boundaries
+    else:
+        assert saved.get("success") is not True, saved
+        assert "boundaries" in json.dumps(saved)
 
 
 @pytest.mark.asyncio
@@ -748,7 +781,7 @@ async def test_mcp_validate_architecture_payload_accepts_complete_payload_withou
             "name": "Customer Portal",
             "entity_type": "web_app",
             "responsibility": "Collects checkout input.",
-            "boundaries": "Browser UI boundary.",
+            "boundaries": ["Browser UI boundary."],
             "technologies": ["React"],
         },
         {
@@ -756,7 +789,7 @@ async def test_mcp_validate_architecture_payload_accepts_complete_payload_withou
             "name": "Checkout API",
             "entity_type": "api",
             "responsibility": "Validates checkout and creates orders.",
-            "boundaries": "Backend API boundary.",
+            "boundaries": ["Backend API boundary."],
             "technologies": ["FastAPI"],
         },
     ]

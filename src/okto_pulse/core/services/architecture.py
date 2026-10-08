@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
 
+from pydantic import TypeAdapter, ValidationError
+
 from okto_pulse.core.ports.architecture_persistence import (
     ArchitectureFilter,
     ArchitectureOperator,
@@ -27,6 +29,7 @@ from okto_pulse.core.ports.architecture_persistence import (
     get_architecture_persistence_port,
 )
 from okto_pulse.core.models.schemas import (
+    ArchitectureBoundaries,
     ArchitectureDesignCreate,
     ArchitectureDesignResponse,
     ArchitectureDesignSummary,
@@ -40,6 +43,8 @@ from okto_pulse.core.services.architecture_observability import (
     observe_architecture_projection,
     observe_architecture_warning_ack,
 )
+
+_BOUNDARIES_ADAPTER = TypeAdapter(ArchitectureBoundaries)
 
 PARENT_MODELS = {
     "ideation": ("ideation", "ideation_id"),
@@ -753,12 +758,18 @@ def architecture_design_payload_schema() -> dict[str, Any]:
             "entity_contract": {
                 "required": ["id", "name", "entity_type"],
                 "recommended": ["responsibility", "boundaries", "technologies", "relationships", "notes"],
+                "boundaries": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1, "pattern": r"\S"},
+                    "default": [],
+                    "description": "Ordered boundary statements; preserve each item's content. No scalar or null coercion.",
+                },
                 "rules": [
                     "name must be a concrete component name, not just the category",
                     "name comparison is normalized by removing spaces, underscores and hyphens",
                     "entity_type is the category, for example api, web_app, database, queue, worker, external_service",
                     "responsibility should say what the component owns or guarantees",
-                    "boundaries should say what runtime, data, team, or external boundary the entity represents",
+                    "boundaries is an array of non-blank strings describing runtime, data, team, or external limits; omitted means []; scalar text and null are rejected",
                 ],
                 "bad_examples": [
                     {"id": "entity-api", "name": "API", "entity_type": "api"},
@@ -771,7 +782,7 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                         "name": "Checkout API",
                         "entity_type": "api",
                         "responsibility": "Validates checkout commands and orchestrates payment authorization.",
-                        "boundaries": "Backend application boundary",
+                        "boundaries": ["Backend application boundary"],
                         "technologies": ["FastAPI", "SQLAlchemy"],
                     },
                     {
@@ -3094,6 +3105,15 @@ class ArchitectureDesignRepository:
                 issues.append(f"{path} must be a JSON object; received {type(raw_entity).__name__}.")
                 continue
             entities.append(raw_entity)
+            try:
+                _BOUNDARIES_ADAPTER.validate_python(raw_entity.get("boundaries", []))
+            except ValidationError as exc:
+                for error in exc.errors():
+                    suffix = "".join(f"[{part}]" for part in error["loc"])
+                    issues.append(
+                        f"{path}.boundaries{suffix}: expected an array of non-blank strings; "
+                        f"{error['msg']}"
+                    )
             entity_id = _canonical_ref(raw_entity.get("id"))
             entity_name = str(raw_entity.get("name") or "").strip()
             entity_type = str(raw_entity.get("entity_type") or "").strip()
@@ -3114,7 +3134,7 @@ class ArchitectureDesignRepository:
                     warnings.append(
                         f"{path}.responsibility is empty. Tasks may implement behavior in the wrong component or skip owned duties."
                     )
-                if not str(raw_entity.get("boundaries") or "").strip():
+                if raw_entity.get("boundaries", []) == []:
                     warnings.append(
                         f"{path}.boundaries is empty. Runtime, data, tenant, or external boundaries may be crossed accidentally."
                     )
@@ -3493,7 +3513,7 @@ class ArchitectureDesignRepository:
             elif "responsibility" in lower:
                 fixes.append("Add a concise responsibility that states what the component owns, guarantees, or persists.")
             elif "boundaries" in lower:
-                fixes.append("Add boundaries describing runtime, data, tenancy, external-system, or ownership limits.")
+                fixes.append("Set boundaries to an array of non-blank strings describing runtime, data, tenancy, external-system, or ownership limits; use [] when unspecified.")
             elif "semantic_node_registry" in lower or "canonical mapping" in lower:
                 fixes.append(
                     "Add the entity_type to SEMANTIC_NODE_REGISTRY or rename the entity to a known type. "

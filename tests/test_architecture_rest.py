@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 
 import pytest_asyncio
@@ -18,6 +20,39 @@ from sqlalchemy_test_models import ArchitectureFindingRun, Board, Card, CardStat
 
 
 USER_ID = "architecture-rest-user"
+
+
+@pytest.mark.parametrize("boundaries", [[], ["Tenant data, isolated", "Backend runtime"]])
+def test_rest_boundaries_validate_create_read_and_update(_client_and_entities, boundaries):
+    client, ids = _client_and_entities
+    body = _architecture_body()
+    body["entities"][0]["boundaries"] = boundaries
+    checked = client.post("/api/v1/architecture/validate", json=body)
+    assert checked.status_code == 200, checked.text
+    assert checked.json()["valid"] is True
+    created = client.post(f"/api/v1/ideations/{ids['ideation_id']}/architecture", json=body)
+    assert created.status_code == 201, created.text
+    design_id = created.json()["id"]
+    loaded = client.get(f"/api/v1/architecture/{design_id}")
+    assert loaded.json()["entities"][0]["boundaries"] == boundaries
+    replacement = ["Public port only", "Keep comma, and newline\ninside item"]
+    body["entities"][0]["boundaries"] = replacement
+    updated = client.patch(f"/api/v1/architecture/{design_id}", json={"entities": body["entities"]})
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["entities"][0]["boundaries"] == replacement
+
+
+@pytest.mark.parametrize("boundaries", ["Backend", None, [""], [" \n"], ["Valid", 2]])
+def test_rest_boundaries_rejected_by_dry_run_and_create(_client_and_entities, boundaries):
+    client, ids = _client_and_entities
+    body = _architecture_body()
+    body["entities"][0]["boundaries"] = boundaries
+    checked = client.post("/api/v1/architecture/validate", json=body)
+    assert checked.status_code == 200, checked.text
+    assert checked.json()["valid"] is False
+    assert any("entities[0].boundaries" in issue for issue in checked.json()["issues"])
+    created = client.post(f"/api/v1/ideations/{ids['ideation_id']}/architecture", json=body)
+    assert created.status_code == 422, created.text
 
 
 def _id(prefix: str) -> str:
@@ -102,21 +137,21 @@ def _topology_warning_body() -> dict:
                 "name": "Customer Portal",
                 "entity_type": "web_app",
                 "responsibility": "Sends requests.",
-                "boundaries": "Browser.",
+                "boundaries": ["Browser."],
             },
             {
                 "id": "entity-api",
                 "name": "Pulse API",
                 "entity_type": "api",
                 "responsibility": "Handles requests.",
-                "boundaries": "Backend.",
+                "boundaries": ["Backend."],
             },
             {
                 "id": "entity-audit",
                 "name": "Audit Sink",
                 "entity_type": "service",
                 "responsibility": "Consumes audit records.",
-                "boundaries": "Async sink.",
+                "boundaries": ["Async sink."],
             },
         ],
         "interfaces": [

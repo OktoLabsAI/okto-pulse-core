@@ -2,6 +2,60 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — boundaries estruturado — implementação e regressões concluídas
+
+Pedido autorizado após reprodução no teste de refinamento: padronizar boundaries como lista em todo o Pulse. Baseline instalado/source/wheel comprovado byte-a-byte:903 Core+403 Community. Causa: ArchitectureEntity exigia str|null enquanto critique verificava apenas presença via str(value). Contrato novo único: array ordenado de strings não vazias/não whitespace; omissão produz [], lista vazia mantém aviso existente; texto/null/tipos mistos recusados sem conversão. Preservar conteúdo e ordem dos itens, inclusive vírgulas. Escopo: schema/dry-run/persistência/snapshots/cópias/MCP/REST, UI criação/edição/leitura, exports/KG, docs e testes. Nenhuma alteração de autoridade/gate nem migração de dados. Runtime e home atual preservados; instalação no host não integra este recorte.
+
+Implementação: `ArchitectureBoundaries` é o contrato público compartilhado por
+`ArchitectureEntity`, pelo critique e pelo export Community. Editor oferece um
+campo por item, inclusão/remoção e leitura como lista; entidades novas usam `[]`.
+Detalhe do diagrama e export Markdown do frontend preservam os itens. O export
+Python de arquitetura antes omitia boundaries na projeção rica; HTML/Markdown
+agora incluem as listas por entidade e escapam conteúdo. Persistência JSON,
+snapshots, propagação e projeção KG já preservam arrays e foram verificados sem
+introduzir adaptadores no Core. Documentação MCP/schema atualizados; catálogo
+gerado permaneceu sem alteração e seu teste de drift passou.
+
+Validação do recorte: Core **100 passaram** (contrato, repository, REST, MCP,
+UoW e drift do catálogo); Community **45 passaram** (exports, rich media,
+fluxo nativo de custo contínuo e persistência de arquitetura); frontend **86
+passaram** nos seis arquivos de arquitetura/export, incluindo a rodada final
+dos dois arquivos ampliados (**31 passaram**). TypeScript/build, sincronização
+dos **79 arquivos** da SPA, Ruff F/E9 e diff-check passaram. Lint ratchet:
+0 erros, 316 warnings, abaixo do baseline existente402. Nenhum budget foi elevado.
+Fixtures novas foram corrigidas para usar os envelopes/serialização reais do
+export e o diagram_type suportado `context`; não houve relaxamento dos testes.
+
+Prova anterior aos testes Python: instalação isolada em
+`PULSE_REFACTOR/.validation-v040/venv`, com **842 arquivos .py Core + 317
+Community** idênticos byte-a-byte entre fontes e site-packages; **903+403
+payloads** idênticos entre fontes/wheels/instalação. Após alterar o export,
+Community foi reconstruído/reinstalado e a prova repetida antes da nova bateria.
+Fontes nos testes resolvidas com `PYTHONPATH=core/src;community/src` absolutos;
+as fixtures usam bases temporárias. Evidências locais:
+`boundaries-provenance.json`, `boundaries-core.log`, `boundaries-community.log`,
+`boundaries-closure.log`; wheels em `dist-architecture-boundaries-20261008`,
+todos sob `PULSE_REFACTOR/.validation-v040/`. F16 usa os dois wheels e os
+READMEs regenerados: imports Core7632/Community1103; oito budgets ZERO.
+Resultado final F16: `ok=true`, nenhum finding nem drift de documentação.
+Commit Community: `272e79c6`; o commit Core que contém esta entrada reúne
+o contrato, as regressões e a documentação correspondentes em `feature/v0.4.0`.
+
+Retomada da iniciativa de testes: a instância instalada no host **não recebeu
+este build**; não foi encerrada, reinstalada nem teve dados alterados. A arquitetura
+do refinamento `c19ba77d-d30b-48db-ab5a-461e724e1645`, design
+`c76e3595-fda1-4ed3-9c99-f94d615078a6`, foi anteriormente salva com boundaries
+em texto. Esse conteúdo não é convertido automaticamente; ao aplicar o novo
+build, deverá ser reautorado explicitamente no contrato de listas, sem reescrever
+os snapshots históricos. Não retomar avaliações como se o runtime já estivesse
+atualizado.
+
+Achado adjacente, fora deste recorte: a fixture `_topology_diagrams()` usa
+`diagram_type="runtime"`, aceito pelo critique mas recusado pelo Literal de
+gravação. A regressão de boundaries usa `context` para isolar seu contrato;
+essa divergência de enum fica registrada para a próxima rodada de testes da
+plataforma, sem ampliar a entrega atual.
+
 ### 2026-10-08 — correção do contrato do editor de revisões de guideline
 
 Aceitação local: salvar uma métrica customizada retornava `validation_failed / fix_input`.
