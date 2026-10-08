@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-VER-13 aplicabilidade após mudança de base/condição
+Base015bab1f/bd4e04fc; turno anterior foi progresso. Proof novo sem colisão,
+provenance-native-applicability-20261008 terminal0:main88 byte-idêntico838/317
+Python,899/403 payloads. Schema nativo: prova assinada passing/implementação A
+inicialmente liberam rollup. Origem aceita B via append/CAS, requisito/critério/
+condição alterados na mesma edição. Nova assinatura e timestamp recente ainda
+ligados ao digest A recusam binding para implementação B; sessão nova sem crédito.
+Histórico A permanece exatamente igual, inclusive resultado passing.
+Nova observação autenticada explicitamente ligada ao digest/base B recebe crédito
+por novos IDs; nenhum reaproveitamento automático da prova A.
+
+native-applicability-20261008/session95473 terminal0:1pass6.85s; Ruff verde.
+Recibo clean-break-native-applicability-20261008.json; AC-VER-13 qualificado.
+Origem/observação são fatos controlados; não alega execução externa/autenticação
+de attestation nem equivalência automática entre bases. Produto/SPA inalterados.
+Índice219verificados/16pendentes/11superados. Main88 closure/oito budgets ZERO.
+Handles terminais; commit/push teste/evidência, WIP KG10 preservado.
+Continuar VER11/15/18, INT10/11, DEI64, KG e benchmarks fixos.
+BASE:T23/KG10/KG28 seguem decisões pendentes. Objetivo integral ativo;
+sem promoção/dados reais.
+
 ### 2026-10-08 — AC-VER-06 relatório misto e crédito por critério
 Basede4a3d56/2d14b4d7; turno anterior foi progresso. Proof novo sem colisão,
 provenance-mixed-assertion-reproduction-20261008 terminal0:main88838/317 Python,

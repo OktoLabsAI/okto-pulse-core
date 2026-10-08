@@ -1,0 +1,30 @@
+{
+  "scope": "AC-VER-13 applicability after changed requirement and source revision",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "ARQVER:AC-VER-13",
+  "result": {
+    "passed": 1,
+    "failed": 0,
+    "seconds": 6.85,
+    "terminal_session": 95473
+  },
+  "evidence": [
+    "Native schema: signed passing inspection report and implementation at revision A initially satisfy full rollup.",
+    "Accepted source advances to B through native request/receipt/head append/CAS; requirement, criterion and scenario behavior change in the same Spec edition.",
+    "Newly signed, freshly observed report still bound to A scenario digest cannot be admitted against implementation B. Fresh session shows no current test credit.",
+    "Original A implementation and passing test payloads remain byte-equivalent historical dictionaries; old test result remains passed.",
+    "New authenticated observation bound to B semantic digest and explicitly naming B source recovers credit only through new B implementation/test IDs. Historical A payloads remain unchanged."
+  ],
+  "limits": [
+    "Source execution facts and externally observed report content are controlled fixture inputs. This tests applicability/currentness consumer, not external attestation authentication or actual code execution.",
+    "No automatic equivalence assessment or blind carry-forward between commits is claimed: the positive control supplies newly applicable evidence.",
+    "No product/frontend/SPA changes. Prior frontend evidence remains applicable; no new frontend count claimed.",
+    "Main88 paired provenance and closure with all eight zero budgets remain unchanged."
+  ],
+  "artifacts": {
+    "provenance-native-applicability-20261008.json": "ee36c51e89e0c8fbf4588e6de72d244d12e85a4096bc592215c807eea37db28e",
+    "native-applicability-20261008.xml": "97f17e5d453f7777d7922b42198fc5c1c7af6f7423290812dc2cb5cc4c23d1f9",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}
