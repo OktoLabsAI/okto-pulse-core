@@ -2,6 +2,22 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — reinstalação de Coverage e Code Evidence Matrix
+
+A pedido do usuário, reconstruídos e reinstalados os wheels locais Core e
+Community 0.4.0 no Python313 do host, via pip --user --force-reinstall --no-deps.
+Pulse estava encerrado; não iniciado automaticamente. Home e dados preservados.
+Inclui Community e2736073 (Coverage) e 93fafb0c (recuperação de versão da matriz).
+
+Comparação byte a byte fonte/wheel/site-packages passou: Core 842 Python/903
+arquivos de payload; Community 317 Python/403 arquivos de payload. Conjunto e
+conteúdo dos 79 arquivos do frontend também idênticos, sem resíduos extras.
+`okto-pulse --version` confirmou ambos 0.4.0. Evidência local:
+`PULSE_REFACTOR/.validation-v040/coverage-host-provenance.json`; wheels em
+`dist-coverage-20261008`. Pronto para o usuário executar `okto-pulse serve` e
+recarregar o navegador para consumir a interface nova.
+
+
 ### 2026-10-08 — Coverage reorganizada para consumo humano
 
 Implementada a estrutura acordada: Overview, Planning, Implementation e
