@@ -28,7 +28,7 @@ class Catalog:
     {'layer': 'deterministic'}, {'created_by': 'system:layer1_worker'},
     {'created_by': 'worker_layer1'}, {'rule_id': 'supersedes/explicit_decision@v2.1'},
     {'fallback_reason': 'claim worker provenance'}, {'agent_id': 'system:layer1_worker'},
-    {'layer': None},
+    {'layer': None}, {'layer': 'fallback', 'confidence': 0.85},
 ])
 async def test_public_candidate_refuses_internal_writer_metadata(board_id, agent_id, db_factory, metadata):
     async with db_factory() as db:

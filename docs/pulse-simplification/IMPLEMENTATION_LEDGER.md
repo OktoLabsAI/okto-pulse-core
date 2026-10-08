@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — KG-30 limite do fallback interpretativo
+AC-VER-18 enviado Core3ce6208d/Community0350e4af; índice224/11/11.
+Inspeção do complemento KG §5.4 (238–249), PublicEdgeCandidate e writers:
+campos internos layer/fallback_reason não constituem contrato público durável
+de interpretação. Clamp 0.85 existe, mas não tem consumidor de produto.
+Teste público de proveniência inclui agora tentativa layer=fallback/confidence0.85:
+recusada, candidato ausente. Suites de sugestões de fonte congelada e policy
+confirmam ausência de vínculos normativos/cobertura automática.
+Proof provenance-native-fallback-boundary-20261008: main90 byte-idêntico,
+838/317 Python,899/403 payloads antes dos testes.
+native-fallback-boundary-20261008/session55428 terminal0:33pass5.26s.
+Recibo clean-break-native-fallback-boundary-20261008.json.
+KG-30 permanece pendente: não demonstrado armazenamento/replay/navegação
+da afirmação interpretativa, nem gate de entrega com essa afirmação.
+§5.4 permite explicitar esse limite; proíbe chamar fallback pendente de entregue.
+Não abrir editor genérico, reativar repair ou ampliar autoridade por conveniência.
+
+Benchmarks: reavaliação §187–196 permite snapshots congelados, sem manter
+segunda implementação; população não equivalente exige limite explícito.
+Recibos main29/main68 medem segmentos, não fluxo comparativo integral;
+não reutilizar esses totais como ganho do main90. Próxima campanha precisa
+incluir recursos/preflight efetivamente consumidos, autoria/classificação,
+retomada e duas populações/atores equivalentes. ADV23 mede bytes/tokens reais,
+não número de tools. Demais pendências do índice mantidas, sem novos critérios.
+WIP Community test_native_spec_relationship_parity.py (KG10) preservado.
+Decisões BASE:T23/KG10/KG28 continuam aguardando; produto e SPA inalterados.
+
 ### 2026-10-08 — AC-VER-18 contexto combinado com prova parcial autenticada
 Base19c2d060/1f0ec16a. Mesmo cenário nativo agora admite relatório demonstration
 autenticado e bindings reais de implementação/teste. FR/BR/AC recebem crédito
