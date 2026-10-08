@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-VER-18 base de contexto nativo (parcial)
+Base65da3fda/15dba423; turno anterior foi progresso. RF-VER-18 pede plano,
+prova e proveniência equivalentes em requisito/Spec/Card/API/MCP/UI.
+Inspeção confirma superfícies distintas: RequirementVerificationPanel consome
+requirement-verification (delivery_evaluated=False); SpecModal também monta
+DeliveryEvidencePanel. Não interpretar readiness/herança como crédito.
+
+Teste existente de paridade REST/MCP agora seleciona adopted_context=native_schema.
+Limite1 mantém pendência global fora da página; detalhe focused evita reconsulta
+da Spec inteira. Com/sem autoridade de planejamento, resultado equivalente,
+sem writes capturados. Proof provenance-native-verification-context-20261008
+terminal0:main90 byte-idêntico838/317 Python,899/403 payloads antes dos testes.
+Backend native-verification-context-20261008/session41712 terminal0:
+2pass15.32s. Frontend RequirementVerificationPanel/API:31pass,sucessoTrue.
+Ruff/diff check verdes. Recibo clean-break-native-verification-context-partial-20261008.json.
+Não encerra AC-VER-18: falta witness combinado BR herdada+IR promovido+evidência
+parcial, comparado em contexto de novo agente/UI incluindo superfície delivery.
+Índice223/12/11 mantido. Sem produto/SPA; closure main90/oito budgets ZERO.
+Todos handles terminais; commit/push teste/evidência, WIP KG10 preservado.
+Próximo: combinar fixture nativa de herança/prova com promoção real (helper
+classification.batch_for(disposition=promote_to_ir)/execute), comparar reads
+requirement-verification+delivery e apresentação da UI sem ampliar autoridade.
+BASE:T23/KG10/KG28 seguem decisões pendentes; objetivo integral ativo.
+
 ### 2026-10-08 — AC-VER-11 revisão e reuso de prova BR nativos
 Base02caae7e/ee873908; turno anterior foi progresso. Fixture adopted_context
 passa a aceitar native_schema (inicializador atual/pragmas reais); matriz de

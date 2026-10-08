@@ -1,0 +1,29 @@
+{
+  "scope": "ARQVER:AC-VER-18",
+  "status": "partial",
+  "proof_pair": "dist-native-main90",
+  "evidence": [
+    "REST/MCP requirement-verification parity now exercises native schema initialization, with and without scenario/Card planning authority.",
+    "Paged result preserves global unresolved requirement and exposes bounded scenario/Test Card/implementation details; read captures prove no relational writes.",
+    "Frontend 31 tests cover inherited contribution provenance, pending global planning, permissions, pagination/API filters and explicit no-delivery-credit presentation."
+  ],
+  "results": {
+    "backend_passed": 2,
+    "frontend_passed": 31
+  },
+  "remaining": [
+    "Combined native witness with inherited BR, actual promoted IR and partial registered evidence, comparing fresh-agent context and rendered UI.",
+    "Requirement-verification is a planning read with delivery_evaluated=false. Validate evidence via actual delivery surface, not by claiming this endpoint evaluates proof."
+  ],
+  "limits": [
+    "No acceptance criterion newly qualified.",
+    "Authentication in transport parity is controlled; permission/filter behavior is exercised within existing typed contexts.",
+    "No product/frontend/SPA change or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-verification-context-20261008.json": "96f43e7f373faa4d32a5d25a69081a5d732eae9c86209de6b73d67ddb6bd6c2c",
+    "native-verification-context-20261008.xml": "534837a7fb1f1107f26a7b5fb34cfc4093473deffc190cfee0ff8e0b33344bfa",
+    "native-verification-context-frontend-20261008.json": "ec2ef7c83ffc13cc4265a66222495396165a18c2f33ee33fd05543ba95809662",
+    "closure-native-main90.json": "738a5f3f3390888489c030ace3cfdd62c223416a5d689a599dcbf1da759fddfd"
+  }
+}
