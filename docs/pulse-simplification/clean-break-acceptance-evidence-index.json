@@ -5444,7 +5444,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-batch.json",
+        "criterion_key": "DEI:DEI-T34",
+        "proof_pair": "dist-native-main85"
+      }
     },
     {
       "key": "DEI:DEI-T35",
@@ -5466,7 +5471,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-batch.json",
+        "criterion_key": "DEI:DEI-T35",
+        "proof_pair": "dist-native-main85"
+      }
     },
     {
       "key": "DEI:DEI-T36",
@@ -5488,7 +5498,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-batch.json",
+        "criterion_key": "DEI:DEI-T36",
+        "proof_pair": "dist-native-main85"
+      }
     },
     {
       "key": "DEI:DEI-T37",
@@ -5510,7 +5525,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-batch.json",
+        "criterion_key": "DEI:DEI-T37",
+        "proof_pair": "dist-native-main85"
+      }
     },
     {
       "key": "DEI:DEI-T38",
@@ -5532,7 +5552,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-batch.json",
+        "criterion_key": "DEI:DEI-T38",
+        "proof_pair": "dist-native-main85"
+      }
     },
     {
       "key": "DEI:DEI-T39",
@@ -5554,7 +5579,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-batch.json",
+        "criterion_key": "DEI:DEI-T39",
+        "proof_pair": "dist-native-main85"
+      }
     },
     {
       "key": "DEI:DEI-T40",

@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T34–39: lote nativo, rollback e retry (main85)
+Basebb5d2e20/7bea70b1; progresso anterior confirmado por commits/push e recibo.
+Revisados modelo compartilhado, resolução de refs, savepoint, fence da revisão
+e recibo imutável de replay. Nenhuma implementação de compatibilidade necessária.
+Proof provenance-native-delivery-batch1 terminal0 confirmou o mesmo par main85,
+835/317 Python e896/403 payloads byte a byte antes dos testes.
+
+Core native-delivery-batch-core1/session38286 terminal0:43pass em6.25s.
+Community native-delivery-batch-community1/session17299 terminal0:26pass em46.26s.
+Acrescentada prova explícita de timeout após commit real, single e batch:
+retry com identity map vazia recupera os mesmos IDs de execução/binding/evento/
+handler. Não duplica nenhum dos quatro. Nome de teste sem “legacy append”;
+o single writer é envelope atual do produto.
+Community native-delivery-batch-community2/session47367 terminal0:28pass em54.92s.
+Total distinto71, sem somar a campanha de26 repetida. Ruff/diff check verdes.
+
+Recibo clean-break-native-delivery-batch.json mapeia cada critério às asserções.
+DEI-T34/35/36/37/38/39 qualificados; índice106verificados/129pendentes/11superados.
+Não inferir DEI-T33 (equivalência integral single/batch) ou T40 (relatório
+concorrente) dessas provas. SQL real usa metadata ORM atual; não substitui
+admissão de schema completo nem autenticação HTTP instalada.
+Sem alteração de runtime/frontend: closure main85 existente continua válida,
+oito budgets ZERO; não reconstruído/reinstalado nem repetida auditoria sem causa.
+Todos handles terminais. Sem promoção/dados reais. WIP KG10 preservado fora
+do commit. Retomar critérios DEI pendentes, mantendo decisões de autoridade
+ainda não respondidas e sem repetir campanhas encerradas.
+
 ### 2026-10-08 — DEI-T53: writer único e recusa de prova antiga (main85)
 Base Coree70fc2b6/Community59f28230. Revisados schema, rota REST, caso de uso,
 adapter e testes de Delivery. Implementation/test antigos são recusados:

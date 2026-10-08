@@ -1,0 +1,65 @@
+{
+  "scope": "Current Delivery batch atomicity, aggregate bounds, references, retry and concurrent revision fencing",
+  "proof_pair": "dist-native-main85",
+  "criteria": {
+    "DEI:DEI-T34": [
+      "test_later_failure_rolls_back_receipt_binding_event_and_handler",
+      "test_failure_after_first_insert_rolls_back_even_if_caller_commits",
+      "test_invalid_execution_does_not_degrade_to_progress"
+    ],
+    "DEI:DEI-T35": [
+      "test_batch_is_closed_and_single_scope",
+      "test_aggregate_link_and_byte_limits_apply_to_entire_batch",
+      "test_local_and_persisted_references_consume_aggregate_budget"
+    ],
+    "DEI:DEI-T36": [
+      "test_batch_is_closed_and_single_scope",
+      "test_local_references_are_typed_previous_entries_only",
+      "test_progress_reference_is_closed_and_has_exactly_one_identity"
+    ],
+    "DEI:DEI-T37": [
+      "test_retry_after_committed_response_timeout_preserves_all_identities",
+      "test_inline_real_origin_commits_once_and_replay_has_same_ids",
+      "test_native_rest_mcp_batch_replay_and_entry_errors"
+    ],
+    "DEI:DEI-T38": [
+      "test_atomic_batch_replay_manifest_and_revision",
+      "test_single_writer_key_cannot_be_reused_as_batch_and_current_append_fences_batch"
+    ],
+    "DEI:DEI-T39": [
+      "test_two_concurrent_batches_cannot_claim_same_delivery_revision"
+    ]
+  },
+  "review": [
+    "CardDeliveryEvidenceBatchInput validates shared REST/MCP envelopes before service execution:50 entries,200 aggregate references,128KiB UTF-8.",
+    "Typed local references require a distinct prior entry of the correct kind; no forward/cyclic or ambiguous resolution.",
+    "Adapter locks scope before revision check and uses nested transaction for all constituent receipts, bindings and origin outbox.",
+    "Immutable first entry stores batch receipt; replay verifies payload digest and exact membership before returning identities."
+  ],
+  "changes": [
+    "Added actual timeout-after-commit test for single and batch operations; fresh SQLAlchemy identity map and retry preserve execution, binding, event and handler primary keys.",
+    "Renamed stale legacy wording in test name; current single writer remains an intended native envelope, not compatibility."
+  ],
+  "tests": {
+    "core_passed": 43,
+    "community_passed": 28,
+    "distinct_passed": 71,
+    "core_seconds": 6.25,
+    "community_seconds": 54.92,
+    "prior_community_campaign": "26 passed in46.26s; superseded by28-case campaign, not added to total."
+  },
+  "limits": [
+    "No runtime product or frontend change; main85 closure remains applicable without rerun.",
+    "SQL tests use real SQLite with current ORM metadata and native execution contracts; this campaign does not qualify full storage admission or installed HTTP authentication.",
+    "Timeout injected after real commit; no actual network timeout claimed.",
+    "No automatic qualification of DEI-T33 or report-concurrency DEI-T40 from these results.",
+    "No real runtime/data touched or promotion performed."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-batch1.json": "e994024d1f7e783c00e2aa11a63d44d87731390611fde130882bb90c08cc6089",
+    "native-delivery-batch-core1.xml": "35709088402ac4b51f91edcd5f4cc04bacbaa18c149b12a53255d3d39addf6ac",
+    "native-delivery-batch-community1.xml": "a723a60bd4fd623dc0f62559820159539a548e6b33d93ae773c4ca651cb096e8",
+    "native-delivery-batch-community2.xml": "506ea5322504b473af9d133ae9331f31d2751e1291d138754eacc8e0ef182495",
+    "closure-native-main85.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}
