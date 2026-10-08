@@ -370,13 +370,6 @@ def stub_registry(monkeypatch):
     monkeypatch.setattr(
         registry_mod, "get_kg_registry", lambda: reg, raising=True,
     )
-    # Also patch the _batch_lookup_created_at to return empty (no
-    # temporal filter in these tests).
-    monkeypatch.setattr(
-        tier_power, "_batch_lookup_created_at",
-        lambda board_id, node_ids: {},
-        raising=True,
-    )
     # These tests exercise the rewrite strategies, not the graph_layer filter
     # (spec e2598178). Stub the layer lookup so the synthetic nodes are treated
     # as canonical and survive the default-canonical scope; the layer contract

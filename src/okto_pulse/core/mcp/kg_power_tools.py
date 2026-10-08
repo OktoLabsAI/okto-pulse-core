@@ -376,7 +376,7 @@ okto-pulse://reference/tool-docs/kg."""
         search (embedding + HNSW + traversal), falling back to string match when
         embedding is unavailable. Deterministic — invokes NO LLM. Optional
         min_confidence (default 0.5) and since/until ISO-8601 bounds on
-        created_at; graph_layer (canonical|working|all, default canonical) scopes
+        source_updated_at (latest source update, not history or as-of); graph_layer (canonical|working|all, default canonical) scopes
         results by KG layer and fails closed on invalid values BEFORE execution.
         Returns nodes, total_matches, applied_graph_layer and a layer_audit where
         metadata/legacy_unknown never count as canonical/working leakage.

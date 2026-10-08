@@ -545,15 +545,20 @@ Args:
     timeout_ms: Optional positive timeout in ms, narrowed to the current Board
         policy (default 15000, maximum 30000). All reads and fallbacks share it.
     since: Optional ISO-8601 timestamp — return only nodes with
-        ``created_at >= since``. Empty string = no lower bound.
+        ``source_updated_at >= since``. Empty string = no lower bound.
         Invalid timestamps are ignored (best-effort).
     until: Optional ISO-8601 timestamp — return only nodes with
-        ``created_at <= until``. Empty string = no upper bound.
+        ``source_updated_at <= until``. Empty string = no upper bound.
 
 Returns:
     JSON with nodes, total_matches, optional warning. When a temporal
     filter is active the response also carries ``temporal_filter``
-    metadata (candidates_before_filter, filtered_out).
+    metadata (field, interpretation, candidates_before_filter, filtered_out).
+    The window uses the latest source update, not projection creation.
+    Missing source timestamps never fall back to graph creation time.
+    This bounded search does not reconstruct every historical change, a diff,
+    or an as-of snapshot; history_complete, as_of_supported and
+    complete_for_window are false. Unavailable timestamp reads fail explicitly.
 
 Cypher, natural and reflective query data envelopes have a 4 MiB serialized
 JSON budget, including query metadata. Transport framing is separate. Native

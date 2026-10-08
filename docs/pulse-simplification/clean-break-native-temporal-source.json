@@ -1,0 +1,116 @@
+{
+  "criterion": "KG:KG-60",
+  "qualification": "verified_current_pair_review",
+  "proof_pair": "dist-native-main74",
+  "changes": [
+    "Natural query since/until selects source_updated_at instead of projection created_at; handles native runtime ISO timestamp results.",
+    "Missing source timestamps never fall back to projection creation; failed or malformed reads return query_temporal_unavailable.",
+    "Response declares latest source update, no complete history, no as_of, and bounded window completeness; MCP documentation aligned."
+  ],
+  "evidence": [
+    "Real Grafx witness: older source creation, latest update inside window, recent projection creation; only matching latest source update returned.",
+    "Changing projection created_at preserves selection; a subsequent source edit outside the window removes the hit instead of inventing past events.",
+    "Absent provider, failed read and malformed timestamp produce explicit errors; registered MCP tool preserves temporal metadata and error code.",
+    "Source metadata tests preserve source chronology and reject client attestation."
+  ],
+  "tests": {
+    "core_passed": 83,
+    "total_distinct_passed": 83,
+    "campaigns": {
+      "native-temporal-source1": 66,
+      "native-temporal-mcp3": 17
+    }
+  },
+  "closure": {
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": []
+  },
+  "limits": [
+    "Projection timestamp perturbation exercises query invariance; this witness is not an end-to-end rebuild orchestration test.",
+    "MCP boundary tests control the query result; separate query tests use actual Grafx.",
+    "No frontend behavior changed; no live-browser claim. Retrieval is bounded, not complete historical enumeration.",
+    "Initial MCP test attempts failed due to fixture assumptions (nested helper and structured error shape), corrected without product changes."
+  ],
+  "artifacts": {
+    "provenance-native-main74.json": "769a57b527c6ff329784312942c5ec5c059475375a5c86e671b32314989fd994",
+    "native-temporal-source-repro1.xml": "0591b3963f3ad51ad72de5aa146bfb09c3f074862df5b53870e8bb0c954628a1",
+    "native-temporal-source1.xml": "ba657d87dba39e11caafffbb57322af4cb4b2dafd2b6b6d72438c0ca43c31929",
+    "native-temporal-mcp3.xml": "3f9fd661323eaa957312272059aa48302972c727b0659383bd4b8aeb6ae3878e",
+    "closure-native-main74.json": "ee30665f2d4163d615fc35d82cadbc94dca845b1b3296f1802f2bf450b297071"
+  }
+}

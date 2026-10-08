@@ -884,12 +884,10 @@ def execute_natural_query(
 ) -> dict:
     """Hybrid search: embed query -> HNSW k-NN -> 1-hop traversal -> ranking.
 
-    Optional ``since`` / ``until`` parameters accept ISO-8601 timestamps
-    and post-filter results by ``n.created_at`` so an agent can scope the
-    query to a release window, a sprint, or "what happened since I last
-    looked". Invalid timestamps are ignored (best-effort). Over-fetch by a
-    10x factor so post-filter still returns ``limit`` matches when the window
-    is narrow.
+    Optional ``since`` / ``until`` bounds filter retrieved candidates by
+    ``source_updated_at``. Projection creation never substitutes for missing
+    source time. This is a latest-update window, not event history or as-of
+    reconstruction. Retrieval is bounded even when over-fetching 10x.
 
     Ideação 2cf21a31 — optional pre-retrieve rewrite stage:
 
@@ -1118,11 +1116,10 @@ def execute_natural_query(
     all_results = _filter_natural_source_confidence(board_id, all_results, min_confidence)
     filtered_out = 0
     if temporal_filter_requested and all_results:
-        node_ids = [r["node_id"] for r in all_results]
-        timestamps = _batch_lookup_created_at(board_id, node_ids)
+        timestamps = _batch_lookup_source_updated_at(board_id, all_results)
         kept: list[dict] = []
         for r in all_results:
-            ts = timestamps.get(r["node_id"])
+            ts = timestamps.get((r["node_type"], r["node_id"]))
             if ts is None:
                 # Node vanished between vector hit and lookup — drop to avoid
                 # misleading an agent that asked for a specific window.
@@ -1134,7 +1131,7 @@ def execute_natural_query(
             if until_dt is not None and ts > until_dt:
                 filtered_out += 1
                 continue
-            r["created_at"] = ts.isoformat()
+            r["source_updated_at"] = ts.isoformat()
             kept.append(r)
         all_results = kept
 
@@ -1239,6 +1236,11 @@ def execute_natural_query(
         resp["temporal_filter"] = {
             "since": since,
             "until": until,
+            "field": "source_updated_at",
+            "interpretation": "latest_source_update_not_history",
+            "history_complete": False,
+            "as_of_supported": False,
+            "complete_for_window": False,
             "candidates_before_filter": total_before_filter,
             "filtered_out": filtered_out,
         }
@@ -1341,42 +1343,45 @@ def _apply_graph_layer_to_natural_results(
     return kept, audit
 
 
-def _batch_lookup_created_at(board_id: str, node_ids: list[str]) -> dict[str, Any]:
-    """Fetch ``created_at`` for a list of node ids in one pass across all
-    node types. Returns a mapping ``{node_id: datetime}``. Nodes without a
-    known created_at (e.g. degenerate rows) are omitted — callers treat the
-    absence as "outside the temporal window" to be safe.
-    """
-    from datetime import timezone
+def _batch_lookup_source_updated_at(board_id: str, rows: list[dict]) -> dict[tuple[str, str], Any]:
+    """Read source update times for candidate identities, never projection time."""
+    from datetime import datetime, timezone
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-    if not node_ids:
+    if not rows:
         return {}
-
-    out: dict[str, Any] = {}
-    executor = getattr(get_kg_registry(), "cypher_executor", None)
+    executor = get_kg_registry().cypher_executor
     if executor is None:
-        return out
-    for node_type in NODE_TYPES:
-        try:
+        raise TierPowerError("query_temporal_unavailable", "Source update times could not be resolved.")
+    grouped: dict[str, set[str]] = {}
+    for row in rows:
+        kind, identity = row.get("node_type"), row.get("node_id")
+        if kind in NODE_TYPES and isinstance(identity, str) and identity:
+            grouped.setdefault(kind, set()).add(identity)
+    out: dict[tuple[str, str], Any] = {}
+    try:
+        for kind, identities in grouped.items():
             result = executor.execute_read_only(
                 board_id,
-                f"MATCH (n:{node_type}) WHERE n.id IN $ids "
-                f"RETURN n.id, n.created_at",
-                {"ids": node_ids},
-                max_rows=max(len(node_ids), 1),
+                f"MATCH (n:{kind}) WHERE n.id IN $ids RETURN n.id, n.source_updated_at",
+                {"ids": sorted(identities)}, max_rows=len(identities),
             )
-            for row in result.get("rows") or []:
-                nid = row[0]
-                ts = row[1]
-                if ts is None:
+            for identity, timestamp in result.get("rows") or []:
+                if identity not in identities or timestamp is None:
                     continue
-                # graph backend returns a Python datetime; ensure tz-aware UTC
-                if hasattr(ts, "tzinfo") and ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
-                out[nid] = ts
-        except Exception:
-            continue
+                if isinstance(timestamp, str):
+                    timestamp = _parse_iso_ts(timestamp)
+                if not isinstance(timestamp, datetime):
+                    raise ValueError("Invalid stored source update timestamp")
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+                out[(kind, identity)] = timestamp
+    except (GraphQueryTimeout, GraphQueryResourceLimit):
+        raise
+    except Exception as exc:
+        raise TierPowerError(
+            "query_temporal_unavailable", "Source update times could not be resolved."
+        ) from exc
     return out
 
 

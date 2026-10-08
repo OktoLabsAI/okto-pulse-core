@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG60: janela pela última atualização da fonte (main74)
+Base89948729/e6ab915a. Repro native-temporal-source-repro1 terminal1:1 falha
+real (comparação str/datetime) no filtro que consultava created_at da projeção.
+Corrigido para source_updated_at, identidade tipo/id e parsing do formato nativo.
+Ausência de timestamp não usa fallback; leitura indisponível/malformada falha
+com query_temporal_unavailable. Resposta declara latest_source_update_not_history,
+history_complete/as_of_supported/complete_for_window=false. Sem gate novo.
+Docs MCP atualizadas; gerador oficial executado, catálogo sem diferença resultante.
+
+Par main74 construído, instalação98852 terminal0; provenance-native-main74
+byte-idêntico835/896+317/403 antes de comportamento. Core11600 terminal0:
+native-temporal-source1=66pass/215.65s. Core4850 terminal0:
+native-temporal-mcp3=17pass/6.74s. Total83 distintos; diff-check verde.
+Tentativas mcp1/mcp2 falharam por fixture (helper local e envelope estruturado),
+corrigidas só no teste. Closure49964 terminal0:ok=true, findings/documentation
+vazios, oito budgets0. Community/SPA inalterados, sem teste frontend necessário
+para esta alteração exclusiva da consulta MCP. Todos processos deste milestone terminais.
+
+Recibo clean-break-native-temporal-source.json qualifica KG60; índice95 verificadas,
+140 pendentes/11 N/A. Limite explícito: perturbação de created_at em grafo real prova
+invariância da consulta, não execução E2E do orquestrador de rebuild. Atualizações
+sucessivas não são reconstruídas como histórico/as_of. Testes MCP controlam backend;
+a prova de consulta usa Grafx real. Nenhuma conversão ou exclusão de base real.
+
+Próximo critério existente: KG62 (>3 hops, continuação/parcial explícito).
+KG61 já qualificado no recibo clean-break-native-amendment-parity.json/main44;
+não reabrir sem nova evidência. Permanecem decisões BASE:T23/KG10/KG28 pendentes.
+Nenhuma promoção/tag/release/runtime real alterado.
+
 ### 2026-10-07 — KG59 qualificado; KG60 com lacuna concreta identificada
 Base54e7c040/e6ab915a limpa. Prova provenance-native-bug-temporal1 terminal0,
 main73 byte-idêntico835/896+317/403. Sem alterações de produto/SPA/teste neste turno.
