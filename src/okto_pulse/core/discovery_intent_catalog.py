@@ -53,7 +53,7 @@ DEFAULT_DISCOVERY_INTENTS: tuple[dict[str, Any], ...] = (
         "label": "Which test scenarios have no task?",
         "description": (
             "Lists TestScenario nodes that are not linked to any "
-            "implementation card — likely blindspots in the sprint plan."
+            "implementation card — coverage gaps on the current board."
         ),
         "category": "coverage_tracing",
         "tool_binding": "okto_pulse_list_test_scenarios",

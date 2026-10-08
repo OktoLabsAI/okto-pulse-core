@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG52 qualificado: Discovery sem conversão de parâmetros (main71)
+Base6f5a7efc/fcc83a4f limpa confirmada. Byteproof main70 antes da reprodução.
+Fallback explícito legacy de params_schema sem type encontrado no Core e SPA;
+9 falhas Core e1 frontend reproduziram aceitação indevida/resíduos Sprint.
+Agora metadata exige type suportado; sem inferir texto, tanto resposta/execução
+quanto UI. Erro visível sem executar query/selector. Texto explicitamente tipado
+preservado. Removidos6 verbos Sprint e referência sprint-plan no catálogo atual.
+
+Build36745 terminal0; verify:frontend-dist terminal0.79arquivos/78assets,
+hash b79f5aef7a16b6b6d785d9d5fc5d707dfb5a33024e7a8991a6c0c968f87f1b6d.
+Wheels71 construídos; install13817 terminal0; provenance-native-main71
+byte-idêntico835/896+317/403 antes das campanhas de comportamento.
+Core14734 terminal0:111pass/16.73s. Relacional99664 terminal0:7pass/14.79s.
+Frontend17pass. Storage85513 terminal0:44pass/45.32s. Total179 distintos.
+Ruff F/E9 verde; closure71758 terminal0, ok=true, findings/documentation vazios,
+oito budgets0. Todos processos terminais. Nenhuma promoção ou dado real alterado.
+
+Revisão integrada: Q15 nativo preserva Board/Spec e IDs; eventos/filas/DTOs Sprint
+recusados sem projeção; intent aposentado não reinterpretado; schema antigo de
+params recusado sem conversão; bases incompatíveis não chegam ao seeding.
+Seeding nativo atualiza bindings próprios em base compatível, preservando choices;
+não renomeia intent aposentado. localStorage só guarda abertura do catálogo.
+Guards de navegação Sprint e metadata genérica de atividade não são conversores.
+Recibo clean-break-native-discovery-retirement.json qualifica KG52 REESCRITO.
+Índice88 verificadas/147 pendentes/11 superadas. KG53 já N/A.
+Próximo: KG54, conflito de fingerprint do schema recusado sem sobrescrever;
+depois KG55 estados frontend, mantendo o escopo de aceitação fixo.
+
 ### 2026-10-07 — Q15: contrato atual sem leitura de requisitos antigos (main70)
 Reprodução native-q15-old-shape-repro1:7 falhas esperadas/16pass. Q15 aceitava
 strings/objetos sem ID armazenado e gerava child_ref FR/AC por posição.

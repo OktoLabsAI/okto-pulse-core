@@ -58,77 +58,55 @@ def _make_intent(row: dict[str, Any]) -> SimpleNamespace:
     )
 
 
-def test_legacy_params_schema_missing_type_defaults_to_text():
-    schema = {"topic": {"required": True, "label": "Topic / phrase"}}
+@pytest.mark.parametrize("metadata", [
+    {"required": True}, {"type": None}, {"type": ""}, {"type": "future"},
+    "text", None,
+])
+def test_params_schema_refuses_incompatible_metadata_without_conversion(metadata):
+    from copy import deepcopy
+    schema = {"topic": metadata}
+    before = deepcopy(schema)
+    with pytest.raises(ValueError, match="incompatible_discovery_params_schema"):
+        normalize_discovery_params_schema(schema)
+    assert schema == before
 
-    normalized = normalize_discovery_params_schema(schema)
 
-    assert normalized == {
-        "topic": {"type": "text", "required": True, "label": "Topic / phrase"}
-    }
-    assert "type" not in schema["topic"], "normalization must not mutate input"
+def test_current_text_params_are_preserved_without_mutation():
+    schema = {"topic": {"type": "text", "required": True, "label": "Topic"}}
+    assert normalize_discovery_params_schema(schema) == schema
 
 
-def test_discovery_intent_response_normalizes_legacy_params_schema():
+def test_discovery_intent_response_refuses_untyped_stored_params():
     now = datetime.now(UTC)
     intent = SimpleNamespace(
-        id="intent-1",
-        name="legacy_text",
-        label="Legacy Text",
-        description=None,
-        category="tests",
-        tool_binding="okto_pulse_kg_query_natural",
-        params_schema={"query": {"required": True}},
-        renderer="table",
-        min_permission="kg.query.global",
-        active=True,
-        is_seed=True,
-        created_at=now,
-        updated_at=now,
+        id="intent-1", name="query", label="Query", description=None,
+        category="tests", tool_binding="okto_pulse_kg_query_natural",
+        params_schema={"query": {"required": True}}, renderer="table",
+        min_permission="kg.query.global", active=True, is_seed=True,
+        created_at=now, updated_at=now,
     )
-
-    response = DiscoveryIntentResponse.model_validate(intent)
-
-    assert response.params_schema == {"query": {"type": "text", "required": True}}
+    with pytest.raises(ValueError, match="incompatible_discovery_params_schema"):
+        DiscoveryIntentResponse.model_validate(intent)
 
 
 @pytest.mark.asyncio
-async def test_legacy_text_param_without_type_executes_existing_binding(monkeypatch):
-    captured: dict[str, Any] = {}
-
-    async def fake_query_natural(board_id: str, params: dict[str, Any]) -> dict[str, Any]:
-        captured["board_id"] = board_id
-        captured["params"] = params
-        return {
-            "rows": [],
-            "columns": [],
-            "total": 0,
-            "tool_binding": "okto_pulse_kg_query_natural",
-            "params_echo": params,
-            "execution": "real_tool",
-        }
-
-    monkeypatch.setattr(discovery_executor, "_exec_query_natural", fake_query_natural)
+async def test_untyped_stored_params_refused_before_query_dispatch(monkeypatch):
+    async def forbidden(*args, **kwargs):
+        pytest.fail("Incompatible stored metadata must not dispatch a query")
+    monkeypatch.setattr(discovery_executor, "_exec_query_natural", forbidden)
     intent = SimpleNamespace(
-        id="legacy-query",
-        name="similar_nodes_to_text",
-        tool_binding="okto_pulse_kg_query_natural",
-        params_schema={"query": {"required": True, "label": "Phrase"}},
+        name="similar_nodes_to_text", tool_binding="okto_pulse_kg_query_natural",
+        params_schema={"query": {"required": True}},
     )
+    with pytest.raises(ValueError, match="incompatible_discovery_params_schema"):
+        await discovery_executor.execute_intent(
+            None, "user", "board", intent, {"query": "policy boundary"})
 
-    out = await discovery_executor.execute_intent(
-        db=None,
-        user_id="user-1",
-        board_id="board-1",
-        intent=intent,
-        params={"query": "policy boundary"},
-    )
 
-    assert out["execution"] == "real_tool"
-    assert captured == {
-        "board_id": "board-1",
-        "params": {"query": "policy boundary"},
-    }
+def test_current_catalog_and_activity_labels_have_no_sprint_support():
+    import json
+    assert "sprint" not in json.dumps(SEED_INTENTS).lower()
+    assert not any("sprint" in action for action in discovery_executor._ACTION_VERBS)
 
 
 def test_seed_params_schema_uses_supported_types():
