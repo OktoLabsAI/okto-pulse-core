@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG43: uma linha agregada não escapa dos limites
+Todos terminais: Community aggregate1=9pass/16.89s; aggregate2=10pass/1fail/20.82s
+(fixture esperava list em vez da tupla declarada no contrato Python);
+aggregate3=2pass/3.19s e aggregate4=2pass/8.24s (inclui HTTP413 do erro real).
+Core1=15pass/6.18s e Core2=4pass/5.31s.30 distintos, não somar reruns.
+Grafx real collect10001 numa linha recusa result_value1024. Outro collect100
+com strings50000 cabe em limites nativos mas excede envelope serializado4MiB;
+Pulse recusa com limite/observado explícitos, HTTP413 não expõe o conteúdo.
+Caso pequeno preserva valores; testes de quatro reducers/MCP mantêm orçamento
+serializado e counts/continuação. Não alterado produto nem tipo de retorno.
+Recibo clean-break-native-query-aggregate-bounds.json registra30 testes e limites:
+framing fora do envelope, recusa explícita conforme§6.5, não paginação fictícia
+de agregação indivisível nem alegação de servidor autenticado instalado.
+KG43 qualificado:79 verificadas/156 pendentes/11 superadas.
+Main67 inalterado; prova byte anterior, closure67/SPA mantidos, não reexecutados.
+Próximo: KG44 (deadline nativo e liberação/isolamento de recursos) e KG45,
+conforme escopo fixo; nenhum processo de teste ativo.
+
+### 2026-10-07 — KG43: limites de coleção e payload em validação
+KG42 publicado Coreb98d2ea2/Community21097591, pushes0. Main67 produto inalterado.
+Aggregate1 (79936) terminal0:9pass/16.89s, Grafx collect10001 numa linha recusado
+com graph_query_resource_limit/result_value1024; HTTP413 explícito e sem retry.
+Core1 (87629) terminal0:15pass/6.18s, compound budget e quatro reducers curados.
+Leitura §6.5 confirma cursor/limitação explícita; não exigir truncamento silencioso.
+Novo teste realGrafx separa valor/array nativos de tamanho serializado:2 ou100
+strings50000 em UMA linha; ambas coleções cabem nos limites nativos, mas caso
+grande deve recusar serialized_payload_bytes4MiB. Pequeno deve preservar valores.
+Ativos aggregate2 (24743) e core2 (49919,response budget). Não editar produto
+ou reinstalar. Nenhum frontend alterado; índice78/157/11, KG43 ainda pendente.
+
 ### 2026-10-07 — KG42: paginação vinculada à geração comprovada
 Pagination1 (75160) terminal0:79pass/20.56s; pagination2 (72891) terminal0:
 1pass/41.09s. Total80 distintos, Ruff F/E9 verde. Nenhum processo ativo.
