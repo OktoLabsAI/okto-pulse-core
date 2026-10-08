@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — Gap reproduzido AC-INT-08/ADV-21: associação não chega ao KG
+Base961e05a1/113438cd. Proof provenance-native-association-projection1 terminal0:
+835/317 Python e896/403 payloads byte a byte. Novo WIP Community
+tests/test_architecture_association_projection.py. Teste usa classificação
+real e reader de consolidação; hook privado apenas como instrumentação de
+teste observa serializer/extractor reais, sem reach-in em adaptador/produto.
+
+native-association-projection1/session78084 terminal1:1fail7.14s. Associação
+relacional está current e ambos endpoints existem na extração; nenhuma
+aresta os liga. Localizada ausência no input público de consolidação,
+reader SQL, serializer/worker e famílias de active sets. Não é apenas atraso
+de worker. Nenhuma execução Grafx final alegada nesta reprodução.
+
+Recibo clean-break-native-association-projection-review.json registra cadeia,
+hash do WIP e próximos passos: mapear fato conforme complemento KG/schema
+existente; porta tipada e reader de associações atuais; extração incremental
+e rebuild com owner/active set; provar reassociação/retração em Grafx com
+relacional autoritativo, sem reparo do usuário. RF-INT-08 já exige o resultado;
+não acrescentar novo alvo nem mudar autoridade/histórico para resolvê-lo.
+
+Índice permanece189verificados/46pendentes/11superados. Produto/SPA intactos,
+main87 ainda vigente, closure anterior/oito budgets ZERO. Todos handles
+terminais. Preservar ambos WIPs (associação e KG10), fora do commit.
+Commit/push Core somente da investigação; sem promoção/dados reais.
+Retomar diretamente a correção desta lacuna antes de qualificar os2 critérios.
+
 ### 2026-10-08 — AC-INT-04 mesma iniciativa com revisão ampla/separada (main87)
 Base93dbd66d/d053c09d. Proof provenance-native-agent-configurations1 terminal0:
 835/317 Python e896/403 payloads byte a byte. Parametrizado mesmo fluxo
