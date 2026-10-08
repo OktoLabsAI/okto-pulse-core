@@ -2,6 +2,83 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — C4 concluído: entrega de engenharia e handoff
+
+Escopo consolidado v1.3 + corte aprovado concluído com o limite explícito de
+KG§5.4. Índice fixo: **234 critérios verificados, 11 superados pelo corte de
+legado/migração e 1 entrega limitada (KG30)**; nenhuma decisão de autoridade
+pendente. KG30 oferece correção normativa e sugestões read-only; afirmação
+interpretativa durável, navegação fallback e replay NÃO foram implementados.
+Esse limite é permitido pelo complemento e não foi renomeado como feature pronta.
+
+Produto verificado e pushes confirmados na feature/v0.4.0:
+- Core: 38d897c8fd58ad6a353c105266b6138bd1dafbf2.
+- Community: 51d85093694d814e94b3520c1d89c7a2d6cd7ada.
+O commit que introduz este registro contém somente documentação/recibos finais;
+seu SHA é consultável por git log -- docs/pulse-simplification/IMPLEMENTATION_LEDGER.md.
+
+Auditoria88488 passou25/233.18s; runtime isolado Python3.11.14,
+Pydantic2.13.5/Grafx0.0.7. Fonte/wheel/install903/403payloads byte-idênticos,
+antes de comportamento; 282tools canônicas/zeroaliases/54resources.
+Init nativo, rerun, crash-resume, concorrência2workers e recusa de base
+incompatível sem mudança de bytes/sidecars passaram. Closure final oitoZERO,
+sem findings/documentation_findings. Paridade determinística instalada cinco
+famílias não é alegação de purge/materialização Grafx produtivo.
+
+Fluxo contínuo8448 passou4/57.11s; medição final e captura completa comprimida
+no recibo clean-break-final-continuous-cost-main98-20261008.json e relatório.
+Mesma policy:84→59calls, sem alegação de30%global/50%tokens nem runtime legado.
+Browser50436 falhou porque selecionei a fixture antiga incompleta r3. Ledger já
+indicava native-browser-public-spec-main91-20261008-tmp como fonte completa.
+R2/58094 passou1pytest/66.35s,1Playwright/7.8s: SPA instalada, POST real,
+4registros anteriores preservados e1novo local-user/human; IRs sem prova
+continuam blocked. Screenshot inspecionado; zeroERROR/Traceback e shutdown
+ordenado dos dois listeners. Nenhum processo de campanha ativo.
+
+Recibo final: clean-break-final-engineering-qualification-main98-20261008.json.
+Evidências anteriores ficam preservadas; não afirmar reexecução de toda suite
+histórica. Qualificação incremental do escopo e revalidação final do pacote,
+fluxos afetados, autoridade, frontend e medição estão explicitadas nos recibos.
+
+**Instalação nova / retomada operacional após revisão**
+1. Usar o par de wheels0.4.0 e Grafx0.0.7 produzidos em
+   D:/Projetos/Techridy/PULSE_REFACTOR/.validation-v040/
+   native-release-audit-main98-20261008-tmp/test_fresh_wheels_install_and_0/
+   release-artifact-gate/wheels/.
+2. Criar venv nova Python3.11+; instalar os três wheels juntos com suas
+   dependências (uv pip install --python <venv>/Scripts/python.exe <grafx.whl>
+   <core.whl> <community.whl>). Não instalar só uma metade do par.
+3. Definir DATA_DIR para diretório novo. DATABASE_URL/KG_BASE_DIR/UPLOAD_DIR/
+   METRICS_DIR não devem herdar caminhos da instalação anterior.
+4. Executar <venv>/Scripts/python.exe -I -m okto_pulse.community.cli init;
+   depois serve. Aceitação de termos segue o CLI. Um processo já em memória
+   precisa ser encerrado/reiniciado para usar o novo install.
+5. Bases incompatíveis serão recusadas. Não há conversão, backfill, importador
+   antigo nem exclusão automática. Histórico/recuperação próprios da0.4.0 ficam.
+Não houve release/tag/merge/deploy, alteração de dados reais ou promoção de
+runtime do usuário. Requisitos Nexus enviados por engano não entraram no Pulse.
+
+### 2026-10-08 — KG28 publicado; KG30 delimitado; C4 em execução
+Pushes confirmados0: Core38d897c8 / Community51d85093, feature/v0.4.0.
+KG30 revalidado main98: campanha56838 passou33/8.44s. Conforme KG§5.4 e
+critério que condiciona navegação ao suporte existente, entrega limitada a
+correção normativa + sugestões read-only; fallback interpretativo durável,
+navegação derivada e replay NÃO implementados. Sem editor de arestas novo.
+Recibo clean-break-fallback-delivery-limit-main98-20261008.json; índice
+234verificados +1limited_by_explicit_package_permission +11superados.
+Limite deve aparecer no handoff final; não renomear como fallback implementado.
+
+C4 ATIVO: audit instalado88488 (native-release-audit-main98-20261008);
+medição do fluxo final8448 (native-continuous-measurement98-20261008,
+capture em benchmark-native-continuous-main98-20261008). Mesmas fixtures
+atuais, par já byte-provado; não abrir campanha histórica nem trocar policies.
+Após terminais, conferir resultados/recibo/medição; browser instalado deve usar
+a venv criada pelo audit e prova da SPA atual antes de servir, em dados
+descartáveis. Fonte native delivery fixture já existente usada no main92,
+sem conversão nem dados reais. Não mutar produto enquanto campanhas ativas.
+Só então registrar C4, SHAs, instrução fresh-install e limite KG30; commit/push.
+Objetivo ainda ativo, nenhum bloqueio recorrente. Não declarar entrega final já.
+
 ### 2026-10-08 — KG28 concluído: policy humana, gate atual e contexto autorizado
 main98/session10307 terminou0: SPA build/sync, par instalado e proof byte-a-byte
 842/317Python,903/403payloads ANTES dos testes. Core209casos distintos:

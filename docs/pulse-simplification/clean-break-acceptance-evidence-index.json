@@ -1999,10 +1999,18 @@
       "discovered_artifacts": [],
       "current_qualification": "verified_current_pair_review",
       "current_review": {
-        "artifact": "clean-break-benchmark-accepted-scope-main92-20261008.json",
+        "artifact": "clean-break-final-continuous-cost-main98-20261008.json",
         "criterion_key": "BASE:T43",
-        "proof_pair": "dist-native-main92"
-      }
+        "proof_pair": "dist-native-main98",
+        "qualification": "Final current native measurement under the explicitly approved reassessment scope; preserved exact within-policy semantic parity and limits."
+      },
+      "prior_current_reviews": [
+        {
+          "artifact": "clean-break-benchmark-accepted-scope-main92-20261008.json",
+          "criterion_key": "BASE:T43",
+          "proof_pair": "dist-native-main92"
+        }
+      ]
     },
     {
       "key": "BASE:T44",
@@ -3815,7 +3823,13 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "limited_by_explicit_package_permission",
+      "current_review": {
+        "artifact": "clean-break-fallback-delivery-limit-main98-20261008.json",
+        "criterion_key": "KG:KG-30",
+        "proof_pair": "dist-native-main98",
+        "qualification": "Source correction and read-only suggestions delivered under KG §5.4; durable interpretive fallback/navigation/replay remains unsupported and is not claimed implemented."
+      }
     },
     {
       "key": "KG:KG-31",
@@ -4699,10 +4713,18 @@
       "discovered_artifacts": [],
       "current_qualification": "verified_current_pair_review",
       "current_review": {
-        "artifact": "clean-break-benchmark-accepted-scope-main92-20261008.json",
+        "artifact": "clean-break-final-continuous-cost-main98-20261008.json",
         "criterion_key": "KG:KG-64",
-        "proof_pair": "dist-native-main92"
-      }
+        "proof_pair": "dist-native-main98",
+        "qualification": "Final current native measurement under the explicitly approved reassessment scope; preserved exact within-policy semantic parity and limits."
+      },
+      "prior_current_reviews": [
+        {
+          "artifact": "clean-break-benchmark-accepted-scope-main92-20261008.json",
+          "criterion_key": "KG:KG-64",
+          "proof_pair": "dist-native-main92"
+        }
+      ]
     },
     {
       "key": "KG:KG-65",

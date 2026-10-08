@@ -132,3 +132,21 @@ reescrita explicitamente no índice. A meta de50% não foi demonstrada; a reduç
 de chamadas observada é29,76%, não30%. Não há ganho histórico integral nem custo
 marginal KG isolado comprovados. Nenhuma alteração de produto é proposta para
 forçar esses números.
+
+## Qualificação do par final — 2026-10-08 / main98
+
+Produto Core 38d897c8 / Community 51d85093; quatro variantes contínuas
+passaram com paridade semântica exata. Captura completa e recibo:
+clean-break-final-continuous-cost-main98-20261008.json.
+
+| Policy | Estratégia | Calls | Tokens cl100k_base | Sessões | Queries SQL |
+|---|---|---:|---:|---:|---:|
+| Ampla | Individual | 84 | 214502 | 1 | 2701 |
+| Ampla | Lote | 59 | 206754 | 1 | 2001 |
+| Revisor separado | Individual | 84 | 465990 | 4 | 2701 |
+| Revisor separado | Lote | 59 | 456659 | 4 | 2001 |
+
+Comparação restrita à mesma policy e população da fixture atual. A redução de
+calls é 29,7619%; não representa 30% arredondado nem economia global histórica.
+Tokens variam com conteúdo de IDs; não são cobrança de modelo. Não somar tempo
+externo aninhado ao MCP. O benchmark não reintroduz versões legadas.

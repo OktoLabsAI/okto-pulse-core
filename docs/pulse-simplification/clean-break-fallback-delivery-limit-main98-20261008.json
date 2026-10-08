@@ -1,0 +1,31 @@
+{
+  "format": "pulse-040-reviewed-increment/v1",
+  "status": "limited_by_explicit_package_permission",
+  "criterion_keys": [
+    "KG:KG-30"
+  ],
+  "proof_pair": "dist-native-main98",
+  "authority": "COMPLEMENTO_KG_RASTREABILIDADE.md §5.4 explicitly permits source correction and read-only suggestions first when durable interpretation/replay is unsupported; KG-30 says navigation when supported.",
+  "implemented": [
+    "Normative source correction under existing authorship/locks.",
+    "Read-only bounded suggestions for frozen/current Specs, without source mutation or coverage credit.",
+    "Public cognitive edge input refuses fallback; no generic relation repair or authority bypass."
+  ],
+  "not_implemented": [
+    "Durable authored interpretive assertion with version provenance, worker-derived fallback navigation and replay. This is not claimed as delivered."
+  ],
+  "disposition": "Accepted bounded delivery allowed by the package. Preserve this explicit functional limit in the final handoff; no new subsystem or public graph editor.",
+  "results": {
+    "passed": 33,
+    "seconds": 8.44
+  },
+  "supporting_receipts": [
+    "clean-break-native-fallback-boundary-20261008.json",
+    "clean-break-native-missing-link-policy-main98-20261008.json"
+  ],
+  "artifacts": {
+    "native-fallback-boundary-main98-20261008.xml": "3c13f21ee069bfa1c4929d64bd0095ddfcbd40e4461568dbe2ae093daba7668d",
+    "native-fallback-boundary-main98-20261008.log": "4adbf3af39a85af3001b06cd9b474c8ece6105df6a05e7cbe3d1652d18c8c1f1",
+    "provenance-native-missing-link-context-main98-20261008.json": "b6538592ef0cbbe1130576d975f58931500796d890bb46107f009a5ec46292eb"
+  }
+}
