@@ -2,6 +2,21 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — relatório de custo consolidado, sem nova campanha
+Milestone instalado enviado: Core77af9d5e/Communityfb599428; ambos pushes0.
+BENCHMARK_COST_REPORT.md consolida recibos main90: catálogo -2.35% tokens,
+classificação ampla -31.65% calls/-3.31% tokens, restrita -31.25%/-4.25%.
+Separa execução com políticas distintas, overhead de sessões e reuso provado.
+Não soma fixtures como iniciativa contínua; não alega50/30global nem reexecução
+em main92. Nenhum gate removido, mudança de tokenizer ou novo alvo de produto.
+BASE:T43/KG64 continuam pendentes de comparação integral equivalente.
+Índice227/8/11 mantido. Sem testes necessários para consolidação aritmética
+de recibos existentes; números recalculados diretamente do JSON preservado.
+Próximo trabalho independente delimitado: resolver a lacuna do comparador
+integral (sem repetir os recortes existentes) e registrar limite KG30 conforme
+KG§5.4. BASE:T23/KG10/KG28 aguardam decisão; KG16/24 dependem KG10.
+Todos os processos deste turno terminais; WIP KG10 untracked preservado.
+
 ### 2026-10-08 — DEI-T64 fechado na SPA instalada
 Auditoria45001 terminou0:20passed/228.18s. Browser10188 terminou0:
 1pytest/76.29s incluindo1Playwright/13.1s. Runtime isolado Python3.11.14,
