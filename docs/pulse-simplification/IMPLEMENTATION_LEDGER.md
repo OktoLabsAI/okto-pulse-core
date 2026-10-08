@@ -2,6 +2,41 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — autoria pública e classificação comparável
+Turno anterior foi progresso; Core2d33cc5c/Community6c1f5cfa conferidos,
+apenas WIP KG10 preservado. Novo test_native_classification_cost: schema nativo,
+catálogo completo, dois agentes autenticados/grants reais. Autoria pública de
+Design com1/26interfaces, schema/preflight, recusa de warnings e confirmação
+nativa do payload; paginação completa e detalhe de todos contratos.
+Classificação individual versus lote das mesmas decisões context_only.
+Segundo agente retoma completude/proveniência sem ganhar crédito de entrega.
+Estado persistido conserva autoria first,26decisões e contratos íntegros.
+
+Proof provenance-native-classification-cost-20261008 terminal0:main90 idêntico
+838/317 Python,899/403 payloads antes dos testes. Iterações1/2 falharam composição
+auth da fixture;3/4 exigiram reconhecimento real de warnings;5 chaves vinculadas
+ao Design recém-gerado não transferem a outro create. Usado reconhecimento
+integral explícito já previsto em _require_warning_acknowledgement, sem alterar
+produto/autoridade. Campanha6/session16714 terminal0:4pass29.09s.
+Medição native-classification-measurement90-20261008/session1129 terminal0:
+4pass22.33s;2warnings anyio rewrite conhecidos. Ruff/diff verdes.
+Paridade semântica exata dos outcomes1/26 confirmada (deduplicado alias current
+do pytest por path resolvido):interface/contrato/ator/disposição/IRs/motivo.
+IDs/timestamps/versões e recibos do lote são distintos por operação, preservados.
+26contratos:59→34tools/call,893761→857459bytes,224384→216168tokens.
+1contrato:8calls nos dois caminhos,659502bytes em ambos;tokens variam por IDs.
+Custos incluem2initialize+2tools/list+6resources/read por caso, sem esconder tools.
+
+Arquivo benchmark-native-classification-main90-20261008.json.gz/recibo
+clean-break-native-classification-cost-20261008.json. Segmento comparável,
+não ganho integral: Specs/iniciativa/grants ainda semeados, populações em fixtures
+distintas, sem variante filtrada por permissão ou promoção IR neste segmento.
+BASE:T43/KG64/AC-INT-12 mantidos pendentes; índice225/10/11, sem alvo novo.
+Próximo: incorporar comparação à iniciativa simples/muitos candidatos e
+variante de permissões, preservando custos de preflight/autoria/retomada.
+Sem produto/SPA/instalação antiga; closure main90/oito budgets ZERO.
+Handles terminais. Decisões BASE:T23/KG10/KG28 e limite KG30 preservados.
+
 ### 2026-10-08 — custo real de resources por sessão
 Turno anterior foi progresso: ADV23 qualificado/enviado Core27d1be8b e
 Community1689b4b9. Estado inicial conferido: apenas WIP KG10 na Community.
