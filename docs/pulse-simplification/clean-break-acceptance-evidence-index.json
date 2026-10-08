@@ -6338,7 +6338,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-architecture-write.json",
+        "criterion_key": "ARQVER:AC-ARQ-06",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-07",
@@ -6360,7 +6365,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-architecture-write.json",
+        "criterion_key": "ARQVER:AC-ARQ-07",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-08",
@@ -6382,7 +6392,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-architecture-write.json",
+        "criterion_key": "ARQVER:AC-ARQ-08",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-09",
@@ -6419,7 +6434,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-architecture-write.json",
+        "criterion_key": "ARQVER:AC-ARQ-09",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-10",
@@ -6493,7 +6513,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-architecture-write.json",
+        "criterion_key": "ARQVER:AC-ARQ-11",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-12",
@@ -6515,7 +6540,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-architecture-write.json",
+        "criterion_key": "ARQVER:AC-ARQ-12",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-13",
@@ -7306,7 +7336,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-architecture-write.json",
+        "criterion_key": "ARQVER:ADV-01",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:ADV-02",
@@ -7907,7 +7942,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-architecture-write.json",
+        "criterion_key": "ARQVER:ADV-19",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:ADV-20",

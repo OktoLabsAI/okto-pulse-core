@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — ARQ classificação, proveniência e atomicidade (main86)
+Base89493da2/ba80ac91 conferida. Proof provenance-native-architecture-write1
+terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.
+Revisados caso de uso, persistência, witnesses relacionais da campanha anterior
+e authoring frontend. Promoção/associação/contexto preservam autoria e contrato;
+associação não entrega IR, publicação parcial não adota consumidor; decisões
+da mesma origem são locais à Spec. Lote sem autoridade faz zero writes.
+Rollback de decisão, histórico e outbox não deixa IR órfão/chave consumida;
+concorrência/replay conserva uma versão e revalida autoridade atual.
+
+Community write1/session35479:39pass em65.78s. Frontend authoring:32pass.
+Renomeado teste de autoridade MCP interna, distinguindo ActorContext da coluna
+Agent.permissions removida em C1/C3; nenhuma regra de autoridade alterada.
+Comentário de writer antigo corrigido para injeção deliberada de violação.
+write2/session58157:2pass em6.24s, incluídos nos39. Total71 novos distintos.
+Witnesses já verdes em architecture-read-community1 reutilizados sem dupla
+contagem. Ruff/diff check verdes; todos handles terminais.
+
+Recibo clean-break-native-architecture-write.json. AC-ARQ-06/07/08/09/11/12
+e ADV-01/19 qualificados; índice150verificados/85pendentes/11superados.
+Não inferir fluxo completo de início/autenticação instalada desta campanha.
+Nenhum produto/SPA alterado; main86 e closure vigentes, oito budgets ZERO.
+Commit/push de nomes/evidências; WIP KG10 preservado. Sem promoção/dados reais.
+Continuar restantes critérios de revisão, locks e início da Spec.
+
 ### 2026-10-08 — ARQ leitura de contratos e conteúdo não confiável (main86)
 Basea29ce402/ba80ac91 conferida. Proof provenance-native-architecture-read1
 terminal0 antes da campanha:835/317 Python e896/403 payloads byte a byte.

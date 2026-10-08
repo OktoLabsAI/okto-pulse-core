@@ -1,0 +1,69 @@
+{
+  "scope": "Native architecture classification: authored dispositions, IR provenance and atomic persistence",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "ARQVER:AC-ARQ-06": [
+      "test_mixed_batch_creates_once_preserves_normative_ir_and_records_actor",
+      "test_new_candidate_after_batch_is_pending_and_homonymous_origins_stay_distinct"
+    ],
+    "ARQVER:AC-ARQ-07": [
+      "test_accepted_suggestion_preserves_complete_contract_and_workflow",
+      "test_invalid_batch_preserves_every_table"
+    ],
+    "ARQVER:AC-ARQ-08": [
+      "test_accepted_suggestion_preserves_complete_contract_and_workflow"
+    ],
+    "ARQVER:AC-ARQ-09": [
+      "test_association_preserves_pending_local_delivery_and_rejects_foreign_ir"
+    ],
+    "ARQVER:AC-ARQ-11": [
+      "test_partial_publication_keeps_consumption_in_explicit_context"
+    ],
+    "ARQVER:AC-ARQ-12": [
+      "test_any_denied_permission_prevents_design_body_reads_and_all_writes",
+      "test_replay_is_actor_bound_read_only_and_still_checks_current_permissions",
+      "test_concurrent_exact_requests_share_receipt_and_one_version_bump",
+      "test_new_candidate_after_batch_is_pending_and_homonymous_origins_stay_distinct"
+    ],
+    "ARQVER:ADV-01": [
+      "test_same_origin_has_independent_persisted_decisions_in_two_specs"
+    ],
+    "ARQVER:ADV-19": [
+      "test_outbox_or_history_failure_rolls_back_already_flushed_receipt_and_irs",
+      "test_decision_insert_failure_cannot_leave_irs_or_claimed_key",
+      "test_outer_rollback_removes_every_part_of_an_applied_batch"
+    ]
+  },
+  "evidence": [
+    "Mixed promotion/association/context decisions preserve actor, source contract, adopted revisions, one Spec version bump and immutable history/outbox; existing normative IR is unchanged and no workflow transition is performed.",
+    "Accepted event suggestion retains event schema, string error contract and versioned external reference, without inventing HTTP fields. Invalid last IR rolls back the whole batch.",
+    "Local association creates no new IR and grants no delivery evidence. Foreign IR association is rejected with unchanged persistence.",
+    "Publication-only promotion retains consumption and error policy as explicit contextual remainder; original source remains intact and resulting delivery inventory contains only the authored local IR obligation.",
+    "Permission denial occurs before design-body reads and every write. Exact replay is read-only and actor-bound; current authority still applies. Changed intent/key reuse conflicts; concurrent identical requests share one receipt/version bump.",
+    "A candidate appearing after an earlier batch remains pending. Decisions for the same source are local to each Spec and may differ without contamination.",
+    "Injected history, outbox or decision-storage failures and outer rollback leave no orphan IR/key/decision; exact retry after failure succeeds.",
+    "Frontend requires explicit choices and type, accepts suggestions only on request, supports selected contract parts/local IR association, and preserves exact unknown-outcome retries without double submit."
+  ],
+  "tests": {
+    "community_distinct_passed": 39,
+    "frontend_passed": 32,
+    "new_campaign_distinct_passed": 71,
+    "community_seconds": 65.78,
+    "renamed_case_rerun": "2 passed in 6.24s, included in 39",
+    "reused_witness_campaign": "native-architecture-read-community1.xml: 31 passed on same unchanged main86; specific acceptance witnesses inspected and reused, not counted again as new tests"
+  },
+  "limits": [
+    "Internal ActorContext permission capabilities are distinct from the removed persisted Agent.permissions contract, as recorded in C1/C3. Only misleading legacy naming was corrected; authority behavior was not changed.",
+    "Fixtures seed lifecycle/source facts where stated; these tests do not qualify the complete Spec start transition or installed end-to-end authentication.",
+    "No product/SPA change; main86 proof and closure remain applicable with eight zero budgets.",
+    "No conversion, migration, promotion or real-data mutation."
+  ],
+  "artifacts": {
+    "provenance-native-architecture-write1.json": "d138952f2160a1a6980885659fe5e2e8ba8a2bf9be2b2039e313e632dd3a1cc8",
+    "native-architecture-write1.xml": "78401e26ecbc7bc95b0047952799bc188758dc7340e7675f762313ad1fa7397f",
+    "native-architecture-write2.xml": "3294396bb96dd5d63a0bb231cc937ca4c3862fb2ee08c193046094cbe6835012",
+    "native-architecture-write-frontend1.json": "050370805403021de671ea713d48d668ba5e25bc7a59e7696b6ecf7f004a8fbc",
+    "native-architecture-read-community1.xml": "b652f2c8bbb0ba138abad5a730889a9600062d8661e1bbd6957338b682ed7097",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}
