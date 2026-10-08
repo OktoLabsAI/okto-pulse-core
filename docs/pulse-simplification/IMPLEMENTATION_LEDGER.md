@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T63: histórico paginado e limitado (main86)
+Base3e5af827/e8019f11 conferida; WIP KG10 preservado. Fonte/instalação
+comprovadas antes da campanha em provenance-native-delivery-history1.
+Core history-core1/session30517 terminal0:14pass em3.35s.
+Community history-community1/session14452 terminal0:15pass em27.43s;
+um warning de metadados JUnit, sem falha. Frontend LedgerPanel/ProgressHistory:
+7pass. Total36 distintos.
+
+Revisados reader relacional, reautorização por página e consumidores da UI.
+Histórico25 pagina20+5 sem perda; populações1/25/200 mantêm query count por
+view e tamanho limitado. Detalhe preserva autoria/revogação/edições nativas,
+omite campos internos e não atribui atualidade nem recovery verificada.
+Cursores recusam mudança de ator/limite/view/edição/geração; UI limpa dados
+negados ou de outro escopo e cancela respostas antigas.
+Query count constante não significa população SQL constante no resume.
+Caps multibyte da retomada já comprovados no recibo anterior main86.
+
+Recibo clean-break-native-delivery-history.json; DEI-T63 qualificado.
+Índice125verificados/110pendentes/11superados. Sem extrapolar autenticação
+instalada, todo isolamento de escrita/cache ou benchmark KG64.
+Nenhum produto/teste/SPA alterado; closure main86 mantém oito budgets ZERO.
+Todos handles terminais; sem promoção/dados reais. Commit/push das evidências.
+Retomar os critérios pendentes, mantendo decisões BASE:T23/KG10/KG28 pendentes.
+
 ### 2026-10-08 — DEI-T43/T45/T46: retomada, autoria e limite (main86)
 Basef2dd83e9/0e99e5c3 conferida. Revisados reader relacional de retomada,
 provas/impacto acumulados, paginação e UI. Proof provenance-native-delivery-resume1
