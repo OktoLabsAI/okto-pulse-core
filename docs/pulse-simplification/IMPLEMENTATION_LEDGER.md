@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Documentação de opções nativas reconciliada (main79)
+Base134fd0dc/53ca6805 limpa. Delivery manifest documentado só v2; seleção opcional
+atual descrita sem promessa de compatibilidade/rollout. Campo participants confirmado
+em schemas.ArchitectureInterface, normalização architecture_candidates e validação
+architecture.py:3203/3381; mantido como contrato funcional. Reference scaffold usa
+interpretation_limit obrigatório; removida promessa de conversão no próximo edit.
+Defaults Board/captura Learning descritos sem atribuí-los a legado.
+Sem Python/SPA alterado. Gerador oficial sem drift. Wheels79/instalação51530 terminal0;
+provenance-native-main79 byte-idêntico835/896+317/403. Core60647 terminal0:
+235pass/20.72s (resources/catalog/selection/project structure/architecture/bug docs).
+Closure13196 terminal0:ok=true, findings/documentation vazios, oito budgets0.
+Recibo clean-break-native-optional-contract-guidance.json. Índice98/137/11 inalterado.
+Todos handles terminais; nenhum runtime/dado real alterado.
+
+Próximo gap concreto de suporte legado ATIVO:
+kg_health_service.py LEGACY_HEALTH_SCHEMA_VERSION=1.0, payload schema_version;
+Community/api/kg_health.py exige alias e defaults health_schema_version=1.3.
+Frontend KGHealthView.tsx:258/KnowledgeGraphPage.tsx:126 usa
+health_schema_version ?? schema_version; kg-health-api.ts também aceita backend ladybug.
+Remover alias/default/fallback do contrato Health mantendo health_schema_version,
+graph_schema_version e probe_diagnostics.schema_version (este último é observação
+de schema do grafo, NÃO o alias). Preservar métricas atuais e UI de versão incompatível.
+readiness_service.py:223 também assume1.3 quando campo ausente; investigar recusa.
+Testes focais: Core test_kg_health.py/test_health_schema_1_1_contract.py;
+Community test_health_schema_1_1_contract.py/test_health_route_observation.py;
+frontend KGHealthView/KnowledgeGraphPage.diagnostics (exigir testes frontend).
+Não editar produto durante testes/build/closure; novos wheels/prova após correção.
+
 ### 2026-10-07 — Investigação: seleção opcional nativa não é leitor legado
 Milestone anterior commit1c1ed83c enviado. Árvore limpa antes desta anotação.
 Leitura de main.py:7099 confirma: writer nativo só sela delivery_manifest quando

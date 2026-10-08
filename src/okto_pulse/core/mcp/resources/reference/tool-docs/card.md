@@ -229,14 +229,17 @@ empty selection, not all records. Foreign, missing or revoked records fail;
 stale Card/Spec/ledger revisions require refresh. A truncated list is not a
 complete population and must not be selected as one silently.
 
-The server stores a `card-delivery-selection/v1` manifest beside the conclusion,
+The server stores a `card-delivery-selection/v2` manifest beside the conclusion,
 with hashes of the actual immutable records, obligation scope and presented
 impact. Do not send client hashes or validity flags. A frozen Card's delivery
 read uses the selected records while still applying all relevant revocations,
 material progress, source/Target heads and latest authenticated test results.
 Selection cannot hide a known failure or authorize completion. Authorized rework
-reads the current ledger again and preserves the old report. Legacy reports
-without a manifest retain compatibility until the integrated adoption rollout.
+reads the current ledger again and preserves the old report. Selection is
+optional in the native report contract: when omitted, the delivery read evaluates
+the current ledger without a selected-record restriction. When a manifest is
+present, its v2 contract, hashes and scope must validate; invalid manifests
+never fall back to an unrestricted read.
 
 The existing conclusion, completeness/drift, review authority and impact policy
 remain required. To reuse accumulated impact without retyping it, add

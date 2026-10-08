@@ -19,13 +19,13 @@ Args:
     board_id: Board ID to retrieve.
     include: Comma-separated list of collections to inline. Accepts any
         subset of `ideations`, `specs`, `cards`, `agents`. Pass `*` to
-        inline every collection (legacy shape).
+        inline every supported collection.
 
 Returns:
     JSON string with the board overview, plus any inlined collections.
 
 The returned `settings.skip_code_evidence_coverage_global` flag controls the
-Board-wide Code Evidence Matrix coverage skip. Missing legacy values resolve to
+Board-wide Code Evidence Matrix coverage skip. An omitted setting resolves to
 `false`. Its effective value for a Spec is the OR of this Board setting and the
 Spec's audited `skip_code_evidence_coverage` flag.
 

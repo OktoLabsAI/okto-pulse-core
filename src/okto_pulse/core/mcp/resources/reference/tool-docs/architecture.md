@@ -21,7 +21,7 @@ are not blockers, but they usually mark details a downstream implementer or
 validator would otherwise have to guess.
 
 The server critiques the full payload before accepting it. Rejections include
-contextual paths such as entities[0].name, interfaces[1].participants[0] when legacy participants are supplied, or
+contextual paths such as entities[0].name, interfaces[1].participants[0] when participants are supplied, or
 diagrams[0].adapter_payload.elements[2].linkedEntityId. Fix the cited field
 and retry; do not move invalid architecture into prose fields to bypass the
 structured artifact.
@@ -247,7 +247,7 @@ Contextual validation examples:
 - entities[0].name duplicates entity_type "api" -> use a concrete name such
   as "Checkout API" and keep entity_type as "api".
 - interfaces[0].participants[1] references an unknown entity -> remove
-  legacy participants or correct the participant id/name.
+  invalid participants or correct the participant id/name.
 - interfaces[0].direction must be one of source_to_target,
   target_to_source, bidirectional, none.
 - diagrams[0].adapter_payload.elements[2].linkedInterfaceIds must reference
@@ -288,7 +288,7 @@ The response includes:
 
 Typical catches:
 - entities where name duplicates entity_type after normalization.
-- interfaces with invalid legacy participants, invalid direction, or missing
+- interfaces with invalid participants, invalid direction, or missing
   protocol/contract metadata for schema payloads.
 - diagrams with any format other than excalidraw_json. Mermaid, PlantUML,
   C4, SVG, and raw snippets are allowed only as descriptive text in entity
@@ -401,7 +401,7 @@ references remain data and are not fetched. This is an editable draft, not a
 write or semantic approval. Partial adoption requires content authored for those
 scopes; do not silently reuse the whole-contract proposal as partial coverage.
 
-Reads do not refresh sources, fetch `schema_ref`, migrate legacy work, reopen Done
+Reads do not refresh sources, fetch `schema_ref`, convert incompatible work, reopen Done
 Specs, create IRs, or persist decisions. Use the authorized writer to classify or
 revise a decision; source/version changes require refreshing before retrying.
 

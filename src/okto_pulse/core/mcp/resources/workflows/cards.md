@@ -235,7 +235,7 @@ okto_pulse_create_card(
 default Board configuration. Omission resolves to `advisory`: no Learning is
 required for completion. In `blocking`, submit a valid durable capture with the
 report or select one for task validation. Empty queues, historical presence and
-provider failures are not proof. This policy does not replace legacy cognitive
+provider failures are not proof. This policy does not replace cognitive
 holds or other completion gates, and `skip_cognitive_consolidation` cannot waive
 it. Transition previews expose `valid_durable_learning_capture` as request input;
 they do not materialize the graph or approve a capture.
@@ -274,7 +274,7 @@ writer rechecks its source and authenticated evidence and records the linkage
 only if the existing completion gates allow Done. Source reads and the existing
 Learning-query permission are required. This does not approve implementation or
 materialize the graph. A changed execution report requires a capture on its new
-basis; a legacy card without its executor report cannot attach an older capture
+basis; a Card without its executor report cannot attach an older capture
 to a conclusion inferred from the review.
 
 ### Historical bug closure via Path B — operational checklist
