@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T49/T50 conflito de impacto e fato fora do plano
+Base999fa734/4860c00a; turno anterior foi progresso. Proof novo sem colisão,
+provenance-native-impact-conflict-20261008 terminal0 antes dos testes:
+main88 byte-idêntico838/317 Python e899/403 payloads.
+
+Matriz nativa REST/MCP registra experiment.py fora do Target src/file.py com
+card.conclusion.write. Projeção mantém fato claim_only, plano intacto, sem
+binding/relatório/aprovação/crédito. Observação aceita posterior em B, append/CAS
+generation2: declaração em C recusa reuse com current_observation_required;
+controle em B retorna basis receipt-2. Mesmo commit após recusa/resolução não
+altera snapshots dos modelos observados. Origem aceita é fixture coerente;
+não alega autenticação de attestation nem inspeção externa de arquivos.
+Resolução é boundary real de seleção para relatório, não transição completa.
+
+native-impact-conflict-20261008/session82531 terminal0:4pass11.82s.
+Frontend DeliveryNetImpactPanel/session56249 terminal0:3pass, JSONsuccessTrue:
+claim-only sem aprovação, reconciliação pendente, fatos/limites visíveis.
+Ruff/diff check verdes. Recibo clean-break-native-impact-conflict-20261008.json.
+Nenhum produto/SPA alterado; closure main88/oito budgets ZERO.
+
+Índice210verificados/25pendentes/11superados. Handles terminais.
+Commit/push teste/evidência; WIP KG10 preservado. Sem promoção/dados reais.
+DEI-T52 ainda pendente: separação guideline/task não qualificada por esta matriz.
+Continuar demais itens fixos; BASE:T23/KG10/KG28 seguem decisões pendentes.
+Objetivo integral ativo.
+
 ### 2026-10-08 — DEI-T44 retomada em checkout compartilhado compatível
 Base739d4247/f5812577; turno anterior foi progresso. Proof novo sem colisão,
 provenance-native-shared-resume-20261008 terminal0 antes dos testes:
