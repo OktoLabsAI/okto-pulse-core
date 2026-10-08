@@ -5517,12 +5517,11 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review",
+      "current_qualification": "verified_current_pair_review",
       "current_review": {
-        "artifact": "clean-break-native-delivery-state-progress.json",
+        "artifact": "clean-break-native-envelope-semantics.json",
         "criterion_key": "DEI:DEI-T33",
-        "proof_pair": "dist-native-main86",
-        "reason": "Authorized state-gate discrepancy resolved; complete single/batch parity remains to be qualified."
+        "proof_pair": "dist-native-main88"
       }
     },
     {

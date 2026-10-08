@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T33 equivalência semântica single/lote unitário
+Base5cbf2e61/ef1708d4. Main88 permanece byte-idêntico, proof desta sessão
+provenance-native-association-gate1 precede campanha; nenhum produto alterado.
+Novo witness parametrizado compara mesmos dados SQL em savepoints separados:
+progress/implementation/test × válido/versão incorreta/fonte inexistente.
+Payload semântico, autoria, efeito de cobertura e causas de recusa são iguais.
+Normaliza apenas ID gerado e proveniência _batch; não descarta semântica.
+Replay preserva um registro e versões de Card/Spec. Test usa prova assinada real.
+
+native-envelope-semantics1/session54619 terminal0:25pass44.31s,9 casos novos e16
+de estado/replay/revogação reexecutados. Ruff/diff check verdes. Verificado
+_record_card_entry comum, inclusive submitter inline; report envolve batch.
+Não alegar novo transporte/autenticação instalada ou execução inline neste teste.
+44frontend anteriores reutilizados com hash conferido e diff vazio desde361647f5
+em components/code-traceability e services/api.ts; sem rerun/recontagem.
+
+Recibo clean-break-native-envelope-semantics.json; DEI-T33 qualificado.
+Índice192verificados/43pendentes/11superados. Commit/push teste/evidência.
+Main88 closure/oito budgets ZERO; SPA intacta; todos handles terminais.
+WIP KG10 preservado. Sem promoção/dados reais. Seguir pendências do índice
+fixo; BASE:T23/KG10/KG28 ainda exigem decisão previamente registrada.
+
 ### 2026-10-08 — AC-INT-08/ADV-21: planejamento/gate antes da convergência
 Base757af070/729b33ea. Turno anterior foi progresso: correção projetiva testada,
 commitada e enviada. Proof provenance-native-association-gate1 terminal0 confirma

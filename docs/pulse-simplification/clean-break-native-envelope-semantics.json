@@ -1,0 +1,43 @@
+{
+  "scope": "DEI-T33 native single versus one-entry batch semantic equivalence",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "DEI:DEI-T33",
+  "result": {
+    "passed": 25,
+    "failed": 0,
+    "seconds": 44.31,
+    "terminal_session": 54619,
+    "new_cases": 9
+  },
+  "evidence": [
+    "Native schema, identical SQL state under independent savepoints, same authenticated fixture actor and source evidence.",
+    "Progress, implementation and signed Test Card result persist equal semantic payloads and equal evaluated coverage; only immutable batch envelope provenance and generated record identity are normalized.",
+    "Both return exact replay without a second record; native Card policy version and Spec version remain unchanged.",
+    "Wrong version and missing source are rejected with equal cause codes and zero new rows for all three kinds.",
+    "Existing eight-state parity and eight frozen-state replay/revocation witnesses rerun successfully.",
+    "Source review confirms both entry forms invoke _record_card_entry; inline capture supplies the same execution submitter and report capture wraps the same batch path."
+  ],
+  "reused_frontend": {
+    "passed": 44,
+    "artifact": "native-delivery-envelope-frontend1.json",
+    "unchanged_since": "361647f578eec02b1e260564e16bde6c1f889f44",
+    "checked_paths": [
+      "frontend/src/components/code-traceability",
+      "frontend/src/services/api.ts"
+    ],
+    "note": "Hash verified against prior native delivery-state receipt; git diff to current HEAD empty for these sources/tests. Not rerun or added to new execution count."
+  },
+  "limits": [
+    "Actor is supplied to the real persistence adapter; this test does not claim installed transport authentication.",
+    "Batch-specific revision fence and envelope metadata remain explicit parts of its contract; no exception, authority or state gate was changed.",
+    "Inline capture/report transport coverage is referenced through the existing common implementation and prior acceptance evidence, not falsely counted as new cases here.",
+    "No product/frontend source changed; main88 closure and zero budgets remain applicable. No promotion or real-data action."
+  ],
+  "artifacts": {
+    "provenance-native-association-gate1.json": "17e4c7ecfba3021b390b8df0ea9a78e061d8b17b42b93265d35ace4f1509ff1e",
+    "native-envelope-semantics1.xml": "67b6621ddf706b3008c52545a4aa5235b0d8d7848ba6e9118fa6a31a79fcbc42",
+    "native-delivery-envelope-frontend1.json": "a751880c26e35030dc6efc27dfb79d81a4f937cd3ffa9d2bf7f490e31f2d146d",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}
