@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T58 fechado: autoridade nativa do skip
+Base6de9b256/dff91d18; turno anterior foi progresso. Novo proof sem colisão,
+provenance-native-skip-authority-20261008 terminal0 antes dos testes:
+main88 byte-idêntico838/317 Python,899/403 payloads.
+Matriz schema nativo/UoW/services reais: owner/editor permitem skip apenas Draft;
+viewer/stranger recusam por escopo, owner/editor in_progress recusam por lifecycle.
+Sessão nova confirma skip e histórico apenas nos permitidos; obrigações/provas
+continuam factualmente incompletas e intactas. Identidade é input de fixture;
+não alega transporte autenticado nem autorização para reabertura da Spec.
+
+Campanha1/session29208:4fail10.83s (campos errados BoardShare).
+Campanha2/session77332:2pass/2fail13.08s (restrição Draft real; matriz ampliada).
+Campanha3/session88894:6pass/2fail21.81s (porta knowledge não registrada).
+Campanha4/session23179:6pass/2fail19.68s (adapter resource não registrado).
+Composição de teste corrigida com adapters reais, sem mockar projeção/autoridade.
+Campanha5/session87423 terminal0:8pass17.95s. Ruff/diff check verdes.
+Recibo clean-break-native-skip-authority-20261008.json complementa evidência
+anterior:6backend/85domínio/44frontend, hashes conferidos sem recontagem.
+DEI-T58 qualificado. Índice215verificados/20pendentes/11superados.
+Sem mudança de produto/SPA; main88 closure/oito budgets ZERO.
+Todos handles terminais. Commit/push teste/evidência; WIP KG10 preservado.
+Continuar DEI-T61/T62/T64, VER/KG e benchmarks fixos. BASE:T23/KG10/KG28
+seguem decisões pendentes. Objetivo integral ativo; sem promoção/dados reais.
+
 ### 2026-10-08 — DEI-T58 evidência parcial de waiver e postura factual
 Base0b636cd9/7bcff173. Proof main88 desta sessão continua byte-idêntico.
 Testes atualizados para schema nativo e authorizer/use case reais:

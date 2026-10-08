@@ -1,0 +1,37 @@
+{
+  "scope": "DEI-T58 completion of native skip authority coverage",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "DEI:DEI-T58",
+  "result": {
+    "passed": 8,
+    "failed": 0,
+    "seconds": 17.95,
+    "terminal_session": 87423
+  },
+  "evidence": [
+    "Native schema, real Community UoW, Spec service, Board owner/share and realm checks. Owner and editor can set delivery skip only in Draft.",
+    "Viewer and stranger refuse through EntityNotFoundError before writes; owner/editor outside Draft refuse through SubjectEditRequiresDraftError.",
+    "Fresh session observes persisted skip only in allowed cases, history only for allowed writes; factual obligation rows and delivery records remain unchanged and incomplete.",
+    "Combined with reviewed prior 6 native waiver/posture cases, 85 Core domain cases and 44 frontend cases, qualifies the fixed DEI-T58 criterion without altering authority or policy semantics."
+  ],
+  "limits": [
+    "Actor identity is fixture input to the REST use case; no authentication transport or installed E2E claim.",
+    "Initial lifecycle status is controlled fixture setup; this does not claim authorization to reopen a Spec.",
+    "No product, frontend implementation or SPA changes. Existing main88 closure and all zero budgets remain applicable.",
+    "Initial runs failed due to incorrect BoardShare fixture fields, expected Draft restriction, then missing knowledge/resource adapter registrations. Corrected test composition only."
+  ],
+  "prior_evidence": {
+    "artifact": "clean-break-native-waiver-posture-20261008.json",
+    "sha256": "d55ff50ccd5276e2826758cfb5c2e0ac5314d5991eff4caf7e275a177ce74cef"
+  },
+  "artifacts": {
+    "provenance-native-skip-authority-20261008.json": "5a08518a5f8512759859803ed7f170f39feb3fff2994712700138d88c91cbd26",
+    "native-skip-authority-20261008.xml": "190375ce79f209cbbf4afbeacbcd2cdf87ae59663008cf6cd6feb8ea261c9a81",
+    "native-skip-authority-20261008-2.xml": "ce511397f7ba890559ac22e7e0f16e815bd9dd77c49fb001267d28023f9f668a",
+    "native-skip-authority-20261008-3.xml": "426f1bcf1e67069b6861f47533c65cfbf1c6097f852ab63ad65f39c84f1dff60",
+    "native-skip-authority-20261008-4.xml": "279fbef5fa90628f5227c826510d90410b9d54adbb26899b1889db58a057fb68",
+    "native-skip-authority-20261008-5.xml": "b88da4e79a63263abaf948e47dffc2d995c8cae52cf2ab81e641f00de9bc0044",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}
