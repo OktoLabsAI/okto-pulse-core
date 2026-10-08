@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-INT-11 remediação operacional nativa via MCP
+Base0f680e91/0fdbe8fe; turno anterior foi progresso. Novo teste Community
+test_native_operational_remediation.py usa schema nativo, OR operacional/AC,
+cenário demonstration pendente e Test Card em execução. Catálogo MCP/Client,
+autenticador Community e grants persistidos reais, sem mock de autorização.
+Contexto full/gate indica update_test_scenario_status e depois move_card;
+consulta não muta. Tentativa sem grant retorna interact_in_blocked com
+required_permission=test_scenario.interact_in.ready; histórico/fatos intactos.
+
+Health/queue readers reais: resposta degradada orienta inspect_telemetry, sem
+repair/rebuild. Probes drenados antes da comparação; todas tabelas persistidas
+(inclusive agentes/filas) idênticas, exceto last_used_at da autenticação.
+Arquivos do diretório do grafo byte-idênticos; zero chamadas RebuildProcessor
+ou subprocess.Popen. Não alega observação de serviço externo/recuperação de
+grafo: fixture inicia sem materialização e com telemetria parcialmente ausente.
+
+Proof provenance-native-operational-remediation-20261008 terminal0:
+main90 byte-idêntico838/317 Python,899/403 payloads antes das campanhas.
+Campanhas1/2 corrigiram asserções do envelope real de permissão;3 acrescentou
+grant existente kg.admin.settings_read;4/5 registraram ports reais health/queue
+omitidos pela fixture de entrega;6 corrigiu expectativa none para inspeção
+read-only de telemetria indisponível. Nenhum produto/gate alterado.
+Campanha7/session17609 terminal0:1pass12.10s; Ruff/diff check verdes.
+Recibo clean-break-native-operational-remediation-20261008.json.
+AC-INT-11 qualificado; índice221verificados/14pendentes/11superados.
+Sem frontend/SPA alterado. Closure main90/oito budgets ZERO preservados.
+Todos handles terminais; commit/push testes/evidência; WIP KG10 preservado.
+Retomar VER11/18, INT10, DEI64, KG e benchmarks fixos.
+BASE:T23/KG10/KG28 seguem decisões pendentes. Objetivo integral ativo.
+
 ### 2026-10-08 — main90 elimina conversão de evidência legada no contexto
 Base52fa0473/0fdbe8fe; turno anterior foi progresso. Investigação AC-INT-11
 encontrou _scenario_evidence_present reconstruindo evidence a partir de campos
