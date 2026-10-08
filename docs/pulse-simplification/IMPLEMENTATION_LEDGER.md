@@ -2,6 +2,53 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — KG66: contrato instalado e footprint único (main82)
+Base854663fb/e6719bbc. Campanha kg66-main81: fresh venv com120dependências,
+Grafx local0.0.7. Proof53757 terminal0 antes de init31412 terminal0.
+Runtime58661 terminal0 após prova MCP/REST/browser main81. Inventário282tools,
+zero aliases,54resources conferidos por hash contra catálogo congelado instalado.
+UI corrigida sem Sprint observada; Health1.3 renderizado sem erros de console.
+Reprodução instalada mostrou divergência REAL: MCP graph_primary_bytes versus
+REST graph_lbug_bytes. Removida tradução em Community/api/kg_health.py, contrato
+e fixture frontend alinhados; modelo nested recusa alias antigo explicitamente.
+Sem conversão de storage, gate ou authority alterados.
+
+Testes frontend45+10=55pass; primeira chamada usou caminho inexistente do segundo
+filtro (Vitest rodou45); caminho real localizado e10diagnostics rodados separadamente.
+Build89981 terminal0 e verify79files/78assets mantiveram SPA
+hashee5768cdcd7c8930a1f4effa2951593ee714eaa069a4cfc2cf013f85a5c5e2cf.
+Wheels82 instalados no venv de qualificação e no venv isolado kg66-main81, ambos
+com runtime anterior já encerrado. Proof11930/83857 terminais0:
+835/896+317/403 byte-idênticos. Community35700 terminal0:22pass/15.55s
+(contrato estrito+endpoint conserva valor123), total77distintos comfrontend.
+Ruff/diff-check verdes. Closure47885 terminal0:oktrue,findings/docs vazios,8budgets0.
+
+Runtime99757 novo após instalação82:loopback65216/65217, iniciado03:08:16UTC.
+public_contract.py54638 terminal0:282tools/hash e54resources byte-hash iguais.
+health_contract.py terminal0:REST e MCP Health1.3,16campos de footprint iguais,
+graph_primary_bytes presente/graph_lbug_bytes ausente. Observações são temporais:
+não exigir igualdade artificial de métricas entre chamadas nem mascarar unavailable.
+Browser real main82 renderizou KG Health1.3 e storage panel; console0errors/0warnings.
+Runtime99757 terminal0; browser fechado. Dados só da base nativa isolada, sem
+conversão. Prova main81 arquivada em kg66-main81/main81-observation;
+prova browser final em kg66-main81/main82-browser. O diretório chamado main81
+agora contém instalação82 (ver provenance-kg66-final-main82), NÃO inferir versão
+pelo nome do diretório. stop-server existe. Nenhum processo deste trabalho ativo.
+
+KG:KG-66 qualificado: par instalado+SPA/contratos públicos reais fora dev server.
+Recibo clean-break-native-installed-contract.json explicita limites; não qualifica
+cenários de negócio restantes nem benchmarkKG64. Índice99verificados/136pendentes/11N/A.
+Escopo246total/235aplicáveis inalterado. Nenhum runtime/dado real alterado/promovido.
+
+Próximo ponto concreto na remoção de referências: Health da base nativa recém-criada
+retorna global_discovery_legacy_primary_present, emitido em
+community/adapters/grafx_global_discovery_runtime.py:220. Variável legacy é usada
+para caminho obtido via _path_resolver; função também aceita geração ativa.
+Investigar writer/bootstrap e recovery antes de remover caminhos: observação
+ocorre em base NOVA, logo nome legacy sozinho não prova compatibilidade removível.
+Semântica de recuperação nativa continua obrigatória. Auditar referência restante
+sem criar novo objetivo. KG64 comparativo e decisõesBASE:T23/KG10/KG28 pendentes.
+
 ### 2026-10-07 — Ajuda guiada sem Sprint e prova instalada inicial (main81)
 Base d5d5b079/0caa358b limpa. Instalação isolada kg66-main80/venv concluída:
 120 dependências, Grafx0.0.7 local; proof91386 confirmou835/896+317/403

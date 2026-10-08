@@ -1,0 +1,134 @@
+{
+  "criterion": "KG:KG-66",
+  "qualification": "verified_current_pair_review",
+  "proof_pair": "dist-native-main82",
+  "scope": "Exact installed wheel pair, packaged SPA and live public MCP/REST contracts outside dev server",
+  "changes": [
+    "Removed REST graph_primary_bytes-to-graph_lbug_bytes compatibility translation.",
+    "Aligned frontend type/fixture to native field; strict REST footprint model refuses retired alias."
+  ],
+  "evidence": [
+    "Fresh isolated venv installed both local Pulse wheels and local Grafx0.0.7 with all dependencies; byte comparison proved source/wheel/install payloads.",
+    "Native base initialized on main81; after main82 fix both wheels reinstalled in same isolated environment, re-proven byte-identical, and a new runtime started. No storage conversion or legacy dataset.",
+    "Real HTTP MCP initialize reports0.4.0; 282 tool names/hash match frozen inventory with zero aliases; all54 effective resources match frozen names,MIME types and SHA256 contents.",
+    "Real MCP Health(full) succeeds; REST and MCP both expose Health1.3 and the same16 footprint fields including graph_primary_bytes, without graph_lbug_bytes or top-level schema_version alias.",
+    "Real browser opens packaged SPA and KG Health on installed normal CLI; schema1.3 and storage panel render; zero console errors/warnings.",
+    "Installed main81 browser observed corrected native guided help. Main82 official build yields byte-identical SPA tree.",
+    "Both observed runtime processes stopped with exit0; no real data/runtime touched."
+  ],
+  "tests": {
+    "community_passed": 22,
+    "frontend_passed": 55,
+    "total_distinct_passed": 77
+  },
+  "frontend": {
+    "files": 79,
+    "assets": 78,
+    "tree_sha256": "ee5768cdcd7c8930a1f4effa2951593ee714eaa069a4cfc2cf013f85a5c5e2cf",
+    "official_build": "passed",
+    "verify": "passed"
+  },
+  "closure": {
+    "ok": true,
+    "findings": [],
+    "documentation_findings": [],
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ]
+  },
+  "limits": [
+    "KG66 packaging/public-contract qualification does not qualify remaining business scenarios or comparative benchmark KG64.",
+    "Health explicitly reports unavailable observations under bounded probes; this is not a claim all metrics are healthy/available.",
+    "Source-level endpoint tests prove populated123 value preserved; installed comparison proves field parity with real observations, not equality across changing timestamps/probes.",
+    "global_discovery_legacy_primary_present observed on a fresh native base remains a separate naming/layout investigation; do not delete native recovery layout based solely on that label.",
+    "Acceptance count after this review:99 verified/136 pending/11 superseded."
+  ],
+  "artifacts": {
+    "provenance-native-main82.json": "9d1384ddb2d05ca39ae51f54869bd9961b41ddac1d82534c835ec934c112f15f",
+    "provenance-kg66-fresh-main81.json": "12e390caaea92348555930e94858a4827caf79c87a6f2e9529b28c3041cc94e3",
+    "provenance-kg66-final-main82.json": "4999a1a0d117b53fb00057c2a9f2be11c8986d0baa0f9613624115384ae78522",
+    "native-health-footprint-rest1.xml": "577db30b4b618830c0cf358ac8c6fd65cd7d8ac4c740768eb0bfafa918c212c8",
+    "native-health-footprint-frontend1.json": "682361dddd6164f1448bb92cee885d097f37a0acc2e32a724ad5ecb2449764e8",
+    "native-health-footprint-diagnostics1.json": "91cc6c545e2cef68c734b2e59eb93b5ad903252bc3e9f6bc4c05ffa462814245",
+    "closure-native-main82.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249",
+    "kg66-main81/init-result.json": "3b1214b0e2406a1e2e67dc50d7f5738610320d9b2f6749264270a800bc63e24d",
+    "kg66-main81/public-contract-result.json": "f08d2eb4f0a8d235cbb6f19f52df90cc5e28597feeb952db06592d6397bac2d7",
+    "kg66-main81/health-parity-result.json": "e67ccb7f0e2c1b862b51d43841a67e6dc086bcd5aacae33d00ec26127bfdf1d9",
+    "kg66-main81/health-observed.json": "ffc04d7c62eaf02f76df5bec0db1a94a16408a14aa3dd17c9a10b81a06f5338c",
+    "kg66-main81/server.json": "d61a17ead5c2681b30792d843e54537e4f71b6d06e06d52afb1f96289b10daa8",
+    "kg66-main81/main82-browser/observations/snapshot.txt": "ab7ccc61ed6c3def7b4f5a6e0c629d337799be09c8a078925d5cd07fe23b0951",
+    "kg66-main81/main82-browser/observations/requests.txt": "c857f1b224c2cb7b350491b9b90b0fbc87caac11e33aa98fce25990b93e14b80",
+    "kg66-main81/main82-browser/observations/console.txt": "5e022534a5fe0feeb06a8fc815ff2ad8e4598aae62e789579db7dbcbfb58bc2a"
+  }
+}
