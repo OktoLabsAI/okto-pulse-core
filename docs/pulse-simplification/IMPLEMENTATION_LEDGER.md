@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T58 evidência parcial de waiver e postura factual
+Base0b636cd9/7bcff173. Proof main88 desta sessão continua byte-idêntico.
+Testes atualizados para schema nativo e authorizer/use case reais:
+humano sem grant e agente com grant não criam/revogam waiver; humano autorizado
+pode. Waivers implementation/test separados, nenhum ID de prova fabricado.
+Revogação autorizada restaura incompletude preservando Done e histórico.
+Skip/advisory permitem postura sem falsificar projeção; blocking recusa.
+
+Community native-waiver-posture-20261008/session9349 terminal0:6pass13.92s.
+Core native-waiver-domain-20261008 terminal0:85pass4.11s.
+Frontend native-waiver-posture-frontend-20261008 terminal0:44pass/successTrue.
+Ruff verde. Sem produto/SPA alterado; só título de teste deixa de chamar a
+superfície nativa Spec de legacy. Nenhuma migração/compatibilidade reintroduzida.
+Recibo clean-break-native-waiver-posture-20261008.json registra limites.
+DEI-T58 CONTINUA PENDENTE: skip foi aplicado por SQL controlado; falta qualificar
+a autoridade de alteração do skip. Não alegar cobertura por esta execução.
+Índice214/21/11 mantido. Todos handles terminais; closure main88/budgets ZERO.
+Commit/push parcial rastreável. Próximo: concluir boundary de skip, depois
+DEI/projeções, VER/KG/benchmarks restantes. WIP KG10 e decisões preservadas.
+Objetivo integral ativo; sem promoção/dados reais.
+
 ### 2026-10-08 — DEI-T42 retrabalho com prova e revisão de entrega distintas
 Basec54efbc4/33b7a4db; autorização DEI-T33/T41 já implementada em main86.
 Proof provenance-native-rework-proof-20261008 terminal0 antes dos testes:
