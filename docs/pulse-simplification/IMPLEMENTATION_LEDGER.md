@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-VER-15 falha operacional e consulta parcial
+Baseb6a6303d/04cdc158; turno anterior foi progresso. Novo proof sem colisão,
+provenance-native-operational-partial-20261008 terminal0:main88 byte-idêntico
+838/317 Python,899/403 payloads. OR nativo/perfil operacional/mesmo Test Card:
+relatório demonstration autenticado preserva alerta failed e query unavailable
+com limitação explícita de timeout. Sessão nova: zero crédito de teste ao OR/AC,
+resultado failed autenticado; nenhum passing fabricado. Gate de entrega da Spec
+recusa sem skip, permite com skip preconfigurado, preservando projeção/evidência.
+Autoridade de configurar skip é coberta pela matriz nativa8 anterior; não
+reinterpretar este estímulo SQL como teste de autorização ou transição completa.
+
+native-operational-partial-20261008/session19897 terminal0:2pass10.77s.
+Frontend native-operational-partial-frontend-20261008 terminal0:36pass/successTrue,
+incluindo novo teste de apresentação da falha e da consulta parcial no detalhe.
+Ruff/diff check verdes. Recibo clean-break-native-operational-partial-20261008.json.
+AC-VER-15 qualificado; índice220verificados/15pendentes/11superados.
+Sem produto/SPA alterado; main88 closure/oito budgets ZERO. Handles terminais.
+Commit/push testes/evidência; WIP KG10 preservado. Continuar VER11/18, INT10/11,
+DEI64, KG e benchmarks fixos. BASE:T23/KG10/KG28 seguem decisões pendentes.
+Objetivo integral ativo; sem promoção/dados reais.
+
 ### 2026-10-08 — AC-VER-13 aplicabilidade após mudança de base/condição
 Base015bab1f/bd4e04fc; turno anterior foi progresso. Proof novo sem colisão,
 provenance-native-applicability-20261008 terminal0:main88 byte-idêntico838/317

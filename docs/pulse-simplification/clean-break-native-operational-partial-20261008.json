@@ -1,0 +1,34 @@
+{
+  "scope": "AC-VER-15 operational failed alert and partial query",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "ARQVER:AC-VER-15",
+  "results": {
+    "backend_passed": 2,
+    "backend_seconds": 10.77,
+    "backend_session": 19897,
+    "frontend_passed": 36
+  },
+  "evidence": [
+    "Native OR with operational profile, assigned implementation and Test Card, authenticated demonstration report: alert failed and partial telemetry query unavailable are separate observations.",
+    "Fresh session preserves both outcomes and explicit timeout limitation, with authenticated failed result. OR and criterion receive no passing test credit.",
+    "Blocking Spec delivery gate refuses with skip off; preconfigured skip allows this gate with skip on. Exact factual projection and evidence remain unchanged.",
+    "Existing native skip-authority matrix separately verifies owner/editor Draft write permissions and viewer/stranger/lifecycle refusals.",
+    "Frontend report detail retains failed alert and unavailable partial-query observation; 36 report/rollup frontend tests pass."
+  ],
+  "limits": [
+    "External alert/query observations and skip posture are controlled fixture inputs. Actual signed issuer/verifier, relational store and delivery gate run; no live service outage is induced.",
+    "This verifies the delivery gate used by Spec closure, not every independent Spec transition gate. Skip does not manufacture a passing verdict.",
+    "No product/frontend implementation/SPA change. Main88 paired closure remains applicable with eight zero budgets."
+  ],
+  "prior_authority": {
+    "artifact": "clean-break-native-skip-authority-20261008.json",
+    "sha256": "32024d37f6a503244920ad95c3bae5234d0bab78b8636804e6a08f8ef6c6cba7"
+  },
+  "artifacts": {
+    "provenance-native-operational-partial-20261008.json": "4020aba6e9ad29d9e2189d50f3cd743bc20183ca3eaa73e2ee5695db86b9fdb6",
+    "native-operational-partial-20261008.xml": "e3728ede7e53cc0239b3a296ff35c5aaebecd8400efb5fe5a7b9fcde2f868aeb",
+    "native-operational-partial-frontend-20261008.json": "078298807a84dc53b3a0531ad205943daee6186747f9bca337cc09e3638e84a8",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}
