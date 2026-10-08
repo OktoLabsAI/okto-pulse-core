@@ -2,6 +2,26 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T57 escopo semântico nativo do Card sem vínculos
+Base17416d8b/01ed9e81; turno anterior foi progresso. Proof novo sem colisão,
+provenance-native-card-scope-20261008 terminal0 antes dos testes:
+main88 byte-idêntico838/317 Python,899/403 payloads.
+Testes em schema nativo: Card normal sem vínculo normativo, title/description/
+details definidos. Prova aceita vinculada a card:task satisfaz o predicado de
+implementação antes da edição. Mudar apenas description ou details, mantendo
+ID/título, produz novo digest em leitura com sessão nova. Nenhuma prova anterior
+satisfaz novo binding; payload histórico preservado. Source review confirma
+card-delivery-scope/v2 inclui title,description,details,card_type.
+Estímulo SQL é alteração semântica controlada, não teste da autoridade para editar.
+
+native-card-scope-20261008/session72375 terminal0:2pass10.62s; Ruff verde.
+Recibo clean-break-native-card-scope-20261008.json; DEI-T57 qualificado.
+Sem produto/frontend/SPA alterado. Main88 closure/oito budgets ZERO.
+Índice212verificados/23pendentes/11superados; handles terminais.
+Commit/push teste/evidência; WIP KG10 preservado. Sem promoção/dados reais.
+Continuar reabertura/waivers/schema/projeções DEI, VER/KG e benchmarks fixos.
+BASE:T23/KG10/KG28 continuam decisões pendentes; objetivo integral ativo.
+
 ### 2026-10-08 — DEI-T52 famílias de impacto não intercambiáveis
 Base459f440c/81fe17ba; turno anterior foi progresso. Proof novo sem colisão,
 provenance-native-impact-families-20261008 terminal0 antes dos testes:

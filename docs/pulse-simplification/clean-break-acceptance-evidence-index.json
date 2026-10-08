@@ -6146,7 +6146,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-card-scope-20261008.json",
+        "criterion_key": "DEI:DEI-T57",
+        "proof_pair": "dist-native-main88"
+      }
     },
     {
       "key": "DEI:DEI-T58",

@@ -1,0 +1,30 @@
+{
+  "scope": "DEI-T57 native unlinked Card semantic scope under description/details changes",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "DEI:DEI-T57",
+  "result": {
+    "passed": 2,
+    "failed": 0,
+    "seconds": 10.62,
+    "terminal_session": 72375
+  },
+  "evidence": [
+    "Current native schema contains an unlinked normal Card with declared title, description and details, not a legacy fallback object.",
+    "Accepted implementation receipt is bound to card:task and demonstrably satisfies implementation_binding_ready for its original semantic binding.",
+    "Each case changes only description or details through controlled SQL while retaining Card ID and title. A fresh-session read produces a distinct obligation semantic digest.",
+    "No historical implementation fact satisfies the changed binding; the original delivery record payload remains identical.",
+    "Source review confirms native card-delivery-scope/v2 includes title, description, details and card_type."
+  ],
+  "limits": [
+    "Controlled semantic mutation tests evidence invalidation, not permission or lifecycle authorization to edit the Card.",
+    "Uses real native store/admission and accepted source fixture. Does not claim complete Spec closeout, installed transport authentication or new frontend behavior.",
+    "No product/frontend change; no UI test change required for this backend acceptance witness.",
+    "No migration, real-data operation or promotion. Main88 installed parity and closure remain applicable with eight zero budgets."
+  ],
+  "artifacts": {
+    "provenance-native-card-scope-20261008.json": "cbb84c7e7363096aaa1847b891d42b7c9acdd5823db5e44ef7aee6a1c98e7236",
+    "native-card-scope-20261008.xml": "1749e465effe880901a8dcf02094af10a6df7674134df7b3bccecb0c698ed990",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}
