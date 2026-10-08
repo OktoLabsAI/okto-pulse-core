@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG55 qualificado: isolamento Board e erro de busca (main73)
+Reprodução de race: resposta Discovery do Board anterior substituía resultado atual;
+rejeição tardia publicava erro no Board novo. native-discovery-board-race-repro3
+confirma2falhas. repro1/2 eram inválidos por texto duplicado na fixture (title=summary);
+corrigida fixture antes da reprodução válida. Não tratados como evidência do bug.
+Discovery agora remonta estado por Board, isolando resultados/inputs/selectors e
+promessas antigas. Sem mexer em autoridade ou contratos backend.
+
+Segunda reprodução native-discovery-search-error-repro1:2falhas; busca textual
+engolia permission/service error como resultado vazio. Catch publica erro na UI;
+retry com sucesso limpa erro e exibe vazio somente quando resultado foi bem-sucedido.
+Campanha native-kg-ui-states3 terminal0:80pass em5suítes (diagnostics/Health/Sync/
+maintenance/Discovery), incluindo4 regressões novas. Testes DOM com APIs controladas,
+não alegação E2E livebrowser (KG66 permanece próprio).
+
+Build final43681 terminal0; verify:frontend-dist terminal0.79arquivos/78assets,
+hash902f7a0a11ab8a1c45cb0ec52b5d9294503a758769133ea9d39262214c9c9142.
+Wheels73 construídos; install83780 terminal0; provenance-native-main73
+byte-idêntico835/896+317/403. Python produtivo inalterado.
+Closure7299 terminal0:ok=true, findings/documentation vazios, oito budgets0.
+Todos processos terminais. Recibo clean-break-native-kg-ui-states.json qualifica KG55.
+Índice90 verificadas/145 pendentes/11 superadas. Nenhuma promoção ou dado real alterado.
+Próximo: KG56 fonte congelada/sugestão sem adoção normativa via fallback;
+KG57 impacto potencial vs confirmado e KG58 vínculo estrutural vs execução passing.
+São critérios existentes, sem alteração do escopo de aceitação.
+
 ### 2026-10-07 — KG54 qualificado; renderizador DDL legado removido (main72)
 Basee4fd1832/1b9f3927 limpa confirmada. Complemento D5/§schema determina evoluir
 da base real; schema atual0.8.0, não0.6.0. Nenhuma versão/fingerprint alterada.

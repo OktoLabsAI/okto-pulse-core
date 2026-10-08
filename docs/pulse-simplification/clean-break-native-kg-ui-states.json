@@ -1,0 +1,64 @@
+{
+  "criterion": "KG:KG-55",
+  "qualification": "verified_current_pair_review",
+  "proof_pair": "dist-native-main73",
+  "changes": [
+    "Scope Discovery state to the selected Board via a keyed component; late previous-Board success/error cannot publish into current state.",
+    "Show free-text search errors instead of presenting them as successful empty results; successful retry clears the error."
+  ],
+  "evidence": {
+    "board_switch": "Two controlled promises reproduce old Board success overwriting current results and old failure appearing in new Board; both now refused by component lifetime.",
+    "empty_error": "Search permission/service failures are visible; successful empty retry shows no-results only after success. Existing query/selector empty and error/retry cases pass.",
+    "lag": "Sync indicator distinguishes behind/live/polling/disconnected; page presents census before slower health.",
+    "permissions": "Health no-permission performs zero fetches; page removes Code Traceability nodes, incident edges and counts after permission loss.",
+    "diagnostic_races": "Late previous-Board census ignored; graph renders without waiting for diagnostics; unmount prevents onboarding refresh.",
+    "maintenance": "Graph controls retirement suite confirms removed maintenance actions."
+  },
+  "tests": {
+    "frontend_passed": 80,
+    "initial_expected_board_race_failures": 2,
+    "initial_expected_search_error_failures": 2,
+    "suites": [
+      "KnowledgeGraphPage.diagnostics",
+      "KGHealthView",
+      "KGSyncIndicator",
+      "GraphControlsPanel.maintenance",
+      "GlobalSearchView"
+    ]
+  },
+  "frontend": {
+    "files": 79,
+    "assets": 78,
+    "sha256": "902f7a0a11ab8a1c45cb0ec52b5d9294503a758769133ea9d39262214c9c9142",
+    "official_build": "terminal0",
+    "verify_frontend_dist": "terminal0"
+  },
+  "closure": {
+    "ok": true,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    },
+    "findings": [],
+    "documentation_findings": []
+  },
+  "limits": [
+    "Vitest DOM/component tests with controlled API mocks, not a live-browser installed-server E2E claim.",
+    "Python product unchanged; wheels rebuilt and installed to prove packaged frontend correspondence.",
+    "Board switching clears Board-scoped query inputs/results/selectors; underlying issued request need not be cancelled for isolation.",
+    "No release promotion or user runtime/data changes."
+  ],
+  "artifacts": {
+    "provenance-native-main73.json": "ae497b9ec09891eb0f7cb56c0197ea12b087cb65272847adef236546b3b238a8",
+    "native-discovery-board-race-repro3.json": "781fdfec67dc87ec2b1daf9c223e33facb86bbb5fe00a304e83d8cb955aac66e",
+    "native-discovery-search-error-repro1.json": "4e14fd9babe13daf5e4970a70d5dfcb5bb0d00a4f22e79a414ecaf221f12444a",
+    "native-kg-ui-states3.json": "85a091df8ec3e0ba4af97c2091c1fec37eba5a22fe60e764e366ebc2a700e5ee",
+    "closure-native-main73.json": "50921d66df86b2107b9922f2e6eba86c2c08b8a7a7d1d914742bdef7acc87640"
+  }
+}
