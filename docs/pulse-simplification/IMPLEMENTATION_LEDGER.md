@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-VER-18 paridade combinada REST/MCP/UI (parcial)
+Base7390e14c/de9a51c1; turno anterior foi progresso. test_native_verification_context
+agora compara plano, rollup Spec e resume Card por FastAPI/FastMCP reais, sessões
+novas e actor controlado. Decisão de autorização real (sem mock): board.read e
+code_traceability.evidence.read explícitos, sem permissão de gravar progresso.
+A UI monta RequirementVerificationPanel/DeliveryEvidencePanel/CardResumePanel
+com JSON exato gerado pelo backend. Mostra herança FR, IRs promovidos pendentes,
+rollup Blocked e checkpoint executor; zero checkmark, uma chamada por painel,
+zero getSpec. Fixture JSON versionada sob frontend/.../__tests__/fixtures/.
+
+Proof provenance-native-context-transports-20261008 terminal0:
+main90 byte-idêntico838/317 Python,899/403 payloads.
+Iterações1/2 corrigem tuple/list e view ledger indevida no rollup Spec;3-7
+corrigem construção/import da fixture de permissões e prerequisito board.read,
+sem alteração de produto/gate. Campanha8/session66278 terminal0:1pass12.70s.
+Frontend native-context-frontend-20261008 terminal0:1pass/successTrue.
+Ruff/diff check verdes. Recibo clean-break-native-context-transport-ui-partial-20261008.json.
+AC-VER-18 permanece pendente: checkpoint material parcial não substitui prova
+de execução parcial autenticada; falta adicioná-la ao cenário combinado e
+verificar sua proveniência apresentada. Não recriar a promoção ou a paridade
+já demonstradas; evoluir a fixture atual. Autenticação/login não são testados
+aqui, apenas contextos tipados e decisão real de leitura.
+Índice223/12/11 mantido. Sem produto/SPA; closure main90/oito budgets ZERO.
+Handles terminais; commit/push testes/evidências; WIP KG10 preservado.
+BASE:T23/KG10/KG28 seguem decisões pendentes. Objetivo integral ativo.
+
 ### 2026-10-08 — AC-VER-18 cenário combinado nativo (parcial)
 Basecc493329/1f81349f; turno anterior foi progresso. Novo teste Community
 test_native_verification_context.py: schema nativo, coordinator real promove
