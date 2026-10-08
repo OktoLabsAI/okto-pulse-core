@@ -2,6 +2,26 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T08 mudança concorrente de origem durante append
+Base3946abbb/558ee2d8. Novo witness nativo retém Card/Spec desatualizados na
+identity map e comando preparado. Hook de entrada no fence faz outra sessão
+mudar Spec do Card ou edição da Spec (contrato nativo correspondente), com commit.
+Asserção prova cache antigo antes do lock de produção. Single/batch revalidam
+fonte, recusam delivery_edition_conflict e nem commit após recusa vaza binding.
+Observer independente confirma mutação concorrente preservada e zero registros.
+
+native-delivery-origin-race1/session18367 terminal0:4pass11.81s. Ruff verde.
+Proof desta sessão/main88 continua válido, sem mudança de produto. Corrida é
+interleaving determinístico no fence, não benchmark; estímulo SQL não prova a
+autorização de mover/reabrir objetos. UI já conferida neste turno não mudou.
+Recibo clean-break-native-delivery-origin-race.json; DEI-T08 qualificado.
+
+Índice200verificados/35pendentes/11superados. Closure main88/oito budgets ZERO;
+todos handles terminais. Commit/push teste/evidência, WIP KG10 preservado.
+Sem promoção/dados reais. DEI-T07 ainda pendente da matriz cross-Board completa;
+não qualificar pela mera recusa de ID inexistente. Prosseguir demais critérios
+do índice fixo. BASE:T23/KG10/KG28 permanecem decisões pendentes.
+
 ### 2026-10-08 — DEI-T01–T06 atores, permissões e entradas não confiáveis
 Basefa8a82d0/8b38e235. Turno anterior foi progresso com critérios qualificados e
 commits enviados. Proof provenance-native-delivery-authority1 terminal0 antes
