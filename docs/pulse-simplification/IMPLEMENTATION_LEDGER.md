@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — Coverage reorganizada para consumo humano
+
+Implementada a estrutura acordada: Overview, Planning, Implementation e
+Verification. Resumo com três indicadores independentes e próximos passos;
+planejamento em cartões por dimensão, com navegação às seções responsáveis;
+provas separadas por implementação/verificação, com referências recolhidas.
+Diagnóstico do grafo fica em expansão secundária. Removida a afirmação fixa
+de completude geral não estabelecida. Sem score agregado entre as três fases.
+
+Indicador de planejamento explicita dimensões aplicáveis totalmente cobertas
+divididas pelas dimensões com itens; não calcula média de vínculos distintos.
+Provas usam contagens autoritativas existentes sobre todas as obrigações do
+escopo, independentemente da página. Dimensões vazias não contam; escopo vazio
+mostra No items, e dados ausentes/incompletos/restritos mostram Unavailable.
+Dispensa não conta como prova. Nenhuma mudança em backend, permissões, gates,
+dados da iniciativa ou regras de admissão. Paginação e cancelamento preservados.
+
+Validação: 13 testes frontend de painel/cliente passaram, cobrindo navegação,
+ausência de novas consultas ao trocar subaba, paginação, revisão, cancelamento,
+restrição, escopo vazio, dados parciais e dispensa. Conferência visual Playwright
+do componente real em desktop e largura 390px, com fixture isolada; screenshots
+locais em Community/output/playwright/coverage-*.png. Backend local deixou de
+responder na conferência; não foi reiniciado nem alterado. Fixture removida
+após inspeção. TypeScript/Vite e sincronização de 79 arquivos passaram; build
+incluído no commit Community (árvore SHA256
+`0a593f654b2818c5c8508a7687c4c5ccb10655ff5fc9fad1751d96ef96500604`); instalação
+local ainda pendente, junto da correção anterior da Code Evidence Matrix.
+
+
 ### 2026-10-08 — Code Evidence Matrix com versão desatualizada na tela
 
 Reprodução REST somente leitura no Board `2fd79a82-08b2-4ecc-823a-2c820342f6b9`,
