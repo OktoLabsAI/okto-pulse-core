@@ -1027,8 +1027,7 @@ class ListAllowedTransitionsUseCase:
             AmendmentRevisionService,
         )
         from okto_pulse.core.services.bug_regression_scenarios import (
-            AmendmentLineageFact,
-            BugRegressionGateValidator,
+                    BugRegressionGateValidator,
             BugRegressionScenarioEligibilityResolver,
         )
         from okto_pulse.core.services.main import (
@@ -1044,7 +1043,8 @@ class ListAllowedTransitionsUseCase:
             if getattr(card, "spec_id", None)
             else []
         )
-        amendment_facts = [AmendmentLineageFact.from_row(row) for row in amendment_rows]
+        from okto_pulse.core.services.amendment_coverage import current_amendment_facts
+        amendment_facts = await current_amendment_facts(services.cards.db, amendment_rows)
         effective_test_ids = list(
             getattr(card, "linked_test_task_ids", None) or []
         ) or _amendment_regression_test_task_ids(amendment_rows)

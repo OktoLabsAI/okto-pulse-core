@@ -76,7 +76,7 @@ async def _seed(db, *, with_evidence: bool = True):
     )
     scenario = {
         "id": ids["scenario"], "title": "AC happy-path scenario",
-        "linked_criteria": [0], "status": "automated",
+        "linked_criteria": ["ac-1"], "status": "automated",
     }
     if evidence is not None:
         scenario["evidence"] = evidence
@@ -84,7 +84,7 @@ async def _seed(db, *, with_evidence: bool = True):
     db.add(Board(id=ids["board"], name="BUG-02 matrix", owner_id=USER_ID))
     db.add(Spec(
         id=ids["spec"], board_id=ids["board"], title="Bug spec", status=SpecStatus.DONE,
-        created_by=USER_ID, functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+        created_by=USER_ID, functional_requirements=[{"id": "fr-1", "text": "FR1"}], acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
         test_scenarios=[scenario], business_rules=[], api_contracts=[],
     ))
     db.add(Card(

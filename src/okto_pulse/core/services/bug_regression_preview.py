@@ -22,7 +22,6 @@ from okto_pulse.core.services.bug_regression_observability import (
     observe_bug_workflow_remediation,
 )
 from okto_pulse.core.services.bug_regression_scenarios import (
-    AmendmentLineageFact,
     BugRegressionScenarioEligibilityResolver,
     BugRegressionScenarioEligibilityResult,
 )
@@ -143,7 +142,8 @@ class BugRegressionScenarioPreviewService:
             original_spec_id=spec.id,
             origin_bug_id=bug_card.id,
         )
-        amendment_facts = [AmendmentLineageFact.from_row(row) for row in amendment_rows]
+        from okto_pulse.core.services.amendment_coverage import current_amendment_facts
+        amendment_facts = await current_amendment_facts(self._db, amendment_rows)
 
         result = self._resolver.resolve(
             bug_card=bug_card,

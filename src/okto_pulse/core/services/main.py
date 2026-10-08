@@ -206,11 +206,13 @@ from okto_pulse.core.services.bug_regression_observability import (
     observe_bug_regression_resolution,
     record_bug_regression_decision,
 )
+from okto_pulse.core.services.amendment_coverage import current_amendment_facts, current_coverage_basis
 from okto_pulse.core.services.bug_regression_scenarios import (
     AmendmentLineageFact,
     BugRegressionCoverageState,
     BugRegressionGateValidator,
     BugRegressionScenarioEligibilityResolver,
+    CoverageBasis,
     CoverageConfirmationFact,
     evaluate_coverage_confirmation_consumability,
 )
@@ -4408,7 +4410,7 @@ class CardService:
             if getattr(card, "spec_id", None)
             else []
         )
-        amendment_facts = [AmendmentLineageFact.from_row(row) for row in amendment_rows]
+        amendment_facts = await current_amendment_facts(self.db, amendment_rows)
         effective_test_ids = direct_test_ids or _amendment_regression_test_task_ids(
             amendment_rows
         )
@@ -5444,6 +5446,14 @@ class CardService:
                 facts={"amendment_id": amendment_id},
             )
 
+        basis = await current_coverage_basis(
+            self.db, amendment=amendment, task_id=regression_test_task_id,
+            scenario_id=regression_scenario_id, scenario_spec_id=scenario_spec_id or "")
+        if basis is None:
+            raise CardOperationError(
+                "coverage_precondition_unmet", "Current regression evidence cannot be resolved.",
+                remediation="attach_reexecutable_evidence", facts={"amendment_id": amendment_id})
+
         # 4. BUG-01 (FR1/FR4): gate-consumability preflight. Binding, validator
         #    authorization and reexecutable evidence are NECESSARY but NOT
         #    sufficient â€” a syntactically valid tuple can still be inert for the
@@ -5458,9 +5468,13 @@ class CardService:
             scenario_spec_id=scenario_spec_id,
             evidence_ref=evidence_ref,
             reviewer_id=reviewer_id,
+            coverage_basis=basis,
         )
 
+        from dataclasses import asdict
+
         confirmation = {
+            "basis": asdict(basis),
             "validator_id": reviewer_id,
             "amendment_revision_id": amendment.id,
             "regression_test_task_id": regression_test_task_id,
@@ -5526,6 +5540,7 @@ class CardService:
         scenario_spec_id: str | None,
         evidence_ref: str,
         reviewer_id: str,
+        coverage_basis: CoverageBasis,
     ) -> None:
         """BUG-01 (FR1/FR2/FR4): fail closed BEFORE persisting when the candidate
         coverage confirmation would be INERT â€” i.e. the bug regression gate would
@@ -5569,6 +5584,7 @@ class CardService:
             else None
         )
         candidate = CoverageConfirmationFact(
+            basis=coverage_basis,
             validator_id=reviewer_id,
             amendment_revision_id=amendment.id,
             regression_test_task_id=regression_test_task_id,
@@ -5580,7 +5596,8 @@ class CardService:
             original_spec=original_spec,
             origin_task=origin_task,
             affected_tasks=None,
-            amendment_fact=AmendmentLineageFact.from_row(amendment),
+            amendment_fact=replace(
+                AmendmentLineageFact.from_row(amendment), current_coverage_basis=coverage_basis),
             candidate_confirmation=candidate,
             scenario_id=regression_scenario_id,
             scenario_spec_id=scenario_spec_id,
@@ -6536,9 +6553,7 @@ class CardService:
                 if card.spec_id
                 else []
             )
-            amendment_facts = [
-                AmendmentLineageFact.from_row(row) for row in amendment_rows
-            ]
+            amendment_facts = await current_amendment_facts(self.db, amendment_rows)
             effective_linked_tests = (
                 linked_tests or _amendment_regression_test_task_ids(amendment_rows)
             )

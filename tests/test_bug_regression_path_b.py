@@ -14,6 +14,7 @@ Reproduce:
 from __future__ import annotations
 
 from copy import deepcopy
+import pytest
 
 from sqlalchemy_test_models import Card, CardStatus, CardType, Spec
 from okto_pulse.core.services.bug_regression_scenarios import (
@@ -25,6 +26,7 @@ from okto_pulse.core.services.bug_regression_scenarios import (
     BugRegressionNextAction,
     BugRegressionRejectionReason,
     BugRegressionScenarioEligibilityResolver,
+    CoverageBasis,
     CoverageConfirmationFact,
 )
 
@@ -62,6 +64,13 @@ def _card(
     )
 
 
+def _basis():
+    return CoverageBasis(
+        scenario_spec_id="other-spec", spec_edition=1, scenario_epoch=1,
+        semantic_sha256="sha256:" + "a" * 64, evidence_sha256="b" * 64,
+        amendment_sha256="c" * 64, evidence_ref="tests/test_x.py::test_y")
+
+
 def _fact(**over) -> AmendmentLineageFact:
     """A fully-valid amendment lineage fact for bug-1 on spec-1 declaring FOREIGN
     and claiming a task that IS in the bug's authoritative set (origin-1)."""
@@ -77,6 +86,7 @@ def _fact(**over) -> AmendmentLineageFact:
         regression_scenario_ids=(FOREIGN,),  # declares the artifact
         regression_test_task_ids=("tc-1",),  # declares the regression test task
         automated_regression_refs=(),
+        current_coverage_basis=_basis(),
     )
     base.update(over)
     return AmendmentLineageFact(**base)
@@ -86,6 +96,7 @@ def _confirmation(**over) -> CoverageConfirmationFact:
     """A valid, artifact-bound validator coverage attestation for _fact() (G2).
     Coverage is reached ONLY via this persisted bound signal — never a bool."""
     base = dict(
+        basis=_basis(),
         validator_id="claude-validator",
         amendment_revision_id="amd-1",       # binds to THIS amendment
         regression_test_task_id="tc-1",      # ∈ amendment.regression_test_task_ids
@@ -364,6 +375,27 @@ def test_gate_allows_only_path_b_ready():
     allowed = _gate(amendment_facts=[_fact(coverage_confirmation=_confirmation())])
     assert allowed.allowed is True
     assert allowed.decision is BugRegressionGateDecision.ALLOW
+
+
+@pytest.mark.parametrize("field", list(CoverageBasis.__dataclass_fields__))
+def test_gate_requires_every_current_basis_dimension(field):
+    from dataclasses import replace
+    original = _basis()
+    value = getattr(original, field)
+    changed = replace(original, **{field: value + 1 if isinstance(value, int) else value + "changed"})
+    blocked = _gate(amendment_facts=[_fact(
+        coverage_confirmation=_confirmation(), current_coverage_basis=changed)])
+    assert not blocked.allowed
+    assert blocked.decision is BugRegressionGateDecision.BLOCK_COVERAGE_PENDING
+
+
+@pytest.mark.parametrize("basis", [None, {}, {"scenario_epoch": True}])
+def test_incomplete_confirmation_basis_never_grants_coverage(basis):
+    from dataclasses import asdict
+    metadata = {**asdict(_confirmation()), "basis": basis}
+    confirmation = CoverageConfirmationFact.from_metadata(metadata)
+    assert confirmation.basis is None
+    assert not _gate(amendment_facts=[_fact(coverage_confirmation=confirmation)]).allowed
 
 
 def test_gate_blocks_coverage_pending():

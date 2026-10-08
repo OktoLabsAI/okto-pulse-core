@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — T23: confirmação vinculada à fonte/prova atuais
+KG anterior publicado Core05b0865d/Community77bf0041. Implementação T23 acrescenta
+CoverageBasis tipada e resolver compartilhado via porta pública de persistência.
+Sela Spec/edição/epoch existente da coleção de cenários, digest semântico
+existente, prova completa/referência e fonte do Amendment. Preview, transições,
+início e conclusão revalidam; confirmação continua exclusiva do validador.
+Audit agora retém o conteúdo completo de cada confirmação; nenhuma leitura
+reescreve histórico ou reabre Bug Done. Sem conversão/backfill/compatibilidade.
+
+main94 build/install67268 e proof46023 terminaram0 (839/317Python,900/403payloads).
+Primeira campanha20742:18pass/6fail;89909:70pass/4fail. Parser recusava prefixo
+sha256: do contrato existente; corrigido. Fixtures puras declaram base atual;
+fixture BUG02 passou de links numéricos para IDs nativos, sem relaxar guard.
+Probes66823/23293 preservados; segundo isolou parser, não mecanismo.
+
+main95 build/install e proof97648 terminaram0 ANTES dos comportamentos.
+Campanha81759:97pass/1fail; falha restauração era fixture Core sem hooks de
+versionamento Community. As mesmas asserções foram movidas para schema nativo/
+CommunitySemanticSession, sem fabricar epoch. Native13222 recusou realm ausente
+da fixture; RealmScope.local explícito corrigiu e r2 passou1/4.81s.
+Core75216 passou97/18.98s;71282 passou28/4.96s (18sobrepostos,10novos);
+91608 passou91/15.64s. Total198casos Core distintos +1native +12frontend.
+Coleta intermediária sem import pytest preservada; correção só no teste.
+Closure75030 falhou só README; render oficial +26910 passou0, oito budgetsZERO.
+Ruff F/E9 e diff-check verdes. Todos processos terminais.
+
+Recibo clean-break-native-amendment-currentness-main95-20261008.json;
+BASE:T23 verificado; índice233verificados/2pendentes/11superados.
+Epoch existente cobre coleção de cenários e seus vínculos de tasks:
+alteração dessa versão exige reconfirmação, inclusive restauração idêntica.
+Confirmação sem base não recebe inferência retrospectiva. Milestone commit/push.
+Próximos fixos: KG28 autorizado e disposição limitada KG30 conforme KG§5.4;
+depois fechamento C4 do par final. Nenhuma decisão de autoridade pendente.
+
 ### 2026-10-08 — KG10/16/24: projeção delimitada e paridade concluídas
 main93: Core59841 passou89/54.08s; Core90952 passou21/6.79s (20sobrepostos,
 90casos distintos). Community77145 passou3/299.49s em SQL/Grafx nativos.
