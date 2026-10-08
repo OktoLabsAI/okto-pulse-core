@@ -2,6 +2,50 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C1/C3: publicação legada retirada e validada no main68
+Core84604 terminal0:31pass/285.30s; Community63332 terminal0:14pass/29.10s.
+45 casos distintos, sem falhas. Fonte NULL preservada após outbox/reconciliação
+recusados, nenhum digest. Adapter recusa cinco valores sem LSN/transação aberta.
+Preservadas promoção/reconciliação nativas entre camadas atuais e regras Learning.
+Removido teste que exigia conversão de digest legacy_unknown em canonical.
+Recibo clean-break-native-publication-layers.json registra hashes e limites.
+Main68 byte-idêntico835/896+317/403; closure95446 terminal0 com oito budgets0,
+sem findings/documentation_findings. Ruff F/E9 e diff-check verdes.
+Sem catálogo/tool/frontend alterados. Não atribuir este resultado à SPA/release.
+Nenhum teste ativo. Índice83/152/11 mantido (provas de cada critério identificam par).
+Próximo: separar diagnóstico de fonte inválida de rótulos/caminhos legados ainda
+presentes em source_maturity, rebuild_sources, natural-query audit e inventories;
+preservar recusa de corrupção e recuperação nativa. Seguir demais critérios
+KG48+ após esse residual; não criar novo alvo nem alegar entrega integral.
+
+### 2026-10-07 — main68 instalado; adapter e closure verdes, Core ativo
+Instalação60427 terminal0; provenance-native-main68.json terminal0 antes de testes:
+835/896 Core +317/403 Community byte-idênticos.
+Community native-publication-layers-community1 handle63332 terminal0:
+14pass/29.10s, incluindo cinco recusas de camada sem LSN/transação/digest.
+Closure95446 terminal0:ok=true, findings/documentation_findings vazios,
+oito budgets0. Sem README drift, sem regeneração necessária.
+Core native-publication-layers-core1 handle84604 segue vivo no último poll;
+suite imp1/imp2, aguardar terminal antes de editar/reinstalar/publicar.
+Mantidos diagnósticos/recovery e consultas antigas ainda em investigação;
+não alegar remoção integral de legacy_unknown. Frontend inalterado.
+
+### 2026-10-07 — C1/C3: recusa de camada de publicação não atual (WIP)
+Base publicada cf17d860/6ba66908, worktrees limpas confirmadas. Progresso anterior:
+KG46/KG47 publicados, não foi turno sem progresso.
+Confirmado teste de migração em test_kg_r1_imp2: digest legacy_unknown era
+publicado e depois convertido via reconciliação; removido esse requisito antigo.
+Resolver de publicação agora recusa camadas fora de canonical/working; adapter
+Grafx recusa antes de vetor/transação. Mantidas regras canônicas de Learning,
+dívida/holds e reconciliação de digests nativos com camadas válidas.
+Teste misto imp2 conserva coerência canonical/working/all; imp1 substitui
+publicação antiga por recusa com fonte ausente preservada e nenhum digest.
+Novo teste adapter verifica cinco valores recusados sem avanço de LSN/transação.
+Main68 construído em ambos; instalação handle60427 em execução, NÃO testar antes
+de terminal e prova verify_pair. Não alterar produto até concluir campanhas.
+Ainda não retira toda classificação legacy_unknown de diagnósticos/read/recovery.
+Próximo: prova byte, suites imp1/imp2+adapter, closure, recibo e publicação se verde.
+
 ### 2026-10-07 — KG46/KG47: negação de agregados e escopo all comprovados
 Turno anterior teve progresso publicado KG44/45 e investigação; esta retomada
 revalidou handle58785 vivo e aguardou terminal0:55pass/264.81s. Não reiniciado.

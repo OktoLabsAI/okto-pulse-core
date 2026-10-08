@@ -11,8 +11,8 @@ Discovery upsert path (``_apply_event``), the parity reconciler
 
 It is PURE: the caller fetches the (board-scoped) debt/pending overlay once and
 passes the per-artifact reason in. ``raw_graph_layer`` must already be coalesced
-to ``legacy_unknown`` for a missing layer — this resolver NEVER defaults a
-missing layer to ``canonical`` (fail-closed; FR5). R2 (stale canonical demotion
+for diagnostic collection when missing; publication accepts only canonical or
+working and rejects missing/unknown layers without conversion. R2 (stale canonical demotion
 of the source) and R7 partition integrity are out of scope here.
 """
 
@@ -70,8 +70,8 @@ def resolve_expected_digest_layer(
 
     Only a *canonical* ``Learning`` is subject to the R7 publication carve-out
     (reuses :func:`evaluate_canonical_learning_publication`); every other node —
-    and a non-canonical Learning — publishes at its own (already fail-closed)
-    ``raw_graph_layer``. ``exclusion_reason`` is non-None only when a canonical
+    and a working Learning — publishes at its valid ``raw_graph_layer``.
+    Missing or retired layer values cannot become a durable publication state. ``exclusion_reason`` is non-None only when a canonical
     Learning was downgraded to ``working`` (so the caller can emit the metric).
 
     ``relates_to_endpoints`` (S-KG-02) is the non-bug taxonomy evidence
@@ -80,6 +80,8 @@ def resolve_expected_digest_layer(
     Learning publishes at ``canonical`` ONLY with a resolved source + a canonical
     ``relates_to`` to an S-KG-01 taxonomy endpoint (else downgraded to ``working``).
     """
+    if raw_graph_layer not in (GRAPH_LAYER_CANONICAL, GRAPH_LAYER_WORKING):
+        raise ValueError("global_projection_graph_layer_invalid")
     if node_type == LEARNING_NODE_TYPE and raw_graph_layer == GRAPH_LAYER_CANONICAL:
         publishable, reason = evaluate_canonical_learning_publication(
             source_artifact_ref=source_artifact_ref or "",

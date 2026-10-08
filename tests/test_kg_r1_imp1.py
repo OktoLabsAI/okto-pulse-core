@@ -355,10 +355,11 @@ def test_resolver_non_learning_mirrors_raw_layer():
     assert resolve_expected_digest_layer(
         node_type="Decision", raw_graph_layer="working"
     ) == ("working", None)
-    # Fail-closed: a legacy_unknown stays legacy_unknown, never canonical (FR5).
-    assert resolve_expected_digest_layer(
-        node_type="Requirement", raw_graph_layer=LEGACY_UNKNOWN
-    ) == (LEGACY_UNKNOWN, None)
+    for invalid_layer in (LEGACY_UNKNOWN, "", None, "all", "unknown"):
+        with pytest.raises(ValueError, match="global_projection_graph_layer_invalid"):
+            resolve_expected_digest_layer(
+                node_type="Requirement", raw_graph_layer=invalid_layer
+            )
 
 
 def test_resolver_canonical_learning_uses_r7_rule():
@@ -1330,35 +1331,19 @@ async def test_reconcile_keeps_incomplete_learning_working_no_flip(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_legacy_missing_layer_stays_out_of_canonical(db_factory):
+async def test_missing_layer_refuses_publication_without_conversion(db_factory):
     board_id = await _new_board(db_factory)
     nid = f"req_{uuid.uuid4().hex[:10]}"
-    _seed_node(board_id, "Requirement", nid, layer=None)  # no graph_layer at all
-    assert await _run_outbox(db_factory, board_id, [("Requirement", nid)]) == 1
-    # Published as legacy_unknown, NOT canonical.
-    assert _digest_layer(board_id, nid) == LEGACY_UNKNOWN
-    # A reconcile event must not "heal" it into canonical.
-    assert await _run_outbox_no_refs(db_factory, board_id) == 1
-    assert _digest_layer(board_id, nid) == LEGACY_UNKNOWN
-
-    svc = get_kg_service()
-    canon_ids = {
-        r["id"]
-        for r in svc.query_global(
-            QUERY_TEXT,
-            user_boards=[board_id],
-            graph_layer="canonical",
-            min_similarity=0.1,
+    _seed_node(board_id, "Requirement", nid, layer=None)
+    assert await _run_outbox(db_factory, board_id, [("Requirement", nid)]) == 0
+    assert _digests_for(board_id, nid) == []
+    assert await _run_outbox_no_refs(db_factory, board_id) == 0
+    assert _digests_for(board_id, nid) == []
+    with open_board_connection(board_id) as (_db, conn):
+        result = conn.execute(
+            "MATCH (n:Requirement {id:$id}) RETURN n.graph_layer", {"id": nid}
         )
-    }
-    all_ids = {
-        r["id"]
-        for r in svc.query_global(
-            QUERY_TEXT, user_boards=[board_id], graph_layer="all", min_similarity=0.1
-        )
-    }
-    assert nid not in canon_ids, "legacy_unknown digest leaked into canonical"
-    assert nid in all_ids, "all query must still surface it diagnostically"
+        assert result.rows == ((None,),)
 
 
 @pytest.mark.asyncio

@@ -540,19 +540,17 @@ async def test_mismatch_does_not_override_canonical_debt(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_query_global_layer_coherence_and_legacy_fail_closed(db_factory):
+async def test_query_global_layer_coherence(db_factory):
     board_id = await _new_board(db_factory)
     canon = f"dec_c_{uuid.uuid4().hex[:8]}"
     work = f"dec_w_{uuid.uuid4().hex[:8]}"
-    legacy = f"req_l_{uuid.uuid4().hex[:8]}"
     _seed_node(board_id, "Decision", canon, layer="canonical")
     _seed_node(board_id, "Decision", work, layer="working")
-    _seed_node(board_id, "Requirement", legacy, layer=None)  # no graph_layer
     assert (
         await _run_outbox(
             db_factory,
             board_id,
-            [("Decision", canon), ("Decision", work), ("Requirement", legacy)],
+            [("Decision", canon), ("Decision", work)],
         )
         == 1
     )
@@ -574,14 +572,13 @@ async def test_query_global_layer_coherence_and_legacy_fail_closed(db_factory):
     working_ids = _ids("working")
     all_ids = _ids("all")
 
-    # canonical-only: only the canonical node; never working or legacy_unknown.
+    # Canonical-only excludes working.
     assert canon in canonical_ids
     assert work not in canonical_ids
-    assert legacy not in canonical_ids
     # working scope returns the working node, not the canonical one.
     assert work in working_ids and canon not in working_ids
-    # all is diagnostic: surfaces every layer including legacy_unknown.
-    assert {canon, work, legacy} <= all_ids
+    # All includes both current artifact layers.
+    assert {canon, work} == all_ids
 
 
 # ===========================================================================
@@ -589,21 +586,6 @@ async def test_query_global_layer_coherence_and_legacy_fail_closed(db_factory):
 # ===========================================================================
 
 
-@pytest.mark.asyncio
-async def test_legacy_digest_later_gets_expected_layer_via_reconcile(db_factory):
-    """ts_94e83637 (2nd clause): a legacy_unknown digest is fail-closed, and once
-    its board node acquires a real layer the reconciler maps it to the expected
-    layer (no longer stuck outside canonical)."""
-    board_id = await _new_board(db_factory)
-    nid = f"req_{uuid.uuid4().hex[:8]}"
-    _seed_node(board_id, "Requirement", nid, layer=None)  # no layer -> legacy_unknown
-    assert await _run_outbox(db_factory, board_id, [("Requirement", nid)]) == 1
-    assert _digest_layer(board_id, nid) == "legacy_unknown"
-
-    # The board node later acquires a canonical layer; reconcile maps it.
-    _set_node_layer(board_id, "Requirement", nid, "canonical")
-    assert await _run_outbox_no_refs(db_factory, board_id) == 1
-    assert _digest_layer(board_id, nid) == "canonical"
 
 
 def _seed_digest_directly(board_id, *, digest_id, original_node_id, layer):
