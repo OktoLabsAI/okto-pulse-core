@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-VER-18 contexto combinado com prova parcial autenticada
+Base19c2d060/1f0ec16a. Mesmo cenário nativo agora admite relatório demonstration
+autenticado e bindings reais de implementação/teste. FR/BR/AC recebem crédito
+da mesma prova; dois IRs promovidos e seus critérios continuam sem execução,
+rollup bloqueado. Planejamento completo não equivale a entrega concluída.
+Sessão nova/REST/MCP preservam proveniência; leitor author não se apropria
+do checkpoint executor nem da prova agent-1. UI mostra autor, source-main,
+revisão, autenticação current e seis checkmarks apenas nas três obrigações
+cobertas; IRs pendentes, uma chamada por painel e zero getSpec.
+
+Proof provenance-native-context-proof-20261008 terminal0 antes dos testes:
+main90 byte-idêntico838/317 Python,899/403 payloads.
+Campanhas1/2 falharam por fixture incompleta (alocação AC/Test Cards IR);
+completar dados de planejamento, sem relaxar gate, preservou IRs não executados.
+Campanha3/session3004 terminal0:1pass13.59s; JSON exato versionado no frontend.
+Campanha4/session50390 terminal0:1pass11.64s com asserts adicionais de crédito
+efetivo, autenticação, ator e fonte. Frontend terminal0:1pass.
+Estados dos Cards/observação externa são entradas controladas; não alega
+transição pública de conclusão nem execução de serviço externo/login.
+Recibo clean-break-native-context-proof-20261008.json; AC-VER-18 qualificado.
+Índice224verificados/11pendentes/11superados. Produto/SPA inalterados,
+closure main90/oito budgets ZERO. WIP KG10 preservado.
+Próximo: KG30, benchmarks e DEI64 do universo fixo; decisões BASE:T23/KG10/KG28
+ainda pendentes. Objetivo integral ativo, sem promoção/dados reais.
+
 ### 2026-10-08 — AC-VER-18 paridade combinada REST/MCP/UI (parcial)
 Base7390e14c/de9a51c1; turno anterior foi progresso. test_native_verification_context
 agora compara plano, rollup Spec e resume Card por FastAPI/FastMCP reais, sessões

@@ -1,0 +1,36 @@
+{
+  "scope": "ARQVER:AC-VER-18",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main90",
+  "evidence": [
+    "Native combined population: real candidate promotion into two IRs, inherited BR responsibility, authenticated demonstration receipt and implementation/test bindings.",
+    "One proof credits FR, inherited BR and AC; both promoted IRs and their criteria remain unsatisfied. Structurally complete planning does not grant global delivery: rollup remains blocked.",
+    "Fresh sessions and real FastAPI/FastMCP reads return equal qualification, Spec rollup and Card resume. Reader differs from checkpoint and evidence authors; real permission decisions preserve read-only authority.",
+    "Frontend renders exact successful backend payload with three panels, six partial-credit checkmarks, pending IRs, blocked rollup, authenticated test, original actor/source/revision and checkpoint. One request per panel and zero getSpec calls.",
+    "Prior bounded global-pending/focused requirement checks remain in clean-break-native-verification-context-partial-20261008.json."
+  ],
+  "results": {
+    "backend_passed": 1,
+    "backend_seconds": 11.64,
+    "frontend_passed": 1
+  },
+  "limits": [
+    "Controlled qualification, allocations, Card lifecycle, source observation and external report content; no claim of executing the external service or completing Cards through public transitions.",
+    "Typed reader identities and real authorization; credential login is not tested. Frontend network boundary is mocked with exact backend output.",
+    "No product or SPA change, no release or real-data operation."
+  ],
+  "iterations": [
+    "1 fixture AC allocation missing; write refused delivery_obligation_not_found.",
+    "2 missing IR Test Card allocations made inventory incomplete; authenticated test admission refused.",
+    "3 explicit AC and IR Test Card allocations supply complete planning, leaving IR executions pending; backend and exact-payload frontend pass.",
+    "4 added explicit assertions for effective credit, current authentication, original actor and source; passes."
+  ],
+  "artifacts": {
+    "provenance-native-context-proof-20261008.json": "8d8b557d2ef9ee4e70ee0851debaf3fe9721e67c104f982dd4a78edb67a8ee66",
+    "native-context-proof-20261008-3.xml": "309f34a7a6d35a3bf34351e1fa605f002515e7ed27e5cda60eef35a68666736a",
+    "native-context-proof-20261008-4.xml": "b8efa6844862f7280b9df13958263b9f861abcdbde2e1b62e25e7bc55c15fd09",
+    "native-context-proof-frontend-20261008.json": "f068ee2e3e5cdd75fb036440c974fb5888502c7c830700f17425e14fdc8524b2",
+    "native-context-proof-20261008-3-tmp/test_inherited_br_promoted_ir_0/native-context.json": "23eeb447b3ca9d793f0c9e3c6ef5cf7042a1225275e1d87eeef094cf3b15af39",
+    "closure-native-main90.json": "738a5f3f3390888489c030ace3cfdd62c223416a5d689a599dcbf1da759fddfd"
+  }
+}

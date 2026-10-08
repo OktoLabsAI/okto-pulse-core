@@ -7384,7 +7384,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-context-proof-20261008.json",
+        "criterion_key": "ARQVER:AC-VER-18",
+        "proof_pair": "dist-native-main90"
+      }
     },
     {
       "key": "ARQVER:AC-INT-01",
