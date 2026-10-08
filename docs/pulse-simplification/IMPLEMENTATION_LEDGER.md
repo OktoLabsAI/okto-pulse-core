@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — merge consciente de Delivery Evidence em Coverage / Implementation
+
+Community `451e3f08`: removida a aba principal Delivery Evidence e unificada
+em Coverage → Implementation. Mantidos os checks por obrigação, gate do Board,
+toggle existente e visão por Card; cada obrigação expande provas de implementação
+e verificação, referências, revisão semântica, dispensas e lacunas. Registros
+filtrados pelos IDs associados à obrigação, sem cruzar evidência de outro item.
+Dispensa identificada como Waived, distinta do check de prova. Sem mutação de
+dados, cálculo novo de gate ou alteração de permissões.
+
+Coverage agora usa AccessibleTabList/AccessibleTabPanel secondary, exatamente
+o componente de Validation: Overview, Planning, Implementation. Botões de ação
+com altura 36px, borda, fundo, hover e foco consistentes. Os dois indicadores de
+prova do Overview levam à única Implementation. Acesso antigo de Delivery
+preservado mesmo sem permissões mais amplas de resumo: subabas e consultas
+autorizadas separadamente. Atualização da revisão da Spec recarrega o rollup.
+
+46 testes frontend passaram (Coverage, cliente REST, Delivery e AccessibleTabs),
+incluindo expansão isolada, provas/dispensas, atualização, permissões, paginação
+e cancelamento. TypeScript/Vite e pacote de 79 arquivos passaram; árvore SHA256
+`5c353fbd2257f97b584a99d256251b733b8f3f573b4d6ccd0fd6224ef9e0e318`.
+Usuário encerrou Pulse e autorizou reinstalar/iniciar/inspecionar: wheels locais
+reinstalados, 842 Python Core e 317 Community idênticos fonte/wheel/site-packages;
+79 arquivos frontend idênticos. Evidência `coverage-merge-host-provenance.json`
+em `.validation-v040`. Runtime iniciado oculto, PID Python 33496 posterior à
+instalação, home default preservada. Inspeção integrada concluída no runtime
+instalado em 127.0.0.1:8100, My Board/Spec de reservas: três subabas, ausência
+de Delivery Evidence principal, checks de 79 obrigações, expansão de
+ReservationUnitOfWork com implementação/verificação separadas e nenhuma prova
+fabricada (a iniciativa ainda não tem execução). Console sem erros/warnings.
+Screenshots locais Community/output/playwright/coverage-merge-installed.png e
+coverage-merge-expanded.png. Processo mantido ativo para inspeção do usuário.
+
+
 ### 2026-10-08 — reinstalação de Coverage e Code Evidence Matrix
 
 A pedido do usuário, reconstruídos e reinstalados os wheels locais Core e
