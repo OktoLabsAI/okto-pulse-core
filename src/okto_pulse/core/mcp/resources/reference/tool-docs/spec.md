@@ -510,16 +510,16 @@ separating Current from Previous by lifecycle edition.
 Useful for understanding why a spec was validated (or failed). Canonical
 records include five scores, per-score justifications, optional pinpoints,
 outcome, threshold violations, and a resolved_thresholds snapshot of what was
-in effect when the submit happened. Older records preserve their historical
-score/summary or three-metric shape.
+in effect when the submit happened. Every native record uses this same contract;
+incompatible historical shapes are refused without conversion.
 The result matching the active Spec edition is Current. Earlier-edition results
-are Previous; legacy SQL `NULL` editions are `history_only` under Previous and
-can never become Current.
+are Previous. Missing or inconsistent editions are refused without assigning
+an edition to the stored record.
 
 Args:
     board_id: Board ID
     spec_id: Spec ID
-    lifecycle_state: Optional `all|current|previous|history_only` filter
+    lifecycle_state: Optional `all|current|previous` filter
 
 Returns:
     JSON with current_validation_id and validations list (reverse chronological)
@@ -650,20 +650,17 @@ Returns:
 Update a spec's fields. Content changes (description, context, requirements, criteria) bump the version.
 Only non-empty fields are updated.
 
-New Specs adopt the joint architecture/verification execution contract. A legacy
-Spec must explicitly adopt before its first start, through an authorized Draft
-revision. Send `adopt_execution_contract` with `contract_version` equal to
-`spec-execution-contract/v1`, `expected_spec_version` and `expected_spec_edition`.
-The existing content-edit permission and lock apply. The server persists actor
-provenance and bumps the content version; a stale request fails without mutation.
-This marker is separate from the selection of Architecture Designs. Adoption
-does not classify candidates, allocate Cards, invent criteria or upgrade old proof.
+Every Spec requires the native joint architecture/verification execution contract,
+created by the server with the Spec and scoped to its Board and edition.
+A missing or incompatible contract is refused; this update command has no
+legacy adoption or conversion option. Architecture Design selection remains
+separate from this contract and does not classify candidates, allocate Cards,
+invent criteria or create proof.
 
 Before first start, all current architecture candidates must be classified and
 the complete verification/implementation plan must resolve. Existing evaluations,
 dependencies and coverage gates still apply; passing execution is not required
-at planning time. Already-running legacy work preserves its approved contract
-until an explicit revision/adoption. Done history is not automatically reopened.
+at planning time. Native Done history is not automatically reopened.
 
 Args:
     board_id: Board ID

@@ -25,13 +25,13 @@ the delivered implementation. Call `okto_pulse_get_delivery_evidence(board_id,
 spec_id)` and use its rollup projection: exact obligation references plus the
 per_card block (each linked card's derived obligations and satisfaction).
 
-**Card-scoped since 0.3.4 (spec 793c43d0):** `okto_pulse_record_delivery_evidence`
+**Card-scoped delivery:** `okto_pulse_record_delivery_evidence`
 anchors on the CARD — pass `board_id, card_id, spec_id` and a command carrying
 `expected_card_version` (the card CAS fence) and `expected_spec_edition`. The
 obligation universe of a normal/bug card derives from its own spec links; a card
 without links carries exactly the `card:<card_id>` fallback obligation. Waivers
 are NOT accepted on the card surface — they remain a human-only, spec-rollup
-exception on the legacy ledger; revoke stays human-only everywhere.
+exception on the native ledger; revoke stays human-only everywhere.
 
 1. Tasks/bug cards provide code delivery: follow the existing Target investigation,
    resolution and execution-receipt workflow; record the committed result revision,
@@ -854,9 +854,9 @@ inheritance. Their authenticated results retain the original Test Card and
 author; `observes_this_card` identifies an explicit implementation reference,
 not automatic coverage. The canonical evaluator still decides satisfaction.
 At most 20 related Test Cards are read by default; an incomplete population
-is explicitly unknown, with scoped ledger follow-ups. Legacy scopes retain
-own-Card tests and require the Spec rollup for broader qualification. Targets
-have a follow-up to their existing paginated list, under its own permission.
+is explicitly unknown, with scoped ledger follow-ups. Use the Spec rollup for
+broader qualification. Targets have a follow-up to their existing paginated
+list, under its own permission.
 Follow-up reads remain subject to their own permissions and gates. The response
 does not inspect a workspace or claim that all narrative pending work is resolved.
 

@@ -1,0 +1,108 @@
+{
+  "scope": "native Quality, Spec validation, execution contract, governance metadata and delivery guidance",
+  "proof_pair": "dist-native-main78",
+  "changes": [
+    "Removed migrated Quality/spec_validation and NULL-edition/history_only promises; native edition requirements and separate Validation surface documented.",
+    "Removed legacy execution-contract adoption instructions; current Spec contract and native sealed pinpoint snapshots required.",
+    "Governance metadata remains optional under current contract; removed legacy-compatible-write interpretation.",
+    "Delivery implementation requires explicit contribution bindings (including batches), and progress accepts only v2. Removed v1 replay and obligation_refs-only compatibility promises.",
+    "Native earlier-edition history, audit fields, human waiver/revoke, and evidence authority preserved."
+  ],
+  "evidence": [
+    "Documentation reconciled against current domain/service/models before editing; no runtime semantics changed.",
+    "332 tests covering served resources/catalog, Quality documentation, governance optional envelope, native validation history/snapshots, execution contract, delivery bindings/progress/batches passed."
+  ],
+  "tests": {
+    "core_passed": 332,
+    "total_distinct_passed": 332
+  },
+  "closure": {
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": []
+  },
+  "limits": [
+    "Not a new criterion qualification: acceptance index remains 98 verified,137 pending,11 superseded.",
+    "Other resource promises still require reconciliation, notably reports without manifest and project_structure reference_scaffold handling.",
+    "No frontend or Python runtime changes; no live-browser claim."
+  ],
+  "artifacts": {
+    "provenance-native-main78.json": "5cfeaf3101a0c257634c433019abf9801e2229f180d75b6cbec9624e78aa871e",
+    "native-contract-guidance1.xml": "d95301c06f830431e0a5bfd1aeb9abcce67f4fd0e944512b88c0c4c7358c4bb0",
+    "closure-native-main78.json": "ee30665f2d4163d615fc35d82cadbc94dca845b1b3296f1802f2bf450b297071"
+  }
+}

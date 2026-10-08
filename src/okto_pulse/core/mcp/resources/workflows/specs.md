@@ -208,8 +208,8 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
    pinpoint Pulse resolves the authorized anchor and seals its human label,
    text/excerpt, source version and digest into validation history. Clients
    submit only the anchor selector and explanation; they cannot supply the
-   sealed snapshot. Records created before this contract explicitly report the
-   snapshot as `legacy_unavailable` and are never re-resolved from current
+   sealed snapshot. Each pinpoint requires its native sealed snapshot; an absent
+   or incompatible snapshot is refused and is never reconstructed from current
    mutable Spec content.
 
 Checklist mode/template governance is human-owned in Board Config. Agents may

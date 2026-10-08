@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Promessas de compatibilidade reconciliadas com contratos nativos (main78)
+Base6742382f/53ca6805 limpa. Corrigidos7resources (Quality/guideline/Spec/workflow/
+errors/Code Traceability) com base em código atual: edição positiva obrigatória,
+history_only recusado, histórico Spec Validation na superfície própria, snapshots
+de pinpoints selados obrigatórios, sem adopt_execution_contract.
+Governance metadata continua opcional; erro não sugere mais escrita legacy-compatible.
+Delivery exige bindings parciais/completos, inclusive batch, e progress/v2;
+removidas promessas obligation_refs-only/v1/deltas e clients legados.
+Nenhum Python produtivo/gate/autoridade mudou. Histórico nativo e auditoria preservados.
+
+Gerador oficial executado sem drift. Wheels main78 construídos; instalação59487
+terminal0; provenance-native-main78 byte-idêntico835/896+317/403 antes de comportamento.
+Core80318 terminal0:332pass/18.65s em resources/catalog/Quality docs/governance/
+histórico validation/snapshots/execution contract/delivery contract/progress/batch.
+Closure77287 terminal0:ok=true, findings/documentation vazios, oito budgets0.
+Recibo clean-break-native-contract-guidance.json. Sem novo item no denominador
+ou qualificação: índice98 verificadas/137 pendentes/11 N/A. Frontend igual main75.
+Todos handles terminais. Nenhum runtime/dado real alterado.
+
+Próximo concreto, já no escopo de retirada de legado:
+- tool-docs/card.md:238 promete relatório sem delivery_manifest compatível até rollout.
+  NÃO apenas apagar sem conferir: domain/delivery_selection.py aceita ausência;
+  pode haver seleção opcional nativa. services/main.py:4575 contém comentário de
+  fallback de conclusão de task validation que precisa ser confrontado com o fluxo real.
+  Verificar writer, read e admissão com testes existentes antes de mudar semântica.
+- workflows/cards.md:238/277 chama holds/report ausente de legacy.
+- reference/project_structure.md:121 promete normalizar note/interpretation_limit
+  em reference_scaffold na próxima edição; confrontar modelo de escrita/leitura.
+- tool-docs/architecture.md:24/250/291 ainda recomenda participantes antigos.
+- tool-docs/board.md:28 cita missing legacy values; verificar default atual.
+KG64/KG66 e decisões BASE:T23/KG10/KG28 continuam pendentes.
+
 ### 2026-10-07 — KG65: referências Sprint/manutenção removidas (main77)
 KG63 commits Core71f72077/Community53ca6805 enviados. Preflight de recursos189pass
 mas inspeção identificou lacunas reais: docs ainda citavam Sprint, migração de schema

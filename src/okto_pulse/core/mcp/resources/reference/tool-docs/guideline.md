@@ -263,8 +263,7 @@ Returns:
 ## `okto_pulse_list_semantic_guideline_assessments`
 
 Page immutable semantic assessment results. Product surfaces group them as
-Current or Previous by subject edition; legacy SQL `NULL` editions are
-history-only under Previous.
+Current or Previous by subject edition. Missing subject editions are invalid.
 
 Args:
     board_id: Authenticated board scope.
@@ -273,7 +272,7 @@ Args:
     entity_type, subject_id: Optional exact subject filters.
     guideline_id, binding_id: Optional exact policy filters.
     outcome: Optional `passed` or `metric_threshold_failed`.
-    currentness: Technical compatibility filter `current|stale`; scanning
+    currentness: Technical audit filter `current|stale`; scanning
         remains keyset-safe. Use lifecycle state for human decisions.
     profile: Closed `summary`, `detail`, or `full` projection.
 
@@ -282,7 +281,7 @@ Returns:
 
 ## `okto_pulse_get_semantic_guideline_assessment`
 
-Read one immutable semantic assessment result by compatibility receipt identity.
+Read one immutable semantic assessment result by its server-issued receipt identity.
 
 Args:
     board_id: Authenticated board scope.

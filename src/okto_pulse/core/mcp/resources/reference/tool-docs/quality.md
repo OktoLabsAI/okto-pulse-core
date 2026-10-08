@@ -7,8 +7,8 @@ version: "1.0"
 Quality assessments are immutable, edition-bound results for an Ideation,
 Refinement, or Spec. Their score and pinpointed findings are evidence; the
 applicable lifecycle gate remains the authority for whether an entity may
-advance. `receipt_id` and tool names containing `receipt` are compatibility API
-terms, not product concepts.
+advance. `receipt_id` and tool names containing `receipt` are technical API
+identifiers; product surfaces use Current and Previous results.
 
 Operational pre-flight, currentness, projection, and gate rules:
 `okto-pulse://reference/quality-assessments`.
@@ -17,14 +17,13 @@ Supported assessment kinds are:
 
 - Ideation: `ambiguity`
 - Refinement: `ambiguity`
-- Spec: externally recorded `requirement_lint` at `approved`; read-only
-  migrated `spec_validation` audit evidence
+- Spec: externally recorded `requirement_lint` at `approved`. Native Spec
+  Validation history is read through the Validation surface.
 
 Each lifecycle edition has at most one current head. Product flows use
-`lifecycle_state`: `current`, `previous`, or legacy `history_only`. Returning
-the subject to `draft` starts a new edition and moves the old result into
-Previous. A legacy row with SQL `NULL` edition is always `history_only`, stays
-readable under Previous, is never backfilled, and can never become Current.
+`lifecycle_state`: `current` or `previous`. Returning the subject to `draft`
+starts a new edition and moves the old result into Previous. A positive subject
+edition is required; missing editions are refused without conversion or import.
 Technical currentness reasons remain audit metadata and do not make ordinary
 row-version or policy drift look like a new human validation cycle.
 
@@ -39,7 +38,7 @@ and `current_result`. The result is absent for `not_started` and contains only
 `score` and `scale` for `current`; it never embeds findings, evidence,
 questions, anchors, receipt IDs, or head mechanics. The field is omitted
 entirely when the caller lacks that entity type's Quality-read permission.
-Legacy array listing shapes remain unchanged.
+Parent listings without the PageEnvelope projection return the documented array shape.
 
 ## `okto_pulse_record_ambiguity_assessment`
 
@@ -180,7 +179,7 @@ Args:
         using the supported subject/kind matrix at the top of this resource
 
 Returns:
-    Success envelope with the immutable result and compatibility receipt/head
+    Success envelope with the immutable result and technical receipt/head
     fields. Product state is Current for the active edition; ordered
     `stale_reasons` are technical audit metadata only. Returns
     `assessment_current_not_found` when that subject/kind has no head.
@@ -190,10 +189,10 @@ Permissions:
 
 ## `okto_pulse_get_quality_assessment_receipt`
 
-Read one immutable result by its compatibility `receipt_id` inside its board scope. The detailed result
+Read one immutable result by its `receipt_id` inside its board scope. The detailed result
 preserves traceability from findings to any Q&A materialized with the write.
-A result from an earlier edition remains readable under Previous. A legacy
-result with SQL `NULL` edition is history-only and can never become Current.
+A native result from an earlier edition remains readable under Previous.
+A result without a positive subject edition is invalid.
 
 Args:
     board_id: Board ID
@@ -221,19 +220,19 @@ Args:
     subject_type: `ideation`, `refinement`, or `spec`
     subject_id: Subject ID inside the board
     assessment_kind: Optional supported kind filter
-    state: Compatibility filter: `current`, `stale`, or `superseded`.
+    state: Technical audit filter: `current`, `stale`, or `superseded`.
         Product surfaces group every non-current row under Previous; use the
         returned lifecycle state for human decisions.
     limit: Maximum entries, from 1 through 200 (default 50)
     cursor: Opaque `next_cursor` returned by the preceding page
-    offset: Non-negative compatibility input for the first page. Once a
+    offset: Non-negative offset for the first page. Once a
         cursor is present its keyset position is authoritative and a
         simultaneous non-zero offset is rejected
 
 Returns:
     Success envelope with `items`, `offset`, `limit`, `total_filtered`,
     `total_overall`, `has_more`, `next_cursor`, and ordering. Every item
-    includes its compatibility receipt payload, `is_head`, technical `state`,
+    includes its immutable receipt payload, `is_head`, technical `state`,
     and lifecycle projection.
 
 Permissions:
@@ -255,7 +254,7 @@ Args:
     severity: Optional `info`, `low`, `medium`, `high`, or `critical`
     limit: Maximum entries, from 1 through 200 (default 50)
     cursor: Opaque `next_cursor` returned by the preceding page
-    offset: Non-negative compatibility input for the first page. Once a
+    offset: Non-negative offset for the first page. Once a
         cursor is present its keyset position is authoritative and a
         simultaneous non-zero offset is rejected
 

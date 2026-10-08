@@ -71,9 +71,9 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   Multiple partial records do not add up to completion. Complete is still an
   executor declaration, subject to the existing proof and review requirements.
   Exact replay cannot change a declaration; a later declaration is a new record.
-  New records do not silently revoke or replace earlier records. Legacy clients
-  may still use `obligation_refs` under the current compatibility contract;
-  history without a declaration stays legacy, never relabelled complete.
+  New records do not silently revoke or replace earlier records. Implementation
+  entries require explicit `bindings`; an `obligation_refs`-only implementation
+  or a record without its contribution declaration is refused.
   This extension does not adopt ARQ/VER, redefine assigned contribution scope
   or seal the final selection.
   For multiple Targets, supply a nonempty `execution_refs` set on **each** binding:
@@ -111,8 +111,8 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   A report can select these records with `delivery_selection.reuse_impact=true`
   to avoid retyping the impact block. The report revalidates the exact selected
   set and its observed bases; the whole-card preview alone is not approval.
-  New deltas capture the known source identity on the server. A legacy delta
-  without that provenance is not silently assigned the source's new identity.
+  Deltas capture the known source identity on the server. Missing provenance
+  cannot be inferred from the source's current identity.
   Validation/rejected/done/on_hold/not_started cards cannot accept a new checkpoint.
   Record significant results or a deliberate pause; no fixed time/command cadence.
   `none` is a context note without a material delta. `targets` requires exact
@@ -123,10 +123,9 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   the work strictly after the checkpoint. Rebinding an old receipt, appending a
   clean note or comparing commit hashes cannot restore it. Independent Targets
   stay eligible; tests never transfer to a new implementation record.
-  Legacy v1 payloads/replay digests remain intact: dirty state or material impact
-  is treated conservatively in its declared scope; a context-only legacy note
-  does not invalidate proof solely by time. The full active checkpoint population
-  governs currentness even when the resume summary is capped at 20 records.
+  Only `delivery-progress/v2` is accepted; incompatible payloads are refused
+  without conversion. The full active checkpoint population governs currentness
+  even when the resume summary is capped at 20 records.
 - `test`: executing or done TEST `card_id`, linked passed/failed `scenario_id`, nonempty
   `implementation_ids` returned from implementation associations. Uses the current
   authenticated scenario receipt; clients cannot supply `verified` or hashes. Only
@@ -137,7 +136,7 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   Promotion is by read: do not re-record a result just because a card reaches Done.
   A newer failed run invalidates earlier passing coverage even before its new
   association is saved. New records retain their original outcome when the live
-  scenario changes; legacy rows are not backfilled with invented run history.
+  scenario changes. Every native association retains its authenticated run history.
   Frozen states remain frozen. Multiple tests may jointly cover code.
 - `revoke`: authorized human only, `record_id`, empty `obligation_refs`,
   justification. Revokes a record of this card. Appends a tombstone; cannot erase
@@ -145,7 +144,7 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
 
 Waivers remain on the human-only Spec REST surface, using `phase` =
 `implementation` or `test`, exact obligation refs and justification. That surface
-also revokes legacy records. Neither operation creates a passing test.
+also revokes native records. Neither operation creates a passing test.
 
 Every card write requires Spec edition/card version and a nonempty explanation. At most
 1,000 refs/implementation IDs, 20,000 explanation characters; unknown fields and
@@ -180,13 +179,13 @@ For one or several entries, use the same endpoint/tool with this envelope:
 ```
 
 Read `per_card.delivery_revision`; zero is valid only for an empty ledger.
-The revision includes every record in this Card/Spec/edition, including legacy
+The revision includes every record in this Card/Spec/edition, including native
 appends and revocations. A batch has 1–50 entries, unique `client_ref` (80 ASCII
 letters/digits/underscore/hyphen), at most 200 reference uses across entries and
 128 KiB serialized bytes. Each entry uses its existing progress/implementation/test
 contract and permission; waiver/revoke remain separate. Implementation/test
-admission still requires the existing authenticated source records. Partial/complete
-declarations are not yet supported.
+admission still requires the existing authenticated source records. Implementation entries require an explicit partial/complete
+declaration on each binding, including inside a batch.
 
 Within a batch, an implementation may use `execution_client_ref: "earlier-proof"`
 instead of execution_id/execution_submission. This references the accepted execution
