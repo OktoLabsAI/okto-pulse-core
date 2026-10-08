@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — VER métodos e admissão de relatórios (main86)
+Basec3f4416a/ff8978f4 conferida; proof provenance-native-verification-methods1
+terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.
+Core methods-core1/session51669:88pass em12.33s. Community methods1/
+session45112:15pass em40.20s. Frontend método/relatório:24pass.
+Acrescentados integration/manual no writer REST/MCP e três recusas de
+relatório estático incompleto: methods2/session71404:5pass em17.79s,
+uma sobreposição; totalCommunity19, total131distintos. Ruff/diff check verdes.
+
+Método não altera tipo de cenário; enum desconhecido é422, versão stale409.
+Capabilities concretas e população completa determinam prontidão. Relatório
+assinado vincula método/autoria/condição/critério; adulteração é recusada.
+Ausência de fonte/regras/configuração não emite receipt nem muda histórico.
+Relatório inconclusivo/autenticado permanece ready, sem crédito passing.
+Frontend não confunde admissão/persistência/aprovação e preserva autoridade.
+
+Recibo clean-break-native-verification-methods.json; AC-VER-08 qualificado.
+Índice171verificados/64pendentes/11superados. AC-VER-14 permanece separado:
+admissão está comprovada, mas falta testemunho completo de entrega do TR.
+Identidades controladas e fatos de implementação seedados não provam auth
+instalada. Nenhum produto/SPA alterado; closure main86 e oito budgets ZERO.
+Todos handles terminais; WIP KG10 preservado. Commit/push de testes/evidências,
+sem promoção/dados reais. Continuar critérios de prova e aplicabilidade.
+
 ### 2026-10-08 — VER vínculos exatos e leitura reversa (main86)
 Base9e48bc87/08659ae2 conferida. Proof provenance-native-criterion-links1
 terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.

@@ -1,0 +1,45 @@
+{
+  "scope": "Native scenario methods and external report admission",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "ARQVER:AC-VER-08": [
+      "test_rest_mcp_same_body_writer_version_conflict_and_closed_method[manual]",
+      "test_rest_mcp_same_body_writer_version_conflict_and_closed_method[integration]",
+      "test_real_http_replay_receipt_binds_method_and_rejects_reinterpretation",
+      "test_rest_mcp_admission_and_real_status_write_with_freshness",
+      "test_unsupported_or_absent_method_cannot_hide_behind_supported_scenario"
+    ]
+  },
+  "evidence": [
+    "REST/MCP writes preserve manual and integration scenario types while authoring inspection and automated methods; stale version is 409, unknown method and authority extras are 422.",
+    "Planning considers the complete population and installed verifier capability. Unsupported or absent methods stay blocking; scenario type is not used to infer a method or grant evidence.",
+    "Real HTTP execution receipts and signed inspection/static-analysis/demonstration reports bind method, scenario semantics, criterion scope and author. Tampered fields and method reinterpretation are refused.",
+    "Added three REST refusals for static reports missing sources, rules or configuration: no receipt emitted and persisted snapshot/history unchanged. Unauthorized inspection and foreign scope also fail before receipt creation.",
+    "External reports use the existing scoped status writer and Test Card delivery chain. Stale/failed/nonconclusive observations invalidate credit without closing the Spec. Unsigned or forged bulk evidence is refused.",
+    "Frontend sends unchanged server-issued evidence, separates admission from persistence, preserves permission/version boundaries and displays inconclusive/aborted/unavailable as pending rather than passing."
+  ],
+  "tests": {
+    "core_passed": 88,
+    "community_distinct_passed": 19,
+    "frontend_passed": 24,
+    "total_distinct_passed": 131,
+    "core_seconds": 12.33,
+    "community_main_seconds": 40.2,
+    "community_added_seconds": 17.79,
+    "added_campaign_passed": 5,
+    "overlap": 1
+  },
+  "limits": [
+    "REST and MCP identities are controlled fixtures; not an installed credential lifecycle or full browser E2E.",
+    "Accepted implementation facts and scenario states are seeded in the delivery-chain fixture. AC-VER-14 remains pending its complete technical-requirement delivery witness; report-admission evidence alone is not that qualification.",
+    "No product/SPA change, conversion, promotion or real-data operation. Main86 closure stays applicable with eight zero budgets."
+  ],
+  "artifacts": {
+    "provenance-native-verification-methods1.json": "7cb5b8fd8b7582ca0d0cdc769a52e26605a8f4f40c40506c935ea8047f0aa0bb",
+    "native-verification-methods-core1.xml": "9e098bafaa4fe562ca2bb0cee8cfe6cdcde547a6fc68d2299be41cc788e66e77",
+    "native-verification-methods1.xml": "38446ce517fd4b12ca641a9dc3a103eadb626462f6916c4b3114425890fb6a2a",
+    "native-verification-methods2.xml": "e3fb5d868c39fde1567f7efa433212cb97d4deebe320192572ee3cb0eba603d6",
+    "native-verification-methods-frontend1.json": "0b15cc2276b31f5f0688b6f3bdb4adc4f93da5b7b2fc45ea75a7ebbf2798858e",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}
