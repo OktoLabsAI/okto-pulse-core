@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-INT-05 classificação desatualizada (main87)
+Basebbeee546/a4413524. Proof provenance-native-classification-conflict1
+terminal0:835/317 Python e896/403 payloads byte a byte. Nova prova com
+duas sessões: primeiro autor lê intenção; segundo edita condição IR pelo
+writer governado e commit; classificação antiga recusa por versão, preserva
+conteúdo novo, decisões imutáveis e histórico atribuído ao segundo autor.
+
+Estendido witness de contrato: alteração material torna1 candidato
+review_required, conserva2 current e contrato analisado; pedido antigo recusa
+sem sobrescrever fonte. Estímulo de contrato é SQL; IR usa writer real.
+Identidades/permissões controladas, sem alegação de auth instalada,
+benchmark simultâneo ou novo teste de start.
+
+conflict1:1fail5.25s (campo ORM incorreto); conflict2/session48608:1fail7.56s
+(RealmScope ausente na nova sessão). Corrigida preparação, sem produto/gate.
+conflict3/session55421:2pass12.21s (1 novo caso,1 caso fortalecido).
+Frontend52 da campanha anterior reutilizados, hash conferido, sem recontagem.
+Ruff/diff check verdes, handles terminais.
+
+Recibo clean-break-native-classification-conflict.json; AC-INT-05 qualificado.
+Índice184verificados/51pendentes/11superados. Main87/closure vigentes, oito
+budgets ZERO; sem produto/SPA alterado. WIP KG10 preservado fora do commit.
+Commit/push testes/evidências. Sem promoção/dados reais.
+Continuar critérios restantes de verificabilidade/autoridade/eficiência do índice.
+
 ### 2026-10-08 — AC-INT-07 lote de contexto e exceções (main87)
 Baseb8b75fb3/d22d931f; proof provenance-native-classification-batch1 terminal0:
 835/317 Python e896/403 payloads byte a byte. Dois novos casos de transporte
