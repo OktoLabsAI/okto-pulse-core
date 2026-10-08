@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — associação de prova pelo Card no navegador
+Turno anterior foi progresso: leitura nativa no browser enviada
+Coref8888dca/Community892bace2; WIP KG10 preservado.
+Fixture agora monta CardDeliveryDoDPanel real para test-card. Playwright escolhe
+FR/BR/AC, run autenticado ts e implementação aceita, informa justificativa e
+grava pela rota canônica do Card. Navega novamente ao rollup e confirma6✓/8◌,
+sem crédito dos IRs nem conclusão global. Nenhuma resposta de API fabricada.
+
+Proof provenance-native-browser-write-main91.json terminal0 antes dos testes,
+838/317Python e899/403payloads idênticos. Produto/SPA inalterados.
+Campanha1/session54754 recusou com403; campanha2/session88041 isolou falta de
+spec.tests.update_status, pré-requisito vigente de spec.tests.execute.
+Fixture recebeu as duas permissões; controle do produto não alterado.
+Rerun3/session29210 terminal0:1pass24.86s incluindo2Playwrightpass11.3s.
+SQL confirmou autoria author/human/test/test-card. Replay REST exato mesmo ID,
+replayed=true, total4registros (checkpoint/implementação/teste anterior/associação
+do browser). REST e MCP novos concordam no rollup, ainda blocked.
+Prova anterior agent-1 e checkpoint executor preservados; não atribuir execução
+externa ao browser. Ruff F/E9/diff-check verdes; falhas anteriores retidas.
+
+Recibo clean-break-native-browser-write-main91-20261008.json sela payload,
+resposta, logs/XML/screenshot. Sem processos pendentes.
+DEI64 ainda requer navegação na SPA empacotada, não novo teste da mesma fixture.
+Índice226/9/11 inalterado; decisões BASE:T23/KG10/KG28 e limite KG30 mantidos.
+Próximo: montar runtime descartável com SPA instalada e verificar o fluxo pelos
+entry points reais; não usar dados/runtime do usuário. Commit/push testes e ledger.
+Nenhuma feature nova, migração, compatibilidade ou ampliação de autoridade.
+
 ### 2026-10-08 — navegador com leitura real do cenário nativo
 Turno anterior foi progresso: manifesto corrigido e auditoria instalada passou,
 Core23f98cce enviado; Community0714d574 e WIP KG10 preservados.
