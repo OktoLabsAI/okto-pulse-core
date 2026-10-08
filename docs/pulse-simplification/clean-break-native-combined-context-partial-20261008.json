@@ -1,0 +1,30 @@
+{
+  "scope": "ARQVER:AC-VER-18",
+  "status": "partial",
+  "proof_pair": "dist-native-main90",
+  "evidence": [
+    "Native schema; actual architecture classification coordinator promotes one candidate into two IRs with one receipt.",
+    "BR inherits FR condition and implementation responsibility with explicit source path.",
+    "Real delivery store registers partial checkpoint by executor; fresh session planning preserves inheritance and pending IR Test Card allocation.",
+    "Delivery projection remains blocked with no implementation/test IDs; checkpoint actor and record ID preserved; promoted IRs and ready scenario unchanged."
+  ],
+  "results": {
+    "passed": 1,
+    "duration_seconds": 11.71
+  },
+  "remaining": [
+    "Compare this combined population through REST/MCP and frontend using same payload, including progress/resume detail.",
+    "A partial checkpoint is not authenticated execution evidence; do not call this alone proof of the full AC-VER-18 requirement."
+  ],
+  "iterations": [
+    "1 incomplete IR qualification/allocation correctly prevented delivery population.",
+    "2 nullable supplementary collections in reader fixture correctly refused delivery population.",
+    "3 explicitly populated API contracts/decisions and native qualified IR allocations; pending execution preserved; test passes."
+  ],
+  "artifacts": {
+    "provenance-native-combined-context-20261008.json": "40edd1eb689f708a4a0803458ca1b5e9e25320356a4c979ac756e2633596d605",
+    "native-combined-context-20261008-3.xml": "bb02e3fc671254a0ea2d1cc7bd1d10d111a29cfb477a38e79e34e1260705e8ff",
+    "native-combined-context-20261008-3.log": "3ad58dd858dc1352334738618060247c0e870f7c0c0e5ca6795c31c88b7bfe43",
+    "native-combined-context-20261008-3-tmp/test_inherited_br_promoted_ir_0/native-context.json": "772d5f8809bbb1b23f14e8cd8033f5afc203006ee334eb02932a92e9de7230bb"
+  }
+}

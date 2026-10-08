@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-VER-18 cenário combinado nativo (parcial)
+Basecc493329/1f81349f; turno anterior foi progresso. Novo teste Community
+test_native_verification_context.py: schema nativo, coordinator real promove
+candidato em dois IRs/um recibo; BR herda condição/alocação da FR. IRs recebem
+qualificação/alocação como dados controlados, cenários ainda sem Test Card.
+Store real registra checkpoint parcial por executor. Sessão nova preserva
+herança/pendências; projeção delivery bloqueada, zero IDs implementação/teste,
+histórico de progresso com record_id/ator originais. IRs promovidos intactos.
+
+Proof provenance-native-combined-context-20261008 terminal0:main90 idêntico
+838/317 Python,899/403 payloads. Campanha1/session82205 recusou inventário por
+qualificação/alocação IR ausente; campanha2/session69833 recusou coleções
+suplementares null na fixture de leitura. Correção explicita listas nativas
+api_contracts/decisions vazias. Nenhum gate/produto relaxado.
+Campanha3/session26175 terminal0:1pass11.71s; Ruff/diff check verdes.
+Payload nativo gerado em native-combined-context-20261008-3-tmp/
+test_inherited_br_promoted_ir_0/native-context.json (plan/delivery/promoted),
+hash no recibo clean-break-native-combined-context-partial-20261008.json.
+Próximo: usar essa mesma população para REST/MCP e frontend, incluindo detalhe
+progress/resume. Checkpoint parcial não equivale a evidência autenticada de
+execução; critério permanece pendente até comparações restantes.
+Índice223/12/11 mantido; sem produto/frontend/SPA. Closure main90/oito budgets ZERO.
+Todos handles terminais; commit/push teste/evidência, WIP KG10 preservado.
+BASE:T23/KG10/KG28 continuam decisões pendentes. Objetivo integral ativo.
+
 ### 2026-10-08 — AC-VER-18 base de contexto nativo (parcial)
 Base65da3fda/15dba423; turno anterior foi progresso. RF-VER-18 pede plano,
 prova e proveniência equivalentes em requisito/Spec/Card/API/MCP/UI.
