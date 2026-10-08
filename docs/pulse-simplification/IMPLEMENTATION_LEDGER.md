@@ -35,9 +35,11 @@ findings/documentation_findings vazios e oito budgets ZERO (recibo local
 Produto Community: `d468213` na feature/v0.4.0. Wheel pronto para reinstalação:
 `.validation-v040/dist-guideline-revision-final-20261008/okto_pulse-0.4.0-py3-none-any.whl`.
 Prova reutilizável: `.validation-v040/verify_guideline_revision.py`.
-Instalação Python313 do usuário ainda pendente: solicitado Ctrl+C para liberar
-o executável do Windows; manter a aba do rascunho aberta sem recarregar.
-Depois da reinstalação, executar a prova também no Python313. A SPA precisa
+Após confirmação do usuário, reinstalação Python313 concluída com pip --user
+--force-reinstall --no-deps do wheel final. Prova no Python313:903+403 payloads
+source/wheel/site byte-idênticos e conjuntos Python iguais. CLI resolvido para
+Roaming/Python/Python313/Scripts/okto-pulse.EXE; nenhum processo Pulse restante.
+Data home preservado. Usuário pode iniciar com `okto-pulse serve`. A SPA precisa
 ser recarregada para receber o código novo, preservando antes o texto não salvo.
 
 Observação do teste assistido: a rubrica fornecida anteriormente pelo agente
