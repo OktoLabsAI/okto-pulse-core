@@ -2,6 +2,25 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — ADV-13 vínculo posterior ao run (main87)
+Base7321fbc2/8b78666c; proof provenance-native-postrun-link1 terminal0:
+835/317 Python e896/403 payloads byte a byte. Estendido witness governado:
+UI ainda tem prova atual antes de receber novo vínculo de obrigação BR;
+writer salva o vínculo, mas a observação antiga perde aplicabilidade.
+Sem nova prova/receipt, crédito retroativo ou alteração de ledger/avaliação.
+
+postrun-link1/session67711:1pass em9.85s. Ruff/diff check verdes.
+O BR já possui dimensão pendente no cenário: evidência decisiva é a perda
+do crédito UI previamente válido após mudança de seus próprios links.
+Não alegar transição isolada do gate BR ou novo E2E HTTP/auth.
+Negativos de digest e frontend main87 reutilizados, sem repetir/contar.
+
+Recibo clean-break-native-postrun-link.json; ADV-13 qualificado.
+Índice179verificados/56pendentes/11superados. Nenhum produto/SPA alterado,
+closure main87 vigente, oito budgets ZERO. Todos handles terminais.
+WIP KG10 preservado; commit/push teste/evidências. Sem promoção/dados reais.
+Continuar critérios pendentes de revisão, retomada e autoridade.
+
 ### 2026-10-08 — AC-VER-16 pelo writer governado (main87)
 Base6ce9a1a6/b2d3050e; proof provenance-native-governed-applicability1
 terminal0:835/317 Python e896/403 payloads byte a byte.
