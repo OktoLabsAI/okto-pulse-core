@@ -2,6 +2,41 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — Recuperação sem exceção para tentativas antigas (main83)
+Base8acaf0da/33be82e1 limpa. Investigação do diagnóstico legacy_primary:
+routed_global_graph_composition passa snapshot.anchor_path; bootstrap cria catálogo
+Grafx atual nesse caminho. Recovery ativa geração nativa; se antes não havia pointer,
+rollback o remove e retorna ao anchor. Não excluir esses caminhos: são recuperação
+nativa exigida, não conversores/bases antigas.
+Corrigidos nomes internos em4adapters e helper restore_anchor_generation (sem alias);
+diagnóstico novo global_discovery_anchor_primary_present verificado em Grafx real.
+
+Encontrado suporte legado ATIVO em _record_completed_attempt: capturava erro de
+identidade e retornava resultado sem journal para preservar labels de chamadas
+diretas antigas. Removido esse catch/return. recover_and_cutover e
+rebuild_candidate_and_cutover agora validam identidade canônica run/epoch/attempt
+antes de resolver paths, abrir bancos ou executar fences. Fixtures diretas usam
+recovery_attempt_id do worker.4casos negativos proíbem qualquer I/O/fence.
+Sem alteração de locks, autoridade de recuperação ou histórico nativo.
+
+Wheels83/install terminais0; proof6858 terminal0 ANTES dos testes:
+835/896+317/403 byte-idênticos. Community41065 terminal0:
+69pass/283.41s — providers Grafx, worker extensions, batches interrompidos,
+routed recovery, schema atual/recusa estrangeira, observação Health global.
+Frontend Health+Diagnostics55pass, total124distintos. Sem SPA/sourcefrontend
+alterado. Ruff/diff-check verdes. Closure51504 terminal0:oktrue,findings/docs
+vazios,8budgets0. Recibo clean-break-native-recovery-identity.json.
+Índice99/136/11 inalterado. Todos handles terminais, nenhum runtime/dado real tocado.
+
+Retomada: continuar o escopo fixo; fronteira KG ainda pendente10/16/24/28/30/64.
+Para16/24 revisar a união de recibos já existentes antes de inventar cenário:
+clean-break-native-relationship-family-review.json enumera famílias e
+clean-break-native-explicit-decision-parity.json fecha gapG6 identificado ali.
+Para30, complementoKG§5.4 permite sugestão read-only quando afirmação durável não
+é suportada, mas proíbe marcar fallback durável como implementado sem replay.
+DecisõesBASE:T23/KG10/KG28 seguem pendentes; benchmarkKG64 exige comparação.
+Não confundir referências históricas do ledger com caminho legado ativo.
+
 ### 2026-10-08 — KG66: contrato instalado e footprint único (main82)
 Base854663fb/e6719bbc. Campanha kg66-main81: fresh venv com120dependências,
 Grafx local0.0.7. Proof53757 terminal0 antes de init31412 terminal0.
