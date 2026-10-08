@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG44/45: prazo nativo, recursos e ausência de quota comprovados
+Campanhas terminais sem falhas: Community1=16, Community2=44, Core1=15,
+Core2=5; total80 casos distintos. XMLs conferidos novamente nesta retomada.
+Três timeouts Grafx com relógio real deixam zero transações abertas, sem
+recovery_required, e permitem writer/checkpoint/leitura após cada término.
+Cancelamento repetido do trabalho em thread aguarda conclusão; escopos
+preservam prazo compartilhado.35 chamadas por família MCP e35 leituras nativas
+não esgotam quota por contagem. Reservas concorrentes e cleanup permanecem.
+Recibo clean-break-native-query-runtime.json registra hashes, escopo e limites
+dos testes controlados; não representa benchmark de carga nem HTTP autenticado.
+KG44/KG45 qualificados:81 verificadas/154 pendentes/11 superadas.
+Produto e frontend main67 inalterados; sem reinstalação ou novo closure.
+Turno de correção do usuário apenas confirmou exclusão do Nexus, sem avanço
+de implementação; retomada confere evidência e publica este milestone.
+Próximo: KG46/KG47, permissões e isolamento de camadas, no escopo fixo.
+Decisões T23/KG10/KG28 continuam pendentes; trabalho independente disponível.
+
+### 2026-10-07 — KG44/45: prazos e chamadas sucessivas em validação
+Turno anterior progresso publicado Core219077a3/Community3f9df37b; worktrees
+limpas/sincronizadas. Prova provenance-native-query-runtime1 terminal0 antes
+de comportamento: main67 byte-idêntico835/896+317/403.
+Acrescentada prova com relógio REAL no Grafx: três queries de expansão sob10ms,
+GraphQueryTimeout nativo, open_transactions=0/recovery_required=false após
+cada uma, writer/checkpoint/nova leitura funcionam. Suites scalar/pair/batch
+com relógio controlado também agora afirmam ausência de transações abertas.
+Community1 (89795) terminal0:16pass/6.70s. Core1 (64946) terminal0:
+15pass/28.64s, inclui35 chamadas MCP por família e35 leituras Grafx nativas,
+sem consulta ao limiter histórico; orçamento compartilhado/cancelamento real de
+thread também preservados. Ports/auth/policy controlados onde indicado na suite.
+Ativos Community2 (45461, read lanes+policy transports) e Core2 (22562, blocking IO).
+Sem produto/frontend alterados; índice79/156/11 ainda. Não reinstalar.
+Próximo: terminais, limites/evidência, qualificação KG44/45 apenas se comprovados.
+
 ### 2026-10-07 — KG43: uma linha agregada não escapa dos limites
 Todos terminais: Community aggregate1=9pass/16.89s; aggregate2=10pass/1fail/20.82s
 (fixture esperava list em vez da tupla declarada no contrato Python);

@@ -4077,7 +4077,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-query-runtime.json",
+        "criterion_key": "KG:KG-44",
+        "proof_pair": "dist-native-main67"
+      }
     },
     {
       "key": "KG:KG-45",
@@ -4099,7 +4104,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-query-runtime.json",
+        "criterion_key": "KG:KG-45",
+        "proof_pair": "dist-native-main67"
+      }
     },
     {
       "key": "KG:KG-46",

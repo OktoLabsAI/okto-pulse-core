@@ -1,0 +1,62 @@
+{
+  "criteria": [
+    "KG:KG-44",
+    "KG:KG-45"
+  ],
+  "proof_pair": "dist-native-main67",
+  "review_base": {
+    "core": "219077a3",
+    "community": "3f9df37b"
+  },
+  "verified": [
+    "Actual Grafx wall-clock deadlines terminate three successive expansion queries; after each timeout open_transactions is zero, recovery_required is false, and write transaction, checkpoint and subsequent read succeed.",
+    "Native scalar/pair/batch deadline cases release transactions. Compound queries share one deadline and snapshot; query execution scopes preserve board isolation and cannot widen an enclosing deadline.",
+    "Core owned blocking tasks drain to terminal completion under repeated cancellation before cancellation propagates; context is preserved and no detached native worker is left behind.",
+    "35 successive calls per MCP family pass authorization/scope callbacks without consulting the injected former question-count limiter. A separate real Grafx case completes 35 Cypher reads.",
+    "Read-lane tests preserve bounded participant allocation, balance concurrent reservations, release reservations on failure and before retry, and retain transaction cleanup ordering. Transport policy and native timeout tests remain green."
+  ],
+  "tests": {
+    "acceptance-native-query-runtime-community1.xml": {
+      "tests": "16",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "6.697"
+    },
+    "acceptance-native-query-runtime-community2.xml": {
+      "tests": "44",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "10.820"
+    },
+    "acceptance-native-query-runtime-core1.xml": {
+      "tests": "15",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "28.613"
+    },
+    "acceptance-native-query-runtime-core2.xml": {
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "4.782"
+    }
+  },
+  "distinct_passed": 80,
+  "limits": [
+    "Native real-clock test is isolated and sequential, not a production load or process-memory benchmark.",
+    "Authorization and policy are controlled in query-count tests; native Cypher execution is real in the dedicated 35-read case.",
+    "Concurrency reservation and retry failures are controlled; thread cancellation uses actual threads with events. No claim of authenticated live-server end-to-end execution.",
+    "Product and frontend unchanged. Prior closure67 and frontend validation retained, not rerun. No compatibility path introduced."
+  ],
+  "artifacts": {
+    "provenance-native-query-runtime1.json": "d327e074bc9af428b032837c62b2e72acc834d81732877347dce0e7b54e1e5a2",
+    "acceptance-native-query-runtime-community1.xml": "ad9f75e3ef0122a2e4dc02a607e9283c0fb64958d9aceea0ca92eaca939ed226",
+    "acceptance-native-query-runtime-community2.xml": "e1b042a610ba68c10f9adccc4b740f180467d3e1a82a6c640edb1680711484f9",
+    "acceptance-native-query-runtime-core1.xml": "42e40b0af458c4304270cb67c5876060f94282cc8115f17d0e01a99d44bb125c",
+    "acceptance-native-query-runtime-core2.xml": "b4cc543253434792e7832a3872a0b739ea9c7bb0e2014172b11834903f8d1ea9"
+  }
+}
