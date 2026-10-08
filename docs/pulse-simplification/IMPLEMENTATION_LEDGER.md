@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T07 isolamento entre Boards com objetos existentes
+Base4fa81238/2f49b8c9. Proof provenance-native-delivery-board2 terminal0:
+main88 byte-idêntico838/317 Python,899/403 payloads antes dos testes.
+Fixture original fornece execução aceita e admitida; segundo Board possui
+Spec/Card/FR/AC nativos próprios. REST/MCP recusam Card, Spec, obrigação,
+receipt existente e Target do outro Board, com causa exata. Single/lote de duas
+entradas: nos erros de entrada, progresso local válido precede referência
+estrangeira; recusa não deixa escrita parcial nem após commit do caller.
+Leitura estrangeira prévia na mesma sessão não contamina progress/resume/ledger
+local. Detail/Card/cursor estrangeiros recusados, conteúdo sentinela ausente,
+respostas REST de sucesso no-store.
+
+board1/session19676:12pass24.11s, sem batch/causa exata ainda.
+board2/session76617:18pass/4fail36.86s: faltava AC na fixture local.
+board3/session32394:18pass/4fail43.27s: causa esperada corrigida após revisão
+do resolver; execução de outro Board é omitida e gera execution_set_unresolved.
+board4/session96316 terminal0:22pass35.79s, matriz final. Ruff/diff check verdes.
+Sem mudança de produto. Frontend44 anterior hash conferido e diff vazio em
+code-traceability e services/api.ts desde361647f5; reutilização sem recontagem.
+Principais/extração de credencial são fixtures; authorizer/persistência reais.
+Não alega autenticação instalada. Recibo clean-break-native-delivery-board-isolation.json.
+
+Índice201verificados/34pendentes/11superados. Main88 closure/oito budgets ZERO.
+Todos handles terminais. Commit/push teste/evidência; WIP KG10 preservado.
+Sem promoção/dados reais. Continuar DEI-T11 e demais pendências do índice fixo.
+BASE:T23/KG10/KG28 seguem decisões pendentes já registradas.
+
 ### 2026-10-08 — DEI-T08 mudança concorrente de origem durante append
 Base3946abbb/558ee2d8. Novo witness nativo retém Card/Spec desatualizados na
 identity map e comando preparado. Hook de entrada no fence faz outra sessão

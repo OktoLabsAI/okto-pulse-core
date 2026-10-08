@@ -1,0 +1,62 @@
+{
+  "scope": "DEI-T07 existing foreign Board objects refused through native delivery REST/MCP",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "DEI:DEI-T07",
+  "result": {
+    "passed": 22,
+    "failed": 0,
+    "seconds": 35.79,
+    "terminal_session": 96316
+  },
+  "evidence": [
+    "Native current SQL schema. Original Board has an accepted investigation/Target execution successfully admitted as implementation; second Board has its own native Spec, Card, normative requirement and observable criterion.",
+    "REST/MCP with real authorizer and explicit principal permissions refuse actual foreign Card, Spec, obligation, existing execution receipt and progress Target. Exact cause codes asserted.",
+    "Single and two-entry batch are tested. For entry-level refusal the batch puts a valid local progress entry first. Full column snapshots of observed Card, Spec, delivery record, DomainEvent, Target and execution models remain identical even after commit following refusal.",
+    "Foreign progress is read into the same adapter/session first. Foreign record detail, foreign cursor replay and foreign Card read are refused. Local progress/resume/ledger never return foreign records or sentinel content; successful REST reads specify no-store."
+  ],
+  "attempts": [
+    {
+      "campaign": "native-delivery-board1",
+      "passed": 12,
+      "failed": 0,
+      "limit": "Initial checks lacked exact cause assertions and batch cases; not separately counted."
+    },
+    {
+      "campaign": "native-delivery-board2",
+      "passed": 18,
+      "failed": 4,
+      "reason": "Local fixture lacked observable criterion, so allocation refused before foreign execution lookup."
+    },
+    {
+      "campaign": "native-delivery-board3",
+      "passed": 18,
+      "failed": 4,
+      "reason": "Exact expected error corrected after reviewing domain proof-set resolution: foreign execution omitted by scoped reader yields delivery_execution_set_unresolved."
+    }
+  ],
+  "reused_frontend": {
+    "passed": 44,
+    "artifact": "native-delivery-envelope-frontend1.json",
+    "unchanged_since": "361647f578eec02b1e260564e16bde6c1f889f44",
+    "checked_paths": [
+      "frontend/src/components/code-traceability",
+      "frontend/src/services/api.ts"
+    ],
+    "note": "Artifact hash verified, git diff empty. Not rerun or included in new execution count."
+  },
+  "limits": [
+    "Credential extraction and principals are fixture inputs; real permission checks and SQL persistence are not mocked. This is in-process REST/MCP, not installed authentication E2E.",
+    "Foreign receipt is the existing admitted fixture execution chain; no invented foreign accepted proof or incompatible data conversion.",
+    "No product or frontend changes, no real-data operations or promotion. Main88 closure and eight zero budgets remain applicable."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-board2.json": "f9ce3aff80a95969636867e53825227c0223a68b55414f3966ce75fc7e162d7e",
+    "native-delivery-board1.xml": "d35668fb01e54993822b1f0fc454b0aa8e1df77cdcadf5baa54ab9eb5f718325",
+    "native-delivery-board2.xml": "540f36339345e918654f4de788b049bf7138c099b1ceae54768c21d8b499e319",
+    "native-delivery-board3.xml": "ac614279a1b27c742420f41e1b3bafd7da68374669e4ba406f83f61b01a59acd",
+    "native-delivery-board4.xml": "d1b92b412c69c5c5e3891673b285c58c55e121a131a57dbedf90cef0dd00def7",
+    "native-delivery-envelope-frontend1.json": "a751880c26e35030dc6efc27dfb79d81a4f937cd3ffa9d2bf7f490e31f2d146d",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}
