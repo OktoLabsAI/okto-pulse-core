@@ -2,6 +2,44 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — teste ao vivo de boundaries no refinamento
+
+Após reinício informado pelo usuário, exercitado o runtime instalado no Board
+`2fd79a82-08b2-4ecc-823a-2c820342f6b9`, refinamento
+`c19ba77d-d30b-48db-ab5a-461e724e1645`, arquitetura
+`c76e3595-fda1-4ed3-9c99-f94d615078a6`. Schema MCP publicado confirma arrays.
+Reautoria explícita do design v3 para v4: nove entidades, dois itens por
+entidade (18 no total), preservando integralmente as frases e sua ordem.
+Treze interfaces e dois diagramas/35 elementos preservados. Dry-run completo
+e posterior validação MCP passaram sem issues ou warnings; leitura MCP
+retornou exatamente as listas gravadas. Texto, null, whitespace e item
+numérico foram recusados em dry-run; tentativa de gravação MCP com texto
+também recusada, sem nova versão ou mutação.
+
+O PATCH REST em Review foi corretamente recusado com409
+`subject_edit_requires_draft`. Após contexto completo e descoberta da
+transição permitida, fluxo normal Review → Draft (edição2), PATCH200 e
+Draft → Review. Estado final: Review, edição2, versão31; arquitetura v4.
+Nenhuma aprovação, dispensa ou evidência fictícia criada. Code Evidence
+continua advisory e pendente; estes testes são do Pulse, não implementação
+ou provas do aplicativo fictício de reservas.
+
+Limitação observada: os nove boundaries escalares preexistentes impediam
+a leitura tipada e o pre-read da atualização MCP antes da reautoria. Conteúdo
+recuperado por diagnóstico SQLite somente leitura; edição feita pelo endpoint
+REST público sob identidade local configurada, com gates normais. Não houve
+escrita direta no banco, conversor, migração automática ou alteração do parent
+Done. Após a edição, leitura e validação MCP funcionam. Limitação dos registros
+antigos permanece registrada, sem ampliar este teste para compatibilidade.
+
+Verificação independente somente leitura confirmou os três snapshots antigos
+idênticos, exatamente um snapshot novo e demais campos autorados preservados.
+Evidências locais em `PULSE_REFACTOR/.validation-v040/`:
+`live-boundaries-before.json`, `live-boundaries-rest-result.json` e
+`live-boundaries-verification.json`. Teste ao vivo via REST/MCP; não se atribui
+nova verificação visual do frontend a esta sessão. Nenhuma alteração de código
+ou reinstalação adicional necessária neste recorte.
+
 ### 2026-10-08 — reinstalação no host do contrato boundaries
 
 Usuário informou que parou o Pulse e autorizou reinstalação. Instalados com
