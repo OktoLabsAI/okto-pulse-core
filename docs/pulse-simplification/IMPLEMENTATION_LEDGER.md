@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — custo real de resources por sessão
+Turno anterior foi progresso: ADV23 qualificado/enviado Core27d1be8b e
+Community1689b4b9. Estado inicial conferido: apenas WIP KG10 na Community.
+test_single_agent_spec_execution agora lê resources reais antes das operações:
+preflight/specs/policy/quality/spec_gates em todas sessões; cards/card_types/
+code-traceability para executor e reviewer de Card; knowledge-governance/
+project-structure para executor. Novo reviewer relê no contexto da nova sessão.
+
+Proof provenance-native-protocol-cost-20261008 terminal0: main90 byte-idêntico
+838/317 Python,899/403 payloads. Campanha native-protocol-cost90-20261008/
+session21061 terminal0:4pass28.68s; dois warnings já conhecidos de anyio rewrite.
+Captura:10sessões,10initialize,10tools/list,98tools/call,76resources/read.
+Sequência de tools idêntica por caso à captura main90 anterior (assert conferido);
+quatro cenários terminam Spec Done com gates e evidências reais.
+Resources acrescentam1528408bytes/339976tokens de payload, contados integralmente.
+Archive benchmark-native-protocol-cost-main90-20261008.json.gz e recibo
+clean-break-native-protocol-cost-20261008.json preservam corpos/hashes.
+
+Não qualificar BASE:T43/KG64/AC-INT-12 com este recorte: falta autoria/classificação
+com população simples/muitos candidatos e comparação equivalente. Ler guia
+não prova executar todas suas instruções; entidades e fatos iniciais continuam
+semeados. Não alegar economia sobre sequência de tool names sem equivalência
+de fatos/payloads. Índice225/10/11 mantido; sem produto/frontend/SPA alterados.
+Próximo: fixture nativa de candidatos/classificação via catálogo completo,
+autoria pública okto_pulse_add_architecture_design, duas sessões/identidades,
+leitura paginada e classificação batched versus mesmas decisões individuais.
+Reaproveitar test_architecture_candidates_integration/classification_use_case
+e instrumentação measure_mcp_fixture/compare_mcp_measurements já versionadas.
+WIP KG10 intacto; BASE:T23/KG10/KG28 seguem decisões pendentes. Handles terminais.
+
 ### 2026-10-08 — ADV-23 medição de schemas e chamadas reais
 Turno anterior foi progresso: AC-VER-18 qualificado e limite KG30 documentado.
 Base atual Coreb74fff35/Community0350e4af; árvores limpas salvo WIP KG10.
