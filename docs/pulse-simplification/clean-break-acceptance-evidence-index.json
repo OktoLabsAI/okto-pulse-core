@@ -4749,7 +4749,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-authority.json",
+        "criterion_key": "DEI:DEI-T01",
+        "proof_pair": "dist-native-main88"
+      }
     },
     {
       "key": "DEI:DEI-T02",
@@ -4778,7 +4783,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-authority.json",
+        "criterion_key": "DEI:DEI-T02",
+        "proof_pair": "dist-native-main88"
+      }
     },
     {
       "key": "DEI:DEI-T03",
@@ -4800,7 +4810,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-authority.json",
+        "criterion_key": "DEI:DEI-T03",
+        "proof_pair": "dist-native-main88"
+      }
     },
     {
       "key": "DEI:DEI-T04",
@@ -4812,7 +4827,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-authority.json",
+        "criterion_key": "DEI:DEI-T04",
+        "proof_pair": "dist-native-main88"
+      }
     },
     {
       "key": "DEI:DEI-T05",
@@ -4824,7 +4844,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-authority.json",
+        "criterion_key": "DEI:DEI-T05",
+        "proof_pair": "dist-native-main88"
+      }
     },
     {
       "key": "DEI:DEI-T06",
@@ -4846,7 +4871,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-authority.json",
+        "criterion_key": "DEI:DEI-T06",
+        "proof_pair": "dist-native-main88"
+      }
     },
     {
       "key": "DEI:DEI-T07",

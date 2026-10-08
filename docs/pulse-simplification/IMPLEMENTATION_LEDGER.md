@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T01–T06 atores, permissões e entradas não confiáveis
+Basefa8a82d0/8b38e235. Turno anterior foi progresso com critérios qualificados e
+commits enviados. Proof provenance-native-delivery-authority1 terminal0 antes
+das campanhas:main88 byte-idêntico838/317 Python e899/403 payloads.
+
+Nova matriz em schema nativo, REST/MCP sem mock do authorizer/persistência:
+planejador sem execução recusa single/batch/inline/alias/report sem writes;
+executor sem target.create apenas associa prova existente e não altera Target;
+testador associa resultado assinado preservando implementação e não pode gravar
+implementação. Payload forjando ator/verified/current/gate_passed recusa nos dois
+transportes, no envelope e na entrada. Snapshots completos dos modelos observados
+permanecem iguais mesmo após commit do caller depois da recusa.
+
+authority1/session97704:2pass/12fail21.21s. Fixture esperava detalhe privado de
+permissão (API publica forbidden seguro) e lia payload de erro MCP (code separado);
+report usava estado inicial done não admitido. Corrigidas preparação/asserções,
+sem produto. authority2/session20868:14pass22.66s; authority3/session90625:
+30pass50.33s após adicionar16 casos de campos forjados. Ruff/diff check verdes.
+agent-flows1/session41240:8pass43.59s: fluxo Spec completo agente amplo/revisor
+separado e handoff com grants reais/self-review recusado. Total38 backend distintos.
+
+Frontend44+4 anteriores reutilizados com hashes conferidos e diff vazio desde
+361647f5 em componentes Delivery e API/teste de validação; sem recontagem.
+Autenticação da matriz é fixture de principal; MCP completo usa authenticator/
+grants reais com extração de credencial in-process. Attestation/contexto e settings
+cognitivo/impact/resource são controlados, sem alegar todos gates nessa fixture.
+
+Recibo clean-break-native-delivery-authority.json; DEI-T01–06 qualificados.
+Índice199verificados/36pendentes/11superados. Nenhum produto/SPA alterado;
+main88 closure mantém oito budgets ZERO. Todos handles terminais.
+Commit/push teste/evidência; WIP KG10 preservado. Sem promoção/dados reais.
+Continuar DEI-T07/T08 e atualidade/retomada, demais VER/KG e benchmarks do índice
+fixo. BASE:T23/KG10/KG28 continuam pendentes de decisão, não de nova investigação.
+
 ### 2026-10-08 — ADV-14 remoção do único Test Card
 Basefda36379/8b38e235. Revisado witness existente completo: plano nativo pronto,
 DELETE REST autorizado do único Test Card, preservação de histórico/avaliações,
