@@ -1,0 +1,44 @@
+{
+  "scope": "Declared Card responsibility and inherited BR provenance",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "ARQVER:AC-INT-01": [
+      "test_inherited_br_uses_selected_contribution_not_every_card_of_source",
+      "test_ui_completion_cannot_deliver_authorization_or_its_inherited_rule",
+      "test_diamond_reuses_one_proof_and_persisted_cycle_never_receives_credit",
+      "shows inherited responsibility only for its declared Card and preserves provenance"
+    ],
+    "ARQVER:AC-INT-02": [
+      "test_direct_links_without_authored_scope_remain_pending",
+      "test_overlapping_scopes_need_explicit_br_allocation_and_preserve_legitimate_direct_links",
+      "test_ui_completion_cannot_deliver_authorization_or_its_inherited_rule",
+      "test_two_partial_authorization_records_never_sum_to_the_inherited_obligation"
+    ]
+  },
+  "evidence": [
+    "Core resolver preserves source provenance and origin=inherited for a BR without direct Card links. Only the Card allocated to its selected terminal criterion receives the BR responsibility.",
+    "Direct links without authored scope remain pending. Overlapping source allocations require an explicit BR allocation; links/counts and partial claims cannot infer sufficient responsibility.",
+    "Previously verified real SQL/HTTP witnesses show UI-only completion leaves the authorization Card missing and the inherited BR unsatisfied. Authorization implementation alone still lacks test credit; its signed passing test closes the remaining scope.",
+    "Diamond source paths retain provenance while obligation IDs/test records remain unique. Changes to authorization scope/revision/results do not invalidate independent UI credit or rewrite historical payloads.",
+    "Frontend previously verified on the same main86 displays the inherited source and selected Card, ambiguous allocation, global pending scope and exact missing criterion gaps."
+  ],
+  "tests": {
+    "new_core_passed": 24,
+    "core_seconds": 5.98,
+    "reused": "Unchanged native-delivery-multicard1/3 and native-verification-start-frontend1 campaigns, hashes checked; no rerun/new-count claim"
+  },
+  "limits": [
+    "Source receipt/execution facts are seeded in SQL witnesses; signed HTTP assertions use real issuer/verifier. No full source-attestation or installed-authentication E2E claim.",
+    "Responsibility does not grant semantic approval, implementation completion or test credit by itself.",
+    "No product/test/SPA edits. Main86 closure remains applicable with eight zero budgets; no promotion, conversion or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-responsibility1.json": "16ed654b8689c34fa036a6a260875ba5f8ea46a26111c972a060bcb5f02806a3",
+    "native-responsibility-core1.xml": "b6e680c68c73bd829c4b3eec1730fd81cbf839015ab75f8ea341a9b09626e5b3",
+    "native-delivery-multicard1.xml": "7c2ceb6edd0cf6ce465f7ae7d1a3a4e4613ad320a532e957ff7a628ba7f0d0ba",
+    "native-delivery-multicard3.xml": "64e9b77d0699301035c6a4f15959dd6487a8fd45572bf0c4e26724b30c50d34f",
+    "native-delivery-multicard-frontend1.json": "7ffd99ad80208a381ee939bb32069d54fa37fa858858cf1e78ddbd359c886b2f",
+    "native-verification-start-frontend1.json": "c0b045da14b876273f918bb6fedd26f7ad61580f4af5a5053e20d5d82075eb04",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

@@ -2,6 +2,26 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — INT responsabilidade herdada e alocação (main86)
+Basece46f84c/400740c6 conferida. Proof provenance-native-responsibility1
+terminal0:835/317 Python e896/403 payloads byte a byte. Core responsibility-
+core1/session27424:24pass em5.98s. Resolver completo revisado: proveniência
+FR→BR, critério selecionado, pendência sem plano e ambiguidade por sobreposição.
+
+Reutilizados witnesses SQL/HTTP e frontend main86, hashes dos recibos
+multicard/verification-start conferidos. UI concluída não entrega autorização
+ou BR herdada. Implementação da autorização ainda precisa de teste; parciais
+não somam conclusão. Caminhos distintos não duplicam obrigação/prova.
+Painel apresenta origem herdada, Card selecionado e lacunas explícitas.
+Fatos de origem seedados não são prova de handshake de atestação instalado.
+Nenhum teste anterior repetido ou contado novamente.
+
+Recibo clean-break-native-responsibility.json; AC-INT-01/02 qualificados.
+Índice177verificados/58pendentes/11superados. Nenhum produto/teste/SPA
+alterado; closure main86 vigente, oito budgets ZERO. Handle terminal.
+WIP KG10 preservado. Commit/push Core apenas de evidências, sem promoção
+ou dados reais. Continuar demais critérios de aplicabilidade e autoridade.
+
 ### 2026-10-08 — VER cobertura parcial e diamante de herança (main86)
 Base799e0aa2/400740c6 conferida. Proof provenance-native-inheritance-coverage1
 terminal0:835/317 Python e896/403 payloads byte a byte. Revisados os testes
