@@ -2,6 +2,50 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG46/KG47: negação de agregados e escopo all comprovados
+Turno anterior teve progresso publicado KG44/45 e investigação; esta retomada
+revalidou handle58785 vivo e aguardou terminal0:55pass/264.81s. Não reiniciado.
+Novas provas: MCP e REST negam count/collect antes do provider; natural/reflective
+com all continuam negados sem CT. Dois Boards Grafx reais com digests canonical/
+working: consulta autorizada em ambos retorna ambos, escopo restrito só retorna
+o Board permitido (duas linhas), escopo vazio não retorna nada.
+Core2 handle31006 terminal0:33pass/45.90s. Community2 handle85055 terminal0:
+15pass/7.36s. Community1 anterior38pass;98 casos finais distintos, sem falhas.
+Recibo clean-break-native-query-authorization.json registra limites de auth
+injetada, SQL/graph reais e hashes. KG46/KG47 qualificados:83/152/11.
+Produto/SPA main67 inalterados, nenhuma reinstalação. Todos testes terminais.
+
+Investigação clean-break a continuar: legacy_unknown é usado em diagnóstico de
+fontes incompletas e também aceito como camada durável no digest. Não confundir
+reconciliação nativa/recovery atuais com migrador apenas por nome. O contrato
+global_projection_inventory e source_maturity também consomem essa classificação;
+ler/refinar remoção integrada antes de alterar publicação ou gates. Não há
+autorização nova necessária para retirar compatibilidade já abrangida por C1–C4,
+mas mudanças independentes de semântica continuam sujeitas ao pacote.
+Próximo: resolver esse residual no escopo já autorizado e seguir KG48 em diante.
+
+### 2026-10-07 — KG46/KG47 em investigação; publicação anterior confirmada
+KG44/45 publicados: Core3277dbaa / Community20bfb42a, pushes terminal0.
+Nova prova provenance-native-query-authorization1.json terminal0: mesmo main67
+835/896+317/403 byte-idêntico antes de comportamento.
+Community authorization1 terminal0:38pass/9.61s (CT REST, operational security,
+power REST). Core authorization1 handle58785 segue VIVO: último poll retorna
+session_id58785, sem terminal; não reiniciar por demora. Log exato
+.validation-v040/acceptance-native-query-authorization-core1.log mostra43 pontos.
+Suite inclui CT authorization, direct MCP ACL, layer propagation, natural layer.
+Não editar produto/reinstalar enquanto executa.
+
+Leitura encontrou residual candidato à retirada dentro do escopo C1–C4:
+tier_power.py1252–1340 aceita/classifica legacy_unknown e o inclui em all;
+cypher_templates.layer_label_projection coalesce camada ausente para esse valor;
+Community grafx_global_discovery.upsert_grafx_decision_digest_vector aceita
+legacy_unknown durável e comentário prevê promoção posterior pelo reconciliador.
+source_maturity também usa o mesmo rótulo para fonte/tipo inválido, portanto
+não fazer substituição textual ampla nem retirar recusas de dados inválidos.
+Próximo: terminal Core, ler layer_parity/escritores/contrato nativo e separar
+compatibilidade efetiva de diagnóstico/recovery atual antes de alterar.
+KG46/KG47 não qualificados; índice81/154/11. Sem mudanças de produto/SPA.
+
 ### 2026-10-07 — KG44/45: prazo nativo, recursos e ausência de quota comprovados
 Campanhas terminais sem falhas: Community1=16, Community2=44, Core1=15,
 Core2=5; total80 casos distintos. XMLs conferidos novamente nesta retomada.

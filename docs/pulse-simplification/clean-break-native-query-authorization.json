@@ -1,0 +1,63 @@
+{
+  "criteria": [
+    "KG:KG-46",
+    "KG:KG-47"
+  ],
+  "proof_pair": "dist-native-main67",
+  "review_base": {
+    "core": "3277dbaa",
+    "community": "20bfb42a"
+  },
+  "verified": [
+    "MCP and REST raw entity, count and collect queries without complete Code Traceability authority are denied before invoking the provider; no result or count can be returned from that provider.",
+    "Natural and reflective MCP requests with graph_layer=all also stop at the Code Traceability authorization gate.",
+    "Bounded node/detail/edge reads forward Code Traceability exclusion and mask graph counts. Real relational operational readers filter restricted rows before pagination and counts.",
+    "Actual Grafx global discovery with two populated Boards and canonical/working digests returns both Boards with both authorized, only the authorized Board under restricted scope, and no results for empty scope, including graph_layer=all.",
+    "Existing native layer propagation, direct MCP board permission denial and REST exact-operation denial remain green."
+  ],
+  "tests": {
+    "acceptance-native-query-authorization-community1.xml": {
+      "tests": "38",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "9.596"
+    },
+    "acceptance-native-query-authorization-community2.xml": {
+      "tests": "15",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "7.353"
+    },
+    "acceptance-native-query-authorization-core1.xml": {
+      "tests": "55",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "264.755"
+    },
+    "acceptance-native-query-authorization-core2.xml": {
+      "tests": "33",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "45.869"
+    }
+  },
+  "distinct_final_passed": 98,
+  "count_basis": "93 baseline cases +2 additional Core aggregate denials +2 additional REST aggregate denials +1 native two-Board test; repeated cases counted once.",
+  "limits": [
+    "Actor credentials are injected in authorization tests; this is handler/domain and real relational filtering evidence, not a live authenticated server.",
+    "Global discovery uses actual current Grafx and populated source graphs with an explicit authorized Board list supplied at the service boundary.",
+    "No product/frontend modifications. Existing main67 closure and frontend evidence retained, not rerun.",
+    "Residual legacy_unknown classification and durable digest acceptance remain under investigation; these criteria do not certify completion of the clean-break removal."
+  ],
+  "artifacts": {
+    "provenance-native-query-authorization1.json": "caa8a28c228fa53a6a3e09a5b720ed0b7fbaed21a4d4c691d710692a3805fb0c",
+    "acceptance-native-query-authorization-community1.xml": "2a0712d00d9d45d3ee39b5a03a92b120a7cdd50c8c34942151c846814640c3ab",
+    "acceptance-native-query-authorization-community2.xml": "649eb40d9fd79d8bf40f7072b635fa39969c40d3b8cad07ccf5effe6f74e2b7b",
+    "acceptance-native-query-authorization-core1.xml": "5fddddc2a70b2aa3e2c48db970eefb6f2906086af4cd4f02d20c067cedfadfb3",
+    "acceptance-native-query-authorization-core2.xml": "983c701d128d3a82613315d0ee3e3e1b7e089517330a6a4f5d18061719f5e6c0"
+  }
+}

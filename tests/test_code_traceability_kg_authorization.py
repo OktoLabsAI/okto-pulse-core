@@ -401,12 +401,20 @@ async def test_session_similarity_runs_with_complete_ct_read_grant(
             {"board_id": BOARD_ID, "cypher": "MATCH (n) RETURN n"},
         ),
         (
+            "okto_pulse_kg_query_cypher",
+            {"board_id": BOARD_ID, "cypher": "MATCH (n:Entity) RETURN count(n)"},
+        ),
+        (
+            "okto_pulse_kg_query_cypher",
+            {"board_id": BOARD_ID, "cypher": "MATCH (n:Entity) RETURN collect(n.id)"},
+        ),
+        (
             "okto_pulse_kg_query_natural",
-            {"board_id": BOARD_ID, "nl_query": "traceability"},
+            {"board_id": BOARD_ID, "nl_query": "traceability", "graph_layer": "all"},
         ),
         (
             "okto_pulse_kg_query_reflective",
-            {"board_id": BOARD_ID, "nl_query": "traceability"},
+            {"board_id": BOARD_ID, "nl_query": "traceability", "graph_layer": "all"},
         ),
     ),
 )

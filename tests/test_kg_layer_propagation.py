@@ -459,3 +459,25 @@ def test_mcp_invalid_graph_layer_returns_structured_error(monkeypatch):
                 graph_layer="bogus")
     # TR5: invalid layer → structured error, not a silent default or crash.
     assert "error" in out or out.get("code") in ("invalid_param", "invalid_argument")
+
+
+def test_query_global_all_preserves_authorized_board_boundary():
+    allowed_board = _seed_global_digests()
+    hidden_board = _seed_global_digests()
+    svc = get_kg_service()
+    # Both boards contain matching live source nodes and canonical/working digests.
+    unrestricted = svc.query_global(
+        QUERY_TEXT, user_boards=[allowed_board, hidden_board],
+        graph_layer="all", min_similarity=0.1,
+    )
+    assert {row["board_id"] for row in unrestricted} == {allowed_board, hidden_board}
+    restricted = svc.query_global(
+        QUERY_TEXT, user_boards=[allowed_board],
+        graph_layer="all", min_similarity=0.1,
+    )
+    assert {row["board_id"] for row in restricted} == {allowed_board}
+    assert _global_layers(restricted) == {"canonical", "working"}
+    assert len(restricted) == 2
+    assert svc.query_global(
+        QUERY_TEXT, user_boards=[], graph_layer="all", min_similarity=0.1,
+    ) == []
