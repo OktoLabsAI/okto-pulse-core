@@ -2,6 +2,42 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — ADV-23 medição de schemas e chamadas reais
+Turno anterior foi progresso: AC-VER-18 qualificado e limite KG30 documentado.
+Base atual Coreb74fff35/Community0350e4af; árvores limpas salvo WIP KG10.
+Proof provenance-native-benchmark-20261008 terminal0: main90 byte-idêntico
+838/317 Python,899/403 payloads antes da execução.
+
+measure_mcp_registry captura atual:282 tools,224701bytes/51391tokens catálogo,
+10607bytes/2538tokens instruções. Novo scripts/compare_mcp_measurements.py
+reconta snapshot baseline e atual com mesmo cl100k_base0.14.0, preserva hashes
+e mede cada request/response do fluxo. Baseline congelado validado por hashes:
+340tools,229702bytes/52627tokens. Reduzir58 tools não significa reduzir custo
+na mesma proporção. record_delivery_evidence cresceu2379→18717bytes,
+578→4480tokens. Nenhuma execução/instalação de runtime antigo.
+Teste adversarial reduz duas tools a uma com schema maior: bytes/tokens sobem.
+Teste de contabilização ignora contadores antigos, mede Unicode e recusa
+resposta ausente. Campanha/session30193 terminal0:2pass2.70s.
+
+Fluxos nativos: native-session-measurement90-20261008/session98233 terminal0:
+8pass63.37s (dois warnings pytest de rewrite anyio já importado).
+36sessões,36initialize,36tools/list,136tools/call;68782bytes entrada,
+8981032bytes saída;16951/2126322tokens respectivamente.
+Casos amplos/separação de reviewer, approve/reject/rework, até Spec Done.
+Todos payloads retidos em benchmark-native-payloads-main90-20261008.json.gz;
+recibo clean-break-native-benchmark-accounting-20261008.json.
+ADV23 qualificado: contagem de tools não substitui bytes/tokens/chamadas.
+Índice225verificados/10pendentes/11superados, universo246 inalterado.
+
+BASE:T43/KG64/AC-INT-12 NÃO qualificados: captura ainda usa autoria/fatos
+semeados e não consome resources/read; não é comparação integral de iniciativa
+simples/muitos candidatos. Antes/depois de população diferente não é economia.
+Próximo trabalho independente: completar medição de preflights/resources,
+autoria/classificação e retomada equivalente, reaproveitando instrumentação.
+KG30 limitação §5.4 preservada; BASE:T23/KG10/KG28 decisões pendentes.
+Produto/SPA inalterados; oito budgets ZERO conforme closure main90.
+Sem processos pendentes; WIP Community KG10 preservado.
+
 ### 2026-10-08 — KG-30 limite do fallback interpretativo
 AC-VER-18 enviado Core3ce6208d/Community0350e4af; índice224/11/11.
 Inspeção do complemento KG §5.4 (238–249), PublicEdgeCandidate e writers:

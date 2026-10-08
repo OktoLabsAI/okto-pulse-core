@@ -8411,7 +8411,12 @@
         "criterion_key": "ARQVER:ADV-23"
       },
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-benchmark-accounting-20261008.json",
+        "criterion_key": "ARQVER:ADV-23",
+        "proof_pair": "dist-native-main90"
+      }
     },
     {
       "key": "ARQVER:ADV-24",

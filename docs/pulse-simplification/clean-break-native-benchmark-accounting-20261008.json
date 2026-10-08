@@ -1,0 +1,79 @@
+{
+  "scope": "ARQVER:ADV-23",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main90",
+  "source_pair": {
+    "core": "b74fff35",
+    "community": "0350e4af"
+  },
+  "evidence": [
+    "Reproducible comparison script recounts frozen baseline/current catalog, instructions and every current request/response with the same cl100k_base tokenizer.",
+    "Adversarial test supplies fewer tools with a larger combined schema; both measured bytes and tokens increase. Another test recounts UTF-8 bodies despite stale embedded counts and refuses missing responses.",
+    "Actual native suite measures 8 execution/handoff cases, broad-agent and separated-reviewer sessions, full tools/list discovery, lifecycle/rework and actual gates; no schema size inferred from tool count."
+  ],
+  "catalog": {
+    "before": {
+      "tools": 340,
+      "bytes": 229702,
+      "tokens_cl100k_base": 52627,
+      "sha256": "8a0b8bf631511d7f3fcb72bbde685910d800ad0e0c92bf083fbb95cab7be19cf"
+    },
+    "after": {
+      "tools": 282,
+      "bytes": 224701,
+      "tokens_cl100k_base": 51391,
+      "sha256": "8e7a57f51894b42de083d27d06c37ad8ca437d45ac64d9569c87f5f069af0ffb"
+    }
+  },
+  "growing_tool": {
+    "name": "okto_pulse_record_delivery_evidence",
+    "before": {
+      "bytes": 2379,
+      "tokens_cl100k_base": 578,
+      "sha256": "401e2a15562e765930cc6cd00e8efdce654852b670e2238562175b1c8d045983"
+    },
+    "after": {
+      "bytes": 18717,
+      "tokens_cl100k_base": 4480,
+      "sha256": "e8fa61c87baad35d739f1d4fad1a32fdb9bf7a92e55e2bd0cc539c72b44dcc09"
+    }
+  },
+  "current_flow": {
+    "sessions": 36,
+    "methods": {
+      "initialize": 36,
+      "tools/list": 36,
+      "tools/call": 136
+    },
+    "request_bytes": 68782,
+    "request_tokens_cl100k_base": 16951,
+    "response_bytes": 8981032,
+    "response_tokens_cl100k_base": 2126322
+  },
+  "results": {
+    "flow_passed": 8,
+    "flow_seconds": 63.37,
+    "accounting_passed": 2,
+    "accounting_seconds": 2.7
+  },
+  "artifact": {
+    "file": "benchmark-native-payloads-main90-20261008.json.gz",
+    "sha256": "4794881458c8c70929a31633beec6c76e206cb0546d0ee64a5df4b1b941414a9",
+    "raw_sha256": "bc4d9009df0cc85757db473c4649730bec726485861e51f3c34a5acf231912e5"
+  },
+  "artifacts": {
+    "provenance-native-benchmark-20261008.json": "f192dd16342a700f81cfaa1167f99e5e8b66233d6dcce5390856e4484a38a288",
+    "native-session-measurement90-20261008.xml": "a0bedb80ae5cfc2fe7f13dfead9100295ccc3692309bb3d9967fbfac77273200",
+    "native-benchmark-accounting-20261008.xml": "548de66cc8a50dd527f7492f82d56964a9c35020dc5f3f37ee11ebbaa3a1d78f",
+    "benchmark-payload-comparison90-20261008.json": "028365ac72c4f79d68acafa365166731ed4278fb2a443594c712e0c955bf04e1"
+  },
+  "limits": [
+    "ADV-23 accounting criterion only. BASE:T43, KG:KG-64 and ARQVER:AC-INT-12 remain pending.",
+    "Catalog reduction from 340 to 282 tools is not full-flow savings; metadata tokens fall from 52627 to 51391, while record_delivery_evidence grows from 578 to 4480 tokens.",
+    "Frozen engineering snapshot only; no old runtime, migration or compatibility branch was installed or restored.",
+    "Current flow seeded authorship/facts and did not consume resources/read; it does not prove complete preflight/authorship/classification/external-work comparative cost.",
+    "cl100k_base counts are reproducible tokenization of actual serialized application payloads, not model billing or network framing.",
+    "Prior captures have different case populations; no before/after full-flow gain or target percentage is claimed.",
+    "No product/frontend/SPA change or real-data operation."
+  ]
+}
