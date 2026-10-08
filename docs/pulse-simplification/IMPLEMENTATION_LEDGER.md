@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-INT-10 contrato fechado fonte/wheel
+Base884533f1/652e4c17; turno anterior foi progresso. Probe standalone
+Community tests/native_contract_distribution_probe.py, sem conftest:
+9 casos por processo (5 modelos,2 REST,2 MCP). Campos Sprint/policy migrada
+recusados; método desconhecido e campo extra recusados via rotas FastAPI e
+host/Client FastMCP reais. REST usa dependências sentinela (não valida login):
+zero acesso a serviços. MCP recusa antes de autenticação do handler.
+Erros/esquema idênticos no checkout e wheel;570 módulos Pulse por processo
+com origem individual conferida na árvore correspondente.
+
+Proof provenance-native-contract-parity-20261008 terminal0 antes dos probes:
+main90 byte-idêntico838/317 Python,899/403 payloads.
+Campanha source/session37161 terminal0. Primeira installed falhou pré-probe:
+-I oculta FastAPI do site de dependências do usuário. Segunda/session23116
+terminal0 usa -I e acrescenta somente site.getusersitepackages() após venv;
+nenhum src carregado, conforme todas570 origens. Não é E2E de processo antigo.
+Comparação native-contract-parity-comparison-20261008:identicalTrue.
+Ruff/diff check verdes. Recibo clean-break-native-contract-parity-20261008.json.
+AC-INT-10 qualificado conforme reavaliação: cliente antigo recebe erro,
+sem adaptação. Índice222verificados/13pendentes/11superados.
+Sem produto/frontend/SPA alterados; closure main90/oito budgets ZERO.
+Todos handles terminais; commit/push teste/evidência; WIP KG10 preservado.
+Retomar VER11/18, DEI64, KG e benchmarks fixos. BASE:T23/KG10/KG28 seguem
+decisões pendentes. Objetivo integral ativo; sem promoção/dados reais.
+
 ### 2026-10-08 — AC-INT-11 remediação operacional nativa via MCP
 Base0f680e91/0fdbe8fe; turno anterior foi progresso. Novo teste Community
 test_native_operational_remediation.py usa schema nativo, OR operacional/AC,

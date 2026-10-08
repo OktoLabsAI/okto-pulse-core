@@ -1,0 +1,37 @@
+{
+  "scope": "ARQVER:AC-INT-10",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main90",
+  "probe": "community/tests/native_contract_distribution_probe.py",
+  "evidence": [
+    "Identical standalone probe executed in separate fresh source and installed processes, bypassing test conftest.",
+    "All 570 imported Pulse module origins verified under the appropriate src trees or validation site-packages; no source module leaked into installed execution.",
+    "CardCreate/CardUpdate reject retired sprint_id and migrated_validation_policy. TestScenarioWrite rejects unknown verification method.",
+    "Real FastAPI route returns 422/literal_error for unknown method and 422/extra_forbidden for old unknown field; domain services never touched.",
+    "Real Community FastMCP host/Client rejects unknown method and extra field before handler authentication.",
+    "Normalized responses and MCP input schema equal across source/wheel. Nine contract cases per process."
+  ],
+  "results": {
+    "source_exit": 0,
+    "installed_exit": 0,
+    "equal": true,
+    "modules_per_process": 570,
+    "cases_per_process": 9
+  },
+  "limits": [
+    "REST authentication and UOW dependencies are controlled sentinels to prove pre-domain rejection, not end-to-end authorization or durable writes.",
+    "Installed first attempt with -I lacked FastAPI from user dependency site; failed before probe. Second -I process appends only site.getusersitepackages() after venv paths; Pulse origins verified individually.",
+    "No legacy adaptation tested or added. These are rejection probes for the native contract.",
+    "No product/frontend/SPA change. No active service, release or real-data action."
+  ],
+  "artifacts": {
+    "provenance-native-contract-parity-20261008.json": "95c4c1d511b84effb27be8548b8555c147f40cbffaa5ec8fa5d0810b7a29ae17",
+    "native-contract-parity-source-20261008.json": "13e5ad739f7e26eab85829f18ea48cd7d640a344d755504522403585c0453b70",
+    "native-contract-parity-source-20261008.log": "5103fb7920787bf1ae304df5781945d760924e4b59dad434de5c910351cba2aa",
+    "native-contract-parity-installed-20261008.log": "58d2c5f604cf2bc031738b58582c82b932191624cb0b7a460b6666b747bc2126",
+    "native-contract-parity-installed-20261008-2.json": "2329b4e2258068e730b2bf14b82a815aa524f45128699537860bcee61c0b07e9",
+    "native-contract-parity-installed-20261008-2.log": "5103fb7920787bf1ae304df5781945d760924e4b59dad434de5c910351cba2aa",
+    "native-contract-parity-comparison-20261008.json": "22dc1794ed06e232c39cb53897bd4910770f2c1790c5ad3b9bf3e001c364709e",
+    "closure-native-main90.json": "738a5f3f3390888489c030ace3cfdd62c223416a5d689a599dcbf1da759fddfd"
+  }
+}
