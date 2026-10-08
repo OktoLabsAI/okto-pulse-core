@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — auditoria instalada e manifesto de recursos concluída
+Autorização DEI-T33/T41 reiterada pelo usuário: já aplicada/testada em main86,
+conforme seção existente; não reaplicar nem reabrir a decisão.
+Base desta retomada Core d06da979 / Community 0714d574; WIP KG10 preservado.
+
+Auditoria native-release-audit-20261008 terminou1:24passed/1failed/132.13s.
+Falha no pacote novo isolado Python3.11: manifesto SK-A de recursos desatualizado.
+Inspeção instalada em3.11 e3.13 produziu o mesmo digest esperado
+5a9db32a58b1b7a5398109074917a92468e50db225aef2fc2e82dd031edc41d9,
+diferente do manifesto guardado;16recursos mudaram, instruções inalteradas.
+Regenerado exclusivamente por python -m okto_pulse.core.mcp.ska_resource_manifest.
+Nenhum gate/semântica/autoridade alterado. Frontend native-release-ui-audit-20261008:
+33passed/0failed/success=true; produto/SPA sem alteração.
+
+Builds/install dist-native-main91 terminais0. Provenance-native-main91.json
+terminal0 ANTES dos testes:838/317Python,899/403payloads fonte/wheel/install
+byte-idênticos. Rerun instalado42916, testes manifesto/catalogo81670 e
+closure82354 em andamento neste registro; aguardar terminais antes de aceite.
+Não reutilizar main90 como prova integral do novo manifesto.
+Falha inicial preservada; índice226/9/11 inalterado, entrega integral pendente.
+BASE:T23/KG10/KG28 ainda dependem das respectivas decisões, não desta aprovação.
+
+Terminais finais: Core81670 passou6/8.26s; closure82354 passou, ok=true,
+findings/documentation_findings vazios e oito budgets ZERO; Community42916
+passou1/212.16s. Pacote isolado Python3.11.14/Pydantic2.13.5/Grafx0.0.7:
+282tools canônicas/zeroaliases/54resources via listener HTTP real;
+22resources governados e13tools SK-A íntegros. Matriz instalada passou
+fresh/rerun/crash-resume/concorrência, recusa incompatível sem mudar bytes e
+paridade das cinco famílias KG. Payloads899/403 fonte/wheel/install iguais.
+Nenhum processo deste incremento permanece pendente.
+
+Recibo clean-break-native-installed-audit-main91-20261008.json incorpora
+evidência integral instalada e hashes das campanhas, inclusive falha inicial.
+Core testado com diff do manifesto sobre d06da979; Community0714d574 com WIP
+KG10 fora do pacote. Não atribuir a campanha a um SHA limpo que ainda não existia.
+Ruff não necessário para JSON gerado; diff-check passou. Commit/push Core
+da correção+recibo+ledger; Community sem alteração versionada neste incremento.
+DEI64 continua pendente de fechamento integrado, não promover só por catálogo.
+Não declarar entrega integral; seguir critérios restantes e decisões já isoladas.
+
 ### 2026-10-08 — AC-INT-12 relatório integrado de custos e reuso
 Turno anterior foi progresso; base Core2daf34b6/Community93b15c1c conferida.
 Instrumentação measure_mcp_fixture agora mede CommunityHttpManifestExecutor,
