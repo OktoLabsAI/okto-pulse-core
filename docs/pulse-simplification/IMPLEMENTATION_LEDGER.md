@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T24 commits divergentes e revert sem ancestralidade presumida
+Base76c1d356/3d98814d; turno anterior foi progresso. Nome de proof/recibo/campanha
+novo conferido antes de escrever. Proof provenance-native-commit-basis-20261008-1
+terminal0 antes dos testes:main88 byte-idêntico838/317 Python,899/403 payloads.
+
+Seis casos SQL nativos: dois Targets com proofs atuais, observações distintas,
+hash menor/maior/igual, ordem dos recibos invertida. Bases distintas recusam
+execution_base_conflict sem persistência; controles da mesma base admitem.
+Quatro casos adicionais criam Git descartável: branches divergentes e revert
+descendente que restaura conteúdo inicial com hash distinto. Predicado de domínio
+recusa ambos os pares nas duas ordens. Hashes Git são fatos de domínio controlados;
+não são gravados como attestation falsamente autenticada. SQL usa cadeia de
+origem sintética coerente separadamente. Sem nova semântica/gate de produto.
+
+native-commit-basis-20261008-1/session68063:5pass/6fail23.09s, erro de posição
+das asserções ao inserir teste (cauda do teste anterior ficou no novo); corrigido.
+Campanha2/session73748:11pass22.04s.
+Campanha3/session24511 terminal0:15pass28.96s (10novos+5regressão).
+Ruff/diff check verdes. Frontend44/main88closure hashes conferidos e diff vazio
+nos componentes code-traceability/testes e services/api.ts desde361647f5;
+reutilização sem recontagem. Nenhuma alteração de produto ou SPA.
+Recibo clean-break-native-commit-basis-20261008.json; DEI-T24 qualificado.
+
+Índice206verificados/29pendentes/11superados. Todos handles terminais;
+oito budgets ZERO. Commit/push teste/evidência; WIP KG10 preservado.
+Sem promoção/dados reais. Continuar retomada/impacto DEI, VER/KG e benchmarks
+do índice fixo. BASE:T23/KG10/KG28 seguem decisões pendentes. Objetivo ativo.
+
 ### 2026-10-08 — correção de colisão de evidência e revalidação DEI-T20/T21
 O commitdfde665d reutilizou por engano clean-break-native-delivery-currentness.json
 (já servia DEI-T20/T21). Restaurado byte-a-byte deb8ae8860; evidência nova de
