@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Investigação: seleção opcional nativa não é leitor legado
+Milestone anterior commit1c1ed83c enviado. Árvore limpa antes desta anotação.
+Leitura de main.py:7099 confirma: writer nativo só sela delivery_manifest quando
+data.delivery_selection foi fornecida. domain/delivery_selection.py:81 retorna
+None (sem filtro de seleção) quando não há relatório/manifesto. Teste existente
+test_delivery_selection.py::test_manifest_pins_exact_records_and_rework_preserves_historical_report
+cobre omissão, seleção e rework. Logo não tornar seleção obrigatória por apagar
+promessa legacy: seria alterar opção nativa atual, não remover conversor.
+models/delivery_selection.py só aceita card-delivery-selection/v2; teste
+test_previous_or_incomplete_manifest_is_rejected_without_conversion recusa v1,
+ausência de versão/basis e não modifica entrada.
+
+Próxima correção concreta em tool-docs/card.md:232–239: substituir manifesto/v1
+por v2; explicar seleção opcional atual e retirar promessa de rollout compatível.
+Manter revogações/falhas/currentness e histórico nativo.
+main.py:4575 comentário menciona fallback de conclusão; busca no método atual
+não encontrou esse append em submit_task_validation (append executor só move_card).
+Não tratar comentário como prova de mecanismo ativo; verificar caso sem report
+pelos testes antes de mexer em gate.
+
+Outras investigações, ainda inconclusas:
+ProjectStructureTab.tsx:169 mostra interpretation_limit ou note; modelo nativo
+domain/project_structure.py exige interpretation_limit no reference_scaffold.
+Ainda falta conferir se divergência entre campos é permitida nativamente antes
+de retirar comportamento de leitura. ArchitectureDesignInterface em schemas.py:1128
+ainda possui participants; remover a palavra legacy na documentação não autoriza
+remover campo funcional. Próximo agente deve ler normalização/direção/endpoints.
+Nenhuma alteração adicional de produto/teste neste registro; main78 continua válido.
+
 ### 2026-10-07 — Promessas de compatibilidade reconciliadas com contratos nativos (main78)
 Base6742382f/53ca6805 limpa. Corrigidos7resources (Quality/guideline/Spec/workflow/
 errors/Code Traceability) com base em código atual: edição positiva obrigatória,
