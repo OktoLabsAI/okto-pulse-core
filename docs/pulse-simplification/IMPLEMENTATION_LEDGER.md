@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T42 retrabalho com prova e revisão de entrega distintas
+Basec54efbc4/33b7a4db; autorização DEI-T33/T41 já implementada em main86.
+Proof provenance-native-rework-proof-20261008 terminal0 antes dos testes:
+main88 byte-idêntico838/317 Python,899/403 payloads.
+Handoff MCP agora em schema nativo. Reviewer sem grant não reabre; executor
+autorizado reabre. Nova origem aceita via append/CAS e execution-2 tornam prova
+anterior stale: relatório que reutiliza execução antiga recusa sem alterar
+Card/histórico. Nova prova gera ID e revisão de entrega distintos, nova conclusão
+e validação independente. Rejeição/parecer/conclusão/prova anteriores preservados.
+Versão semântica do Card permanece: conteúdo não mudou.
+
+Campanha1/session93434:2pass/2fail28.42s, asserção errada esperava incremento de
+policy_version. Corrigida para delivery_revision; nenhum produto alterado.
+Campanha2/session23030 terminal0:4pass24.38s; Ruff/diff check verdes.
+Origem aceita é fixture coerente; não alega autenticação da attestation ou E2E UI.
+Sem mudança frontend/SPA. Recibo clean-break-native-rework-proof-20261008.json.
+Índice214verificados/21pendentes/11superados. Main88 closure/oito budgets ZERO.
+Todos handles terminais (busca recursiva desnecessária cancelada sem mutações).
+Commit/push teste e evidência; WIP KG10 preservado. Sem promoção/dados reais.
+Continuar waivers/projeções DEI, VER/KG e benchmarks fixos; BASE:T23/KG10/KG28
+seguem decisões pendentes. Objetivo integral ativo.
+
 ### 2026-10-08 — DEI-T59 revisado: instalação limpa e recusa sem conversão
 Base3bb314e2/33b7a4db; turno anterior foi progresso. Reassessment linha181
 substitui upgrade repetido por criação limpa/reinício/integridade/recusa.
