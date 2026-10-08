@@ -43,7 +43,7 @@ def test_mcp_summary_preserves_versioned_materialization_contract() -> None:
         "memory_pressure_status": "unconfirmed",
         "recent_events": [],
         "checked_at": "2026-07-16T00:00:00+00:00",
-        "health_schema_version": "1.1",
+        "health_schema_version": "1.3",
         "materialization_state": "not_materialized",
         "materialization_generation": "generation-1",
         "probe_reason_codes": {
@@ -61,7 +61,7 @@ def test_mcp_summary_preserves_versioned_materialization_contract() -> None:
 
     projected = KGHealthMCPProjection().project(payload, profile="summary")
 
-    assert projected["health_schema_version"] == "1.1"
+    assert projected["health_schema_version"] == "1.3"
     assert projected["materialization_state"] == "not_materialized"
     assert projected["materialization_generation"] == "generation-1"
     assert projected["probe_reason_codes"] == payload["probe_reason_codes"]
@@ -248,7 +248,7 @@ async def test_confirmed_empty_composes_known_zero_contract_without_graph_reads(
     finally:
         reset_materialization_evidence_port_for_tests()
 
-    assert result["schema_version"] == "1.0"
+    assert "schema_version" not in result
     assert result["health_schema_version"] == "1.3"
     assert result["materialization_state"] == "not_materialized"
     assert result["materialization_generation"] == "generation-empty-1"

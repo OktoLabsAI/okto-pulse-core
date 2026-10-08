@@ -172,13 +172,15 @@ async def build_health_readiness(
     if profile not in VALID_PROFILES:
         raise InvalidProfileError(f"invalid_profile: {profile}")
 
-    from okto_pulse.core.services.kg_health_service import get_kg_health
+    from okto_pulse.core.services.kg_health_service import HEALTH_SCHEMA_VERSION, get_kg_health
 
     health = await get_kg_health(
         board_id,
         db,
         scheduler_control=scheduler_control,
     )
+    if health.get("health_schema_version") != HEALTH_SCHEMA_VERSION:
+        raise ValueError("kg_health_contract_version_invalid")
     counters = build_technical_signal_counters(health)
     debt_unavailable = counters["canonical_debt_open_count"] is None
     # Infrastructure status is Board-scoped; semantic artifact queries remain separate.
@@ -220,7 +222,7 @@ async def build_health_readiness(
 
     result: dict[str, Any] = {
         "board_id": board_id,
-        "health_schema_version": health.get("health_schema_version", "1.3"),
+        "health_schema_version": health["health_schema_version"],
         "profile": "full" if _is_full(profile) else "summary",
         "overall_state": (
             "at_risk" if debt_unavailable and health.get("overall_state") == "healthy"

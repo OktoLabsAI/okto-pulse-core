@@ -153,7 +153,6 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         "default_score_count",
         "default_score_ratio",
         "avg_relevance",
-        "schema_version",
         "health_schema_version",
         "graph_schema_version",
         "contradict_warn_count",
@@ -221,7 +220,7 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         "source_count",
     }
     assert set(result.keys()) == expected_fields
-    assert result["schema_version"] == "1.0"
+    assert "schema_version" not in result
     assert result["health_schema_version"] == HEALTH_SCHEMA_VERSION
     assert result["health_schema_version"] == "1.3"
     assert isinstance(result["queue_depth"], int)

@@ -14,6 +14,7 @@ async def test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy(
     monkeypatch, profile, enforcement,
 ):
     snapshot = {
+        "health_schema_version": "1.3",
         "overall_state": "degraded",
         "dead_letter_count": 300001,
         "global_outbox_dead_letter_count": 200002,
@@ -93,7 +94,7 @@ async def test_unavailable_debt_never_becomes_zero_or_clears_known_blocker(
 ):
     async def get_health(board_id, db, **kwargs):
         assert board_id == "authorized-board"
-        return {"overall_state": "healthy", "dead_letter_count": known_dlq,
+        return {"health_schema_version": "1.3", "overall_state": "healthy", "dead_letter_count": known_dlq,
                 "canonical_debt": summary}
 
     async def active(db, board_id):
@@ -112,3 +113,14 @@ async def test_unavailable_debt_never_becomes_zero_or_clears_known_blocker(
     assert result["readiness"]["canonical_debt_observation_status"] == "unavailable"
     assert "canonical_debt_observation_unavailable" in result["readiness"]["reasons"]
     assert result["readiness"]["policy_reason"] != "no open technical signal"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("version", [None, "1.0", "1.1", "2.0"])
+async def test_readiness_refuses_missing_or_incompatible_version(monkeypatch, version):
+    async def get_health(*args, **kwargs):
+        return {"schema_version": "1.0", "health_schema_version": version}
+
+    monkeypatch.setattr(health_service, "get_kg_health", get_health)
+    with pytest.raises(ValueError, match="kg_health_contract_version_invalid"):
+        await readiness.build_health_readiness("board", object())

@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Health com contrato único; alias/rota Ladybug removidos (main80)
+Baseaca3438f/53ca6805. Removidos LEGACY_HEALTH_SCHEMA_VERSION e alias público
+schema_version=1.0. REST exige health_schema_version Literal1.3; readiness recusa
+versão ausente/diferente em vez de inferir1.3. Frontend sem fallback nem linha
+duplicada. Campos graph_schema_version, KGStats.schema_version e diagnóstico
+de schema do grafo preservados. Rota removida Ladybug é unavailable, sem abrir,
+converter ou excluir armazenamento. Contrato de rota público aceita só Grafx.
+Nenhuma mudança de policy, métricas ou gate de conclusão; contrato observacional.
+
+Frontend final native-health-single-contract-frontend2:55pass. Build9295 terminal0,
+verify:frontend-dist verde;79arquivos/78assets,
+hashf16b97f71718938ca3966b458e31cebe0eee1398f31f8d4ffec8841dd079ab6b.
+Primeiro build recusou fixture malformada sem cast e remoção indevida do schema
+de KGStats nos testes; corrigidos, sem mexer nesse contrato separado.
+Revisão pré-teste retirou check duplicado inserido no helper interno; Ruff verde.
+Core wheel80 reconstruído/reinstalado antes da prova final; instalações85685/64056
+terminais0. Proof43216 terminal0:835/896+317/403 byte-idênticos.
+Arquivo de prova concluído02:38:51.644UTC, antes do início pytest Community
+02:38:57.182UTC e Core02:38:59.675UTC (timestamps XML conferidos).
+
+Core26790 terminal0:129pass/23.30s. Community71063 terminal0:21pass/15.75s.
+Total205 distintos incluindo55frontend. Closure48168 terminal0:ok=true,
+findings/documentation vazios, oito budgets0. Diff-check limpo nos2repos.
+Recibo clean-break-native-health-single-contract.json. Índice98/137/11 inalterado.
+Todos handles terminais; nenhum runtime ou dado real alterado.
+
+Próximo no plano: seguir auditoria de referências/fallbacks legados restantes
+e fechar prova instalada KG66; manter benchmark comparativo KG64 distinto de
+medição absoluta. Decisões BASE:T23/KG10/KG28 ainda pendentes. Não declarar entrega
+total enquanto critérios pendentes ou promessas de compatibilidade restarem.
+
 ### 2026-10-07 — Documentação de opções nativas reconciliada (main79)
 Base134fd0dc/53ca6805 limpa. Delivery manifest documentado só v2; seleção opcional
 atual descrita sem promessa de compatibilidade/rollout. Campo participants confirmado

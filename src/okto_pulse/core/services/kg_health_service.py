@@ -10,7 +10,7 @@ JSON payload describing the live state of a board's knowledge graph:
       band (sintoma de inflation), and avg_relevance.
     * In-process counter from scoring.get_contradict_warn_count for
       contradict_warn_count.
-    * schema_version is a fixed string ("1.3") versioning the response
+    * health_schema_version is a fixed string ("1.3") versioning the response
       payload independently of the graph backend schema.
 
 Failed or incomplete observations retain explicit unavailability. Public graph
@@ -101,7 +101,6 @@ logger = logging.getLogger("okto_pulse.services.kg_health")
 
 
 HEALTH_SCHEMA_VERSION = "1.3"
-LEGACY_HEALTH_SCHEMA_VERSION = "1.0"
 _MATERIALIZATION_EVIDENCE_BUDGET_S = 2.0
 _MATERIALIZATION_EVIDENCE_UNAVAILABLE = "materialization_evidence_unavailable"
 _CURRENT_GENERATION_STORE_UNAVAILABLE_REASON = "current_generation_store_unavailable"
@@ -3817,7 +3816,6 @@ async def get_kg_health(
             if source_diag.get("source_count") is not None
             else None
         ),
-        "schema_version": LEGACY_HEALTH_SCHEMA_VERSION,
         "health_schema_version": HEALTH_SCHEMA_VERSION,
         "graph_schema_version": graph_schema_version,
         "contradict_warn_count": get_contradict_warn_count(board_id),
