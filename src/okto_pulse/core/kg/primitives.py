@@ -1632,6 +1632,7 @@ def _validate_graph_connectivity_before_commit(
     writer_path: str,
     kg_health_state: str,
     deterministic_rdl_alternative_candidate_ids: frozenset[str] = frozenset(),
+    deterministic_spec_decision_candidate_ids: frozenset[str] = frozenset(),
 ) -> dict:
     """Validate zero-orphan invariants before any graph backend mutation.
 
@@ -1754,6 +1755,7 @@ def _validate_graph_connectivity_before_commit(
         deterministic_rdl_alternative_candidate_ids=(
             deterministic_rdl_alternative_candidate_ids
         ),
+        deterministic_spec_decision_candidate_ids=deterministic_spec_decision_candidate_ids,
     )
     response = result.to_response()
     response["checked_nodes"] = len(guard_nodes)
@@ -1830,6 +1832,59 @@ def _validate_projection_intent_collection(intents, *, session_id):
                         "Each projection member must have exactly one owner.", session_id=session_id,
                     )
                 seen.add(candidate_id)
+
+
+def _validated_deterministic_spec_decision_grants(
+    *, agent_id, session_artifact_type, session_artifact_id,
+    node_candidates, edge_candidates, relational_projection_active_set_intents,
+) -> frozenset[str]:
+    """Prove the exact native Spec owner at the graph commit boundary.
+
+    This is not a public grant. Only the internal worker with its declared
+    Decision active set and a current belongs_to edge can use provenance alone.
+    Existing graph edges are deliberately not evidence for this authority.
+    """
+    from okto_pulse.core.ports.spec_projection import is_spec_child_reference
+
+    if (agent_id != "system:historical_consolidation"
+            or session_artifact_type != "spec"
+            or type(session_artifact_id) is not str or not session_artifact_id
+            or type(node_candidates) is not dict or type(edge_candidates) is not dict
+            or type(relational_projection_active_set_intents) is not tuple):
+        return frozenset()
+    intents = [intent for intent in relational_projection_active_set_intents
+               if getattr(intent, "namespace", None) == "decision_requirements"]
+    if (len(intents) != 1
+            or getattr(intents[0], "owner_type", None) != "spec"
+            or getattr(intents[0], "owner_id", None) != session_artifact_id
+            or getattr(intents[0], "active_refs", None) != ()):
+        return frozenset()
+    for mapping in (node_candidates, edge_candidates):
+        if any(type(key) is not str or not key
+               or getattr(candidate, "candidate_id", None) != key
+               for key, candidate in mapping.items()):
+            return frozenset()
+    roots = [key for key, node in node_candidates.items()
+             if _enum_value(getattr(node, "node_type", "")) == "Entity"
+             and getattr(node, "source_artifact_ref", None) == f"spec:{session_artifact_id}"]
+    if len(roots) != 1:
+        return frozenset()
+    granted = set()
+    for key, node in node_candidates.items():
+        if (_enum_value(getattr(node, "node_type", "")) != "Decision"
+                or not is_spec_child_reference(getattr(node, "source_artifact_ref", None),
+                    owner_id=session_artifact_id, section="decision")):
+            continue
+        provenance = [edge for edge in edge_candidates.values()
+                      if getattr(edge, "from_candidate_id", None) == key
+                      and _enum_value(getattr(edge, "edge_type", "")) == "belongs_to"]
+        if (len(provenance) == 1
+                and getattr(provenance[0], "to_candidate_id", None) == roots[0]
+                and getattr(provenance[0], "rule_id", None) == "belongs_to/fdec@v2.0"
+                and getattr(provenance[0], "created_by", None) == "worker_layer1"
+                and _enum_value(getattr(provenance[0], "layer", "deterministic")) == "deterministic"):
+            granted.add(key)
+    return frozenset(granted)
 
 
 def _validated_deterministic_rdl_alternative_grants(
@@ -3328,6 +3383,12 @@ def _do_graph_commit(
                 ),
             )
         )
+        spec_decision_grants = _validated_deterministic_spec_decision_grants(
+            agent_id=agent_id, session_artifact_type=session_artifact_type,
+            session_artifact_id=session_artifact_id, node_candidates=node_candidates,
+            edge_candidates=edge_candidates,
+            relational_projection_active_set_intents=relational_projection_active_set_intents,
+        )
         connectivity = _validate_graph_connectivity_before_commit(
             graph_scope=graph_scope,
             board_id=board_id,
@@ -3341,6 +3402,7 @@ def _do_graph_commit(
             deterministic_rdl_alternative_candidate_ids=(
                 deterministic_rdl_alternative_grants
             ),
+            deterministic_spec_decision_candidate_ids=spec_decision_grants,
         )
         for endpoint, (node_id, node_type) in resolved_dependency_endpoints.items():
             candidate_to_graph_id[endpoint] = node_id

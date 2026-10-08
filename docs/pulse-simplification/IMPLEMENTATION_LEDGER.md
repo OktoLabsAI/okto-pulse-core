@@ -2,6 +2,44 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — KG10/16/24: projeção delimitada e paridade concluídas
+main93: Core59841 passou89/54.08s; Core90952 passou21/6.79s (20sobrepostos,
+90casos distintos). Community77145 passou3/299.49s em SQL/Grafx nativos.
+Frontend22346 passou34; closure55017 falhou apenas matriz README gerada.
+Render oficial atualizou ambos READMEs; closure61905 terminou0, oito budgets
+ZERO, findings/documentation_findings vazios. Ruff F/E9 e diff-check verdes.
+Todos os processos deste marco terminaram; nenhuma campanha pendente.
+
+Recibo clean-break-native-spec-owner-parity-main93-20261008.json preserva
+hashes, falha documental inicial, prova byte-a-byte anterior ao comportamento
+e revisão das famílias já verificadas. KG10/16/24 verificados; índice
+232verificados/3pendentes/11superados. Sem coocorrência inventada nem dispensa
+para Decision cognitiva genérica; dono e proveniência internos obrigatórios.
+Histórico e recibos anteriores preservados. Commit/push pareados deste marco.
+
+Próximos fixos: BASE:T23 e KG28 já autorizados; KG30 com limite previsto KG§5.4.
+Não há decisão de autoridade pendente. Entrega integral ainda não concluída.
+
+### 2026-10-08 — KG10 autorizado implementado, validação main93 ativa
+Base publicada Corefaac6fa6/Communityfd9084b6; três autorizações registradas.
+WIP Core: helper privado deriva grant apenas do worker exato, sessão Spec,
+active-set decision_requirements do dono, raiz Entity exata e belongs_to atual
+com rule/layer/writer corretos. Guard dispensa somente decision_judgement para
+esse conjunto validado; mantém proveniência e recusa cognição genérica.
+Não usa aresta velha como autoridade nem cria coocorrência. Core sem mecanismo.
+Novo teste cobre caminho válido e16forgeries, writer cognitivo e grant mutável.
+Community: reprodução antiga que esperava falha virou teste de preservação/
+paridade; WIP nativo FR/TR completo também está sob validação (não sobrescrito).
+
+Build/install main93/session39249 terminaram0. Proof80035 terminou0 ANTES dos
+comportamentos:838/317Python e899/403payloads fonte/wheel/install idênticos.
+ATIVOS: Core59841 native-spec-owner-main93-20261008; Community77145
+native-spec-parity-main93-20261008; closure55017; frontend22346 (nodes,
+DecisionImpactPanel,SpecCoveragePanel). Aguardar todos terminais. Nenhum aceite
+KG promovido ainda; índice229/6/11. Nenhuma mudança frontend/SPA neste produto.
+Próximos: tratar resultados, registrar recibo e commit/push do KG; T23 e KG28
+já autorizados seguem depois, sem novas perguntas de autoridade nessas decisões.
+
 ### 2026-10-08 — decisões T23/KG10 autorizadas e escopo correto do benchmark
 Usuário respondeu explicitamente nesta sessão: AUTORIZADO T23 vínculo de
 confirmação à revisão/prova atual, revalidação sem reabrir Bugs Done; AUTORIZADO

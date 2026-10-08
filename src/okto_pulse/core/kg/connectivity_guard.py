@@ -662,6 +662,7 @@ class KGNodeConnectivityGuard:
         existing_node_refs: Iterable[Any] = (),
         generation_id: str = "",
         deterministic_rdl_alternative_candidate_ids: Iterable[str] = (),
+        deterministic_spec_decision_candidate_ids: frozenset[str] = frozenset(),
     ) -> KGConnectivityValidationResult:
         node_snapshots = tuple(_snapshot_node(node) for node in nodes)
         edge_snapshots = tuple(_snapshot_edge(edge) for edge in edges)
@@ -702,6 +703,12 @@ class KGNodeConnectivityGuard:
                 type(candidate_id) is str and bool(candidate_id)
                 for candidate_id in raw_rdl_alternative_grants
             )
+            else frozenset()
+        )
+        spec_decision_grants = (
+            deterministic_spec_decision_candidate_ids
+            if type(deterministic_spec_decision_candidate_ids) is frozenset
+            and all(type(value) is str and value for value in deterministic_spec_decision_candidate_ids)
             else frozenset()
         )
         # RKG-02: the shared resolver decides if a Learning is bug-derived; a
@@ -786,6 +793,16 @@ class KGNodeConnectivityGuard:
                 required_groups = [_learning_bug_group()]
             else:
                 required_groups = list(rule.required_edge_groups)
+
+            # Only the authenticated Spec projection may carry a normative
+            # Decision with provenance alone. Generic cognitive Decisions keep
+            # their judgement requirement; no co-occurrence edge is invented.
+            from okto_pulse.core.ports.spec_projection import is_spec_owned_node_identity
+            if (writer_class is WriterClass.DETERMINISTIC
+                    and node.node_type == "Decision"
+                    and node.candidate_id in spec_decision_grants
+                    and is_spec_owned_node_identity("Decision", node.source_artifact_ref)):
+                required_groups = [group for group in required_groups if group.name != "decision_judgement"]
 
             for group in required_groups:
                 resolution = self._resolve_group(
