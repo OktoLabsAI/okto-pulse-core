@@ -1,0 +1,56 @@
+{
+  "scope": "Architecture start admission, approved obligations and content locks",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "ARQVER:AC-ARQ-10": [
+      "test_promoted_ir_cannot_be_dismissed_as_context_in_approved_scope"
+    ],
+    "ARQVER:AC-ARQ-15": [
+      "test_pending_architecture_blocks_actual_start_without_workflow_mutation[3]",
+      "test_pending_architecture_blocks_actual_start_without_workflow_mutation[31]",
+      "shows architecture blocker IDs, truncation and governed revision guidance"
+    ],
+    "ARQVER:AC-INT-03": [
+      "test_pending_architecture_blocks_actual_start_without_workflow_mutation"
+    ],
+    "ARQVER:ADV-03": [
+      "test_pending_architecture_blocks_actual_start_without_workflow_mutation[31]"
+    ],
+    "ARQVER:ADV-08": [
+      "test_invalid_batch_preserves_every_table[lock-architecture_classification_spec_locked]",
+      "test_draft_gate_survives_unrestricted_permissions",
+      "keeps classification authoring unavailable in %s while retaining review"
+    ]
+  },
+  "evidence": [
+    "Real REST start with 3 or 31 candidates blocks on the one pending candidate outside the presented page. The response includes its ID, the review/classification tools and authorized Draft revision guidance.",
+    "After the real reopen and classification requests, status stays Draft. A seeded current-edition rejection still blocks the real start transition; replacing that assessment result with approval permits start. Cards stay not_started and no IR/test evidence is invented.",
+    "Previously passing, unchanged main86 SQL witnesses show that context_only cannot dismiss a promoted IR in approved scope. All persisted tables remain unchanged and the delivery gate remains incomplete.",
+    "Previously passing, unchanged main86 SQL witnesses reject the mixed classification batch under content lock and reject writes outside Draft even with interaction permissions.",
+    "Frontend presents blocker IDs and revision guidance without a bypass button; classification authoring remains unavailable outside Draft and without write authority."
+  ],
+  "tests": {
+    "community_distinct_passed": 7,
+    "frontend_passed": 68,
+    "new_campaign_distinct_passed": 75,
+    "community_main_seconds": 26.11,
+    "community_strengthened_seconds": 14.91,
+    "strengthened_cases": 2,
+    "reused_witnesses": "native-architecture-read-community1.xml and native-architecture-write1.xml; unchanged main86, not counted as new tests"
+  },
+  "limits": [
+    "Assessment outcomes are seeded inputs; this campaign exercises real transition gates, not the complete assessment submission or installed authentication lifecycle.",
+    "Frontend uses controlled API responses/principals. No claim of full browser-to-installed-runtime E2E.",
+    "ADV-14 is not qualified solely from the passing deletion/readiness case; the applicable deletion lock/revision behavior remains to be reviewed.",
+    "No product/SPA changes or storage conversion. Main86 closure remains applicable with eight zero budgets; no promotion or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-architecture-start1.json": "5c9eb2038a6c5d609bfa3e6a651a542f536e7d7a45991cc372a34a5d290820f9",
+    "native-architecture-start1.xml": "4a773759ee0b3931c2e434fc9013c11518d94effe4c30965af73d4a0fbe848fa",
+    "native-architecture-start2.xml": "43f2a0bb729be1700786b541d4091a4b1fc8cd5c521c17a0ba15a0c4ed59bd6a",
+    "native-architecture-start-frontend1.json": "3c6a975bd9dd2a802ed3e0a444fd66158e28b7ddbe235166a4407b5e4ac5400f",
+    "native-architecture-read-community1.xml": "b652f2c8bbb0ba138abad5a730889a9600062d8661e1bbd6957338b682ed7097",
+    "native-architecture-write1.xml": "78401e26ecbc7bc95b0047952799bc188758dc7340e7675f762313ad1fa7397f",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

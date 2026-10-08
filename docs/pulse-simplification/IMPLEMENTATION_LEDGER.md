@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — ARQ início e locks de conteúdo (main86)
+Basecda82dcd/b4cdfd1c conferida. Proof provenance-native-architecture-start1
+terminal0 antes da campanha:835/317 Python e896/403 payloads byte a byte.
+Community start1/session10298:7pass em26.11s. Fortalecidas asserções de
+remediação real (tools e revisão Draft autorizada); start2/session64434:
+2pass em14.91s, incluídos nos7. Frontend ValidationErrorDisplay/SpecModal:
+68pass, session29464 terminal0. Total75 distintos.
+
+Candidato pendente fora da página bloqueia início com IDs; classificação
+após reabertura real não inicia Spec/Cards. Rejeição da edição continua
+bloqueando; aprovação permite transição sem inventar IR/prova de teste.
+Avaliações são entradas seedadas; não alegar submissão/autenticação E2E.
+Revistos witnesses main86 já verdes: content lock recusa lote sem writes;
+IR promovido não pode ser dispensado como contexto no escopo aprovado,
+histórico intacto e entrega ainda incompleta. UI conserva leitura sem authoring.
+
+Recibo clean-break-native-architecture-start.json. AC-ARQ-10/15,
+AC-INT-03 e ADV-03/08 qualificados; índice161verificados/74pendentes/11superados.
+ADV-14 não qualificado só pelo caso de remoção/prontidão; revisar locks
+aplicáveis à exclusão. Nenhum produto/SPA alterado; closure main86 vigente,
+oito budgets ZERO. Todos handles terminais; WIP KG10 preservado.
+Commit/push de testes/evidências. Sem promoção ou dados reais.
+Continuar os critérios restantes de verificabilidade e integração.
+
 ### 2026-10-08 — ARQ identidade, paginação e revisão semântica (main86)
 Base5a5a44d2/301c6dc7 conferida. Proof provenance-native-architecture-review1
 terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.
