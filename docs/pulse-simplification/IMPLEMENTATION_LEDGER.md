@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — iniciativa com duas Specs e custo de recusa
+Turno anterior foi progresso; Corebcc9f761/Communitya87851ef conferidos,
+Community somente WIP KG10. test_native_classification_cost agora parte da
+mesma Ideation concluída e cria duas Specs via MCP (1/26contratos). Confere
+ideation_id/created_by persistidos. Dois agentes autenticados; variante second
+nega apenas spec.entity.edit_fields, preserva leituras e recebe permission_denied
+ao tentar classificar. Nome read-only-reader é local à classificação, não
+significa principal sem qualquer outra permissão de escrita.
+
+Proof provenance-native-initiative-cost-20261008 terminal0: main90 byte-idêntico
+838/317 Python,899/403 payloads antes dos testes.
+Campanha1/session48212 recusou corretamente Ideation Draft; precondição
+controlada de iniciativa concluída explicitada. Campanha2/session65794 terminal0:
+4pass31.63s. Medição/session69761 terminal0:4pass28.81s,2warnings anyio conhecidos.
+27decisões por variante, autoria first intacta; equivalência semântica exata
+em todas quatro variantes; nenhum novo registro por tentativa recusada.
+Todos tools/list contêm282tools. Catálogo/resources/detalhes completos medidos.
+Amplo:69→44tools/call,956626→917924bytes,242377→232677tokens.
+Restrito:70→45calls,958376→919665bytes,243203→232873tokens, recusa incluída.
+Variação de IDs/timestamps não é economia atribuível a autorização.
+
+Archive benchmark-native-initiative-main90-20261008.json.gz e recibo
+clean-break-native-initiative-cost-20261008.json. Não promover aceite integral:
+RF-INT-12 também pede custo de perfis/defaults e reuso de critérios/evidências,
+não demonstrado por classificação context_only. BASE:T43/KG64 idem dependem
+comparação integral. Universo225/10/11 mantido; nenhum critério acrescentado.
+Próximo: medir esses trechos faltantes pelos writers/leitores nativos já
+existentes, reaproveitando a iniciativa e instrumentação; não refazer auth,
+criação pública, lote, paginação ou paridade já comprovados.
+Produto/SPA inalterados; closure main90/oito budgets ZERO. Handles terminais.
+WIP KG10, decisões BASE:T23/KG10/KG28 e limite KG30 preservados.
+
 ### 2026-10-08 — autoria pública e classificação comparável
 Turno anterior foi progresso; Core2d33cc5c/Community6c1f5cfa conferidos,
 apenas WIP KG10 preservado. Novo test_native_classification_cost: schema nativo,

@@ -1,0 +1,107 @@
+{
+  "scope": [
+    "BASE:T43",
+    "KG:KG-64",
+    "ARQVER:AC-INT-12"
+  ],
+  "status": "partial",
+  "proof_pair": "dist-native-main90",
+  "evidence": [
+    "One completed initiative seeds the starting boundary; first agent publicly creates both simple and 26-contract Specs under that same initiative, then authors and classifies their Designs.",
+    "Second agent resumes both Specs in a distinct authenticated session. The restricted variant denies spec.entity.edit_fields and a real classification write is refused with permission_denied.",
+    "All four variants retain exactly 27 decisions by first agent. Full semantic decision equality is checked across batch/individual and broad/restricted reader variants.",
+    "All tools/list responses contain 282 tools. Both execution paths read all candidate details and all protocol resource bodies; no reduction by hiding tools or omitting contracts.",
+    "Broad variant: 69 to 44 tool calls, 956626 to 917924 bytes, 242377 to 232677 tokens. Restricted variant: 70 to 45 calls, 958376 to 919665 bytes, 243203 to 232873 tokens, including refused write."
+  ],
+  "results": {
+    "passed": 4,
+    "seconds": 28.81,
+    "decisions_per_variant": 27,
+    "catalog_tools": 282
+  },
+  "summary": {
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[batch-broad-reader-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 6,
+        "tools/call": 44
+      },
+      "requests": 54,
+      "bytes": 917924,
+      "tokens_cl100k_base": 232677,
+      "classification": {
+        "requests": 2,
+        "bytes": 27469,
+        "tokens_cl100k_base": 10558
+      }
+    },
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[batch-read-only-reader-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 6,
+        "tools/call": 45
+      },
+      "requests": 55,
+      "bytes": 919665,
+      "tokens_cl100k_base": 232873,
+      "classification": {
+        "requests": 3,
+        "bytes": 29214,
+        "tokens_cl100k_base": 11009
+      }
+    },
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[individual-broad-reader-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 6,
+        "tools/call": 69
+      },
+      "requests": 79,
+      "bytes": 956626,
+      "tokens_cl100k_base": 242377,
+      "classification": {
+        "requests": 27,
+        "bytes": 66173,
+        "tokens_cl100k_base": 21098
+      }
+    },
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[individual-read-only-reader-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 6,
+        "tools/call": 70
+      },
+      "requests": 80,
+      "bytes": 958376,
+      "tokens_cl100k_base": 243203,
+      "classification": {
+        "requests": 28,
+        "bytes": 67919,
+        "tokens_cl100k_base": 21543
+      }
+    }
+  },
+  "permission_variant": "Only classification authorship is restricted: spec.entity.edit_fields=false. Other grants remain broad; this is not a universally read-only principal.",
+  "artifact": {
+    "file": "benchmark-native-initiative-main90-20261008.json.gz",
+    "sha256": "7278131898d8c8d5573a8a465d9f6d552427b67f5e21b481120f9ce2bdf491ac",
+    "raw_sha256": "d68ee19e50d4aa90bfb6ae77df336d6554b5debab4ab3fca87ef23f2642bf9b7"
+  },
+  "artifacts": {
+    "provenance-native-initiative-cost-20261008.json": "cfdc5019a3f209dc8fdb43003bcfe3a3bd494fde240b1a79f2f1471632e88204",
+    "native-initiative-cost-20261008-2.xml": "abee4c0ebfea9056d2b43221995940b6b0ca8f082faa0a2854915a6b01fe076a",
+    "native-initiative-measurement90-20261008.xml": "68837568832a6f6eb77b2268aedd0b680f75a72d4335dd10e12e6d6c50dfe5bc"
+  },
+  "limits": [
+    "Classification/authorship/resume segment only. RF-INT-12 profile/default/criterion-evidence-reuse costs and full-flow comparisons remain unproven.",
+    "Completed Ideation and initial grants are controlled fixture inputs; no claim that this campaign authors or completes that Ideation.",
+    "Classification completeness remains distinct from semantic approval, normative IR fulfillment and Spec delivery.",
+    "Random IDs/timestamps influence exact token counts; do not attribute token difference between separate runs solely to one refusal.",
+    "No 50/30 target or full KG traversal saving is inferred. No acceptance promoted or product/frontend/SPA change.",
+    "First campaign correctly refused Spec creation from Draft Ideation; completed-initiative precondition was then made explicit without relaxing product gates."
+  ]
+}
