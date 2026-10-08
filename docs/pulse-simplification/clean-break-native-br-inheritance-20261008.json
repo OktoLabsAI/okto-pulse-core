@@ -1,0 +1,31 @@
+{
+  "scope": "ARQVER:AC-VER-11",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main90",
+  "evidence": [
+    "Architecture candidate fixture can initialize current schema with actual SQLite pragmas; semantic-review matrix now selects that native mode.",
+    "Real REST evaluation records reviewer rejection when inherited login-success criterion does not observe five failed passwords and blocking; structurally complete plan cannot override rejection/start denial.",
+    "Corrected condition is authored through scoped REST writer, favorable external evaluation permits actual start, same Test Card retains original scenario allocation.",
+    "Separate native evidence fixture admits one demonstration report bound to the exact blocking condition. One implementation and one test binding provide actual current credit to FR, inherited BR and AC.",
+    "Fresh session projection is allowed, all three obligations share the same test record; exactly one Test Card and one authenticated report receipt remain."
+  ],
+  "results": {
+    "semantic_cases_passed": 2,
+    "proof_cases_passed": 1,
+    "other_native_fixture_cases_passed": 4,
+    "total_passed": 7
+  },
+  "limits": [
+    "Reviewer judgment and observed report content are controlled external inputs; Pulse does not infer semantic sufficiency or execute the external login service.",
+    "Reject/corrected review paths and proof reuse use separate disposable fixtures. This criterion does not claim supersession of rejection in one continuous edition.",
+    "Validated status and initial Card assignments are fixture inputs; actual review/write/start and proof store/projection paths are exercised.",
+    "No product/frontend/SPA change, release or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-br-inheritance-20261008.json": "7959970273e6cb2e5eaeb59d1141b6c8f794acc5ff64a555edeffe5b282170d3",
+    "native-br-inheritance-review-20261008.xml": "8c4b3ab5c08f910658e2fe8c352c2b1344cafe9d27f4bab0a8490ad10b63f13e",
+    "native-br-inheritance-proof-20261008.xml": "62a44fe520e90e53f91b55f575ed09d94246df9c6560c262a3bcd85696827acb",
+    "native-br-inheritance-fixture-20261008.xml": "930aabfbbbde48eaae58bc6a38ce3e13714da85f7498084d473ca34445168dbd",
+    "closure-native-main90.json": "738a5f3f3390888489c030ace3cfdd62c223416a5d689a599dcbf1da759fddfd"
+  }
+}

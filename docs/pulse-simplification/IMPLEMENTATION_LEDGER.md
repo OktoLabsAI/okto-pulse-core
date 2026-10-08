@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-VER-11 revisão e reuso de prova BR nativos
+Base02caae7e/ee873908; turno anterior foi progresso. Fixture adopted_context
+passa a aceitar native_schema (inicializador atual/pragmas reais); matriz de
+revisão semântica usa essa seleção, sem mudar defaults das outras suites.
+Login válido não comprova cinco erros/bloqueio: avaliação externa reject via
+REST persiste e bloqueia início apesar da estrutura completa. Condição corrigida
+pelo writer scoped e avaliação favorável permitem início com mesmo Test Card.
+
+Novo test_native_br_verification_reuse: schema nativo, BR herda critério da FR,
+um relatório demonstration autenticado observa cinco falhas/bloqueio. Store
+registra uma implementação e uma prova; sessão nova confirma rollup allowed,
+FR/BR/AC com mesmo test_id, um único Test Card/receipt. Conteúdo externo e
+julgamento são inputs controlados; não alega execução real de login nem
+supersessão da rejeição entre fixtures independentes.
+
+Proof provenance-native-br-inheritance-20261008 terminal0 antes dos testes:
+main90 byte-idêntico838/317 Python,899/403 payloads.
+Review/session32195 terminal0:2pass14.60s.
+Proof/session9451 terminal0:1pass9.67s.
+Demais casos da fixture alterada/session83390 terminal0:4pass20.52s.
+Ruff/diff check verdes; recibo clean-break-native-br-inheritance-20261008.json.
+AC-VER-11 qualificado; índice223verificados/12pendentes/11superados.
+Sem produto/frontend/SPA alterado; closure main90/oito budgets ZERO.
+Todos handles terminais; commit/push testes/evidência, WIP KG10 preservado.
+Retomar VER18, DEI64, KG e benchmarks fixos. BASE:T23/KG10/KG28 seguem decisões
+pendentes. Objetivo integral ativo; sem promoção/dados reais.
+
 ### 2026-10-08 — AC-INT-10 contrato fechado fonte/wheel
 Base884533f1/652e4c17; turno anterior foi progresso. Probe standalone
 Community tests/native_contract_distribution_probe.py, sem conftest:
