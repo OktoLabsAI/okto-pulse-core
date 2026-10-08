@@ -6712,7 +6712,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-verification-start.json",
+        "criterion_key": "ARQVER:AC-VER-01",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-VER-02",
@@ -6768,7 +6773,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-verification-start.json",
+        "criterion_key": "ARQVER:AC-VER-03",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-VER-04",
@@ -6818,7 +6828,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-verification-start.json",
+        "criterion_key": "ARQVER:AC-VER-05",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-VER-06",
@@ -6868,7 +6883,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-verification-start.json",
+        "criterion_key": "ARQVER:AC-VER-07",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-VER-08",
@@ -6940,7 +6960,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-verification-start.json",
+        "criterion_key": "ARQVER:AC-VER-10",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-VER-11",
@@ -7014,7 +7039,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-verification-start.json",
+        "criterion_key": "ARQVER:AC-VER-12",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-VER-13",
@@ -7596,7 +7626,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-verification-start.json",
+        "criterion_key": "ARQVER:ADV-09",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:ADV-10",
@@ -7800,7 +7835,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-verification-start.json",
+        "criterion_key": "ARQVER:ADV-15",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:ADV-16",

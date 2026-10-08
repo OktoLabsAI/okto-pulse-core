@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — VER qualificação e admissão de início (main86)
+Base8c727b64/08659ae2 conferida; WIP KG10 preservado. Proof
+provenance-native-verification-start1 terminal0 antes dos testes:835/317 Python
+e896/403 payloads byte a byte. Community verification-start1/session34190:
+16pass em47.88s. Core verification-start-core1/session9654:42pass em5.37s.
+Defaults ampliados para FR/TR/OR e teste de metadado nativo renomeado:
+core2/session71881:6pass em4.09s; total Core44 distintos, sem duplicar rerun.
+Frontend RequirementVerificationPanel:29pass. Total89 distintos; ruff verde.
+
+Gate recusa perfil OR ausente, trabalho operacional não atribuído, ciclo,
+terminal ausente e critério órfão. Revisão Draft e reparo permitem iniciar,
+ainda sem runs/crédito. Critério técnico usa identidade/writer/histórico comum.
+Avaliação semântica externa rejeita condição alheia e HTTP200 não concede
+latência/alerta. Viewer real do Board lê mas não dispensa/revoga IR.
+Cancelamento real do único implementador conserva IR, invalida avaliação
+e exige realocação via revisão autorizada. Defaults são propostas, não writes.
+Estados iniciais e algumas atribuições são fixtures; não alegar auth E2E.
+
+Recibo clean-break-native-verification-start.json. AC-VER-01/03/05/07/10/12
+e ADV-09/15 qualificados; índice169verificados/66pendentes/11superados.
+AC-VER-11 ainda precisa comprovar reutilização efetiva da prova; aprovação
+do plano corrigido isoladamente não a prova. Sem produto/SPA alterado:
+closure main86 vigente, oito budgets ZERO. Todos handles terminais.
+Commit/push Core de testes/evidências; Community permanece08659ae2.
+Sem promoção/dados reais; seguir restantes critérios, sem ampliar universo.
+
 ### 2026-10-08 — ARQ início e locks de conteúdo (main86)
 Basecda82dcd/b4cdfd1c conferida. Proof provenance-native-architecture-start1
 terminal0 antes da campanha:835/317 Python e896/403 payloads byte a byte.

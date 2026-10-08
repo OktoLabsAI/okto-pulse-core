@@ -129,7 +129,7 @@ def test_closed_configuration_never_accepts_dispensing_or_evidence_flags(value):
         (ObservabilityRequirement, {"id": "or", "title": "OR"}),
     ],
 )
-def test_typed_read_models_do_not_backfill_legacy_metadata(model, payload):
+def test_typed_read_models_do_not_invent_missing_native_qualification(model, payload):
     assert "verification" not in model.model_validate(payload).model_dump()
     assert (
         model.model_validate({**payload, "verification": None}).model_dump()[
@@ -324,16 +324,23 @@ def test_all_active_criteria_remain_normative_planning_inputs(damage, code):
     assert not result["criteria_resolution_complete"]
 
 
-def test_draft_defaults_are_versioned_proposals_not_silent_writes():
+@pytest.mark.parametrize("kind,profile", [
+    ("functional_requirement", "functional"),
+    ("technical_requirement", "technical"),
+    ("observability_requirement", "operational"),
+])
+def test_draft_defaults_are_versioned_proposals_not_silent_writes(kind, profile):
     data = population()
-    data["functional_requirements"][0].pop("verification")
+    field = VERIFICATION_REQUIREMENT_FIELDS[kind]
+    data[field] = [{"id": "pending", "text": "Qualification pending in Draft"}]
     before = copy.deepcopy(data)
     result = resolve(data)
     assert data == before
-    assert row(result, "fr-auth")["verification"] is None
-    assert row(result, "fr-auth")["default_proposal"] == verification_default_proposal(
-        "functional_requirement"
-    )
+    pending = row(result, "pending")
+    assert pending["verification"] is None
+    assert pending["criteria_paths"] == []
+    assert pending["default_proposal"] == verification_default_proposal(kind)
+    assert pending["default_proposal"]["verification"]["required_profiles"] == [profile]
     assert not result["criteria_resolution_complete"]
 
 
