@@ -1,0 +1,50 @@
+{
+  "scope": "Refresh DEI-T20/T21 current evidence after provenance artifact name collision",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criteria": [
+    "DEI:DEI-T20",
+    "DEI:DEI-T21"
+  ],
+  "results": {
+    "core": {
+      "passed": 12,
+      "failed": 0,
+      "seconds": 4.21,
+      "terminal_session": 32848
+    },
+    "community": {
+      "passed": 7,
+      "failed": 0,
+      "seconds": 19.45,
+      "terminal_session": 96986
+    }
+  },
+  "evidence": [
+    "Existing domain and SQL witnesses rerun on current paired source after terminal main88 install/wheel/source parity.",
+    "Context-only note preserves proof despite dirty external workspace declaration; closed material-change contract rejects missing or contradictory scope.",
+    "Target/source/unknown material changes invalidate precisely affected old observations. Clean note or old receipt rebinding cannot renew proof.",
+    "Later observation supports a successor, old record remains historical. A dirty checkpoint beyond summary cap still blocks; only same-scope human revocation clears its effect.",
+    "Inline old-observation attempt rolls back origin receipt, checkpoint and events; source/Target conflict refuses before persistence."
+  ],
+  "historical_artifact_incident": {
+    "restored_receipt": "clean-break-native-delivery-currentness.json",
+    "restored_from": "b8ae8860",
+    "byte_identical": true,
+    "overwritten_local_proof": "provenance-native-delivery-currentness1.json",
+    "original_expected_sha256": "e94cf4e729e3495bd511e5bf8a572bb95aabb304165f66f348c1b04d80da254a",
+    "resolution": "Historical receipt restored verbatim; original local proof bytes are unavailable after accidental overwrite and are not reconstructed or claimed valid. Fresh uniquely named main88 proof and rerun campaigns replace current qualification for both criteria. New Target currentness evidence has its own separate receipt."
+  },
+  "limits": [
+    "Community progress fixture seeds accepted origin facts in SQL; this is not attestation authentication or installed E2E.",
+    "These are 19 revalidated tests, not new acceptance criteria. Native current-schema Target currentness is evidenced separately.",
+    "No product/frontend changes. Prior frontend44 hash verified and relevant sources unchanged; not rerun or recounted. No real-data operation or promotion."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-target-currentness1.json": "a8d5fddedb73e7848dddd4f246c108a8acbc2b62c23eed1a9367175ffbd508bb",
+    "native-material-progress-revalidation-20261008-core.xml": "4a40c7929757c2afe14929b0ae5476eb65873b4a252262e51625a20747842042",
+    "native-material-progress-revalidation-20261008-community.xml": "2527ee0586a21866de598010a18e5734554872d1fd2380f871c4871f256fe92e",
+    "native-delivery-envelope-frontend1.json": "a751880c26e35030dc6efc27dfb79d81a4f937cd3ffa9d2bf7f490e31f2d146d",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

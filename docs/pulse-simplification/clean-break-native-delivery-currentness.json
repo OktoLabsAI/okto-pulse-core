@@ -1,66 +1,58 @@
 {
-  "scope": "Scoped native delivery currentness and non-delivery dispositions",
-  "status": "verified_current_pair_review",
-  "proof_pair": "dist-native-main88",
-  "criteria": [
-    "DEI:DEI-T19",
-    "DEI:DEI-T23",
-    "DEI:DEI-T32"
-  ],
-  "result": {
-    "passed": 5,
-    "failed": 0,
-    "seconds": 13.95,
-    "terminal_session": 13791
+  "scope": "DEI-T20/T21: context-only notes preserve proof; material progress invalidates affected old observations without deleting history",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "DEI:DEI-T20": [
+      "test_context_note_does_not_invalidate_earlier_proof_even_with_external_dirty_state",
+      "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[none]"
+    ],
+    "DEI:DEI-T21": [
+      "test_material_change_is_scoped_and_requires_strictly_later_observation",
+      "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[targets]",
+      "test_rebinding_old_observation_or_clean_note_cannot_restore_proof",
+      "test_dirty_checkpoint_hidden_by_summary_cap_still_blocks_and_revoke_is_authorized",
+      "test_dirty_then_inline_old_observation_rolls_back_origin_and_checkpoint"
+    ]
   },
+  "review": [
+    "Core progress_blocks_execution uses explicit change scope and observation time; received time, repeated bindings and clean notes cannot renew old evidence.",
+    "Community reads full active progress population independently of summary caps, honoring only same-scope human revocations.",
+    "Strengthened real SQL test proves Spec and Target revisions unchanged by checkpoint/read in addition to Card version/status and exact ledger/event counts."
+  ],
   "evidence": [
-    "Full native schema starts with admitted implementation plus signed passing Test Card evidence and allowed rollup.",
-    "Target revision/path changes use the real CAS writer with reason digest. Prior proof becomes stale; rebinding the old execution is refused without new delivery records.",
-    "New source observation has recomputed observation digest, distinct request/receipt/workspace identity and generation-2 predecessor chain. Native origin store appends and advances head under expected revision.",
-    "Successor execution on the same Target at a different commit invalidates prior delivery even though Card identity remains unchanged. Old delivery payloads and IDs remain intact after fresh-session reads and refused rebind.",
-    "The same source-head advance and execution on an independent Target leave prior proof and signed test credited. No new binding or retest is demanded for activity outside the named proof set.",
-    "Stored not_touched and superseded execution dispositions survive reads unchanged. Neither can be bound as implementation or appear as an implementation candidate; no delivery record is invented."
+    "No-change note leaves both execution candidates and gate readiness intact.",
+    "Target-two change invalidates FR requiring both receipts while independent TR retains its valid receipt; unknown scope conservatively invalidates both.",
+    "Old observation cannot be rebound after dirty checkpoint or a subsequent clean note. Later accepted observation supports a successor while old record remains historical.",
+    "Dirty checkpoint beyond20-item summary still blocks; only authorized human revocation removes its active effect while preserving its record.",
+    "Inline attempt based on old observation rolls back receipt, checkpoint and events."
   ],
-  "attempts": [
-    {
-      "campaign": "native-delivery-currentness1",
-      "passed": 2,
-      "failed": 1,
-      "reason": "Direct Target revision fixture rejected by native CAS trigger. Campaign launched while fresh parity proof handle was pending; not used as final acceptance evidence."
-    },
-    {
-      "campaign": "native-delivery-currentness2",
-      "passed": 2,
-      "failed": 1,
-      "reason": "CAS writer stimulus still omitted required last_change_reason_sha256; native trigger correctly refused."
-    },
-    {
-      "campaign": "native-delivery-currentness3",
-      "passed": 3,
-      "failed": 0,
-      "seconds": 11.72,
-      "reason": "Correct native CAS mutation passed; final campaign adds two disposition cases."
-    }
-  ],
-  "reused_frontend": {
-    "passed": 44,
+  "tests": {
+    "core_passed": 12,
+    "community_passed": 7,
+    "distinct_backend_passed": 19,
+    "core_seconds": 5.51,
+    "community_seconds": 20.53
+  },
+  "frontend_review": {
     "artifact": "native-delivery-envelope-frontend1.json",
-    "unchanged_since": "361647f578eec02b1e260564e16bde6c1f889f44",
-    "note": "Hash verified against prior receipt, diff empty for code-traceability components/tests and services/api.ts; not rerun or included in execution total."
+    "cases": [
+      "selects only affected Targets and requires a selection before saving a code change",
+      "can explicitly record a context note without declaring the external dirty work changed",
+      "shows the declared material change after reload"
+    ],
+    "status": "Previously passed on identical main86 frontend; reviewed without unnecessary rerun."
   },
   "limits": [
-    "Accepted origin facts and execution rows are controlled fixture inputs; this validates native persistence lineage and delivery consumers, not agent attestation authentication or full execution-submit authorization.",
-    "Independent Target is outside the existing normative proof set. This does not grant compatibility to composed proofs from different commits.",
-    "Target mutation uses real persistence CAS and reason digest, not full authoring authorization.",
-    "No product/frontend changes. Main88 installed parity is terminal before final campaign; closure and all eight zero budgets remain applicable. No promotion or real-data operations."
+    "The successor-observation SQL fixture seeds accepted origin facts; it does not authenticate an external repository.",
+    "DEI-T23 is not fully qualified here: independent implementation readiness is covered, complete test/integration-basis behavior remains separate.",
+    "No runtime/frontend change; existing main86 closure with eight ZERO budgets remains applicable.",
+    "No legacy read/conversion, promotion or real-data operation."
   ],
   "artifacts": {
-    "provenance-native-delivery-currentness1.json": "a8d5fddedb73e7848dddd4f246c108a8acbc2b62c23eed1a9367175ffbd508bb",
-    "native-delivery-currentness1.xml": "115c669101700aea92e6238a833e54c4e1ba7888d7913011018ada51e57cd095",
-    "native-delivery-currentness2.xml": "ba9f2bd1493a946af9cb5502e4518ce653c6636623d45e75b82ec5e06c18a839",
-    "native-delivery-currentness3.xml": "539f2ff18a2dd4c5f5f767546078cdae93355d5d5799d9e6d65c08daada814f1",
-    "native-delivery-currentness4.xml": "edd4202078f67d106606881e57692630920a10afc493e8a1ddb074b955671cba",
+    "provenance-native-delivery-currentness1.json": "e94cf4e729e3495bd511e5bf8a572bb95aabb304165f66f348c1b04d80da254a",
+    "native-delivery-currentness-core1.xml": "4dc83ea92915cbed19a7b3060634692b9504d3613cc1d2899ec82089289130c2",
+    "native-delivery-currentness-community1.xml": "bfa731e496acc7af8482215019730c3cc7614f61c36a5db6ef4f39356c3f3163",
     "native-delivery-envelope-frontend1.json": "a751880c26e35030dc6efc27dfb79d81a4f937cd3ffa9d2bf7f490e31f2d146d",
-    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
   }
 }

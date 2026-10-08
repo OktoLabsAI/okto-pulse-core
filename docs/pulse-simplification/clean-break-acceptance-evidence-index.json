@@ -5226,7 +5226,7 @@
       ],
       "current_qualification": "verified_current_pair_review",
       "current_review": {
-        "artifact": "clean-break-native-delivery-currentness.json",
+        "artifact": "clean-break-native-delivery-target-currentness.json",
         "criterion_key": "DEI:DEI-T19",
         "proof_pair": "dist-native-main88"
       }
@@ -5253,9 +5253,9 @@
       ],
       "current_qualification": "verified_current_pair_review",
       "current_review": {
-        "artifact": "clean-break-native-delivery-currentness.json",
+        "artifact": "clean-break-native-material-progress-revalidation-20261008.json",
         "criterion_key": "DEI:DEI-T20",
-        "proof_pair": "dist-native-main86"
+        "proof_pair": "dist-native-main88"
       }
     },
     {
@@ -5280,9 +5280,9 @@
       ],
       "current_qualification": "verified_current_pair_review",
       "current_review": {
-        "artifact": "clean-break-native-delivery-currentness.json",
+        "artifact": "clean-break-native-material-progress-revalidation-20261008.json",
         "criterion_key": "DEI:DEI-T21",
-        "proof_pair": "dist-native-main86"
+        "proof_pair": "dist-native-main88"
       }
     },
     {
@@ -5334,7 +5334,7 @@
       ],
       "current_qualification": "verified_current_pair_review",
       "current_review": {
-        "artifact": "clean-break-native-delivery-currentness.json",
+        "artifact": "clean-break-native-delivery-target-currentness.json",
         "criterion_key": "DEI:DEI-T23",
         "proof_pair": "dist-native-main88"
       }
@@ -5552,7 +5552,7 @@
       "discovered_artifacts": [],
       "current_qualification": "verified_current_pair_review",
       "current_review": {
-        "artifact": "clean-break-native-delivery-currentness.json",
+        "artifact": "clean-break-native-delivery-target-currentness.json",
         "criterion_key": "DEI:DEI-T32",
         "proof_pair": "dist-native-main88"
       }

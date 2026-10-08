@@ -2,6 +2,26 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — correção de colisão de evidência e revalidação DEI-T20/T21
+O commitdfde665d reutilizou por engano clean-break-native-delivery-currentness.json
+(já servia DEI-T20/T21). Restaurado byte-a-byte deb8ae8860; evidência nova de
+T19/T23/T32 passa a clean-break-native-delivery-target-currentness.json, com
+referências do índice corrigidas. O nome do proof local também colidiu:
+provenance-native-delivery-currentness1.json original/main86 foi sobrescrito.
+Bytes originais desse proof não estão disponíveis; não foram reconstruídos nem
+tratados como válidos. Conteúdo novo/main88 preservado em nome único
+provenance-native-delivery-target-currentness1.json.
+
+Para remover dependência corrente do artefato perdido, reexecutadas suites
+DEI-T20/T21 após proof terminal: native-material-progress-revalidation-20261008-core
+/session32848:12pass4.21s; community/session96986:7pass19.45s, ambos terminal0.
+Recibo novo clean-break-native-material-progress-revalidation-20261008.json
+registra incidente, hashes e limites; índiceT20/T21 aponta para esta revalidação.
+Recibo histórico permanece intacto, indisponibilidade local explicitada.
+Nenhum produto alterado. Contagem permanece205/30/11 (19 testes revalidados,
+não critérios novos); todos handles terminais, main88/oito budgets ZERO.
+Correção commit/push sem reescrever histórico Git; WIP KG10 preservado.
+
 ### 2026-10-08 — DEI-T19/T23/T32 atualidade delimitada e disposições
 Baseb8ae8860/f2934332. Turno anterior: progresso, dois critérios e pushes.
 Proof provenance-native-delivery-currentness1/session71954 terminal0:main88
@@ -25,7 +45,7 @@ currentness3/session52047:3pass11.72s.
 currentness4/session13791 terminal0:5pass13.95s; Ruff verde.
 Frontend44 anterior hash conferido, diff361647f5..HEAD vazio para componentes
 code-traceability/testes e services/api.ts. Reuso sem recontagem.
-Recibo clean-break-native-delivery-currentness.json qualifica DEI-T19/T23/T32.
+Recibo clean-break-native-delivery-target-currentness.json qualifica DEI-T19/T23/T32.
 
 Índice205verificados/30pendentes/11superados. Closure main88/oito budgets ZERO;
 sem produto/SPA alterado e todos handles terminais. Commit/push teste/evidência.
