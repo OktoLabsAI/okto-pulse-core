@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-VER-16 pelo writer governado (main87)
+Base6ce9a1a6/b2d3050e; proof provenance-native-governed-applicability1
+terminal0:835/317 Python e896/403 payloads byte a byte.
+Novo caso usa StructuredSpecEntityService real, preset Spec, versão esperada
+e composição completa Community. Nota editorial mantém crédito; limite200→100
+remove crédito dependente, mantém UI, avaliações e payloads de ledger.
+SpecHistory conserva entradas e acrescenta auditoria; Spec continua Draft.
+
+Campanhas: governed1/session39200,2pass/1fail15.13s (porta ausente);
+governed2/session88748,1fail13.63s (fixture sparse sem project revision);
+governed3/session31951,1fail12.50s (application persistence ausente);
+governed4/session7767,1pass11.22s após composição completa e revision0.
+Total3 casos distintos verdes, incluindo os2 anteriores já executados.
+Ruff/diff check verdes. Todos handles terminais. Sem alteração de produto.
+Frontend main87 já validado45pass, não repetido/contado novamente.
+
+Recibo clean-break-native-governed-applicability.json; AC-VER-16 qualificado.
+Índice178verificados/57pendentes/11superados. Teste não é novo HTTP E2E:
+invoca writer governado real, com estado/avaliação iniciais seedados.
+Não prova travessia de edição após reopen nem benchmark real de latência.
+Main87/closure vigentes, oito budgets ZERO. WIP KG10 preservado.
+Commit/push do teste/evidências; sem promoção, conversão ou dados reais.
+Continuar critérios restantes de aplicabilidade, sem reabrir os já comprovados
+salvo alterações materiais ou novos resultados contraditórios.
+
 ### 2026-10-08 — Correção prospectiva de aplicabilidade, par main87
 Base6ce65a92/400740c6. Core agora usa um único digest nativo schema3,
 limitado a critérios ligados por identidade exata; vincula texto, perfil e links.
