@@ -2,6 +2,24 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-VER-17 proteção de OR ativo (main87)
+Base8e23ea14/ca013954. Proof provenance-native-operational-authority1
+terminal0:835/317 Python e896/403 payloads byte a byte. Três novos casos
+REST tentam verification null, mode none e perfis vazios em Spec in_progress.
+operational-authority1/session34383:3pass em12.53s; ruff/diff check verdes.
+
+Recusa409/422, null aponta revisão Draft; snapshot relacional, versão/status
+e OR intactos. Diagnóstico conserva perfil operacional, sem alegar entrega.
+Principal autor controlado e estado inicial seedado: prova write/readback reais,
+não autenticação instalada ou transição completa. UI de qualificação não mudou;
+evidência existente de leitura/autoridade/save explícito reutilizada, sem rerun.
+
+Recibo clean-break-native-operational-authority.json; AC-VER-17 qualificado.
+Índice180verificados/55pendentes/11superados. Produto/SPA sem alterações,
+closure main87 vigente, oito budgets ZERO. Todos handles terminais.
+WIP KG10 preservado fora do commit; commit/push teste/evidências.
+Sem promoção/dados reais; continuar critérios pendentes do índice fixo.
+
 ### 2026-10-08 — ADV-13 vínculo posterior ao run (main87)
 Base7321fbc2/8b78666c; proof provenance-native-postrun-link1 terminal0:
 835/317 Python e896/403 payloads byte a byte. Estendido witness governado:
