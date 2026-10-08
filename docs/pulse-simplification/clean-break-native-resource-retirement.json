@@ -1,0 +1,111 @@
+{
+  "criterion": "KG:KG-65",
+  "qualification": "verified_current_pair_review",
+  "proof_pair": "dist-native-main77",
+  "changes": [
+    "Removed served Sprint guidance in cards, transitions, deletion cascades, contexts and threshold policy.",
+    "Replaced hot-path schema-migration promise with refusal of incompatible storage, without conversion/deletion.",
+    "Removed mandatory extra health inspection after amendment while preserving no new canonical debt/DLQ and normative evidence gates.",
+    "Global discovery missing-embedding diagnostic reports unavailable search coverage, without legacy backfill/rebuild instruction."
+  ],
+  "evidence": [
+    "All effective served resources checked against live tools and resource URIs; server manifest and generated catalog drift gates pass.",
+    "New served-content guard rejects Sprint mentions and known retired migration/backfill/mandatory-maintenance instructions.",
+    "Real board graph/outbox/global graph tests preserve eligible-type and missing-embedding counts with the corrected diagnostic.",
+    "Bug closure documentation gate preserves re-executable proof, validator-confirmed coverage and projection invariants."
+  ],
+  "tests": {
+    "core_passed": 204,
+    "total_distinct_passed": 204
+  },
+  "closure": {
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": []
+  },
+  "limits": [
+    "Main76 had one documentation reconciliation failure: canonical debt/DLQ invariant wording had been lost; restored without restoring mandatory health calls. Final main77 rerun passes all 204.",
+    "KG65 qualification covers removed Sprint/maintenance recommendations, not all remaining clean-break documentation.",
+    "Known remaining obsolete compatibility guidance in quality.md, code-traceability.md, errors.md and workflows/specs.md still requires current-contract reconciliation.",
+    "No frontend change in this milestone; no live-browser or end-to-end user runtime claim."
+  ],
+  "artifacts": {
+    "provenance-native-main77.json": "9d93bbcb1f5f4af899221052c8892fc70c9dab43e737ab582e8836bbda22989e",
+    "native-resource-retirement3.xml": "efdf263b0648fefc9a6759acf8035cd915989aeb8f023771cafde60b0bd15cc2",
+    "closure-native-main77.json": "ee30665f2d4163d615fc35d82cadbc94dca845b1b3296f1802f2bf450b297071"
+  }
+}

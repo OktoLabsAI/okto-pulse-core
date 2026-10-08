@@ -325,7 +325,7 @@ Submit a fenced, idempotent task validation for a Normal or Bug card in
 
 Evaluates the implementation quality of a completed task against three
 dimensions: confidence, completeness, and drift. The system applies
-threshold checks (resolved from sprint → spec → board hierarchy) and
+threshold checks (resolved from Spec overrides and Board defaults) and
 the board's `reviewer_separation_mode` against task creator, assignee, and
 executor conflicts. `enforce` returns the action-required code
 `reviewer_separation_required` with remediation

@@ -154,7 +154,7 @@ affordance below.
 
 Summary-first reads are for **exploration only**. The SDLC safety rule is
 unchanged: you MUST read full gate context before any status-changing move
-(moving a card/spec/sprint, submitting a gate, deciding a transition). For a
+(moving a card/spec, submitting a gate, deciding a transition). For a
 card, the mandatory in-band call is
 `okto_pulse_get_task_context(profile="full", context_scope="gate")`; for the
 other entity-context tools it remains `profile="full"`. Summary-first discovery

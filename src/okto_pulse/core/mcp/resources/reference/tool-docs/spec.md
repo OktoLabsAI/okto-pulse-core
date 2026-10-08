@@ -231,9 +231,7 @@ Args:
     spec_id: Spec ID
 
 Returns:
-    JSON with success status and a governed `takedown` receipt. Receipts for
-    sprints deleted by the spec cascade are exposed under
-    `takedown.descendant_deletions`.
+    JSON with success status and a governed `takedown` receipt.
 
 ## `okto_pulse_delete_spec_evaluation`
 
@@ -352,7 +350,7 @@ Get the FULL consolidated context of a spec. Returns ALL structured data
 needed to evaluate, validate, or review this spec before advancing it.
 
 Includes: requirements, test scenarios, business rules, API contracts, IRs,
-ORs, screen mockups, knowledge bases, Q&A, evaluations, cards, and sprints.
+ORs, screen mockups, knowledge bases, Q&A, evaluations and cards.
 
 **Always call this before evaluating, moving, or creating cards from a spec.**
 
@@ -373,7 +371,7 @@ Args:
 
 Returns:
     JSON with complete spec context: all requirements + structured sections +
-    artifacts + cards + sprints. `gate_readiness.spec_checklist` always projects
+    artifacts + cards. `gate_readiness.spec_checklist` always projects
     the canonical curated-checklist mode, allowance, lifecycle state, technical
     compatibility reasons, and follow-up tool names. In `draft` this readiness remains visible
     without prematurely claiming an active transition gate; when an unsatisfied

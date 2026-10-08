@@ -96,7 +96,7 @@ Args:
 
 Returns:
     JSON with success status and a governed `takedown` receipt. Cascaded
-    spec/sprint receipts are exposed recursively under
+    spec receipts are exposed recursively under
     `takedown.descendant_deletions`.
 
 ## `okto_pulse_delete_refinement_question`

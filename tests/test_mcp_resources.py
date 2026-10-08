@@ -750,3 +750,16 @@ def test_served_resources_reference_only_live_tools_and_resource_uris() -> None:
         referenced_uris = set(_RESOURCE_URI_PATTERN.findall(body))
         assert referenced_tools <= tools, (spec.uri, sorted(referenced_tools - tools))
         assert referenced_uris <= uris, (spec.uri, sorted(referenced_uris - uris))
+
+
+def test_served_guidance_has_no_sprint_or_automatic_migration_instructions() -> None:
+    from okto_pulse.core.mcp import server
+
+    for spec in server.effective_resource_catalog().specs():
+        body = spec.read().lower()
+        assert not re.search(r"\bsprints?\b", body), spec.uri
+        for retired_instruction in (
+            "schema migrations self-heal", "backfill embeddings",
+            "kg checkpoints (not optional)", "one-shot legacy import",
+        ):
+            assert retired_instruction not in body, (spec.uri, retired_instruction)

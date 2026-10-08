@@ -1,11 +1,9 @@
 """Behavioral test for Global Discovery health/diagnostics (spec 849d6292,
 Batch 3 — impl card c9909c53, test card 75121717 = ts_43b23305 AC8).
 
-After the outbox digests valid nodes and SKIPS at least one legacy node without
-an embedding, ``check_global`` must surface (a) the digested-type count aligned
-to ``VECTOR_INDEX_TYPES`` and (b) the missing-embedding skip count — WITHOUT
-recommending a rebuild, since a missing embedding on legacy data is a backfill,
-not a rebuild. Exercises the REAL board graph + REAL outbox + REAL global graph.
+After the outbox digests valid nodes and skips a node without an embedding,
+check_global surfaces type counts and the availability gap without prescribing
+migration, backfill or rebuild. Exercises real board/outbox/global storage.
 """
 
 from __future__ import annotations
@@ -153,13 +151,13 @@ async def test_health_exposes_digested_types_and_skips_without_recommending_rebu
 ):
     board_id = f"gdh-{uuid.uuid4().hex[:10]}"
     bootstrap_board_graph(board_id)
-    # A valid embedded Requirement + a legacy Bug WITHOUT embedding.
+    # A valid embedded Requirement + a Bug WITHOUT embedding.
     _seed(board_id, "Requirement", "req_ok", with_embedding=True)
-    _seed(board_id, "Bug", "bug_legacy", with_embedding=False)
+    _seed(board_id, "Bug", "bug_missing_embedding", with_embedding=False)
 
     processed = await _run_outbox(
         board_id=board_id, db_factory=db_factory,
-        refs=[("Requirement", "req_ok"), ("Bug", "bug_legacy")],
+        refs=[("Requirement", "req_ok"), ("Bug", "bug_missing_embedding")],
     )
     assert processed == 1
 
@@ -173,12 +171,11 @@ async def test_health_exposes_digested_types_and_skips_without_recommending_rebu
     # (b) the missing-embedding skip is surfaced.
     assert health.counts["missing_embedding_skipped"] >= 1
 
-    # AC8: the diagnostic must NOT recommend a rebuild for legacy missing
-    # embeddings — it names the backfill instead.
     lowered = health.details.lower()
-    assert "rebuild" in lowered  # appears only as "NOT a rebuild"
-    assert "not a rebuild" in lowered
-    assert "backfill" in lowered
+    assert "embedding unavailable" in lowered
+    assert "excluded from global discovery" in lowered
+    assert not any(word in lowered for word in ("legacy", "backfill", "rebuild", "migration"))
+
 
 
 @pytest.mark.asyncio
@@ -194,6 +191,6 @@ async def test_health_clean_board_reports_zero_skips(db_factory):
     health = check_global(board_id)
 
     assert health.counts["missing_embedding_skipped"] == 0
-    # No skip → the rebuild-avoidance note is absent (no false alarm).
-    assert "not a rebuild" not in health.details.lower()
+    # No skip means no unavailable-embedding diagnostic.
+    assert "embedding unavailable" not in health.details.lower()
     assert health.healthy is True

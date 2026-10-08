@@ -14,7 +14,7 @@ For versioned guidelines prefer retirement/unlink as defined in
 |---|---|
 | `DELETE /api/v1/boards/{board_id}` | The board, every source entity, relational KG/KB history, uploaded attachment, board graph, rebuild/audit/quarantine artifact, and every physical Global Discovery generation that could retain the board. Because Global Discovery is a derived cross-board store, the delete invalidates it for all boards; rebuild/recovery must rematerialize it from the remaining relational sources. |
 | `okto_pulse_delete_card` | The card and all its Q&A, comments, attachments, validations, conclusions. |
-| `okto_pulse_delete_spec` | The spec and its derived sprints. Cards survive as orphans with `spec_id=null`. |
+| `okto_pulse_delete_spec` | The spec. Cards survive as orphans with `spec_id=null`. |
 | `okto_pulse_delete_ideation` / `okto_pulse_delete_refinement` | The ideation/refinement and every derived child (refinements, specs). |
 | `okto_pulse_delete_attachment` | The file blob. |
 | `okto_pulse_delete_comment` / `okto_pulse_delete_question` | The comment or Q&A item. |
@@ -77,7 +77,7 @@ For versioned guidelines prefer retirement/unlink as defined in
 8. **SK-A histories follow the root lifecycle.** Archive or cancel preserves
    immutable Quality/RDL/checklist history for authorized audit reads and
    invalidates its use as a live head where required. Restore/reopen recomputes
-   currentness and never replays the one-shot legacy import. A governed hard
+   currentness from native v0.4.0 records. A governed hard
    delete/purge removes dependent heads, links, findings, executions, receipts,
    RDL rows, audit/outbox projections, and graph roots in the explicit
    child-first order; verify that no cross-subject head or stale RDL projection

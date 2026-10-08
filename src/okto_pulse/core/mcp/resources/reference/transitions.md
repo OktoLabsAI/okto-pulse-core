@@ -42,8 +42,7 @@ board-specific alternative.
 | `started`/`in_progress`/`validation` | `done` | Linked scenarios have an honest terminal result (`passed`, `failed`, or `automated`) and required evidence, plus `conclusion` + completeness/drift; other completion gates still apply |
 
 A Test Card being `done` means its execution/report is complete, not that the
-product passed. Preserve `failed`; do not relabel it to unblock a move. Sprint
-review, bug regression and delivery approval have their own success/evidence
+product passed. Preserve `failed`; do not relabel it to unblock a move. Bug regression and delivery approval have their own success/evidence
 requirements. See `okto-pulse://reference/card_types`.
 
 Type rules — scenario cap (`max_scenarios_per_card`), evidence gate, validation-gate skip, scenario updates on locked specs: see `okto-pulse://reference/card_types`.

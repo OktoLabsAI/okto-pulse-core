@@ -2,6 +2,43 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG65: referências Sprint/manutenção removidas (main77)
+KG63 commits Core71f72077/Community53ca6805 enviados. Preflight de recursos189pass
+mas inspeção identificou lacunas reais: docs ainda citavam Sprint, migração de schema
+self-heal e health obrigatório; health.check_global recomendava backfill.
+Corrigidos recursos servidos e diagnóstico de embedding ausente. Contadores/skip/
+autoridade/gates preservados. Novo teste percorre catálogo efetivo servido.
+Gerador oficial executado; catálogo final sem drift/diferença.
+
+Main76: byteproof+closure verdes; campanha203pass/1fail detectou perda de menção
+à invariante canonical debt/DLQ no texto de Amendment. Restaurada a invariante;
+NÃO restaurada a chamada adicional obrigatória de health. Nenhum teste relaxado.
+Par main77 construído/instalado (10380 terminal0), provenance-native-main77
+byte-idêntico835/896+317/403. Core51472 terminal0:204pass/56.37s,
+native-resource-retirement3. Closure46889 terminal0:ok=true, findings/documentation
+vazios, oito budgets0. Todos handles terminais; frontend igual main75.
+Recibo clean-break-native-resource-retirement.json qualifica KG65 no seu escopo:
+URI/tool/remediação Sprint/manutenção removida. Índice98 verificadas/137 pendentes/11 N/A.
+
+PENDÊNCIA CONCRETA DO CLEAN-BREAK, não entrega total: outros resources ainda prometem
+compatibilidade que precisa ser reconciliada com código atual:
+- reference/tool-docs/quality.md: migrated spec_validation, history_only/SQL NULL,
+  receipt chamado compatibility API. services/quality_assessment.py:938 já recusa
+  subject_edition inválido; reference/quality-assessments.md já declara sem backfill.
+- reference/errors.md:22 sugere intentionally legacy-compatible write.
+  domain/knowledge_governance.py:271 aceita metadata omitido como contrato opcional
+  atual; remover interpretação de compatibilidade sem tornar campo obrigatório.
+- reference/tool-docs/code-traceability.md:74–183 promete clientes/rows/deltas antigos.
+- workflows/specs.md:212 legacy_unavailable; confrontar snapshot atual e decisão
+  autorizada antes de mudar texto/semântica.
+Busca anterior encontrou também workflow/cards e docs architecture/spec/board
+com linguagem legacy; distinguir suporte obsoleto de diagnóstico de dado inválido
+e de fato de domínio (ex.: usuário documenta uma migration do seu projeto).
+Não declarar essa revisão completa por passar teste de nomes vivos.
+Próximo: reconciliar essas promessas com contratos nativos já implementados,
+sem adicionar conversor/fallback; depois KG66 e comparação KG64 ainda pendentes.
+Nenhuma promoção, dados ou processo real do usuário alterado.
+
 ### 2026-10-07 — KG63: duração de criação até última conclusão (main75)
 KG62 commit89032170 enviado ao remoto. Lacuna de UI: rótulo genérico
 Median resolution hours não explicitava origem nem efeito de reabertura.
