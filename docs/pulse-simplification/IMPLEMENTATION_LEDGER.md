@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T25/26/27/29: resultado autenticado e crédito (main86)
+Basee03f9168/de390a33. Revisados _test, admissão de resultados e suites SQL
+assinadas; frontend revisto nos casos de outcomes históricos e registro
+passed/failed sem test_result confiável fornecido pelo cliente.
+Proof provenance-native-delivery-test-admission1 terminal0 antes da campanha:
+835/317 Python e896/403 payloads byte a byte no mesmo main86.
+
+Core test-admission-core1/session53949 terminal0:15pass em4.51s.
+Community test-admission-community1/session30312 terminal0:8pass em22.89s.
+Total23backend distintos. Reutilizada evidência frontend main86 vigente,
+sem código alterado nem repetição para contar testes novamente.
+Passed pode ser preservado antes de Done; finalizar somente implementação
+não basta, e finalizar Test Card usa o mesmo registro. Failed permanece
+histórico fiel, não crédito. Nova falha invalida passing anterior já na leitura,
+antes de novo binding. Assinatura forjada/status incompatível são recusados.
+
+Recibo clean-break-native-delivery-test-admission.json; DEI-T25/26/27/29
+qualificados. Índice119verificados/116pendentes/11superados.
+Não extrapolar substituição E1/E2 ou união de vários Test Cards.
+Nenhum produto/teste/SPA modificado nesta campanha: commit somente de evidências
+no Core; Community permanece de390a33 com WIP KG10 preservado.
+Closure main86 mantém oito budgets ZERO. Todos handles terminais.
+Sem promoção ou dado real tocado. Retomar critérios pendentes do índice.
+
 ### 2026-10-08 — DEI-T20/T21: nota versus mudança material (main86)
 Base16c50b0c/c2441d05. Revisados progress_blocks_execution, população completa
 de checkpoints ativos no adapter e provas SQL de atualidade. Fonte e recibo
