@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T53: writer único e recusa de prova antiga (main85)
+Base Coree70fc2b6/Community59f28230. Revisados schema, rota REST, caso de uso,
+adapter e testes de Delivery. Implementation/test antigos são recusados:
+schema422, guard no caso de uso e guard no adapter antes de lock/escrita.
+Waiver/revoke permanecem função atual humana. Corrigidas descrições que
+chamavam essa superfície de legado; nenhum gate ou writer alterado.
+
+Ampliados testes REST/MCP e chamada direta para schema nativo completo,
+mantendo SQL, constraints e verificador de teste reais. A primeira campanha
+(session73133) terminou1:34pass/2fail, pois a fixture Bug usava teste assinado
+de julho contra recibo novo de outubro. Recusa correta de prova stale.
+Fixture agora separa schema nativo do tipo Bug, usa Card normal e observação
+assinada posterior ao recibo; defaults das demais fixtures preservados.
+native-delivery-writer2/session51744 terminal0:68pass em83.90s.
+native-delivery-writer-core1/session30855 terminal0:31pass em7.17s.
+Total99 distintos; ruff e diff check verdes.
+
+Main85 construído/instalado; proof/session92644 terminal0 antes dos testes:
+835/317 Python,896/403 payloads idênticos byte a byte. Closure/session95076
+terminal0:sem findings, oito budgets ZERO. Sem alteração de produto entre
+proof/testes/closure; correção posterior apenas nas fixtures.
+Recibo clean-break-native-delivery-writer.json. DEI-T53 qualificado; índice
+100verificados/135pendentes/11superados, universo246 inalterado.
+Transportes usam principals/autorização controlados: não qualifica autenticação
+E2E, UI nem os demais critérios DEI por inferência.
+Sem conversor, frontend alterado, promoção ou dado real tocado.
+Todos handles terminais. Commit/push coordenados deste incremento; teste WIP
+Community de KG10 continua preservado fora do commit, aguardando decisão.
+Retomar pelos critérios funcionais pendentes do índice; não reexecutar este
+incremento sem mudança/falha nova que justifique.
+
 ### 2026-10-08 — Orientação obsoleta de recuperação retirada (main84)
 Conferido WIP dos dois repos; retomada sem reset. O turno anterior apenas
 confirmou a retirada do pedido Nexus, sem avanço técnico; esta retomada validou

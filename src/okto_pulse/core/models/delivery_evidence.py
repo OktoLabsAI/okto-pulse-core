@@ -81,7 +81,7 @@ class DeliveryEvidenceReadQuery(DeliveryEvidenceQuery):
 class DeliveryEvidenceInput(BaseModel):
     """Spec-scoped exceptions; implementation and test writes belong to cards.
 
-    Historical proof payloads are read from the ledger, never through this
+    Native card proof history is read from the ledger, never through this
     inbound contract. Reject obsolete writers instead of accepting proof that
     the card-ledger rollup cannot consume.
     """

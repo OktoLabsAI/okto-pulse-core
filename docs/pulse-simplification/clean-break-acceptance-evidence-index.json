@@ -5828,7 +5828,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-writer.json",
+        "criterion_key": "DEI:DEI-T53",
+        "proof_pair": "dist-native-main85"
+      }
     },
     {
       "key": "DEI:DEI-T54",

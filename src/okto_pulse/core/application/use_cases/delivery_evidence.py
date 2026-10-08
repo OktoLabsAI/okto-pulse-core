@@ -82,7 +82,7 @@ class RecordCardDeliveryEvidenceUseCase:
 
     The task owns its implementation/test bindings; the command carries the
     card CAS fence (expected_card_version) and the spec edition. Waivers are
-    deliberately absent — they stay on the legacy spec-rollup surface and are
+    deliberately absent — they stay on the human-only spec-rollup surface and are
     human-only (BR-3). Revoke keeps the human-only rule.
     """
 
