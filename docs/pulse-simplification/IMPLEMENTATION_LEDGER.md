@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — init somente com My Board
+
+Pedido explícito: remover o board Demo e seus dados incompatíveis do bootstrap.
+Removidas criação, recuperação e consolidação específicas do Demo e seu toggle;
+init/primeiro boot mantêm apenas My Board vazio e Local Agent, com credencial
+reveal-once e idempotência preservadas. Testes do mecanismo retirado substituídos
+por ausência de Specs/Cards/auditoria e repetição sem duplicação, conservando
+os testes de cancelamento/falha na entrega da credencial.
+
+Validação isolada após source/wheel/site byte-idênticos (903+403 payloads):
+30 testes backend passaram/60.56s, incluindo init real offline SQLite/Grafx,
+My Board único e grafo vazio exceto BoardMeta; frontend onboarding/addBoard21
+passaram/18.61s. Ruff F/E9 passou. Closure inicial pediu apenas regeneração das
+matrizes README após remoção de imports; regeneradas pelo renderer oficial.
+Closure final ok=true, findings/documentation_findings vazios, oito budgets ZERO.
+Recibo local: .validation-v040/closure-no-demo-final-20261008.json.
+
+Reinstalação inicial bloqueada pelo executável aberto (WinError32); após usuário
+confirmar Ctrl+C, wheel final reinstalado com sucesso no Python313 local e nova
+prova903+403 byte-idênticos. Build final só remove whitespace terminal do produto.
+Usuário autorizou também limpar novamente C:\Users\jpamb\.okto-pulse: caminho
+absoluto, ausência de reparse points/processos verificados, pasta removida e
+ausência confirmada. Não inicializar automaticamente: próximo init do usuário
+criará My Board/Local Agent e revelará sua credencial normalmente.
+
 ### 2026-10-08 — orientação para instalação anterior no data home
 
 Após reinstalação local autorizada, o usuário reproduziu `serve` contra
