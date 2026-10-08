@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T19/T23/T32 atualidade delimitada e disposições
+Baseb8ae8860/f2934332. Turno anterior: progresso, dois critérios e pushes.
+Proof provenance-native-delivery-currentness1/session71954 terminal0:main88
+byte-idêntico838/317 Python e899/403 payloads. Primeira campanha foi iniciada
+com esse handle ainda pendente; apenas final posterior qualifica os critérios.
+
+Novo witness em schema nativo: prova completa inicialmente permitida.
+Revisão/path do Target via writer CAS+reason digest ou nova execução no mesmo
+Target desatualizam prova anterior, impedem rebind e preservam IDs/payloads.
+Nova observação possui digest recalculado, request/receipt/workspace distintos,
+predecessor/generation2; append/CAS do head real. Atividade em Target independente
+fora do conjunto de provas preserva crédito/teste anterior, mesmo com novo head.
+not_touched/superseded ficam persistidos, sem binding/candidato/rollup inventado.
+Origem aceita e execution rows são estímulos controlados: não alega autenticação
+da attestation nem autorização de submit/edição nesta matriz.
+
+currentness1/session6593:2pass/1fail13.26s (update SQL sem contrato CAS).
+currentness2/session42831:2pass/1fail13.15s (writer sem reason digest obrigatório).
+Trigger nativo preservado; fixture corrigida conforme contrato, sem produto.
+currentness3/session52047:3pass11.72s.
+currentness4/session13791 terminal0:5pass13.95s; Ruff verde.
+Frontend44 anterior hash conferido, diff361647f5..HEAD vazio para componentes
+code-traceability/testes e services/api.ts. Reuso sem recontagem.
+Recibo clean-break-native-delivery-currentness.json qualifica DEI-T19/T23/T32.
+
+Índice205verificados/30pendentes/11superados. Closure main88/oito budgets ZERO;
+sem produto/SPA alterado e todos handles terminais. Commit/push teste/evidência.
+WIP KG10 preservado; sem promoção/dados reais. Continuar DEI-T24, retomada,
+verificabilidade/KG e benchmarks do índice fixo. BASE:T23/KG10/KG28 permanecem
+decisões pendentes; objetivo integral ativo.
+
 ### 2026-10-08 — DEI-T11 prova anterior a Done sem crédito final antecipado
 Base d9956ec2/cf098c4d enviada. Witness existente atualizado para schema nativo
 e asserções de rollup. Gate real recusa ausência de prova; implementação aceita

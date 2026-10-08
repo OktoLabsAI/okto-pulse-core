@@ -5224,7 +5224,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-currentness.json",
+        "criterion_key": "DEI:DEI-T19",
+        "proof_pair": "dist-native-main88"
+      }
     },
     {
       "key": "DEI:DEI-T20",
@@ -5327,7 +5332,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-currentness.json",
+        "criterion_key": "DEI:DEI-T23",
+        "proof_pair": "dist-native-main88"
+      }
     },
     {
       "key": "DEI:DEI-T24",
@@ -5540,7 +5550,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-currentness.json",
+        "criterion_key": "DEI:DEI-T32",
+        "proof_pair": "dist-native-main88"
+      }
     },
     {
       "key": "DEI:DEI-T33",
