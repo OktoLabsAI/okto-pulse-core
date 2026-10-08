@@ -214,3 +214,63 @@ async def test_uncovered_requirements_treats_archived_card_links_as_inactive(mon
     assert {row["type"] for row in result["rows"]} == (
         {"UncoveredTR", "UncoveredBR", "UncoveredDecision"} if archived else set()
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["functional_requirements", "technical_requirements", "acceptance_criteria"])
+@pytest.mark.parametrize("items", [["old string"], [{"text": "Missing stored identity"}]])
+async def test_uncovered_refuses_old_requirement_shapes(monkeypatch, field, items):
+    from copy import deepcopy
+    spec = SimpleNamespace(
+        id="s1", title="Spec", status="review", functional_requirements=[],
+        technical_requirements=[], acceptance_criteria=[], test_scenarios=[],
+        business_rules=[], api_contracts=[], integration_requirements=[],
+        observability_requirements=[], decisions=[],
+    )
+    setattr(spec, field, deepcopy(items))
+
+    class Reader:
+        async def get_board_settings(self, _db, *, board_id):
+            return {}
+
+        async def list_specs(self, _db, *, board_id):
+            return [spec]
+
+        async def list_board_cards(self, _db, *, board_id, include_archived=False):
+            return []
+
+    monkeypatch.setattr(executor, "get_discovery_execution_read_port", lambda: Reader())
+    with pytest.raises(ValueError, match="incompatible_spec_requirement"):
+        await executor._exec_uncovered_requirements(None, "board")
+    assert getattr(spec, field) == items
+
+
+@pytest.mark.asyncio
+async def test_uncovered_preserves_current_fr_ac_identity_after_reordering(monkeypatch):
+    spec = SimpleNamespace(
+        id="s1", title="Spec", status="review",
+        functional_requirements=[{"id": "fr-b", "text": "B"}, {"id": "fr-a", "text": "A"}],
+        acceptance_criteria=[{"id": "ac-b", "text": "B"}, {"id": "ac-a", "text": "A"}],
+        technical_requirements=[], test_scenarios=[], business_rules=[],
+        api_contracts=[], integration_requirements=[], observability_requirements=[], decisions=[],
+    )
+
+    class Reader:
+        async def get_board_settings(self, _db, *, board_id):
+            return {}
+
+        async def list_specs(self, _db, *, board_id):
+            return [spec]
+
+        async def list_board_cards(self, _db, *, board_id, include_archived=False):
+            return []
+
+    monkeypatch.setattr(executor, "get_discovery_execution_read_port", lambda: Reader())
+    for _ in range(2):
+        result = await executor._exec_uncovered_requirements(None, "board")
+        assert {row["meta"]["child_ref"] for row in result["rows"]} == {
+            "spec:s1:functional_requirement:fr-a", "spec:s1:functional_requirement:fr-b",
+            "spec:s1:acceptance_criterion:ac-a", "spec:s1:acceptance_criterion:ac-b",
+        }
+        for field in ("functional_requirements", "acceptance_criteria"):
+            getattr(spec, field).reverse()

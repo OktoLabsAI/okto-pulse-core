@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Q15: contrato atual sem leitura de requisitos antigos (main70)
+Reprodução native-q15-old-shape-repro1:7 falhas esperadas/16pass. Q15 aceitava
+strings/objetos sem ID armazenado e gerava child_ref FR/AC por posição.
+Removidos renderer legacy e fallback TR; validação de armazenamento existente
+reutilizada, sem conversão. FR/AC preservam ID canônico ao reordenar; gates
+de cobertura permanecem os mesmos. Não altera autoridade nem histórico.
+
+Wheels main70 construídos e instalados; install56400 terminal0. Byteproof
+provenance-native-main70:835/896 Core+317/403 Community idênticos.
+Campanhas terminais: native-q15-current2 42pass; native-q15-relational2 7pass;
+native-q15-sources1 23pass; native-q15-frontend1 16pass. Total88 distintos.
+Relacional real prova isolamento Board, gaps Done visíveis, cancelados excluídos,
+Cards arquivados/cancelados sem cobertura e somente SELECT em leituras repetidas.
+Ruff F/E9 verde nos3 arquivos alterados. SPA permanece main69.
+
+Closure29842 terminal1 APENAS README matrix drift; matriz regenerada oficialmente.
+Closure96213 terminal0, closure-native-main70-final ok=true, findings e
+documentation_findings vazios, oito budgets0. Recibo:
+clean-break-native-q15-current-contract.json. Todos processos terminais.
+
+KG52 ainda não qualificado: inspeção final localizou labels sprint_* de Activity
+em discovery_executor.py:663–668 e descrição "sprint plan" em discovery_intent_catalog.py.
+Próximo: retirar suporte/texto obsoleto e revisar fontes/estado salvo em conjunto.
+GlobalSearchView guarda só discovery-intents-open no localStorage; guards contra
+navegação Sprint são recusa, não converter. Contagem87/148/11 inalterada.
+Nenhuma promoção, mudança do runtime real ou conversão/exclusão de dados.
+
 ### 2026-10-07 — KG50/KG51 qualificados; UI Sprint retirada no main69
 KG50/51 recibo clean-break-native-health-maintenance-absence.json:416 casos
 distintos finais, inclui83front,69Core,192ausência,72observação/censo.

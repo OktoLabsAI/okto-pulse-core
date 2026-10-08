@@ -1392,18 +1392,6 @@ def _item_title(item: dict[str, Any], child_type: SpecChildType) -> str:
     return child_type.replace("_", " ").title()
 
 
-def _requirement_title(item: Any) -> str:
-    """Render legacy strings and current structured FR/AC values uniformly."""
-
-    if isinstance(item, dict):
-        for key in ("text", "title", "name", "label", "description"):
-            value = item.get(key)
-            if value not in (None, ""):
-                return str(value)[:160]
-        return ""
-    return str(item or "")[:160]
-
-
 def _uncovered_child_row(
     *,
     spec: Any,
@@ -1443,28 +1431,18 @@ def _uncovered_child_row(
 
 
 async def _exec_uncovered_requirements(db: Any, board_id: str) -> dict:
-    """NEW aggregator (ideação d1783b03): lists spec children that have
-    incomplete deterministic coverage across the specs on the board.
+    """List current Spec coverage gaps without a planning-cycle dimension.
 
-    Design after user review (conversa de fechamento da ideação):
-
-    1. **Specs `cancelled` são excluídas** — trabalho abandonado não é débito.
-    2. **Specs `done` continuam incluídas** — fechar a spec não cobre o gap;
-       ele pode ter sido aceito explicitamente via `skip_*_coverage` no
-       momento da validation. O dashboard continua enxergando o link
-       faltante e precisa reportá-lo para o usuário decidir.
-    3. **Usamos a mesma função canônica que o validation gate**
-       (`analytics_service.compute_spec_coverage`) para evitar drift entre
-       "o que o gate considera uncovered" e "o que o intent reporta".
-       Isso também descarta TRs em forma string legacy (o gate também não
-       conta esses) e cobre BR/API/IR/OR/Decision linkage por task.
-    4. Cada row carrega `meta.spec_status`, `meta.skipped_at_validation`
-       (True se o gate passou com skip=true naquela categoria — por-spec
-       OU por-board) e `meta.in_flight` — o frontend pode agrupar por
-       categoria ou filtrar "só acionáveis".
+    Cancelled Specs are excluded; Done Specs retain visible gaps even when
+    validation coverage was explicitly waived. Coverage uses the canonical
+    summary shared with validation, without converting persisted children.
     """
     from okto_pulse.core.domain.enums import SpecStatus
     from okto_pulse.core.services.analytics_service import spec_coverage_summary
+    from okto_pulse.core.services.spec_entity_canonicalization import (
+        SPEC_REQUIREMENT_FIELDS,
+        validate_stored_spec_children,
+    )
 
     reader = get_discovery_execution_read_port()
     board_settings = await reader.get_board_settings(db, board_id=board_id)
@@ -1505,6 +1483,8 @@ async def _exec_uncovered_requirements(db: Any, board_id: str) -> dict:
 
     rows: list[dict] = []
     for spec in specs:
+        for field_name, _ in SPEC_REQUIREMENT_FIELDS:
+            validate_stored_spec_children(list(getattr(spec, field_name) or ()))
         cov = spec_coverage_summary(spec, cards=cards_by_spec.get(spec.id, []))
         status_value = getattr(spec.status, "value", str(spec.status))
         is_in_flight = spec.status in IN_FLIGHT
@@ -1542,13 +1522,13 @@ async def _exec_uncovered_requirements(db: Any, board_id: str) -> dict:
 
         frs = spec.functional_requirements or []
         for idx in cov["fr_uncovered_indices"]:
-            child_id = str(idx)
+            child_id = frs[idx]["id"]
             child_ref = f"spec:{spec.id}:{SPEC_CHILD_TYPE_FUNCTIONAL_REQUIREMENT}:{child_id}"
             rows.append(
                 {
-                    "id": f"{spec.id}:fr:{idx}",
+                    "id": child_ref,
                     "type": "UncoveredFR",
-                    "title": _requirement_title(frs[idx] if idx < len(frs) else ""),
+                    "title": frs[idx]["text"][:160],
                     "summary": (
                         f"spec: {spec.title} · status: {status_value}"
                         f" · FR #{idx}"
@@ -1574,13 +1554,13 @@ async def _exec_uncovered_requirements(db: Any, board_id: str) -> dict:
 
         acs = spec.acceptance_criteria or []
         for idx in cov["ac_uncovered_indices"]:
-            child_id = str(idx)
+            child_id = acs[idx]["id"]
             child_ref = f"spec:{spec.id}:{SPEC_CHILD_TYPE_ACCEPTANCE_CRITERION}:{child_id}"
             rows.append(
                 {
-                    "id": f"{spec.id}:ac:{idx}",
+                    "id": child_ref,
                     "type": "UncoveredAC",
-                    "title": _requirement_title(acs[idx] if idx < len(acs) else ""),
+                    "title": acs[idx]["text"][:160],
                     "summary": (
                         f"spec: {spec.title} · status: {status_value}"
                         f" · AC #{idx}"
@@ -1604,18 +1584,14 @@ async def _exec_uncovered_requirements(db: Any, board_id: str) -> dict:
                 }
             )
 
-        # TRs: iterate only structured dicts (same as the validation gate —
-        # legacy string-form TRs are outside the gate's coverage count).
         for i, tr in enumerate(spec.technical_requirements or []):
-            if not isinstance(tr, dict):
-                continue
             if _has_active_task_link(tr, cancelled_card_ids):
                 continue
-            child_id, child_index = _child_identity_for_item(tr, fallback_index=i)
+            child_id, child_index = tr["id"], i
             child_ref = f"spec:{spec.id}:{SPEC_CHILD_TYPE_TECHNICAL_REQUIREMENT}:{child_id}"
             rows.append(
                 {
-                    "id": tr.get("id") or f"{spec.id}:tr:{i}",
+                    "id": tr["id"],
                     "type": "UncoveredTR",
                     "title": (tr.get("text") or "")[:160],
                     "summary": (
