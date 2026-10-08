@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-INT-08/ADV-21: planejamento/gate antes da convergência
+Base757af070/729b33ea. Turno anterior foi progresso: correção projetiva testada,
+commitada e enviada. Proof provenance-native-association-gate1 terminal0 confirma
+main88 byte-idêntico838/317 Python e899/403 payloads antes desta campanha.
+
+Estendida fixture Grafx com plano nativo completo de dois IRs, implementação,
+critérios e Test Card. Após reassociação, detalhe retorna ir_two com grafo ainda
+em ir_one. GetRequirementVerificationUseCase real lê plano completo e preserva
+ambos IRs; não infere entrega. SpecService.require_execution_contract_ready
+aceita antes do worker. Mutação controlada do contrato faz o mesmo gate recusar
+classificação desatualizada; reclassificação governada libera antes de convergir.
+Worker então substitui aresta, e context_only a remove sem apagar obrigação.
+
+native-association-gate1/session58193 terminal0:1pass44.64s. Ruff verde.
+Frontend69 e closure main88 reutilizados com hashes conferidos, sem mudanças de
+produto/SPA nem recontagem. Fixture chama gate real, não nova transição completa;
+autenticação e estímulo da mutação são controlados. Enqueue explícito no harness
+offline; não alegar dispatcher. Nenhum gate/policy alterado para passar.
+
+Recibo clean-break-native-association-authority.json; AC-INT-08/ADV-21 qualificados.
+Índice191verificados/44pendentes/11superados. Commit/push teste/evidência;
+WIP KG10 preservado. Sem promoção/dados reais. Retomar critérios restantes do
+índice fixo, incluindo equivalência single/batch DEI-T33; não reabrir o bloqueio
+de estados já autorizado e implementado. Autorizações BASE:T23/KG10/KG28 pendentes.
+
 ### 2026-10-08 — Fechamento do incremento de projeção de associações (main88)
 Todos os handles anteriores terminaram. parity1/session82192 foi interrompida
 (exit1, sem XML terminal qualificável) após recusa de schema da fixture;

@@ -7406,12 +7406,11 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review",
+      "current_qualification": "verified_current_pair_review",
       "current_review": {
-        "artifact": "clean-break-native-association-projection.json",
+        "artifact": "clean-break-native-association-authority.json",
         "criterion_key": "ARQVER:AC-INT-08",
-        "proof_pair": "dist-native-main88",
-        "reason": "Projection and convergence verified; combined planning/delivery consumer and authoritative gate acceptance still pending."
+        "proof_pair": "dist-native-main88"
       }
     },
     {
@@ -8185,12 +8184,11 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review",
+      "current_qualification": "verified_current_pair_review",
       "current_review": {
-        "artifact": "clean-break-native-association-projection.json",
+        "artifact": "clean-break-native-association-authority.json",
         "criterion_key": "ARQVER:ADV-21",
-        "proof_pair": "dist-native-main88",
-        "reason": "Projection and convergence verified; combined planning/delivery consumer and authoritative gate acceptance still pending."
+        "proof_pair": "dist-native-main88"
       }
     },
     {
