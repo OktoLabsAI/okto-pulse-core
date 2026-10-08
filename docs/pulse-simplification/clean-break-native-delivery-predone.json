@@ -1,0 +1,29 @@
+{
+  "scope": "DEI-T11 admit implementation before Done without premature rollup credit",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "DEI:DEI-T11",
+  "result": {
+    "passed": 1,
+    "failed": 0,
+    "seconds": 12.31,
+    "terminal_session": 22208
+  },
+  "evidence": [
+    "Existing integration witness upgraded to current native schema and explicit final-rollup assertions.",
+    "Real Card delivery gate first refuses absent evidence. Accepted committed implementation is then recorded while Card is in_progress; signed passing Test Card evidence binds that exact record.",
+    "The actual Card delivery gate accepts this proof before Done, while Spec delivery rollup stays disallowed in both in_progress and validation.",
+    "Validation refuses new implementation writes. Controlled transition of the implementation Card to Done makes the same proof set satisfy rollup; no replacement receipt or duplicate binding."
+  ],
+  "limits": [
+    "Direct gate invocation with native persistence and signed test evidence. Status changes are controlled SQL stimuli, not a new claim of transition authorization or all governance checks.",
+    "Only the existing backend witness changed. Frontend artifact hash/diff verified earlier this turn remains applicable, without rerun or re-count.",
+    "No product changes; installed main88 parity and closure remain current; no promotion or real-data operations."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-board2.json": "f9ce3aff80a95969636867e53825227c0223a68b55414f3966ce75fc7e162d7e",
+    "native-delivery-predone1.xml": "915e16a95a3e59702947fd5fe5ed8f6ab51b0dcc80af8eca8d0122c9ee7a3053",
+    "native-delivery-envelope-frontend1.json": "a751880c26e35030dc6efc27dfb79d81a4f937cd3ffa9d2bf7f490e31f2d146d",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

@@ -4996,7 +4996,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-predone.json",
+        "criterion_key": "DEI:DEI-T11",
+        "proof_pair": "dist-native-main88"
+      }
     },
     {
       "key": "DEI:DEI-T12",

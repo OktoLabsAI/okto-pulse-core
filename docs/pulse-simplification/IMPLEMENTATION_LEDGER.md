@@ -2,6 +2,22 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T11 prova anterior a Done sem crédito final antecipado
+Base d9956ec2/cf098c4d enviada. Witness existente atualizado para schema nativo
+e asserções de rollup. Gate real recusa ausência de prova; implementação aceita
+em in_progress e teste assinado referenciam o mesmo registro. Gate do Card passa,
+mas rollup final não passa em in_progress nem validation. Novo append em validation
+recusa. Mudança controlada do Card para Done libera rollup com as mesmas provas.
+Estímulo de estado é SQL: autorização/transição completa não é alegada aqui.
+
+native-delivery-predone1/session22208 terminal0:1pass12.31s; Ruff verde.
+Proof/main88 e frontend44 conferidos neste turno seguem válidos; nenhum produto
+ou frontend alterado. Recibo clean-break-native-delivery-predone.json.
+Índice202verificados/33pendentes/11superados; closure main88/oito budgets ZERO.
+Todos handles terminais. Commit/push teste/evidência; WIP KG10 preservado.
+Sem promoção/dados reais. Próximos: atualidade/retomada DEI, VER/KG e benchmarks
+restantes no índice fixo; BASE:T23/KG10/KG28 continuam decisões pendentes.
+
 ### 2026-10-08 — DEI-T07 isolamento entre Boards com objetos existentes
 Base4fa81238/2f49b8c9. Proof provenance-native-delivery-board2 terminal0:
 main88 byte-idêntico838/317 Python,899/403 payloads antes dos testes.
