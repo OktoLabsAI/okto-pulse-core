@@ -1,0 +1,47 @@
+{
+  "scope": "DEI-T43/T45/T46: native resume authorship, explicit recovery limits and accumulated context",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "DEI:DEI-T43": [
+      "test_resume_does_not_replace_old_work_with_short_latest_note",
+      "test_resume_keeps_partial_proof_author_and_invalidates_it_after_dirty_work"
+    ],
+    "DEI:DEI-T45": [
+      "test_resume_does_not_replace_old_work_with_short_latest_note",
+      "distinguishes partial declarations, stale proof, unknown recovery and frozen authority"
+    ],
+    "DEI:DEI-T46": [
+      "test_short_context_checkpoint_retains_prior_accumulated_net_impact",
+      "test_resume_does_not_replace_old_work_with_short_latest_note",
+      "test_multibyte_manifest_is_capped_without_skipping_progress_cursor"
+    ]
+  },
+  "evidence": [
+    "Successor uses only persisted IDs in a fresh SQL session/store; earlier progress and original actor survive a short latest note. No full all-Card rollup is loaded.",
+    "Strengthened test confirms actual Execution.submitted_by remains original actor after successor appends dirty progress; receipt_ownership_transferred and recovery.verified stayfalse.",
+    "Recovery declares workspace_access unknown and unsubmitted_work unknown; caller must observe its own environment, no backend reconstruction claim.",
+    "Accumulated create+modify remains a net create after a short context note; it remains a claim, not delivery evidence.",
+    "128KiB multibyte budget retains totals/truncation and complete20+1 progress pagination; late append causes explicit changed_retry.",
+    "Related tests keep split/inherited obligations and missing owner as unknown rather than zero verification."
+  ],
+  "tests": {
+    "community_distinct_passed": 11,
+    "frontend_passed": 4,
+    "total_distinct_passed": 15,
+    "community_seconds": 23.14,
+    "strengthened_case_rerun": "1 passed in9.98s; included in11, not added."
+  },
+  "limits": [
+    "This is persisted context recovery, not a checkout/patch reconstruction or proof that an external workspace is accessible. DEI-T44 remains separate.",
+    "Does not automatically qualify all history redaction/cursor criteria or report submission concurrency.",
+    "No product/SPA change; same main86 closure remains applicable, eight budgets ZERO.",
+    "No migration, imported history, extra ledger, promotion or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-resume1.json": "602a487baa9b4b09881462a1998a50bce5c7afa792647d86ce3dbfe045a4e50e",
+    "native-delivery-resume1.xml": "9395c100d2bd29eb58759c8eda03c2afb984e68530e7750257f2dc521bb844c7",
+    "native-delivery-resume2.xml": "5c7542ae3d56f07eed9ad9405a09c6585e308eca6d8dfdab19c51f63cec01573",
+    "native-delivery-resume-frontend1.json": "4b42db7dcdd3d079f44e57c910230d7d2a5ad0804f23ad6847cecbe63ce528e4",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

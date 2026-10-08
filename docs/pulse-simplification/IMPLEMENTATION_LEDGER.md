@@ -2,6 +2,29 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T43/T45/T46: retomada, autoria e limite (main86)
+Basef2dd83e9/0e99e5c3 conferida. Revisados reader relacional de retomada,
+provas/impacto acumulados, paginação e UI. Proof provenance-native-delivery-resume1
+terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.
+
+Community resume1/session97451 terminal0:11pass em23.14s.
+Frontend CardResumePanel:4pass. Fortalecida asserção SQL de Execution.submitted_by
+após leitura/checkpoint pelo sucessor: permanece ator original, diferente deB.
+Rerun resume2/session89910 terminal0:1pass em9.98s, incluído nos11.
+Total15 distintos; ruff/diff check verdes.
+Sessão nova recupera IDs/autoria/contexto sem objeto do writer; nota curta
+não substitui trabalho/impacto anterior. Recovery/workspace/unsubmitted continuam
+desconhecidos, sem transferência de receipt. Caps mantêm cursor/totais e
+concorrência gera retry explícito. UI distingue partial/stale/frozen/unknown.
+
+Recibo clean-break-native-delivery-resume.json. DEI-T43/T45/T46 qualificados;
+índice124verificados/111pendentes/11superados.
+DEI-T44 (checkout compartilhado) permanece separado; não se alegou recuperação
+física de código nem qualificação integral de redaction/histórico/relatório.
+Nenhum runtime/SPA alterado; closure main86 vigente, oito budgets ZERO.
+Todos handles terminais. Sem promoção/dado real; WIP KG10 preservado.
+Commit/push do teste e evidências; continuar critérios pendentes do índice.
+
 ### 2026-10-08 — DEI-T22/T28: E2 não herda E1 (main86)
 Baseb7eaf510/de390a33. Acrescentados dois cenários SQL reais: E2 declara
 FRapenas ou FR+AC, após E1/teste1 terem permitido entrega. E2 aponta para
