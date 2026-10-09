@@ -2,6 +2,19 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Barra de completude na capa
+
+Capa da task agora mostra barra compacta junto ao percentual quando calculável.
+Loading/escopo ausente ou incompleto continuam sem barra. Sem alteração do cálculo.
+Sete testes frontend aprovados e build TypeScript/Vite concluído. Instalação
+pareada conferida byte a byte (844/317 Python, 905/403 payloads); processo9168
+posterior ao install, HTTP200. Proveniência em .validation-v040/task-cover-bar-
+{host,process}-provenance.json. SPA79 arquivos SHA256
+45d69efca3a384fd537fcf9ce73ecef6796c1f5f936c5f5c4505f12d075fe66b.
+Browser confirmou ausência da barra no escopo incompleto real e sete barras com
+60% via fixture temporária somente GET, removida após inspeção; nenhuma escrita
+no Board. Screenshot inspecionado: community/output/playwright/task-cover-bar.png.
+
 ### 2026-10-09 — Completude automática nas tasks
 
 Percentual informacional na capa Kanban e barra em Delivery de cards normais.
