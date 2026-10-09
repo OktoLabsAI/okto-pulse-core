@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Coverage recusava histórico substituído como duplicidade atual
+
+Reprodução: GET Coverage da Spec 2372d8a2-68c8-57f4-a609-d809c92d55c6
+retornava503. Source/install conferidos byte a byte (843Core/317Community).
+Leitura SQLite em mode=ro reproduziu snapshot e projeção relacional válidos;
+escopo do grafo158identidades/298relações. Consulta MCP confirmou duas versões
+do Criterion ac_ir_res_storage com a mesma source_artifact_ref: antiga apontava
+superseded_by para a atual. O filtro de tombstones não excluía supersession,
+e grafx_spec_coverage tratava ambas como identidades atuais ambíguas.
+
+Correção delimitada em Community: selecionar somente heads sem superseded_by
+antes de montar by_id e relações. Histórico permanece armazenado; relações de
+endpoints históricos não entram na observação. Duas identidades atuais continuam
+falhando fechado. Sem alteração de gates, autoridade, core, schema ou dados.
+Regressão Grafx real verifica histórico preservado e leitura sem escrita.
+Frontend:16/16 testes de painel/transporte passaram. Backend:29/30 na primeira
+rodada; o novo teste chegou ao resultado correto, mas sua última asserção usava
+get_node inexistente. Corrigida para find_node_types; rerun1/1 passou,
+fechando30 casos distintos aprovados. Diff-check passou.
+Evidências em .validation-v040/coverage-head-{provenance.json,community.xml,
+regression.xml}. Community c9682e25 commitado/enviado. Wheels pareadas reinstaladas;
+coverage-head-host-provenance.json confirma843/317Python e904/403payloads idênticos.
+Processo35896 iniciou1791546901.513765, após mtime1791546866.5692854.
+Home e estado Validated/edição2 preservados. HTTP/UI confirmados depois do restart:
+GET coverage200,158/158nós observados,zero missing_nodes/missing_relations,
+Planning100% (9/9dimensões),sem alerta de falha. Screenshot inspecionada:
+Community/output/playwright/coverage-after-supersession-fix.png (antes também salvo).
+Primeiras consultas após startup retornaram504; consulta seguinte200 sem mudança
+de timeout/policy. Registrar sensibilidade de inicialização, não alegar correção
+de desempenho nem ampliar o escopo. Rollup de prova continua Unavailable, distinto
+da cobertura de planejamento; não convertido artificialmente em zero/sucesso.
+
 ### 2026-10-09 — Spec fictícia saturada e Validated; exercício encerrado antes da execução
 
 My Board 2fd79a82-08b2-4ecc-823a-2c820342f6b9; Spec
