@@ -2,6 +2,22 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Remoção do quadro Decomposition evaluations
+
+A pedido do usuário, removido o quadro da aba Validation da Spec, seu componente
+exclusivo e sua chamada listSpecEvaluations. A permissão de avaliações isolada
+não oferece mais uma aba sem conteúdo; os demais painéis mantêm suas permissões.
+APIs, histórico armazenado e gates de avaliação não foram alterados.
+SpecModal.validationTabs:52/53 passaram no primeiro run; navegação geral excedeu
+5s também em rerun isolado. Com --testTimeout=15000, sem alterar asserções ou
+timeout versionado, esse caso passou em5.10s:53 casos distintos aprovados.
+TypeScript/build e diff-check passaram. SPA79arquivos, SHA256
+d88cffbe014f470c1b45d7135e7b47f82d5123561cd18b510631bdcec9b81818.
+Wheels em .validation-v040/dist-validation-panel-20261009.
+Reinstalação concluída; validation-panel-host-provenance.json confirma igualdade
+byte a byte de843/317Python e904/403payloads. Home preservada. Communityc5032c1.
+
+
 ### 2026-10-09 — Aba KG da Spec exibia falso vazio
 
 Reprodução no navegador: KG Graph exibia ausência de dados embora Coverage
