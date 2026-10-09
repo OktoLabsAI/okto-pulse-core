@@ -2,6 +2,22 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Histórico de policy sem alerta redundante e scores circulares
+
+Previous results usa marcador Previous e não repete o alerta técnico Stale;
+auditoria fora do histórico conserva o diagnóstico de atualidade. Confidence
+agora usa MetricScoreRing como as métricas customizadas. A projeção histórica
+não registra limiar de confiança: o círculo é neutro e informa essa ausência,
+sem reutilizar policy atual para reinterpretar avaliação antiga. Sem alteração
+de dados/gates.46 testes frontend, build e diff-check passaram. Instalação pareada
+conferida byte a byte (843/317 Python;904/403 payloads), processo42140 iniciado
+após os arquivos instalados e HTTP200. Evidências .validation-v040/policy-scores-
+host-provenance.json e policy-scores-process-provenance.json. SPA79arquivos,
+SHA2561b2d02753a7392115b1acef00d2b74d7d285f3cc3081679cce7fcda518837949.
+Browser confirmou zero alerts no resultado anterior, marcador Previous e círculos
+para Confidence89 e conformidade92; screenshot inspecionado em
+community/output/playwright/policy-history-score-rings.png.
+
 ### 2026-10-09 — Histórico completo de Policy Compliance e pinpoints colapsáveis
 
 Previous results passou a expandir cada avaliação com a projeção detail já
