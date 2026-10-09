@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — Functional no padrão Integration; Contracts no padrão Decisions
+
+Functional agora usa linhas compactas inicialmente recolhidas, expansão por
+botão acessível, título, indicador de vínculo, contagem de tasks, ações de
+edição/revogação e inclusão ao final da lista, seguindo Integration. Conteúdo
+e referências aparecem na expansão. FR Task Coverage conta itens ativos com
+vínculo; não representa execução ou prova e não modifica nenhum gate.
+
+Contracts mantém Contract Task Coverage com contagem, percentual e barra no
+mesmo padrão de Decisions, removendo a segunda listagem de contratos dentro
+do resumo. Cobertura continua contando apenas contratos ativos vinculados.
+O pedido intermediário de alterar TR foi explicitamente cancelado: Technical
+e TR Task Coverage não foram modificados. AC também conserva a apresentação.
+
+66 testes frontend passaram: 57 de Functional/navegação e 9 de Contracts,
+incluindo expansão, identidade, permissões, cobertura parcial/total/zero e
+exclusão de revogados. TypeScript/Vite/sync e diff-check passaram. Instalação
+conferida byte a byte entre fonte/wheel/site-packages (842 Python Core, 317
+Community, 79 arquivos frontend); evidência local
+`.validation-v040/functional-contracts-host-provenance.json`.
+Frontend SHA256 `5bf7db9c3013dc814a034156962d005119a2b10d9dbd928eed265f72984d58d7`.
+Pulse reiniciado e HTTP 200 confirmado; inspeção visual no runtime instalado,
+console sem erros. Capturas locais Community
+`output/playwright/functional-integration-pattern.png` e
+`output/playwright/contract-coverage-summary.png`. Dados da iniciativa intactos.
+
 ### 2026-10-08 — FR/AC em cartões estruturados e separação da verificação
 
 Pedido: Functional com título/conteúdo, AC separado de Criterion verification,
