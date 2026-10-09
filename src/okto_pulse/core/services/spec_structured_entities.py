@@ -75,6 +75,7 @@ from okto_pulse.core.services.spec_entity_canonicalization import (  # noqa: F40
     canonicalize_spec_requirement_fields,
     spec_child_id,
     spec_child_text,
+    spec_child_title_fields,
     validate_stored_spec_children,
 )
 
@@ -1693,10 +1694,11 @@ class StructuredSpecEntityService:
                     "linked_task_ids",
                 } | (CRITERION_VERIFICATION_FIELDS if entity_type == "acceptance_criterion" else {"verification", "implementation_plan"}),
             )
-            text = str(payload.get("text") or payload.get("title") or "").strip()
+            text = str(payload.get("text") or "").strip()
             if not text:
                 raise ValueError("text is required.")
             return {
+                **spec_child_title_fields(payload),
                 **(criterion_verification_fields(payload) if entity_type == "acceptance_criterion" else {}),
                 **(requirement_verification_fields(payload) if entity_type == "functional_requirement" else {}),
                 **({"id": payload["id"]} if payload.get("id") else {}),
@@ -1755,11 +1757,12 @@ class StructuredSpecEntityService:
                     "linked_task_ids",
                 } | (CRITERION_VERIFICATION_FIELDS if entity_type == "acceptance_criterion" else {"verification", "implementation_plan"}),
             )
-            if "text" in payload or "title" in payload:
-                text = str(payload.get("text") or payload.get("title") or "").strip()
+            if "text" in payload:
+                text = str(payload.get("text") or "").strip()
                 if not text:
                     raise ValueError("text is required.")
                 item_dict["text"] = text
+            item_dict.update(spec_child_title_fields(payload))
             for key in ("locale", "status", "notes", "linked_task_ids"):
                 if key in payload:
                     item_dict[key] = payload[key]

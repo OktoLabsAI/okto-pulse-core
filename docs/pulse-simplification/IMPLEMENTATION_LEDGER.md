@@ -2,6 +2,45 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — FR/AC em cartões estruturados e separação da verificação
+
+Pedido: Functional com título/conteúdo, AC separado de Criterion verification,
+melhor apresentação dos objetos de verificação e TR como Technical dentro de
+Requirements & Decisions. Implementação concluída.
+
+FR/AC passam a ter título de apresentação independente do conteúdo `text`.
+O serviço antes aceitava `title` mas o descartava na criação e o tratava como
+substituto de `text` na atualização. Agora preserva o título; atualização só de
+título não sobrescreve conteúdo. A criação exige `text`. Título opcional no
+contrato, obrigatório nos novos formulários; itens atuais permanecem sem título
+até autoria explícita, sem backfill ou alteração de IDs, histórico e vínculos.
+Canonicalização valida título textual/nulo também no caminho de coleção.
+
+UI usa operações por ID, versão esperada e revogação com preview/ack existentes,
+eliminando reconciliação por igualdade de texto. AC tem subaba própria. TR saiu
+do topo e de Details, mantendo o editor existente em Technical. Verificação
+ganhou cartões, badges de perfil, campos de referência, vínculos em grade e
+caminhos de critérios estruturados; permissões e cálculos permanecem iguais.
+
+Validação: 130 testes frontend distintos passaram (cartões FR/AC, verificação,
+qualificação, navegação, atividade e edição estruturada); 123 testes backend
+de entidades estruturadas/canonicalização passaram. Novos testes verificam
+título/conteúdo independentes, identidade e notas preservadas, conflito de
+versão, rejeição de título não textual, autoria por ID mesmo com textos iguais,
+permissões, falha de escrita e prevenção de duplo envio. As expectativas visuais
+foram atualizadas; três timeouts na execução concorrente passaram isoladamente.
+TypeScript/Vite/sync passaram; frontend final 79 arquivos, SHA256
+`e0ce8affaa635adc2f65342fdd32ee3bbeec81211872138a48a23df94d4b0c2e`.
+Auditoria `okto-pulse-saas-closure` com wheels passou: zero findings e oito
+budgets em zero (`.validation-v040/requirement-cards-closure.json`).
+
+Instalação local conferida byte a byte entre fontes, wheels e site-packages
+(842 Python Core, 317 Community, 79 arquivos frontend), evidência
+`.validation-v040/requirement-cards-host-provenance.json`. Inspeção no navegador
+confirmou Functional, Technical, AC e Criterion verification; console sem erros.
+Capturas em Community `output/playwright/{functional-cards,acceptance-cards,
+criterion-verification-cards}.png`. Nenhum dado da iniciativa foi alterado.
+
 ### 2026-10-08 — navegação da Spec e candidatos arquiteturais integrados
 
 Solicitação do usuário: Requirements & Decisions com Functional, Business,

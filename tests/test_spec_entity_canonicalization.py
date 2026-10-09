@@ -41,6 +41,20 @@ def _id(prefix: str) -> str:
 
 
 class TestCanonicalizeUnit:
+    @pytest.mark.parametrize('entity_type', ['functional_requirement', 'acceptance_criterion'])
+    def test_title_is_preserved_separately_from_content(self, entity_type):
+        child = {'id': 'stable', 'title': '  Summary  ', 'text': 'Full content', 'linked_task_ids': ['task']}
+        result = canonicalize_spec_children(entity_type, [child], existing_items=[child])[0]
+        assert result['title'] == 'Summary'
+        assert result['text'] == 'Full content'
+        assert result['id'] == 'stable'
+        assert result['linked_task_ids'] == ['task']
+
+    @pytest.mark.parametrize('title', [42, {}, []])
+    def test_rejects_non_text_title(self, title):
+        with pytest.raises(ValueError, match='spec_requirement_title_invalid'):
+            canonicalize_spec_children('functional_requirement', [{'text': 'Content', 'title': title}])
+
     def test_new_object_receives_id_and_status(self):
         out = canonicalize_spec_children("functional_requirement", [{"text": "FR one"}, {"text": "FR two"}])
         assert all(isinstance(x, dict) for x in out)

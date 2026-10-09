@@ -60,6 +60,16 @@ def spec_child_id(item: Any) -> str | None:
     return None
 
 
+def spec_child_title_fields(item: Mapping[str, Any]) -> dict[str, Any]:
+    """An optional display title is independent from the requirement content."""
+    if "title" not in item:
+        return {}
+    title = item["title"]
+    if title is not None and not isinstance(title, str):
+        raise ValueError("spec_requirement_title_invalid: expected text or null")
+    return {"title": title.strip() or None if title is not None else None}
+
+
 def _stable_child_id(entity_type: str, text: str, used_ids: set[str]) -> str:
     """Deterministic, UNIQUE id for a child that has no id yet.
 
@@ -150,6 +160,7 @@ def canonicalize_spec_children(
         child = dict(item)
         child["id"] = child_id
         child["text"] = text
+        child.update(spec_child_title_fields(child))
         child.setdefault("status", "active")
         if entity_type == "acceptance_criterion":
             child.update(criterion_verification_fields(child))

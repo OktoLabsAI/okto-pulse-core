@@ -364,6 +364,40 @@ async def test_structured_create_supports_all_spec_entity_types(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('entity_type,field_name', [
+    ('functional_requirement', 'functional_requirements'),
+    ('acceptance_criterion', 'acceptance_criteria'),
+])
+async def test_requirement_title_is_independent_and_preserves_identity(db_factory, entity_type, field_name):
+    board_id, spec_id, actor_id = f'board-{uuid.uuid4()}', f'spec-{uuid.uuid4()}', 'actor-structured'
+    async with db_factory() as db:
+        await _seed_spec(db, board_id=board_id, spec_id=spec_id, actor_id=actor_id)
+        service = StructuredSpecEntityService(db)
+        common = dict(board_id=board_id, spec_id=spec_id, actor_id=actor_id,
+                      entity_type=entity_type, permission_set=_permission_set('Spec'))
+        created = await service.mutate(StructuredSpecEntityCommand(**common, operation='create',
+            payload={'title': 'Short title', 'text': 'Full observable content', 'notes': 'Preserve notes'}, expected_spec_version=1))
+        assert created.success
+        updated = await service.mutate(StructuredSpecEntityCommand(**common, operation='update',
+            entity_id=created.entity_id, payload={'title': 'Revised title'}, expected_spec_version=created.spec_version))
+        assert updated.success
+        spec = await db.get(Spec, spec_id)
+        child = next(item for item in getattr(spec, field_name) if item['id'] == created.entity_id)
+        assert child['title'] == 'Revised title'
+        assert child['text'] == 'Full observable content'
+        assert child['notes'] == 'Preserve notes'
+        stale = await service.mutate(StructuredSpecEntityCommand(**common, operation='update',
+            entity_id=created.entity_id, payload={'title': 'Stale title'}, expected_spec_version=created.spec_version))
+        assert not stale.success
+        changed = await service.mutate(StructuredSpecEntityCommand(**common, operation='update',
+            entity_id=created.entity_id, payload={'text': 'Revised content'}, expected_spec_version=updated.spec_version))
+        assert changed.success
+        child = next(item for item in getattr(spec, field_name) if item['id'] == created.entity_id)
+        assert child['title'] == 'Revised title'
+        assert child['text'] == 'Revised content'
+
+
+@pytest.mark.asyncio
 async def test_structured_decision_accepts_structured_tr_link(db_factory):
     board_id = f"board-{uuid.uuid4()}"
     spec_id = f"spec-{uuid.uuid4()}"
