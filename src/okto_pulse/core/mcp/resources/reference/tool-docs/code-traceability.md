@@ -22,6 +22,14 @@ omissions. Revoked checkpoints remain labeled history. This is not a complete
 resume manifest; `recovery_verified` is always false. Check your own access to
 the declared workspace before claiming that earlier changes were recovered.
 
+Normal tasks expose `delivery_completeness`: equal-weight assigned obligations
+with current, complete implementation evidence (`completed`, `total`, `percent`).
+The percentage is floored and can reach 100 before Done; it is informational,
+never a lifecycle approval or an executor/reviewer score. Partial declarations,
+progress notes and waivers add no credit. Revocation, stale receipts or changed
+scope remove credit. Missing explicit obligations or incomplete scope return
+`percent: null` with `scope_missing` or `scope_incomplete`, never a guessed zero.
+
 ## `okto_pulse_record_delivery_evidence`
 
 To atomically save the last batch and submit the existing Card execution report,

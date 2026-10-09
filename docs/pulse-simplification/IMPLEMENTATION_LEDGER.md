@@ -2,6 +2,41 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Completude automática nas tasks
+
+Percentual informacional na capa Kanban e barra em Delivery de cards normais.
+Cálculo público de domínio conta obrigações explicitamente atribuídas ao card
+com evidência completa, atual e autenticada, peso igual e arredondamento para
+baixo. Não exige Done para mostrar progresso e não autoriza a transição para
+Done. Relatos de progresso, contribuição parcial e dispensas não somam crédito;
+evidências revogadas/desatualizadas deixam de contar. Escopo ausente/incompleto
+retorna percentual nulo, nunca zero artificial. Test/Bug não recebem indicador.
+Projeção per_card.delivery_completeness compartilhada pela capa e Delivery;
+consulta uma vez por Spec visível, concorrência limitada, cancelamento e respeito
+à permissão de leitura. Atualiza no refresh do Board, foco e registros de entrega.
+Sem persistir score, alterar schema, introduzir migração ou relaxar gates.
+
+Validação: 56 testes Core e 11 Community aprovados, incluindo recibos reais,
+separação de obrigações entre cards, parcial/completo, obsolescência, duplicação
+e independência de Done. O primeiro teste de integração esperava quatro
+obrigações; a fixture atribui os dois ACs a outro card. Expectativa corrigida
+para 1/2=50%, com asserções adicionais sobre o card dos ACs e o card Test.
+44 testes frontend aprovados; após correção de tipos, sete testes da feature
+reexecutados e build TypeScript/Vite aprovado. Auditoria de wheels/documentação
+sem findings, oito budgets em zero (7646 imports Core, 1106 Community, 25 deps).
+READMEs regenerados com a matriz. Diff-check aprovado.
+
+Reinstalação pareada: 844/317 arquivos Python e 905/403 payloads iguais byte a
+byte entre fonte/wheel/install. Processo4216 posterior ao install, HTTP200.
+SPA79 arquivos SHA256fc7dca56961495ed71edc243e03af4e43f3ee1c98aa740817a183e97e9d81fad.
+Proveniência em .validation-v040/task-completeness-{host,process}-provenance.json;
+wheels em dist-task-completeness-20261009. Browser real confirmou estado
+Not calculable nas tasks do exercício (escopo incompleto). Fixture temporária
+somente de resposta GET validou sete capas, uma consulta por Spec e igualdade
+entre capa/barra em 60%, 20% e 100%; interceptação removida e contexto real
+restaurado, nenhum dado/evidência fictícia gravado no Board. Screenshots
+inspecionados: community/output/playwright/task-completeness-{real,cover,delivery}.png.
+
 ### 2026-10-09 — Edições anteriores como consulta secundária
 
 Delivery record history apresenta a edição atual sem seletor em primeiro plano.
