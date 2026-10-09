@@ -2,6 +2,61 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — SIM-03: saturação executável e admissão de resultados
+
+Retomada autorizada do ensaio Reserva de Salas. Estado inicial: 27 Cards em
+In Progress, 51 cenários Ready, Spec edição 4/versão 290. Guideline hexagonal
+1.1.0 vigente; sem menções pendentes. Contextos full/all lidos para cinco Test
+Cards; critérios recuperados sem cópia. Nenhum produto Pulse foi alterado.
+
+Mock em D:/Projetos/reserva-sala-mock: commit local ed62a40d4c24cc2f4df1cd0cce6db2afeaf6e5e1.
+15 testes passaram; novas matrizes executaram 13.056 combinações de calendário,
+150 capacidade, oito precisão, 25 sobreposição, 12 cancelamento = 13.251 casos
+adicionais. Log versionado observations/SIM-03-unittest.txt. Sem código novo de
+produção; aplicação/UoW/HTTP/frontend continuam não implementados.
+
+GAP REAL DO PULSE: tentativa de registrar T02 efetivamente executado com
+automated_test_pointer foi recusada por verification_evidence_authenticated_result_required,
+sem next_action. Correto negar ponteiro sem autenticação, mas o executor público
+atual só executa GETs no próprio Pulse; não há caminho exposto para autenticar
+esta suíte externa. Não usar /health, fabricar recibo, trocar método nem relaxar
+gate. Relatado no Card Disponibilidade, comentário b185114e-a7fb-403f-9ae7-ec90ff609daf.
+Também encontrada documentação antiga em tool-docs/code-traceability descrevendo
+completed/100 antes de Done, divergente da nova maturidade; correção documental
+fica identificada para o próximo incremento do produto.
+
+T33: inspection com outcome=unavailable admitido; recibo
+5e7444a7d1098b89042fa9eb8d6db7f3, fonte versionada SIM-03-inspection.md. Status write
+Ready→Ready guardou o relatório, sem aprovação. Adulterar conclusão foi recusado
+por receipt_report_binding_mismatch/evidence_tampered; tentar usar o original
+como Passed foi recusado por verification_report_invalid. Readback confirmou
+51 Ready e relatório original intacto. Ausência de frontend é do MOCK, não falha
+de acessibilidade nem defeito do Pulse.
+
+Cinco checkpoints reais via Delivery: capacidade a059b4513ece41618f1fe5482e0f508b,
+calendário af149f996bfa4a42a71c9ba0c48ef0b0, relógio 8e4559b587e3408abb17d341c5448d21,
+fronteiras d4b04a163b894f76899a2552ced166f0, inspeção 0981a7c951b34c098a4e4164094548f3
+(prefixo card_delivery_). Retry exato do primeiro retornou mesmo ID/replayed=true;
+payload diferente sob mesma chave foi recusado por delivery_idempotency_conflict.
+Readback total=2 naquele Card confirma apenas SIM-02+SIM-03, sem duplicação.
+
+GAP DO MOCK: T06/T08/T21 referenciam ac_res_clock (now depois da aquisição da
+transação), embora observem somente precisão/limite temporal; T21 também não
+prova todo o histórico/replay do AC de cancelamento. Não conceder cobertura
+integral. Registrar o que falta, sem editar silenciosamente a Spec congelada.
+Nenhum Card concluído, nenhuma verificação automática promovida nem waiver.
+Progresso do domínio permanece 5%; os checkpoints não o elevam artificialmente.
+
+Interface validada no runtime 8100: Test Disponibilidade → Delivery → Progress &
+recovery mostra dois checkpoints, SIM-02 sintético e SIM-03 real, com expansão do
+resultado e trabalho restante. Snapshot page-2026-10-09T23-20-56-671Z.yml e screenshot
+Community/output/playwright/sim03-test-progress.png. Mock limpo após commit local;
+sem remote. Ledger enviado no Core; Community não recebeu alterações de produto.
+Próximo passo útil: resolver admissão/execução de testes automatizados externos
+antes de exigir que o agente repita dados para tentar obter cobertura. Não declarar
+etapa verified nem concluir Cards com base somente nos quinze testes locais.
+
+
 ### 2026-10-09 — Correção do 500 em allowed-transitions
 
 Pedido: investigar e corrigir o 500 observado ao abrir o Card de domínio.
