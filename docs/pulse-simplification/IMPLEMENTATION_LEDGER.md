@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC/verificação expansíveis, identidade FR e Details somente leitura
+
+AC reutiliza a lista compacta de Functional/Integration: título na linha,
+expansão de conteúdo, editor de título/conteúdo e ações por ID. O cadastro já
+persistia título independente (entrega anterior); campo obrigatório no formulário
+mantido. AC existente sem título mostra prévia do conteúdo, sem inventar ou
+gravar títulos. Criterion verification e a qualificação dos requisitos usam
+linhas recolhidas com perfil/modo, contagem e detalhes expansíveis. Autoria,
+permissões, CAS e leitura de metadados indisponíveis permanecem preservados.
+Functional mostra o ID de Reference no badge e usa o mesmo texto `text-xs`
+de Integration no detalhe (sem tipografia de bloco Markdown).
+
+Ordem das abas: Details, Coverage, Project Structure, Code Evidence Matrix,
+Resources, Requirements & Decisions, Tests & Verifications, Q&A, Dependencies,
+References, KG Graph, Validation, Activity; filtros de permissão preservados.
+Details agora é somente consulta, inclusive descrição, contexto e resumo do
+Task Validation Gate, sem callbacks de escrita ou editores. A frase sobre
+legado em Decisions foi removida. Technical/TR não foi alterada.
+
+130 testes frontend distintos passaram (103 de cartões/verificação/navegação,
+78 de navegação/atividade/Decisions, com 51 comuns). TypeScript/Vite/sync e
+diff-check passaram. Frontend SHA256
+`f1da6d6425d15ff827dc97f7372c79ff844a04cadca274e7ab3ecaa713883237`.
+Reinstalação conferida fonte/wheel/site-packages: 842 Python Core, 317 Community,
+79 arquivos frontend, evidência `.validation-v040/ac-compact-host-provenance.json`.
+Inspeção visual de expansão e badge FR, AC e Criterion verification realizada
+sem escrita na iniciativa. Nenhuma mudança de gate ou permissão no backend.
+
 ### 2026-10-08 — Functional no padrão Integration; Contracts no padrão Decisions
 
 Functional agora usa linhas compactas inicialmente recolhidas, expansão por
