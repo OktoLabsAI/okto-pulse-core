@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Aba KG da Spec exibia falso vazio
+
+Reprodução no navegador: KG Graph exibia ausência de dados embora Coverage
+observasse a projeção. O frontend consultava somente canonical (default),
+comparava source_artifact_ref apenas com a raiz exata e limitava a leitura à
+primeira página do Board. A Spec Validated possui derivados em working e
+referências spec:<id>:<tipo>:<id>.
+
+Correção restrita ao frontend: solicitar graph_layer=all, seguir next_cursor,
+selecionar raiz e descendentes com delimitador, excluir superseded_by e
+deduplicar nós/relações. Mantidos API, autorização e armazenamento existentes;
+nenhuma promoção de working, mudança de gate ou escrita na Spec. A tela explica
+que working é provisório; vazio não atribui uma causa presumida ao worker.
+Falha de página, cursor repetido e leitura parcial de relações exibem erro.
+Seis testes frontend passaram; TypeScript/build e git diff --check passaram.
+SPA gerada: 79 arquivos, SHA256
+08983c3f8f05ea0ac497efb1a5e3b487da04382d650973ab454aed401ed91c52.
+Wheels reinstaladas; kg-spec-view-host-provenance.json confirma igualdade
+byte a byte de 843/317 Python e 904/403 payloads, incluindo frontend.
+Home preservada. Processo21756 iniciado1791548733.6127713 após último mtime
+Python1791548718.3095963. Conferência visual na Spec confirmou141nós derivados
+em7tipos e ausência do falso vazio; screenshot inspecionada:
+Community/output/playwright/kg-spec-view-fixed.png. Contagem desta aba é de
+derivados por referência, não o escopo de obrigações de Coverage (que inclui
+Cards); não equivale a checkpoint completo de projeção ou prova de entrega.
+Community475288ad commitado/enviado. Sem alterações de backend; build mantém
+avisos preexistentes de tamanho de chunks/Browserslist. Paginação usa o endpoint
+existente do Board; custo cresce com seu tamanho, sem introduzir endpoint novo.
+
+
 ### 2026-10-09 — Coverage recusava histórico substituído como duplicidade atual
 
 Reprodução: GET Coverage da Spec 2372d8a2-68c8-57f4-a609-d809c92d55c6
