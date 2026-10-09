@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Progress & Recovery padronizado e pré-requisitos das execuções
+
+Orientação permanente do usuário: sempre tentar executar e validar a interface
+antes de concluir; não limitar a conferência ao painel recolhido ou ao build.
+
+Progress & Recovery e seus componentes internos seguem o padrão de Functional:
+cabeçalho compacto, badge, chevron, tipografia, bordas dark/light, botões e campos
+estilizados. Checkpoints, registros históricos e provas de recuperação expandem
+individualmente. Leituras mantêm CAS/escopo, proveniência e distinção entre
+declaração histórica e prova atual. Corrigida chave React duplicada entre leitores.
+
+Lista Authenticated run: confirmado no browser que o card Disponibilidade e
+capacidade está Not Started e os três cenários estão Draft. A projeção existente
+só oferece cenários com passed/failed e evidência autenticada válida em cards
+Started/In Progress/Done. Nenhum bug de preenchimento ou relaxamento desse gate.
+UI desabilita seletor vazio, explica pré-requisitos, oferece Open Tests respeitando
+leitura autorizada e permite Refresh evidence após registro de execução.
+
+Validação: 63 testes Delivery/Recovery + 79 CardModal = 142 aprovados; build
+TypeScript/Vite e diff-check aprovados. SPA79 arquivos SHA256
+72c66a71637409e07db6d32c303203bd583c1b8f58c37799d72a2cb9e20a6903.
+Reinstalação pareada com fonte/wheel/install idênticos byte a byte
+(843/317 Python, 904/403 payloads), processo41308 posterior à instalação, HTTP200.
+Relatórios .validation-v040/delivery-recovery-host-provenance.json e
+delivery-recovery-process-provenance.json. Browser executou leituras reais de
+recuperação e ledger, navegação Open Tests e ausência de candidatos. Screenshots
+inspecionados: community/output/playwright/delivery-recovery-expanded.png e
+delivery-run-prerequisites.png. Cenário positivo de seleção/envio executado no
+browser com fixture de rede explícita, POST interceptado e zero gravações no
+Board; payload contém exatamente cenário, implementação e obrigação selecionados.
+Interceptação removida e contexto real recarregado. Não foi atestada execução
+da aplicação fictícia nem alterado status/dado do exercício.
+
 ### 2026-10-09 — Delivery dos Test Cards orientada à evidência
 
 A aba prioriza propósito e fluxo de execução → associação → registro, com
