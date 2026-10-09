@@ -2,6 +2,82 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Spec fictícia saturada e Validated; exercício encerrado antes da execução
+
+My Board 2fd79a82-08b2-4ecc-823a-2c820342f6b9; Spec
+2372d8a2-68c8-57f4-a609-d809c92d55c6, edição2/versão203, **validated**.
+Validação Current val_80938804, outcome=success, zero violações de limiar;
+scores confidence88/clarity85/assertiveness87/decidability85/ambiguity19.
+Leitura full posterior e list_spec_validations confirmaram estado persistido.
+Não houve execução do aplicativo fictício: 27 Cards not_started (20 Test/7 normal),
+51 cenários Draft, sem prova de implementação ou resultado de teste fabricado.
+Escopo desta rodada termina em Validated, sem avaliação de decomposição para
+execução nem passagem a In Progress/Done. Workspace/stack/árvore devem ser
+reavaliados antes de implementação real; Project Structure N/A da edição2
+persistido no contexto, com justificativa conceitual.
+
+Saturação com valor: títulos nos31AC;13AC/cenários de interfaces substituíram
+texto genérico por operações e oráculos próprios. Seis contratos HTTP receberam
+erros aplicáveis por operação, CSRF e delimitação de path/query/body. Arquitetura
+Spec v2, IRs e Contracts alinhados quanto a room_name/room_location nos DTOs;
+recibo mantém snapshot e frontend recarrega ações atuais depois de replay.
+Seis candidatos arquiteturais alterados reassociados a IRs existentes, sem
+duplicação. Mantidos8FR/6TR/31AC/8BR/6Contracts/13IR/2OR/5Decisions/51cenários.
+Coberturas AC,FR,cenário→Test,BR,TR,Contracts,IR,OR,Decisions:100%.
+Requirement verification:37/37,zero issues,method_plan_complete=true.
+Arquitetura copiada oficialmente ao Card de aplicação; H01/H02 e H03/H04 aos
+respectivos Cards frontend. KBs herdadas foram lidas como referência advisory,
+sem cópia indiscriminada nem criação de conteúdo para aumentar contagens.
+
+Checklist Blocking configurado pelo browser sob autorização explícita do usuário;
+binding v1 4f041e8fd0c104d4188a96d2520be04b3fcd6d642fa3e43b8ed4ec7e993b3c30.
+Resultado clr_2ba4809eb8a9448b971bad48ae5680e2: dez itens pass, blocking_satisfied=true,
+confirmado por leitura do receipt. Requirement Lint da edição2:
+qar_4927f4edbfc644aa8c2db15ecced67a6, zero achados nos45 anchors FR/TR/AC.
+Guideline hexagonal: resultado Current, score92, confiança89; avaliação do desenho,
+não de código executado. Limiar efetivo85 preservado, apesar da referência80 no
+texto da rubric humana. Nenhum skip, limiar ou permissão relaxado.
+
+Teste vivo do recurso anterior: Test Card 9644bcb1-dfdc-5d5e-83a6-7ea9f4517155
+com get_task_context(full,all) resolveu três cenários, seus ACs atuais, perfis,
+vínculos e observações; content_complete/source_resolution_complete=true,
+issues=[] e delivery_evaluated=false. Isso prova utilidade informacional do
+critério no contexto do agente, não execução dos cenários de reservas.
+
+Fricções reais do Pulse, registradas sem expandir automaticamente o escopo:
+
+- **Ciclo de cobertura inconsistente:** cards exigem Approved, mas link_task TR
+  nesse estado retorna traceability_link_rejected (fallback só aceita content lock);
+  update_spec_entity(link_task) exige Draft. Preview de validação manda usar o
+  mesmo link_task recusado. Caminho oficial usado: reabrir Draft (edição1→2),
+  preservar27Cards, gravar37vínculos, Review→Approved e repetir avaliações.
+  Nenhuma correção de autoridade/gate foi improvisada. Reprodução/source:
+  services/main.py append_locked_traceability_task_link,
+  services/spec_structured_entities.py mutate, mcp/server.py _link_task_to_tr_internal.
+- **Lint mal documentado:** score precisa ser len(findings), confidence de finding
+  usa0..1, categoria pertence à taxonomy fechada e anchor context é recusado neste
+  assessment. Recursos MCP dizem apenas score limitado e anchors genéricos.
+  Tentativas rejeitadas não persistiram; achado editorial do contexto fica aqui,
+  fora dos45anchors de requisitos. Zero findings não significa ausência de fricção.
+- **Checklist pouco descobrível por MCP:** start retorna só execution_id/edition/status;
+  binding/docs não enumeram dez item_ids. Foi necessário ler o template canônico
+  domain/checklist.py para executar sem inventar IDs. Não houve acesso direto ao banco.
+- Classificação associate_existing_ir recusa reason com erro genérico, embora
+  schema exponha o campo; retry corrigido sem reason preservou seis associações.
+- Avaliação de guideline em Draft retorna lifecycle_conflict sem detalhar o status
+  requerido no envelope MCP; submissões em Approved foram aceitas.
+- Schemas repetidos em Architecture/IR/Contracts exigem sincronização manual;
+  contexto histórico e recursos duplicados tornam full volumoso. Limite3 cenários
+  por Card resultou em20 grupos coerentes; evitar fragmentação artificial adicional.
+
+KG: consultas temáticas/contradições e16constraints realizadas; zero pares de
+contradição retornados, sem interpretar ausência como prova completa. Health
+observado at_risk,8policy DLQ e métricas indisponíveis; sem recuperação improvisada.
+KG closeout: not_applicable — somente validação da Spec, sem entrega/consolidação
+final. Alterações de código desta rodada já testadas/instaladas no checkpoint
+anterior: Core921342d0/Communitydd81544a. Este fechamento altera apenas ledger;
+não repetir nem alegar suíte integral. Pulse continua iniciado, home preservada.
+
 ### 2026-10-09 — pulso no KG Graph e desbloqueio da configuração inicial do Checklist
 
 Pedido: padronizar loading do KG da Spec e saturar a iniciativa fictícia até
