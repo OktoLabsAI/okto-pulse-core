@@ -12,9 +12,12 @@ em In Progress sem autoria; build TypeScript/Vite e sincronização do pacote
 frontend_dist concluídos. Playwright no frontend local 5174, conectado ao
 runtime 8100, confirmou a aba na Spec real em In Progress e o estado vazio.
 Snapshot: page-2026-10-09T20-39-02-253Z.yml. Nenhum dado da Spec foi alterado.
-O runtime instalado continua no build anterior: reinstalação/reinício ainda
-necessários para disponibilizar esta mudança em 8100. Coverage e Discovery
-permanecem fora desta correção pontual.
+Reinstalação e reinício concluídos a pedido do usuário: ambos os wheels locais
+0.4.0 reinstalados, 844/317 arquivos Python e 79 arquivos frontend comparados
+byte a byte com as árvores locais. Processo 9328 iniciado após a instalação,
+home padrão preservada, HTTP 8100 respondeu 200. Playwright confirmou a aba
+na Spec real na instalação 8100 (snapshot 20-44-59-539Z).
+Coverage e Discovery permanecem fora desta correção pontual.
 
 ### 2026-10-09 — Teste SDLC: execução simulada até 50%
 
