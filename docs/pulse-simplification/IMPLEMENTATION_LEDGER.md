@@ -2,6 +2,22 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Slider para a edição do histórico de entrega
+
+History edition substituído por input range acessível, mínimo1, máximo edição
+atual e passo inteiro1. Badge mostra a edição selecionada e identifica a atual;
+com apenas uma edição, controle fica desabilitado em1. Trocar edição preserva o
+cancelamento da leitura anterior e o isolamento do histórico. 10 testes frontend
+aprovados (ledger e resume), incluindo limites, edição única e troca de escopo.
+Sem mudança de backend, dados ou gates. Build e diff-check aprovados; SPA79
+arquivos SHA256da69f720112b590d0407679483b1aa4bb3e6f40f005b1dbb20db9830cab52d37.
+Wheels pareados reinstalados, bytes fonte/wheel/install idênticos
+(843/317 Python;904/403 payloads); processo26380 posterior ao install, HTTP200.
+Relatórios .validation-v040/history-slider-{host,process}-provenance.json.
+Browser confirmou Home/ArrowLeft limitados em1, End/ArrowRight limitados em2,
+badge da edição atual e leitura real da edição1 com HTTP200. Screenshot
+inspecionado: community/output/playwright/history-edition-slider.png.
+
 ### 2026-10-09 — Leitura do contexto acumulado colapsável
 
 Read accumulated delivery context passou de botão para disclosure no padrão
