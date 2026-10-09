@@ -616,7 +616,8 @@ Scoring contract:
     will usually fail. confidence/clarity/assertiveness/decidability are
     higher-is-better; ambiguity is lower-is-better. Default thresholds are
     70/80/80/80/max-30 respectively. Every score requires its own
-    justification. A pinpoint has `{metrics, kind, severity, excerpt, detail, recommendation, anchor_type, anchor_ref?}`;
+    justification. A pinpoint has `{metrics, kind, severity, excerpt, detail, recommendation, rationale?, anchor_type, anchor_ref?}`;
+    Include rationale to explain why the finding matters and its concrete impact (max 1000 characters).
     metrics is a nonempty unique list of quality dimensions. kind is problem or
     opportunity; severity is low, medium, high or critical. Each finding describes
     ONE specific issue and one recommended action (max 1000 characters each).

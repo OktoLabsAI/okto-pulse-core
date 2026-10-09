@@ -3966,6 +3966,8 @@ class SpecValidationPinpoint(BaseModel):
     excerpt: str = Field(min_length=1, max_length=1000)
     detail: str = Field(min_length=1, max_length=1000)
     recommendation: str = Field(min_length=1, max_length=1000)
+    rationale: str | None = Field(default=None, min_length=1, max_length=1000,
+        description="Evaluator justification: why the quoted issue matters and its concrete impact. Do not restate the issue or recommendation.")
     anchor_type: Literal["whole_artifact", "field", "structured_child", "qa"]
     anchor_ref: str | None = Field(default=None, min_length=1, max_length=4096)
 

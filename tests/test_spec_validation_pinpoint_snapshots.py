@@ -48,6 +48,7 @@ def _pinpoint() -> SpecValidationPinpoint:
         anchor_type=SpecValidationPinpointAnchorType.STRUCTURED_CHILD,
         anchor_ref="ac_123",
         detail="Quantify the expected response time.",
+        rationale="Without a response bound, the acceptance test cannot distinguish pass from fail.",
     )
 
 
@@ -61,6 +62,7 @@ def test_sealed_snapshot_round_trips_without_resolving_current_content() -> None
     assert len(snapshot["source_digest"]) == 64
     assert snapshot["source_version"] == "17:edition:3"
     assert SpecValidationPinpoint.from_dict(projected) == sealed
+    assert projected["rationale"] == _pinpoint().rationale
 
     response = SpecValidationResponse.model_validate(
         native_validation("validation", 3, pinpoints=[projected])
@@ -95,6 +97,7 @@ def test_sealed_native_history_is_read_without_inventing_new_fields():
 @pytest.mark.parametrize(("field", "value"), [
     ("kind", "defect"), ("severity", "urgent"), ("excerpt", "x" * 1001),
     ("recommendation", " "), ("detail", "x" * 1001), ("metrics", []),
+    ("rationale", " "), ("rationale", "x" * 1001),
 ])
 def test_actionable_contract_is_enforced_by_rest_and_shared_command(field, value):
     from okto_pulse.core.models.schemas import SpecValidationSubmit
@@ -192,6 +195,7 @@ def _payload(
                 "excerpt": "Given a valid request", "recommendation": "Specify the expected measurable bounds.",
                 "anchor_type": anchor_type,
                 "detail": "Quantify the expected response time.",
+                "rationale": "Without a bound, the acceptance test has no objective pass condition.",
             }
             | ({"anchor_ref": anchor_ref} if anchor_ref is not None else {})
         ],
@@ -214,6 +218,7 @@ async def test_submit_use_case_seals_snapshot_before_persistence() -> None:
     )
 
     snapshot = result.payload["pinpoints"][0]["anchor_snapshot"]
+    assert result.payload["pinpoints"][0]["rationale"] == _payload()["pinpoints"][0]["rationale"]
     assert snapshot["availability_at_seal"] == "available"
     assert snapshot["label"].startswith("AC-1")
     assert uow.commit_calls == 1

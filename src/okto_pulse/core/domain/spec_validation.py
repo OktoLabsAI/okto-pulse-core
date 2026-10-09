@@ -213,6 +213,7 @@ class SpecValidationPinpoint:
     anchor_type: SpecValidationPinpointAnchorType
     anchor_ref: str | None = None
     anchor_snapshot: SpecValidationAnchorSnapshot | None = None
+    rationale: str | None = None
 
     def __post_init__(self) -> None:
         if (not self.metrics or len(self.metrics) > 5
@@ -228,6 +229,11 @@ class SpecValidationPinpoint:
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip() or len(value) > 1000:
                 raise ValueError(f"spec_validation_pinpoint_{name}_invalid")
+        if self.rationale is not None and (
+            not isinstance(self.rationale, str) or not self.rationale.strip()
+            or len(self.rationale) > 1000
+        ):
+            raise ValueError("spec_validation_pinpoint_rationale_invalid")
         if not isinstance(self.anchor_type, SpecValidationPinpointAnchorType):
             raise ValueError("spec_validation_pinpoint_anchor_type_invalid")
         if self.anchor_type is SpecValidationPinpointAnchorType.WHOLE_ARTIFACT:
@@ -247,7 +253,7 @@ class SpecValidationPinpoint:
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "SpecValidationPinpoint":
         allowed = {"metrics", "kind", "severity", "excerpt", "detail", "recommendation",
-                   "anchor_type", "anchor_ref", "anchor_snapshot"}
+                   "anchor_type", "anchor_ref", "anchor_snapshot", "rationale"}
         if not isinstance(value, Mapping) or not set(value).issubset(allowed):
             raise ValueError("spec_validation_pinpoint_invalid")
         metrics = value.get("metrics")
@@ -259,6 +265,7 @@ class SpecValidationPinpoint:
             kind=value.get("kind"), severity=value.get("severity"),
             excerpt=value.get("excerpt"), detail=value.get("detail"),
             recommendation=value.get("recommendation"),
+            rationale=value.get("rationale"),
             anchor_type=SpecValidationPinpointAnchorType(value.get("anchor_type")),
             anchor_ref=value.get("anchor_ref"),
             anchor_snapshot=SpecValidationAnchorSnapshot.from_dict(raw_snapshot) if raw_snapshot is not None else None,
@@ -273,6 +280,8 @@ class SpecValidationPinpoint:
                    "recommendation": self.recommendation, "anchor_type": self.anchor_type.value}
         if self.anchor_ref is not None:
             payload["anchor_ref"] = self.anchor_ref
+        if self.rationale is not None:
+            payload["rationale"] = self.rationale
         if self.anchor_snapshot is not None:
             payload["anchor_snapshot"] = self.anchor_snapshot.to_dict()
         return payload

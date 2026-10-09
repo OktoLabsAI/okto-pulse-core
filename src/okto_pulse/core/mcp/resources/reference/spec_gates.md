@@ -270,6 +270,10 @@ unique list of affected dimensions; `kind` is `problem` or `opportunity` and
 it does not introduce another gate. `excerpt`, `detail` and `recommendation`
 are required and each is limited to 1000 characters. Prefer a short sentence
 or clause for the verbatim excerpt; never reproduce the whole specification.
+Include `rationale` (up to 1000 characters) to defend the finding: explain why
+the quoted condition is a problem or opportunity and its concrete impact on
+the associated dimensions. Do not repeat the issue or the recommended action.
+This explanation does not add a gate. Sealed records without it remain unchanged.
 
 | `anchor_type` | Use it for | `anchor_ref` |
 |---|---|---|

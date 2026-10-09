@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Policy history e apresentação dos pinpoints
+
+Reproduzidos no browser: Policy Compliance exibindo o JSON canônico do TR
+tr_res_hex e Previous results recusando HTTP200 por anchor.excerpt_hash ausente.
+O encoder de páginas removia nulls com default no domínio; o teste validava
+somente o modelo Pydantic, que reinseria defaults e escondia a falha de wire.
+Corrigida a preservação dos campos nullable de UnboundFindingAnchor e
+AnchorSnapshot; regressão verifica model_dump(exclude_unset=True), como a rota.
+Frontend continua com contrato fechado e deixa de anunciar histórico vazio
+quando a leitura falha. Excerpt estruturado apresenta título e conteúdo textual
+do snapshot selado, sem JSON de transporte nem consulta ao requisito mutável.
+
+Spec Validation: classificação e criticidade destacadas, dimensões visíveis
+no resumo recolhido; problema laranja, ação verde, rationale em bloco próprio.
+Rationale é explicação informacional opcional de até1000 caracteres, persistida
+via domínio/REST/MCP e formulário; instruções do avaliador pedem impacto concreto.
+Não adiciona gate nem altera scores. Histórico sem justificativa permanece
+imutável e informa ausência, sem backfill ou justificativa fabricada.
+Validação concluída:70 testes frontend,214 Core e78 Community; build TypeScript/
+Vite e drift do catálogo MCP passaram. Atualizada expectativa fechada do teste
+MCP para o campo rationale. Closure8772linhas, nenhum finding e oito budgets0;
+matrizes README regeneradas. Wheels pareados instalados e todos os Python
+(843 Core/317 Community) e payloads conferidos byte a byte com a fonte.
+Proveniência: .validation-v040/policy-pinpoints-host-provenance.json.
+SPA79arquivos, SHA256735801e2255ab844d8ee02154bed8aeef64d29a7268dcaf834523e77de0cfdc8.
+Processo44960 iniciado1791552227.4083085, depois do último Python instalado
+1791552213.2616315. Browser real confirmou TR legível, histórico Edition1
+carregado sem erro e blocos coloridos de Spec Validation; dados preservados.
+Capturas em community/output/playwright/policy-history-readable.png e
+spec-pinpoint-emphasis.png. A avaliação nativa antiga não continha classificação,
+trecho focado, ação nem rationale; não foi reavaliada/fabricada para o teste.
+
 ### 2026-10-09 — Abrir Cards em References da Spec
 
 Reproduzido no browser:27cards renderizados como botões, porém clique no primeiro

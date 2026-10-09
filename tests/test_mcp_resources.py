@@ -500,7 +500,7 @@ def test_spec_validation_mcp_schema_is_canonical_and_pinpoints_are_closed() -> N
     pinpoint = properties["pinpoints"]["anyOf"][0]["items"]
     assert pinpoint["additionalProperties"] is False
     assert set(pinpoint["properties"]) == {
-        "metrics", "kind", "severity", "excerpt", "recommendation",
+        "metrics", "kind", "severity", "excerpt", "recommendation", "rationale",
         "anchor_type",
         "anchor_ref",
         "detail",

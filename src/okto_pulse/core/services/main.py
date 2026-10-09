@@ -12399,6 +12399,7 @@ class SpecService:
             required_pinpoint_fields = {"metrics", "kind", "severity", "excerpt", "recommendation", "anchor_type", "detail"}
             allowed_pinpoint_fields = {
                 *required_pinpoint_fields,
+                "rationale",
                 "anchor_ref",
                 "anchor_snapshot",
             }
@@ -12416,6 +12417,7 @@ class SpecService:
                 projected_pinpoint["severity"],
                 projected_pinpoint["excerpt"],
                 projected_pinpoint["recommendation"],
+                projected_pinpoint.get("rationale"),
                 projected_pinpoint["anchor_type"],
                 projected_pinpoint.get("anchor_ref"),
                 projected_pinpoint["detail"],
