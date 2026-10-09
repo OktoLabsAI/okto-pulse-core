@@ -2,6 +2,66 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Progresso derivado de evidência e mock executável
+
+Pedido autorizado: implementar o cálculo sem percentual autodeclarado e preparar
+`D:/Projetos/reserva-sala-mock` para evoluir o ensaio. Estados exclusivos por
+obrigação: planned=0, implemented=50, verified=80, accepted=100; média com pesos
+iguais e arredondamento para baixo. O denominador vem do inventário governado,
+com fingerprint do escopo; escopo ausente/incompleto não vira zero ou sucesso.
+Checkpoints, texto, claims parciais e dispensas não pontuam. Evidência invalidada
+pode reduzir o progresso. Nenhum gate de fechamento ou permissão foi relaxado.
+
+O estágio implemented exige prova de implementação admitida e atual; não equivale
+a revisão independente. Verified reutiliza os checks de recibo, critério, método,
+escopo e implementação exata, desconsiderando somente a conclusão dos Cards em
+cópias privadas informacionais. Accepted usa os estados reais. Nenhuma cópia é
+persistida ou usada como autorização. O adaptador calcula sobre o snapshot da
+Spec, incluindo testes de outros Cards, sem novas consultas. Capa e Delivery
+exibem barra/percentual e a distribuição dos quatro estágios.
+
+Validação: Core 65 testes; Community 42 (integração e contribuições), frontend
+7; build TypeScript/Vite e sincronização de 79 arquivos aprovados. Integração
+cobre 50→80 antes de Done, 100 após conclusão real e regressão por resultado
+inválido. Auditoria inicial: zero findings arquiteturais, duas matrizes README
+a regenerar. Instalação e inspeção visual em andamento; não declarar concluídas.
+
+Mock: repositório local novo, commit 8f5880f294265bcf9d0b6a80dbaf55e1fce981e9,
+oito arquivos, domínio puro de capacidade/calendário/cancelamento/intervalos,
+porta de relógio e adaptadores real/fixo, README e dez testes unittest aprovados.
+Não implementa API, persistência, concorrência ou replay; não há remote criado.
+
+Prova REAL registrada na Spec 2372d8a2-68c8-57f4-a609-d809c92d55c6, edição 4,
+task 1221974a-8da6-5767-932e-0d37cd0241e1: duas obrigações dentre 17,
+ac:ac_res_capacity e ac:ac_res_calendar. Target
+implementation_target_c53bb1a6cf104be6ba39f57239cfcde9, execução
+target_execution_5c5e6d4a8abc454098c0383e6784d6c9, recibo pós-trabalho
+code_receipt_f0d9581a22164a758e3f9afc7ddc3748, Delivery
+card_delivery_8b7e31e33e33433688c326491301540e. Novo cálculo esperado: 5%,
+15 planned/2 implemented/0 verified/0 accepted. Os dez testes locais não foram
+convertidos artificialmente em recibos autenticados de Test Card; nenhum cenário
+foi marcado passed nem Card concluído. Essa autenticação será o próximo passo
+do ensaio para alcançar verified. Não usar replay da saúde do Pulse para provar
+o aplicativo de reserva. Contenção SQLite/Coverage/Discovery anteriores continuam
+fora deste incremento.
+
+Fechamento deste incremento: pip reinstalou ambos os wheels 0.4.0; comparação
+byte a byte confirmou 844/317 arquivos Python e 79 frontend. Novo processo
+22388 iniciou em 19:18:33, após os mtimes instalados. Home padrão preservada.
+F16: zero findings e oito budgets zero; matrizes README regeneradas pelo renderer
+oficial e aprovadas pelo validator exato (delivery-maturity-closure.readmes.json).
+Playwright na instalação 8100 confirmou 5% na capa e no painel Delivery,
+15 planned/2 implemented/0 verified/0 accepted. Screenshot inspecionada:
+Community/output/playwright/delivery-maturity-installed.png; snapshot da capa
+page-2026-10-09T22-20-16-347Z.yml. Nenhum percentual foi digitado pelo agente.
+Observado 500 em allowed-transitions ao abrir o Card e indisponibilidade
+transitória da leitura das capas; Delivery carregou corretamente. Essa falha de
+runtime fica registrada, sem afirmar estabilidade integral da plataforma.
+Diff-check passou nos dois repos. Pronto para commits/pushes pareados; mock tem
+commit local próprio e nenhum remote. Demais frentes do plano não são promovidas
+a concluídas por este incremento.
+
+
 ### 2026-10-09 — SIM-02: saturação das tasks e resultados sintéticos
 
 Pedido: continuar a simulação de desenvolvimento e saturar os cards para testar
