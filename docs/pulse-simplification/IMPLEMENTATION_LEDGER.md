@@ -2,6 +2,51 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — SIM-02: saturação das tasks e resultados sintéticos
+
+Pedido: continuar a simulação de desenvolvimento e saturar os cards para testar
+o Pulse. My Board/Spec continuam os mesmos; edição 4, versão 290, In Progress.
+Não houve alteração de código do produto, policy, gates ou conteúdo da Spec.
+
+- Sete tasks normais: descrição operacional atualizada (removida a afirmação
+  obsoleta de execução não autorizada), Details com resultado simulado,
+  verificações, riscos e retomada; novo checkpoint narrativo de 75% por task.
+  Esse percentual não é cobertura comprovada nem execução real.
+- Vinte Test Cards: preflight full/gate e transições consultados; todos movidos
+  pela aresta pública not_started → in_progress. Resources não bloqueavam.
+  Details contêm entradas, ações, oráculos, ACs, método, saída sintética,
+  classificação e próxima ação para os 51 cenários existentes.
+- Resultados fictícios: 44 sucessos simulados, seis falhas deliberadas e uma
+  observação indisponível (T33: não há aplicativo/leitor de tela executado).
+  Falhas: T12 concorrência, T24 replay após reinício, T25 orçamento busy,
+  T30 chave de retry, T32 foco e ts_9ffbb04b contagem de replay. Cada falha
+  tem criticidade/ação no card; nenhuma foi registrada como bug real.
+- Os 51 cenários foram promovidos de Draft a Ready pelo writer operacional,
+  sem evidence, sem skip e sem alterar método/semântica. Readback confirmou
+  51 Ready. Nenhum passou a passed/failed/automated.
+- Delivery recebeu 27 registros progress/v2 (sete normais, vinte Test).
+  Os 27 IDs foram encontrados por leitura do ledger de cada card: total atual
+  41 checkpoints, três por normal e um por Test; todos na edição corrente.
+  Idempotência: simulation-20261009-sim02-normal-{0..6}-75 e
+  simulation-20261009-sim02-test-{card_id}. material_change=none;
+  workspace_state/recoverability=unknown. Não há recibos de execução fabricados.
+- Gate consultado no Test Disponibilidade: Done bloqueado por
+  test_scenarios_pending e policy_compliance_receipt_missing. Nenhuma avaliação
+  de conformidade de código foi inventada, nenhum Card foi concluído.
+- Interface instalada 8100 verificada: In Progress mostra 27 cards; Details
+  renderiza a rodada SIM-02; Delivery expande Progress & recovery e mostra
+  o checkpoint. Barras de implementação continuam 0%. Snapshots Playwright:
+  page-2026-10-09T21-40-41-170Z.yml, 21-41-07-275Z.yml e 21-41-22-121Z.yml.
+
+Problema REAL do Pulse: database is locked reapareceu em move_card
+(activity_logs/critical_context_guard_decision) e update_test_scenario_status
+(activity_logs/test_scenario_status_changed), além de latências elevadas.
+Readbacks confirmaram ausência da mutação antes de cada retry; a rodada acabou
+sem duplicações. Não confundir essa contenção com as seis falhas sintéticas.
+Para retomada: os cards têm planos e dados de ensaio; execução/evidência real,
+conformidade dos cards e conclusão permanecem pendentes por definição do
+exercício sem código. Coverage/Discovery e contenção não foram corrigidos aqui.
+
 ### 2026-10-09 — Project Structure visível para leitura
 
 Restaurada a aba na Spec mesmo quando a estrutura está ausente e a edição
