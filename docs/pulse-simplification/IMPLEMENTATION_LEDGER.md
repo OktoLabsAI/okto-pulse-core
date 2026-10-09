@@ -2,6 +2,24 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Edições anteriores como consulta secundária
+
+Delivery record history apresenta a edição atual sem seletor em primeiro plano.
+Previous versions inicia recolhido e contém seletor/consulta independentes para
+edições1..atual-1, começando na anterior mais recente. Com edição atual1 não há
+histórico anterior a oferecer; com apenas uma anterior o slider fica fixo nela.
+Abrir, selecionar e recolher histórico não substitui os registros atuais.
+11 testes frontend aprovados: visibilidade, limites, leitura independente,
+cancelamento da consulta histórica na troca, erro e escopo. Sem mudança de gates.
+Build/diff-check aprovados. SPA79 arquivos SHA256
+8473fa8f5420ce14e9e22cf39526e3bdab0c52d1dcfa458c7db828f6b5d9b2ea.
+Reinstalação pareada fonte/wheel/install idênticos byte a byte
+(843/317 Python;904/403 payloads), processo1816 posterior ao install, HTTP200.
+Proveniência em .validation-v040/history-previous-{host,process}-provenance.json.
+Browser confirmou seletor oculto inicialmente, leitura real de edição2 e edição1
+com HTTP200, histórico atual preservado ao consultar/recolher Previous versions.
+Screenshot inspecionado: community/output/playwright/history-previous-versions.png.
+
 ### 2026-10-09 — Slider para a edição do histórico de entrega
 
 History edition substituído por input range acessível, mínimo1, máximo edição
