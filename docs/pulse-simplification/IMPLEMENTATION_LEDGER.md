@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Delivery dos Test Cards orientada à evidência
+
+A aba prioriza propósito e fluxo de execução → associação → registro, com
+estado vazio direcionável e resultados do próprio card em linhas expansíveis.
+Resultado e atualidade têm badges separados; detalhes recuperam justificativa,
+autor/data e identificadores da projeção existente. Contagens são de registros,
+não um score de cobertura nem aprovação inferida. Checkpoints, recuperação e
+impacto ficam em Progress & recovery recolhido. Formulário distingue obrigações
+da Spec, execução autenticada e implementação observada; ausência de candidatos
+informa o próximo passo. Loading usa PulseLoader e Refresh evidence relê a fonte.
+Sem mudança de backend, contratos, gates, autoridade ou dados do exercício.
+
+51 testes frontend passaram (CardDeliveryDoDPanel, CardProgressPanel e
+DeliveryReportBatchEditor), cobrindo resultados passados/falhos, escopo por card,
+detalhes, estado vazio/erro, gravação direta/lote e permissões. TypeScript/Vite e
+diff-check passaram. SPA 79 arquivos, SHA256
+c0a40aad87c17bea8f37f47701d0cdee185a38bf3878057f5faba6342a5ba97b.
+Wheels pareados reinstalados: fonte/wheel/install idênticos byte a byte
+(843/317 Python; 904/403 payloads). Processo 34912 posterior à instalação,
+HTTP200; evidências em .validation-v040/test-delivery-host-provenance.json e
+test-delivery-process-provenance.json. Browser no Test Card “Disponibilidade e
+capacidade” confirmou estado vazio, formulário sem evidência incapaz de enviar,
+refresh e expansão/recolhimento por Enter/Space. Screenshot inspecionado:
+community/output/playwright/test-delivery-overview.png. Resultados preenchidos
+foram verificados com fixtures nos testes; não foram inventadas execuções no Board.
+
 ### 2026-10-09 — Histórico de policy sem alerta redundante e scores circulares
 
 Previous results usa marcador Previous e não repete o alerta técnico Stale;
