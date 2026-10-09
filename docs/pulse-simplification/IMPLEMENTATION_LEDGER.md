@@ -2,6 +2,56 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Teste SDLC: execução simulada até 50%
+
+My Board `2fd79a82-08b2-4ecc-823a-2c820342f6b9`, Spec
+`2372d8a2-68c8-57f4-a609-d809c92d55c6`: edição 4, revisão 290,
+In Progress. Sete tasks normais passaram por Started e estão In Progress;
+20 Test Cards continuam Not Started e nenhum teste do aplicativo foi executado.
+Cada task possui dois registros nativos Delivery progress/v2 (25% e 50%
+simulados), relidos pelo ledger público: 14 registros, dois por card, edição 4.
+Sem código, commits fictícios, recibos de execução fabricados ou alteração de
+policy. material_change=none; workspace/recoverability=unknown. A barra baseada
+em prova permanece 0%; marco narrativo não concede crédito de implementação.
+
+Remediação dos gates pelo MCP público: 37 implementation_plans por camada,
+31 ACs com responsável primário e decisão de composição com coordenador único
+(participação da Aplicação preservada nos requisitos e na nota da Decision).
+Inventário 79/79 completo, zero pendências. Treze candidatos arquiteturais
+associados aos 13 IRs existentes em lote; nenhum requisito duplicado.
+Checklist edição4 `clr_f8a149b11b8648a0936ff0f3aa44cff7` passou 10/10;
+lint `qar_d12f7a4f8476445781c9129442e7dd05` zero ocorrências;
+parecer hexagonal atual aprovado; Spec Validation `val_88a00647`;
+decomposição `eval_20eb46fb` aprovada para simulação. Contexto da edição4
+delimita Project Structure N/A por ausência deliberada de arquivos/workspace.
+
+Achados DO PULSE, ainda não corrigidos neste teste:
+- Coverage de planejamento 100% não expunha a alocação incompleta necessária
+  ao primeiro início. Requisitos e ACs exigiram declarações adicionais.
+- Classificação arquitetural bloqueou apenas o início após a revalidação,
+  exigindo nova reabertura (edições3 e4) e repetição de pareceres sem mudança
+  funcional. Exibir todos os bloqueadores antes da validação evitaria retrabalho.
+- Inventário de AC/Decision aceita um responsável direto, mas não resolve
+  vários responsáveis nessa família; contribuições tipadas existem só para
+  requisitos qualificados. Não eliminar participação sem registrar coordenação.
+- Project Structure desaparece se estrutura=null e criação não permitida.
+  Confirmado em shouldShowProjectStructureTab e browser em In Progress.
+- Usuário relatou timeouts recorrentes de Coverage e HTTP500 em Global
+  Discovery/Key Decisions. Logs confirmam500 no endpoint de execução. Repetição
+  com Board explícito retornou200/10 decisões; isso não comprova correção.
+- Escritas MCP reproduziram database is locked, erros de versão/status sem
+  mudança efetiva do sujeito e OperationalError não traduzido em Delivery.
+  Logs coverage-head-runtime.stderr.log mostram global_outbox.batch com
+  checkout de até276s e consolidação concorrente. Relação causal com cada
+  timeout/500 ainda precisa de reprodução dirigida; não afirmar causa única.
+- Consultas KG foram classificadas como writer pela admissão e recusadas
+  durante gravações; repetição posterior funcionou.
+
+Nenhum código do Pulse foi alterado neste recorte. Não confundir estes achados
+com pendências funcionais do aplicativo fictício, nem considerar os marcos
+simulados aprovação para Done. UI confirmou sete cards em In Progress e barras
+0%. Resultados anteriores e comentários de bloqueio permanecem como histórico.
+
 ### 2026-10-09 — Barra de completude na capa
 
 Capa da task agora mostra barra compacta junto ao percentual quando calculável.
