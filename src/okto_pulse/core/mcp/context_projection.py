@@ -182,6 +182,7 @@ _STRUCTURED_BUDGET_PATHS: tuple[tuple[str, ...], ...] = (
 _RECENT_FIRST_COLLECTION_KEYS = frozenset({"comments", "validations", "evaluations"})
 _TRUNCATION_SUFFIX = "…[truncated]"
 _POST_ASSEMBLY_SEMANTIC_BLOCKS = (
+    "test_verification_context",
     "scenario_reference_context",
     "missing_link_context",
     "test_card_operational_flow",
@@ -1068,6 +1069,7 @@ def _essential_context_projection(
     )
     top_keys = (
         "my_test_scenarios",
+        "test_verification_context",
         "validations",
         "resource_gate_summary",
         "validation_config",
@@ -1444,6 +1446,10 @@ class MCPContextProjectionService:
             projection["budget_bytes"] = _PROFILE_BUDGET_BYTES[resolved_profile]
         if truncated:
             projection["truncation_reason"] = "profile_payload_budget"
+            verification = projected.get("test_verification_context")
+            if isinstance(verification, dict):
+                verification["content_complete"] = False
+                verification["next_read"] = "okto_pulse_get_task_context(profile=full, context_scope=all)"
         projected["projection"] = projection
         # The payload_bytes value affects its own digit count. Iteration converges
         # once that digit count is stable (normally two passes).

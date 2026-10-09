@@ -2,6 +2,55 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — verificação integrada ao AC e contexto resolvido do Test Card
+
+Usuário autorizou retirar a subaba Criterion verification e tornar seus metadados
+úteis na própria autoria do AC e no contexto operacional do agente. Não se cria
+nova entidade, novo ledger ou novo gate. Mantidos os métodos suportados do cenário,
+admissão autenticada, resultado por criterion_id, Test Card e associação Delivery.
+Coverage já separa planejamento, implementação e verificação; reusar esses estados.
+
+Base: Core ed834528 / Community 98305ba3. Implementado: perfil/vínculos
+no detalhe expandido do AC; método e observação esperada dos cenários vinculados;
+remoção da subaba redundante, preservando qualificação de requisitos no mesmo
+contexto de autoria. get_task_context/all resolve somente os cenários atribuídos
+ao Card e seus ACs atuais, com perfil, requisitos/aspectos e contrato de evidência.
+full/all preserva conteúdo completo; summary/detail mantêm limites e sinalização
+de truncamento. gate continua consulta delimitada de prontidão.
+
+get_card continua leitura simples; ACs não são copiados para Cards. Metadado,
+status ou relato não são prova. Não houve schema, migração, gate ou permissão nova.
+Os métodos são os quatro já suportados (automated_test, static_analysis, inspection,
+demonstration), com capacidade obtida pela porta pública. A documentação lazy do
+agente foi atualizada e seu manifesto regenerado oficialmente.
+
+Validação concluída sobre wheels/source/install idênticos: 843 Python/904 payload
+Core e 317 Python/403 payload Community. Core: 104/106 na primeira rodada; os dois
+erros estavam nas novas chamadas de teste sem card_id. Corrigida a fixture, 10/10
+passaram (oito sobrepostos), fechando 106 casos distintos. Inclui MCP real, nova
+leitura após mudança da condição, scope gate, projeções/budgets, metadados, reports
+e drift do catálogo. Community: 18/18, incluindo relatório misto por critério,
+admissão autenticada e atualidade após mudança de base. Frontend: 105 casos
+distintos aprovados por rodadas (16 detalhes, 7 FR/AC, 53 navegação, 29 cobertura/
+qualificação). Falhas iniciais foram seletores do teste de navegação (badge de
+contagem e tabs principal/subtab); corrigidos e rerodados. Nenhum guard relaxado.
+
+TypeScript/Vite/sync, Ruff F/E9, lint (313 warnings no ratchet) e diff-check passaram.
+F16 final ok=true, findings/documentation_findings vazios, oito budgets ZERO;
+matrizes README regeneradas pelo renderer oficial. Evidências em
+PULSE_REFACTOR/.validation-v040/ac-context-{core,core-final,community}.xml,
+ac-context-provenance.json, ac-context-closure.json e relatórios frontend em
+Community/output/ac-context-*.json. Não alegar suite integral do produto.
+
+Pulse reinstalado no host e iniciado, dados da iniciativa preservados. Prova
+ac-context-host-provenance.json confirma igualdade byte a byte; processo Python
+35676 iniciou após o mtime dos arquivos instalados (ac-context-process-provenance.json).
+SPA79 arquivos, SHA256 c23c7f6c1ec9ac223c7d852a2e182ff260fd0e24ebaa80ea320a8b2f6959b591.
+Inspeção Playwright no My Board, Spec 2372d8a2-68c8-57f4-a609-d809c92d55c6,
+confirmou apenas Tests/AC e detalhe do ac_res_search com perfil, FR/BR e cenários;
+sem escrita nos dados. Screenshot local Community/output/playwright/ac-integrated-verification.png.
+Implementação encerrada neste escopo; commits e pushes pareados seguem este registro.
+
 ### 2026-10-09 — badge de AC com Reference
 
 Na subaba AC, o badge agora mostra `item.id`, o mesmo conteúdo de Reference,

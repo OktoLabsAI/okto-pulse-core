@@ -4,6 +4,25 @@ version: "2.0"
 
 # Tool docs — `test-scenario`
 
+## Reading the Test Card's verification work
+
+Read `okto_pulse_get_task_context` with `profile="full", context_scope="all"`
+before executing the card's scenarios. `test_verification_context` resolves the
+assigned scenarios to their current ACs: observable condition, verification
+profile, requirement links/aspects, scenario method and expected observation.
+It includes the Spec edition/version and evidence guidance. ACs remain owned by
+the Spec; there is no copied verification entity in the Card.
+
+Check `content_complete`, `source_resolution_complete` and `issues`. Summary/detail
+can truncate content: follow the full/all read before executing an incomplete
+plan. The gate scope deliberately omits these bodies. `get_card` alone does not
+provide this execution context. No planning field grants delivery credit.
+
+In the UI, expand the AC to author its profile and requirement links and inspect
+its verification scenarios. Methods remain authored in Tests. Record results via
+the existing authenticated evidence path below, referencing exact criterion IDs;
+Coverage distinguishes planning from current verified delivery.
+
 Scenario `verification_method` is independent of `scenario_type`: `automated_test`,
 `static_analysis`, `inspection`, or `demonstration`. Omission leaves the method unspecified;
 no method is inferred from the scenario type or evidence class. The

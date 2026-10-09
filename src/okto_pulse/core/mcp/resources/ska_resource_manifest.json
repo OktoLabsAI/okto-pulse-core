@@ -42,7 +42,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "5a9db32a58b1b7a5398109074917a92468e50db225aef2fc2e82dd031edc41d9",
+  "manifest_sha256": "34d242b14fa89fb3e81000291ea0c5095ad2f7443c1213a3f51a94b050e3a011",
   "manifest_version": "agent-resources/v2",
   "resource_count": 22,
   "resources": [
@@ -319,7 +319,7 @@
       "uri": "okto-pulse://reference/tool-docs/spec"
     },
     {
-      "content_sha256": "def77a0ad4a310353406fb3b27561f2a6fa86941b1a32d970fb6a085454a9448",
+      "content_sha256": "5fd5610e0e54604fa1bbf04cf5f604c9813969899aa05b681435a9d19f46bfe8",
       "cross_links": [
         "okto-pulse://reference/card_types",
         "okto-pulse://reference/code-traceability",

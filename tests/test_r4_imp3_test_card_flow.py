@@ -72,6 +72,7 @@ async def _seed_test_card(
     db_factory,
     *,
     scenarios,
+    criteria=None,
     status: CardStatus = CardStatus.IN_PROGRESS,
 ):
     board_id = _id("board")
@@ -81,13 +82,48 @@ async def _seed_test_card(
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r4 imp3", owner_id=USER_ID))
         db.add(Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"), id=spec_id, board_id=board_id, title="spec", status=SpecStatus.IN_PROGRESS,
-                    created_by=USER_ID, functional_requirements=[], acceptance_criteria=[],
+                    created_by=USER_ID, functional_requirements=[], acceptance_criteria=criteria or [],
                     test_scenarios=scenarios, business_rules=[], api_contracts=[]))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="test card",
                     status=status, card_type=CardType.TEST, created_by=USER_ID,
                     test_scenario_ids=scenario_ids))
         await db.commit()
     return board_id, card_id
+
+
+@pytest.mark.asyncio
+async def test_task_context_resolves_current_card_criteria_without_copying(db_factory):
+    board_id, card_id = await _seed_test_card(db_factory,
+        scenarios=[{"id": "ts-current", "title": "Inspect boundaries", "status": "ready",
+                    "given": "Current source", "when": "Inspect imports", "then": "Only public ports",
+                    "verification_method": "inspection", "linked_criteria": ["ac-current"]}],
+        criteria=[{"id": "ac-current", "title": "Public boundary", "text": "No private reach-ins",
+                   "verification_profile": "technical", "requirement_links": [
+                       {"requirement_type": "technical_requirement", "requirement_id": "tr-ports", "aspect": "Imports"}]},
+                  {"id": "ac-other", "text": "Unrelated condition"}])
+    result = await _call("okto_pulse_get_task_context", board_id=board_id, card_id=card_id,
+                         profile="full", context_scope="all")
+    context = result["test_verification_context"]
+    assert context["content_complete"] and not context["delivery_evaluated"]
+    assert context["card_id"] == card_id and context["spec_version"] == result["spec"]["version"]
+    item = context["items"][0]
+    assert item["verification_method"] == "inspection"
+    assert item["expected_observation"] == "Only public ports"
+    assert [row["criterion_id"] for row in item["criteria"]] == ["ac-current"]
+    assert item["criteria"][0]["condition"] == "No private reach-ins"
+    assert item["criteria"][0]["requirement_links"][0]["aspect"] == "Imports"
+    assert "verification-report/v1" in item["evidence_requirement"]
+    async with db_factory() as db:
+        card = await db.get(Card, card_id)
+        spec = await db.get(Spec, card.spec_id)
+        spec.acceptance_criteria = [{**spec.acceptance_criteria[0], "text": "New condition"}]
+        await db.commit()
+    refreshed = await _call("okto_pulse_get_task_context", board_id=board_id, card_id=card_id,
+                            profile="full", context_scope="all")
+    assert refreshed["test_verification_context"]["items"][0]["criteria"][0]["condition"] == "New condition"
+    gate = await _call("okto_pulse_get_task_context", board_id=board_id, card_id=card_id,
+                      profile="full", context_scope="gate")
+    assert "test_verification_context" not in gate
 
 
 # ===========================================================================

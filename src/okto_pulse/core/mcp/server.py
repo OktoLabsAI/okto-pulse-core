@@ -4292,6 +4292,26 @@ async def okto_pulse_get_task_context(
                 ),
             )
             result["test_card_operational_flow"] = operational_flow
+            if not _gate_scope:
+                from okto_pulse.core.domain.test_card_verification_context import (
+                    build_test_card_verification_context,
+                )
+                from okto_pulse.core.ports.test_evidence import supported_test_verification_methods
+
+                # Derive from the same authorized source as my_test_scenarios;
+                # never persist another copy or infer verification from status.
+                result["test_verification_context"] = {
+                    "board_id": board_id, "card_id": card.id,
+                    "spec_id": card.spec_id,
+                    "spec_version": spec.version if spec is not None else None,
+                    "spec_edition": getattr(spec, "edition", None),
+                    **build_test_card_verification_context(
+                        scenario_ids=card.test_scenario_ids,
+                        scenarios=spec.test_scenarios if spec is not None else None,
+                        criteria=spec.acceptance_criteria if spec is not None else None,
+                        admitted_methods=supported_test_verification_methods(),
+                    ),
+                }
 
         # R4-IMP4: read-only gate/readiness block — surfaces the SAME enforcement /
         # cognitive verdict / gate fields the done-gate enforces (parity by
