@@ -2,6 +2,24 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Leitura do contexto acumulado colapsável
+
+Read accumulated delivery context passou de botão para disclosure no padrão
+Functional, inicialmente recolhido. Primeira expansão faz a leitura e mostra
+PulseLoader; reabrir preserva o resultado sem repetir a consulta. Refresh/Retry
+ficam dentro do conteúdo expandido. Histórico de registros continua independente.
+33 testes frontend aprovados, incluindo expansão/recolhimento, reutilização da
+leitura, falha de refresh, escopo e cancelamento. Build TypeScript/Vite aprovado.
+SPA79 arquivos SHA25605732aaf7df7d5c506de911fe880ad50f52e1ab10b6eeb153b25fec9f050fb6a.
+Reinstalação pareada conferida byte a byte (843/317 Python;904/403 payloads).
+Evidências .validation-v040/context-disclosure-host-provenance.json e
+context-disclosure-process-provenance.json. Processo posterior ao install,
+HTTP200. Browser confirmou inicialmente recolhido, abertura por Enter, fechamento
+por Space e reabertura com apenas uma leitura de contexto. Screenshots em
+community/output/playwright/context-disclosure-{expanded,collapsed}.png.
+Seta vinculada ao próprio disclosure, sem herdar abertura do painel pai.
+Sem alteração de dados ou gates.
+
 ### 2026-10-09 — Progress & Recovery padronizado e pré-requisitos das execuções
 
 Orientação permanente do usuário: sempre tentar executar e validar a interface
