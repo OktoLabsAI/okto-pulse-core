@@ -2,6 +2,18 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — badge de AC com Reference
+
+Na subaba AC, o badge agora mostra `item.id`, o mesmo conteúdo de Reference,
+seguindo Functional. Mantidos título, tooltip completo, truncamento visual e
+expansão. Sem escrita nos dados nem mudança de identidade. Sete testes do
+editor/listagem FR/AC passaram, incluindo a identificação no cabeçalho do AC.
+TypeScript/Vite/sync passaram. Frontend SHA256
+`5034cb20f3ac25917eeae416815b430875ab86dc5cea7e3e5d6a182a252f0c83`.
+Instalação fonte/wheel/site-packages idêntica (842 Python Core, 317 Community,
+79 arquivos frontend); `.validation-v040/ac-reference-host-provenance.json`.
+Pulse reiniciado após a instalação.
+
 ### 2026-10-08 — loading de Coverage com PulseLoader
 
 Overview/Planning de Coverage e seu painel Implementation reutilizam o
