@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — pulso no KG Graph e desbloqueio da configuração inicial do Checklist
+
+Pedido: padronizar loading do KG da Spec e saturar a iniciativa fictícia até
+Validation, observando burocracia sem valor. KGValidationTab usa PulseLoader;
+estados de sucesso/vazio/erro preservados. Frontend reconstruído.
+
+Reprodução ao vivo: Spec 2372d8a2-68c8-57f4-a609-d809c92d55c6, Draft,
+edição1/versão88, 31 AC/51 cenários/zero Cards; contexto full falha com
+checklist_validation_binding_snapshot_missing. Board My Board sem binding.
+Leitura REST deixava escapar exceção; UI exigia binding prévio para salvar,
+apesar de o use case já admitir criação humana com expected_revision=0.
+Corrigidos diagnóstico REST e UI inicial, sem modo implícito, escrita automática,
+mudança de gate ou uso de banco direto. Outros erros não viram configuração vazia.
+Usuário autorizou explicitamente configuração dos gates pelo navegador; escolha
+comunicada: Checklist Blocking, mantendo os demais gates.
+
+Validação: 14 testes frontend e 36 de contrato REST passaram. TypeScript/Vite/sync
+e diff-check passaram. Wheels/source/install byte a byte: 843 Python Core,
+317 Community, payloads904/403. Frontend SHA256
+77246290268dde1b927b1d549a5fbbb7492700e202dd5b96f036791df4a00751.
+Evidências: .validation-v040/kg-checklist-{provenance,host-provenance}.json,
+kg-checklist-community.xml; Community/output/kg-checklist-frontend.json.
+Reinstalado preservando a home; continuação: salvar configuração pelo browser,
+ler contexto integral, substituir ACs genéricos por oráculos concretos e concluir
+as etapas/gates até validação. Não declarar Spec validada neste checkpoint.
+
 ### 2026-10-09 — verificação integrada ao AC e contexto resolvido do Test Card
 
 Usuário autorizou retirar a subaba Criterion verification e tornar seus metadados
