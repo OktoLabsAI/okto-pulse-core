@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Abrir Cards em References da Spec
+
+Reproduzido no browser:27cards renderizados como botões, porém clique no primeiro
+mantinha a Spec e nenhum modal de card era aberto. SpecModal fazia apenas push
+na pilha; CardModal depende do selectedCard/isCardModalOpen no dashboard store,
+e ModalStackRenderer não inicializava esse estado ao receber um card.
+Corrigida a sincronização no renderer compartilhado, incluindo identidade ao
+navegar entre cards/voltar. O link da Spec carrega seu board_id explicitamente.
+Sem mudanças em contratos, dados ou permissões. Quatro testes do renderer
+passaram, incluindo seleção de dois cards e retorno à Spec; diff-check passou.
+Build passou. Corrigida também opção `exact` indevida num teste RTL de Refresh
+da entrega anterior, identificada pelo TypeScript (sem mudança de comportamento).
+Rerun renderer+Validation:18/18. SPA79arquivos, SHA256
+e54a2f0dfb49eaedb2fbf779945a30e8aa551af75daed9784300278f1568cdc8.
+Reinstalação concluída e conferência real aprovada. Proveniência em
+PULSE_REFACTOR/.validation-v040/reference-cards-host-provenance.json:
+843 arquivos Python do Core e 317 do Community idênticos byte a byte entre
+fonte, wheel e instalação; payload completo inclui o frontend. Processo
+Python PID39920 iniciado após os arquivos instalados, HTTP8100 respondendo200.
+Home e dados existentes preservados.
+No browser, References abriu o card [TEST] Disponibilidade e capacidade por
+clique; fechar retornou à Spec. Enter abriu o card normal Domínio — calendário
+e invariantes de reserva; Escape retornou ao mesmo painel, sem modal residual.
+Screenshot inspecionado: community/output/playwright/spec-reference-card-open.png.
+Community commit03962b3f enviado para feature/v0.4.0.
+
+
 ### 2026-10-09 — Pinpoints acionáveis e recuperação da aba Validation
 
 Pedido: evitar apontamento único com a Spec inteira; classificar problema ou
