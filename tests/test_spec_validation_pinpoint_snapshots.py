@@ -42,7 +42,9 @@ def _anchor() -> AnchorSnapshot:
 
 def _pinpoint() -> SpecValidationPinpoint:
     return SpecValidationPinpoint(
-        metric=SpecValidationMetric.DECIDABILITY,
+        metrics=(SpecValidationMetric.DECIDABILITY,),
+        kind="problem", severity="medium", excerpt="Given a valid request",
+        recommendation="Specify the expected measurable bounds.",
         anchor_type=SpecValidationPinpointAnchorType.STRUCTURED_CHILD,
         anchor_ref="ac_123",
         detail="Quantify the expected response time.",
@@ -64,6 +66,44 @@ def test_sealed_snapshot_round_trips_without_resolving_current_content() -> None
         native_validation("validation", 3, pinpoints=[projected])
     ).model_dump(exclude_none=True)
     assert response["pinpoints"][0]["anchor_snapshot"] == snapshot
+
+
+def test_quote_must_be_verbatim_and_dimensions_are_unique():
+    from dataclasses import replace
+    with pytest.raises(ValueError, match="excerpt_not_verbatim"):
+        replace(_pinpoint(), excerpt="An invented quote").seal(_anchor())
+    with pytest.raises(ValueError, match="metrics_invalid"):
+        replace(_pinpoint(), metrics=(SpecValidationMetric.CLARITY, SpecValidationMetric.CLARITY))
+    sealed = replace(_pinpoint(), metrics=(SpecValidationMetric.DECIDABILITY, SpecValidationMetric.CLARITY)).seal(_anchor())
+    assert sealed.to_dict()["metrics"] == ["clarity", "decidability"]
+
+
+def test_sealed_native_history_is_read_without_inventing_new_fields():
+    from copy import deepcopy
+    from okto_pulse.core.models.schemas import SpecValidationSubmit
+    old = {"metric": "clarity", "anchor_type": "field", "anchor_ref": "description",
+           "detail": "Previously recorded observation.", "anchor_snapshot": _pinpoint().seal(_anchor()).to_dict()["anchor_snapshot"]}
+    original = deepcopy(old)
+    result = SpecValidationResponse.model_validate(native_validation("old-native", 3, pinpoints=[old])).model_dump(exclude_none=True)
+    assert result["pinpoints"] == [original]
+    payload = _payload()
+    payload["pinpoints"] = [{k:v for k,v in old.items() if k != "anchor_snapshot"}]
+    with pytest.raises(ValueError):
+        SpecValidationSubmit.model_validate(payload)
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("kind", "defect"), ("severity", "urgent"), ("excerpt", "x" * 1001),
+    ("recommendation", " "), ("detail", "x" * 1001), ("metrics", []),
+])
+def test_actionable_contract_is_enforced_by_rest_and_shared_command(field, value):
+    from okto_pulse.core.models.schemas import SpecValidationSubmit
+    payload = _payload()
+    payload["pinpoints"][0][field] = value
+    with pytest.raises(ValueError):
+        SpecValidationSubmit.model_validate(payload)
+    with pytest.raises(CommandValidationError):
+        SubmitSpecValidationCommand("spec-1", payload).validate()
 
 
 @pytest.mark.parametrize("snapshot", [None, {"availability_at_seal": "legacy_unavailable"}])
@@ -148,7 +188,8 @@ def _payload(
         "recommendation": "approve",
         "pinpoints": [
             {
-                "metric": "decidability",
+                "metrics": ["decidability"], "kind": "problem", "severity": "medium",
+                "excerpt": "Given a valid request", "recommendation": "Specify the expected measurable bounds.",
                 "anchor_type": anchor_type,
                 "detail": "Quantify the expected response time.",
             }

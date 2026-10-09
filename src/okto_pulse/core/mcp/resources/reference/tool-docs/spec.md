@@ -608,7 +608,7 @@ Args:
     decidability_justification: Why this decidability score (min 10 chars)
     ambiguity: Score 0-100 — severity and dispersion of materially competing plausible interpretations (LOWER IS BETTER)
     ambiguity_justification: Why this ambiguity score (min 10 chars)
-    pinpoints: Optional closed list of metric-tagged semantic problem locations
+    pinpoints: Optional closed list of compact actionable findings
     recommendation: One of: approve, reject
 
 Scoring contract:
@@ -616,7 +616,14 @@ Scoring contract:
     will usually fail. confidence/clarity/assertiveness/decidability are
     higher-is-better; ambiguity is lower-is-better. Default thresholds are
     70/80/80/80/max-30 respectively. Every score requires its own
-    justification. A pinpoint has `{metric, anchor_type, anchor_ref?, detail}`;
+    justification. A pinpoint has `{metrics, kind, severity, excerpt, detail, recommendation, anchor_type, anchor_ref?}`;
+    metrics is a nonempty unique list of quality dimensions. kind is problem or
+    opportunity; severity is low, medium, high or critical. Each finding describes
+    ONE specific issue and one recommended action (max 1000 characters each).
+    excerpt is a short verbatim quote (max 1000 characters) from the authorized
+    anchor; the server verifies the exact substring. Never paste the full Spec
+    as a finding. Multiple affected dimensions belong in the same metrics list.
+    Severity is descriptive and does not replace the existing score gates;
     whole_artifact omits anchor_ref, while field/structured_child/qa require it.
     Prefer a stable structured-child or Q&A ID over a mutable ordinal/index.
     Select the rubric band from evidence before the exact score. Do not derive

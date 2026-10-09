@@ -500,13 +500,13 @@ def test_spec_validation_mcp_schema_is_canonical_and_pinpoints_are_closed() -> N
     pinpoint = properties["pinpoints"]["anyOf"][0]["items"]
     assert pinpoint["additionalProperties"] is False
     assert set(pinpoint["properties"]) == {
-        "metric",
+        "metrics", "kind", "severity", "excerpt", "recommendation",
         "anchor_type",
         "anchor_ref",
         "detail",
     }
-    assert set(pinpoint["required"]) == {"metric", "anchor_type", "detail"}
-    assert pinpoint["properties"]["metric"]["enum"] == [
+    assert set(pinpoint["required"]) == {"metrics", "kind", "severity", "excerpt", "recommendation", "anchor_type", "detail"}
+    assert pinpoint["properties"]["metrics"]["items"]["enum"] == [
         "confidence",
         "clarity",
         "assertiveness",
@@ -570,7 +570,8 @@ def test_spec_validation_resources_publish_the_calibrated_evaluator_method() -> 
 
     assert "The stable item ID" in gates
     assert "never a list index or human ordinal" in gates
-    assert "observable defect + impact + concrete remediation" in normalized_gates
+    assert "observable problem and impact" in normalized_gates
+    assert "rejects excerpts absent from that source" in normalized_gates
     assert "at least one pinpoint for every metric" in normalized_gates
     assert "The application must have high availability" in gates
     assert "Run active-active across at least three availability zones" in gates

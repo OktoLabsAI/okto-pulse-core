@@ -263,7 +263,13 @@ Avoid justifications such as “looks good”, “meets the threshold”, or “
 appropriate”. They do not make an evaluation reproducible.
 
 Pinpoints use the closed shape
-`{metric, anchor_type, anchor_ref?, detail}`:
+`{metrics, kind, severity, excerpt, detail, recommendation, anchor_type, anchor_ref?}`.
+Each pinpoint identifies one small, actionable issue. `metrics` is a nonempty
+unique list of affected dimensions; `kind` is `problem` or `opportunity` and
+`severity` is `low`, `medium`, `high` or `critical`. Severity describes impact;
+it does not introduce another gate. `excerpt`, `detail` and `recommendation`
+are required and each is limited to 1000 characters. Prefer a short sentence
+or clause for the verbatim excerpt; never reproduce the whole specification.
 
 | `anchor_type` | Use it for | `anchor_ref` |
 |---|---|---|
@@ -272,11 +278,13 @@ Pinpoints use the closed shape
 | `qa` | A specific unresolved, conflicting, or decision-bearing Q&A item. | The stable Q&A ID. |
 | `whole_artifact` | A systemic issue that cannot honestly be localized. Use sparingly. | Omit `anchor_ref`. |
 
-The client submits only the selector. Pulse resolves it against the authorized
+The client submits the selector and a verbatim excerpt. Pulse resolves it against the authorized
 current Spec and seals the human-readable label/text plus stable ID into
-history. The `detail` must state **observable defect + impact + concrete
-remediation**; an ID alone is never sufficient. Reuse one anchor for multiple
-metrics only when each pinpoint explains a distinct metric-specific impact.
+history and rejects excerpts absent from that source. The `detail` states the
+observable problem and impact; `recommendation` states the concrete action.
+Use one finding with multiple dimensions for the same issue, explaining their
+impact, instead of duplicating the finding. Sealed native records remain intact;
+missing classification is never inferred retrospectively.
 
 Pinpoints remain optional in the transport contract, but this evaluator method
 requires:
@@ -318,10 +326,14 @@ Example pinpoint for the “before” version:
 
 ```json
 {
-  "metric": "decidability",
+  "metrics": ["decidability", "assertiveness"],
+  "kind": "problem",
+  "severity": "high",
+  "excerpt": "The application must have high availability.",
   "anchor_type": "structured_child",
   "anchor_ref": "tr_availability",
-  "detail": "The requirement names high availability but supplies no topology, SLO, scaling bounds, or recovery rule, so implementers must invent materially different operating models; specify those constraints and measurable defaults."
+  "detail": "High availability supplies no topology, SLO, scaling bounds or recovery rule, leaving materially different operating models and no objective test.",
+  "recommendation": "Specify topology, SLO, scaling bounds and recovery constraints with measurable defaults."
 }
 ```
 

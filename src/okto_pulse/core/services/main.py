@@ -12396,7 +12396,7 @@ class SpecService:
             raise ValueError("pinpoints must be a list")
         pinpoint_identities: set[tuple[str | None, ...]] = set()
         for raw_pinpoint in raw_pinpoints:
-            required_pinpoint_fields = {"metric", "anchor_type", "detail"}
+            required_pinpoint_fields = {"metrics", "kind", "severity", "excerpt", "recommendation", "anchor_type", "detail"}
             allowed_pinpoint_fields = {
                 *required_pinpoint_fields,
                 "anchor_ref",
@@ -12411,7 +12411,11 @@ class SpecService:
             pinpoint = SpecValidationPinpoint.from_dict(raw_pinpoint)
             projected_pinpoint = pinpoint.to_dict()
             pinpoint_identity = (
-                projected_pinpoint["metric"],
+                tuple(projected_pinpoint["metrics"]),
+                projected_pinpoint["kind"],
+                projected_pinpoint["severity"],
+                projected_pinpoint["excerpt"],
+                projected_pinpoint["recommendation"],
                 projected_pinpoint["anchor_type"],
                 projected_pinpoint.get("anchor_ref"),
                 projected_pinpoint["detail"],

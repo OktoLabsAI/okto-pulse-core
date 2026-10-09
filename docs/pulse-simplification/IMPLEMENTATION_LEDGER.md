@@ -2,6 +2,62 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Pinpoints acionáveis e recuperação da aba Validation
+
+Pedido: evitar apontamento único com a Spec inteira; classificar problema ou
+oportunidade, criticidade baixa/média/alta/crítica, trecho verbatim, problema,
+ação recomendada e múltiplas dimensões, em estrutura colapsável.
+
+Novo contrato de escrita REST/MCP/domínio: metrics (1–5 únicas), kind
+(problem/opportunity), severity (low/medium/high/critical), excerpt, detail,
+recommendation e seletor de âncora existente. Os três textos têm limite1000;
+trecho não é normalizado nem fabricado e deve existir literalmente na projeção
+autorizada antes de selar/gravar. Dimensões têm ordem canônica; duplicidades,
+enum inválido, vazio, texto excessivo e snapshot fornecido pelo cliente recusados.
+Criticidade é descritiva: nenhum gate/threshold/autoridade foi modificado.
+UI apresenta linha resumida expansível e campos separados, sem resolver a
+âncora contra texto mutável nem colar a Spec inteira. MCP schema e instruções
+do avaliador atualizados; catálogo regenerado pelo gerador e drift-test aprovado.
+
+Histórico produzido na própria0.4.0 permanece imutável. Leitura aceita seus
+registros já selados sem inventar tipo/criticidade/citação; UI informa campos
+não registrados. Não há conversor/backfill, alteração de dados, nem segundo
+contrato de escrita: novos pinpoints exigem a forma estruturada completa.
+
+Falhas de fetch: navegador registrou ERR_CONNECTION_RESET/REFUSED durante
+reinício anterior. Com processo estável, leituras de permissões, current,
+previous validations, lint, checklist-state/executions e semantic assessment
+retornaram200. Refresh recarregava só o resumo, deixando subabas lazy-keep em
+erro. Agora Refresh remonta as leituras das seções; histórico apresenta erro
+explícito+Retry em vez de toast seguido de falso vazio. Policy diferencia falha
+de consulta de permissões de owner-review, mantendo recusa enquanto incerto.
+
+Validação:212Core+21Community passaram, incluindo transporte REST/MCP, contrato,
+snapshot/export, gate nativo, citação literal e histórico sem classificação
+inventada. Frontend76casos distintos aprovados (histórico9, checklist14,
+Validation14, Policy39), incluindo expansão e retry/refresh. Fixtures antigas
+ajustadas ao novo input; falhas de testes na implementação foram corrigidas.
+TypeScript/build e diff-check passaram. Proveniência de ambos os pacotes de
+teste comparada byte a byte:843Core/317CommunityPython.
+Artefatos .validation-v040/pinpoints-{core.xml,community.xml,test-provenance.json}
+e dist-pinpoints-20261009. SPA79arquivos, SHA256
+22bb3d7982e7e74d196eba1fd99cd857ff7f3b59758cd2023f217cd966708c9b.
+Auditoria F16:8770linhas,zero findings de código/wheel; matriz README tinha drift
+nos dois repos. Regenerada pela mesma projeção e validada exatamente contra ambos;
+os oito budgets permanecem0. Evidência pinpoints-closure-matrix.txt.
+Reinstalação concluída; pinpoints-host-provenance.json confirma843/317Python e
+904/403payloads idênticos entre source/wheel/install. Processo28832 iniciou
+1791550379.640855, após últimoPython1791550341.623164. Home e Spec preservadas.
+Conferência real: pinpoint existente abre/fecha sem exibir contexto inteiro;
+screenshot Community/output/playwright/pinpoints-native-history.png inspecionada.
+Novo input estruturado exercitado por testes, sem fabricar nova avaliação live.
+Lint0/360, Checklist e histórico vazio legítimo, Policy89/92 e histórico de
+Spec carregados. Refresh observado em rede: quality-assessments/current,
+validations/current, validations, checklist-state/templates e semantic assessment
+retornam200. Histórico Checklist também200 ao expandir. Nenhuma fonte alterada
+para eliminar os erros de transporte ou conceder acesso.
+
+
 ### 2026-10-09 — Remoção do quadro Decomposition evaluations
 
 A pedido do usuário, removido o quadro da aba Validation da Spec, seu componente

@@ -103,13 +103,15 @@ def _canonical_spec_validation_payload() -> dict[str, object]:
         "recommendation": "approve",
         "pinpoints": [
             {
-                "metric": "decidability",
+                "metrics": ["decidability"], "kind": "problem", "severity": "medium",
+                "excerpt": "Original requirement", "recommendation": "Specify the expected measurable bounds.",
                 "anchor_type": "field",
                 "anchor_ref": "technical_requirements.tr_availability",
                 "detail": "Specify the minimum and maximum instance count.",
             },
             {
-                "metric": "clarity",
+                "metrics": ["clarity"], "kind": "problem", "severity": "medium",
+                "excerpt": "Original requirement", "recommendation": "Specify the expected measurable bounds.",
                 "anchor_type": "whole_artifact",
                 "detail": "State the solution boundary explicitly.",
             },
@@ -121,7 +123,7 @@ def test_spec_validation_canonical_five_metric_contract_is_closed() -> None:
     payload = _canonical_spec_validation_payload()
     model = SpecValidationSubmit.model_validate(payload)
     projected = model.model_dump(exclude_none=True)["pinpoints"]
-    assert [item["metric"] for item in projected] == ["decidability", "clarity"]
+    assert [item["metrics"] for item in projected] == [["decidability"], ["clarity"]]
     assert projected[1].get("anchor_ref") is None
     command = SubmitSpecValidationCommand("spec-1", payload)
     command.validate()
@@ -138,7 +140,8 @@ def test_spec_validation_canonical_five_metric_contract_is_closed() -> None:
     invalid_pinpoint = dict(payload)
     invalid_pinpoint["pinpoints"] = [
         {
-            "metric": "decidability",
+            "metrics": ["decidability"], "kind": "problem", "severity": "medium",
+                "excerpt": "Original requirement", "recommendation": "Specify the expected measurable bounds.",
             "anchor_type": "whole_artifact",
             "anchor_ref": "description",
             "detail": "This reference is forbidden for a whole-artifact anchor.",
@@ -150,11 +153,12 @@ def test_spec_validation_canonical_five_metric_contract_is_closed() -> None:
     unknown_field = dict(payload)
     unknown_field["pinpoints"] = [
         {
-            "metric": "clarity",
+            "metrics": ["clarity"], "kind": "problem", "severity": "medium",
+                "excerpt": "Original requirement", "recommendation": "Specify the expected measurable bounds.",
             "anchor_type": "field",
             "anchor_ref": "description",
             "detail": "Clarify the affected behavior.",
-            "severity": "high",
+            "unsupported": "high",
         }
     ]
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):

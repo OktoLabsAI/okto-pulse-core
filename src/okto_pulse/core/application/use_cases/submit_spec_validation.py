@@ -75,41 +75,22 @@ _CANONICAL_ALLOWED_FIELDS = {
 }
 
 
-def _canonical_pinpoints(value: object) -> list[dict[str, str]]:
+def _canonical_pinpoints(value: object) -> list[dict[str, Any]]:
     if value is None:
         return []
     if not isinstance(value, list):
         raise CommandValidationError("pinpoints must be a list")
-    normalized: list[dict[str, str]] = []
-    identities: set[tuple[str | None, ...]] = set()
-    required_fields = {"metric", "anchor_type", "detail"}
-    allowed_fields = {*required_fields, "anchor_ref"}
+    normalized = []
+    identities = set()
+    from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
     for raw in value:
-        if (
-            not isinstance(raw, Mapping)
-            or not required_fields.issubset(raw)
-            or not set(raw).issubset(allowed_fields)
-        ):
-            raise CommandValidationError(
-                "each pinpoint must contain metric, anchor_type and detail; "
-                "anchor_ref is optional"
-            )
         try:
-            pinpoint = SpecValidationPinpoint(
-                metric=SpecValidationMetric(raw.get("metric")),
-                anchor_type=SpecValidationPinpointAnchorType(raw.get("anchor_type")),
-                anchor_ref=raw.get("anchor_ref"),
-                detail=raw.get("detail"),
-            )
+            if isinstance(raw, Mapping) and "anchor_snapshot" in raw:
+                raise ValueError("spec_validation_anchor_snapshot_server_owned")
+            projected = SpecValidationPinpoint.from_dict(raw).to_dict()
         except (TypeError, ValueError) as exc:
             raise CommandValidationError(str(exc)) from exc
-        projected = pinpoint.to_dict()
-        identity = (
-            projected["metric"],
-            projected["anchor_type"],
-            projected.get("anchor_ref"),
-            projected["detail"],
-        )
+        identity = canonical_sha256(projected)
         if identity in identities:
             raise CommandValidationError("pinpoints must not contain duplicates")
         identities.add(identity)

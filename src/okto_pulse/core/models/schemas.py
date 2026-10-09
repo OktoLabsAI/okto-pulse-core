@@ -3926,7 +3926,7 @@ def project_task_validation_public(
 # ============================================================================
 
 
-class SpecValidationPinpoint(BaseModel):
+class RecordedSpecValidationPinpoint(BaseModel):
     """Closed evaluator-supplied location tagged with one quality metric."""
 
     model_config = ConfigDict(extra="forbid")
@@ -3957,6 +3957,27 @@ class SpecValidationPinpoint(BaseModel):
         return self
 
 
+class SpecValidationPinpoint(BaseModel):
+    """Compact actionable finding; the quoted excerpt is verified before sealing."""
+    model_config = ConfigDict(extra="forbid")
+    metrics: list[Literal["confidence", "clarity", "assertiveness", "decidability", "ambiguity"]] = Field(min_length=1, max_length=5)
+    kind: Literal["problem", "opportunity"]
+    severity: Literal["low", "medium", "high", "critical"]
+    excerpt: str = Field(min_length=1, max_length=1000)
+    detail: str = Field(min_length=1, max_length=1000)
+    recommendation: str = Field(min_length=1, max_length=1000)
+    anchor_type: Literal["whole_artifact", "field", "structured_child", "qa"]
+    anchor_ref: str | None = Field(default=None, min_length=1, max_length=4096)
+
+    @model_validator(mode="after")
+    def validate_finding(self) -> "SpecValidationPinpoint":
+        from okto_pulse.core.domain.spec_validation import SpecValidationPinpoint as Finding
+        finding = Finding.from_dict(self.model_dump())
+        self.metrics = [m.value for m in finding.metrics]
+        self.anchor_ref = finding.anchor_ref
+        return self
+
+
 class SpecValidationAnchorSnapshotResponse(BaseModel):
     """Immutable human-readable anchor content stored with a validation."""
 
@@ -3976,6 +3997,14 @@ class SpecValidationAnchorSnapshotResponse(BaseModel):
 class SpecValidationPinpointResponse(SpecValidationPinpoint):
     """Read projection of a natively sealed validation pinpoint."""
 
+    anchor_snapshot: SpecValidationAnchorSnapshotResponse
+
+
+class RecordedSpecValidationPinpointResponse(RecordedSpecValidationPinpoint):
+    """Immutable native v0.4.0 records: no invented classification or conversion.
+
+    Read only. New submissions exclusively use SpecValidationPinpoint.
+    """
     anchor_snapshot: SpecValidationAnchorSnapshotResponse
 
 
@@ -4040,7 +4069,7 @@ class SpecValidationResponse(BaseModel):
     ambiguity: int = Field(ge=0, le=100, strict=True)
     ambiguity_justification: str = Field(min_length=1)
     recommendation: Literal["approve", "reject"]
-    pinpoints: list[SpecValidationPinpointResponse]
+    pinpoints: list[SpecValidationPinpointResponse | RecordedSpecValidationPinpointResponse]
     outcome: Literal["success", "failed"]
     receipt_id: str = Field(min_length=1)
     subject_version: int = Field(ge=1, strict=True)

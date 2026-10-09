@@ -202,33 +202,11 @@ KnowledgePropagationEnvelopeInput = Annotated[
 
 # Keep the MCP transport schema exact and compact.  The shared command performs
 # the cross-field anchor invariant validation after host-level shape validation.
+from okto_pulse.core.models.schemas import SpecValidationPinpoint as SpecValidationPinpointSchema
+
 SpecValidationPinpointInput = Annotated[
     dict[str, Any],
-    WithJsonSchema(
-        {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "metric": {
-                    "type": "string",
-                    "enum": [
-                        "confidence",
-                        "clarity",
-                        "assertiveness",
-                        "decidability",
-                        "ambiguity",
-                    ],
-                },
-                "anchor_type": {
-                    "type": "string",
-                    "enum": ["whole_artifact", "field", "structured_child", "qa"],
-                },
-                "anchor_ref": {"type": ["string", "null"]},
-                "detail": {"type": "string"},
-            },
-            "required": ["metric", "anchor_type", "detail"],
-        }
-    ),
+    WithJsonSchema(SpecValidationPinpointSchema.model_json_schema()),
 ]
 
 

@@ -202,85 +202,75 @@ class SpecValidationAnchorSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class SpecValidationPinpoint:
-    """A metric-tagged problem location supplied by the evaluator.
+    """One actionable evaluator finding. Pulse verifies its literal source quote."""
 
-    Pulse validates and stores this evidence but never performs the assessment.
-    """
-
-    metric: SpecValidationMetric
-    anchor_type: SpecValidationPinpointAnchorType
+    metrics: tuple[SpecValidationMetric, ...]
+    kind: str
+    severity: str
+    excerpt: str
     detail: str
+    recommendation: str
+    anchor_type: SpecValidationPinpointAnchorType
     anchor_ref: str | None = None
     anchor_snapshot: SpecValidationAnchorSnapshot | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.metric, SpecValidationMetric):
-            raise ValueError("spec_validation_pinpoint_metric_invalid")
+        if (not self.metrics or len(self.metrics) > 5
+            or any(not isinstance(m, SpecValidationMetric) for m in self.metrics)
+            or len(set(self.metrics)) != len(self.metrics)):
+            raise ValueError("spec_validation_pinpoint_metrics_invalid")
+        object.__setattr__(self, "metrics", tuple(sorted(self.metrics, key=lambda m: m.value)))
+        if self.kind not in {"problem", "opportunity"}:
+            raise ValueError("spec_validation_pinpoint_kind_invalid")
+        if self.severity not in {"low", "medium", "high", "critical"}:
+            raise ValueError("spec_validation_pinpoint_severity_invalid")
+        for name in ("excerpt", "detail", "recommendation"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip() or len(value) > 1000:
+                raise ValueError(f"spec_validation_pinpoint_{name}_invalid")
         if not isinstance(self.anchor_type, SpecValidationPinpointAnchorType):
             raise ValueError("spec_validation_pinpoint_anchor_type_invalid")
-        detail = self.detail.strip() if isinstance(self.detail, str) else ""
-        if not detail or len(detail) > 4096:
-            raise ValueError("spec_validation_pinpoint_detail_invalid")
-        object.__setattr__(self, "detail", detail)
         if self.anchor_type is SpecValidationPinpointAnchorType.WHOLE_ARTIFACT:
             if self.anchor_ref is not None:
                 raise ValueError("spec_validation_pinpoint_anchor_ref_forbidden")
-            object.__setattr__(self, "anchor_ref", None)
         else:
-            anchor_ref = (
-                self.anchor_ref.strip() if isinstance(self.anchor_ref, str) else None
-            )
-            if not anchor_ref or len(anchor_ref) > 4096:
+            ref = self.anchor_ref.strip() if isinstance(self.anchor_ref, str) else ""
+            if not ref or len(ref) > 4096:
                 raise ValueError("spec_validation_pinpoint_anchor_ref_required")
-            object.__setattr__(self, "anchor_ref", anchor_ref)
-
-        if self.anchor_snapshot is not None and not isinstance(
-            self.anchor_snapshot,
-            SpecValidationAnchorSnapshot,
-        ):
-            raise ValueError("spec_validation_anchor_snapshot_invalid")
+            object.__setattr__(self, "anchor_ref", ref)
+        if self.anchor_snapshot is not None:
+            if not isinstance(self.anchor_snapshot, SpecValidationAnchorSnapshot):
+                raise ValueError("spec_validation_anchor_snapshot_invalid")
+            if self.excerpt not in (self.anchor_snapshot.text or ""):
+                raise ValueError("spec_validation_pinpoint_excerpt_not_verbatim")
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "SpecValidationPinpoint":
-        if not isinstance(value, Mapping):
+        allowed = {"metrics", "kind", "severity", "excerpt", "detail", "recommendation",
+                   "anchor_type", "anchor_ref", "anchor_snapshot"}
+        if not isinstance(value, Mapping) or not set(value).issubset(allowed):
             raise ValueError("spec_validation_pinpoint_invalid")
-        allowed = {
-            "metric",
-            "anchor_type",
-            "anchor_ref",
-            "detail",
-            "anchor_snapshot",
-        }
-        if not set(value).issubset(allowed):
-            raise ValueError("spec_validation_pinpoint_invalid")
+        metrics = value.get("metrics")
+        if not isinstance(metrics, (list, tuple)):
+            raise ValueError("spec_validation_pinpoint_metrics_invalid")
         raw_snapshot = value.get("anchor_snapshot")
         return cls(
-            metric=SpecValidationMetric(value.get("metric")),
+            metrics=tuple(SpecValidationMetric(m) for m in metrics),
+            kind=value.get("kind"), severity=value.get("severity"),
+            excerpt=value.get("excerpt"), detail=value.get("detail"),
+            recommendation=value.get("recommendation"),
             anchor_type=SpecValidationPinpointAnchorType(value.get("anchor_type")),
             anchor_ref=value.get("anchor_ref"),
-            detail=value.get("detail"),
-            anchor_snapshot=(
-                SpecValidationAnchorSnapshot.from_dict(raw_snapshot)
-                if raw_snapshot is not None
-                else None
-            ),
+            anchor_snapshot=SpecValidationAnchorSnapshot.from_dict(raw_snapshot) if raw_snapshot is not None else None,
         )
 
     def seal(self, snapshot: AnchorSnapshot) -> "SpecValidationPinpoint":
-        return SpecValidationPinpoint(
-            metric=self.metric,
-            anchor_type=self.anchor_type,
-            anchor_ref=self.anchor_ref,
-            detail=self.detail,
-            anchor_snapshot=SpecValidationAnchorSnapshot.seal(snapshot),
-        )
+        return self.from_dict({**self.to_dict(), "anchor_snapshot": SpecValidationAnchorSnapshot.seal(snapshot).to_dict()})
 
     def to_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "metric": self.metric.value,
-            "anchor_type": self.anchor_type.value,
-            "detail": self.detail,
-        }
+        payload = {"metrics": [m.value for m in self.metrics], "kind": self.kind,
+                   "severity": self.severity, "excerpt": self.excerpt, "detail": self.detail,
+                   "recommendation": self.recommendation, "anchor_type": self.anchor_type.value}
         if self.anchor_ref is not None:
             payload["anchor_ref"] = self.anchor_ref
         if self.anchor_snapshot is not None:
