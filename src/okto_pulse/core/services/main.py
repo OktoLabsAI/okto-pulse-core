@@ -17253,6 +17253,22 @@ class GuidelineService:
         from_status: str,
         to_status: str,
     ) -> Any | None:
+        """Informational read only; mutations must recompute under their fence."""
+        return await self._evaluate_policy_transition(
+            board_id=board_id, entity_type=entity_type, subject_id=subject_id,
+            from_status=from_status, to_status=to_status, lock=False,
+        )
+
+    async def _evaluate_policy_transition(
+        self,
+        *,
+        board_id: str,
+        entity_type: str,
+        subject_id: str,
+        from_status: str,
+        to_status: str,
+        lock: bool,
+    ) -> Any | None:
         """Evaluate one frozen Policy Compliance edge without mutating status.
 
         Lifecycle legality remains owned by the canonical SDLC registry.  Free
@@ -17282,6 +17298,7 @@ class GuidelineService:
             entity_type=PolicyEntityType(normalized_entity_type),
             subject_id=subject_id,
             expected_from_status=normalized_from_status,
+            lock=lock,
         )
         return evaluate_policy_transition(snapshot, normalized_to_status)
 
@@ -17296,12 +17313,13 @@ class GuidelineService:
     ) -> Any | None:
         """Recompute and enforce the canonical gate in the mutation UoW."""
 
-        decision = await self.preview_policy_transition(
+        decision = await self._evaluate_policy_transition(
             board_id=board_id,
             entity_type=entity_type,
             subject_id=subject_id,
             from_status=from_status,
             to_status=to_status,
+            lock=True,
         )
         if decision is None:
             return None

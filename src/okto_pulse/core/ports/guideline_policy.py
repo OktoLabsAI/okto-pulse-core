@@ -1042,6 +1042,9 @@ class PolicyTransitionSnapshotResolver(Protocol):
 
     Implementations used by mutation paths must apply their edition-specific
     board/subject locking before returning.  The core contract intentionally
+    defaults to locking; lock=False is an informational preview only and must
+    never authorize a mutation without recomputing with lock=True. It must not
+    acquire a write mutex or row locks merely to display available actions. The core
     does not prescribe a database lock primitive. For an edition-aware subject,
     the returned policy set and governance digests MUST come from the immutable
     snapshot pinned to that subject edition. A later policy deployment applies
@@ -1057,6 +1060,7 @@ class PolicyTransitionSnapshotResolver(Protocol):
         entity_type: PolicyEntityType,
         subject_id: str,
         expected_from_status: str,
+        lock: bool = True,
     ) -> PolicyTransitionSnapshot: ...
 
 

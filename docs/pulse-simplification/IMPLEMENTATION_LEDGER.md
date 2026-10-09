@@ -2,6 +2,42 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Correção do 500 em allowed-transitions
+
+Pedido: investigar e corrigir o 500 observado ao abrir o Card de domínio.
+Traceback instalado confirmou OperationalError/database is locked no UPDATE
+boards SET id=boards.id usado por lock_policy_board. A prévia de transições
+chamava o mesmo resolver bloqueante da mutação. Prova inicial confirmou fontes
+instalados idênticos (844/317 Python, 79 frontend); não era install stale.
+
+Correção: a porta pública recebe lock=True por padrão. GuidelineService separa
+preview (lock=False) de enforce (lock=True), compartilhando o mesmo avaliador.
+O adaptador não adquire mutex/row locks na prévia. Snapshots de edição existentes
+continuam sendo usados; se ainda não há snapshot, a prévia avalia o mesmo conjunto
+candidato sem persistir. A mutação recalcula e congela sob mutex. Nenhuma prévia
+autoriza escrita, nenhum gate, threshold, waiver ou permissão foi relaxado.
+
+Teste novo mantém um writer SQLite aberto: preview retorna a negação correta
+sem UPDATE/INSERT/DELETE; enforce ainda tenta adquirir o mutex e, após liberação,
+recusa ausência de parecer. A primeira execução expôs a gravação lazy de snapshot
+na prévia (23 passaram/1 falhou); corrigida somente para esse caminho de leitura.
+Campanha final Community: 24 passed; Core preview/contrato: 14 passed; frontend
+CardModal/autoridade de transição: 85 passed. Frontend não precisou de alteração.
+Audit, reinstalação e validação visual em andamento. Escopo não inclui solucionar
+toda a contenção do worker KG nem os timeouts de Coverage anteriormente relatados.
+
+Fechamento: F16 ok=true, zero findings/documentation_findings, oito budgets zero
+(transition-preview-closure.json). Wheels reinstalados, prova byte a byte
+844/317 Python+79 frontend em transition-preview-install.json. Processo 22664
+iniciado após instalação; home preservada. Playwright no runtime 8100: GET direto
+200 e abertura real do Card retornou allowed-transitions 200 em 1816ms, cinco
+ações, Done bloqueado por task_validation_required/policy_compliance_receipt_missing.
+Seletor Card status habilitado; screenshot transition-preview-fixed.png inspecionada.
+Nenhum Card mudou de status. Primeira tentativa de Refresh ocorreu durante startup
+e expirou; após readiness e reload, abertura e consulta passaram. Frontend inalterado.
+Diff-check aprovado; commits/pushes pareados encerram esta correção pontual.
+
+
 ### 2026-10-09 — Progresso derivado de evidência e mock executável
 
 Pedido autorizado: implementar o cálculo sem percentual autodeclarado e preparar
