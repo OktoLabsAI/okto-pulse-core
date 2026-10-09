@@ -2,6 +2,20 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Project Structure visível para leitura
+
+Restaurada a aba na Spec mesmo quando a estrutura está ausente e a edição
+do conteúdo já está bloqueada pelo status. Visibilidade depende somente da
+permissão de leitura; criação/edição e vínculos conservam seus gates existentes.
+Frontend: 13 testes passaram (modelo e componente), incluindo estado ausente
+em In Progress sem autoria; build TypeScript/Vite e sincronização do pacote
+frontend_dist concluídos. Playwright no frontend local 5174, conectado ao
+runtime 8100, confirmou a aba na Spec real em In Progress e o estado vazio.
+Snapshot: page-2026-10-09T20-39-02-253Z.yml. Nenhum dado da Spec foi alterado.
+O runtime instalado continua no build anterior: reinstalação/reinício ainda
+necessários para disponibilizar esta mudança em 8100. Coverage e Discovery
+permanecem fora desta correção pontual.
+
 ### 2026-10-09 — Teste SDLC: execução simulada até 50%
 
 My Board `2fd79a82-08b2-4ecc-823a-2c820342f6b9`, Spec
