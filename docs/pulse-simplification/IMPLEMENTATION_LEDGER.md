@@ -2,6 +2,20 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — loading de Coverage com PulseLoader
+
+Overview/Planning de Coverage e seu painel Implementation reutilizam o
+`PulseLoader` compartilhado da aplicação, tamanho sm e legenda acessível.
+Substituído apenas o indicador de carregamento; erros, cancelamento de pedidos,
+recarga, dados e permissões preservados. Sem alteração no backend.
+42 testes passaram (Coverage, DeliveryEvidencePanel e PulseLoader), incluindo
+pedido pendente com traço animado, recarga bloqueada e retirada da animação
+quando a resposta chega. TypeScript/Vite/sync passaram; 79 arquivos frontend,
+SHA256 `de2f22c9dc20c432a6f5e4ab1fc9e912d0c48f646d7af53164f0ffa713af3cfa`.
+Instalação conferida byte a byte entre fonte/wheel/site-packages (842 Python
+Core, 317 Community e frontend); evidência local
+`.validation-v040/coverage-loader-host-provenance.json`. Pulse reiniciado.
+
 ### 2026-10-08 — AC/verificação expansíveis, identidade FR e Details somente leitura
 
 AC reutiliza a lista compacta de Functional/Integration: título na linha,
