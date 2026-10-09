@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — Histórico completo de Policy Compliance e pinpoints colapsáveis
+
+Previous results passou a expandir cada avaliação com a projeção detail já
+carregada: autor/data, confiança, métricas/limiares/resultados, justificativas,
+referências e pinpoints com snapshot selado. Reutiliza AssessmentCard em modo
+somente leitura, sem ações de skip nem reconstrução a partir do conteúdo atual.
+ActionablePinpoint compartilhado inicia recolhido, com título/badges visíveis;
+expansão revela localização, conteúdo, ação e detalhes técnicos autorizados.
+Pinpoints do histórico usam o mesmo componente e a evidência da própria avaliação.
+47 testes frontend passaram, incluindo expansão/recolhimento e histórico completo.
+Build TypeScript/Vite aprovado. Reinstalados wheels pareados, fonte/wheel/install
+byte a byte (843 Python Core/317 Community;904/403 arquivos de payload).
+SPA79arquivos SHA256d08d1ff01cd0959a9707211c1de0056a4b27beb1eef33e65bfc6b5a2b1f87981.
+Proveniência em .validation-v040/policy-history-host-provenance.json e
+policy-history-process-provenance.json:PID45368 posterior aos Python instalados,
+HTTP200. Browser confirmou histórico real Edition1 com confiança89,conformidade92,
+limiar85, rationale, referência de arquitetura e pinpoint preservados. Pinpoint
+atual começa recolhido; Enter expande e Space recolhe. Screenshot inspecionado:
+community/output/playwright/policy-history-full-expanded.png. Sem mudança em
+dados, contratos backend, gates ou autoridade.
+
 ### 2026-10-09 — Policy history e apresentação dos pinpoints
 
 Reproduzidos no browser: Policy Compliance exibindo o JSON canônico do TR
