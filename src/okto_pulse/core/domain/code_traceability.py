@@ -2484,6 +2484,9 @@ def code_investigation_receipt_currentness(
     at: datetime,
     revocation: CodeInvestigationReceiptRevocation | None = None,
     expected_delivery_context: DeliveryContext | None = None,
+    head_receipt: CodeInvestigationReceipt | None = None,
+    head_receipt_revocation: CodeInvestigationReceiptRevocation | None = None,
+    latest_subject_receipt_id: str | None = None,
 ) -> CodeInvestigationReceiptCurrentness:
     """Classify ledger currentness without probing the underlying source."""
 
@@ -2525,6 +2528,41 @@ def code_investigation_receipt_currentness(
     ):
         return CodeInvestigationReceiptCurrentness.OUTDATED
     if head.current_receipt_id == receipt.id:
+        return CodeInvestigationReceiptCurrentness.CURRENT
+    # A source head is shared by Cards. Another Card observing the identical
+    # committed snapshot must not invalidate this Card's bounded observation.
+    # This preserves neither same-Card predecessors nor incomplete/dirty proof,
+    # and never transfers the head's trust, scope, capabilities or lifetime.
+    if (
+        receipt.subject_type is CodeTraceabilitySubjectType.CARD
+        and latest_subject_receipt_id == receipt.id
+        and head_receipt is not None
+        and head_receipt.subject_type is CodeTraceabilitySubjectType.CARD
+        and receipt.subject_id != head_receipt.subject_id
+        and head_receipt.id == head.current_receipt_id
+        and receipt.trust_level is not CodeInvestigationTrustLevel.CONFLICTED
+        and code_investigation_receipt_currentness(
+            head_receipt, head=head, at=evaluated_at,
+            revocation=head_receipt_revocation,
+        ) is CodeInvestigationReceiptCurrentness.CURRENT
+        and receipt.source_identity_digest is not None
+        and receipt.source_identity_digest == head_receipt.source_identity_digest
+        and receipt.declared_revision is not None
+        and receipt.declared_revision == head_receipt.declared_revision
+        and receipt.canonicalization_profile == head_receipt.canonicalization_profile
+        and receipt.delivery_context is head_receipt.delivery_context
+        and receipt.workspace_state is not None
+        and head_receipt.workspace_state is not None
+        and not receipt.workspace_state.declared_dirty
+        and not head_receipt.workspace_state.declared_dirty
+        and receipt.workspace_state.reproducibility_claim is WorkspaceReproducibilityClaim.COMMITTED
+        and head_receipt.workspace_state.reproducibility_claim is WorkspaceReproducibilityClaim.COMMITTED
+        and all(
+            getattr(receipt.workspace_state, field) == getattr(head_receipt.workspace_state, field)
+            for field in ("declared_revision", "workspace_state_id", "fingerprint_algorithm",
+                          "manifest_digest", "manifest_entry_count")
+        )
+    ):
         return CodeInvestigationReceiptCurrentness.CURRENT
     return CodeInvestigationReceiptCurrentness.OUTDATED
 

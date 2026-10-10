@@ -71,7 +71,7 @@ from okto_pulse.core.models.code_traceability import (
     CodeInvestigationReceiptSubmission,
     StartCodeInvestigationInput,
 )
-from okto_pulse.core.ports.code_investigation import CodeInvestigationStore
+from okto_pulse.core.ports.code_investigation import CodeInvestigationStore, CodeInvestigationReceiptQuery
 
 
 Clock = Callable[[], datetime]
@@ -947,6 +947,7 @@ class CodeInvestigationService:
             CodeInvestigationTrustLevel.SINGLE_ATTESTATION
         ),
         require_committed_state: bool = False,
+        require_write_head: bool = False,
     ) -> AcceptedCodeInvestigation:
         receipt = await store.get_receipt(
             board_id=board_id,
@@ -974,11 +975,15 @@ class CodeInvestigationService:
             board_id=board_id,
             source_ref=receipt.source_ref,
         )
+        head_receipt, head_revocation, latest_subject = await self._head_observation(head, receipt, store)
         currentness = code_investigation_receipt_currentness(
             receipt,
             head=head,
             at=self._now(),
             revocation=revocation,
+            head_receipt=head_receipt,
+            head_receipt_revocation=head_revocation,
+            latest_subject_receipt_id=latest_subject,
         )
         if currentness is CodeInvestigationReceiptCurrentness.REVOKED:
             raise CodeInvestigationReceiptRevoked()
@@ -992,6 +997,10 @@ class CodeInvestigationService:
             )
         if head is None:  # narrowed by CURRENT, kept fail-closed for adapters
             raise CodeInvestigationCurrentnessUnknown()
+        if require_write_head and head.current_receipt_id != receipt.id:
+            raise CodeInvestigationHeadConflict(
+                details={"reason": "fresh_card_preflight_required_for_write"}
+            )
         if receipt.contextual_outcome is ContextualInvestigationOutcomeV2.UNAVAILABLE:
             raise CodeInvestigationUnavailable()
         if receipt.trust_level is CodeInvestigationTrustLevel.CONFLICTED:
@@ -1045,6 +1054,7 @@ class CodeInvestigationService:
             board_id=board_id,
             source_ref=receipt.source_ref,
         )
+        head_receipt, head_revocation, latest_subject = await self._head_observation(head, receipt, store)
         return InspectedCodeInvestigationReceipt(
             receipt=receipt,
             head=head,
@@ -1054,8 +1064,22 @@ class CodeInvestigationService:
                 head=head,
                 at=self._now(),
                 revocation=revocation,
+                head_receipt=head_receipt,
+                head_receipt_revocation=head_revocation,
+                latest_subject_receipt_id=latest_subject,
             ),
         )
+
+    async def _head_observation(self, head, receipt, store):
+        if head is None or not head.current_receipt_id or head.current_receipt_id == receipt.id:
+            return None, None, None
+        current = await store.get_receipt(board_id=receipt.board_id, receipt_id=head.current_receipt_id)
+        revocation = await store.get_receipt_revocation(board_id=receipt.board_id, receipt_id=head.current_receipt_id)
+        page = await store.list_receipts(CodeInvestigationReceiptQuery(
+            board_id=receipt.board_id, source_ref=receipt.source_ref,
+            subject_type=receipt.subject_type, subject_id=receipt.subject_id, limit=1,
+        ))
+        return current, revocation, page.items[0].id if page.items else None
 
     async def revoke_receipt(
         self,

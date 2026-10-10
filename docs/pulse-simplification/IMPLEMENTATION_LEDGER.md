@@ -2,6 +2,57 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — SIM-04: saturação das demais tasks e atualidade entre Cards
+
+Pedido: saturar as demais tasks do mock Reserva de Salas. Contextos full/all
+dos 27 Cards lidos; mock local `c125a43144b5cc73425a61c787b57249dcbc9abe`
+adiciona aplicação, SQLite transacional, HTTP/sessão/CSRF, composição e UI.
+31 testes backend/domínio e 5 testes reais de navegador passaram. Checkpoints
+dos sete Cards de implementação persistidos com limites explícitos. Não há
+alegação de implementação integral: paridade com fake independente, envelopes
+de contratos internos e inspeção assistiva permanecem pendentes.
+
+**Decisão autorizada — atualidade por Card sobre fonte idêntica.** Reprodução:
+recibo `code_receipt_df072fe7e78142a2b8f469b186ffab5d` do domínio ficou outdated
+ao investigar outro Card, no MESMO commit/fingerprint; resolução recusada com
+`code_investigation_currentness_unknown`. O head global comparava apenas ID.
+Usuário autorizou explicitamente preservar provas de Cards distintos sobre
+estado exato idêntico, mantendo versão/escopo/revogação/expiração/conflito.
+Regra pura no Core compara identidade, revisão e workspace comprometido exato;
+serviço e gate preservam a leitura das provas. A guarda transacional de escrita
+continua exigindo head próprio: novo preflight antes de novos registros.
+Reprodução live identificou também esse trigger SQL; preservado sem alteração
+de schema/migração. O serviço agora explica o conflito antes do INSERT. Não há
+mecanismo no Core, migração, exceção arquitetural ou mudança de autoridade.
+Recibos anteriores do mesmo Card não são preservados por essa exceção; nenhuma
+confiança, capacidade ou validade temporal é herdada do head de outro Card.
+
+Validação final: 67 testes Core focados (incluem os 10 novos casos), 56 de
+contratos/contexto/catálogo em campanha anterior e 11 de persistência Community,
+incluindo corrida real SQLite. Contagens de campanhas sobrepostas, não somar.
+Auditoria final sem findings e oito budgets ZERO. Reinstalação concluída;
+paridade byte-a-byte: 844 Python Core, 319 Community e 79 arquivos frontend,
+verificada em 2026-10-10T01:09:33Z, antes dos testes live. Processo novo iniciado
+após os arquivos instalados. Nenhuma mudança de schema ou conversão de dados.
+
+Saturação registrada nos 27 Cards: sete implementações com alvos, resoluções,
+execuções e contribuições delimitadas; vinte Cards de teste com checkpoints
+e pendências explícitas. 24/51 cenários com execução autenticada no commit do
+mock acima. As sete provas foram consultadas CURRENT simultaneamente após a
+investigação do último Card. Percentuais derivados observados: domínio 9%,
+aplicação 20%, persistência 8%; HTTP, duas interfaces e composição permanecem
+0% por contribuições parciais. Não converter trabalho parcial em conclusão.
+Nenhum Card promovido a Done; mock local commitado, sem remote configurado.
+
+UI: tentativa real pelo Playwright chegou ao Pulse, mas a nova sessão exibiu
+Terms of Use & License. Termos não aceitos em nome do usuário; conferência
+visual dos percentuais não concluída. Screenshot local Community/output/
+playwright/sim04-terms-block.png. Dados e atualidade conferidos via MCP.
+Logs também mostram timeout do probe de fontes do KG; não tratado como prova
+de falha de Delivery nem corrigido sem reprodução específica neste recorte.
+IDs, checkpoints, execuções e limites: SIM04_DELIVERY_SATURATION.json.
+Correção e evidências prontas para commit/push pareado em feature/v0.4.0.
+
 ### 2026-10-09 — SIM-03: execução autenticada de testes externos
 
 Pedido explícito: fechar a lacuna que impedia testes reais de Reserva de Salas

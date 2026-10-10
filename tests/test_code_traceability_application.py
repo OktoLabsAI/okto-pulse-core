@@ -441,9 +441,11 @@ class FakeInvestigationStore:
         )
 
     async def list_receipts(self, query):
-        items = tuple(
+        items = tuple(sorted((
             item for item in self.receipts.values() if item.board_id == query.board_id
-        )[: query.limit]
+            and (query.source_ref is None or item.source_ref == query.source_ref)
+            and (query.subject_type is None or (item.subject_type is query.subject_type and item.subject_id == query.subject_id))
+        ), key=lambda item: (item.received_at, item.id), reverse=True))[:query.limit]
         return CodeTraceabilityPage(items=items, limit=query.limit)
 
     async def get_current_head(self, *, board_id: str, source_ref: str):

@@ -1,0 +1,936 @@
+{
+  "scope": {
+    "board_id": "2fd79a82-08b2-4ecc-823a-2c820342f6b9",
+    "spec_id": "2372d8a2-68c8-57f4-a609-d809c92d55c6"
+  },
+  "mock_commit": "c125a43144b5cc73425a61c787b57249dcbc9abe",
+  "normal_cards": [
+    {
+      "card": "1221974a-8da6-5767-932e-0d37cd0241e1",
+      "path": "reserva_sala/domain.py",
+      "refs": [
+        "ac:ac_res_capacity",
+        "ac:ac_res_calendar"
+      ],
+      "summary": "Domínio executável: capacidade, calendário, conflitos e política por operação.",
+      "remaining": "Revisão independente da política e dos contratos internos; conclusão dos Cards de teste vinculados.",
+      "target": "implementation_target_c53bb1a6cf104be6ba39f57239cfcde9",
+      "receipt": "code_receipt_7760c9b251a34989805e96c28f3c713a",
+      "observed": "2026-10-10T01:07:38.009840+00:00",
+      "execution": "target_execution_52f8118bda6c49f4953ad6766b25d9c5",
+      "implementation": "card_delivery_32b976506d25414e829b0541dcc2534b"
+    },
+    {
+      "card": "32bf1102-b2de-5962-95fe-35676c851394",
+      "path": "reserva_sala/application.py",
+      "refs": [
+        "ac:ac_res_cancel",
+        "ac:ac_res_change",
+        "ac:ac_res_create",
+        "ac:ac_res_history",
+        "ac:ac_res_list",
+        "ac:ac_res_replay",
+        "ac:ac_res_search"
+      ],
+      "summary": "Seis casos de uso executáveis com CAS, isolamento, replay e histórico transacional.",
+      "remaining": "Envelope discriminado dos contratos internos e paridade com fake independente ainda não implementados.",
+      "target": "implementation_target_81a0a5fe5c2c42f28e59add02bce6a96",
+      "receipt": "code_receipt_9624b5d9300841cfac34cf0214c2962a",
+      "observed": "2026-10-10T01:07:40.151414+00:00",
+      "execution": "target_execution_7d5b362e1c6d46e286573898c1d81bf0",
+      "implementation": "card_delivery_c282b5ff0ddd45149aaea1893a79a444"
+    },
+    {
+      "card": "f8c4b45c-c795-5b0c-b9c7-36d74a2a4aa8",
+      "path": "reserva_sala/adapters/sqlite.py",
+      "refs": [
+        "ac:ac_res_atomic",
+        "ac:ac_ir_res_storage"
+      ],
+      "summary": "SQLite real: BEGIN IMMEDIATE, rollback, CAS, recibos únicos e consultas isoladas.",
+      "remaining": "Paridade independente com fake de UoW e matriz integral de falhas de I/O; sem alegação de cobertura total.",
+      "receipt": "code_receipt_4fbf92f77f6f401fb9a72118ed0741f1",
+      "observed": "2026-10-10T01:07:42.233532+00:00",
+      "target": "implementation_target_86cc9105b1be4c5fb4c60a9f1e0d632d",
+      "execution": "target_execution_2ef01e0b6b5a490e881f5bd26da0d02b",
+      "implementation": "card_delivery_11bb19825f4146a18da398544d58d949"
+    },
+    {
+      "card": "caaae4c5-5e86-5335-b941-66d9358a7a93",
+      "path": "reserva_sala/adapters/http.py",
+      "refs": [],
+      "summary": "HTTP executável: seis rotas, sessões assinadas, CSRF, códigos de negócio e DTOs públicos.",
+      "remaining": "Validação integral dos schemas e contrato estruturado de IdentityProvider; fixtures locais não constituem provisionamento de produção.",
+      "receipt": "code_receipt_ab3f974ab68d4dbcb6314902aa4cc97c",
+      "observed": "2026-10-10T01:07:44.383786+00:00",
+      "target": "implementation_target_38e482ab2fbf439ea1e6fab32fdc2bba",
+      "execution": "target_execution_de824ef3acce4539bd3139ff6f682cc0",
+      "implementation": "card_delivery_69ddc3717f1d4e6ca36d823300ed4a11"
+    },
+    {
+      "card": "eaf209fe-5a70-5d07-8cae-dd33d47367b4",
+      "path": "reserva_sala/web/app.js",
+      "refs": [],
+      "summary": "H01/H02 executáveis: busca, estado vazio/erro e recuperação de resposta perdida preservando chave e payload.",
+      "remaining": "Ampliar matriz de loading, duplo clique e conflitos; revisar Design System e leitor de tela.",
+      "receipt": "code_receipt_b69dec61b2ff4f1eadcb689210bcd84f",
+      "observed": "2026-10-10T01:07:46.387113+00:00",
+      "target": "implementation_target_69e0f725d9524e698dedb2aec6213243",
+      "execution": "target_execution_f7e850b6d0fc465085b46efc2f9919fc",
+      "implementation": "card_delivery_2258742c940e47ad9ba4bfd722a84c1f"
+    },
+    {
+      "card": "4a8c261b-9891-584b-b286-b19cfa1f585b",
+      "path": "reserva_sala/web/app.js",
+      "refs": [],
+      "summary": "H03/H04 executáveis: edição com conflito preservando formulário, cancelamento por teclado, foco e histórico.",
+      "remaining": "Cobrir paginação da interface e recuperação de erro dentro do modal; inspeção com leitor de tela.",
+      "receipt": "code_receipt_0a53f0c710cb4a2ba088055cf6360de2",
+      "observed": "2026-10-10T01:07:48.412956+00:00",
+      "target": "implementation_target_a6f3604c5e0346e2870cb7443a70d7f9",
+      "execution": "target_execution_3d2eaf85e1ca44b3bbcca403068d39b3",
+      "implementation": "card_delivery_c6b06a2ee4144b8799123d7cf39ad824"
+    },
+    {
+      "card": "dcf84b1b-0a85-5dbf-a48e-b5b57d3169bc",
+      "path": "reserva_sala/bootstrap.py",
+      "refs": [],
+      "summary": "Composição injetada e observabilidade de comandos exercitadas, com logs sem payload/cookies.",
+      "remaining": "Comprovar categorias completas de métricas e contrato ready; revisar configuração HTTPS separadamente.",
+      "receipt": "code_receipt_f786c4791f4d49a79ea2f454c94fb360",
+      "observed": "2026-10-10T01:07:50.451995+00:00",
+      "target": "implementation_target_444a234bc5f34911a23f232ab106b1fc",
+      "execution": "target_execution_8d399d4aab924532a5deb25a5eb943f3",
+      "implementation": "card_delivery_93a0f1333a61438782204f5592a36d15"
+    }
+  ],
+  "currentness": [
+    {
+      "card": "1221974a-8da6-5767-932e-0d37cd0241e1",
+      "currentness": "current"
+    },
+    {
+      "card": "32bf1102-b2de-5962-95fe-35676c851394",
+      "currentness": "current"
+    },
+    {
+      "card": "f8c4b45c-c795-5b0c-b9c7-36d74a2a4aa8",
+      "currentness": "current"
+    },
+    {
+      "card": "caaae4c5-5e86-5335-b941-66d9358a7a93",
+      "currentness": "current"
+    },
+    {
+      "card": "eaf209fe-5a70-5d07-8cae-dd33d47367b4",
+      "currentness": "current"
+    },
+    {
+      "card": "4a8c261b-9891-584b-b286-b19cfa1f585b",
+      "currentness": "current"
+    },
+    {
+      "card": "dcf84b1b-0a85-5dbf-a48e-b5b57d3169bc",
+      "currentness": "current"
+    }
+  ],
+  "test_checkpoints": {
+    "9644bcb1-dfdc-5d5e-83a6-7ea9f4517155": {
+      "done": 1,
+      "total": 3,
+      "remaining": "Sem conclusão comprovada: T01 — Busca por intervalo; T10 — Vazio versus falha. Completar as asserções do contrato/cenário antes de declarar aprovação.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_96aedff2c367414bb1cac2c514f1d82d",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "3dd7be00-8a4f-5302-8f0f-cacffd81c7ac": {
+      "done": 1,
+      "total": 3,
+      "remaining": "Sem conclusão comprovada: T03 — Intervalos sobrepostos; T04 — Salas independentes. Completar as asserções do contrato/cenário antes de declarar aprovação.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_8eb4db23166d48b482cd1dc86bc5f4ab",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "904a8be2-a99b-5293-8ac4-87465c7d1dae": {
+      "done": 3,
+      "total": 3,
+      "remaining": "Cenários associados executados; revisão independente e gates de conclusão ainda pendentes.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_5c84145cd73041d583139d587874e9da",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "4002dc53-0af1-5ea5-9ca5-2c450dfb0022": {
+      "done": 3,
+      "total": 3,
+      "remaining": "Cenários associados executados; revisão independente e gates de conclusão ainda pendentes.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_57195251d38b46959188847f6f25f20b",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "787b905d-cfce-5d43-9cc5-3f35378e38fa": {
+      "done": 3,
+      "total": 3,
+      "remaining": "Cenários associados executados; revisão independente e gates de conclusão ainda pendentes.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_d81c183ce94d478898b49b84e8da6118",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "4c97f636-92d4-592b-ab92-0a1fa5f5f9d5": {
+      "done": 0,
+      "total": 3,
+      "remaining": "Sem conclusão comprovada: T15 — Isolamento de recibo; T26 — ID alheio e owner forjado; T27 — Sessão e CSRF. Completar as asserções do contrato/cenário antes de declarar aprovação.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_ae69764aadff46e9b3e026634ec76ca7",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "a8e74019-6c43-56f5-a67f-7c7fc50b6e04": {
+      "done": 3,
+      "total": 3,
+      "remaining": "Cenários associados executados; revisão independente e gates de conclusão ainda pendentes.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_038d575454b6474bbf2bf737d9cebce3",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "9048caf1-3e79-59c9-a436-89d2b21b5b32": {
+      "done": 3,
+      "total": 3,
+      "remaining": "Cenários associados executados; revisão independente e gates de conclusão ainda pendentes.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_c6dbe3a416c8435c90528cbdeec82922",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "c0a0ad28-3d68-5dd4-a71b-ea5f661ff29b": {
+      "done": 2,
+      "total": 3,
+      "remaining": "Sem conclusão comprovada: T25 — Busy limitado. Completar as asserções do contrato/cenário antes de declarar aprovação.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_4e065b2c0b9049e889faeefe16e24b29",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "63629297-8ea6-506d-96fe-8b40f2badcfb": {
+      "done": 2,
+      "total": 2,
+      "remaining": "Cenários associados executados; revisão independente e gates de conclusão ainda pendentes.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_dfbf70988e634e6f892f9c41d1d49efa",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "ed9ec35a-a2f2-5dfe-b181-9df4686c435e": {
+      "done": 0,
+      "total": 2,
+      "remaining": "Sem conclusão comprovada: T29 — Frontend H01; T30 — Frontend H02. Completar as asserções do contrato/cenário antes de declarar aprovação.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_867d813dcfca44288fbe59d77150f043",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "8da12676-eae1-5850-9f81-641c4ce26a66": {
+      "done": 1,
+      "total": 2,
+      "remaining": "Sem conclusão comprovada: T32 — Frontend H04. Completar as asserções do contrato/cenário antes de declarar aprovação.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_0f5f0063f90441ba864f8d512d736169",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "b5c69582-9524-5f13-8b5b-9d8383e7a9d6": {
+      "done": 0,
+      "total": 1,
+      "remaining": "Sem conclusão comprovada: T33 — Responsividade e leitura assistiva. Completar as asserções do contrato/cenário antes de declarar aprovação. Há apenas inspeções automatizadas de 320px/200%, teclado e labels; leitor de tela não foi executado.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_27baedba3be84f25b1ba2a7b9aa31c91",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "64128513-a964-5eea-a6d6-e994bca6d567": {
+      "done": 0,
+      "total": 2,
+      "remaining": "Sem conclusão comprovada: T34 — Fronteira hexagonal; T35 — Paridade de adaptadores. Completar as asserções do contrato/cenário antes de declarar aprovação. Fake independente da UoW ainda não implementado.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_c9d92ae9eba84741b5bb337d4f833b7d",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "d7090ce8-edcd-52bb-8947-626af9b5d8c4": {
+      "done": 0,
+      "total": 2,
+      "remaining": "Sem conclusão comprovada: Contrato — Persistência de transação; Contrato — ReservationUnitOfWork. Completar as asserções do contrato/cenário antes de declarar aprovação.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_4c6593f1de5849e0b8533ff814097b69",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "19c55707-273d-51fc-b2ac-da82c23d9997": {
+      "done": 0,
+      "total": 3,
+      "remaining": "Sem conclusão comprovada: Contrato — Alterar reserva; Contrato — Criar reserva; Contrato — Cancelar reserva. Completar as asserções do contrato/cenário antes de declarar aprovação.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_ac70b05d2b01412fa1bc078e027b2dab",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "7f94d1b5-36ad-5c75-a278-4494b6c2228f": {
+      "done": 1,
+      "total": 2,
+      "remaining": "Sem conclusão comprovada: Contrato — Contrato de invariantes. Completar as asserções do contrato/cenário antes de declarar aprovação.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_bdd473311e5a414ab982606e111eb5c0",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "ce001955-12c5-5199-975f-1cec993c916a": {
+      "done": 0,
+      "total": 3,
+      "remaining": "Sem conclusão comprovada: Contrato — Ler histórico da própria reserva; Contrato — Consultar disponibilidade; Contrato — Listar próprias reservas. Completar as asserções do contrato/cenário antes de declarar aprovação.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_36439d4145554e938a75f7d9ea53098e",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "ec6fa8a6-6a4f-55d0-89db-ea1a1a0242aa": {
+      "done": 0,
+      "total": 3,
+      "remaining": "Sem conclusão comprovada: Contrato — IdentityProvider; Contrato — Porta pública de casos de uso; Contrato — Injeção de adaptadores. Completar as asserções do contrato/cenário antes de declarar aprovação.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_6bf78f7894f24f49ac988777df7c1c96",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    },
+    "f5a80dd6-eeb2-58c2-a564-7dde0aa45aba": {
+      "done": 1,
+      "total": 2,
+      "remaining": "Sem conclusão comprovada: Observabilidade — contadores por resultado. Completar as asserções do contrato/cenário antes de declarar aprovação.",
+      "result": {
+        "outcome": "success",
+        "data": {
+          "id": "card_delivery_c0efb4e7fe2b4559996b210e8a58a984",
+          "replayed": false
+        },
+        "error_code": null,
+        "message": null,
+        "retryable": false,
+        "next_action": null,
+        "meta": {
+          "contract": "okto-pulse.mcp-tool-outcome",
+          "contract_version": "2.0",
+          "tool": "okto_pulse_record_delivery_evidence"
+        }
+      }
+    }
+  },
+  "authenticated_scenarios": [
+    {
+      "id": "ts_6587e6f3",
+      "run_id": "e348a901ef6fd238802abd291a935003",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_T02_capacity_boundaries"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_df0d7369",
+      "run_id": "e4ea9a60c08738fee0c52829b92ae15e",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_T05_duration"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_f1464424",
+      "run_id": "34cffc893850859e0ea2b75141cf871e",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_T06_precision_and_offset"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_48fea019",
+      "run_id": "2da24976eab647ca3faa8ea948687d2f",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_T07_business_hours"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_d16782fd",
+      "run_id": "6cd55393651065bf25941d6fd080ada3",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_T08_start_strictly_future"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_9f098abb",
+      "run_id": "714b0e52173a84c0ba53e0efab1c21b6",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_T09_horizon"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_985cde72",
+      "run_id": "778b9f5857595b5d8d1b324517ed92bf",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_atomic_create_and_sequential_replay"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_5ef6d482",
+      "run_id": "35b2fafdf86f59ef5faeac576766bee4",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_concurrent_create_overlap_and_independent_rooms"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_e9771f3c",
+      "run_id": "e09521cd6f225d39fe789338be7c3780",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_atomic_create_and_sequential_replay",
+        "tests/test_delivery.py::DeliveryTests.test_concurrent_replay_is_one_commit"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_27e31184",
+      "run_id": "2802362924d3db79d26188565531e781",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_atomic_create_and_sequential_replay"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_16279dab",
+      "run_id": "b87ae32c21ae780f515fb37c27210656",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_cancel_releases_room_exact_replay_and_history"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_1ce39723",
+      "run_id": "06e6670ebf5ba5b22cd9e592fe03f5dd",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_change_conflict_and_compare_and_swap"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_2fe6bbb5",
+      "run_id": "4aa7fcf72f9744022a06074ddddaedb9",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_change_conflict_and_compare_and_swap"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_3ac9acd5",
+      "run_id": "542694218953b82808e1c7566110c2e1",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_change_cancel_race_single_commit"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_5e16a84e",
+      "run_id": "2dc16491d981fac233df9965814934af",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_cancel_releases_room_exact_replay_and_history"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_ad53a016",
+      "run_id": "47cb5cf3dc850b1b24733c8772b39769",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_T21_cancel_at_or_after_start"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_a4e2ad63",
+      "run_id": "e0cb8feebc7e27450f0cb477a34c8022",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_cancel_releases_room_exact_replay_and_history"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_2e1cdecb",
+      "run_id": "8304157a04054dc54aa27035ade11e43",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_rollback_after_save_create_and_change"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_3002582b",
+      "run_id": "20a19f8fd7c6c6703e3f6ecbe1dd888f",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_restart_after_lost_response",
+        "tests/test_frontend.py::FrontendTests.test_uncertain_retry_preserves_key_payload_and_single_commit"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_9a8f3731",
+      "run_id": "535738160627a7902b0a8202114f445a",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_pagination_101_and_invalid_inputs",
+        "tests/test_delivery.py::DeliveryTests.test_cancel_releases_room_exact_replay_and_history"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_da63dd0c",
+      "run_id": "d9dc118bd55aab773802e0e3f4351a69",
+      "test_ids": [
+        "tests/test_frontend.py::FrontendTests.test_edit_conflict_preserves_content"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_04b1130a",
+      "run_id": "d7c505c6da4ec050d1e954a9270457ea",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_cancel_releases_room_exact_replay_and_history"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_1e93daf6",
+      "run_id": "0cbc11ecd060e859b185e2cfb25cfb49",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_clock_port_returns_utc_and_can_advance",
+        "tests/test_delivery.py::DeliveryTests.test_clock_is_read_after_write_lock"
+      ],
+      "verified": "verified"
+    },
+    {
+      "id": "ts_65033470",
+      "run_id": "388b0d75d649aabcb7f002f5f59dbcdc",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_http_session_csrf_contracts_and_observability"
+      ],
+      "verified": "verified"
+    }
+  ],
+  "delivery": [
+    {
+      "card_id": "1221974a-8da6-5767-932e-0d37cd0241e1",
+      "completeness": {
+        "percent": 9,
+        "total": 17,
+        "planned": 15,
+        "implemented": 0,
+        "verified": 2,
+        "accepted": 0,
+        "scope_sha256": "5b8debcb9e7718b4ea0f979ce30c65269f000d8ca6fb8a61f06d5030827cf621",
+        "reason": null
+      }
+    },
+    {
+      "card_id": "19c55707-273d-51fc-b2ac-da82c23d9997",
+      "completeness": null
+    },
+    {
+      "card_id": "32bf1102-b2de-5962-95fe-35676c851394",
+      "completeness": {
+        "percent": 21,
+        "total": 25,
+        "planned": 18,
+        "implemented": 1,
+        "verified": 6,
+        "accepted": 0,
+        "scope_sha256": "a9efb8af6eabf0213f7a74651f868ade1988bf0f707c1a406e66155a9055d6f4",
+        "reason": null
+      }
+    },
+    {
+      "card_id": "3dd7be00-8a4f-5302-8f0f-cacffd81c7ac",
+      "completeness": null
+    },
+    {
+      "card_id": "4002dc53-0af1-5ea5-9ca5-2c450dfb0022",
+      "completeness": null
+    },
+    {
+      "card_id": "4a8c261b-9891-584b-b286-b19cfa1f585b",
+      "completeness": {
+        "percent": 0,
+        "total": 9,
+        "planned": 9,
+        "implemented": 0,
+        "verified": 0,
+        "accepted": 0,
+        "scope_sha256": "2e06b5d4267d2ce1663aac4288be9d48eab47affb1ea0e8f1c0fe63b0b4ee363",
+        "reason": null
+      }
+    },
+    {
+      "card_id": "4c97f636-92d4-592b-ab92-0a1fa5f5f9d5",
+      "completeness": null
+    },
+    {
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "completeness": null
+    },
+    {
+      "card_id": "64128513-a964-5eea-a6d6-e994bca6d567",
+      "completeness": null
+    },
+    {
+      "card_id": "787b905d-cfce-5d43-9cc5-3f35378e38fa",
+      "completeness": null
+    },
+    {
+      "card_id": "7f94d1b5-36ad-5c75-a278-4494b6c2228f",
+      "completeness": null
+    },
+    {
+      "card_id": "8da12676-eae1-5850-9f81-641c4ce26a66",
+      "completeness": null
+    },
+    {
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "completeness": null
+    },
+    {
+      "card_id": "904a8be2-a99b-5293-8ac4-87465c7d1dae",
+      "completeness": null
+    },
+    {
+      "card_id": "9644bcb1-dfdc-5d5e-83a6-7ea9f4517155",
+      "completeness": null
+    },
+    {
+      "card_id": "a8e74019-6c43-56f5-a67f-7c7fc50b6e04",
+      "completeness": null
+    },
+    {
+      "card_id": "b5c69582-9524-5f13-8b5b-9d8383e7a9d6",
+      "completeness": null
+    },
+    {
+      "card_id": "c0a0ad28-3d68-5dd4-a71b-ea5f661ff29b",
+      "completeness": null
+    },
+    {
+      "card_id": "caaae4c5-5e86-5335-b941-66d9358a7a93",
+      "completeness": {
+        "percent": 0,
+        "total": 31,
+        "planned": 31,
+        "implemented": 0,
+        "verified": 0,
+        "accepted": 0,
+        "scope_sha256": "4babb321f3d21971d06d12629d530790628985e93e5641a6af9d5000edc808a0",
+        "reason": null
+      }
+    },
+    {
+      "card_id": "ce001955-12c5-5199-975f-1cec993c916a",
+      "completeness": null
+    },
+    {
+      "card_id": "d7090ce8-edcd-52bb-8947-626af9b5d8c4",
+      "completeness": null
+    },
+    {
+      "card_id": "dcf84b1b-0a85-5dbf-a48e-b5b57d3169bc",
+      "completeness": {
+        "percent": 0,
+        "total": 13,
+        "planned": 13,
+        "implemented": 0,
+        "verified": 0,
+        "accepted": 0,
+        "scope_sha256": "57a98969f585330f003b5b23650e38ad0a56105fcd1b800269420dd1790d794d",
+        "reason": null
+      }
+    },
+    {
+      "card_id": "eaf209fe-5a70-5d07-8cae-dd33d47367b4",
+      "completeness": {
+        "percent": 0,
+        "total": 7,
+        "planned": 7,
+        "implemented": 0,
+        "verified": 0,
+        "accepted": 0,
+        "scope_sha256": "b8426d3d42ebdabad9b4671b65333df424f809e46acd32b86ff0c6959f6fb6f4",
+        "reason": null
+      }
+    },
+    {
+      "card_id": "ec6fa8a6-6a4f-55d0-89db-ea1a1a0242aa",
+      "completeness": null
+    },
+    {
+      "card_id": "ed9ec35a-a2f2-5dfe-b181-9df4686c435e",
+      "completeness": null
+    },
+    {
+      "card_id": "f5a80dd6-eeb2-58c2-a564-7dde0aa45aba",
+      "completeness": null
+    },
+    {
+      "card_id": "f8c4b45c-c795-5b0c-b9c7-36d74a2a4aa8",
+      "completeness": {
+        "percent": 8,
+        "total": 15,
+        "planned": 13,
+        "implemented": 1,
+        "verified": 1,
+        "accepted": 0,
+        "scope_sha256": "b7c3ac4647c3708d85a5da5a81fd157d5d3237c20cc7c189c48f900841ee3922",
+        "reason": null
+      }
+    }
+  ],
+  "ui": "Attempted live browser validation; Terms of Use dialog blocked interaction. No terms accepted on behalf of user. Screenshot: Community/output/playwright/sim04-terms-block.png",
+  "limits": [
+    "Not a completed application; all Cards retain in_progress.",
+    "Independent fake UoW parity, exact internal envelopes, full HTTP contract matrix and assistive inspection remain pending.",
+    "Cross-card currentness preserves existing proofs, not authority for new writes; own write head still required."
+  ]
+}

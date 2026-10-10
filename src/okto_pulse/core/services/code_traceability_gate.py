@@ -1482,6 +1482,13 @@ class CodeTraceabilityGateEvaluator:
             at=now,
             revocation=revocation,
             expected_delivery_context=inherited_delivery_context,
+            head_receipt=next((item for item in context.receipts if head and item.id == head.current_receipt_id), None),
+            head_receipt_revocation=next((item for item in context.receipt_revocations if head and item.receipt_id == head.current_receipt_id), None),
+            latest_subject_receipt_id=max(
+                (item for item in context.receipts if item.source_ref == receipt.source_ref
+                 and item.subject_type is receipt.subject_type and item.subject_id == receipt.subject_id),
+                key=lambda item: item.generation, default=receipt,
+            ).id,
         )
         if currentness is not CodeInvestigationReceiptCurrentness.CURRENT:
             return (

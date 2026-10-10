@@ -209,6 +209,7 @@ class CodeEvidenceService:
         accepted = await investigation_service.require_current_receipt(
             board_id=submission.board_id,
             receipt_id=submission.investigation_receipt_id,
+            require_write_head=True,
             store=investigation_store,
             actor_id=actor_id,
             subject_type=submission.parent_type,

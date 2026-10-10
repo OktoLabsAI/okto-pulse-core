@@ -185,6 +185,18 @@ currentness.
 
 ### Sequential observations and conflicts
 
+For different Cards sharing one source, an accepted receipt remains current
+when the current head observes the exact same committed source identity,
+revision, workspace ID, fingerprint algorithm/digest/count and canonicalization
+profile. Observation timestamps may differ. Each Card retains its own receipt,
+subject/version, selector scope, trust, capabilities, revocation and expiry;
+the other Card does not corroborate or extend it. Missing head evidence,
+conflict, changed source state and same-Card predecessor receipts remain
+fail-closed. This rule does not extend to Refinement or Spec receipts.
+New Evidence, Resolution and Execution writes still require a fresh preflight
+owning the current source head. Preservation of existing proof does not relax
+the transactional write-head fence or change the storage format.
+
 A new preflight from the same authenticated attestor may advance a **current**
 head within the same frozen selector scope when source identity is unchanged and
 the observed state changes. Both observations must carry a declared revision and

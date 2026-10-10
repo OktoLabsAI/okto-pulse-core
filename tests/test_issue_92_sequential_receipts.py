@@ -37,7 +37,7 @@ class Scenario:
             targets=(("target-1", 2),),
         )
 
-    async def observe(self, revision="revision-A", *, actor="agent-1", **changes):
+    async def observe(self, revision="revision-A", *, actor="agent-1", subject="card-1", **changes):
         self.count += 1
         self.clock.value += timedelta(seconds=1)
         caps = support.required_capabilities_for_subject(
@@ -47,7 +47,7 @@ class Scenario:
             support.StartCodeInvestigationInput(
                 board_id="board-1",
                 subject_type="card",
-                subject_id="card-1",
+                subject_id=subject,
                 expected_subject_version=4,
                 source_ref=self.source_ref,
                 idempotency_key=f"start-{self.count}",
