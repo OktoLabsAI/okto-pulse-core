@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-10 — DV1–DV4 concluídos; contrato nativo qualificado
+
+DV3 enviado: Core 92bb4551 / Community 5cf74fd8. Campanha final de schema,
+mensagem de incompatibilidade e inspeções REST/MCP: 65 passaram (inclui os 17
+nativos antes registrados; não somar como casos distintos). Dois negativos
+adicionais passaram: banco com constraint anterior, sem decision_review, recusado
+sem mudar bytes; inspeção restrita preservada após alteração fora do escopo e
+invalidada após alteração do requisito observado. Catálogo/quality: 20 passaram;
+uma expectativa fixa remanescente foi atualizada de 282 para 284 tools.
+
+Wheels dos dois checkouts construídos e instalados apenas na dv-venv. Prova de
+paridade em .validation-v040/dv-install-parity.json: Core 850 .py, Community 320
+.py, 58 arquivos MCP e 79 frontend byte-identical. Wheel Core SHA256
+6e3d3cd126910365b2412dc8e2944789b62aa6fcadae958d5dc58c2020296500;
+Community b4bf2fbc6c95d5886bfeb75e86c96cdf2dc7bfe567486b70a463c2a1d09726ed.
+Closure com os dois wheels passou: 8825 linhas, nenhum finding, oito budgets0,
+READMEs exatos (.validation-v040/dv-closure.json). Nenhum baseline foi relaxado.
+
+Processo instalado reiniciado sem PYTHONPATH de checkout: launcher44764,
+runtime40376, início08:38:23 posterior ao mtime08:37:25 do adapter instalado.
+Browser recarregado após reinício, bundle index-BY8Ouj02.js confirmado. Durante a
+parada programada houve connection refused no polling; após reinício os endpoints
+voltaram a200. A home usada é dv-browser-home, portas8120/8121. Home padrão e
+SIM-05 preservadas; T33 humano não foi declarado observado. Não houve promoção
+ou reinstalação na home real. Relatório distribuível no Community:
+docs/decision-verification-acceptance.md. Testes são campanhas focadas nos
+impactos, não alegação de execução integral de toda a suíte dos dois repositórios.
+Inspeção final do bundle instalado confirmou resumo âmbar sem barra/percentual
+quando incompleto, preservando o Verified individual e seu histórico. Evidência:
+Community/output/playwright/dv-installed-summary-final.png. Não restam etapas
+de implementação do DECISION_VERIFICATION_PLAN; instalação na home real e
+conclusão da iniciativa mock anterior não são efeitos automáticos desta entrega.
+
 ### 2026-10-10 — DV3 interface e consumidores implementados; DV4 em qualificação
 
 DV2 enviado: Core 437ea9d0 / Community bc0117dd. Decisions agora possui editor

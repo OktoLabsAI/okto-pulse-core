@@ -1,6 +1,6 @@
 # Verificação proporcional de decisões
 
-Assessment de 10 de outubro de 2026. Implementação autorizada e iniciada;
+Assessment de 10 de outubro de 2026. Implementação DV1–DV4 concluída e qualificada;
 estado e evidências de cada milestone no IMPLEMENTATION_LEDGER.md.
 Alteração de schema com breaking change expressamente autorizada pelo usuário
 em 10 de outubro de 2026; não é uma decisão pendente para executar este plano.
