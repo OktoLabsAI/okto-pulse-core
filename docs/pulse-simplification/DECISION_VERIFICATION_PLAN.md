@@ -3,6 +3,8 @@
 Assessment e plano para revisão, 10 de outubro de 2026. Implementação não iniciada.
 Alteração de schema com breaking change expressamente autorizada pelo usuário
 em 10 de outubro de 2026; não é uma decisão pendente para executar este plano.
+A v0.4.0 ainda não foi publicada e já prevê breaking change. Implementar somente
+o contrato nativo final, sem compatibilidade, conversores, backfills ou migrações.
 
 Decisões devem demonstrar aderência à escolha aprovada. Quando seus efeitos já
 estão expressos em requisitos, a verificação deve reutilizar as provas desses
@@ -234,12 +236,14 @@ Coverage/Delivery, serviços/tipos frontend e seus testes.
 - DV-T16: instalação nova usa contrato único; armazenamento incompatível é
   recusado descritivamente, sem converter nem apagar dados.
 
-## Instalação e dados existentes
+## Contrato nativo da versão ainda não publicada
 
 A proposta de `decision_review` amplia a constraint SQL do ledger da Spec. Isso
 muda o schema aceito pelo contrato estrito de armazenamento. O usuário autorizou
 expressamente a mudança mesmo com breaking change. Atualizar o contrato de schema
 e as fixtures nativas; não criar caminho de compatibilidade ou migração.
+Compatibilidade com builds intermediários da v0.4.0 não é requisito de aceitação,
+frente de desenvolvimento ou decisão pendente.
 
 Validar primeiro em data home isolada, com instalações e dados novos. Preservar
 a home atual e seus relatórios. Sob a diretriz vigente de não criar migrações,

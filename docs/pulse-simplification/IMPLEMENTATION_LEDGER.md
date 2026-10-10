@@ -24,6 +24,9 @@ Impacto de distribuição identificado: a constraint física do ledger de Spec
 aceita apenas waiver/revoke. Acrescentar decision_review muda o schema.
 **Autorização recebida em 10/10:** usuário permite alterar o schema sem
 preocupação com breaking changes. Não solicitar novamente essa autorização.
+Esclarecimento adicional: v0.4.0 ainda não publicada, com breaking change já
+declarada; compatibilidade com builds intermediários e migração estão fora do
+escopo. Entregar somente o contrato nativo final, sem conversores/backfills.
 Mantido o contrato único sem migração: validar em home isolada, recusar bases
 incompatíveis e preservar dados atuais, sem reset/conversão automática.
 T33 e sobrealocação SIM-05 continuam pendências independentes. Nenhum Card/Spec
