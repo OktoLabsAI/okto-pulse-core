@@ -251,10 +251,11 @@ def test_live_catalog_has_one_exact_policy_or_audited_human_only_exemption() -> 
     report = registry_vs_tools_report(list(LIVE_TOOL_NAMES))
 
     assert report.is_valid
-    assert len(report.live_tools) == 282
+    assert len(report.live_tools) == 284
+    assert {'okto_pulse_get_decision_reviews', 'okto_pulse_record_decision_reviews'} <= set(report.live_tools)
     assert "okto_pulse_get_historical_context" not in report.live_tools
     assert "okto_pulse_record_semantic_guideline_assessment" not in report.live_tools
-    assert len(MCP_TOOL_PERMISSION_POLICIES) == 279
+    assert len(MCP_TOOL_PERMISSION_POLICIES) == 281
     assert len(HUMAN_ONLY_MCP_TOOL_EXEMPTIONS) == 3
     assert tuple(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES) == tuple(
         sorted(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES)

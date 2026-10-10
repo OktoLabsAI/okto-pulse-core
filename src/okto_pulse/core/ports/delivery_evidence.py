@@ -6,6 +6,7 @@ from typing import Protocol
 from collections.abc import Mapping
 from okto_pulse.core.models.delivery_selection import DeliverySelectionInput
 from okto_pulse.core.models.delivery_report import CardDeliveryReportCommand
+from okto_pulse.core.models.decision_review import DecisionReviewCommand, DecisionReviewQuery
 from okto_pulse.core.models.code_traceability import ImplementationTargetExecutionSubmission
 
 
@@ -69,6 +70,18 @@ class DeliveryEvidenceReadPort(Protocol):
 
 
 class DeliveryEvidenceStore(DeliveryEvidenceReadPort, Protocol):
+    async def decision_reviews(self, query: DecisionReviewQuery, *, actor_id: str) -> dict:
+        """Read bounded current bases/history; never authenticate arbitrary sources."""
+        ...
+
+    async def record_decision_reviews(self, command: DecisionReviewCommand, *, actor_id: str, actor_kind: str) -> dict:
+        """Append atomic observations under the same fence as Spec Done.
+
+        Resolve native versioned sources, separation, CAS and replay before any
+        insert. No card proof, waiver, lifecycle transition or implicit commit.
+        """
+        ...
+
     async def card_resume(self, query: DeliveryEvidenceReadQuery, *, actor_id: str) -> dict:
         """Read accumulated Card facts through the canonical proof evaluators.
 

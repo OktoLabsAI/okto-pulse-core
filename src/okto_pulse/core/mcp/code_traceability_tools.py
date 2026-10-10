@@ -20,6 +20,7 @@ from typing import Annotated, Any, Callable, Literal, Mapping
 from pydantic import Field, SecretStr, ValidationError
 from okto_pulse.core.models.delivery_evidence import card_delivery_command, DeliveryBatchEntryError, DeliveryEvidenceReadQuery
 from okto_pulse.core.models.delivery_report import CardDeliveryRecordInput
+from okto_pulse.core.models.decision_review import DecisionReviewInput, DecisionReviewCommand, DecisionReviewQuery
 
 from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
@@ -207,6 +208,9 @@ def _error_outcome(error: Exception) -> McpToolOutcome:
             },
             "remediation": [],
         }
+    elif isinstance(error, ValueError) and str(error).startswith(("decision_review_", "decision_inspection_")):
+        projected = {"code": str(error).split(":", 1)[0], "message": str(error), "details": {},
+                     "remediation": [{"action": "review_decision_verification", "tool": "okto_pulse_get_decision_reviews"}]}
     elif isinstance(error, ValueError) and str(error).startswith("delivery_"):
         projected = {"code": str(error).split(":", 1)[0], "message": str(error), "details": error.details() if isinstance(error, DeliveryBatchEntryError) else {}, "remediation": [{"action": "review_delivery_evidence", "tool": "okto_pulse_get_delivery_evidence"}]}
     elif isinstance(error, PermissionDeniedError):
@@ -926,7 +930,33 @@ def register_code_traceability_tools(
             SubmitImplementationTargetExecutionUseCase(investigation, targets)
         ))
 
+    async def okto_pulse_get_decision_reviews(board_id: BoundedId, spec_id: BoundedId) -> McpToolOutcome:
+        """Read Decision adherence, native inspection sources, CAS and review history.
+
+        Declared inspection and obligation proof are both required when selected.
+        No Card or scenario is required for a direct inspection. Sources are resolved
+        by the server; an observation authenticates the reviewer, not its execution.
+        """
+        from okto_pulse.core.application.use_cases.decision_review import GetDecisionReviewsUseCase
+        return await _execute(board_id, DecisionReviewQuery(board_id=board_id, spec_id=spec_id), GetDecisionReviewsUseCase())
+
+    async def okto_pulse_record_decision_reviews(board_id: BoundedId, spec_id: BoundedId, review: DecisionReviewInput) -> McpToolOutcome:
+        """Record 1..50 Decision inspections with spec.validation.submit authority.
+
+        Read get_decision_reviews for exact sources/digests and version/review fences.
+        State what was actually observed. Failed/inconclusive results are preserved;
+        conflicting conclusions require explicitly reconciling all current heads.
+        Does not submit Spec Validation, waive requirements or execute an inspection.
+        Retry the identical batch and idempotency key after a timeout.
+        """
+        from okto_pulse.core.application.use_cases.decision_review import RecordDecisionReviewsUseCase
+        command = DecisionReviewCommand(board_id=board_id, spec_id=spec_id,
+            **DecisionReviewInput.model_validate(review).model_dump())
+        return await _execute(board_id, command, RecordDecisionReviewsUseCase())
+
     for handler in (
+        okto_pulse_get_decision_reviews,
+        okto_pulse_record_decision_reviews,
         okto_pulse_get_delivery_evidence,
         okto_pulse_record_delivery_evidence,
         okto_pulse_start_code_investigation,

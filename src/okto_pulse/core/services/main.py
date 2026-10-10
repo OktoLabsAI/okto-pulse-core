@@ -9495,6 +9495,7 @@ class SpecService:
                 {"field": "status", "old": None, "new": data.status.value},
                 {"field": "architecture_adoption", "old": None, "new": spec.architecture_adoption},
                 {"field": "execution_contract", "old": None, "new": spec.execution_contract},
+                {"field": "decisions", "old": None, "new": spec.decisions},
                 *(
                     [
                         {

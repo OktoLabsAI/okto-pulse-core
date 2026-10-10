@@ -85,7 +85,7 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
     ("Guidelines", "guideline",
      r"guideline"),
     ("Code Traceability", "code-traceability",
-     r"^okto_pulse_(get|record)_delivery_evidence$"),
+     r"^okto_pulse_(get|record)_(delivery_evidence|decision_reviews)$"),
     ("Code Traceability", "code-traceability",
      r"^okto_pulse_(?:.*code_(?:evidence|investigation|traceability)|"
      r".*implementation_(?:target|overlap)|acknowledge_implementation_overlap)"),

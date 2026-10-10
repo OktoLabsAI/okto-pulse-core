@@ -101,6 +101,23 @@ def evaluate_task_reviewer_separation(
     )
 
 
+def evaluate_decision_reviewer_separation(*, board, reviewer_id, author_ids, authors_known, cards=(), executor_ids=()):
+    """Apply the same explicit Board policy to a direct Decision inspection."""
+    base = evaluate_reviewer_separation(board=board, reviewer_id=reviewer_id, cards=cards)
+    conflicts = list(base.conflicts)
+    if not authors_known:
+        conflicts.append("decision_authorship_unknown")
+    if reviewer_id in author_ids:
+        conflicts.append("decision_author")
+    if reviewer_id in executor_ids:
+        conflicts.append("decision_scope_executor")
+    for card in cards:
+        if not isinstance(getattr(card, "created_by", None), str) or not card.created_by.strip():
+            conflicts.append(f"card_authorship_unknown:{getattr(card, 'id', '')}")
+    return ReviewerSeparationDecision(base.mode, not (base.mode == "enforce" and conflicts),
+        bool(base.mode == "warn" and conflicts), tuple(sorted(set(conflicts))), base.source)
+
+
 __all__ = [
     "REVIEWER_SEPARATION_MODES",
     "ReviewerSeparationDecision",

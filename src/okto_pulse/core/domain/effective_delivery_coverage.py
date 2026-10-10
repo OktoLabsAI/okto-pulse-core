@@ -17,6 +17,7 @@ from okto_pulse.core.domain.effective_delivery_inventory import (
     EffectiveDeliveryInventory,
 )
 from okto_pulse.core.domain.enums import CardStatus, CardType, TestScenarioStatus
+from okto_pulse.core.domain.decision_review import DecisionInspectionState
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +120,7 @@ class EffectiveDeliveryContext:
     implementations: tuple[ScopedImplementationFact, ...]
     tests: tuple[ScopedTestFact, ...]
     admitted_methods: frozenset[str] | None
+    decision_inspections: tuple[DecisionInspectionState, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,7 +190,8 @@ def evaluate_effective_snapshot(snapshot):
     if not isinstance(context, EffectiveDeliveryContext):
         return DeliveryCoverageEvaluation((), ('delivery_effective_context_unavailable',), ())
     result = evaluate_effective_delivery_coverage(inventory=context.inventory, snapshot=snapshot,
-        implementations=context.implementations, tests=context.tests, admitted_methods=context.admitted_methods)
+        implementations=context.implementations, tests=context.tests, admitted_methods=context.admitted_methods,
+        decision_inspections=context.decision_inspections)
     obligations = {item.binding: item for item in snapshot.obligations}
     return DeliveryCoverageEvaluation(tuple(ScopedDeliveryCoverageRow(
         obligations[row.binding], row.implementation_ids, row.test_ids,
@@ -206,6 +209,7 @@ def evaluate_effective_delivery_coverage(
     implementations: tuple[ScopedImplementationFact, ...],
     tests: tuple[ScopedTestFact, ...],
     admitted_methods: frozenset[str] | None,
+    decision_inspections: tuple[DecisionInspectionState, ...] = (),
 ) -> EffectiveDeliveryCoverage:
     """Require every approved Card contribution and every selected criterion.
 
@@ -470,16 +474,22 @@ def evaluate_effective_delivery_coverage(
             for row in dependencies
         )
         status = "verified" if satisfied else "obligations_pending"
+        review_ids = ()
         if not plan or not plan.complete:
             status = "planning_pending"
         elif plan.verification.inspection is not None:
-            satisfied = False
-            status = "inspection_pending"
+            states = [state for state in decision_inspections if state.decision_id == plan.decision_id]
+            inspection = states[0] if len(states) == 1 else None
+            review_ids = inspection.record_ids if inspection else ()
+            satisfied = satisfied and inspection is not None and inspection.status == "verified"
+            status = "verified" if satisfied else (
+                inspection.status if inspection and inspection.status != "verified" else
+                "obligations_pending" if inspection else "inspection_pending")
         if not satisfied:
             blockers.add("decision_verification_incomplete")
         result.append(EffectiveDeliveryCoverageRow(binding, (), (),
             tuple(sorted({identity for row in dependencies if row for identity in row.test_ids})),
-            (), (), (), (), True, satisfied, status))
+            (), (), (), (), True, satisfied, status, review_ids))
     if any(not row.implementation_satisfied for row in result):
         blockers.add("delivery_implementation_missing")
     if any(not row.test_satisfied and row.decision_verification_status is None for row in result):

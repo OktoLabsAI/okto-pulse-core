@@ -6,6 +6,41 @@ version: "1.3"
 
 ## `okto_pulse_get_delivery_evidence`
 
+Decisions have a separate adherence result. They reuse explicitly selected
+obligation proofs and/or an authenticated inspection; they do not require their
+own implementation or Test Card. A pending Decision cannot be completed by an
+unrelated passing scenario or a contextual task link.
+
+## `okto_pulse_get_decision_reviews`
+
+Read the current Decision results, exact native inspection sources, edition,
+Spec version and review revision before recording an observation. Sources bind
+the observable scope and current delivery facts; the server supplies their
+references, revisions and digests. Missing or unresolved metadata is pending.
+History retains observations, outcomes, author, timestamp, expected condition,
+sources and reconciliation. Prior editions never gain current credit.
+
+## `okto_pulse_record_decision_reviews`
+
+Requires `spec.validation.submit`, Spec/evidence reads and interaction in the
+current Spec state. This does not submit Spec Validation. Pass the observed
+condition, outcome and exact sources returned by the read operation. At most
+50 Decisions and 128 KiB per atomic batch, up to 20 sources per observation.
+The server owns actor/time and admission. A signed-in declaration establishes
+who reported the observation, not that Pulse executed the inspection.
+
+Reviewer separation follows the Board's off/warn/enforce setting and checks
+native Decision authors and scope executors; unknown authorship cannot prove
+independence. Both selected obligation proof and inspection must pass. Results
+failed, inconclusive, aborted, unavailable, revoked or materially stale remain
+pending. Conflicting results for the same base require explicit `reconciles`
+listing all current observation IDs; a newer passing report alone is insufficient.
+Use the same idempotency key and identical payload after timeout. Refresh scope
+after a version/review conflict. The existing human-only waiver/revoke operations
+remain separate. No invented sources, fake scenarios, implicit waivers or migration.
+
+## Delivery evidence read details
+
 Inputs: `board_id`, `spec_id`. Requires `code_traceability.evidence.read` and board
 access. Returns current `edition`, `version`, complete obligation rows with semantic
 digests, implementation/test association IDs, separate waiver IDs, `allowed`,

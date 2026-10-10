@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-10 — DV2 evidência e fechamento implementados; DV3 em andamento
+
+DV1 enviado: Core 2d0ce031 / Community 502dd394. DV2 acrescenta decision_review
+ao ledger nativo imutável da Spec e amplia a constraint física, sem migração.
+Comando fechado em lote, porta pública, REST/MCP compartilhados, fontes nativas
+versionadas resolvidas pelo servidor, CAS de Spec/edição/reviews, idempotência,
+fence comum ao Done, autoria derivada do histórico e executores do escopo.
+Separação off/warn/enforce, revogação humana, stale por mudança material e
+reconciliação explícita de todos os heads conflitantes. Nova edição preserva
+histórico; comentários/versão técnica não resealam nem invalidam a observação.
+Fontes são projeções relacionais autorizadas, não URIs/hashes externos aceitos
+como prova. A autenticação identifica o declarante; não alega execução pelo Pulse.
+
+Testes: Core 80 passaram (contrato/resolução/planejamento/lifecycle/catalogo);
+Community 53 passaram (12 novos nativos, 4 REST/MCP e regressão do ledger).
+Caso combinado usa implementação e Test Card existentes e só libera a Decision
+quando obrigações E inspeção passam. Spec vazia continua bloqueada por seu gate
+independente de qualificação de escopo; o teste não o dispensou. Campanhas foram
+precedidas de byte parity dos 848 Core/320 Community .py na dv-venv isolada.
+Primeira tentativa misturou conftests dos dois repos e foi interrompida; campanhas
+subsequentes foram separadas. Falhas de fixture (verificador/composição ausentes)
+corrigidas; transporte MCP passou a validar o input tipado também na chamada
+direta. Catálogo/manifest regenerados oficialmente: 284 tools, duas novas.
+Teste do registry exigiu atualizar contagens e ordenação explícita dos registros;
+rerun final: 11 testes passaram. Ruff F/E9 e diff-check passaram.
+
+DV3 iniciado em paralelo apenas nos fontes frontend: editor de plano, formulário
+de inspeção, retry estável, histórico expansível por edição e cobertura sem
+implementação fictícia. 6 testes iniciais e 42 de editor/painéis passaram;
+TypeScript build passou. Ainda faltam alinhamento de analytics/contexto/contagens,
+testes finais e inspeção real do navegador. Nenhuma distribuição/live home foi
+alterada; não declarar entrega integral. DV4 ainda pendente.
+
 ### 2026-10-10 — DV1 contrato e planejamento implementados
 
 Usuário solicitou iniciar a implementação do DECISION_VERIFICATION_PLAN.
