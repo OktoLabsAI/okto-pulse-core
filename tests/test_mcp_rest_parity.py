@@ -365,10 +365,10 @@ class TestSpecCoverageSummaryParity:
         "trs_linked",
         "trs_total",
         # Ideação #10 Fase 1 — decisions paridade
-        "decisions_coverage_pct",
-        "decisions_linked",
+        "decisions_planning_pct",
+        "decisions_planned",
         "decisions_total",
-        "decisions_uncovered_ids",
+        "decisions_pending_ids",
         # IR/OR first-class requirement coverage
         "ir_task_linkage_pct",
         "irs_linked",

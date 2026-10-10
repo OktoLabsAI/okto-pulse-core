@@ -93,16 +93,19 @@ def project_spec_coverage(query: SpecCoverageQuery, snapshot: SpecCoverageSnapsh
             'delivery_contribution_allocation_invalid',
         })
         for row in evaluation.rows:
+            decision_status = getattr(row, 'decision_verification_status', None)
             rows.append({
                 'kind': 'delivery',
                 'obligation_ref': row.obligation.binding.obligation_ref,
                 'semantic_sha256': row.obligation.binding.semantic_sha256,
                 'title': row.obligation.title[:240],
-                'implementation': _proof_status(row.implementation_satisfied, row.implementation_ids,
+                'implementation': 'not_applicable' if decision_status else _proof_status(row.implementation_satisfied, row.implementation_ids,
                     row.implementation_waiver_ids, complete=proof_complete),
                 'verification': _proof_status(row.test_satisfied, row.test_ids, row.test_waiver_ids, complete=proof_complete),
                 'implementation_record_refs': list(row.implementation_ids),
                 'verification_record_refs': list(row.test_ids),
+                'decision_verification_status': decision_status,
+                'decision_review_refs': list(getattr(row, 'decision_review_ids', ())),
                 'implementation_waiver_refs': list(row.implementation_waiver_ids),
                 'verification_waiver_refs': list(row.test_waiver_ids),
                 'required_card_refs': [f'card:{value}' for value in getattr(row, 'required_card_ids', ())],
@@ -111,9 +114,11 @@ def project_spec_coverage(query: SpecCoverageQuery, snapshot: SpecCoverageSnapsh
             })
     rows.sort(key=lambda row: row['obligation_ref'])
     counts = {
-        'obligations': len(rows) if proof_complete else None,
+        'obligations': sum(row['decision_verification_status'] is None for row in rows) if proof_complete else None,
         'implementation_proven': sum(row['implementation'] == 'proven' for row in rows) if proof_complete else None,
-        'verification_proven': sum(row['verification'] == 'proven' for row in rows) if proof_complete else None,
+        'verification_proven': sum(row['verification'] == 'proven' and row['decision_verification_status'] is None for row in rows) if proof_complete else None,
+        'decisions': sum(row['decision_verification_status'] is not None for row in rows) if proof_complete else None,
+        'decisions_verified': sum(row['decision_verification_status'] == 'verified' for row in rows) if proof_complete else None,
         'observed_obligations': len(rows) if snapshot.delivery is not None else None,
     }
     graph_summary, graph_rows, graph_state, generation = project_spec_coverage_graph(query, snapshot)

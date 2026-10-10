@@ -6,7 +6,9 @@ version: "1.3"
 
 Before `move_spec` to `done`, read `okto_pulse_get_delivery_evidence` and resolve
 every missing implementation/test row with `okto_pulse_record_delivery_evidence`.
-Only test cards provide verification; planning evidence and Skip flags do not waive
+Test Cards verify executable obligations. Decisions reuse selected obligation
+proofs and/or direct observations via `okto_pulse_get_decision_reviews` and
+`okto_pulse_record_decision_reviews`. Planning evidence and Skip flags do not waive
 delivery proof. See `okto-pulse://reference/tool-docs/code-traceability`.
 
 Validation and curated-checklist gate rules:

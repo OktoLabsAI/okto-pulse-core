@@ -238,6 +238,7 @@ class CoreAnalyticsOperations:
                     for spec in specs
                 ]
             )
+        from okto_pulse.core.services.decision_verification_read import decision_delivery_rows
         return build_coverage_traceability_projection(
             query=query,
             as_of=as_of,
@@ -245,6 +246,7 @@ class CoreAnalyticsOperations:
             specs=specs,
             cards=cards,
             code_traceability_contexts=contexts,
+            decision_delivery=await decision_delivery_rows(self.__relational_context, specs),
         )
 
     async def canonical_flow_health(self, *, query, as_of):  # noqa: ANN001, ANN201
@@ -294,12 +296,14 @@ class CoreAnalyticsOperations:
             ),
             order_by="occurred_at",
         )
+        from okto_pulse.core.services.decision_verification_read import decision_delivery_rows
         coverage = build_coverage_traceability_projection(
             query=query,
             as_of=as_of,
             board=boards[0],
             specs=tuple(spec for spec in specs if not spec.archived),
             cards=cards,
+            decision_delivery=await decision_delivery_rows(self.__relational_context, tuple(spec for spec in specs if not spec.archived)),
         )
         return build_flow_health_projection(
             query=query,

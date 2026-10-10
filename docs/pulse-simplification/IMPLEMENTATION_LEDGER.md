@@ -2,6 +2,42 @@
 
 ## Estado para retomada
 
+### 2026-10-10 — DV3 interface e consumidores implementados; DV4 em qualificação
+
+DV2 enviado: Core 437ea9d0 / Community bc0117dd. Decisions agora possui editor
+de plano por obrigações e/ou inspeção, formulário único de observação autenticada,
+reconciliação explícita e histórico expansível por edição. Coverage navega para
+esse formulário; implementação de Decision é não aplicável, sem pontos de Card.
+Analytics separa decisions_planning_pct/decisions_planned/decisions_pending_ids
+da aderência efetiva, consumida pelo mesmo avaliador do gate. Contexto e recursos
+MCP orientam a seleção semântica e as duas novas ferramentas. Não há migração.
+
+Validação: 164 testes Core de analytics/coverage; 173 de domínio, planejamento,
+progresso, contexto, catálogo e KG; 17 nativos Community/REST/MCP, incluindo AND,
+prova reaproveitada e projeção coerente sem crédito de implementação. Os demais
+5 testes de supersedência/projeção KG passaram na campanha anterior (a falha
+daquela campanha era o novo oráculo de contagens em Spec vazia; corrigido para
+preservar unavailable, com positivo separado em inventário completo).
+Frontend: 50 testes passaram; build TypeScript/Vite e sync de 79 arquivos passaram,
+tree 796c6308a12cffd898de590d947edf9c7aa2824ea0652d56b78c14fb15520047.
+
+Navegador real via Playwright, runtime isolado 8120/8121, Spec nativa
+a9e1b1e1-2246-4f39-af5c-fe70b7de06af: cadastro de Decision/condição pela UI,
+registro da observação da descrição efetivamente lida, resultado Verified,
+histórico, Implementation não aplicável e link Review in Decisions conferidos.
+A inspeção visual encontrou barra verde com fonte incompleta; corrigida para
+não renderizar percentual/barra sem população completa, com teste de regressão.
+Arquivos de conferência em Community/output/playwright/dv-*, não versionados.
+
+Auditoria executável encontrou reach-in do adapter em reviewer_separation;
+corrigido pela porta pública ports/reviewer_policy, sem duplicar política nem
+ampliar allowlist/budget. Auditoria após correção: 8825 ownership rows,
+0 findings, oito budgets ZERO; READMEs renderizados pelo gerador oficial.
+Paridade antes dos testes: 850 .py Core / 320 Community byte-identical na dv-venv.
+Ruff F/E9 e diff-check passaram. Home real/SIM-05 e observação humana T33 intactas.
+DV4 em andamento: schema/recusa de base incompatível, instalação dos wheels
+finais, nova conferência do processo instalado e auditoria com os dois wheels.
+
 ### 2026-10-10 — DV2 evidência e fechamento implementados; DV3 em andamento
 
 DV1 enviado: Core 2d0ce031 / Community 502dd394. DV2 acrescenta decision_review

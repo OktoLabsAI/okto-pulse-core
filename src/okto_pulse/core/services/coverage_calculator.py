@@ -100,9 +100,8 @@ SPEC_OBJECTIVE_COVERAGE_DIMENSIONS: tuple[CoverageDimensionConfig, ...] = (
     CoverageDimensionConfig("trs", "tr_task_linkage_pct", "trs_total"),
     CoverageDimensionConfig(
         "decisions",
-        "decisions_coverage_pct",
+        "decisions_planning_pct",
         "decisions_total",
-        "skip_decisions_coverage",
     ),
     CoverageDimensionConfig("irs", "ir_task_linkage_pct", "irs_total", "skip_ir_coverage"),
     CoverageDimensionConfig("ors", "or_task_linkage_pct", "ors_total", "skip_or_coverage"),

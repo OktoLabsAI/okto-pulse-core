@@ -102,8 +102,9 @@ class TestBackwardCompat:
         assert cov["brs_linked"] == 1
         assert cov["contracts_linked"] == 0
         assert cov["trs_linked"] == 1
-        assert cov["decisions_linked"] == 1
-        assert cov["decisions_uncovered_ids"] == []
+        # A contextual task link is not a verification plan.
+        assert cov["decisions_planned"] == 0
+        assert cov["decisions_pending_ids"] == ["d1"]
 
     def test_cards_with_no_cancellations_equals_no_cards_path(self):
         """cards param contendo apenas in_progress/done/started cards
@@ -126,8 +127,8 @@ class TestBackwardCompat:
             "brs_linked",
             "contracts_linked",
             "trs_linked",
-            "decisions_linked",
-            "decisions_uncovered_ids",
+            "decisions_planned",
+            "decisions_pending_ids",
         ):
             assert with_cards[k] == baseline[k], f"diverged on key {k}"
 
@@ -319,9 +320,9 @@ class TestDecisionDropAndUncoveredIds:
             ]
         )
         cov = spec_coverage_summary(spec, cards=[_card("c_e", "cancelled")])
-        assert cov["decisions_linked"] == 0
-        assert cov["decisions_coverage_pct"] == 0.0
-        assert cov["decisions_uncovered_ids"] == ["dec_x"]
+        assert cov["decisions_planned"] == 0
+        assert cov["decisions_planning_pct"] == 0.0
+        assert cov["decisions_pending_ids"] == ["dec_x"]
 
 
 class TestStatusRestore:
@@ -346,7 +347,11 @@ class TestRevokedSupersededRegression:
         funcionando mesmo após introdução do cancelled-card filter."""
         spec = _make_spec(
             decisions=[
-                {"id": "dec_a", "status": "active", "linked_task_ids": ["c"]},
+                {"id": "dec_a", "status": "active", "linked_task_ids": ["c"],
+                 "verification": {"obligation_refs": [], "inspection": {
+                     "condition": "The documented scope remains a mock.",
+                     "scope_refs": [{"kind": "spec", "id": "spec-test"}],
+                 }}},
                 {"id": "dec_b", "status": "revoked", "linked_task_ids": ["c"]},
                 {"id": "dec_c", "status": "superseded", "linked_task_ids": ["c"]},
             ]
@@ -354,7 +359,7 @@ class TestRevokedSupersededRegression:
         cov = spec_coverage_summary(spec, cards=[_card("c", "in_progress")])
         # Apenas dec_a entra no denominator
         assert cov["decisions_total"] == 1
-        assert cov["decisions_linked"] == 1
+        assert cov["decisions_planned"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -400,7 +405,7 @@ class TestCoverageRowForSpecExtension:
             assert legacy_key in row, f"legacy field {legacy_key} missing"
         # Additive Analytics fields present
         for new_key in (
-            "decisions_coverage_pct",
+            "decisions_planning_pct",
             "decisions_total",
             "tr_task_linkage_pct",
             "trs_total",
@@ -431,7 +436,7 @@ class TestCoverageRowForSpecExtension:
             ],
         )
         row = _coverage_row_for_spec(spec, cards=[_card("c", "cancelled")])
-        assert row["decisions_coverage_pct"] == 0.0
+        assert row["decisions_planning_pct"] == 0.0
         assert row["tr_task_linkage_pct"] == 0.0
 
     def test_cancelled_card_propagates_to_ir_or_row_shape(self):

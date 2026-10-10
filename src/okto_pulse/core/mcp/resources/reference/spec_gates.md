@@ -7,9 +7,11 @@ version: "1.2"
 ## Delivery evidence gate at Done
 
 Allowed transitions and authoritative completion evaluate the same delivery proof.
-All active FR/TR/BR/AC/API/IR/OR/decision obligations need committed task/bug proof
+All active FR/TR/BR/AC/API/IR/OR obligations need committed task/bug proof
 and authenticated passed TEST-card results for the implementation records actually
-tested. No structured obligations produces one explicit Spec-scope obligation, not
+tested. Decisions reuse the current proofs of their selected obligations and/or
+require their declared direct inspection; they need no artificial task or Test Card.
+Both verification paths, when declared, must pass. No executable structured obligations produces one explicit Spec-scope obligation, not
 vacuous 100% coverage. Waivers are human-authorized, exact-scope and phase-specific.
 Skip Code Evidence/Test Coverage/Test Evidence, advisory posture and greenfield do
 not bypass delivery. Existing done status is preserved, with missing proof exposed
@@ -499,13 +501,27 @@ After a spec reaches `validated`, it must undergo qualitative evaluation before 
 
 ## Decisions Coverage Gate
 
-`skip_decisions_coverage` defaults to `False` on newly created specs. `okto_pulse_submit_spec_validation` calls `check_decisions_coverage` and rejects the spec if any Decision with `status="active"` has no `linked_task_ids`.
+`check_decisions_coverage` rejects active Decisions without a complete explicit
+verification plan: exact active obligation_refs in the same Spec and/or inspection
+condition with bounded scope_refs. Task links are contextual and confer no proof.
+`skip_decisions_coverage` and its Board counterpart do not bypass this contract.
+Do not create an implementation task or Test Card solely to cover a Decision.
+
+At delivery, selected obligations must have their current effective proofs and
+every declared inspection must be verified. Both are required when declared.
+The direct inspection command requires spec.validation.submit and applicable
+reads/interaction, applies reviewer separation, and preserves conflicts/history.
+Semantic Spec Validation checks the adequacy of references and must reject
+executable product behavior hidden only inside a Decision.
 
 **Coverage summary** in `okto_pulse_get_spec_context`:
 - `decisions_total`: total count of `active` decisions.
-- `decisions_linked`: `active` decisions that have at least one entry in `linked_task_ids`.
-- `decisions_coverage_pct`: 0-100.
-- `decisions_uncovered_ids`: list of `decision.id` values with no linked tasks.
+- `decisions_planned`: active Decisions with a resolved verification plan.
+- `decisions_planning_pct`: 0-100, planning only, never evidence of delivery.
+- `decisions_pending_ids`: Decisions whose verification plan remains incomplete.
+
+Current adherence and proof references come from the shared delivery evaluator;
+read `okto_pulse_get_decision_reviews` before inspection or closeout.
 
 ## Task Validation Gate — `okto_pulse_submit_task_validation`
 

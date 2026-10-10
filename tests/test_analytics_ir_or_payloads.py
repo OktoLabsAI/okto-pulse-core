@@ -118,7 +118,7 @@ async def test_compute_coverage_row_includes_ir_or_fields_additively(db_factory)
         "fr_with_rules_pct",
         "fr_with_contracts_pct",
         "tr_task_linkage_pct",
-        "decisions_coverage_pct",
+        "decisions_planning_pct",
     ):
         assert legacy_key in row
     assert row["irs_total"] == 2

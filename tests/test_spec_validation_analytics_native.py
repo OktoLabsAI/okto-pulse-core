@@ -55,7 +55,7 @@ async def test_board_breakdown_reports_current_spec_metrics_without_task_aliases
     assert "last_completeness" not in row
     assert "completeness" in result["task_validation_gate"]["avg_scores"]
     monkeypatch.setattr(analytics, "spec_coverage_summary", lambda *args, **kwargs: {
-        "decisions_coverage_pct": 100, "decisions_uncovered_ids": []})
+        "decisions_planning_pct": 100, "decisions_pending_ids": []})
     details = await analytics.compute_spec_analytics(object(), "board", "spec")
     timeline = details["validation_timeline"][0]
     assert {key: timeline[key] for key in ("confidence", "clarity", "decidability",

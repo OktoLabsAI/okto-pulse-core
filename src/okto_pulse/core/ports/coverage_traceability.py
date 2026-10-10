@@ -232,6 +232,8 @@ class CoverageObligationFact:
     authority_ref: str | None
     authority_reason: str | None = None
     skip: CoverageSkipMetadata = CoverageSkipMetadata()
+    decision_status: str | None = None
+    decision_proof_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.identity, CoverageObligationIdentity):
@@ -242,6 +244,14 @@ class CoverageObligationFact:
             raise ValueError("coverage_traceability_authority_state_invalid")
         if not isinstance(self.skip, CoverageSkipMetadata):
             raise ValueError("coverage_traceability_skip_invalid")
+        if self.decision_status is not None and (
+            self.identity.obligation_type is not CoverageObligationType.DECISION
+            or self.decision_status not in {'verified', 'planning_pending', 'obligations_pending', 'inspection_pending',
+                'conflict', 'failed', 'inconclusive', 'aborted', 'unavailable', 'revoked'}
+            or not isinstance(self.decision_proof_refs, tuple)
+            or any(not isinstance(ref, str) or not ref for ref in self.decision_proof_refs)
+        ):
+            raise ValueError("coverage_decision_adherence_scope_invalid")
         if not self.applicable and self.skip.effective:
             raise ValueError("coverage_traceability_non_applicable_skip_forbidden")
         if self.authority_state is CoverageAuthorityState.AVAILABLE:
@@ -358,6 +368,8 @@ class CoverageObligationRow:
     evidence: tuple[CoverageEvidenceRow, ...]
     authority_ref: str | None = None
     reason: str | None = None
+    decision_status: str | None = None
+    decision_proof_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.identity, CoverageObligationIdentity):
@@ -399,7 +411,12 @@ class CoverageObligationRow:
                 raise ValueError("coverage_traceability_factual_row_not_current")
             if self.covered is not (self.state is CoverageFactState.COVERED):
                 raise ValueError("coverage_traceability_covered_state_mismatch")
-            if bool(eligible) is not self.covered:
+            if self.decision_status is not None:
+                if self.identity.obligation_type is not CoverageObligationType.DECISION or self.evidence:
+                    raise ValueError("coverage_decision_adherence_scope_invalid")
+                if self.covered != (self.decision_status == 'verified') or (self.covered and not self.decision_proof_refs):
+                    raise ValueError("coverage_decision_adherence_proof_invalid")
+            elif bool(eligible) is not self.covered:
                 raise ValueError("coverage_traceability_evidence_coverage_mismatch")
             object.__setattr__(
                 self,
@@ -440,6 +457,8 @@ class CoverageObligationRow:
             "authority_ref": self.authority_ref,
             "reason": self.reason,
             "evidence": [item.canonical_dict() for item in self.evidence],
+            **({"decision_status": self.decision_status, "decision_proof_refs": list(self.decision_proof_refs)}
+               if self.decision_status is not None else {}),
         }
 
 

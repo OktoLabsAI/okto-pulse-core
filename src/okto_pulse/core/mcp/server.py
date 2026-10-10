@@ -14701,9 +14701,10 @@ async def okto_pulse_add_decision(
     path over alternatives. Different from BusinessRule (which is a NORM, a
     prescriptive "MUST" statement): use a Decision to capture design
     intent, tradeoffs, or team consensus. The KG extracts Decisions into
-    queryable nodes, and the optional coverage gate (opt-in) can require each
-    Decision to have >=1 linked task. linked_requirements accepts FR refs and
-    structured TR refs.
+    queryable nodes. Verification selects exact obligations and/or a direct
+    inspection; both declared paths must pass. Contextual task and requirement
+    links do not constitute proof. A complete verification plan is required
+    before validation/start; inspection results are required at completion.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -14815,9 +14816,9 @@ async def _link_task_to_decision_internal(
     card_id: str,
 ) -> str:
     """Internal helper for link_task target_type='decision'. Idempotent —
-    re-linking the same card is a no-op. Populates decision.linked_task_ids so
-    the opt-in coverage gate (skip_decisions_coverage=False) can verify each
-    active Decision has at least one linked task.
+    re-linking the same card is a no-op. Populates contextual traceability in
+    decision.linked_task_ids. Decision verification uses its explicit plan
+    and current evidence, never this task link as approval.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:

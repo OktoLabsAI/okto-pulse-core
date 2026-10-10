@@ -36,10 +36,10 @@ class CoverageSummary(Closed):
     tr_task_linkage_pct: float
     trs_linked: int
     trs_total: int
-    decisions_coverage_pct: float
-    decisions_linked: int
+    decisions_planning_pct: float
+    decisions_planned: int
     decisions_total: int
-    decisions_uncovered_ids: list[str]
+    decisions_pending_ids: list[str]
     ir_task_linkage_pct: float
     irs_linked: int
     irs_total: int
@@ -86,6 +86,8 @@ class DeliveryCounts(Closed):
     implementation_proven: int | None
     verification_proven: int | None
     observed_obligations: int | None
+    decisions: int | None
+    decisions_verified: int | None
 
 
 class Delivery(Closed):
@@ -98,7 +100,7 @@ class Delivery(Closed):
     interpretation: Literal['admitted_proof_and_authorized_waivers_do_not_approve_other_gates']
 
 
-ProofStatus = Literal['unknown', 'proven', 'partial', 'missing', 'satisfied_with_waiver']
+ProofStatus = Literal['unknown', 'proven', 'partial', 'missing', 'satisfied_with_waiver', 'not_applicable']
 
 
 class DeliveryItem(Closed):
@@ -108,6 +110,8 @@ class DeliveryItem(Closed):
     title: str = Field(max_length=240)
     implementation: ProofStatus
     verification: ProofStatus
+    decision_verification_status: str | None
+    decision_review_refs: list[str]
     implementation_record_refs: list[str]
     verification_record_refs: list[str]
     implementation_waiver_refs: list[str]

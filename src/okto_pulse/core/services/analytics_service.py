@@ -224,7 +224,7 @@ def _coverage_row_for_spec(spec: Any, cards: list | None = None) -> dict:
     Output shape matches REST /analytics/coverage exactly. MCP converges to
     this shape (previously omitted BR/contract counts + FR coverage %).
 
-    Spec 233eaad3: extends shape with 4 fields (decisions_coverage_pct,
+    Spec 233eaad3: extends shape with 4 fields (decisions_planning_pct,
     decisions_total, tr_task_linkage_pct, trs_total) sourced from
     ``spec_coverage_summary``. Backward compatible — pre-existing fields
     preserved bit-for-bit; ``cards`` defaults to None.
@@ -291,11 +291,11 @@ def _coverage_row_for_spec(spec: Any, cards: list | None = None) -> dict:
         # covered_ac/total_ac e fr_with_rules_pct, com labels confusos no UI).
         "ac_coverage_pct": cov["ac_coverage_pct"],
         "fr_coverage_pct": cov["fr_coverage_pct"],
-        "decisions_coverage_pct": cov["decisions_coverage_pct"],
+        "decisions_planning_pct": cov["decisions_planning_pct"],
         "decisions_total": cov["decisions_total"],
         # Bug 42e78332: decisions parity with IR/OR (linked + uncovered_ids + skip).
-        "decisions_linked": cov["decisions_linked"],
-        "decisions_uncovered_ids": cov["decisions_uncovered_ids"],
+        "decisions_planned": cov["decisions_planned"],
+        "decisions_pending_ids": cov["decisions_pending_ids"],
         "skip_decisions_coverage": cov["skip_decisions_coverage"],
         "tr_task_linkage_pct": cov["tr_task_linkage_pct"],
         "trs_total": cov["trs_total"],
@@ -326,7 +326,7 @@ async def compute_coverage(
       - spec_id, title, total_ac, covered_ac, total_scenarios,
         scenario_status_counts, business_rules_count, api_contracts_count,
         fr_with_rules_pct, fr_with_contracts_pct,
-      - decisions_coverage_pct, decisions_total, tr_task_linkage_pct, trs_total
+      - decisions_planning_pct, decisions_total, tr_task_linkage_pct, trs_total
         (spec 233eaad3 — sourced from ``spec_coverage_summary`` so cancelled
         cards are excluded from linkage counts).
 
@@ -674,7 +674,7 @@ def spec_coverage_summary(
     Override args (scenarios/rules/contracts/trs/decisions) suportam chamadas
     in-flight onde o spec ainda não foi persistido com a nova coleção.
 
-    Ideação #10 Fase 1: adiciona decisions_coverage_pct + decisions_uncovered_ids
+    Ideação #10 Fase 1: adiciona decisions_planning_pct + decisions_pending_ids
     paralelo ao TR/BR/Contract linkage, paridade first-class.
 
     Spec 233eaad3 (Analytics cancelled-card filter): aceita ``cards`` opcional
@@ -779,17 +779,17 @@ def spec_coverage_summary(
         if isinstance(d, dict) and d.get("status", "active") == "active"
     ]
     d_total = len(active_decisions)
-    d_linked = sum(
-        1
-        for d in active_decisions
-        if (set(d.get("linked_task_ids") or []) - cancelled_card_ids)
-    )
-    d_uncovered_ids = [
-        d.get("id")
-        for d in active_decisions
-        if not (set(d.get("linked_task_ids") or []) - cancelled_card_ids)
-        and d.get("id")
-    ]
+    from okto_pulse.core.domain.decision_verification import resolve_decision_verification
+    try:
+        decision_plans = resolve_decision_verification(spec_id=str(getattr(spec, 'id', '')),
+            decisions=_decisions, collections={'functional_requirements': frs, 'technical_requirements': _trs,
+                'business_rules': _brs, 'integration_requirements': _irs, 'observability_requirements': _ors,
+                'acceptance_criteria': acs, 'api_contracts': _contracts})
+    except ValueError:
+        decision_plans = ()  # Unresolved source never gains planning credit.
+    planned_ids = {plan.decision_id for plan in decision_plans if plan.complete}
+    d_planned = sum(d.get("id") in planned_ids for d in active_decisions)
+    d_pending_ids = [d["id"] for d in active_decisions if d.get("id") and d["id"] not in planned_ids]
     active_irs = [
         ir
         for ir in _irs
@@ -850,10 +850,10 @@ def spec_coverage_summary(
         "tr_task_linkage_pct": _pct(tr_linked, tr_total),
         "trs_linked": tr_linked,
         "trs_total": tr_total,
-        "decisions_coverage_pct": _pct(d_linked, d_total),
-        "decisions_linked": d_linked,
+        "decisions_planning_pct": _pct(d_planned, d_total),
+        "decisions_planned": d_planned,
         "decisions_total": d_total,
-        "decisions_uncovered_ids": d_uncovered_ids,
+        "decisions_pending_ids": d_pending_ids,
         "ir_task_linkage_pct": _pct(ir_linked, ir_total),
         "irs_linked": ir_linked,
         "irs_total": ir_total,
@@ -869,7 +869,7 @@ def spec_coverage_summary(
         **card_counts,
         "skip_test_coverage": getattr(spec, "skip_test_coverage", False),
         "skip_rules_coverage": getattr(spec, "skip_rules_coverage", False),
-        "skip_decisions_coverage": getattr(spec, "skip_decisions_coverage", False),
+        "skip_decisions_coverage": False,
         "skip_ir_coverage": getattr(spec, "skip_ir_coverage", False),
         "skip_or_coverage": getattr(spec, "skip_or_coverage", False),
     }
@@ -1757,6 +1757,18 @@ def render_decisions_markdown(
             lines.append(f"- **Rationale**: {rationale}")
         if context := d.get("context"):
             lines.append(f"- **Context**: {context}")
+        from okto_pulse.core.domain.decision_verification import DecisionVerification
+        try:
+            verification = DecisionVerification.model_validate(d.get('verification'))
+        except ValueError:
+            lines.append('- **Verification**: Plan pending; author exact obligations and/or an inspection condition.')
+        else:
+            lines.append(f'- **Verification method**: {verification.method}; read current adherence with okto_pulse_get_decision_reviews.')
+            if verification.obligation_refs:
+                lines.append('- **Verification obligations**: ' + ', '.join(verification.obligation_refs))
+            if verification.inspection:
+                lines.append('- **Inspection condition**: ' + verification.inspection.condition)
+                lines.append('- **Inspection scope**: ' + ', '.join(f'{r.kind}:{r.id}' for r in verification.inspection.scope_refs))
 
         alternatives = d.get("alternatives_considered") or []
         if alternatives:
@@ -2576,11 +2588,11 @@ async def compute_spec_analytics(db, board_id: str, spec_id: str) -> dict | None
         or [],
         # Bug 42e78332: surface decisions for the entity-detail drilldown (parity with
         # _spec_detail + the IR/OR pattern). EntityDetail.tsx reads data.decisions /
-        # data.decisions_coverage / data.decisions_uncovered_ids; sourced from the
+        # data.decisions_planning / data.decisions_pending_ids; sourced from the
         # already-computed coverage_summary (SSOT spec_coverage_summary).
         "decisions": getattr(spec, "decisions", None) or [],
-        "decisions_coverage": coverage_summary["decisions_coverage_pct"],
-        "decisions_uncovered_ids": coverage_summary["decisions_uncovered_ids"],
+        "decisions_planning": coverage_summary["decisions_planning_pct"],
+        "decisions_pending_ids": coverage_summary["decisions_pending_ids"],
         "cards_summary": {
             "total": len(cards),
             "by_status": _card_status_breakdown(cards),
@@ -3563,12 +3575,12 @@ async def _spec_detail(db: Any, board_id: str, spec_id: str) -> dict:
         "observability_requirements": getattr(spec, "observability_requirements", None)
         or [],
         # Bug 42e78332: surface decisions for the entity-detail drilldown. EntityDetail.tsx
-        # reads top-level data.decisions / data.decisions_coverage / data.decisions_uncovered_ids
+        # reads top-level data.decisions / data.decisions_planning / data.decisions_pending_ids
         # (KPI + "Decisions Coverage" panel). Sourced from spec.decisions + the already-computed
         # coverage_summary (SSOT spec_coverage_summary) — additive, mirrors IR/OR (spec 233eaad3).
         "decisions": getattr(spec, "decisions", None) or [],
-        "decisions_coverage": coverage_summary["decisions_coverage_pct"],
-        "decisions_uncovered_ids": coverage_summary["decisions_uncovered_ids"],
+        "decisions_planning": coverage_summary["decisions_planning_pct"],
+        "decisions_pending_ids": coverage_summary["decisions_pending_ids"],
         "bugs_count": len(bug_cards),
     }
 

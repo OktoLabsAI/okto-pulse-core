@@ -42,7 +42,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "2191767c1f56367d03e71611a21177fa2216af258a5a8a4b81f6fb659358ae5b",
+  "manifest_sha256": "ecc843519250f7cf720dc950e3cfd21a7e05e4d3d8d6545356809c60acf0819f",
   "manifest_version": "agent-resources/v2",
   "resource_count": 22,
   "resources": [
@@ -198,7 +198,7 @@
       "uri": "okto-pulse://reference/quality-assessments"
     },
     {
-      "content_sha256": "8ebf45428ee5c86be833fee4a53ce69c0d0bffff1ab5fa6ef5d74fceb531c083",
+      "content_sha256": "1f591f4a389689bb1615d53272471258186019f02d02acb6706bd5c57220fd2f",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/project-structure",
@@ -296,7 +296,7 @@
       "uri": "okto-pulse://reference/tool-docs/refinement"
     },
     {
-      "content_sha256": "d0a7391a8dba75396668697b00567d4e4ae9b69ae6867a0726c6e91a5a8be00d",
+      "content_sha256": "06380305055cd24cc57526903969b958720fe92329263a33d397fe67a0bd5af7",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/multivalue",
@@ -506,7 +506,7 @@
       "uri": "okto-pulse://workflows/refinements"
     },
     {
-      "content_sha256": "60969e1a665d938ce089719669222026e99ad1e4c932a1ea34093d528b2f9121",
+      "content_sha256": "34cf5ccc8779344e59394dbb42ba4d2cc845e53006d5f00983db9dae8bd3afa9",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/knowledge-governance",

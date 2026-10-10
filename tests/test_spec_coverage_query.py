@@ -83,7 +83,7 @@ def test_current_admitted_implementation_and_test_remain_distinct():
     assert row['implementation_record_refs'] == ['impl']
     assert row['verification_record_refs'] == ['test']
     assert result['delivery']['counts'] == {'obligations': 1, 'implementation_proven': 1,
-        'verification_proven': 1, 'observed_obligations': 1}
+        'verification_proven': 1, 'observed_obligations': 1, 'decisions': 0, 'decisions_verified': 0}
     assert 'approved' not in result and 'allowed' not in result
 
 

@@ -12,7 +12,7 @@ Semantic guideline assessment follows
 
 ## Mandatory delivery closeout
 
-Before moving to Done, call `okto_pulse_get_delivery_evidence`. Every active
+Before moving to Done, call `okto_pulse_get_delivery_evidence`. Every executable
 obligation needs committed implementation proof from a task/bug and authenticated
 passing verification from a **test card**, or separately audited human exemptions.
 Use `okto_pulse_record_delivery_evidence` to register the many-to-many associations.
@@ -20,6 +20,16 @@ Planning Code Evidence links and Skip settings cannot satisfy this gate. Tests m
 cover the current implementation records, not a previous delivery. Do not reopen
 old done Specs merely to repair their evidence; retrospective associations are
 permitted. Follow `okto-pulse://reference/code-traceability` (Delivery evidence).
+
+Active Decisions need an explicit verification plan before validation/start:
+exact same-Spec obligation_refs and/or an observable inspection condition and
+scope. Both parts are mandatory when declared. They never require an artificial
+implementation task or scenario. Read `okto_pulse_get_decision_reviews` and record
+actual inspections with `okto_pulse_record_decision_reviews`; selected obligations
+reuse their current proofs. In semantic evaluation, reject a Decision that hides
+executable behavior instead of formalizing it as a requirement. Also check that
+selected obligations actually demonstrate the choice: an unrelated passing test
+does not establish adherence. Preserve supersedence and history.
 
 ## 2.3 Specs — CRITICAL: Analysis Before Populating
 

@@ -284,25 +284,27 @@ class TestSpecCoverageSummary:
         assert out["tr_task_linkage_pct"] == 50.0
 
     def test_decisions_coverage_active_only(self):
-        """Ideação #10 Fase 1 — decisions_coverage_pct conta só active."""
+        """Ideação #10 Fase 1 — decisions_planning_pct conta só active."""
         spec = self._FakeSpec()
+        spec.id = 'spec'
         out = spec_coverage_summary(
             spec,
             decisions=[
-                {"id": "d1", "status": "active", "linked_task_ids": ["card-1"]},
+                {"id": "d1", "status": "active", "linked_task_ids": [], 'verification': {'inspection': {
+                    'condition': 'Observe scope', 'scope_refs': [{'kind': 'spec', 'id': 'spec'}]}}},
                 {"id": "d2", "status": "active", "linked_task_ids": []},
                 {"id": "d3", "status": "superseded"},  # não conta
                 {"id": "d4"},  # legacy → active → sem linked
             ],
         )
         assert out["decisions_total"] == 3  # d1, d2, d4
-        assert out["decisions_linked"] == 1  # only d1
-        assert out["decisions_coverage_pct"] == 33.3
-        assert set(out["decisions_uncovered_ids"]) == {"d2", "d4"}
+        assert out["decisions_planned"] == 1  # only d1
+        assert out["decisions_planning_pct"] == 33.3
+        assert set(out["decisions_pending_ids"]) == {"d2", "d4"}
 
     def test_decisions_empty_spec_pct_100(self):
         spec = self._FakeSpec()
         out = spec_coverage_summary(spec)
         assert out["decisions_total"] == 0
-        assert out["decisions_coverage_pct"] == 100
-        assert out["decisions_uncovered_ids"] == []
+        assert out["decisions_planning_pct"] == 100
+        assert out["decisions_pending_ids"] == []

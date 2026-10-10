@@ -21,7 +21,7 @@ def _coverage(**overrides) -> dict:
         "br_task_linkage_pct": 100.0, "brs_total": 2,
         "contract_task_linkage_pct": 100.0, "contracts_total": 1,
         "tr_task_linkage_pct": 100.0, "trs_total": 2,
-        "decisions_coverage_pct": 100.0, "decisions_total": 1,
+        "decisions_planning_pct": 100.0, "decisions_total": 1,
         "ir_task_linkage_pct": 100.0, "irs_total": 1,
         "or_task_linkage_pct": 100.0, "ors_total": 1,
         "skip_test_coverage": False, "skip_rules_coverage": False,
@@ -41,7 +41,7 @@ def test_partial_coverage_lowers_pct_and_lists_blocking():
     env = spec_saturation_envelope(
         _coverage(
             ac_coverage_pct=50.0,
-            decisions_coverage_pct=0.0,
+            decisions_planning_pct=0.0,
         )
     )
     assert env["pct"] < 100
@@ -76,7 +76,7 @@ def test_blocking_order_is_canonical():
         _coverage(
             or_task_linkage_pct=0.0,
             ac_coverage_pct=50.0,
-            decisions_coverage_pct=80.0,
+            decisions_planning_pct=80.0,
         )
     )
     assert env["blocking"].index("acceptance_criteria") < env["blocking"].index("decisions")
