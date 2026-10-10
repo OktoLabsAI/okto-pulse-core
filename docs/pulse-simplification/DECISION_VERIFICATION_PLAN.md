@@ -1,6 +1,8 @@
 # Verificação proporcional de decisões
 
 Assessment e plano para revisão, 10 de outubro de 2026. Implementação não iniciada.
+Alteração de schema com breaking change expressamente autorizada pelo usuário
+em 10 de outubro de 2026; não é uma decisão pendente para executar este plano.
 
 Decisões devem demonstrar aderência à escolha aprovada. Quando seus efeitos já
 estão expressos em requisitos, a verificação deve reutilizar as provas desses
@@ -235,22 +237,26 @@ Coverage/Delivery, serviços/tipos frontend e seus testes.
 ## Instalação e dados existentes
 
 A proposta de `decision_review` amplia a constraint SQL do ledger da Spec. Isso
-muda o schema aceito pelo contrato estrito de armazenamento. O plano não promete
-que basta reinstalar para manter a home atual funcionando.
+muda o schema aceito pelo contrato estrito de armazenamento. O usuário autorizou
+expressamente a mudança mesmo com breaking change. Atualizar o contrato de schema
+e as fixtures nativas; não criar caminho de compatibilidade ou migração.
 
 Validar primeiro em data home isolada, com instalações e dados novos. Preservar
 a home atual e seus relatórios. Sob a diretriz vigente de não criar migrações,
 bases incompatíveis serão recusadas; nenhuma conversão ou exclusão automática
-será adicionada. A aplicação à sessão SIM-05 existente não é uma etapa automática
-de DV4: promover o novo build sobre essa base exige decisão explícita sobre sua
-continuidade. Não contornar a constraint armazenando review como waiver, nota
-ou falso Test Card. Nenhuma alteração da home faz parte deste assessment.
+será adicionada. A quebra autorizada permite seguir com a implementação e a
+validação sem nova confirmação de schema. Ela não autoriza apagar a home atual
+nem apresentar a sessão SIM-05 anterior como convertida. A aceitação usa dados
+nativos do novo contrato; o histórico anterior permanece preservado. Não
+contornar a constraint armazenando review como waiver, nota ou falso Test Card.
+Nenhuma alteração da home faz parte deste assessment.
 
 ## Aplicação ao mock e limites de escopo
 
-Após a implementação e a definição de como continuar o ambiente de teste,
-substituir a decisão conceitual pela decisão autorizada de implementar um mock
-para exercitar o Pulse. A inspeção deve conferir os limites efetivamente
+No cenário de aceitação do novo contrato, representar a substituição da decisão
+conceitual pela decisão autorizada de implementar um mock para exercitar o Pulse,
+com autoria e histórico nativos, sem importar resultados antigos como atuais.
+A inspeção deve conferir os limites efetivamente
 declarados, citando a entrega e documentação versionadas. Ela não pode afirmar
 ausência de uso em produção sem delimitar o ambiente observado.
 

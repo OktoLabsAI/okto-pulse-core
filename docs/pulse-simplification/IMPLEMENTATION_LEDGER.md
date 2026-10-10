@@ -21,9 +21,11 @@ Preservar permissões, independência configurada, histórico e gates de requisi
 Quatro milestones DV1–DV4 e dezesseis critérios DV-T01–DV-T16 no plano.
 
 Impacto de distribuição identificado: a constraint física do ledger de Spec
-aceita apenas waiver/revoke. Acrescentar decision_review muda o schema; sob o
-mandato sem migração, validar em home isolada e não promover sobre a home atual
-sem decisão explícita de continuidade. Nenhum reset/conversão foi feito.
+aceita apenas waiver/revoke. Acrescentar decision_review muda o schema.
+**Autorização recebida em 10/10:** usuário permite alterar o schema sem
+preocupação com breaking changes. Não solicitar novamente essa autorização.
+Mantido o contrato único sem migração: validar em home isolada, recusar bases
+incompatíveis e preservar dados atuais, sem reset/conversão automática.
 T33 e sobrealocação SIM-05 continuam pendências independentes. Nenhum Card/Spec
 foi movido, prova criada ou consolidação canonical efetuada neste assessment.
 Validação desta etapa: conferência estática de contratos, consumers e testes
