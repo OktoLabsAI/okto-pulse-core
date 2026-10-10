@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-10 — Assessment da verificação de Decisions
+
+Pedido atual: conferir a proposta de verificação proporcional de decisões e
+formular plano concreto; implementação não iniciada. Plano para revisão em
+[DECISION_VERIFICATION_PLAN.md](DECISION_VERIFICATION_PLAN.md).
+Base conferida: Core 0de0a085 / Community d4c1caa7. A inspeção confirmou que
+Decisions ativas são tratadas como obrigações de implementação e verificação,
+além de existir gate anterior de vínculo obrigatório a task. Métodos inspection,
+static_analysis e demonstration já têm admissão concreta, mas vinculada a
+cenário/Test Card; não há conferência direta de Decision.
+
+Proposta refinada: reutilizar provas de obrigações explicitamente selecionadas
+e/ou inspeção direta, com ambas obrigatórias quando declaradas. Escopo não vira
+um método nem um skip. Contrato na autoria, avaliação semântica na validação,
+registro autenticado e atual no ledger existente, sem task/teste artificial.
+Preservar permissões, independência configurada, histórico e gates de requisitos.
+Quatro milestones DV1–DV4 e dezesseis critérios DV-T01–DV-T16 no plano.
+
+Impacto de distribuição identificado: a constraint física do ledger de Spec
+aceita apenas waiver/revoke. Acrescentar decision_review muda o schema; sob o
+mandato sem migração, validar em home isolada e não promover sobre a home atual
+sem decisão explícita de continuidade. Nenhum reset/conversão foi feito.
+T33 e sobrealocação SIM-05 continuam pendências independentes. Nenhum Card/Spec
+foi movido, prova criada ou consolidação canonical efetuada neste assessment.
+Validação desta etapa: conferência estática de contratos, consumers e testes
+existentes, com referência ao caso operacional SIM-05; sem novos testes runtime.
+
 ### 2026-10-10 — SIM-05: fechamento integral autorizado
 
 Usuário confirmou visualmente os percentuais SIM-04 e liberou a instância para
