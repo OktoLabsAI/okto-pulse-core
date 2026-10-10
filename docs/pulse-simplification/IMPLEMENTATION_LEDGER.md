@@ -2,6 +2,47 @@
 
 ## Estado para retomada
 
+### 2026-10-10 — reinstalação e nova iniciativa mock na home padrão
+
+Após a recusa read-only schema_fingerprint da base anterior, o usuário autorizou
+explicitamente zerar tudo e iniciar uma iniciativa nova com mocks. Processo
+anterior 38400/launcher28512 encerrado; caminho absoluto
+C:\Users\jpamb\.okto-pulse verificado (sem reparse point) e removido. Nenhum
+conversor/backfill ou mudança direta de banco. `init` do build atual criou apenas
+My Board e Local Agent; runtime iniciado na mesma home, DATA_DIR explícito,
+portas8100/8101. Processo4556 iniciado09:49:42, posterior à instalação09:47:55.
+
+Instalados os wheels dos checkouts: Core SHA256
+6e3d3cd126910365b2412dc8e2944789b62aa6fcadae958d5dc58c2020296500,
+Community656caa7cb4de28316e1c59f20e44e0f0fbb13856bc23ff778231739d276892d4.
+Paridade exata instalada:850 Core .py,320 Community .py,58 recursos MCP e79
+frontend. `/health` e frontend200; HTML servido referencia index-CO4F9CU5.js;
+admissão read-only do banco novo compatível. Artefatos em .validation-v040/
+default-home-install-parity.json e dual-progress-wheel-parity.json.
+
+Novo Board8337f239-a9cc-41ba-acb3-7352245103f8. Iniciativa
+`Mock — Completude de cards: implementação e entrega verificada`, Ideation
+d1cd3deb-e35e-4080-9c27-7775d0a7de5d, Draft, criada pelo MCP nativo por conversão
+das quatro Stories de uma lista de compras fictícia: consultar itens, adicionar,
+marcar/desmarcar, filtrar pendentes. Topic6bec6cbd-b098-41c3-8181-d6c3a1cd5838.
+Stories convertidas e vinculadas; dados sintéticos, sem resultados de execução
+alegados. Roteiro prevê duas obrigações explícitas por futuro Card e marcos
+azul/verde0/0,50/25,100/50,100/80,100/100, além de evidência inválida/indisponível.
+Próxima etapa funcional é derivar a Spec e os Cards pelo fluxo nativo, executar
+fixtures e observar as provas; ainda não foram criados Cards nem completudes.
+IDs e trilha MCP em completeness-mock-created.json / completeness-mock-mcp-audit.json.
+
+Credencial inicial consumida pelo handoff reveal-once; erro no script externo
+(`name` duplicado no wrapper) exigiu regenerar a chave do novo Local Agent via
+API pública. A chave não foi impressa ou versionada. O catálogo de Stories ainda
+exemplifica include_archived como string, mas o endpoint exige boolean nativo;
+rejeição invalid_filter resolvida com true, sem alterar policy. Não duplicar as
+Stories ao retomar. Conexões MCP anteriores perderam validade com o reset e
+precisam usar credencial da instalação nova.
+Conferência visual após recarregar o browser: My Board único, quatro Stories e
+uma Ideation Draft visíveis; screenshot Community/output/playwright/
+new-home-ideation.png. Nenhuma interceptação de assets ativa nesta conferência.
+
 ### 2026-10-10 — progresso de implementação separado da entrega verificada
 
 Solicitação e direção visual do usuário: capa e Delivery com uma única trilha,
