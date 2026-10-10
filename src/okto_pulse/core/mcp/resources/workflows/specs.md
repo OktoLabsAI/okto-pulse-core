@@ -272,6 +272,13 @@ Every tool that feeds into a coverage gate **automatically returns a `coverage` 
 
 **FR coverage source:** `fr_coverage_pct` is computed from `business_rules[].linked_requirements`. Direct links on `functional_requirements[].linked_task_ids` are useful task traceability, but they do not satisfy the FR→BR coverage gate.
 
+BR task coverage also recognizes complete qualified inheritance from the FR's
+authored contribution scope and selected ACs. A bare BR→FR link is insufficient.
+The same responsibility resolver drives validation and coverage; missing,
+ambiguous, cancelled, archived or foreign-scope owners do not earn inherited
+credit. Do not create a redundant direct BR→Task link when this path is complete.
+Planning coverage never substitutes for current implementation/test evidence.
+
 ## 2.3d Agent-mediated Code Traceability
 
 When Code Traceability is enabled, the Spec remains normative and Code

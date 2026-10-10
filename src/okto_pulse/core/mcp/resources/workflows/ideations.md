@@ -84,8 +84,10 @@ Use this sequence:
    whether a Current result exists for the edition and obtain its head
    revision. Use revision 0 when none exists.
 3. In `evaluating`, call `okto_pulse_record_ambiguity_assessment` with the
-   current Ideation version, lifecycle edition, and head revision. Score 1–5,
-   lower is better.
+   current Ideation version, lifecycle edition, and head revision. Score 0–5,
+   lower is better; 0 means no identified residual ambiguity. A nonzero score
+   requires findings explaining the residual issues. This is distinct from
+   the scope evaluation's 1–5 ambiguity dimension.
    Pinpoint each issue with a stable field, structured-child, Q&A, or
    whole-artifact anchor; never use an array position.
 4. Proposed questions are immutable evidence in the result; they never create

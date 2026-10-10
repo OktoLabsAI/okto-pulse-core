@@ -5780,7 +5780,7 @@ class CardService:
             )
 
     async def check_rules_coverage(self, spec: "Spec", board: "Board | None") -> None:
-        """Check that every FR has a BR and every BR has a linked task."""
+        """Check FR-to-BR coverage and direct or qualified inherited BR ownership."""
         skip_global = (
             (board.settings or {}).get("skip_rules_coverage_global", False)
             if board
@@ -5827,6 +5827,21 @@ class CardService:
             br for br in brs if isinstance(br, dict) and not br.get("linked_task_ids")
         ]
         if unlinked_rules:
+            from okto_pulse.core.domain.verification_plan import MAX_PLAN_NODES
+            from okto_pulse.core.services.business_rule_coverage import (
+                inherited_business_rule_task_ids,
+            )
+
+            cards = await _application_list(
+                self.db, "card",
+                filters=(ApplicationFilter("board_id", "eq", spec.board_id),
+                         ApplicationFilter("spec_id", "eq", spec.id)),
+                select_fields=("id", "board_id", "spec_id", "card_type", "status", "archived"),
+                limit=MAX_PLAN_NODES + 1,
+            )
+            inherited = inherited_business_rule_task_ids(spec, cards)
+            unlinked_rules = [br for br in unlinked_rules if not inherited.get(br.get("id"))]
+        if unlinked_rules:
             titles = ", ".join(
                 f'"{br.get("title", br.get("id", "?"))}"' for br in unlinked_rules[:3]
             )
@@ -5837,9 +5852,10 @@ class CardService:
             )
             raise ValueError(
                 f"Cannot validate spec: {len(unlinked_rules)} business rule(s) "
-                f"in spec '{spec.title}' have no linked task cards "
+                f"in spec '{spec.title}' have no linked task cards or complete inherited responsibility "
                 f"({titles}{suffix}). "
-                f"REQUIRED ACTION: Link task cards to each business rule via "
+                f"REQUIRED ACTION: Resolve the qualified FR contribution and the BR criteria, "
+                f"or link task cards directly to each business rule via "
                 f"okto_pulse_link_task(target_type='rule', target_id=<rule_id>, "
                 f"card_id=<card_id>, spec_id=<spec_id>). "
                 f"Alternatively, enable 'skip rules coverage' on the spec or board."

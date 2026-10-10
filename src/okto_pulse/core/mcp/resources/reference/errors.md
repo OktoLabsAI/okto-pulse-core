@@ -118,8 +118,8 @@ An omitted `reviewer_separation_mode` uses `enforce` with `source="board_default
 |---|---|---|
 | `"Cannot start this card: N test scenario(s) have no linked task cards"` | Scenarios have no test cards linked | For each uncovered scenario, create a test card (`card_type="test"` + `test_scenario_ids`) and/or call `okto_pulse_link_task(target_type="scenario", ...)`. |
 | `"Cannot start this card: N functional requirement(s) have no linked business rules"` | FR→BR coverage incomplete | Call `okto_pulse_add_business_rule` with `linked_requirements` referencing the uncovered FR indices. |
-| `"Cannot start this card: N business rule(s) have no linked task cards"` | BR→Task coverage incomplete | Call `okto_pulse_link_task(target_type="rule", ...)` for each unlinked BR. |
-| `"Cannot validate spec: N business rule(s) have no linked task cards"` | Same, at validation time | Same fix — link implementation tasks to every BR. |
+| `"Cannot start this card: N business rule(s) have no linked task cards"` | BR responsibility incomplete | Resolve qualified inherited FR contribution and BR criteria, or author legitimate direct BR task links. |
+| `"Cannot validate spec: N business rule(s) ... have no linked task cards or complete inherited responsibility"` | Same, at validation time | Inspect requirement verification and fix missing/ambiguous responsibility. Complete inherited responsibility does not require a duplicate direct link. |
 | `"Cannot validate spec: N test scenario(s) have no linked test cards"` | Scenario side | Create/link test cards for every scenario. |
 | `"Cannot move spec to 'done': N acceptance criteria lack test scenarios"` | AC→Scenario coverage incomplete | Create a scenario for every uncovered AC (use `linked_criteria` with the 0-based index). |
 | `"Cannot move spec to 'done': N linked task(s) are not yet done or cancelled"` | Open task cards still attached | Complete or cancel the pending task cards (bugs are excluded from this check). |

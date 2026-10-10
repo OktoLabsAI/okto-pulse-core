@@ -2,6 +2,63 @@
 
 ## Estado para retomada
 
+### 2026-10-10 — Codex associado; ensaio novo encontrou e corrigiu gate BR
+
+Usuário pediu associação pelo browser e continuidade dos testes. Agente Codex
+67897b89-6f59-4c41-bf5f-1a530a5c8818 recebeu acesso ao My Board
+8337f239-a9cc-41ba-acb3-7352245103f8 por Agents → Board Access; MCP autenticado
+confirmou o vínculo. Usada a conexão configurada pelo usuário, sem divulgar ou
+rotacionar a credencial. Ideation d1cd3deb-e35e-4080-9c27-7775d0a7de5d concluída
+após triad KG, avaliação de escopo small e ambiguidade 0. Spec derivada
+d440bd78-4b05-56ab-b33c-8937dc75f66c, `Mock de completude — lista de compras local`.
+Quatro FRs/BRs, oito ACs/cenários, quatro Tasks e quatro Tests; fixture Python
+em memória, sem UI nova, banco ou integração. Estrutura TO-BE shopping.py e
+test_shopping.py. Ainda não há código/prova entregue pelo mock.
+
+Reprodução real: inventário qualificado completo (16 obrigações; BRs herdadas
+dos FRs com condições nos ACs) coexistia com erro da Spec Validation exigindo
+quatro links BR→Task diretos. Não foram criados links redundantes nem skips.
+O plano consolidado exige compartilhamento da resolução direta/herdada entre
+planejamento e entrega. `check_rules_coverage`, resumo e projeção canônica agora
+consomem as contribuições herdadas do resolver existente, preservando o caminho
+direto e os bloqueios de população ausente, ambiguidade e proprietário inválido.
+É cobertura de planejamento, não crédito de execução. Nenhum schema, autoridade,
+recibo ou dado histórico alterado. Documentação MCP alinhada; corrigida também
+a escala de ambiguidade Quality de 1–5 para 0–5 (escopo continua 1–5).
+
+Validação: campanhas Core 61 e 49 passed (12 repetidos, 98 distintos), incluindo
+gate/resumo/projeção, cancelamento, herança, catálogo e casos negativos. Frontend
+16 passed, inclusive BR planejada 100% sem conceder implementação/verificação.
+Ruff F/E9 e diff-check passaram. Closure oficial: 8833 linhas, nenhum finding,
+oito budgets ZERO e READMEs regenerados. Wheel Core SHA256
+621dfa92ce6395038cd785f7f4a787d7e153538367b06b2677d100d49d1c909b;
+Community656caa7cb4de28316e1c59f20e44e0f0fbb13856bc23ff778231739d276892d4.
+Reinstalação na home padrão sem exclusão/conversão; paridade byte-a-byte de
+851 Core .py/320 Community .py/58 recursos/79 assets. Runtime38160 iniciado
+10:25:00 após instalação; launcher36300. Frontend permanece index-CO4F9CU5.js.
+
+Teste instalado: BR coverage 100%, validação val_af5f08a2 aceita e Spec em
+in_progress, edição3/versão48. Checklist Blocking configurado pelo browser sob
+autorização prévia do usuário; receipt clr_daf455215ddd4372ac2f582a21ebb2ab passed.
+Lint qar_10e8431353774b2dbfbf452c2bd5609e; avaliação eval_adb52381 aprovada. A
+Decision dec_7594677f formaliza a delimitação do fixture, verificação por inspeção
+da Spec, sem task/test artificial. Reaberturas de autoria preservaram edições
+anteriores; não houve rejeição ativa ignorada. Browser real inspecionado:
+Coverage → Planning mostra 8/8 ACs,4/4 FRs,8/8 cenários e4/4 BRs;
+Community/output/playwright/br-inherited-coverage-fixed.png. Capa inicial mostra
+0% azul/0% verde, screenshot completeness-initial-cards.png.
+
+Observações ainda não corrigidas: home nova sem binding Checklist causou
+`checklist_validation_binding_snapshot_missing` até configuração humana;
+exigência de ao menos uma Decision mesmo em fixture mínimo adiciona formalização
+à escolha já escrita no contexto. Registrar isso como fricção, não desligar gate.
+Próximo passo: executar as Tasks/Tests com provas reais e conferir as barras.
+Denominador observado é quatro obrigações por task (FR+BR+2AC), não duas como
+estimado no roteiro inicial. Não apresentar marcos narrados como observados.
+IDs dos cards e respostas MCP: .validation-v040/completeness-new-cards.json;
+scripts current/author/allocate/validate_mock_edition3 preservados para auditoria,
+não devem ser reexecutados cegamente. Home atual e seus agentes devem ser mantidos.
+
 ### 2026-10-10 — reinstalação e nova iniciativa mock na home padrão
 
 Após a recusa read-only schema_fingerprint da base anterior, o usuário autorizou

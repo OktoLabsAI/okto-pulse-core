@@ -747,8 +747,19 @@ def spec_coverage_summary(
     )
 
     br_total = len(_brs)
+    from okto_pulse.core.services.business_rule_coverage import inherited_business_rule_task_ids
+    inherited_br_links = inherited_business_rule_task_ids(
+        spec, cards, collections={
+            "functional_requirements": frs, "business_rules": _brs,
+            "technical_requirements": _trs, "acceptance_criteria": acs,
+            "integration_requirements": _irs, "observability_requirements": _ors,
+        },
+    )
     br_linked = sum(
-        1 for br in _brs if (set(br.get("linked_task_ids") or []) - cancelled_card_ids)
+        1 for br in _brs if (
+            (set(br.get("linked_task_ids") or []) - cancelled_card_ids)
+            or inherited_br_links.get(br.get("id"))
+        )
     )
 
     # F13: exclude not_applicable (and superseded/revoked) contracts from coverage,

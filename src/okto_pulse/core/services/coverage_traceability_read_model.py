@@ -102,7 +102,7 @@ def _linked_ids(item: Mapping[str, Any]) -> set[str]:
     return {str(value) for value in raw if isinstance(value, str) and value}
 
 
-def _derived_links(spec: object) -> dict[tuple[CoverageObligationType, int], set[str]]:
+def _derived_links(spec: object, cards=None) -> dict[tuple[CoverageObligationType, int], set[str]]:
     from okto_pulse.core.services.analytics_service import (
         resolve_linked_criteria_to_indices,
         resolve_linked_fr_indices,
@@ -127,6 +127,11 @@ def _derived_links(spec: object) -> dict[tuple[CoverageObligationType, int], set
             links.setdefault(
                 (CoverageObligationType.FUNCTIONAL_REQUIREMENT, index), set()
             ).update(task_ids)
+    from okto_pulse.core.services.business_rule_coverage import inherited_business_rule_task_ids
+    inherited = inherited_business_rule_task_ids(spec, cards)
+    for index, rule in enumerate(_structured(getattr(spec, "business_rules", None))):
+        if inherited.get(rule.get("id")):
+            links[(CoverageObligationType.BUSINESS_RULE, index)] = inherited[rule["id"]]
     return links
 
 
@@ -508,8 +513,8 @@ def build_coverage_traceability_projection(
     for spec in spec_rows:
         spec_id = str(spec.id)
         edition = int(getattr(spec, "edition", 1))
-        derived = _derived_links(spec)
         scoped_cards = cards_by_spec.get(spec_id, {})
+        derived = _derived_links(spec, list(scoped_cards.values()))
         for obligation_type, field in _COLLECTIONS:
             collection = _structured(getattr(spec, field, None))
             for index, item in enumerate(collection):

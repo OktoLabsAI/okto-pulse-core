@@ -50,8 +50,9 @@ Use this sequence:
    `okto_pulse_get_current_quality_assessment(subject_type="refinement",
    assessment_kind="ambiguity")`; use head revision 0 if none exists.
 3. Call `okto_pulse_record_ambiguity_assessment` with the current Refinement
-   version, lifecycle edition, and head revision with a 1–5 lower-is-better
-   score. Pinpoint every issue to a stable field, structured-child ID, Q&A ID,
+   version, lifecycle edition, and head revision with a 0–5 lower-is-better
+   score. Zero means no identified residual ambiguity; nonzero scores require
+   findings. Pinpoint every issue to a stable field, structured-child ID, Q&A ID,
    or the whole artifact. Mutable list positions are forbidden anchors.
 4. Proposed questions are immutable evidence in the result; they never create
    or update Q&A. If a question requires clarification or semantic edits,
