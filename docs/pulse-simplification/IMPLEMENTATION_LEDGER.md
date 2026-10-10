@@ -2,6 +2,43 @@
 
 ## Estado para retomada
 
+### 2026-10-10 — progresso de implementação separado da entrega verificada
+
+Solicitação e direção visual do usuário: capa e Delivery com uma única trilha,
+duas barras sobrepostas (implementação azul, entrega verificada verde) e
+percentuais explicitamente identificados. Community commit `959174a`.
+Implementação deriva das obrigações com prova atual: implemented + verified +
+accepted, dividido pelo total, com arredondamento para baixo. O verde preserva
+o score existente de maturidade 0/50/80/100; não é uma nova razão de testes
+passing. A barra verde é mais fina para ambas permanecerem visíveis em 100%.
+Ausência/inconsistência da fonte continua sem percentual; Done, relatos e
+contribuições parciais não dão crédito. Sem alteração de schema, domínio,
+permissões, gates, registros ou status das tasks.
+
+Reprodução por leitura da instância: Card eaf209fe-5a70-5d07-8cae-dd33d47367b4,
+Frontend — busca e confirmação H01/H02, Done; 7/7 implementações comprovadas,
+5 obrigações no estágio implemented e 2 accepted: implementação 100%, entrega
+verificada floor((5*50+2*100)/7)=64%. A lista de checks verifica implementação;
+as lacunas de verificação retornadas incluem calendário/capacidade, cancelamento
+e acessibilidade. Não foram fabricados resultados nem alteradas associações.
+
+Validação: 10 testes do componente/capa/leitura + 28 do painel Delivery passaram;
+TypeScript/Vite, sync/verify de 79 arquivos empacotados, ESLint dos arquivos
+alterados e diff-check passaram. Campanha adicional KanbanBoard.impactEvidence
+ficou sem concluir e foi interrompida; não é contabilizada como aprovação, e
+sua causa não foi investigada neste ajuste visual delimitado.
+Bundle index-CO4F9CU5.js, frontend tree
+57d72168bcb9d86e53c2213985b8567fbd5cbc5b14843ff1cb7c7fc1418918d1.
+
+Navegador real: build recém-gerado servido via interceptação de assets somente
+na aba de teste; API real apenas lida. Capa e Delivery inspecionadas visualmente
+com 100% azul / 64% verde; evidências Community/output/playwright/
+dual-progress-cover.png e dual-progress-delivery.png. Aba de teste fechada,
+removendo a interceptação. A instalação principal não foi promovida: comparação
+prévia encontrou 26 .py Core e 5 Community diferentes do checkout (DV ainda não
+instalado). Esta conferência valida o frontend novo sobre o contrato de leitura
+observado, não a execução do backend novo. Home e processos do usuário preservados.
+
 ### 2026-10-10 — DV1–DV4 concluídos; contrato nativo qualificado
 
 DV3 enviado: Core 92bb4551 / Community 5cf74fd8. Campanha final de schema,
