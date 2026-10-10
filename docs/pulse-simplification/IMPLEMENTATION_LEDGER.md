@@ -2,6 +2,18 @@
 
 ## Estado para retomada
 
+### 2026-10-10 — SIM-05: fechamento integral autorizado
+
+Usuário confirmou visualmente os percentuais SIM-04 e liberou a instância para
+inspeção. Novo escopo: completar somente o necessário no mock para finalizar
+tasks, testes e Spec pelos gates efetivos; depois consultar o grafo e consolidar
+o aprendizado cognitivo. Não reduzir contratos ou inventar evidências para
+fechar. Base publicada: Core 06e82d3a / Community d4c1caa7; mock c125a431,
+commit local sem remote. Push de ambos confirmado antes de iniciar trabalho.
+Artefatos locais output/ e .playwright-cli/ são evidências de execução, não
+fontes pendentes. Adapter sinalizado pelo Git não tinha diferença de conteúdo;
+índice atualizado sem mudança funcional. Esta entrada é o checkpoint inicial.
+
 ### 2026-10-09 — SIM-04: saturação das demais tasks e atualidade entre Cards
 
 Pedido: saturar as demais tasks do mock Reserva de Salas. Contextos full/all
