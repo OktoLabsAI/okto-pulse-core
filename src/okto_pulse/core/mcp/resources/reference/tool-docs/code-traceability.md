@@ -23,9 +23,11 @@ resume manifest; `recovery_verified` is always false. Check your own access to
 the declared workspace before claiming that earlier changes were recovered.
 
 Normal tasks expose `delivery_completeness`: equal-weight assigned obligations
-with current, complete implementation evidence (`completed`, `total`, `percent`).
-The percentage is floored and can reach 100 before Done; it is informational,
-never a lifecycle approval or an executor/reviewer score. Partial declarations,
+at exclusive stages `planned` (0), `implemented` (50), `verified` (80),
+`accepted` (100), plus `total`, `percent` and `scope_sha256`. The percentage is
+the floored average. Verification needs current authenticated test evidence
+bound to the implementation; acceptance also requires the lifecycle gates.
+The percentage is informational, never a lifecycle approval or an executor/reviewer score. Partial declarations,
 progress notes and waivers add no credit. Revocation, stale receipts or changed
 scope remove credit. Missing explicit obligations or incomplete scope return
 `percent: null` with `scope_missing` or `scope_incomplete`, never a guessed zero.

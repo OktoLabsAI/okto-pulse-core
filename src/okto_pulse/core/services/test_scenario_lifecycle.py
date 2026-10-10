@@ -366,6 +366,7 @@ _ATTESTATION_V2_KEYS = frozenset(
         "assertions",
         "provenance",
         "attestation_sha256",
+        "execution_basis",
     }
 )
 _ASSERTION_V2_KEYS = frozenset({"name", "expected", "observed", "status", "message"})
@@ -420,6 +421,8 @@ def compute_execution_attestation_sha256(
     unsigned = {
         key: value for key, value in plain.items() if key != "attestation_sha256"
     }
+    if unsigned.get("execution_basis") is None:
+        unsigned.pop("execution_basis", None)
     # Pydantic materializes the optional assertion message as ``None`` while a
     # raw JSON producer may omit it. Canonicalize that one optional field so a
     # typed request round-trip cannot invalidate an otherwise identical proof.
@@ -585,6 +588,12 @@ def verify_mcp_replay_evidence_v2(
         )
 
     reasons = []
+    if attestation.get("execution_basis") is not None:
+        from okto_pulse.core.models.schemas import TestExecutionBasis
+        try:
+            TestExecutionBasis.model_validate(attestation["execution_basis"])
+        except (TypeError, ValueError):
+            reasons.append("evidence_v2.execution_basis_invalid")
     # This is deliberately only a structural check.  A receipt is opaque to
     # CORE and must be authenticated by the registered edition verifier before
     # any write.  A public SHA over caller-controlled fields is not authority.

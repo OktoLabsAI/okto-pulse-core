@@ -2,6 +2,74 @@
 
 ## Estado para retomada
 
+### 2026-10-09 — SIM-03: execução autenticada de testes externos
+
+Pedido explícito: fechar a lacuna que impedia testes reais de Reserva de Salas
+de produzirem cobertura verificada. Implementação nesta frente: perfil local
+`okto-pulse test-runner`, limitado a Board/Spec/cenário/source_ref e métodos
+Python unittest. O mesmo execute_test_scenario_evidence recebe replay com
+runner_ref e commit completo; não aceita comandos, caminhos ou resultados
+autodeclarados do cliente. Permissão spec.tests.execute permanece obrigatória.
+
+Community extrai blobs Git da revisão indicada para diretório temporário,
+verifica hashes, executa subprocesso e observa contagens/outcome. Não incorpora
+arquivos dirty/ignorados. Recibo existente autentica cenário, fonte, revisão e
+seletores. Timeout, skip, expected failure, teste inexistente, zero/incompletude
+não produzem aprovação. Falha real pode ser registrada com status failed.
+Delivery exige fonte/revisão iguais ao recibo limpo da implementação e execução
+posterior; a associação não muda lifecycle nem concede aprovação humana.
+
+Core contém somente contrato estruturado/puro execution_basis; filesystem/Git/
+subprocesso/registro ficam em community/adapters. Perfil é autoridade do host
+em DATA_DIR/test-runners, separado do backup portátil de evidências; restaurar
+histórico não autoriza código no host receptor. Código de testes precisa ser
+confiável: execução como usuário OS do Pulse, não sandbox de segurança. Escopo
+implementado é unittest, não importação genérica de relatórios CI.
+
+Documentação MCP atualizada, inclusive correção da descrição antiga de progresso
+(planned 0 / implemented 50 / verified 80 / accepted 100). Catálogo regenerado
+pelo gerador oficial. UI distingue External test run e mostra runner/revisão/
+seletores no detalhe do badge. Testes frontend: 18 passed; build concluído.
+Core evidência/gates/completude/catalog: 57 passed. Auditoria inicial sem findings
+e oito budgets zero; matrizes README regeneradas oficialmente. Validação final,
+instalação e reprodução no mock em andamento; não declarar progresso elevado
+antes de status write + vínculo Delivery + leitura autenticada.
+
+Falha encontrada e corrigida no desenvolvimento: git archive aplica conversões
+de checkout no Windows; leitura via ls-tree/cat-file agora preserva exatamente
+os blobs. Testes de subprocesso voltaram a passar após a correção.
+
+Reprodução instalada: primeiro ensaio recusado sem recibo por dependência tzdata
+ocultada pelo modo Python -I. Ajustado para -E/-P, preservando localização dos
+pacotes do usuário OS e excluindo tokens/configuração/PYTHONPATH do subprocesso.
+Erro de setup agora informa categoria e direciona para seletores/dependências;
+não vira teste Failed fictício. Teste de regressão inclui dependência instalada.
+Suite final do runner: 13 passed; vínculo exato + adaptador V2: 36 passed.
+Campanha anterior incremental/recovery também passou. Manifesto adulterado com
+basis inválida é recusado sem exception não tratada; stdout do projeto descartado
+para não criar arquivos de log ilimitados. Resultado estruturado é autenticado.
+
+Reprodução pública real em My Board: perfil reserva-capacity, cenário ts_6587e6f3,
+revisão 8f5880f294265bcf9d0b6a80dbaf55e1fce981e9 (mesma da implementação aceita;
+não usou o HEAD posterior com novos testes). Run 94f700e1a1c36a47cf65bc107e0fc06c,
+recibo 8bda73de65a69fa17afe252591fb5bc5. Status writer Ready → Passed retornou
+evidence_verification_status=verified, sem skip. Vínculo Delivery criado:
+card_delivery_a2cf0af77fbd48059bbb69554e0a4204, somente ac:ac_res_capacity,
+referenciando implementação card_delivery_8b7e31e33e33433688c326491301540e.
+Readback: domínio 5% → 7%, 17 obrigações = 15 planned / 1 implemented /
+1 verified / 0 accepted. Cards permanecem In Progress, T01/T10 permanecem Ready.
+Não atribuir crédito a persistência, aplicação, UI ou ao AC de Clock transacional.
+
+UI real inspecionada: Tests → Evidence apresenta T02 Passed com badge External
+test run; tooltip contém source/revision/runner/selector. T01/T10 sem evidência.
+Snapshot page-2026-10-10T00-23-40-349Z.yml e screenshot
+Community/output/playwright/external-runner-test-evidence.png. Capa do domínio
+mostra 7% e barra. Prova estruturada: .validation-v040/external-runner-live-proof.json.
+F16 final ok=true, findings/documentation_findings vazios, oito budgets zero
+(.validation-v040/external-runner-closure-final.json). Reinstalação verificada
+byte a byte: 844 Core + 319 Community Python, 79 frontend, origens site-packages.
+Runtime reiniciado após a instalação; dados do home preservados.
+
 ### 2026-10-09 — SIM-03: saturação executável e admissão de resultados
 
 Retomada autorizada do ensaio Reserva de Salas. Estado inicial: 27 Cards em

@@ -11474,8 +11474,9 @@ async def okto_pulse_execute_test_scenario_evidence(
         str,
         Field(
             description=(
-                "Preferred MCP-only mode: JSON object with optional description "
-                "and required GET-only steps; server adds all trusted bindings"
+                "JSON with GET-only steps, or {runner_ref, revision} selecting a "
+                "locally registered external test runner and full Git commit; "
+                "server executes and adds all trusted bindings"
             )
         ),
     ] = "",
@@ -11491,6 +11492,11 @@ async def okto_pulse_execute_test_scenario_evidence(
     ``okto_pulse_update_test_scenario_status``. Traversal, duplicate JSON keys,
     malformed/oversized input, unreachable runtime and unsigned observations
     fail closed.
+    External project tests use replay={"runner_ref":"registered-name",
+    "revision":"full Git commit"}. The host operator first registers the scoped
+    runner with `okto-pulse test-runner`; callers cannot supply commands or paths.
+    The receipt binds the observed source/revision. Delivery accepts a binding
+    only to implementation evidence from that exact clean revision.
     Docs: okto-pulse://reference/tool-docs/test-scenario.
     """
 

@@ -386,6 +386,16 @@ class TestEvidenceProvenanceV2(BaseModel):
     environment: str = Field(..., min_length=1)
 
 
+class TestExecutionBasis(BaseModel):
+    """Observed immutable source used by an authenticated external test run."""
+
+    model_config = ConfigDict(extra="forbid")
+    source_ref: str = Field(..., min_length=1)
+    revision: str = Field(..., pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+    runner_ref: str = Field(..., min_length=1)
+    test_ids: list[str] = Field(..., min_length=1, max_length=100)
+
+
 class TestExecutionAttestationV2(BaseModel):
     """Evidence V2 result emitted after exercising the real product runtime.
 
@@ -407,6 +417,7 @@ class TestExecutionAttestationV2(BaseModel):
     manifest_sha256: str = Field(..., min_length=1)
     assertions: list[TestEvidenceAssertionV2] = Field(..., min_length=1)
     provenance: TestEvidenceProvenanceV2
+    execution_basis: TestExecutionBasis | None = None
     attestation_sha256: str = Field(..., min_length=1)
 
 

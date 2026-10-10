@@ -52,6 +52,41 @@ Executable guideline evaluation of `test_scenario` follows
 
 Full long-form documentation (args, returns, examples, enum prose) for `okto_pulse_*` tools in this family. The `tools/list` surface carries only the compact summary; read here on demand.
 
+## External automated tests (Community local host)
+
+The host operator explicitly registers a Python unittest profile once:
+
+```powershell
+okto-pulse test-runner capacity --workspace D:/project --source-ref SOURCE_ID --board-id BOARD_ID --spec-id SPEC_ID --scenario-id SCENARIO_ID --test tests/test_domain.py::DomainTests.test_capacity
+```
+
+Registration authorizes executing that project's code as the Pulse OS user.
+Profiles are scoped to Board/Spec/scenario, stored in `DATA_DIR/test-runners`,
+and cannot be created/changed by an MCP or REST execution request. To revoke,
+remove the profile locally; issued historical receipts remain verifiable.
+Profiles are host authority and are not automatically restored with evidence.
+This runner supports explicit Python `unittest.TestCase` methods using the
+Pulse Python environment; it is not a general CI report importer or arbitrary
+shell runner. Repeat `--test` for multiple methods; default timeout is 60s,
+configurable locally up to 120s. Only register trusted code: the temporary
+workspace is a reproducibility boundary, not an OS security sandbox.
+
+Call `okto_pulse_execute_test_scenario_evidence` with the usual identifiers,
+`status="passed"`, and `replay='{"runner_ref":"capacity","revision":"FULL_GIT_COMMIT"}'`.
+The runtime extracts the exact tracked commit, executes the registered methods,
+and issues an installation-authenticated receipt with source, revision and test
+selectors. It does not execute uncommitted/ignored files. Timeouts, missing tests,
+skips, expected failures and incomplete runs do not produce a passing receipt.
+Use `status="failed"` for an observed failing execution; requested status never
+overrides the actual outcome. No scenario or Card is moved by execution alone.
+
+Pass the returned evidence **unchanged** to the scenario status writer, then bind
+the scenario to the implementation through Delivery. The implementation receipt
+must identify the same source and exact clean revision and precede this run.
+Wrong revision/source, tampering or changed scenario semantics fail closed.
+Passing tests alone neither approve the Test Card nor prove that the selected
+tests satisfy every AC; the authored scope and governance gates still apply.
+
 ## `okto_pulse_admit_test_verification_report`
 
 Supply `board_id`, `spec_id`, `scenario_id` and a closed `report` object. This
