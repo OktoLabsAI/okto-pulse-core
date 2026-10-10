@@ -2,6 +2,72 @@
 
 ## Estado para retomada
 
+### 2026-10-10 — ensaio de completude executado até aceite H04
+
+Continuidade do ensaio anterior, sem novo escopo de produto. Fixture local real
+em D:/Projetos/pulse-completude-mock, commits b71e62c (scaffold) e
+ aa2234da9a11df6087c485b82484917540156939 (H02 parcial, H03/H04 implementados,
+ testes unittest). Sem remote configurado para o mock; commits são locais.
+Fonte source_c0eb8568276d41b4aed46fd85152b66a, observações de Git limpo,
+manifesto SHA256, AST, contenção de paths/symlinks, leitura UTF-8, detecção
+binária, scan limitado de segredos e histórico de renames. Targets por função
+criados antes do código. Resoluções finais/execution receipts no mesmo commit.
+Overlaps H04 com funções distintas no mesmo arquivo reconhecidos explicitamente.
+
+Estado factual confirmado no MCP e no browser (implementação azul / entrega
+verificada verde; quatro obrigações FR+BR+2AC por Task):
+
+| Card | Estado | Implementação | Entrega verificada |
+| --- | --- | --- | --- |
+| H01 Consultar | Not Started | 0% | 0% |
+| H02 Adicionar | In Progress | 25% | 12% |
+| H03 Marcar | In Progress | 100% | 50% |
+| H04 Filtrar | Done | 100% | 100% |
+
+H02 implementa somente AC positivo; rejeição de nome vazio continua ausente,
+sem crédito de FR/BR/AC negativo. H03 tem provas de implementação, não testes
+executados. H04 atingiu primeiro 100%/80% após dois cenários autenticados
+(ts_691cb83d e ts_abbc7b52); T04 foi concluído e a validação val_37b1e24d
+aceitou H04, completando quatro obrigações. Reviewer separation do Board já
+era off; autor/executor/revisor Codex explicitamente identificado, sem fingir
+revisão independente. H04 subject_version2; T04 Done version1. H01/T01 seguem
+Not Started; H02/T02 e H03/T03 In Progress. Spec permanece In Progress,
+edição3/versão48, intencionalmente incompleta para comparação dos estados.
+
+Runners locais registrados pela CLI oficial: mock-completeness-h04-pending e
+mock-completeness-h04-all, com escopo exato Board/Spec/cenário/fonte/revisão.
+Provas de Delivery: H03 card_delivery_e35a9697a288431c8d78b1d1c80098e1;
+H02 card_delivery_97775fdbfab6494491380a9ef7b82fbc;
+H04 card_delivery_ff44f8695d28483197b7dc4b84580a49;
+testes card_delivery_b8d6b21517e34c448a30ede4a59b3593 e
+card_delivery_c5bbefe941294fdcbe13b6420d0b28c1.
+
+Fricções reproduzidas, sem alterações de autoridade/gates:
+- record_delivery_evidence com kind=test sem obligation_refs falha no transporte
+  com Object of type ValueError is not JSON serializable, em vez do diagnóstico
+  delivery_obligation_refs_required. Payload correto funciona. Não é falha do
+  runner nem ausência de expected_output_snapshot: evidência nativa foi aceita
+  sem edição. A hipótese inicial comunicada sobre esse campo foi descartada;
+  editar a evidência assinada foi corretamente recusado por tampering.
+- Recursos Code Traceability exigem reason_code=missing_expected para criação
+  e agent_observed_at idêntico ao recibo; mensagens expõem essas regras, mas o
+  fluxo possui repetição considerável de preflight. Não relaxado.
+- Logs do KG mantêm metric_status=unavailable, degradação/query_deadline_exceeded
+  e decisão classificada unknown_artifact_type no rebuild. Não afirmar saúde
+  plena nem consolidação canonical da Spec incompleta. Investigar separadamente
+  ao testar fechamento/consolidação completa; não houve reparo ou escrita direta.
+
+Artifacts: Community/output/playwright/mock-completeness-verified-bars.png e
+mock-h04-delivery-accepted.png; screenshots abertos para inspeção visual.
+Provas/scripts locais em .validation-v040/mock-completeness-proof-state.json,
+mock-completeness-after-implementation.json, mock-completeness-after-verification.json,
+mock-completeness-final.json, mock_completeness_proofs.py,
+record_mock_implementations.py, verify_mock_h04.py, close_mock_h04.py.
+São scripts de auditoria de execução, não repetir cegamente (recibos/idempotência).
+Runtime/instalação continuam os do checkpoint anterior. Correção BR já enviada:
+Core bbdf82ca / Community 5eeceeb8. Nenhuma nova mudança de código Pulse neste
+checkpoint, somente dados do ensaio e ledger. Preservar home, credenciais e mock.
+
 ### 2026-10-10 — Codex associado; ensaio novo encontrou e corrigiu gate BR
 
 Usuário pediu associação pelo browser e continuidade dos testes. Agente Codex
