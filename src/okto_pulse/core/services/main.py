@@ -6114,43 +6114,18 @@ class CardService:
     async def check_decisions_coverage(
         self, spec: "Spec", board: "Board | None"
     ) -> None:
-        """Check that every active Decision has a linked task unless skipped.
+        """Require an explicit verification plan, never a ceremonial task link.
 
-        New and legacy specs default to enforcing this gate. Only `active`
-        decisions are checked â€” `superseded` and `revoked` are historical and
-        do not need linkage.
+        The former task-link skip does not waive decision verification.
+        Results are required at delivery, not during planning.
         """
-        skip_global = (
-            (board.settings or {}).get("skip_decisions_coverage_global", False)
-            if board
-            else False
-        )
-        skip_spec = getattr(spec, "skip_decisions_coverage", False)
-        if skip_spec or skip_global:
-            return
-        decisions = list(spec.decisions or [])
-        active = [
-            d
-            for d in decisions
-            if isinstance(d, dict) and d.get("status", "active") == "active"
-        ]
-        if not active:
-            return
-        unlinked = [d for d in active if not d.get("linked_task_ids")]
-        if unlinked:
-            titles = ", ".join(
-                f'"{d.get("title", d.get("id", "?"))}"' for d in unlinked[:3]
-            )
-            suffix = f" and {len(unlinked) - 3} more" if len(unlinked) > 3 else ""
-            raise ValueError(
-                f"Cannot validate spec: {len(unlinked)} Decision(s) "
-                f"in spec '{spec.title}' have no linked task cards "
-                f"({titles}{suffix}). "
-                f"REQUIRED ACTION: Link task cards to each Decision via "
-                f"okto_pulse_link_task(target_type='decision', "
-                f"target_id=<decision_id>, card_id=<card_id>, spec_id=<spec_id>). "
-                f"Alternatively, enable 'skip decisions coverage' on the spec or board."
-            )
+        from okto_pulse.core.domain.decision_verification import decision_verification_plans
+
+        pending = [plan for plan in decision_verification_plans(spec) if not plan.complete]
+        if pending:
+            raise ValueError("decision_verification_plan_incomplete: " + "; ".join(
+                f"{plan.decision_id}: {', '.join(plan.blockers)}" for plan in pending[:20]
+            ))
 
     async def resequence_columns(
         self,
@@ -8287,6 +8262,10 @@ async def _validate_spec_linked_refs(
         "business_rules": final_brs, "integration_requirements": final_irs,
         "observability_requirements": final_ors,
     }
+    from okto_pulse.core.domain.decision_verification import validate_decision_verification_references
+    validate_decision_verification_references(spec_id=current_spec.id, decisions=final_decisions,
+        collections={**verification_collections, "acceptance_criteria": final_acs_raw,
+                     "api_contracts": final_contracts})
     validate_requirement_verification_references(
         spec_id=current_spec.id, collections=verification_collections, criteria=final_acs_raw,
         previous_collections={field: getattr(current_spec, field, None) or () for field in verification_collections},
@@ -9456,6 +9435,11 @@ class SpecService:
             {field: getattr(spec, field, None) or () for field in VERIFICATION_REQUIREMENT_FIELDS.values()},
             spec.acceptance_criteria or (),
         )
+        from okto_pulse.core.domain.decision_verification import decision_verification_plans
+        for decision_plan in decision_verification_plans(spec):
+            invalid = set(decision_plan.blockers) - {"decision_verification_required"}
+            if invalid:
+                raise ValueError("; ".join(sorted(invalid)))
         await _application_add(
             self.db,
             spec,

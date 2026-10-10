@@ -1,6 +1,7 @@
 # Verificação proporcional de decisões
 
-Assessment e plano para revisão, 10 de outubro de 2026. Implementação não iniciada.
+Assessment de 10 de outubro de 2026. Implementação autorizada e iniciada;
+estado e evidências de cada milestone no IMPLEMENTATION_LEDGER.md.
 Alteração de schema com breaking change expressamente autorizada pelo usuário
 em 10 de outubro de 2026; não é uma decisão pendente para executar este plano.
 A v0.4.0 ainda não foi publicada e já prevê breaking change. Implementar somente

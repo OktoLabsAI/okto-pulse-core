@@ -17,6 +17,7 @@ from datetime import datetime
 from okto_pulse.core.models.bug_clusters import BugClustersRequest
 from okto_pulse.core.models.spec_coverage_query import SpecCoverageRequest
 from okto_pulse.core.models.decision_impact import DecisionImpactRequest
+from okto_pulse.core.domain.decision_verification import DecisionVerification
 from okto_pulse.core.models.lineage_query import LineageRequest
 from importlib.resources import files as package_files
 from types import SimpleNamespace
@@ -14690,6 +14691,7 @@ async def okto_pulse_add_decision(
     supersedes_decision_id: str = "",
     linked_requirements: list[str] | None = None,
     notes: str = "",
+    verification: DecisionVerification | None = None,
 ) -> str:
     """Add a formalized Decision to a spec.
 
@@ -14758,6 +14760,7 @@ async def okto_pulse_add_decision(
                     supersedes_decision_id=supersedes_decision_id,
                     linked_requirement_tokens=linked_requirement_tokens,
                     notes=notes.replace("\\n", "\n") if notes else None,
+                    verification=verification.model_dump(mode="json") if verification else None,
                 ),
                 actor=actor,
                 uow=uow,

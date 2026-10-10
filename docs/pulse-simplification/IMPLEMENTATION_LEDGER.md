@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-10 — DV1 contrato e planejamento implementados
+
+Usuário solicitou iniciar a implementação do DECISION_VERIFICATION_PLAN.
+Contrato fechado Decision.verification com obrigações tipadas e/ou inspeção,
+resolução de referências ativas na mesma Spec e gate de planejamento sem task
+artificial. Writers Spec create/update/structured/bulk compartilham a validação;
+MCP add_decision e promoção de candidato recebem o mesmo contrato. Ausência em
+Draft permanece pendente; skip_decisions_coverage não dispensa o novo contrato.
+Inventário não atribui implementação nem pontos de Card à Decision. Cobertura
+derivada reutiliza as provas exatas das obrigações sem aceitar waiver como prova;
+inspeção permanece bloqueada até o recibo direto DV2. Contrato combinado é AND.
+
+Validação final: 142 testes passaram (decision_verification, effective_delivery_coverage,
+effective_delivery_inventory, spec_structured_entities). Antes da campanha,
+instalação isolada dv-venv confirmou byte parity dos 845 .py Core e 319 Community.
+Primeira campanha: 55 passaram/1 falhou por fixture unitária com prefixo de ref
+incompatível; fixture passou a usar o prefixo canônico, sem alias no produto.
+Ruff identificou validação de criação fora do fluxo; corrigida antes da campanha
+final, com dois testes adicionais de persistência/recusa pelo writer estruturado.
+Ruff F/E9 passou. Runner local em PULSE_REFACTOR/.validation-v040/run_dv_tests.py. Home real e
+processo do usuário preservados. Frontend não alterado neste milestone.
+Próximo: DV2 registro tipado decision_review, autoridade/separação, CAS/replay,
+atualidade/conflito e gate; depois DV3 UI/consumidores e DV4 aceitação. Este
+checkpoint não declara entrega integral nem fechamento da SIM-05/T33.
+
 ### 2026-10-10 — Assessment da verificação de Decisions
 
 Pedido atual: conferir a proposta de verificação proporcional de decisões e

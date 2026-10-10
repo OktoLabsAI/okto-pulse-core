@@ -25,6 +25,7 @@ from okto_pulse.core.discovery_params_schema import (
     normalize_discovery_params_schema,
 )
 from okto_pulse.core.domain.requirement_verification import VerificationQualifiedModel
+from okto_pulse.core.domain.decision_verification import DecisionVerification
 from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
 from okto_pulse.core.domain.learning_submission import LearningSubmission
 from okto_pulse.core.domain.execution_contract import SpecExecutionContract
@@ -1071,6 +1072,8 @@ class ObservabilityRequirement(VerificationQualifiedModel):
 DecisionStatus = Literal["active", "superseded", "revoked"]
 
 
+
+
 class Decision(BaseModel):
     """A decision formalized on a spec — causal/contextual choice.
 
@@ -1090,6 +1093,8 @@ class Decision(BaseModel):
     linked_task_ids: list[str] | None = None
     status: DecisionStatus = "active"
     notes: str | None = None
+
+    verification: DecisionVerification | None = None
 
 
 # ============================================================================

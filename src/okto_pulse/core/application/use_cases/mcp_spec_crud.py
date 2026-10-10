@@ -937,6 +937,7 @@ class McpAddDecisionCommand:
         "supersedes_decision_id",
         "linked_requirement_tokens",
         "notes",
+        "verification",
     )
 
     def __init__(
@@ -951,6 +952,7 @@ class McpAddDecisionCommand:
         supersedes_decision_id: str,
         linked_requirement_tokens: list | None,
         notes: str | None,
+        verification: dict | None = None,
     ) -> None:
         self.spec_id = spec_id
         self.dec_id = dec_id
@@ -961,6 +963,7 @@ class McpAddDecisionCommand:
         self.supersedes_decision_id = supersedes_decision_id
         self.linked_requirement_tokens = linked_requirement_tokens
         self.notes = notes
+        self.verification = verification
 
 
 class McpAddDecisionResult:
@@ -1056,6 +1059,7 @@ class McpAddDecisionUseCase:
             "linked_task_ids": None,
             "status": "active",
             "notes": command.notes,
+            "verification": command.verification,
         }
         decisions.append(decision)
         await service.update_spec(

@@ -24,6 +24,9 @@ from okto_pulse.core.domain.implementation_responsibility import (
     RequirementContribution,
     resolve_implementation_responsibility,
 )
+from okto_pulse.core.domain.decision_verification import (
+    DecisionVerificationPlan, decision_verification_plans,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +36,7 @@ class EffectiveDeliveryObligation:
     contributions: tuple[RequirementContribution, ...]
     blockers: tuple[str, ...]
     declared_card_ids: tuple[str, ...] = ()
+    decision_plan: DecisionVerificationPlan | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,8 +84,8 @@ class EffectiveDeliveryInventory:
         return tuple(
             row
             for row in self.rows
-            if card_id in row.declared_card_ids
-            or any(fact.card_id == card_id for fact in row.contributions)
+            if row.family != "decision" and (card_id in row.declared_card_ids
+            or any(fact.card_id == card_id for fact in row.contributions))
         )
 
 
@@ -146,6 +150,10 @@ def resolve_effective_delivery_inventory(*, spec, cards, qualification):
     }
     allocated = set()
     rows = []
+    try:
+        decision_plans = {row.decision_id: row for row in decision_verification_plans(spec)}
+    except ValueError as exc:
+        return EffectiveDeliveryInventory((), responsibilities, False, (str(exc),))
 
     def direct(binding, card_id, *, origin="direct", scope="whole_requirement"):
         return RequirementContribution(
@@ -175,6 +183,12 @@ def resolve_effective_delivery_inventory(*, spec, cards, qualification):
         facts = ()
         binding = obligation.binding
         blockers = set()
+        if prefix == "decision":
+            decision_plan = decision_plans.get(identity)
+            rows.append(EffectiveDeliveryObligation(binding, prefix, (),
+                decision_plan.blockers if decision_plan else ("decision_verification_required",),
+                (), decision_plan))
+            continue
         links = raw.get(ref, {}).get("linked_task_ids") or []
         if not isinstance(links, list) or any(
             not isinstance(link, str) for link in links

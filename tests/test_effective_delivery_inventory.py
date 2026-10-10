@@ -51,7 +51,7 @@ def test_supplemental_obligations_do_not_disappear_from_qualified_plan():
     assert not result.complete
     assert any(
         row.binding.obligation_ref == "decision:decision"
-        and "delivery_inventory_work_unassigned" in row.blockers
+        and "decision_verification_required" in row.blockers
         for row in result.rows
     )
     assert {row.binding.obligation_ref for row in result.card_obligations("owner")} == {

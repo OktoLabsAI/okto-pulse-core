@@ -98,6 +98,8 @@ class EffectiveDeliveryCoverageRow:
     test_waiver_ids: tuple[str, ...]
     implementation_satisfied: bool
     test_satisfied: bool
+    decision_verification_status: str | None = None
+    decision_review_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +128,8 @@ class ScopedDeliveryCoverageRow(DeliveryCoverageRow):
     required_card_ids: tuple[str, ...]
     missing_card_ids: tuple[str, ...]
     missing_criteria: tuple[tuple[str, str], ...]
+    decision_verification_status: str | None = None
+    decision_review_ids: tuple[str, ...] = ()
 
     @property
     def implementation_satisfied(self):
@@ -191,6 +195,7 @@ def evaluate_effective_snapshot(snapshot):
         row.implementation_waiver_ids, row.test_waiver_ids,
         row.implementation_satisfied, row.test_satisfied, row.required_card_ids,
         row.missing_card_ids, row.missing_criteria,
+        row.decision_verification_status, row.decision_review_ids,
     ) for row in result.rows if row.binding in obligations), result.blockers, result.rejected_record_ids)
 
 
@@ -335,6 +340,8 @@ def evaluate_effective_delivery_coverage(
             by_test_binding.setdefault(binding, []).append(test)
     checks = 0
     for binding, obligation in expected.items():
+        if obligation.family == "decision":
+            continue
         base = baseline_rows.get(binding)
         required = {item.card_id: item for item in obligation.contributions}
         if len(required) != len(obligation.contributions) or not required:
@@ -448,9 +455,34 @@ def evaluate_effective_delivery_coverage(
                 verified,
             )
         )
+    # Decisions reuse delivery proof; they never manufacture implementation
+    # ownership or accept arbitrary Test Card bindings to a contextual choice.
+    by_ref = {row.binding.obligation_ref: row for row in result}
+    for binding, obligation in expected.items():
+        if obligation.family != "decision":
+            continue
+        plan = obligation.decision_plan
+        refs = plan.verification.obligation_refs if plan and plan.verification else ()
+        dependencies = [by_ref.get(ref) for ref in refs]
+        satisfied = bool(plan and plan.complete) and all(
+            row is not None and row.implementation_satisfied and row.test_satisfied
+            and not row.implementation_waiver_ids and not row.test_waiver_ids
+            for row in dependencies
+        )
+        status = "verified" if satisfied else "obligations_pending"
+        if not plan or not plan.complete:
+            status = "planning_pending"
+        elif plan.verification.inspection is not None:
+            satisfied = False
+            status = "inspection_pending"
+        if not satisfied:
+            blockers.add("decision_verification_incomplete")
+        result.append(EffectiveDeliveryCoverageRow(binding, (), (),
+            tuple(sorted({identity for row in dependencies if row for identity in row.test_ids})),
+            (), (), (), (), True, satisfied, status))
     if any(not row.implementation_satisfied for row in result):
         blockers.add("delivery_implementation_missing")
-    if any(not row.test_satisfied for row in result):
+    if any(not row.test_satisfied and row.decision_verification_status is None for row in result):
         blockers.add("delivery_test_result_missing")
     rejected.difference_update(relevant_tests)
     rejected.update(set(actual_tests) - relevant_tests)
