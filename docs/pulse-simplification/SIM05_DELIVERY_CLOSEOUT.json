@@ -1,0 +1,3387 @@
+{
+  "scope": {
+    "board_id": "2fd79a82-08b2-4ecc-823a-2c820342f6b9",
+    "spec_id": "2372d8a2-68c8-57f4-a609-d809c92d55c6"
+  },
+  "mock_commit": "5d959623113f2be8983dabf1d4b1c54f1184a07a",
+  "local_test_count": 46,
+  "spec": {
+    "status": "in_progress",
+    "edition": 4,
+    "version": 290
+  },
+  "cards": [
+    {
+      "id": "9644bcb1-dfdc-5d5e-83a6-7ea9f4517155",
+      "title": "[TEST] Disponibilidade e capacidade",
+      "status": "done"
+    },
+    {
+      "id": "3dd7be00-8a4f-5302-8f0f-cacffd81c7ac",
+      "title": "[TEST] Concorrência entre reservas",
+      "status": "done"
+    },
+    {
+      "id": "904a8be2-a99b-5293-8ac4-87465c7d1dae",
+      "title": "[TEST] Calendário e precisão",
+      "status": "done"
+    },
+    {
+      "id": "4002dc53-0af1-5ea5-9ca5-2c450dfb0022",
+      "title": "[TEST] Relógio e limites temporais",
+      "status": "done"
+    },
+    {
+      "id": "787b905d-cfce-5d43-9cc5-3f35378e38fa",
+      "title": "[TEST] Confirmação e replay",
+      "status": "done"
+    },
+    {
+      "id": "4c97f636-92d4-592b-ab92-0a1fa5f5f9d5",
+      "title": "[TEST] Isolamento e sessão",
+      "status": "done"
+    },
+    {
+      "id": "a8e74019-6c43-56f5-a67f-7c7fc50b6e04",
+      "title": "[TEST] Alteração e CAS",
+      "status": "done"
+    },
+    {
+      "id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "title": "[TEST] Cancelamento concorrente",
+      "status": "done"
+    },
+    {
+      "id": "c0a0ad28-3d68-5dd4-a71b-ea5f661ff29b",
+      "title": "[TEST] Rollback e recuperação",
+      "status": "done"
+    },
+    {
+      "id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "title": "[TEST] Paginação e histórico",
+      "status": "done"
+    },
+    {
+      "id": "ed9ec35a-a2f2-5dfe-b181-9df4686c435e",
+      "title": "[TEST] Frontend busca e confirmação",
+      "status": "done"
+    },
+    {
+      "id": "8da12676-eae1-5850-9f81-641c4ce26a66",
+      "title": "[TEST] Frontend gestão e cancelamento",
+      "status": "done"
+    },
+    {
+      "id": "b5c69582-9524-5f13-8b5b-9d8383e7a9d6",
+      "title": "[TEST] Acessibilidade e responsividade",
+      "status": "in_progress"
+    },
+    {
+      "id": "64128513-a964-5eea-a6d6-e994bca6d567",
+      "title": "[TEST] Fronteiras e paridade",
+      "status": "done"
+    },
+    {
+      "id": "d7090ce8-edcd-52bb-8947-626af9b5d8c4",
+      "title": "[TEST] Contrato transacional",
+      "status": "done"
+    },
+    {
+      "id": "19c55707-273d-51fc-b2ac-da82c23d9997",
+      "title": "[TEST] Contratos de comandos",
+      "status": "done"
+    },
+    {
+      "id": "7f94d1b5-36ad-5c75-a278-4494b6c2228f",
+      "title": "[TEST] Invariantes e relógio",
+      "status": "done"
+    },
+    {
+      "id": "ce001955-12c5-5199-975f-1cec993c916a",
+      "title": "[TEST] Contratos de consultas",
+      "status": "done"
+    },
+    {
+      "id": "ec6fa8a6-6a4f-55d0-89db-ea1a1a0242aa",
+      "title": "[TEST] Identidade e composição",
+      "status": "done"
+    },
+    {
+      "id": "f5a80dd6-eeb2-58c2-a564-7dde0aa45aba",
+      "title": "[TEST] Observabilidade segura",
+      "status": "done"
+    },
+    {
+      "id": "1221974a-8da6-5767-932e-0d37cd0241e1",
+      "title": "Domínio — calendário e invariantes de reserva",
+      "status": "done"
+    },
+    {
+      "id": "32bf1102-b2de-5962-95fe-35676c851394",
+      "title": "Aplicação — comandos, consultas e replay",
+      "status": "done"
+    },
+    {
+      "id": "f8c4b45c-c795-5b0c-b9c7-36d74a2a4aa8",
+      "title": "Persistência — UoW SQLite atômica e recuperável",
+      "status": "done"
+    },
+    {
+      "id": "caaae4c5-5e86-5335-b941-66d9358a7a93",
+      "title": "HTTP — sessão e seis contratos de reserva",
+      "status": "done"
+    },
+    {
+      "id": "eaf209fe-5a70-5d07-8cae-dd33d47367b4",
+      "title": "Frontend — busca e confirmação H01/H02",
+      "status": "done"
+    },
+    {
+      "id": "4a8c261b-9891-584b-b286-b19cfa1f585b",
+      "title": "Frontend — gestão e cancelamento H03/H04",
+      "status": "done"
+    },
+    {
+      "id": "dcf84b1b-0a85-5dbf-a48e-b5b57d3169bc",
+      "title": "Composição e observabilidade dos comandos",
+      "status": "done"
+    }
+  ],
+  "automated_scenarios": [
+    {
+      "id": "ts_6587e6f3",
+      "outcome": "success",
+      "run_id": "a3637ebe7ceb3f3da72f13c53eaead41",
+      "executed_at": "2026-10-10T01:58:33.362758+00:00",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_T02_capacity_boundaries"
+      ]
+    },
+    {
+      "id": "ts_df0d7369",
+      "outcome": "success",
+      "run_id": "40b37eab1a4fedf781d3cc1fefaf4a1e",
+      "executed_at": "2026-10-10T01:58:38.921696+00:00",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_T05_duration"
+      ]
+    },
+    {
+      "id": "ts_f1464424",
+      "outcome": "success",
+      "run_id": "bd28cbf6292a5114a73530560cc20d64",
+      "executed_at": "2026-10-10T01:58:54.414564+00:00",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_T06_precision_and_offset"
+      ]
+    },
+    {
+      "id": "ts_48fea019",
+      "outcome": "success",
+      "run_id": "d95fb22de4f3bc28d15a9f348219ba73",
+      "executed_at": "2026-10-10T01:59:17.924306+00:00",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_T07_business_hours"
+      ]
+    },
+    {
+      "id": "ts_d16782fd",
+      "outcome": "success",
+      "run_id": "ca77d54457e2a4f099079e728abc952f",
+      "executed_at": "2026-10-10T01:59:29.323701+00:00",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_T08_start_strictly_future"
+      ]
+    },
+    {
+      "id": "ts_9f098abb",
+      "outcome": "success",
+      "run_id": "69bbad9bb5e644d80806b2ca9ff597d8",
+      "executed_at": "2026-10-10T01:59:31.280461+00:00",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_T09_horizon"
+      ]
+    },
+    {
+      "id": "ts_985cde72",
+      "outcome": "success",
+      "run_id": "e758a7504e0f2d14cb9b8327f7819e25",
+      "executed_at": "2026-10-10T02:36:16.950992+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_atomic_create_and_sequential_replay",
+        "tests/test_frontend.py::FrontendTests.test_search_loading_and_confirmation_double_submit_conflict",
+        "tests/test_closure.py::ClosureTests.test_http_create_replay_identity_and_security"
+      ]
+    },
+    {
+      "id": "ts_5ef6d482",
+      "outcome": "success",
+      "run_id": "4195db4212466a041b8d81a53a260a7d",
+      "executed_at": "2026-10-10T01:59:47.509261+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_concurrent_create_overlap_and_independent_rooms"
+      ]
+    },
+    {
+      "id": "ts_e9771f3c",
+      "outcome": "success",
+      "run_id": "567a030b4fe6e09e1d8e0ed53e386edd",
+      "executed_at": "2026-10-10T01:59:52.696368+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_atomic_create_and_sequential_replay",
+        "tests/test_delivery.py::DeliveryTests.test_concurrent_replay_is_one_commit"
+      ]
+    },
+    {
+      "id": "ts_27e31184",
+      "outcome": "success",
+      "run_id": "6dd6bd7a23120061bba4cb0b22e62582",
+      "executed_at": "2026-10-10T01:59:56.715456+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_atomic_create_and_sequential_replay"
+      ]
+    },
+    {
+      "id": "ts_16279dab",
+      "outcome": "success",
+      "run_id": "cfe43521f753221d611543fb65a33395",
+      "executed_at": "2026-10-10T02:00:03.469513+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_cancel_releases_room_exact_replay_and_history"
+      ]
+    },
+    {
+      "id": "ts_1ce39723",
+      "outcome": "success",
+      "run_id": "afac11aff153d094ad69030c7c7d64a4",
+      "executed_at": "2026-10-10T02:00:10.804713+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_change_conflict_and_compare_and_swap"
+      ]
+    },
+    {
+      "id": "ts_2fe6bbb5",
+      "outcome": "success",
+      "run_id": "b4032a24ea0d80570306a5c6fe915187",
+      "executed_at": "2026-10-10T02:00:16.779648+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_change_conflict_and_compare_and_swap"
+      ]
+    },
+    {
+      "id": "ts_3ac9acd5",
+      "outcome": "success",
+      "run_id": "84ac18c4cbb2799575707e33554db5d1",
+      "executed_at": "2026-10-10T02:00:21.850828+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_change_cancel_race_single_commit"
+      ]
+    },
+    {
+      "id": "ts_5e16a84e",
+      "outcome": "success",
+      "run_id": "fd5b488a0b646e10197670f34976b4e0",
+      "executed_at": "2026-10-10T02:00:28.372092+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_cancel_releases_room_exact_replay_and_history"
+      ]
+    },
+    {
+      "id": "ts_ad53a016",
+      "outcome": "success",
+      "run_id": "9b126f9528630f3ea1a22a2884ecf2e9",
+      "executed_at": "2026-10-10T02:00:35.125267+00:00",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_T21_cancel_at_or_after_start",
+        "tests/test_closure.py::ClosureTests.test_http_change_cancel_and_temporal_lock"
+      ]
+    },
+    {
+      "id": "ts_a4e2ad63",
+      "outcome": "success",
+      "run_id": "2983c219e221cffaa90fb69f045e7d08",
+      "executed_at": "2026-10-10T02:36:09.439291+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_cancel_releases_room_exact_replay_and_history",
+        "tests/test_frontend.py::FrontendTests.test_cancel_focus_trap_error_and_uncertain_retry"
+      ]
+    },
+    {
+      "id": "ts_2e1cdecb",
+      "outcome": "success",
+      "run_id": "1d0e500ad7ef9426fb1337513ae67767",
+      "executed_at": "2026-10-10T02:00:49.550612+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_rollback_after_save_create_and_change"
+      ]
+    },
+    {
+      "id": "ts_3002582b",
+      "outcome": "success",
+      "run_id": "68a4f952c227d4581be5aa76e94b58f7",
+      "executed_at": "2026-10-10T02:00:58.769667+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_restart_after_lost_response",
+        "tests/test_frontend.py::FrontendTests.test_uncertain_retry_preserves_key_payload_and_single_commit"
+      ]
+    },
+    {
+      "id": "ts_9a8f3731",
+      "outcome": "success",
+      "run_id": "8ceae9aaeb6af167ea274b764afa9001",
+      "executed_at": "2026-10-10T02:35:54.638273+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_http_pagination_history_101_and_isolation",
+        "tests/test_frontend.py::FrontendTests.test_list_history_pagination_and_successful_edit"
+      ]
+    },
+    {
+      "id": "ts_da63dd0c",
+      "outcome": "success",
+      "run_id": "1508869abddadab0c384aa2789cdc914",
+      "executed_at": "2026-10-10T02:11:13.166012+00:00",
+      "test_ids": [
+        "tests/test_frontend.py::FrontendTests.test_edit_conflict_preserves_content",
+        "tests/test_frontend.py::FrontendTests.test_list_history_pagination_and_successful_edit"
+      ]
+    },
+    {
+      "id": "ts_04b1130a",
+      "outcome": "success",
+      "run_id": "ab327afa38c232e9f17cc3c53f5dd22b",
+      "executed_at": "2026-10-10T02:36:02.794262+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_cancel_releases_room_exact_replay_and_history",
+        "tests/test_frontend.py::FrontendTests.test_list_history_pagination_and_successful_edit"
+      ]
+    },
+    {
+      "id": "ts_1e93daf6",
+      "outcome": "success",
+      "run_id": "ed99ee748b238119849c86378c0150cb",
+      "executed_at": "2026-10-10T02:11:22.647708+00:00",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_clock_port_returns_utc_and_can_advance",
+        "tests/test_delivery.py::DeliveryTests.test_clock_is_read_after_write_lock"
+      ]
+    },
+    {
+      "id": "ts_65033470",
+      "outcome": "success",
+      "run_id": "2ad991abbeb019c60d0e9ed7e9fdb94f",
+      "executed_at": "2026-10-10T02:11:26.577876+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_http_session_csrf_contracts_and_observability"
+      ]
+    },
+    {
+      "id": "ts_3245bc54",
+      "outcome": "success",
+      "run_id": "6fa548d5cbd8019cb068e354fdd62673",
+      "executed_at": "2026-10-10T02:11:31.733078+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_availability_overlap_and_empty_vs_failure"
+      ]
+    },
+    {
+      "id": "ts_932187ee",
+      "outcome": "success",
+      "run_id": "c168f7497cde25606b541d7d79b2ffaa",
+      "executed_at": "2026-10-10T02:11:34.851119+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_availability_overlap_and_empty_vs_failure"
+      ]
+    },
+    {
+      "id": "ts_65562292",
+      "outcome": "success",
+      "run_id": "fd743d54b5ef60f7f49644fce7d25c14",
+      "executed_at": "2026-10-10T02:11:39.945515+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_concurrent_create_overlap_and_independent_rooms"
+      ]
+    },
+    {
+      "id": "ts_da595ac5",
+      "outcome": "success",
+      "run_id": "ff95a22a8ff1fdbafa3d95681ff911c3",
+      "executed_at": "2026-10-10T02:11:43.050778+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_availability_overlap_and_empty_vs_failure"
+      ]
+    },
+    {
+      "id": "ts_3c650809",
+      "outcome": "success",
+      "run_id": "fb6f99fde3700814974c6b46266c6e5e",
+      "executed_at": "2026-10-10T02:11:46.389320+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_http_create_replay_identity_and_security"
+      ]
+    },
+    {
+      "id": "ts_8ee3f923",
+      "outcome": "success",
+      "run_id": "f851096e47e263179f36bb40f01aca0f",
+      "executed_at": "2026-10-10T02:11:58.185682+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_busy_budget_and_counter_outcomes",
+        "tests/test_frontend.py::FrontendTests.test_search_empty_error_preserves_filters"
+      ]
+    },
+    {
+      "id": "ts_6311ef23",
+      "outcome": "success",
+      "run_id": "5c1f614c00cd80c3f4411cb259b7735a",
+      "executed_at": "2026-10-10T02:12:03.901077+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_http_create_replay_identity_and_security"
+      ]
+    },
+    {
+      "id": "ts_f7d521ed",
+      "outcome": "success",
+      "run_id": "f53b27cccbd50e905e75831f6d8c754b",
+      "executed_at": "2026-10-10T02:12:09.412383+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_http_create_replay_identity_and_security"
+      ]
+    },
+    {
+      "id": "ts_66cab4e2",
+      "outcome": "success",
+      "run_id": "c7ba107397c1ab1ad84a915f31f48363",
+      "executed_at": "2026-10-10T02:12:18.834762+00:00",
+      "test_ids": [
+        "tests/test_frontend.py::FrontendTests.test_search_loading_and_confirmation_double_submit_conflict",
+        "tests/test_frontend.py::FrontendTests.test_search_empty_error_preserves_filters"
+      ]
+    },
+    {
+      "id": "ts_80a49606",
+      "outcome": "success",
+      "run_id": "4001ece442e67cce5b88bbbe6bf4cbfa",
+      "executed_at": "2026-10-10T02:12:33.241471+00:00",
+      "test_ids": [
+        "tests/test_frontend.py::FrontendTests.test_search_loading_and_confirmation_double_submit_conflict",
+        "tests/test_frontend.py::FrontendTests.test_uncertain_retry_preserves_key_payload_and_single_commit"
+      ]
+    },
+    {
+      "id": "ts_1436b691",
+      "outcome": "success",
+      "run_id": "7ac59208ccc6f20bc75fd8024a3d6ba5",
+      "executed_at": "2026-10-10T02:12:44.365058+00:00",
+      "test_ids": [
+        "tests/test_frontend.py::FrontendTests.test_cancel_focus_trap_error_and_uncertain_retry",
+        "tests/test_frontend.py::FrontendTests.test_cancel_keyboard_focus_and_history"
+      ]
+    },
+    {
+      "id": "ts_5a243c3d",
+      "outcome": "success",
+      "run_id": "c98b09520aee245bc77a2e49f20501c3",
+      "executed_at": "2026-10-10T02:12:48.453670+00:00",
+      "test_ids": [
+        "tests/test_domain.py::DomainTests.test_domain_has_no_mechanism_imports",
+        "tests/test_closure.py::ClosureTests.test_public_discriminated_contract_and_memory_parity"
+      ]
+    },
+    {
+      "id": "ts_2c27f4f9",
+      "outcome": "success",
+      "run_id": "4be1f4c5caeef6d788b3a71a03e6c218",
+      "executed_at": "2026-10-10T02:12:54.325516+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_public_discriminated_contract_and_memory_parity",
+        "tests/test_closure.py::ClosureTests.test_all_uow_operations_on_independent_adapters"
+      ]
+    },
+    {
+      "id": "ts_390e4059",
+      "outcome": "success",
+      "run_id": "cedbc8d219182d3dad13db377bc9a2ed",
+      "executed_at": "2026-10-10T02:12:58.256194+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_transaction_readonly_closed_cas_and_receipt_uniqueness",
+        "tests/test_delivery.py::DeliveryTests.test_rollback_after_save_create_and_change",
+        "tests/test_delivery.py::DeliveryTests.test_concurrent_replay_is_one_commit"
+      ]
+    },
+    {
+      "id": "ts_bb73d28e",
+      "outcome": "success",
+      "run_id": "859adf59ce6fac9c530e4df1f395a854",
+      "executed_at": "2026-10-10T02:13:01.396642+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_http_change_cancel_and_temporal_lock"
+      ]
+    },
+    {
+      "id": "ts_b7bd20ba",
+      "outcome": "success",
+      "run_id": "1be10142fd1e5fd9d3106c330d3a00a4",
+      "executed_at": "2026-10-10T02:13:04.158714+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_policy_nullability_ownership_and_conflicts",
+        "tests/test_domain.py::DomainTests.test_T03_half_open_intervals",
+        "tests/test_domain.py::DomainTests.test_T21_cancel_at_or_after_start"
+      ]
+    },
+    {
+      "id": "ts_02d7edd1",
+      "outcome": "success",
+      "run_id": "c4b7d823763b18b3ab7074365949a401",
+      "executed_at": "2026-10-10T02:13:13.119080+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_http_pagination_history_101_and_isolation"
+      ]
+    },
+    {
+      "id": "ts_4e87a024",
+      "outcome": "success",
+      "run_id": "8271ab3fa6e9c6a799f6fc3e59820d8c",
+      "executed_at": "2026-10-10T02:13:18.317252+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_sessions_expired_revoked_and_composition",
+        "tests/test_closure.py::ClosureTests.test_http_create_replay_identity_and_security"
+      ]
+    },
+    {
+      "id": "ts_9a06e4dc",
+      "outcome": "success",
+      "run_id": "1fc852865cd98733bb1dc7fd7cc3a686",
+      "executed_at": "2026-10-10T02:13:21.533539+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_http_create_replay_identity_and_security"
+      ]
+    },
+    {
+      "id": "ts_0d9423df",
+      "outcome": "success",
+      "run_id": "f3a218d1bf71f175e7d29681df5603f1",
+      "executed_at": "2026-10-10T02:13:24.598376+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_public_discriminated_contract_and_memory_parity"
+      ]
+    },
+    {
+      "id": "ts_2e0ee404",
+      "outcome": "success",
+      "run_id": "607957b622b4f5a4be6174f2549d73ef",
+      "executed_at": "2026-10-10T02:13:29.638353+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_availability_overlap_and_empty_vs_failure",
+        "tests/test_closure.py::ClosureTests.test_http_create_replay_identity_and_security"
+      ]
+    },
+    {
+      "id": "ts_0a994a0f",
+      "outcome": "success",
+      "run_id": "21fcc381df46bd3496a22636afdb6c4d",
+      "executed_at": "2026-10-10T02:13:33.437565+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_http_pagination_history_101_and_isolation"
+      ]
+    },
+    {
+      "id": "ts_d6505034",
+      "outcome": "success",
+      "run_id": "e44881e4503ecca756898ca1115ca9ce",
+      "executed_at": "2026-10-10T02:13:36.967233+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_http_change_cancel_and_temporal_lock"
+      ]
+    },
+    {
+      "id": "ts_af6d7800",
+      "outcome": "success",
+      "run_id": "84893d973df74741db2eefa2d934f56b",
+      "executed_at": "2026-10-10T02:13:46.057556+00:00",
+      "test_ids": [
+        "tests/test_delivery.py::DeliveryTests.test_sessions_expired_revoked_and_composition",
+        "tests/test_closure.py::ClosureTests.test_public_discriminated_contract_and_memory_parity"
+      ]
+    },
+    {
+      "id": "ts_f789fb20",
+      "outcome": "success",
+      "run_id": "5de64bec5d9b94e31f21e22a9b3b40f2",
+      "executed_at": "2026-10-10T02:13:49.121985+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_all_uow_operations_on_independent_adapters"
+      ]
+    },
+    {
+      "id": "ts_9ffbb04b",
+      "outcome": "success",
+      "run_id": "995c70d1d1084bf7d16ca691563d146a",
+      "executed_at": "2026-10-10T02:13:54.650380+00:00",
+      "test_ids": [
+        "tests/test_closure.py::ClosureTests.test_busy_budget_and_counter_outcomes"
+      ]
+    }
+  ],
+  "expanded_runs": [
+    {
+      "scenario_id": "ts_9a8f3731",
+      "prior_run_id": "c4c47699cb2aff73fab8e2c08f958bcc",
+      "current_run_id": "8ceae9aaeb6af167ea274b764afa9001"
+    },
+    {
+      "scenario_id": "ts_04b1130a",
+      "prior_run_id": "261edbeeab9eed46d82e4b1e07d05c95",
+      "current_run_id": "ab327afa38c232e9f17cc3c53f5dd22b"
+    },
+    {
+      "scenario_id": "ts_a4e2ad63",
+      "prior_run_id": "38c4e4dce0c826faeadcfc29bb8bd460",
+      "current_run_id": "2983c219e221cffaa90fb69f045e7d08"
+    },
+    {
+      "scenario_id": "ts_985cde72",
+      "prior_run_id": "8cfea4fdfc179471842ed46d23d11c15",
+      "current_run_id": "e758a7504e0f2d14cb9b8327f7819e25"
+    }
+  ],
+  "manual": {
+    "scenario_id": "ts_ab132c7f",
+    "card_id": "b5c69582-9524-5f13-8b5b-9d8383e7a9d6",
+    "status": "pending",
+    "user_accepted_inspection": true,
+    "result_received": false,
+    "url": "http://127.0.0.1:8110",
+    "comment_id": "ac608de8-c3f0-4a87-91b1-c106839f6268"
+  },
+  "delivery": {
+    "allowed": false,
+    "blockers": [
+      "delivery_test_result_missing"
+    ],
+    "read_complete": true,
+    "obligation_count": 79,
+    "cards": [
+      {
+        "id": "1221974a-8da6-5767-932e-0d37cd0241e1",
+        "status": "done",
+        "progress": {
+          "percent": 97,
+          "total": 17,
+          "planned": 0,
+          "implemented": 1,
+          "verified": 0,
+          "accepted": 16,
+          "scope_sha256": "5b8debcb9e7718b4ea0f979ce30c65269f000d8ca6fb8a61f06d5030827cf621",
+          "reason": null
+        }
+      },
+      {
+        "id": "32bf1102-b2de-5962-95fe-35676c851394",
+        "status": "done",
+        "progress": {
+          "percent": 94,
+          "total": 25,
+          "planned": 0,
+          "implemented": 3,
+          "verified": 0,
+          "accepted": 22,
+          "scope_sha256": "a9efb8af6eabf0213f7a74651f868ade1988bf0f707c1a406e66155a9055d6f4",
+          "reason": null
+        }
+      },
+      {
+        "id": "4a8c261b-9891-584b-b286-b19cfa1f585b",
+        "status": "done",
+        "progress": {
+          "percent": 94,
+          "total": 9,
+          "planned": 0,
+          "implemented": 1,
+          "verified": 0,
+          "accepted": 8,
+          "scope_sha256": "2e06b5d4267d2ce1663aac4288be9d48eab47affb1ea0e8f1c0fe63b0b4ee363",
+          "reason": null
+        }
+      },
+      {
+        "id": "caaae4c5-5e86-5335-b941-66d9358a7a93",
+        "status": "done",
+        "progress": {
+          "percent": 95,
+          "total": 31,
+          "planned": 0,
+          "implemented": 3,
+          "verified": 0,
+          "accepted": 28,
+          "scope_sha256": "4babb321f3d21971d06d12629d530790628985e93e5641a6af9d5000edc808a0",
+          "reason": null
+        }
+      },
+      {
+        "id": "dcf84b1b-0a85-5dbf-a48e-b5b57d3169bc",
+        "status": "done",
+        "progress": {
+          "percent": 84,
+          "total": 13,
+          "planned": 0,
+          "implemented": 4,
+          "verified": 0,
+          "accepted": 9,
+          "scope_sha256": "57a98969f585330f003b5b23650e38ad0a56105fcd1b800269420dd1790d794d",
+          "reason": null
+        }
+      },
+      {
+        "id": "eaf209fe-5a70-5d07-8cae-dd33d47367b4",
+        "status": "done",
+        "progress": {
+          "percent": 64,
+          "total": 7,
+          "planned": 0,
+          "implemented": 5,
+          "verified": 0,
+          "accepted": 2,
+          "scope_sha256": "b8426d3d42ebdabad9b4671b65333df424f809e46acd32b86ff0c6959f6fb6f4",
+          "reason": null
+        }
+      },
+      {
+        "id": "f8c4b45c-c795-5b0c-b9c7-36d74a2a4aa8",
+        "status": "done",
+        "progress": {
+          "percent": 93,
+          "total": 15,
+          "planned": 0,
+          "implemented": 2,
+          "verified": 0,
+          "accepted": 13,
+          "scope_sha256": "b7c3ac4647c3708d85a5da5a81fd157d5d3237c20cc7c189c48f900841ee3922",
+          "reason": null
+        }
+      }
+    ],
+    "missing": [
+      {
+        "ref": "decision:dec_1d23379a",
+        "implementation_satisfied": true,
+        "missing_criteria": []
+      },
+      {
+        "ref": "fr:fr_res_cancel",
+        "implementation_satisfied": true,
+        "missing_criteria": [
+          [
+            "card_delivery_d7c7b21536624921973167b91a378b8e",
+            "ac_res_cancel"
+          ]
+        ]
+      },
+      {
+        "ref": "fr:fr_res_change",
+        "implementation_satisfied": true,
+        "missing_criteria": [
+          [
+            "card_delivery_421774e2bbae47ff9ccf28b7d682b069",
+            "ac_res_calendar"
+          ],
+          [
+            "card_delivery_421774e2bbae47ff9ccf28b7d682b069",
+            "ac_res_capacity"
+          ],
+          [
+            "card_delivery_62ed5529cb5b4f869ef7b08693db84b8",
+            "ac_res_calendar"
+          ],
+          [
+            "card_delivery_62ed5529cb5b4f869ef7b08693db84b8",
+            "ac_res_capacity"
+          ],
+          [
+            "card_delivery_7ab255a134ae412ab9414e11f45ebfb3",
+            "ac_res_calendar"
+          ],
+          [
+            "card_delivery_7ab255a134ae412ab9414e11f45ebfb3",
+            "ac_res_capacity"
+          ],
+          [
+            "card_delivery_beb67ace2a7346be9bce8834f87adc57",
+            "ac_res_calendar"
+          ],
+          [
+            "card_delivery_beb67ace2a7346be9bce8834f87adc57",
+            "ac_res_capacity"
+          ],
+          [
+            "card_delivery_d7c7b21536624921973167b91a378b8e",
+            "ac_res_calendar"
+          ],
+          [
+            "card_delivery_d7c7b21536624921973167b91a378b8e",
+            "ac_res_capacity"
+          ],
+          [
+            "card_delivery_d7c7b21536624921973167b91a378b8e",
+            "ac_res_change"
+          ]
+        ]
+      },
+      {
+        "ref": "fr:fr_res_create",
+        "implementation_satisfied": true,
+        "missing_criteria": [
+          [
+            "card_delivery_62ed5529cb5b4f869ef7b08693db84b8",
+            "ac_res_calendar"
+          ],
+          [
+            "card_delivery_62ed5529cb5b4f869ef7b08693db84b8",
+            "ac_res_capacity"
+          ],
+          [
+            "card_delivery_7ab255a134ae412ab9414e11f45ebfb3",
+            "ac_res_calendar"
+          ],
+          [
+            "card_delivery_7ab255a134ae412ab9414e11f45ebfb3",
+            "ac_res_capacity"
+          ],
+          [
+            "card_delivery_81c473e243f24b429ab9694fa713bef6",
+            "ac_res_calendar"
+          ],
+          [
+            "card_delivery_81c473e243f24b429ab9694fa713bef6",
+            "ac_res_capacity"
+          ],
+          [
+            "card_delivery_beb67ace2a7346be9bce8834f87adc57",
+            "ac_res_calendar"
+          ],
+          [
+            "card_delivery_beb67ace2a7346be9bce8834f87adc57",
+            "ac_res_capacity"
+          ],
+          [
+            "card_delivery_d7c7b21536624921973167b91a378b8e",
+            "ac_res_calendar"
+          ],
+          [
+            "card_delivery_d7c7b21536624921973167b91a378b8e",
+            "ac_res_capacity"
+          ],
+          [
+            "card_delivery_d7c7b21536624921973167b91a378b8e",
+            "ac_res_create"
+          ]
+        ]
+      },
+      {
+        "ref": "fr:fr_res_replay",
+        "implementation_satisfied": true,
+        "missing_criteria": [
+          [
+            "card_delivery_81c473e243f24b429ab9694fa713bef6",
+            "ac_res_cancel"
+          ],
+          [
+            "card_delivery_d7c7b21536624921973167b91a378b8e",
+            "ac_res_cancel"
+          ]
+        ]
+      },
+      {
+        "ref": "fr:fr_res_search",
+        "implementation_satisfied": true,
+        "missing_criteria": [
+          [
+            "card_delivery_62ed5529cb5b4f869ef7b08693db84b8",
+            "ac_res_calendar"
+          ],
+          [
+            "card_delivery_62ed5529cb5b4f869ef7b08693db84b8",
+            "ac_res_capacity"
+          ],
+          [
+            "card_delivery_81c473e243f24b429ab9694fa713bef6",
+            "ac_res_calendar"
+          ],
+          [
+            "card_delivery_81c473e243f24b429ab9694fa713bef6",
+            "ac_res_capacity"
+          ],
+          [
+            "card_delivery_beb67ace2a7346be9bce8834f87adc57",
+            "ac_res_calendar"
+          ],
+          [
+            "card_delivery_beb67ace2a7346be9bce8834f87adc57",
+            "ac_res_capacity"
+          ]
+        ]
+      },
+      {
+        "ref": "fr:fr_res_ux",
+        "implementation_satisfied": true,
+        "missing_criteria": [
+          [
+            "card_delivery_81c473e243f24b429ab9694fa713bef6",
+            "ac_res_a11y"
+          ]
+        ]
+      },
+      {
+        "ref": "tr:tr_res_ui",
+        "implementation_satisfied": true,
+        "missing_criteria": [
+          [
+            "card_delivery_81c473e243f24b429ab9694fa713bef6",
+            "ac_res_a11y"
+          ]
+        ]
+      }
+    ]
+  },
+  "associations": [
+    {
+      "id": "card_delivery_82fe4b240cd8452ea2e3b164a7760320",
+      "idempotency_key": "sim05-test-association-0",
+      "scenario_id": "ts_3245bc54",
+      "card_id": "9644bcb1-dfdc-5d5e-83a6-7ea9f4517155",
+      "obligation_refs": [
+        "br:br_5278b8d5",
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_a86c5ed1bc894b78ac3329e09e85fb64",
+      "idempotency_key": "sim05-test-association-1",
+      "scenario_id": "ts_3245bc54",
+      "card_id": "9644bcb1-dfdc-5d5e-83a6-7ea9f4517155",
+      "obligation_refs": [
+        "ac:ac_res_search",
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_a429dad3844747e2b04495649e0f2740",
+      "idempotency_key": "sim05-test-association-2",
+      "scenario_id": "ts_3245bc54",
+      "card_id": "9644bcb1-dfdc-5d5e-83a6-7ea9f4517155",
+      "obligation_refs": [
+        "br:br_5278b8d5"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_69911c8ebe454703817f26a63b801e74",
+      "idempotency_key": "sim05-test-association-3",
+      "scenario_id": "ts_3245bc54",
+      "card_id": "9644bcb1-dfdc-5d5e-83a6-7ea9f4517155",
+      "obligation_refs": [
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_4a1c868bb56d48f4a5c68364e0569825",
+      "idempotency_key": "sim05-test-association-4",
+      "scenario_id": "ts_6587e6f3",
+      "card_id": "9644bcb1-dfdc-5d5e-83a6-7ea9f4517155",
+      "obligation_refs": [
+        "ac:ac_res_capacity",
+        "fr:fr_res_change",
+        "fr:fr_res_create",
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_27ba88e884db45d8b21db1aefa1dc925",
+      "idempotency_key": "sim05-test-association-5",
+      "scenario_id": "ts_932187ee",
+      "card_id": "3dd7be00-8a4f-5302-8f0f-cacffd81c7ac",
+      "obligation_refs": [
+        "br:br_5278b8d5",
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_868b725b1546425ca0602e3076997fc1",
+      "idempotency_key": "sim05-test-association-6",
+      "scenario_id": "ts_932187ee",
+      "card_id": "3dd7be00-8a4f-5302-8f0f-cacffd81c7ac",
+      "obligation_refs": [
+        "ac:ac_res_search",
+        "fr:fr_res_search",
+        "tr:tr_res_atomic"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_ef7b64755291439693a27026b85bc442",
+      "idempotency_key": "sim05-test-association-7",
+      "scenario_id": "ts_932187ee",
+      "card_id": "3dd7be00-8a4f-5302-8f0f-cacffd81c7ac",
+      "obligation_refs": [
+        "ac:ac_res_atomic",
+        "br:br_5278b8d5",
+        "tr:tr_res_atomic"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_71173bd5b8e147428743ca4f84d28a17",
+      "idempotency_key": "sim05-test-association-8",
+      "scenario_id": "ts_932187ee",
+      "card_id": "3dd7be00-8a4f-5302-8f0f-cacffd81c7ac",
+      "obligation_refs": [
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_411ba92f3b7a4f36a336e9b9ae1bab48",
+      "idempotency_key": "sim05-test-association-9",
+      "scenario_id": "ts_65562292",
+      "card_id": "3dd7be00-8a4f-5302-8f0f-cacffd81c7ac",
+      "obligation_refs": [
+        "br:br_5278b8d5",
+        "fr:fr_res_create",
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_9e5fecf26cdd458f9388ef09c221891b",
+      "idempotency_key": "sim05-test-association-10",
+      "scenario_id": "ts_65562292",
+      "card_id": "3dd7be00-8a4f-5302-8f0f-cacffd81c7ac",
+      "obligation_refs": [
+        "ac:ac_res_create",
+        "ac:ac_res_search",
+        "fr:fr_res_create",
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_7f406ca390b04c398a3d1d4812b9f467",
+      "idempotency_key": "sim05-test-association-11",
+      "scenario_id": "ts_65562292",
+      "card_id": "3dd7be00-8a4f-5302-8f0f-cacffd81c7ac",
+      "obligation_refs": [
+        "br:br_5278b8d5",
+        "fr:fr_res_create"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_30212760125a423188725bf3bad135a9",
+      "idempotency_key": "sim05-test-association-12",
+      "scenario_id": "ts_df0d7369",
+      "card_id": "904a8be2-a99b-5293-8ac4-87465c7d1dae",
+      "obligation_refs": [
+        "ac:ac_res_calendar",
+        "fr:fr_res_change",
+        "fr:fr_res_create",
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_98dd6983177b402a827fc7856076a0b2",
+      "idempotency_key": "sim05-test-association-13",
+      "scenario_id": "ts_f1464424",
+      "card_id": "904a8be2-a99b-5293-8ac4-87465c7d1dae",
+      "obligation_refs": [
+        "ac:ac_res_calendar",
+        "ac:ac_res_clock",
+        "fr:fr_res_change",
+        "fr:fr_res_create",
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_5114eda5a83744a2987c1e75b3944d2c",
+      "idempotency_key": "sim05-test-association-14",
+      "scenario_id": "ts_48fea019",
+      "card_id": "904a8be2-a99b-5293-8ac4-87465c7d1dae",
+      "obligation_refs": [
+        "ac:ac_res_calendar",
+        "fr:fr_res_change",
+        "fr:fr_res_create",
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_f0f6f2f30a0e42d595cc9f4bfb345079",
+      "idempotency_key": "sim05-test-association-15",
+      "scenario_id": "ts_d16782fd",
+      "card_id": "4002dc53-0af1-5ea5-9ca5-2c450dfb0022",
+      "obligation_refs": [
+        "ac:ac_res_calendar",
+        "ac:ac_res_clock",
+        "fr:fr_res_change",
+        "fr:fr_res_create",
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_ad9cb86f374f477398804d6c02459f9b",
+      "idempotency_key": "sim05-test-association-16",
+      "scenario_id": "ts_9f098abb",
+      "card_id": "4002dc53-0af1-5ea5-9ca5-2c450dfb0022",
+      "obligation_refs": [
+        "ac:ac_res_calendar",
+        "fr:fr_res_change",
+        "fr:fr_res_create",
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_6e3a9b3021ac42c4afcc6cea7109d23f",
+      "idempotency_key": "sim05-test-association-17",
+      "scenario_id": "ts_da595ac5",
+      "card_id": "9644bcb1-dfdc-5d5e-83a6-7ea9f4517155",
+      "obligation_refs": [
+        "br:br_5278b8d5",
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_5a8eb17b204a4259a98ece1573eecb90",
+      "idempotency_key": "sim05-test-association-18",
+      "scenario_id": "ts_da595ac5",
+      "card_id": "9644bcb1-dfdc-5d5e-83a6-7ea9f4517155",
+      "obligation_refs": [
+        "ac:ac_res_search",
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_d874146fde3a4e88a14e812952207b94",
+      "idempotency_key": "sim05-test-association-19",
+      "scenario_id": "ts_da595ac5",
+      "card_id": "9644bcb1-dfdc-5d5e-83a6-7ea9f4517155",
+      "obligation_refs": [
+        "br:br_5278b8d5"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_43d3f4515d3746f89b9b396bb9c5c508",
+      "idempotency_key": "sim05-test-association-20",
+      "scenario_id": "ts_da595ac5",
+      "card_id": "9644bcb1-dfdc-5d5e-83a6-7ea9f4517155",
+      "obligation_refs": [
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_510ce0ff4eb04653914d781bc02e8e2b",
+      "idempotency_key": "sim05-test-association-21",
+      "scenario_id": "ts_985cde72",
+      "card_id": "787b905d-cfce-5d43-9cc5-3f35378e38fa",
+      "obligation_refs": [
+        "fr:fr_res_create"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a",
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_f926461819524a4ea0985405f553b52d",
+      "idempotency_key": "sim05-test-association-22",
+      "scenario_id": "ts_985cde72",
+      "card_id": "787b905d-cfce-5d43-9cc5-3f35378e38fa",
+      "obligation_refs": [
+        "ac:ac_res_create",
+        "fr:fr_res_create"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_dc8453f9a1654458a6f904705391857a",
+      "idempotency_key": "sim05-test-association-23",
+      "scenario_id": "ts_5ef6d482",
+      "card_id": "3dd7be00-8a4f-5302-8f0f-cacffd81c7ac",
+      "obligation_refs": [
+        "fr:fr_res_create"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_f996f9574173408a8ff585d62eb6f8f1",
+      "idempotency_key": "sim05-test-association-24",
+      "scenario_id": "ts_5ef6d482",
+      "card_id": "3dd7be00-8a4f-5302-8f0f-cacffd81c7ac",
+      "obligation_refs": [
+        "ac:ac_res_create",
+        "fr:fr_res_create",
+        "tr:tr_res_atomic"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_f194650efadb45889d0674c794fd0fd9",
+      "idempotency_key": "sim05-test-association-25",
+      "scenario_id": "ts_5ef6d482",
+      "card_id": "3dd7be00-8a4f-5302-8f0f-cacffd81c7ac",
+      "obligation_refs": [
+        "ac:ac_res_atomic",
+        "fr:fr_res_create",
+        "tr:tr_res_atomic"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_d13334bdfa2e49b0b992d2ac8766e0e1",
+      "idempotency_key": "sim05-test-association-26",
+      "scenario_id": "ts_e9771f3c",
+      "card_id": "787b905d-cfce-5d43-9cc5-3f35378e38fa",
+      "obligation_refs": [
+        "ac:ac_res_replay",
+        "br:br_3520507f",
+        "decision:dec_2abe6f1b",
+        "fr:fr_res_replay",
+        "tr:tr_res_atomic"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_df246f4699ee41589373204d670b35ca",
+      "idempotency_key": "sim05-test-association-27",
+      "scenario_id": "ts_e9771f3c",
+      "card_id": "787b905d-cfce-5d43-9cc5-3f35378e38fa",
+      "obligation_refs": [
+        "ac:ac_res_atomic",
+        "br:br_3520507f",
+        "fr:fr_res_replay",
+        "tr:tr_res_atomic"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_7b3e65eac4a243fe8b8390dea08e3e67",
+      "idempotency_key": "sim05-test-association-28",
+      "scenario_id": "ts_27e31184",
+      "card_id": "787b905d-cfce-5d43-9cc5-3f35378e38fa",
+      "obligation_refs": [
+        "ac:ac_res_replay",
+        "br:br_3520507f",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_d7fa958e5ee94381b7d8264ad2898045",
+      "idempotency_key": "sim05-test-association-29",
+      "scenario_id": "ts_27e31184",
+      "card_id": "787b905d-cfce-5d43-9cc5-3f35378e38fa",
+      "obligation_refs": [
+        "br:br_3520507f",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_052d786ef57b4d8e98c719bb9ea0f1fc",
+      "idempotency_key": "sim05-test-association-30",
+      "scenario_id": "ts_3c650809",
+      "card_id": "4c97f636-92d4-592b-ab92-0a1fa5f5f9d5",
+      "obligation_refs": [
+        "ac:ac_res_replay",
+        "br:br_3520507f",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_6234760b07a44d36820f9390248815b9",
+      "idempotency_key": "sim05-test-association-31",
+      "scenario_id": "ts_3c650809",
+      "card_id": "4c97f636-92d4-592b-ab92-0a1fa5f5f9d5",
+      "obligation_refs": [
+        "br:br_3520507f",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_b2e0dd29e8d747ab98067bb02b4d72e6",
+      "idempotency_key": "sim05-test-association-32",
+      "scenario_id": "ts_3c650809",
+      "card_id": "4c97f636-92d4-592b-ab92-0a1fa5f5f9d5",
+      "obligation_refs": [
+        "ac:ac_res_security",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_5e620b37f0bc478fa95990901952b59f",
+      "idempotency_key": "sim05-test-association-33",
+      "scenario_id": "ts_16279dab",
+      "card_id": "a8e74019-6c43-56f5-a67f-7c7fc50b6e04",
+      "obligation_refs": [
+        "br:br_61ffa7b7",
+        "fr:fr_res_change"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_5e9eb972c87249d5ba26785147a3fc0a",
+      "idempotency_key": "sim05-test-association-34",
+      "scenario_id": "ts_16279dab",
+      "card_id": "a8e74019-6c43-56f5-a67f-7c7fc50b6e04",
+      "obligation_refs": [
+        "ac:ac_res_change",
+        "br:br_61ffa7b7",
+        "fr:fr_res_change"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_a4451f7533bf4fbcaddaa3e1ccc0dcb7",
+      "idempotency_key": "sim05-test-association-35",
+      "scenario_id": "ts_16279dab",
+      "card_id": "a8e74019-6c43-56f5-a67f-7c7fc50b6e04",
+      "obligation_refs": [
+        "fr:fr_res_change"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_eaaa5c2e36d44aea9a1e6dec2e138969",
+      "idempotency_key": "sim05-test-association-36",
+      "scenario_id": "ts_1ce39723",
+      "card_id": "a8e74019-6c43-56f5-a67f-7c7fc50b6e04",
+      "obligation_refs": [
+        "br:br_61ffa7b7",
+        "fr:fr_res_change"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_dccb3aa12e7f47b1811d5e2e997e94b5",
+      "idempotency_key": "sim05-test-association-37",
+      "scenario_id": "ts_1ce39723",
+      "card_id": "a8e74019-6c43-56f5-a67f-7c7fc50b6e04",
+      "obligation_refs": [
+        "ac:ac_res_change",
+        "br:br_61ffa7b7",
+        "fr:fr_res_change"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_a5661be480d84c7fbe733c821380c7df",
+      "idempotency_key": "sim05-test-association-38",
+      "scenario_id": "ts_1ce39723",
+      "card_id": "a8e74019-6c43-56f5-a67f-7c7fc50b6e04",
+      "obligation_refs": [
+        "fr:fr_res_change"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_2a8c319ff44743ffb18f76c8f3b1319e",
+      "idempotency_key": "sim05-test-association-39",
+      "scenario_id": "ts_2fe6bbb5",
+      "card_id": "a8e74019-6c43-56f5-a67f-7c7fc50b6e04",
+      "obligation_refs": [
+        "br:br_61ffa7b7",
+        "fr:fr_res_change"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_8e5e1286b8b14a05b4db70fbbed21f67",
+      "idempotency_key": "sim05-test-association-40",
+      "scenario_id": "ts_2fe6bbb5",
+      "card_id": "a8e74019-6c43-56f5-a67f-7c7fc50b6e04",
+      "obligation_refs": [
+        "ac:ac_res_change",
+        "br:br_61ffa7b7",
+        "fr:fr_res_change",
+        "tr:tr_res_atomic"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_90dad25392c44b50a8a2c7efc3d55f93",
+      "idempotency_key": "sim05-test-association-41",
+      "scenario_id": "ts_2fe6bbb5",
+      "card_id": "a8e74019-6c43-56f5-a67f-7c7fc50b6e04",
+      "obligation_refs": [
+        "ac:ac_res_atomic",
+        "fr:fr_res_change",
+        "tr:tr_res_atomic"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_3d95c475a901439bb08cd9ce043cec06",
+      "idempotency_key": "sim05-test-association-42",
+      "scenario_id": "ts_3ac9acd5",
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "obligation_refs": [
+        "br:br_61ffa7b7",
+        "fr:fr_res_cancel",
+        "fr:fr_res_change"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_0ec97f2a12904535a5c8adf0a67275e6",
+      "idempotency_key": "sim05-test-association-43",
+      "scenario_id": "ts_3ac9acd5",
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "obligation_refs": [
+        "ac:ac_res_cancel",
+        "ac:ac_res_change",
+        "br:br_61ffa7b7",
+        "fr:fr_res_cancel",
+        "fr:fr_res_change",
+        "fr:fr_res_replay",
+        "tr:tr_res_atomic"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_3f4c8598a1b74cf9af059eeb5711fc91",
+      "idempotency_key": "sim05-test-association-44",
+      "scenario_id": "ts_3ac9acd5",
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "obligation_refs": [
+        "ac:ac_res_atomic",
+        "fr:fr_res_cancel",
+        "fr:fr_res_change",
+        "fr:fr_res_replay",
+        "tr:tr_res_atomic"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_7f8eae77cf354f0d8e4153a1940120e7",
+      "idempotency_key": "sim05-test-association-45",
+      "scenario_id": "ts_5e16a84e",
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "obligation_refs": [
+        "br:br_61ffa7b7",
+        "fr:fr_res_cancel"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_7c0cc2964c9b42bbb4c79accdf7d039f",
+      "idempotency_key": "sim05-test-association-46",
+      "scenario_id": "ts_5e16a84e",
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "obligation_refs": [
+        "ac:ac_res_cancel",
+        "br:br_61ffa7b7",
+        "fr:fr_res_cancel",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_fad715f622d842fe93838877b6072d99",
+      "idempotency_key": "sim05-test-association-47",
+      "scenario_id": "ts_5e16a84e",
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "obligation_refs": [
+        "fr:fr_res_cancel",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_bce409eae5924c53aca0fe1511e092a3",
+      "idempotency_key": "sim05-test-association-48",
+      "scenario_id": "ts_ad53a016",
+      "card_id": "4002dc53-0af1-5ea5-9ca5-2c450dfb0022",
+      "obligation_refs": [
+        "ac:ac_res_clock",
+        "br:br_61ffa7b7",
+        "fr:fr_res_cancel"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_cbe43982e989442ea85879fdd2144f9b",
+      "idempotency_key": "sim05-test-association-49",
+      "scenario_id": "ts_ad53a016",
+      "card_id": "4002dc53-0af1-5ea5-9ca5-2c450dfb0022",
+      "obligation_refs": [
+        "ac:ac_res_cancel",
+        "br:br_61ffa7b7",
+        "fr:fr_res_cancel",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_28a73896f6a84f1890a879ef5444e738",
+      "idempotency_key": "sim05-test-association-50",
+      "scenario_id": "ts_ad53a016",
+      "card_id": "4002dc53-0af1-5ea5-9ca5-2c450dfb0022",
+      "obligation_refs": [
+        "fr:fr_res_cancel",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3",
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_5c8d8bda31bc46fa8d5f9be73306b114",
+      "idempotency_key": "sim05-test-association-51",
+      "scenario_id": "ts_a4e2ad63",
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "obligation_refs": [
+        "br:br_61ffa7b7",
+        "fr:fr_res_cancel"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_c16054c78b414b62bfda1f523979aee5",
+      "idempotency_key": "sim05-test-association-52",
+      "scenario_id": "ts_a4e2ad63",
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "obligation_refs": [
+        "ac:ac_res_cancel",
+        "ac:ac_res_replay",
+        "br:br_3520507f",
+        "br:br_61ffa7b7",
+        "fr:fr_res_cancel",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_89e0b599e3184a6bac6a3b3ca676b093",
+      "idempotency_key": "sim05-test-association-53",
+      "scenario_id": "ts_a4e2ad63",
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "obligation_refs": [
+        "br:br_3520507f",
+        "fr:fr_res_cancel",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_443f6663a7ca4e5aa68fe21e26bd03bd",
+      "idempotency_key": "sim05-test-association-54",
+      "scenario_id": "ts_2e1cdecb",
+      "card_id": "c0a0ad28-3d68-5dd4-a71b-ea5f661ff29b",
+      "obligation_refs": [
+        "tr:tr_res_atomic"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_c0fe47ce6f554387b42a115ad9fa8404",
+      "idempotency_key": "sim05-test-association-55",
+      "scenario_id": "ts_2e1cdecb",
+      "card_id": "c0a0ad28-3d68-5dd4-a71b-ea5f661ff29b",
+      "obligation_refs": [
+        "ac:ac_res_atomic",
+        "tr:tr_res_atomic"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_caf9afe357984d6ab6136081354bfb5a",
+      "idempotency_key": "sim05-test-association-56",
+      "scenario_id": "ts_3002582b",
+      "card_id": "c0a0ad28-3d68-5dd4-a71b-ea5f661ff29b",
+      "obligation_refs": [
+        "ac:ac_res_replay",
+        "br:br_3520507f",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_38b42a5b1bc74bac9ef69e9f233b7a07",
+      "idempotency_key": "sim05-test-association-57",
+      "scenario_id": "ts_3002582b",
+      "card_id": "c0a0ad28-3d68-5dd4-a71b-ea5f661ff29b",
+      "obligation_refs": [
+        "ac:ac_res_recovery",
+        "br:br_3520507f",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_677227978393492bb4ea142b78538ba1",
+      "idempotency_key": "sim05-test-association-58",
+      "scenario_id": "ts_3002582b",
+      "card_id": "c0a0ad28-3d68-5dd4-a71b-ea5f661ff29b",
+      "obligation_refs": [
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57",
+        "card_delivery_81c473e243f24b429ab9694fa713bef6"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_2835bb36a880435e858cf1b65b714942",
+      "idempotency_key": "sim05-test-association-59",
+      "scenario_id": "ts_8ee3f923",
+      "card_id": "c0a0ad28-3d68-5dd4-a71b-ea5f661ff29b",
+      "obligation_refs": [
+        "ac:ac_res_recovery"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_4367aa2a0c964072bdccc2ea0aaf4c2c",
+      "idempotency_key": "sim05-test-association-60",
+      "scenario_id": "ts_8ee3f923",
+      "card_id": "c0a0ad28-3d68-5dd4-a71b-ea5f661ff29b",
+      "obligation_refs": [
+        "ac:ac_res_ux",
+        "br:br_1a496b36",
+        "fr:fr_res_ux",
+        "tr:tr_res_ui"
+      ],
+      "implementation_ids": [
+        "card_delivery_81c473e243f24b429ab9694fa713bef6"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_24e02a6eabdf40cdb570f58f402bb964",
+      "idempotency_key": "sim05-test-association-61",
+      "scenario_id": "ts_6311ef23",
+      "card_id": "4c97f636-92d4-592b-ab92-0a1fa5f5f9d5",
+      "obligation_refs": [
+        "ac:ac_res_list",
+        "br:br_5c35321c",
+        "fr:fr_res_history",
+        "fr:fr_res_list"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_5b7e3c6a8d2447f383d56907acfd7a24",
+      "idempotency_key": "sim05-test-association-62",
+      "scenario_id": "ts_6311ef23",
+      "card_id": "4c97f636-92d4-592b-ab92-0a1fa5f5f9d5",
+      "obligation_refs": [
+        "fr:fr_res_history"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_4bde6e8dc8204ac090cf362dbd62782a",
+      "idempotency_key": "sim05-test-association-63",
+      "scenario_id": "ts_6311ef23",
+      "card_id": "4c97f636-92d4-592b-ab92-0a1fa5f5f9d5",
+      "obligation_refs": [
+        "ac:ac_res_security",
+        "br:br_5c35321c",
+        "fr:fr_res_history",
+        "fr:fr_res_list"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_5dfc17caea2b40dfbc0fe44e17e1153b",
+      "idempotency_key": "sim05-test-association-64",
+      "scenario_id": "ts_f7d521ed",
+      "card_id": "4c97f636-92d4-592b-ab92-0a1fa5f5f9d5",
+      "obligation_refs": [
+        "ac:ac_res_security"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_07567ca68ac04aed8f19e7d05f0a1c37",
+      "idempotency_key": "sim05-test-association-65",
+      "scenario_id": "ts_9a8f3731",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "ac:ac_res_history",
+        "ac:ac_res_list",
+        "br:br_5c35321c",
+        "fr:fr_res_history",
+        "fr:fr_res_list"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_e5aadba985f6420aad1f0c9320250422",
+      "idempotency_key": "sim05-test-association-66",
+      "scenario_id": "ts_9a8f3731",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "fr:fr_res_history"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_6dc4ba72a78046468184db23c4b65e9c",
+      "idempotency_key": "sim05-test-association-67",
+      "scenario_id": "ts_9a8f3731",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "br:br_5c35321c",
+        "fr:fr_res_history",
+        "fr:fr_res_list"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_f3e98eeda72748faa803192dfdca5c96",
+      "idempotency_key": "sim05-test-association-68",
+      "scenario_id": "ts_66cab4e2",
+      "card_id": "ed9ec35a-a2f2-5dfe-b181-9df4686c435e",
+      "obligation_refs": [
+        "br:br_5278b8d5",
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_3fe5e206e30d4e2a9aa7c8171a44acba",
+      "idempotency_key": "sim05-test-association-69",
+      "scenario_id": "ts_66cab4e2",
+      "card_id": "ed9ec35a-a2f2-5dfe-b181-9df4686c435e",
+      "obligation_refs": [
+        "ac:ac_res_search",
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_0220c2dcf8ba42cbb6c9c4a3eeb53b8e",
+      "idempotency_key": "sim05-test-association-70",
+      "scenario_id": "ts_66cab4e2",
+      "card_id": "ed9ec35a-a2f2-5dfe-b181-9df4686c435e",
+      "obligation_refs": [
+        "br:br_5278b8d5"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_b9e7eed36ced4ce1b88ffe291883107f",
+      "idempotency_key": "sim05-test-association-71",
+      "scenario_id": "ts_66cab4e2",
+      "card_id": "ed9ec35a-a2f2-5dfe-b181-9df4686c435e",
+      "obligation_refs": [
+        "fr:fr_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_7b72c3c111b445d397fc7efc0a31b5ab",
+      "idempotency_key": "sim05-test-association-72",
+      "scenario_id": "ts_66cab4e2",
+      "card_id": "ed9ec35a-a2f2-5dfe-b181-9df4686c435e",
+      "obligation_refs": [
+        "ac:ac_res_ux",
+        "br:br_1a496b36",
+        "fr:fr_res_search",
+        "fr:fr_res_ux",
+        "tr:tr_res_ui"
+      ],
+      "implementation_ids": [
+        "card_delivery_81c473e243f24b429ab9694fa713bef6"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_e225aff19a404b90a071025bbce85f5a",
+      "idempotency_key": "sim05-test-association-73",
+      "scenario_id": "ts_80a49606",
+      "card_id": "ed9ec35a-a2f2-5dfe-b181-9df4686c435e",
+      "obligation_refs": [
+        "ac:ac_res_replay",
+        "br:br_3520507f",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_5f924daadc76417ba946526dcd68ef3c",
+      "idempotency_key": "sim05-test-association-74",
+      "scenario_id": "ts_80a49606",
+      "card_id": "ed9ec35a-a2f2-5dfe-b181-9df4686c435e",
+      "obligation_refs": [
+        "br:br_3520507f",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_7499fa1161f84ce2a86848ccb8b323f0",
+      "idempotency_key": "sim05-test-association-75",
+      "scenario_id": "ts_80a49606",
+      "card_id": "ed9ec35a-a2f2-5dfe-b181-9df4686c435e",
+      "obligation_refs": [
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_27e000dfd38b40ca8a2fda19a388b670",
+      "idempotency_key": "sim05-test-association-76",
+      "scenario_id": "ts_80a49606",
+      "card_id": "ed9ec35a-a2f2-5dfe-b181-9df4686c435e",
+      "obligation_refs": [
+        "ac:ac_res_ux",
+        "br:br_1a496b36",
+        "fr:fr_res_replay",
+        "fr:fr_res_ux",
+        "tr:tr_res_ui"
+      ],
+      "implementation_ids": [
+        "card_delivery_81c473e243f24b429ab9694fa713bef6"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_1d1cde6a5546459c8d511ae630bdad2f",
+      "idempotency_key": "sim05-test-association-77",
+      "scenario_id": "ts_da63dd0c",
+      "card_id": "8da12676-eae1-5850-9f81-641c4ce26a66",
+      "obligation_refs": [
+        "br:br_61ffa7b7",
+        "fr:fr_res_change"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_4545c42703ca43e6837ba279a655fcff",
+      "idempotency_key": "sim05-test-association-78",
+      "scenario_id": "ts_da63dd0c",
+      "card_id": "8da12676-eae1-5850-9f81-641c4ce26a66",
+      "obligation_refs": [
+        "ac:ac_res_change",
+        "br:br_61ffa7b7",
+        "fr:fr_res_change"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_41c0964333874d2b9c092e58b1a4d352",
+      "idempotency_key": "sim05-test-association-79",
+      "scenario_id": "ts_da63dd0c",
+      "card_id": "8da12676-eae1-5850-9f81-641c4ce26a66",
+      "obligation_refs": [
+        "fr:fr_res_change"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3",
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_61e407485429488d8d4f941202b37811",
+      "idempotency_key": "sim05-test-association-80",
+      "scenario_id": "ts_da63dd0c",
+      "card_id": "8da12676-eae1-5850-9f81-641c4ce26a66",
+      "obligation_refs": [
+        "br:br_1a496b36",
+        "fr:fr_res_change",
+        "fr:fr_res_ux",
+        "tr:tr_res_ui"
+      ],
+      "implementation_ids": [
+        "card_delivery_421774e2bbae47ff9ccf28b7d682b069"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_9c2eb6fa0daa4546b018b4c6328fdc10",
+      "idempotency_key": "sim05-test-association-81",
+      "scenario_id": "ts_1436b691",
+      "card_id": "8da12676-eae1-5850-9f81-641c4ce26a66",
+      "obligation_refs": [
+        "br:br_61ffa7b7",
+        "fr:fr_res_cancel"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_39135e0283974a429b5adbb298339e34",
+      "idempotency_key": "sim05-test-association-82",
+      "scenario_id": "ts_1436b691",
+      "card_id": "8da12676-eae1-5850-9f81-641c4ce26a66",
+      "obligation_refs": [
+        "ac:ac_res_cancel",
+        "br:br_61ffa7b7",
+        "fr:fr_res_cancel",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_f648db59f51e4e49b645eca91a831b16",
+      "idempotency_key": "sim05-test-association-83",
+      "scenario_id": "ts_1436b691",
+      "card_id": "8da12676-eae1-5850-9f81-641c4ce26a66",
+      "obligation_refs": [
+        "fr:fr_res_cancel",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3",
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_e4e4a86184164df9b7a260e8345a8510",
+      "idempotency_key": "sim05-test-association-84",
+      "scenario_id": "ts_1436b691",
+      "card_id": "8da12676-eae1-5850-9f81-641c4ce26a66",
+      "obligation_refs": [
+        "ac:ac_res_a11y",
+        "fr:fr_res_cancel",
+        "fr:fr_res_replay",
+        "fr:fr_res_ux",
+        "tr:tr_res_ui"
+      ],
+      "implementation_ids": [
+        "card_delivery_421774e2bbae47ff9ccf28b7d682b069"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_6fe045be9bd940dda008d91cd34e0b04",
+      "idempotency_key": "sim05-test-association-85",
+      "scenario_id": "ts_5a243c3d",
+      "card_id": "64128513-a964-5eea-a6d6-e994bca6d567",
+      "obligation_refs": [
+        "tr:tr_res_hex"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a",
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_b6b2f0a0e2424204a051b91f6d430146",
+      "idempotency_key": "sim05-test-association-86",
+      "scenario_id": "ts_5a243c3d",
+      "card_id": "64128513-a964-5eea-a6d6-e994bca6d567",
+      "obligation_refs": [
+        "ac:ac_res_hex",
+        "tr:tr_res_hex"
+      ],
+      "implementation_ids": [
+        "card_delivery_d7c7b21536624921973167b91a378b8e"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_5891c5b530ff4c3f89a3fd66eac49435",
+      "idempotency_key": "sim05-test-association-87",
+      "scenario_id": "ts_2c27f4f9",
+      "card_id": "64128513-a964-5eea-a6d6-e994bca6d567",
+      "obligation_refs": [
+        "ac:ac_res_history",
+        "ac:ac_res_replay",
+        "br:br_3520507f",
+        "fr:fr_res_history",
+        "fr:fr_res_replay",
+        "tr:tr_res_atomic"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_e3a888061bb24e738ecdd8a328894b7e",
+      "idempotency_key": "sim05-test-association-88",
+      "scenario_id": "ts_2c27f4f9",
+      "card_id": "64128513-a964-5eea-a6d6-e994bca6d567",
+      "obligation_refs": [
+        "ac:ac_res_atomic",
+        "br:br_3520507f",
+        "decision:dec_24e08365",
+        "fr:fr_res_history",
+        "fr:fr_res_replay",
+        "tr:tr_res_atomic"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_f2c6e2b8b8db4df69ac62aadaea9a725",
+      "idempotency_key": "sim05-test-association-89",
+      "scenario_id": "ts_2c27f4f9",
+      "card_id": "64128513-a964-5eea-a6d6-e994bca6d567",
+      "obligation_refs": [
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_d7c7b21536624921973167b91a378b8e"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_e099367a620543dcac4de8fcf81ae48f",
+      "idempotency_key": "sim05-test-association-90",
+      "scenario_id": "ts_04b1130a",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "ac:ac_res_history",
+        "fr:fr_res_history"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_5e9185af61014fdb979f66194f1c7a51",
+      "idempotency_key": "sim05-test-association-91",
+      "scenario_id": "ts_04b1130a",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "fr:fr_res_history"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_1045137adde449f1af1eb9e3303da50e",
+      "idempotency_key": "sim05-test-association-92",
+      "scenario_id": "ts_390e4059",
+      "card_id": "d7090ce8-edcd-52bb-8947-626af9b5d8c4",
+      "obligation_refs": [
+        "ac:ac_ir_res_storage"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_fba0989d652c4de5ab7fb13d1b67d975",
+      "idempotency_key": "sim05-test-association-93",
+      "scenario_id": "ts_bb73d28e",
+      "card_id": "19c55707-273d-51fc-b2ac-da82c23d9997",
+      "obligation_refs": [
+        "ac:ac_ir_res_change",
+        "api:api_329002ab"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_3ab64c2b60a249499a9f8430f125d607",
+      "idempotency_key": "sim05-test-association-94",
+      "scenario_id": "ts_b7bd20ba",
+      "card_id": "7f94d1b5-36ad-5c75-a278-4494b6c2228f",
+      "obligation_refs": [
+        "ac:ac_ir_res_rules"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_f048ee32b9394f31a4c4c974feceb810",
+      "idempotency_key": "sim05-test-association-95",
+      "scenario_id": "ts_02d7edd1",
+      "card_id": "ce001955-12c5-5199-975f-1cec993c916a",
+      "obligation_refs": [
+        "ac:ac_ir_res_history",
+        "api:api_3e30852e"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_7687ea2d4ec04a6a8dfe3ca4c75fb27c",
+      "idempotency_key": "sim05-test-association-96",
+      "scenario_id": "ts_4e87a024",
+      "card_id": "ec6fa8a6-6a4f-55d0-89db-ea1a1a0242aa",
+      "obligation_refs": [
+        "ac:ac_ir_res_identity_port",
+        "decision:dec_e64635f9"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_8c70595275764a5799eca1d449114361",
+      "idempotency_key": "sim05-test-association-97",
+      "scenario_id": "ts_9a06e4dc",
+      "card_id": "19c55707-273d-51fc-b2ac-da82c23d9997",
+      "obligation_refs": [
+        "ac:ac_ir_res_create",
+        "api:api_6afd7502"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_12deb1d8dba6465ab0982f13a98006f8",
+      "idempotency_key": "sim05-test-association-98",
+      "scenario_id": "ts_0d9423df",
+      "card_id": "ec6fa8a6-6a4f-55d0-89db-ea1a1a0242aa",
+      "obligation_refs": [
+        "ac:ac_ir_res_usecases"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_afb651115ac24cb787ee3a34d1231a30",
+      "idempotency_key": "sim05-test-association-99",
+      "scenario_id": "ts_2e0ee404",
+      "card_id": "ce001955-12c5-5199-975f-1cec993c916a",
+      "obligation_refs": [
+        "ac:ac_ir_res_search",
+        "api:api_39176209"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_a9778396ff4f4087889c0437a2cac6e5",
+      "idempotency_key": "sim05-test-association-100",
+      "scenario_id": "ts_0a994a0f",
+      "card_id": "ce001955-12c5-5199-975f-1cec993c916a",
+      "obligation_refs": [
+        "ac:ac_ir_res_list",
+        "api:api_120488ad"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_b352adca3f2a40f0b30bcd87c2059e56",
+      "idempotency_key": "sim05-test-association-101",
+      "scenario_id": "ts_d6505034",
+      "card_id": "19c55707-273d-51fc-b2ac-da82c23d9997",
+      "obligation_refs": [
+        "ac:ac_ir_res_cancel",
+        "api:api_b9746d97"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_1866496d3af74ff2892fce22b791f8a4",
+      "idempotency_key": "sim05-test-association-102",
+      "scenario_id": "ts_af6d7800",
+      "card_id": "ec6fa8a6-6a4f-55d0-89db-ea1a1a0242aa",
+      "obligation_refs": [
+        "ac:ac_ir_res_wiring",
+        "decision:dec_f1dbd73a"
+      ],
+      "implementation_ids": [
+        "card_delivery_d7c7b21536624921973167b91a378b8e"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_bee6f56e9bca4f4f94a0154d0892300f",
+      "idempotency_key": "sim05-test-association-103",
+      "scenario_id": "ts_1e93daf6",
+      "card_id": "7f94d1b5-36ad-5c75-a278-4494b6c2228f",
+      "obligation_refs": [
+        "ac:ac_ir_res_clock_port"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_ea209d1205c74fefaa924c49f17438b0",
+      "idempotency_key": "sim05-test-association-104",
+      "scenario_id": "ts_f789fb20",
+      "card_id": "d7090ce8-edcd-52bb-8947-626af9b5d8c4",
+      "obligation_refs": [
+        "ac:ac_ir_res_uow"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_48cbde3db3da4bef8c9a02e2f289fc94",
+      "idempotency_key": "sim05-test-association-105",
+      "scenario_id": "ts_65033470",
+      "card_id": "f5a80dd6-eeb2-58c2-a564-7dde0aa45aba",
+      "obligation_refs": [
+        "ac:ac_res_observe_0"
+      ],
+      "implementation_ids": [
+        "card_delivery_d7c7b21536624921973167b91a378b8e"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_b5df2f0017e744c783f9b410b319cb71",
+      "idempotency_key": "sim05-test-association-106",
+      "scenario_id": "ts_9ffbb04b",
+      "card_id": "f5a80dd6-eeb2-58c2-a564-7dde0aa45aba",
+      "obligation_refs": [
+        "ac:ac_res_observe_1"
+      ],
+      "implementation_ids": [
+        "card_delivery_d7c7b21536624921973167b91a378b8e"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_8353c2658ee04fd5a3e503537fd19a69",
+      "idempotency_key": "sim05-test-association-107",
+      "scenario_id": "ts_6587e6f3",
+      "card_id": "9644bcb1-dfdc-5d5e-83a6-7ea9f4517155",
+      "obligation_refs": [
+        "br:br_f4101c5c"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_a3774c93430e46289cacb8da44b1f879",
+      "idempotency_key": "sim05-test-association-108",
+      "scenario_id": "ts_932187ee",
+      "card_id": "3dd7be00-8a4f-5302-8f0f-cacffd81c7ac",
+      "obligation_refs": [
+        "br:br_02da6056"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_07864f02c58a4db4b0773642989aea58",
+      "idempotency_key": "sim05-test-association-109",
+      "scenario_id": "ts_df0d7369",
+      "card_id": "904a8be2-a99b-5293-8ac4-87465c7d1dae",
+      "obligation_refs": [
+        "br:br_f4101c5c",
+        "tr:tr_res_clock"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_0fd4655d0f7544f58986c427d7f6ea9f",
+      "idempotency_key": "sim05-test-association-110",
+      "scenario_id": "ts_f1464424",
+      "card_id": "904a8be2-a99b-5293-8ac4-87465c7d1dae",
+      "obligation_refs": [
+        "br:br_f4101c5c",
+        "tr:tr_res_clock"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_fb6af7937a464413962662d056635b5c",
+      "idempotency_key": "sim05-test-association-111",
+      "scenario_id": "ts_48fea019",
+      "card_id": "904a8be2-a99b-5293-8ac4-87465c7d1dae",
+      "obligation_refs": [
+        "br:br_f4101c5c",
+        "tr:tr_res_clock"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_b3bca94941844610809605ee94f46feb",
+      "idempotency_key": "sim05-test-association-112",
+      "scenario_id": "ts_d16782fd",
+      "card_id": "4002dc53-0af1-5ea5-9ca5-2c450dfb0022",
+      "obligation_refs": [
+        "br:br_f4101c5c",
+        "tr:tr_res_clock"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_1e3cf061561f447ca9baa6aabad9d7e8",
+      "idempotency_key": "sim05-test-association-113",
+      "scenario_id": "ts_9f098abb",
+      "card_id": "4002dc53-0af1-5ea5-9ca5-2c450dfb0022",
+      "obligation_refs": [
+        "br:br_f4101c5c",
+        "tr:tr_res_clock"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_9b92f6ddb1654c94884703b40a86b31f",
+      "idempotency_key": "sim05-test-association-114",
+      "scenario_id": "ts_5ef6d482",
+      "card_id": "3dd7be00-8a4f-5302-8f0f-cacffd81c7ac",
+      "obligation_refs": [
+        "br:br_02da6056"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_c58a6bb3256c489ca9012739c5b36a49",
+      "idempotency_key": "sim05-test-association-115",
+      "scenario_id": "ts_e9771f3c",
+      "card_id": "787b905d-cfce-5d43-9cc5-3f35378e38fa",
+      "obligation_refs": [
+        "br:br_02da6056"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_6384feadcbca49aab79b71c8f33c79fc",
+      "idempotency_key": "sim05-test-association-116",
+      "scenario_id": "ts_3c650809",
+      "card_id": "4c97f636-92d4-592b-ab92-0a1fa5f5f9d5",
+      "obligation_refs": [
+        "tr:tr_res_security"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_0ca9f8fc6010451188d60ff365be85c6",
+      "idempotency_key": "sim05-test-association-117",
+      "scenario_id": "ts_2fe6bbb5",
+      "card_id": "a8e74019-6c43-56f5-a67f-7c7fc50b6e04",
+      "obligation_refs": [
+        "br:br_02da6056"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_cee0611b462542508f3407159bf6929c",
+      "idempotency_key": "sim05-test-association-118",
+      "scenario_id": "ts_3ac9acd5",
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "obligation_refs": [
+        "br:br_02da6056"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_4617a712b9ae414982c0721b4a0b58e3",
+      "idempotency_key": "sim05-test-association-119",
+      "scenario_id": "ts_ad53a016",
+      "card_id": "4002dc53-0af1-5ea5-9ca5-2c450dfb0022",
+      "obligation_refs": [
+        "tr:tr_res_clock"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_4555229da4594629837aeb8d244de3fd",
+      "idempotency_key": "sim05-test-association-120",
+      "scenario_id": "ts_2e1cdecb",
+      "card_id": "c0a0ad28-3d68-5dd4-a71b-ea5f661ff29b",
+      "obligation_refs": [
+        "br:br_02da6056"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_27256213e3e645369fd455090632206e",
+      "idempotency_key": "sim05-test-association-121",
+      "scenario_id": "ts_3002582b",
+      "card_id": "c0a0ad28-3d68-5dd4-a71b-ea5f661ff29b",
+      "obligation_refs": [
+        "tr:tr_res_recovery"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_02181f2f5e1d4b0fb900faf8bc17a704",
+      "idempotency_key": "sim05-test-association-122",
+      "scenario_id": "ts_8ee3f923",
+      "card_id": "c0a0ad28-3d68-5dd4-a71b-ea5f661ff29b",
+      "obligation_refs": [
+        "tr:tr_res_recovery"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_02861f09015f4f569495fd12266d605f",
+      "idempotency_key": "sim05-test-association-123",
+      "scenario_id": "ts_6311ef23",
+      "card_id": "4c97f636-92d4-592b-ab92-0a1fa5f5f9d5",
+      "obligation_refs": [
+        "br:br_be2abc28"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_18ebbca409d744a3aae5712826758f2f",
+      "idempotency_key": "sim05-test-association-124",
+      "scenario_id": "ts_6311ef23",
+      "card_id": "4c97f636-92d4-592b-ab92-0a1fa5f5f9d5",
+      "obligation_refs": [
+        "tr:tr_res_security"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_35e41acd62c94ff7ba0a70a86a89fb30",
+      "idempotency_key": "sim05-test-association-125",
+      "scenario_id": "ts_f7d521ed",
+      "card_id": "4c97f636-92d4-592b-ab92-0a1fa5f5f9d5",
+      "obligation_refs": [
+        "tr:tr_res_security"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_9a944cb692eb4ecb970e13c4a27dfd9d",
+      "idempotency_key": "sim05-test-association-126",
+      "scenario_id": "ts_9a8f3731",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "br:br_be2abc28"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_1a08cbf3fca54ae08ef1e05e985252db",
+      "idempotency_key": "sim05-test-association-127",
+      "scenario_id": "ts_2c27f4f9",
+      "card_id": "64128513-a964-5eea-a6d6-e994bca6d567",
+      "obligation_refs": [
+        "br:br_be2abc28"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_e123fe3bbc51492599c9deb94a310a82",
+      "idempotency_key": "sim05-test-association-128",
+      "scenario_id": "ts_2c27f4f9",
+      "card_id": "64128513-a964-5eea-a6d6-e994bca6d567",
+      "obligation_refs": [
+        "br:br_02da6056"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_dd310c4082674b4d8d4ca40b4f2454fe",
+      "idempotency_key": "sim05-test-association-129",
+      "scenario_id": "ts_04b1130a",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "br:br_be2abc28"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_4822df3eaaa24cf6a829842833eed955",
+      "idempotency_key": "sim05-test-association-130",
+      "scenario_id": "ts_390e4059",
+      "card_id": "d7090ce8-edcd-52bb-8947-626af9b5d8c4",
+      "obligation_refs": [
+        "ir:ir_res_storage"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_4cf275f300194119a0c745118372cab8",
+      "idempotency_key": "sim05-test-association-131",
+      "scenario_id": "ts_bb73d28e",
+      "card_id": "19c55707-273d-51fc-b2ac-da82c23d9997",
+      "obligation_refs": [
+        "ir:ir_res_change"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_d221d833727b41a09fa4b5c0200773bd",
+      "idempotency_key": "sim05-test-association-132",
+      "scenario_id": "ts_b7bd20ba",
+      "card_id": "7f94d1b5-36ad-5c75-a278-4494b6c2228f",
+      "obligation_refs": [
+        "ir:ir_res_rules"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_8b285a687c45494880f09d51f3ee430b",
+      "idempotency_key": "sim05-test-association-133",
+      "scenario_id": "ts_02d7edd1",
+      "card_id": "ce001955-12c5-5199-975f-1cec993c916a",
+      "obligation_refs": [
+        "ir:ir_res_history"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_0a8b5b2ac44c4c388a874f8637877ecb",
+      "idempotency_key": "sim05-test-association-134",
+      "scenario_id": "ts_4e87a024",
+      "card_id": "ec6fa8a6-6a4f-55d0-89db-ea1a1a0242aa",
+      "obligation_refs": [
+        "ir:ir_res_identity_port"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_f50448f314034933a8d70a7ef9192e0d",
+      "idempotency_key": "sim05-test-association-135",
+      "scenario_id": "ts_9a06e4dc",
+      "card_id": "19c55707-273d-51fc-b2ac-da82c23d9997",
+      "obligation_refs": [
+        "ir:ir_res_create"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_19656d01445942f281a0195b167dbc6d",
+      "idempotency_key": "sim05-test-association-136",
+      "scenario_id": "ts_0d9423df",
+      "card_id": "ec6fa8a6-6a4f-55d0-89db-ea1a1a0242aa",
+      "obligation_refs": [
+        "ir:ir_res_usecases"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_42e41f98cca64d43bf1dc827919189c3",
+      "idempotency_key": "sim05-test-association-137",
+      "scenario_id": "ts_2e0ee404",
+      "card_id": "ce001955-12c5-5199-975f-1cec993c916a",
+      "obligation_refs": [
+        "ir:ir_res_search"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_923bfc31d9c34432a40b2c5721a97f2f",
+      "idempotency_key": "sim05-test-association-138",
+      "scenario_id": "ts_0a994a0f",
+      "card_id": "ce001955-12c5-5199-975f-1cec993c916a",
+      "obligation_refs": [
+        "ir:ir_res_list"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_45472385f7b54ae4abe53d58caaf56f2",
+      "idempotency_key": "sim05-test-association-139",
+      "scenario_id": "ts_d6505034",
+      "card_id": "19c55707-273d-51fc-b2ac-da82c23d9997",
+      "obligation_refs": [
+        "ir:ir_res_cancel"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_f15fede33ab849bd89e1f5a225f296f9",
+      "idempotency_key": "sim05-test-association-140",
+      "scenario_id": "ts_af6d7800",
+      "card_id": "ec6fa8a6-6a4f-55d0-89db-ea1a1a0242aa",
+      "obligation_refs": [
+        "ir:ir_res_wiring"
+      ],
+      "implementation_ids": [
+        "card_delivery_d7c7b21536624921973167b91a378b8e"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_57097f0f9f93416c822bfe3002c56873",
+      "idempotency_key": "sim05-test-association-141",
+      "scenario_id": "ts_1e93daf6",
+      "card_id": "7f94d1b5-36ad-5c75-a278-4494b6c2228f",
+      "obligation_refs": [
+        "ir:ir_res_clock_port"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_a903194a7c4c423b9c6a7ba1da54e84a",
+      "idempotency_key": "sim05-test-association-142",
+      "scenario_id": "ts_f789fb20",
+      "card_id": "d7090ce8-edcd-52bb-8947-626af9b5d8c4",
+      "obligation_refs": [
+        "ir:ir_res_uow"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_00bb0590b7f94475bbf86ca1075fd435",
+      "idempotency_key": "sim05-test-association-143",
+      "scenario_id": "ts_65033470",
+      "card_id": "f5a80dd6-eeb2-58c2-a564-7dde0aa45aba",
+      "obligation_refs": [
+        "or:or_5a717f07"
+      ],
+      "implementation_ids": [
+        "card_delivery_d7c7b21536624921973167b91a378b8e"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_38b630045a304bddb61d3944fd11edb4",
+      "idempotency_key": "sim05-test-association-144",
+      "scenario_id": "ts_9ffbb04b",
+      "card_id": "f5a80dd6-eeb2-58c2-a564-7dde0aa45aba",
+      "obligation_refs": [
+        "or:or_28a096df"
+      ],
+      "implementation_ids": [
+        "card_delivery_d7c7b21536624921973167b91a378b8e"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_9e5e0a7979934d10bddb45ffe66bfca9",
+      "idempotency_key": "sim05-expanded-association-0",
+      "scenario_id": "ts_985cde72",
+      "card_id": "787b905d-cfce-5d43-9cc5-3f35378e38fa",
+      "obligation_refs": [
+        "fr:fr_res_create"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a",
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_7af66e0a4b094e548210a65864922972",
+      "idempotency_key": "sim05-expanded-association-1",
+      "scenario_id": "ts_985cde72",
+      "card_id": "787b905d-cfce-5d43-9cc5-3f35378e38fa",
+      "obligation_refs": [
+        "ac:ac_res_create",
+        "fr:fr_res_create"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_760840071f6947eabfe7b961834b6e5d",
+      "idempotency_key": "sim05-expanded-association-2",
+      "scenario_id": "ts_a4e2ad63",
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "obligation_refs": [
+        "br:br_61ffa7b7",
+        "fr:fr_res_cancel"
+      ],
+      "implementation_ids": [
+        "card_delivery_d5f393505e4e4972a7340705688f112a"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_c5b948c712264502beb5d447a291273b",
+      "idempotency_key": "sim05-expanded-association-3",
+      "scenario_id": "ts_a4e2ad63",
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "obligation_refs": [
+        "ac:ac_res_cancel",
+        "ac:ac_res_replay",
+        "br:br_3520507f",
+        "br:br_61ffa7b7",
+        "fr:fr_res_cancel",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_daa377c3d1b042d4bde5020b7fbee9ad",
+      "idempotency_key": "sim05-expanded-association-4",
+      "scenario_id": "ts_a4e2ad63",
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "obligation_refs": [
+        "br:br_3520507f",
+        "fr:fr_res_cancel",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_e47f5d78be0a494783b81322c78dda53",
+      "idempotency_key": "sim05-expanded-association-5",
+      "scenario_id": "ts_9a8f3731",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "ac:ac_res_history",
+        "ac:ac_res_list",
+        "br:br_5c35321c",
+        "fr:fr_res_history",
+        "fr:fr_res_list"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_61894e6c521c40af937a8781cd6e0dda",
+      "idempotency_key": "sim05-expanded-association-6",
+      "scenario_id": "ts_9a8f3731",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "fr:fr_res_history"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_75646b26865c4405b38a38b7453e7840",
+      "idempotency_key": "sim05-expanded-association-7",
+      "scenario_id": "ts_9a8f3731",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "br:br_5c35321c",
+        "fr:fr_res_history",
+        "fr:fr_res_list"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_53c02d08e5544abc8c883bfb38031a7c",
+      "idempotency_key": "sim05-expanded-association-8",
+      "scenario_id": "ts_04b1130a",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "ac:ac_res_history",
+        "fr:fr_res_history"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_04ac2a3faccc4f64bbaa526a7144cd91",
+      "idempotency_key": "sim05-expanded-association-9",
+      "scenario_id": "ts_04b1130a",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "fr:fr_res_history"
+      ],
+      "implementation_ids": [
+        "card_delivery_7ab255a134ae412ab9414e11f45ebfb3"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_58dc7b7dbb494ef2ba12619c90057dab",
+      "idempotency_key": "sim05-expanded-association-10",
+      "scenario_id": "ts_9a8f3731",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "br:br_be2abc28"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_1df2113c44c9445d85d47c8ace678490",
+      "idempotency_key": "sim05-expanded-association-11",
+      "scenario_id": "ts_04b1130a",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "br:br_be2abc28"
+      ],
+      "implementation_ids": [
+        "card_delivery_62ed5529cb5b4f869ef7b08693db84b8"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_dcec8ec1e0544ef0801d16aebc7d86a9",
+      "idempotency_key": "sim05-expanded-association-12",
+      "scenario_id": "ts_9a8f3731",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "fr:fr_res_history",
+        "fr:fr_res_list"
+      ],
+      "implementation_ids": [
+        "card_delivery_421774e2bbae47ff9ccf28b7d682b069"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_855e7f06bbad46e9b12f836dc9c80150",
+      "idempotency_key": "sim05-expanded-association-13",
+      "scenario_id": "ts_04b1130a",
+      "card_id": "63629297-8ea6-506d-96fe-8b40f2badcfb",
+      "obligation_refs": [
+        "fr:fr_res_history"
+      ],
+      "implementation_ids": [
+        "card_delivery_421774e2bbae47ff9ccf28b7d682b069"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_54e3f6d4e4f84025a66b338e75943e35",
+      "idempotency_key": "sim05-expanded-association-14",
+      "scenario_id": "ts_a4e2ad63",
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "obligation_refs": [
+        "fr:fr_res_cancel",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_4a861ad69b5747a48b79de5f2b550708",
+      "idempotency_key": "sim05-expanded-association-15",
+      "scenario_id": "ts_a4e2ad63",
+      "card_id": "9048caf1-3e79-59c9-a436-89d2b21b5b32",
+      "obligation_refs": [
+        "fr:fr_res_cancel",
+        "fr:fr_res_replay"
+      ],
+      "implementation_ids": [
+        "card_delivery_421774e2bbae47ff9ccf28b7d682b069"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_ee9a7570c62743f782572076105bca5a",
+      "idempotency_key": "sim05-expanded-association-16",
+      "scenario_id": "ts_985cde72",
+      "card_id": "787b905d-cfce-5d43-9cc5-3f35378e38fa",
+      "obligation_refs": [
+        "fr:fr_res_create"
+      ],
+      "implementation_ids": [
+        "card_delivery_beb67ace2a7346be9bce8834f87adc57"
+      ],
+      "outcome": "success"
+    },
+    {
+      "id": "card_delivery_fae228240ba24e23be7ab1d63f963029",
+      "idempotency_key": "sim05-expanded-association-17",
+      "scenario_id": "ts_985cde72",
+      "card_id": "787b905d-cfce-5d43-9cc5-3f35378e38fa",
+      "obligation_refs": [
+        "fr:fr_res_create"
+      ],
+      "implementation_ids": [
+        "card_delivery_81c473e243f24b429ab9694fa713bef6"
+      ],
+      "outcome": "success"
+    }
+  ],
+  "kg": {
+    "health_observed_at": "2026-10-10T02:16:04.554057+00:00",
+    "graph_state": "at_risk",
+    "metric_status": "unavailable",
+    "correlation_id": "c3e97e655a8a4aa5a2bef7b287dce4c0",
+    "classification_reason": "board_graph_metadata_present;graph:metric.unavailable;graph_metrics_observation_incomplete;health_probe_unavailable:digest_layer_parity,stale_canonical_parity;policy_constraint_projection:dlq",
+    "natural_query": {
+      "outcome": "error",
+      "data": {
+        "error": {
+          "code": "timeout",
+          "message": "Query exceeded its execution deadline"
+        }
+      },
+      "error_code": "timeout",
+      "message": "Query exceeded its execution deadline",
+      "retryable": true,
+      "next_action": null,
+      "meta": {
+        "contract": "okto-pulse.mcp-tool-outcome",
+        "contract_version": "2.0",
+        "tool": "okto_pulse_kg_query_natural"
+      },
+      "details": {
+        "error": {
+          "code": "timeout",
+          "message": "Query exceeded its execution deadline"
+        }
+      }
+    },
+    "related_context": {
+      "outcome": "success",
+      "data": {
+        "context": [
+          {
+            "center_id": "entity_3778166680e7197c76b9cd12",
+            "center_title": "Reserva de salas — consistência das reservas e contratos hexagonais",
+            "hop1_id": "entity_7579d07ad7c3038e06e3af8b",
+            "hop1_title": "Reserva de Salas — arquitetura hexagonal e consistência local",
+            "hop2_id": null,
+            "hop2_title": null,
+            "rel1_type": "belongs_to",
+            "rel2_type": null
+          },
+          {
+            "center_id": "entity_3778166680e7197c76b9cd12",
+            "center_title": "Reserva de salas — consistência das reservas e contratos hexagonais",
+            "hop1_id": "entity_936c11de3c02b066d06c7d72",
+            "hop1_title": "[TEST] Acessibilidade e responsividade",
+            "hop2_id": null,
+            "hop2_title": null,
+            "rel1_type": "belongs_to",
+            "rel2_type": null
+          },
+          {
+            "center_id": "entity_3778166680e7197c76b9cd12",
+            "center_title": "Reserva de salas — consistência das reservas e contratos hexagonais",
+            "hop1_id": "requirement_a0b492cbf1a5c86995728982",
+            "hop1_title": "Usuário autenticado consulta intervalo e participantes; recebe somente salas com capacidade suficiente e sem reserva con",
+            "hop2_id": null,
+            "hop2_title": null,
+            "rel1_type": "belongs_to",
+            "rel2_type": null
+          },
+          {
+            "center_id": "entity_3778166680e7197c76b9cd12",
+            "center_title": "Reserva de salas — consistência das reservas e contratos hexagonais",
+            "hop1_id": "requirement_431fae550b6a0c01a1a60b71",
+            "hop1_title": "Confirmar reserva válida do ator autenticado, retornando ID, versão1, status confirmed e replayed=false somente após com",
+            "hop2_id": null,
+            "hop2_title": null,
+            "rel1_type": "belongs_to",
+            "rel2_type": null
+          },
+          {
+            "center_id": "entity_3778166680e7197c76b9cd12",
+            "center_title": "Reserva de salas — consistência das reservas e contratos hexagonais",
+            "hop1_id": "requirement_d8b0e36dcc6ee7f0975c8175",
+            "hop1_title": "Listar exclusivamente reservas do ator, ordenadas por start_at desc e ID; paginação default20/max100, cursor opaco e açõ",
+            "hop2_id": null,
+            "hop2_title": null,
+            "rel1_type": "belongs_to",
+            "rel2_type": null
+          }
+        ],
+        "count": 5,
+        "applied_graph_layer": "working"
+      },
+      "error_code": null,
+      "message": null,
+      "retryable": false,
+      "next_action": null,
+      "meta": {
+        "contract": "okto-pulse.mcp-tool-outcome",
+        "contract_version": "2.0",
+        "tool": "okto_pulse_kg_get_related_context"
+      }
+    },
+    "cognitive_closeout": {
+      "status": "blocked",
+      "reason": "Spec remains in_progress; canonical Spec closeout requires Done. No completed SDLC closeout claimed."
+    }
+  },
+  "operational_findings": [
+    "SQLite database is locked on board write fence; same idempotent association 43 succeeded after two failed attempts and contention subsided.",
+    "Policy projection GraphInvalidQuery reached DLQ; bounded natural query timed out, later structural working-layer query returned five relationships.",
+    "Some board cards retained loading/error tooltip under contention; refreshed UI displayed current derived progress."
+  ],
+  "scope_decision": {
+    "status": "awaiting_user",
+    "reason": "Frozen allocation assigns cancel criterion to H01/H02 and whole business criteria to composition; old conceptual-only decision remains active despite subsequent implementation authorization.",
+    "proposed_action": "Governed Spec responsibility review preserving requirements, scenarios, gates and history; no silent waiver."
+  },
+  "interface": {
+    "domain_percent_observed": 97,
+    "frontend_management_percent_observed": 94,
+    "snapshot": "okto_labs_pulse_community/output/playwright/sim05-current-before-refresh.yml"
+  },
+  "resume": [
+    "Read current full Spec and Card gates before lifecycle mutations.",
+    "Collect actual T33 screen-reader observations; do not turn willingness to inspect into a passing result.",
+    "Await scope decision before revising frozen allocation; preserve the old edition and decisions.",
+    "Re-evaluate missing contribution criteria after approved scope handling; don't infer coverage from a passing unrelated test.",
+    "After legitimate Spec Done, run mandatory canonical cognitive closeout and verify KG queries."
+  ]
+}

@@ -14,6 +14,62 @@ Artefatos locais output/ e .playwright-cli/ são evidências de execução, não
 fontes pendentes. Adapter sinalizado pelo Git não tinha diferença de conteúdo;
 índice atualizado sem mudança funcional. Esta entrada é o checkpoint inicial.
 
+SIM-05 execução: mock 5d959623113f2be8983dabf1d4b1c54f1184a07a commitado
+localmente. 46 testes passaram (38 Python/backend e 8 navegador Edge). Envelope
+discriminado, IdentityProvider estruturado, erros HTTP/CSRF403 e request_id,
+UoW em memória independente, paridade e paginação101 implementados/testados.
+Teste real identificou falha de Shift+Tab no modal; foco corrigido e suíte verde.
+Fixture humana em http://127.0.0.1:8110, PID30204, Clock08/10/2026; dados em TEMP.
+Usuário aceitou executar T33 com leitor de tela; aguardar relato, não fabricar.
+Pulse UI acessível e Delivery inspecionado via Playwright; fontes instalados
+844 Core/319 Community e 79 frontend byte-identical antes dos testes runtime.
+As sete tasks de implementação foram validadas e estão Done. Os 50 cenários
+automatizados passaram pelo executor autenticado do Pulse sobre 5d95962; os
+19 Cards correspondentes estão Done. T33 permanece in_progress, aguardando
+o relato humano aceito pelo usuário. Não houve dispensa nem resultado inventado.
+As avaliações de policy dos 27 Cards foram registradas. A separação de revisor
+está em warn no Board; a avaliação do próprio executor foi explicitada.
+Concluídas 163 associações factuais (145 iniciais + 18 após ampliar quatro
+runners com testes de frontend já existentes). As 54 execuções autenticadas
+correspondem a 50 cenários únicos; não somar como 54 cenários. Rollup final:
+domínio97%, aplicação94%, persistência93%, HTTP95%, H01/H02 64%, H03/H04 94%,
+composição84%. Todas as provas de implementação aceitas; gate da Spec ainda
+`delivery_test_result_missing`. 26/27 Cards Done, Spec in_progress edição4/v290.
+Relatório sem tokens/recibos de autenticação em
+SIM05_DELIVERY_CLOSEOUT.json. A versão da Spec continua edição4/version290.
+KG health retornou at_risk, métricas unavailable, 68 projeções de policy em DLQ
+e uma entrega global terminal; busca natural expirou (timeout), mas a consulta
+estrutural working recuperou a Spec e cinco relações. Fechamento cognitivo
+canônico aguarda Spec Done; não foi alegado como concluído. Isso é um
+problema observado no Pulse, não reprovação dos testes do mock. Não houve
+rebuild, alteração de armazenamento ou replay manual de filas.
+Contenção SQLite produziu `database is locked` no fence de escrita de Board;
+o MCP escapou como `code_traceability_mcp_error_unsupported:OperationalError`.
+Após duas falhas, a mesma escrita idempotente foi aceita; não houve duplicação
+semântica. UI inspecionada novamente: domínio97% com barra em Delivery e capa;
+H03/H04 94% na capa. Loading nas capas teve tooltip de erro durante contenção,
+e atualizou após refresh. Nenhuma alteração de código do Pulse nesta etapa.
+
+**Decisão SIM-05 pendente — responsabilidade de verificação da iniciativa.**
+O rollup final não está pronto para Spec Done. A alocação congelada atribui
+`ac_res_cancel` ao Card H01/H02 em `fr_res_replay`, embora esse Card cubra
+busca/confirmação, e atribui calendário/capacidade/CRUD à composição. Não é
+um defeito demonstrado no cálculo do Pulse: é sobrealocação no plano de
+contribuições que foi registrado para a iniciativa fictícia. O avaliador
+`contribution_verification_criteria` exige os critérios de cada contribuição;
+os testes corretamente limitados ao domínio não provam as demais camadas.
+Proposta concreta: revisão governada da Spec para delimitar os critérios por
+contribuição (H01/H02: busca, criação, replay; H03/H04: listagem, alteração,
+cancelamento, histórico e replay; composição: wiring e observabilidade), sem
+remover requisitos, cenários ou histórico e sem relaxar gates. Confirmar o
+restante da alocação pelos contratos de domínio/aplicação/portas/adaptadores.
+A decisão conceitual dec_1d23379a também continua ativa apesar da autorização
+posterior para implementar o mock; ela não será disfarçada de teste automático.
+Antes de qualquer edição congelada, solicitei decisão ao usuário. Origem:
+PLANO_PULSE_CODEX.md §10.2 nível C e §10.4; não inventar mudança de escopo/gate.
+Trabalho independente: concluir as associações factuais, inspecionar UI,
+consultar o KG e publicar este checkpoint. A espera por T33 permanece separada.
+
 ### 2026-10-09 — SIM-04: saturação das demais tasks e atualidade entre Cards
 
 Pedido: saturar as demais tasks do mock Reserva de Salas. Contextos full/all
