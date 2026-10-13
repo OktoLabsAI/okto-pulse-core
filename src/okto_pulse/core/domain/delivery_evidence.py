@@ -314,6 +314,20 @@ class DeliveryWaiverFact:
     actor_id: str
     authorization_receipt_id: str
     current_authorized: bool
+    disposition: Literal["not_applicable", "risk_accepted"] | None = None
+
+    @property
+    def legacy_disposition_unspecified(self) -> bool:
+        return self.disposition is None
+
+
+def delivery_waiver_current(item: DeliveryWaiverFact, scope: DeliveryScope,
+                            binding: DeliveryBinding, phase: DeliveryPhase) -> bool:
+    """Shared authority/scope predicate for old projections and new applicability."""
+    return (item.scope == scope and item.binding == binding and item.phase == phase
+        and isinstance(item.phase, DeliveryPhase) and item.current_authorized is True
+        and item.disposition in {None, "not_applicable", "risk_accepted"}
+        and _text(item.id, item.justification, item.actor_id, item.authorization_receipt_id))
 
 
 @dataclass(frozen=True, slots=True)
@@ -471,18 +485,8 @@ def _evaluate_delivery_facts(
             test_index.pop(binding, None)
 
     for item in snapshot.waivers:
-        valid = (
-            item.scope == snapshot.scope
-            and item.binding in expected
-            and isinstance(item.phase, DeliveryPhase)
-            and item.current_authorized is True
-            and _text(
-                item.id,
-                item.justification,
-                item.actor_id,
-                item.authorization_receipt_id,
-            )
-        )
+        valid = item.binding in expected and delivery_waiver_current(
+            item, snapshot.scope, item.binding, item.phase)
         if not valid:
             rejected.add(item.id)
             continue

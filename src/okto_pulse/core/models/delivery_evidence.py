@@ -93,6 +93,7 @@ class DeliveryEvidenceInput(BaseModel):
     kind: Literal["waiver", "revoke"]
     obligation_refs: list[Identity] = Field(default_factory=list, max_length=1000)
     phase: Literal["implementation", "test"] | None = None
+    disposition: Literal["not_applicable", "risk_accepted"] | None = None
     record_id: Identity | None = None
     justification: str = Field(min_length=1, max_length=20000, pattern=r"\S")
 
@@ -111,6 +112,8 @@ class DeliveryEvidenceInput(BaseModel):
 
     @model_validator(mode="after")
     def closed_shape(self):
+        if self.kind != "waiver" and self.disposition is not None:
+            raise ValueError("delivery_disposition_requires_waiver")
         if len(set(self.obligation_refs)) != len(self.obligation_refs):
             raise ValueError("delivery_duplicate_obligation")
         supplied = {

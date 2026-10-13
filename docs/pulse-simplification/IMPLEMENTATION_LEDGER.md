@@ -37820,3 +37820,9 @@ Plano PLANO_CODEX_PULSE_ENTREGA_VERIFICACAO_READINESS_v1.md iniciado sobre 8a6d8
 ### Readiness P01 — contratos e predicados compartilhados
 
 Tipos fechados de readiness e resultados imutaveis introduzidos. Prova e lifecycle separados no avaliador existente; projecao legada 0/50/80/100 preservada sem fabricar Card Done. 131 testes Core e 41 integracoes Community passaram; ruff passou. Paridade 853/320 e auditoria oficial de fonte 8.840 linhas, zero findings/oito budgets ZERO/READMEs exatos. P00 publicado 1b62ac14/1e08a18e; P02 agora agrega os resultados. Regressoes P00 ainda RED, a resolver em P03/P06/P08. Sem deploy/reinstalacao de producao. Relatorios individuais contem comandos e limitacoes.
+
+### Readiness P02 — WIP de agregacao e dispensas
+
+P01 publicado 0b896202/cb2fff93. Agregacao pura com unidades canonicas e N/A/unknown; waiver disposition tipado com replay e historico preservados. 157 testes Core passaram apos corrigir indeterminismo de duplicata contraditoria; 41 Community passaram (inclui SQLite waiver/replay real). Paridade 853/320; ruff passou. Falhas/sucessos e comandos nos relatorios pareados. P02 ainda IN_PROGRESS: falta projetar os fatos canonicos completos em UnitPhaseAssessment, contribuições/BR/fallback/Decision/cenarios. Nao ha endpoint ou UI readiness ainda. P03 resultados negativos/bases, P04-P11 e regressoes P00 seguem pendentes. Auditoria fonte desta rodada em execucao; aguardar terminal.
+
+Auditoria P02 parcial terminou com sucesso: 8.841 linhas de propriedade, zero findings, READMEs exatos, oito budgets ZERO (audit_readiness.py). Nao ha processos de teste/auditoria desta rodada pendentes. Este checkpoint preserva trabalho testado; P02 continua IN_PROGRESS, com as lacunas e proximo passo descritos acima.
