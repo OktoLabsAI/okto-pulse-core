@@ -367,8 +367,18 @@ def evaluate_delivery_coverage(
     return evaluate_effective_snapshot(snapshot)
 
 
+def delivery_proof_lifecycle_eligible(status: CardStatus, *, require_done: bool) -> bool:
+    """Keep proof validity distinct from completion without manufacturing Done facts."""
+    if require_done:
+        return status == CardStatus.DONE
+    return status in {
+        CardStatus.STARTED, CardStatus.IN_PROGRESS, CardStatus.VALIDATION,
+        CardStatus.ON_HOLD, CardStatus.DONE,
+    }
+
+
 def _evaluate_delivery_facts(
-    snapshot: DeliveryEvidenceSnapshot,
+    snapshot: DeliveryEvidenceSnapshot, *, require_lifecycle: bool = True,
 ) -> DeliveryCoverageEvaluation:
     """Internal receipt/lifecycle/waiver checks used by effective coverage.
 
@@ -403,7 +413,7 @@ def _evaluate_delivery_facts(
         valid = (
             item.scope == snapshot.scope
             and item.card_type in (CardType.NORMAL, CardType.BUG)
-            and item.card_status == CardStatus.DONE
+            and delivery_proof_lifecycle_eligible(item.card_status, require_done=require_lifecycle)
             and _text(
                 item.id,
                 item.card_id,
@@ -424,7 +434,7 @@ def _evaluate_delivery_facts(
         valid = (
             item.scope == snapshot.scope
             and item.card_type == CardType.TEST
-            and item.card_status == CardStatus.DONE
+            and delivery_proof_lifecycle_eligible(item.card_status, require_done=require_lifecycle)
             and item.result == TestScenarioStatus.PASSED
             and item.current_verified_run is True
             and _text(

@@ -1,14 +1,14 @@
-"""Informational implementation coverage, independent of lifecycle approval."""
+"""Deprecated maturity projection; readiness/v1 uses independent proof metrics."""
 
 from dataclasses import dataclass, replace
 from hashlib import sha256
 import json
 
 from okto_pulse.core.domain.delivery_evidence import (
-    DeliveryEvidenceSnapshot, implementation_binding_ready,
+    DeliveryEvidenceSnapshot,
 )
 from okto_pulse.core.domain.effective_delivery_coverage import (
-    EffectiveDeliveryContext, implementation_scope_current, evaluate_effective_snapshot,
+    EffectiveDeliveryContext, evaluate_effective_snapshot,
 )
 from okto_pulse.core.domain.enums import CardStatus, CardType
 
@@ -64,24 +64,11 @@ def calculate_delivery_completeness(snapshot: DeliveryEvidenceSnapshot, card_id:
     snapshot = replace(snapshot, obligations=tuple(o for o in snapshot.obligations if o.binding in bindings),
         implementations=tuple(s.fact for s in implementations), tests=tuple(s.fact for s in tests), waivers=(),
         effective_context=replace(context, inventory=replace(context.inventory, rows=rows), implementations=implementations, tests=tests))
-    ready = {
-        binding for binding in bindings
-        if any(fact.card_id == card_id and fact.card_type == CardType.NORMAL
-               and fact.scope == snapshot.scope
-               and fact.card_status not in {CardStatus.CANCELLED, CardStatus.REJECTED}
-               and all(isinstance(value, str) and value.strip() for value in (fact.id, fact.actor_id, fact.explanation))
-               and implementation_binding_ready(fact, binding)
-               and implementation_scope_current(snapshot, fact, binding)
-               for fact in snapshot.implementations)
-    }
-    # Private informational copies ignore only completion, reusing the same
-    # receipt/scope/method/criterion checks. Never persist or expose these as
-    # gate authorization; the actual acceptance evaluation keeps real statuses.
-    pre_impl = tuple(replace(s, fact=replace(s.fact, card_status=CardStatus.DONE)) for s in implementations)
-    pre_test = tuple(replace(s, fact=replace(s.fact, card_status=CardStatus.DONE)) for s in tests)
-    pre_acceptance = replace(snapshot, implementations=tuple(s.fact for s in pre_impl), tests=tuple(s.fact for s in pre_test),
-        effective_context=replace(snapshot.effective_context, implementations=pre_impl, tests=pre_test))
-    verified = {r.obligation.binding for r in evaluate_effective_snapshot(pre_acceptance).rows if r.test_satisfied} & ready
+    proof = evaluate_effective_snapshot(snapshot, require_lifecycle=False)
+    ready = {r.obligation.binding for r in proof.rows if r.implementation_satisfied}
+    # Compatibility only: retain 0/50/80/100 while sharing proof predicates.
+    # Facts retain their real lifecycle state in both projections.
+    verified = {r.obligation.binding for r in proof.rows if r.test_satisfied} & ready
     accepted = {r.obligation.binding for r in evaluate_effective_snapshot(snapshot).rows if r.test_satisfied} & verified
     counts = (len(bindings - ready), len(ready - verified), len(verified - accepted), len(accepted))
     # Floor prevents rounded 100% while any obligation remains below acceptance.

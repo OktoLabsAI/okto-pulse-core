@@ -37816,3 +37816,7 @@ Pip final15403/provenance-final terminaram0:831/894 Core+363/448 Community byte-
 ## Delivery readiness v1 — P00 (2026-10-13)
 
 Plano PLANO_CODEX_PULSE_ENTREGA_VERIFICACAO_READINESS_v1.md iniciado sobre 8a6d8c04/5eeceeb8, sem diff de base. Rastreabilidade integral em docs/DELIVERY_READINESS_IMPLEMENTATION_REPORT.md de cada repo; inventario de 23 consumidores Core e 44 Community. Paridade isolada 851/320 e imports locais provados. Regressoes esperadas RED: 4 Core (G07), 8 Community (V01/V03/V05/V09-V11), 1 frontend (U05). Nenhuma mudanca funcional ainda. Proximo P01: contratos e avaliacao factual compartilhada; P02-P11 e 96 IDs mantidos, sem reducao de escopo. Nao confundir a reproducao RED com correcao ou entrega final.
+
+### Readiness P01 — contratos e predicados compartilhados
+
+Tipos fechados de readiness e resultados imutaveis introduzidos. Prova e lifecycle separados no avaliador existente; projecao legada 0/50/80/100 preservada sem fabricar Card Done. 131 testes Core e 41 integracoes Community passaram; ruff passou. Paridade 853/320 e auditoria oficial de fonte 8.840 linhas, zero findings/oito budgets ZERO/READMEs exatos. P00 publicado 1b62ac14/1e08a18e; P02 agora agrega os resultados. Regressoes P00 ainda RED, a resolver em P03/P06/P08. Sem deploy/reinstalacao de producao. Relatorios individuais contem comandos e limitacoes.

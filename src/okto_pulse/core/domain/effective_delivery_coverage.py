@@ -12,11 +12,12 @@ from okto_pulse.core.domain.delivery_evidence import (
     TestDeliveryFact,
     _evaluate_delivery_facts,
     implementation_binding_ready,
+    delivery_proof_lifecycle_eligible,
 )
 from okto_pulse.core.domain.effective_delivery_inventory import (
     EffectiveDeliveryInventory,
 )
-from okto_pulse.core.domain.enums import CardStatus, CardType, TestScenarioStatus
+from okto_pulse.core.domain.enums import CardType, TestScenarioStatus
 from okto_pulse.core.domain.decision_review import DecisionInspectionState
 
 
@@ -185,13 +186,13 @@ def contribution_verification_criteria(obligation, contribution):
     return contribution.criterion_ids
 
 
-def evaluate_effective_snapshot(snapshot):
+def evaluate_effective_snapshot(snapshot, *, require_lifecycle: bool = True):
     context = snapshot.effective_context
     if not isinstance(context, EffectiveDeliveryContext):
         return DeliveryCoverageEvaluation((), ('delivery_effective_context_unavailable',), ())
     result = evaluate_effective_delivery_coverage(inventory=context.inventory, snapshot=snapshot,
         implementations=context.implementations, tests=context.tests, admitted_methods=context.admitted_methods,
-        decision_inspections=context.decision_inspections)
+        decision_inspections=context.decision_inspections, require_lifecycle=require_lifecycle)
     obligations = {item.binding: item for item in snapshot.obligations}
     return DeliveryCoverageEvaluation(tuple(ScopedDeliveryCoverageRow(
         obligations[row.binding], row.implementation_ids, row.test_ids,
@@ -210,6 +211,7 @@ def evaluate_effective_delivery_coverage(
     tests: tuple[ScopedTestFact, ...],
     admitted_methods: frozenset[str] | None,
     decision_inspections: tuple[DecisionInspectionState, ...] = (),
+    require_lifecycle: bool = True,
 ) -> EffectiveDeliveryCoverage:
     """Require every approved Card contribution and every selected criterion.
 
@@ -279,7 +281,7 @@ def evaluate_effective_delivery_coverage(
 
     # Receipt/lifecycle/waiver checks are necessary but not sufficient; the
     # effective verdict also requires the scopes and criteria resolved below.
-    baseline = _evaluate_delivery_facts(snapshot)
+    baseline = _evaluate_delivery_facts(snapshot, require_lifecycle=require_lifecycle)
     blockers.update(
         code
         for code in baseline.blockers
@@ -301,7 +303,7 @@ def evaluate_effective_delivery_coverage(
             or fact.contributions is None
             or fact.scope != snapshot.scope
             or fact.card_type not in {CardType.NORMAL, CardType.BUG}
-            or fact.card_status != CardStatus.DONE
+            or not delivery_proof_lifecycle_eligible(fact.card_status, require_done=require_lifecycle)
         ):
             rejected.add(fact.id)
             continue
@@ -403,7 +405,7 @@ def evaluate_effective_delivery_coverage(
                     ),
                     (checked_fact,),
                     complete=snapshot.complete,
-                )
+                ), require_lifecycle=require_lifecycle,
             )
             if not check.rows[0].test_satisfied:
                 continue
