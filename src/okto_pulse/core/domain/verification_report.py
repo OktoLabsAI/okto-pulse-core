@@ -146,6 +146,29 @@ def verification_report_passing_criteria(report) -> tuple[str, ...]:
     return tuple(sorted(key for key, values in outcomes.items() if values == {'passed'}))
 
 
+def verification_report_source_issue(report, expected_sources: tuple[tuple[str, str], ...]) -> Literal[
+    'verification_base_unresolved', 'verification_base_mismatch',
+] | None:
+    """Require every canonical delivered source and immutable revision.
+
+    Callers authenticate the report and resolve expected sources from accepted
+    implementation receipts. Time, current repository HEAD and ancestry are not
+    equivalence evidence. Extra sources (e.g. inspected dependencies) do not
+    replace a missing delivered source.
+    """
+    verification_report_scenario_status(report)
+    if (not expected_sources or any(
+        not isinstance(source, str) or not source.strip()
+        or not isinstance(revision, str) or not revision.strip()
+        for source, revision in expected_sources
+    )):
+        return 'verification_base_unresolved'
+    observed = {source.reference: source.revision for source in report.sources}
+    if any(observed.get(source) != revision for source, revision in expected_sources):
+        return 'verification_base_mismatch'
+    return None
+
+
 def require_verification_report_context(report, *, method, status, criterion_ids):
     """Bind the external observation to the entire current scenario's criteria.
 
