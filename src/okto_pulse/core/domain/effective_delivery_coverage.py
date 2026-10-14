@@ -20,6 +20,10 @@ from okto_pulse.core.domain.effective_delivery_inventory import (
 from okto_pulse.core.domain.enums import CardType, TestScenarioStatus
 from okto_pulse.core.domain.decision_review import DecisionInspectionState
 from okto_pulse.core.domain.verification_plan import RequiredVerificationScenario
+from okto_pulse.core.domain.delivery_verification import (
+    NativeVerificationPopulation, ScenarioVerificationFinding, missing_scenario_reason,
+)
+from okto_pulse.core.domain.delivery_assessment import FactualReason, ReadinessReason
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +109,7 @@ class EffectiveDeliveryCoverageRow:
     decision_review_ids: tuple[str, ...] = ()
     missing_scenarios: tuple[tuple[str, str, str], ...] = ()
     conflicting_scenario_receipts: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    scenario_findings: tuple[ScenarioVerificationFinding, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +131,7 @@ class EffectiveDeliveryContext:
     admitted_methods: frozenset[str] | None
     decision_inspections: tuple[DecisionInspectionState, ...] = ()
     required_scenarios: tuple[RequiredVerificationScenario, ...] | None = None
+    native_verification: NativeVerificationPopulation | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +145,7 @@ class ScopedDeliveryCoverageRow(DeliveryCoverageRow):
     decision_review_ids: tuple[str, ...] = ()
     missing_scenarios: tuple[tuple[str, str, str], ...] = ()
     conflicting_scenario_receipts: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    scenario_findings: tuple[ScenarioVerificationFinding, ...] = ()
 
     @property
     def implementation_satisfied(self):
@@ -199,7 +206,7 @@ def evaluate_effective_snapshot(snapshot, *, require_lifecycle: bool = True):
     result = evaluate_effective_delivery_coverage(inventory=context.inventory, snapshot=snapshot,
         implementations=context.implementations, tests=context.tests, admitted_methods=context.admitted_methods,
         decision_inspections=context.decision_inspections, require_lifecycle=require_lifecycle,
-        required_scenarios=context.required_scenarios)
+        required_scenarios=context.required_scenarios, native_verification=context.native_verification)
     obligations = {item.binding: item for item in snapshot.obligations}
     return DeliveryCoverageEvaluation(tuple(ScopedDeliveryCoverageRow(
         obligations[row.binding], row.implementation_ids, row.test_ids,
@@ -208,6 +215,7 @@ def evaluate_effective_snapshot(snapshot, *, require_lifecycle: bool = True):
         row.missing_card_ids, row.missing_criteria,
         row.decision_verification_status, row.decision_review_ids, row.missing_scenarios,
         row.conflicting_scenario_receipts,
+        row.scenario_findings,
     ) for row in result.rows if row.binding in obligations), result.blockers, result.rejected_record_ids)
 
 
@@ -221,6 +229,7 @@ def evaluate_effective_delivery_coverage(
     decision_inspections: tuple[DecisionInspectionState, ...] = (),
     require_lifecycle: bool = True,
     required_scenarios: tuple[RequiredVerificationScenario, ...] | None = None,
+    native_verification: NativeVerificationPopulation | None = None,
 ) -> EffectiveDeliveryCoverage:
     """Require every approved Card contribution and every selected criterion.
 
@@ -230,6 +239,16 @@ def evaluate_effective_delivery_coverage(
     condition cannot conceal a missing technical/operational condition.
     """
     blockers = set()
+    native_runs = {}
+    if native_verification is not None:
+        if len(native_verification.runs) > 5000 or sum(
+            1 + len(run.sources) + len(run.observations) for run in native_verification.runs
+        ) > 20000:
+            return EffectiveDeliveryCoverage((), ('delivery_effective_resolution_limit',), ())
+        if not native_verification.complete:
+            blockers.add('delivery_verification_run_population_unavailable')
+        for run in native_verification.runs:
+            native_runs.setdefault(run.scenario_id, []).append(run)
     # Required topology is independent of selected records. Missing topology
     # must not let a passing subset claim complete criterion verification.
     scenarios = {}
@@ -408,6 +427,12 @@ def evaluate_effective_delivery_coverage(
         test_ids = set()
         for test in by_test_binding.get(binding, ()):
             fact = test.fact
+            if native_verification is not None:
+                runs = native_runs.get(fact.scenario_id, ())
+                if (not native_verification.complete or len(runs) != 1
+                    or not runs[0].authenticated or runs[0].scope != snapshot.scope
+                    or runs[0].receipt_id != fact.receipt_id):
+                    continue
             # The fact checks prove authentication, current passing result,
             # exact implementation IDs and Done. It may withhold its aggregate
             # test_ids if another implementation lacks tests, so evaluate each
@@ -510,6 +535,29 @@ def evaluate_effective_delivery_coverage(
         conflicting_receipts = tuple(sorted((key, conflicts[key])
             for key in {scenario_id for _, _, scenario_id in missing_scenarios}
             if key in conflicts))
+        findings = []
+        for identity, criterion, scenario_id in sorted(missing_scenarios):
+            if scenario_id in conflicts:
+                reason = FactualReason(ReadinessReason.VERIFICATION_CONFLICT,
+                    source_ids=conflicts[scenario_id], criterion_ids=(criterion,), scenario_ids=(scenario_id,))
+            elif not scenarios[scenario_id].complete:
+                reason = FactualReason(
+                    ReadinessReason.VERIFICATION_METHOD_UNSUPPORTED
+                    if scenarios[scenario_id].method not in admitted_methods else ReadinessReason.VERIFICATION_PLAN_MISSING,
+                    criterion_ids=(criterion,), scenario_ids=(scenario_id,))
+            else:
+                reason = missing_scenario_reason(scope=snapshot.scope, binding=binding,
+                    implementation=actual_implementations[identity], scenario_id=scenario_id,
+                    criterion_id=criterion, population=native_verification,
+                    current_runs=tuple(native_runs.get(scenario_id, ())))
+                if reason.code == ReadinessReason.VERIFICATION_ASSOCIATION_MISSING and require_lifecycle and any(
+                    test.fact.scenario_id == scenario_id and identity in test.fact.verified_implementation_ids
+                    and test.fact.receipt_id in reason.source_ids and test.fact.current_verified_run
+                    and not delivery_proof_lifecycle_eligible(test.fact.card_status, require_done=True)
+                    for test in by_test_binding.get(binding, ())
+                ):
+                    reason = replace(reason, code=ReadinessReason.LIFECYCLE_CARD_OPEN)
+            findings.append(ScenarioVerificationFinding(identity, criterion, scenario_id, reason))
         implementation_waivers = base.implementation_waiver_ids if base else ()
         test_waivers = base.test_waiver_ids if base else ()
         if conflicting_receipts and not test_waivers:
@@ -539,6 +587,7 @@ def evaluate_effective_delivery_coverage(
                 verified,
                 missing_scenarios=tuple(sorted(missing_scenarios)),
                 conflicting_scenario_receipts=conflicting_receipts,
+                scenario_findings=tuple(findings),
             )
         )
     # Decisions reuse delivery proof; they never manufacture implementation

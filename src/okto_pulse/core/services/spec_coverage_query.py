@@ -91,6 +91,7 @@ def project_spec_coverage(query: SpecCoverageQuery, snapshot: SpecCoverageSnapsh
             'delivery_effective_inventory_incomplete', 'delivery_effective_inventory_mismatch',
             'delivery_verification_methods_unavailable', 'delivery_scoped_population_mismatch',
             'delivery_verification_scenario_population_unavailable',
+            'delivery_verification_run_population_unavailable',
             'delivery_contribution_allocation_invalid',
         })
         for row in evaluation.rows:

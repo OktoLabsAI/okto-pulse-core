@@ -9,6 +9,7 @@ provider, filesystem access, execution or state transitions occur here.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import Literal
 
@@ -173,6 +174,7 @@ class ImplementationExecutionProof:
     symbol: str | None = None
     blocking_progress_ids: tuple[str, ...] = ()
     blocking_progress_truncated: bool = False
+    observed_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,6 +264,7 @@ class TestDeliveryFact:
     current_verified_run: bool
     actor_id: str
     verified_implementation_ids: tuple[str, ...] = ()
+    rejection_reasons: tuple[str, ...] = ()
 
 
 def require_test_result_admission(snapshot: DeliveryEvidenceSnapshot, fact: TestDeliveryFact | None) -> None:

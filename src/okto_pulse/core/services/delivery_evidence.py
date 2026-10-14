@@ -141,6 +141,7 @@ async def require_card_delivery(
         "delivery_implementation_missing", "delivery_test_result_missing",
         "delivery_verification_scenario_population_unavailable",
         "delivery_verification_run_conflict",
+        "delivery_verification_run_population_unavailable",
     }
     if structural_blockers:
         raise ValueError(
