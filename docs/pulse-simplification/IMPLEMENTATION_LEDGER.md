@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — planejamento: checkpoint reconciliado com o trabalho local
+
+Pedido atual: iniciar o planejamento detalhado. O documento existente
+SPEC_UNIFIED_VALIDATION_PLAN.md foi mantido como plano único, sem novo escopo.
+Sua seção 6.2 foi atualizada: Core f1223c29 / Community d3937da9 em
+feature/v0.4.0, HEADs iguais aos respectivos tracking branches locais.
+
+Há trabalho local não publicado: manifesto obrigatório na conclusão Core,
+schema REST/MCP, leitura MCP do ciclo e restrição de Board; tratamento de
+indisponibilidade no REST e preservação da base no formulário; fixtures e
+testes parcialmente adaptados. Essas alterações foram preservadas e não são
+declaradas testadas ou concluídas por esta revisão documental. As provas do
+checkpoint publicado abaixo não se aplicam automaticamente a esse diff.
+
+Retomada definida: qualificar esse incremento U2 com manifestos reais nos
+testes de persistência, negativos de identidade/concorrência/autoridade e
+replay, paridade REST/MCP, testes frontend, tipos e catálogo gerado; concluir
+resumo comum e leitura leve; executar U3 e então U4. U1 não será refeito.
+Todos os julgamentos, critérios, severidades, permissões e históricos seguem
+preservados; unifica-se o ponto de conclusão, sem média entre avaliações.
+
+Este checkpoint altera somente plano e ledger. Não houve nova instalação,
+mudança de dados, execução de E2E ou alteração de código de produto nesta
+revisão. O diff local de implementação permanece separado do commit documental.
+Verificação documental: diff --check dos dois documentos e
+scripts/check_markdown_links.py aprovados; URLs externas não foram consultadas.
+
 ### 2026-10-14 — U2: revisões transacionais e manifesto na leitura do ciclo
 
 Base deste incremento: Core 130dca86 / Community e08415ab. Escopo ativo continua

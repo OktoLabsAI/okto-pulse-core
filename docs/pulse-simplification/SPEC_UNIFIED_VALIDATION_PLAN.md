@@ -308,22 +308,37 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento consolidado sobre o checkpoint publicado
 
-Conferência de 14/10/2026: Core `d30df58b` e Community `e08415ab`, ambos em
-`feature/v0.4.0`, sem alterações locais; push dos dois confirmou
-`Everything up-to-date` antes desta revisão documental. Esta revisão atende ao
-pedido de planejamento; não inicia outra alteração de comportamento.
+Conferência atual de 14/10/2026: Core `f1223c29` e Community `d3937da9`, ambos
+em `feature/v0.4.0`, com HEAD igual ao respectivo tracking branch local. Há
+alterações locais de implementação de U2 ainda não publicadas nem qualificadas
+como incremento concluído. Esta revisão atende ao pedido de planejamento;
+não modifica comportamento nem declara essas alterações prontas.
 
 | Frente | Situação conferida | Trabalho restante |
 | --- | --- | --- |
 | U1 | Autoria de Cards em Draft e retirada da Decision obrigatória implementadas e registradas no ledger. | Exercitar os caminhos reais UI/MCP no U4; não implementar novamente. |
-| U2 — pareceres e recibo | Comando aceita decomposição tipada, usa autoria autenticada e recibo transacional; resultado distingue qualidade, promoção e bloqueios. Evidência existente `u2-replay.xml`: 267 testes, zero falhas/erros. | Completar manifesto, leitura integrada e comprovação dos predicados compartilhados. A suíte existente não comprova o U2 inteiro. |
+| U2 — pareceres e recibo | Comando aceita decomposição tipada, usa autoria autenticada e recibo transacional; resultado distingue qualidade, promoção e bloqueios. Evidência existente `u2-replay.xml`: 267 testes, zero falhas/erros. | Completar leitura integrada e comprovação dos predicados compartilhados. A suíte existente não comprova o U2 inteiro. |
+| U2 — manifesto | Tipos/porta, revisões persistidas e leitura REST consistente publicados. Evidências anteriores: 95 testes Core, 130 Community, seis frontend e checagem de tipos, conforme ledger. | Qualificar o trabalho local que exige manifesto na conclusão, expõe leitura MCP e preserva a base do formulário; depois concluir resumo e metadados leves. Nenhum resultado anterior comprova as alterações locais atuais. |
 | U3 | Cliente acompanha o contrato composto e mantém chave estável para retry. | Workspace integrado e sincronização externa ainda pendentes; mudança do payload não significa interface concluída. |
-| U4 | Há evidência de regressões e closure do checkout (`closure-u2-replay.json`, `ok=true`). | Build final, auditoria dos wheels, paridade da instalação e novo ensaio completo UI/MCP ainda pendentes. |
+| U4 | Há evidência de regressões e closure do checkout publicado (`closure-u2-manifest.json`, `ok=true`, oito budgets ZERO). | Build final, auditoria dos wheels, paridade da instalação e novo ensaio completo UI/MCP ainda pendentes. |
 
 Executar a sequência abaixo dentro dos milestones existentes, com commit/push
 e ledger ao encerrá-los. Não criar milestones de produto adicionais.
 
 **U2 — terminar o contrato de conclusão e sua leitura.**
+
+Retomada imediata: conferir o diff local da conclusão, schemas REST/MCP,
+leitura delimitada ao Board e formulário. Atualizar os fixtures dos consumidores
+para obter o manifesto da fonte real nos testes de persistência; completar os
+casos de manifesto ausente, identidade divergente, mudança de Card sem bump da
+Spec, alteração de autoridade e replay após mudança de estado. Regenerar o
+catálogo pela ferramenta oficial. A passagem deste incremento exige paridade
+REST/MCP, testes frontend do payload e da preservação de formulário sujo,
+checagem de tipos e ausência de deriva arquitetural. Não publicar essas
+alterações como concluídas com base apenas nas suítes do commit anterior.
+
+Os itens 1–2 abaixo já possuem implementação publicada do manifesto; conferir
+seus limites ao integrar os demais gates, sem reimplementar o que está entregue.
 
 1. Inventariar somente os dados que influenciam os gates desta conclusão:
    Spec/edição, Cards e alocação do plano, resultados nativos e autoridade/policy
