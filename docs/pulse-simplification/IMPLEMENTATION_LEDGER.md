@@ -2,6 +2,82 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — E2E novo concluído da ideação a Done, UI e MCP em 100%
+
+Pedido: criar uma iniciativa mock nova e percorrer todo o SDLC, incluindo
+tasks, testes autenticados e conferência visual. Executado no runtime instalado
+0.4.0 (Core 55593815 / Community 82bf8fcf), My Board
+8337f239-a9cc-41ba-acb3-7352245103f8, sem alterar policies, skips ou banco
+diretamente. Paridade byte a byte conferida antes do ensaio: 861 Python Core,
+323 Python Community e 79 arquivos frontend. Processo 40020 iniciado após a
+instalação; home padrão preservada. Não houve alteração de código Pulse.
+
+Lineage nova, toda Done:
+- Ideação 6c3b01aa-ed04-4493-aa7f-89fbbd77fbcf, edição 1/versão 6.
+- Refinamento b222faaa-1284-474b-a8a5-a1d75f2fcfff, edição 1/versão 5.
+- Spec 3fbbb126-b9d6-54b3-a11c-70d05082a7cc, **E2E mock — estoque local completo**,
+  edição 4/versão 37.
+- H01 cb848b9c-1f51-5e08-9ed9-1e188f1ce50f e H02
+  39740c2a-4720-5a14-a298-2ec72588cd5e: Done, implementação 100%, verificação 100%.
+- Tests fdc55b18-650d-5452-8d05-bf1b21e5f062 e
+  07aa4fbb-2797-5751-b9b3-a025e8082ae0: Done, implementação não aplicável,
+  verificação 100% (2/2 cenários cada).
+
+Fixture real mínima, inteiramente sintética, em D:/Projetos/pulse-e2e-estoque-mock:
+normalizar_rotulo e somar_quantidades, sem rede, persistência ou dados reais.
+Baseline 810ec4fb9d8521f607a17663e12c8ff3b52acaed; implementação/testes
+0c2ebcebd023f61d28846573f24ad619f8ffa977. Repositório mock sem remote;
+commits locais. Fonte source_41b1e99290994dd7bf0bd0d92a8c207e, investigação
+greenfield, Targets criados e resolvidos como ausência esperada antes do código,
+resoluções/execution receipts finais sobre o mesmo commit limpo. Compartilhamento
+do módulo entre símbolos independentes reconhecido no overlap nativo.
+
+Dois FRs, duas BRs transitivas, quatro ACs/cenários e uma decisão de escopo.
+Contribuições integrais por FR; nenhum link BR→Task redundante. Checklist
+Blocking passou; requirement lint 0; Spec Validation aprovada, decomposição
+avaliada; tasks passaram por Validation e aceite nativo. Reviewer separation
+já era off: mesmo autor/executor/revisor Codex, sem alegar revisão independente.
+Decisão dec_faa010a3 (funções locais em vez de HTTP) confirmada por inspeção
+autenticada do escopo, sem Task ou teste artificial. Nenhum waiver utilizado.
+
+Quatro unittest observados localmente e quatro execuções separadas pelo runner
+autenticado do Pulse, uma por cenário; todos passed/verified. Profiles registrados
+pela CLI oficial como e2e-estoque-01_1, 01_2, 02_1 e 02_2. Resultados intactos
+admitidos e associados às provas exatas de implementação. Progressão nativa:
+100% implementação / 0% verificação → 100% / 88% (decisão pendente) → 100% / 100%.
+Readiness final da Spec e dos quatro Cards: delivered, gate allowed, zero unidades
+pendentes, zero causas, zero exceções. Fechamento é nativo, não mero percentual.
+
+Browser Playwright headed na instalação real: ideação/evaluation, validação da
+Spec, Coverage, References abrindo Cards, Delivery de task e Test, capas no Board
+filtrado por E2E. Draft→Review feito pelo botão da UI e confirmado via MCP.
+Screenshots abertos para inspeção: tasks com barras azul/verde 100%; Tests com
+somente barra verde expandida 100%; Coverage mostra planejamento, implementação,
+verificação e aderência da decisão em 100%. Console do browser: zero erros e
+warnings. Busca canonical retornou 19 relações de vizinhança da Spec concluída,
+incluindo pais, Cards, requisitos e decisão; não é auditoria global do KG.
+
+Fricções registradas, sem expandir este teste para refatorações:
+1. Criar Cards em Approved e definir implementation_plan em Draft exige ida e
+   volta de lifecycle para alocar o trabalho. As reaberturas deste ensaio também
+   incluíram correção autoral do contexto e a Decision exigida pelo gate.
+2. Spec Validation exige ao menos uma Decision ativa mesmo com escolha de escopo
+   explícita em prosa. Formalizamos a escolha existente; não inventamos cenário.
+3. UI aberta reteve dados anteriores às mutações MCP, incluindo alerta de edição
+   divergente em Validation. Refresh nativo sincronizou; estado final UI/MCP igual.
+Erros de preparação dos scripts (campo de resposta, safe_excerpt e timestamp de
+observação exato) foram corrigidos no cliente; não são defeitos comprovados do Pulse.
+
+Prova versionada: [evidence-live-sdlc-e2e-20261014.json](evidence-live-sdlc-e2e-20261014.json).
+Contém IDs, métricas finais, execuções, hashes das imagens, limites e consulta KG.
+Scripts/auditoria local: PULSE_REFACTOR/.validation-v040/e2e-estoque-20261014/;
+state.json em ui_and_mcp_verified. Não executar scripts antigos cegamente: os
+artefatos já estão fechados e as operações têm identidade/edição próprias.
+Screenshots: Community/output/playwright/e2e-*.png. Runtime deixado em execução,
+Board filtrado por E2E na coluna Done. Iniciativa anterior incompleta preservada.
+Este ensaio qualifica o caminho sintético descrito, não toda a plataforma, todos
+os perfis de permissão ou integrações externas.
+
 ### 2026-10-10 — ensaio de completude executado até aceite H04
 
 Continuidade do ensaio anterior, sem novo escopo de produto. Fixture local real

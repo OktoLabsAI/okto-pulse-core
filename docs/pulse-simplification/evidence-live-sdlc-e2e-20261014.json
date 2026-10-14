@@ -1,0 +1,999 @@
+{
+  "schema": "pulse-live-sdlc-e2e/v1",
+  "date": "2026-10-14",
+  "board_id": "8337f239-a9cc-41ba-acb3-7352245103f8",
+  "parents": {
+    "ideation": {
+      "id": "6c3b01aa-ed04-4493-aa7f-89fbbd77fbcf",
+      "title": "E2E mock — etiquetas e resumo de estoque (14/10)",
+      "status": "done",
+      "edition": 1,
+      "version": 6
+    },
+    "refinement": {
+      "id": "b222faaa-1284-474b-a8a5-a1d75f2fcfff",
+      "title": "E2E mock — contrato das funções de estoque",
+      "status": "done",
+      "edition": 1,
+      "version": 5
+    },
+    "spec": {
+      "id": "3fbbb126-b9d6-54b3-a11c-70d05082a7cc",
+      "title": "E2E mock — estoque local completo",
+      "status": "done",
+      "edition": 4,
+      "version": 37
+    }
+  },
+  "cards": {
+    "test_01": "fdc55b18-650d-5452-8d05-bf1b21e5f062",
+    "test_02": "07aa4fbb-2797-5751-b9b3-a025e8082ae0",
+    "normal_01": "cb848b9c-1f51-5e08-9ed9-1e188f1ce50f",
+    "normal_02": "39740c2a-4720-5a14-a298-2ec72588cd5e"
+  },
+  "fixture": {
+    "path": "D:\\Projetos\\pulse-e2e-estoque-mock",
+    "baseline": "810ec4fb9d8521f607a17663e12c8ff3b52acaed",
+    "implementation": "0c2ebcebd023f61d28846573f24ad619f8ffa977",
+    "source_ref": "source_41b1e99290994dd7bf0bd0d92a8c207e",
+    "real_business_data": false
+  },
+  "runtime": {
+    "api": "http://127.0.0.1:8100",
+    "mcp": "http://127.0.0.1:8101/mcp",
+    "data_home": "C:/Users/jpamb/.okto-pulse",
+    "server_pid": 40020,
+    "core_commit": "55593815",
+    "community_commit": "82bf8fcf",
+    "installed_source_parity": {
+      "core_py": 861,
+      "community_py": 323,
+      "frontend_files": 79
+    }
+  },
+  "final_readiness": {
+    "test_01": {
+      "contract_version": "delivery-readiness/v1",
+      "metrics_version": 2,
+      "scope": {
+        "board_id": "8337f239-a9cc-41ba-acb3-7352245103f8",
+        "spec_id": "3fbbb126-b9d6-54b3-a11c-70d05082a7cc",
+        "card_id": "fdc55b18-650d-5452-8d05-bf1b21e5f062",
+        "card_type": "test",
+        "spec_edition": 4,
+        "spec_version": 37,
+        "card_version": 1
+      },
+      "snapshot_id": "f2341cfd06dfba89645e991ee667ddd0997aa6aa9593c58e48f90977950fcc56",
+      "evaluated_at": "2026-10-14T15:34:02.635762Z",
+      "scope_complete": true,
+      "evaluation_complete": true,
+      "implementation": {
+        "unit": "obligation",
+        "status": "not_applicable",
+        "percent": null,
+        "total": 0,
+        "applicable": 0,
+        "satisfied": 0,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 0,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      },
+      "verification": {
+        "unit": "scenario",
+        "status": "known",
+        "percent": 100,
+        "total": 2,
+        "applicable": 2,
+        "satisfied": 2,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 2,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      },
+      "delivery_state": "delivered",
+      "proof_complete": true,
+      "delivery_gate": {
+        "status": "allowed",
+        "mode": "blocking",
+        "exception_applied": false,
+        "exception_refs": []
+      },
+      "lifecycle": {
+        "stored_status": "done",
+        "target": "done",
+        "check_status": "not_evaluated",
+        "other_blocker_count": null,
+        "qualification_is_current": true,
+        "reason_codes": [
+          "native_completion_recorded"
+        ],
+        "context_refs": [
+          "card:fdc55b18-650d-5452-8d05-bf1b21e5f062"
+        ]
+      },
+      "summary": {
+        "message_code": "delivered",
+        "message": "Entrega concluída com qualificação atual.",
+        "unresolved_units": 0,
+        "root_causes": 0,
+        "lifecycle_pending": null,
+        "exceptions": 0
+      },
+      "mutation_reauthorization_required": true,
+      "issues": [],
+      "next_actions": [],
+      "page": {
+        "total": 0,
+        "returned": 0,
+        "has_more": false,
+        "next_cursor": null,
+        "response_truncated": false,
+        "phase_filter": "all"
+      }
+    },
+    "test_02": {
+      "contract_version": "delivery-readiness/v1",
+      "metrics_version": 2,
+      "scope": {
+        "board_id": "8337f239-a9cc-41ba-acb3-7352245103f8",
+        "spec_id": "3fbbb126-b9d6-54b3-a11c-70d05082a7cc",
+        "card_id": "07aa4fbb-2797-5751-b9b3-a025e8082ae0",
+        "card_type": "test",
+        "spec_edition": 4,
+        "spec_version": 37,
+        "card_version": 1
+      },
+      "snapshot_id": "0c573fcdfb64922bff1ee705f997d4e5aa016cfcb63d6a4e30d2f044e7cae4a6",
+      "evaluated_at": "2026-10-14T15:34:02.744344Z",
+      "scope_complete": true,
+      "evaluation_complete": true,
+      "implementation": {
+        "unit": "obligation",
+        "status": "not_applicable",
+        "percent": null,
+        "total": 0,
+        "applicable": 0,
+        "satisfied": 0,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 0,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      },
+      "verification": {
+        "unit": "scenario",
+        "status": "known",
+        "percent": 100,
+        "total": 2,
+        "applicable": 2,
+        "satisfied": 2,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 2,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      },
+      "delivery_state": "delivered",
+      "proof_complete": true,
+      "delivery_gate": {
+        "status": "allowed",
+        "mode": "blocking",
+        "exception_applied": false,
+        "exception_refs": []
+      },
+      "lifecycle": {
+        "stored_status": "done",
+        "target": "done",
+        "check_status": "not_evaluated",
+        "other_blocker_count": null,
+        "qualification_is_current": true,
+        "reason_codes": [
+          "native_completion_recorded"
+        ],
+        "context_refs": [
+          "card:07aa4fbb-2797-5751-b9b3-a025e8082ae0"
+        ]
+      },
+      "summary": {
+        "message_code": "delivered",
+        "message": "Entrega concluída com qualificação atual.",
+        "unresolved_units": 0,
+        "root_causes": 0,
+        "lifecycle_pending": null,
+        "exceptions": 0
+      },
+      "mutation_reauthorization_required": true,
+      "issues": [],
+      "next_actions": [],
+      "page": {
+        "total": 0,
+        "returned": 0,
+        "has_more": false,
+        "next_cursor": null,
+        "response_truncated": false,
+        "phase_filter": "all"
+      }
+    },
+    "normal_01": {
+      "contract_version": "delivery-readiness/v1",
+      "metrics_version": 2,
+      "scope": {
+        "board_id": "8337f239-a9cc-41ba-acb3-7352245103f8",
+        "spec_id": "3fbbb126-b9d6-54b3-a11c-70d05082a7cc",
+        "card_id": "cb848b9c-1f51-5e08-9ed9-1e188f1ce50f",
+        "card_type": "normal",
+        "spec_edition": 4,
+        "spec_version": 37,
+        "card_version": 1
+      },
+      "snapshot_id": "ab537cc8ead3fb938d50787921ee15ca50ba10bb8373b7e08858759dce3bdbaa",
+      "evaluated_at": "2026-10-14T15:34:02.851257Z",
+      "scope_complete": true,
+      "evaluation_complete": true,
+      "implementation": {
+        "unit": "obligation",
+        "status": "known",
+        "percent": 100,
+        "total": 4,
+        "applicable": 4,
+        "satisfied": 4,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 4,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      },
+      "verification": {
+        "unit": "obligation",
+        "status": "known",
+        "percent": 100,
+        "total": 4,
+        "applicable": 4,
+        "satisfied": 4,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 4,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      },
+      "delivery_state": "delivered",
+      "proof_complete": true,
+      "delivery_gate": {
+        "status": "allowed",
+        "mode": "blocking",
+        "exception_applied": false,
+        "exception_refs": []
+      },
+      "lifecycle": {
+        "stored_status": "done",
+        "target": "done",
+        "check_status": "not_evaluated",
+        "other_blocker_count": null,
+        "qualification_is_current": true,
+        "reason_codes": [
+          "native_completion_recorded"
+        ],
+        "context_refs": [
+          "card:cb848b9c-1f51-5e08-9ed9-1e188f1ce50f"
+        ]
+      },
+      "summary": {
+        "message_code": "delivered",
+        "message": "Entrega concluída com qualificação atual.",
+        "unresolved_units": 0,
+        "root_causes": 0,
+        "lifecycle_pending": null,
+        "exceptions": 0
+      },
+      "mutation_reauthorization_required": true,
+      "issues": [],
+      "next_actions": [],
+      "page": {
+        "total": 0,
+        "returned": 0,
+        "has_more": false,
+        "next_cursor": null,
+        "response_truncated": false,
+        "phase_filter": "all"
+      }
+    },
+    "normal_02": {
+      "contract_version": "delivery-readiness/v1",
+      "metrics_version": 2,
+      "scope": {
+        "board_id": "8337f239-a9cc-41ba-acb3-7352245103f8",
+        "spec_id": "3fbbb126-b9d6-54b3-a11c-70d05082a7cc",
+        "card_id": "39740c2a-4720-5a14-a298-2ec72588cd5e",
+        "card_type": "normal",
+        "spec_edition": 4,
+        "spec_version": 37,
+        "card_version": 1
+      },
+      "snapshot_id": "a2d7dd48567faf92922c5dbe16b00312dd70c35f15d06ade6471ebbb8fe001c4",
+      "evaluated_at": "2026-10-14T15:34:02.966442Z",
+      "scope_complete": true,
+      "evaluation_complete": true,
+      "implementation": {
+        "unit": "obligation",
+        "status": "known",
+        "percent": 100,
+        "total": 4,
+        "applicable": 4,
+        "satisfied": 4,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 4,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      },
+      "verification": {
+        "unit": "obligation",
+        "status": "known",
+        "percent": 100,
+        "total": 4,
+        "applicable": 4,
+        "satisfied": 4,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 4,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      },
+      "delivery_state": "delivered",
+      "proof_complete": true,
+      "delivery_gate": {
+        "status": "allowed",
+        "mode": "blocking",
+        "exception_applied": false,
+        "exception_refs": []
+      },
+      "lifecycle": {
+        "stored_status": "done",
+        "target": "done",
+        "check_status": "not_evaluated",
+        "other_blocker_count": null,
+        "qualification_is_current": true,
+        "reason_codes": [
+          "native_completion_recorded"
+        ],
+        "context_refs": [
+          "card:39740c2a-4720-5a14-a298-2ec72588cd5e"
+        ]
+      },
+      "summary": {
+        "message_code": "delivered",
+        "message": "Entrega concluída com qualificação atual.",
+        "unresolved_units": 0,
+        "root_causes": 0,
+        "lifecycle_pending": null,
+        "exceptions": 0
+      },
+      "mutation_reauthorization_required": true,
+      "issues": [],
+      "next_actions": [],
+      "page": {
+        "total": 0,
+        "returned": 0,
+        "has_more": false,
+        "next_cursor": null,
+        "response_truncated": false,
+        "phase_filter": "all"
+      }
+    },
+    "spec": {
+      "contract_version": "delivery-readiness/v1",
+      "metrics_version": 2,
+      "scope": {
+        "board_id": "8337f239-a9cc-41ba-acb3-7352245103f8",
+        "spec_id": "3fbbb126-b9d6-54b3-a11c-70d05082a7cc",
+        "card_id": null,
+        "card_type": null,
+        "spec_edition": 4,
+        "spec_version": 37,
+        "card_version": null
+      },
+      "snapshot_id": "a90c8f98171dae2d62759235c1eb9edb846ded7ca5e3915e240e6f824927f6d0",
+      "evaluated_at": "2026-10-14T15:34:03.073514Z",
+      "scope_complete": true,
+      "evaluation_complete": true,
+      "implementation": {
+        "unit": "obligation",
+        "status": "known",
+        "percent": 100,
+        "total": 9,
+        "applicable": 8,
+        "satisfied": 8,
+        "not_applicable": 1,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 8,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 1,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      },
+      "verification": {
+        "unit": "obligation",
+        "status": "known",
+        "percent": 100,
+        "total": 9,
+        "applicable": 9,
+        "satisfied": 9,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 9,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      },
+      "delivery_state": "delivered",
+      "proof_complete": true,
+      "delivery_gate": {
+        "status": "allowed",
+        "mode": "blocking",
+        "exception_applied": false,
+        "exception_refs": []
+      },
+      "lifecycle": {
+        "stored_status": "done",
+        "target": "done",
+        "check_status": "not_evaluated",
+        "other_blocker_count": null,
+        "qualification_is_current": true,
+        "reason_codes": [
+          "native_completion_recorded"
+        ],
+        "context_refs": [
+          "spec:3fbbb126-b9d6-54b3-a11c-70d05082a7cc"
+        ]
+      },
+      "summary": {
+        "message_code": "delivered",
+        "message": "Entrega concluída com qualificação atual.",
+        "unresolved_units": 0,
+        "root_causes": 0,
+        "lifecycle_pending": null,
+        "exceptions": 0
+      },
+      "mutation_reauthorization_required": true,
+      "issues": [],
+      "next_actions": [],
+      "page": {
+        "total": 0,
+        "returned": 0,
+        "has_more": false,
+        "next_cursor": null,
+        "response_truncated": false,
+        "phase_filter": "all"
+      }
+    }
+  },
+  "runs": {
+    "01_1": {
+      "run_id": "a9fc6e1eae2542649cb5382174a13a21",
+      "executed_at": "2026-10-14T15:31:59.141457+00:00",
+      "scenario_id": "ts_ed5269d4",
+      "outcome": "passed",
+      "assertions": [
+        {
+          "name": "external unittest results",
+          "expected": {
+            "tests_run": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "expected_failures": 0,
+            "unexpected_successes": 0,
+            "exit_code": 0
+          },
+          "observed": {
+            "tests_run": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "expected_failures": 0,
+            "unexpected_successes": 0,
+            "exit_code": 0
+          },
+          "status": "passed"
+        }
+      ],
+      "execution_basis": {
+        "source_ref": "source_41b1e99290994dd7bf0bd0d92a8c207e",
+        "revision": "0c2ebcebd023f61d28846573f24ad619f8ffa977",
+        "runner_ref": "e2e-estoque-01_1",
+        "test_ids": [
+          "test_estoque.py::EstoqueTests.test_normalizacao"
+        ]
+      },
+      "attestation_sha256": "sha256:cd6e21f4c6a32c94758d4bbd92d18d46d9fe484ad086d7e1217b9ad382064064"
+    },
+    "01_2": {
+      "run_id": "33d82b4047e2ce06ba9c26a2f582d494",
+      "executed_at": "2026-10-14T15:32:00.661478+00:00",
+      "scenario_id": "ts_305c48b7",
+      "outcome": "passed",
+      "assertions": [
+        {
+          "name": "external unittest results",
+          "expected": {
+            "tests_run": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "expected_failures": 0,
+            "unexpected_successes": 0,
+            "exit_code": 0
+          },
+          "observed": {
+            "tests_run": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "expected_failures": 0,
+            "unexpected_successes": 0,
+            "exit_code": 0
+          },
+          "status": "passed"
+        }
+      ],
+      "execution_basis": {
+        "source_ref": "source_41b1e99290994dd7bf0bd0d92a8c207e",
+        "revision": "0c2ebcebd023f61d28846573f24ad619f8ffa977",
+        "runner_ref": "e2e-estoque-01_2",
+        "test_ids": [
+          "test_estoque.py::EstoqueTests.test_rotulo_vazio"
+        ]
+      },
+      "attestation_sha256": "sha256:cb399d9aa7d4cd5b4cefb9ca6378809a9c627589822eabc1d26df5a4e500d409"
+    },
+    "02_1": {
+      "run_id": "6b52b11b93fa4cbd392a920732254d43",
+      "executed_at": "2026-10-14T15:32:01.926575+00:00",
+      "scenario_id": "ts_2c6018bd",
+      "outcome": "passed",
+      "assertions": [
+        {
+          "name": "external unittest results",
+          "expected": {
+            "tests_run": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "expected_failures": 0,
+            "unexpected_successes": 0,
+            "exit_code": 0
+          },
+          "observed": {
+            "tests_run": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "expected_failures": 0,
+            "unexpected_successes": 0,
+            "exit_code": 0
+          },
+          "status": "passed"
+        }
+      ],
+      "execution_basis": {
+        "source_ref": "source_41b1e99290994dd7bf0bd0d92a8c207e",
+        "revision": "0c2ebcebd023f61d28846573f24ad619f8ffa977",
+        "runner_ref": "e2e-estoque-02_1",
+        "test_ids": [
+          "test_estoque.py::EstoqueTests.test_soma_e_vazio"
+        ]
+      },
+      "attestation_sha256": "sha256:b351d0ad31bb7c72f4a323380da6e7b5d28182c7d6eed49876472353bf24d171"
+    },
+    "02_2": {
+      "run_id": "42469d92765e31d0f0619467c5787649",
+      "executed_at": "2026-10-14T15:32:03.281881+00:00",
+      "scenario_id": "ts_6d80c1c9",
+      "outcome": "passed",
+      "assertions": [
+        {
+          "name": "external unittest results",
+          "expected": {
+            "tests_run": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "expected_failures": 0,
+            "unexpected_successes": 0,
+            "exit_code": 0
+          },
+          "observed": {
+            "tests_run": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "expected_failures": 0,
+            "unexpected_successes": 0,
+            "exit_code": 0
+          },
+          "status": "passed"
+        }
+      ],
+      "execution_basis": {
+        "source_ref": "source_41b1e99290994dd7bf0bd0d92a8c207e",
+        "revision": "0c2ebcebd023f61d28846573f24ad619f8ffa977",
+        "runner_ref": "e2e-estoque-02_2",
+        "test_ids": [
+          "test_estoque.py::EstoqueTests.test_quantidade_negativa"
+        ]
+      },
+      "attestation_sha256": "sha256:375a1ca1d29bdb38c5ffc0d88672125908f42a827cba25bbc567d9e6e0ce320d"
+    }
+  },
+  "canonical_query": {
+    "context": [
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "entity_839a1af87ffdf2669fe17b5b",
+        "hop1_title": "E2E mock — contrato das funções de estoque",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "entity_9d4fb785247617a7353f5f5e",
+        "hop1_title": "Board 8337f239-a9cc-41ba-acb3-7352245103f8",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "entity_bbef1d8082a9c66f70f69085",
+        "hop1_title": "[TEST] E2E H01 — Normalizar rótulo",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "entity_e6f4a41468b7e99798417848",
+        "hop1_title": "[TEST] E2E H02 — Somar quantidades",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "entity_7b284f46a9c672ee45ebce49",
+        "hop1_title": "E2E H01 — Normalizar rótulo",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "entity_100359cee985285b1b2d6c48",
+        "hop1_title": "E2E H02 — Somar quantidades",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "requirement_8e74d22700e9f67894ead245",
+        "hop1_title": "normalizar_rotulo(texto: str) retorna texto.strip().upper(); vazio após strip gera ValueError(\"rotulo_obrigatorio\"). Nen",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "requirement_754c9a702120cf4e8864bb06",
+        "hop1_title": "somar_quantidades(quantidades: list[int]) retorna a soma dos inteiros não negativos; lista vazia retorna 0. Qualquer neg",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "constraint_fba21846ef30d1eaaca47efe",
+        "hop1_title": "Normalizar rótulo — invariante",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "constraint_77d3f89701d318efa05dfcfb",
+        "hop1_title": "Somar quantidades — invariante",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "criterion_d3336d4d53a7e43f6fe1a03d",
+        "hop1_title": "Dado texto=\"  caixa a  \"; quando normalizar_rotulo(texto); então Retorna \"CAIXA A\"; entrada permanece \"  caixa a  \".",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "criterion_00f52983c5a48fdddcc09559",
+        "hop1_title": "Dado texto=\"\" e texto=\"   \"; quando normalizar_rotulo(texto) para cada entrada; então Em ambos os casos gera ValueError ",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "criterion_5bcc691361ef07f7153c462b",
+        "hop1_title": "Dado quantidades=[0,2,3] e caso adicional []; quando somar_quantidades(quantidades); então Retorna 5 e 0 respectivamente",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "criterion_4b651ae61472b439eb5f3d60",
+        "hop1_title": "Dado quantidades=[2,-1,3]; quando somar_quantidades(quantidades); então Gera ValueError com mensagem exata quantidade_ne",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "testscenario_efbcb2069668d8e9888ccd6b",
+        "hop1_title": "E2E H01.1 — Normalização",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "testscenario_4f23933fc2e2957777438a60",
+        "hop1_title": "E2E H01.2 — Rejeitar vazio",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "testscenario_af2ad4344c7c861c60b3c26a",
+        "hop1_title": "E2E H02.1 — Soma e vazio",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "testscenario_6c5eb40d4a81533c3703b6e0",
+        "hop1_title": "E2E H02.2 — Rejeitar negativo",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      },
+      {
+        "center_id": "entity_73438f8e57d1acb5a5dc47a6",
+        "center_title": "E2E mock — estoque local completo",
+        "hop1_id": "decision_eabbb0a8a096068d216a8537",
+        "hop1_title": "Ensaio local sem serviço HTTP",
+        "hop2_id": null,
+        "hop2_title": null,
+        "rel1_type": "belongs_to",
+        "rel2_type": null
+      }
+    ],
+    "count": 19,
+    "applied_graph_layer": "canonical"
+  },
+  "ui": {
+    "session": "pulse-e2e",
+    "mutation": "Spec draft -> review through native button; MCP confirmed review",
+    "console_errors": 0,
+    "console_warnings": 0,
+    "screenshots": [
+      {
+        "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\e2e-ideation-evaluation.png",
+        "sha256": "8dcc273252be2dd82e19154f887d71968fa491dbf489eedcd00dc59cf010ab3f"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\e2e-spec-validation.png",
+        "sha256": "b6d4c5d549cf6524cced9717e5249206e3e93a1146e41a01f58236ebc8af6ee7"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\e2e-spec-done-coverage.png",
+        "sha256": "232ea4a42359085b23bf8042fc460512acbc87875f7d0320460f3d1c1edfe0ec"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\e2e-task-done-delivery.png",
+        "sha256": "a9c0ab003490ca3789e3f273c77bd32581727cf502a9fc203bcba6ccc1a805fd"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\e2e-test-done-delivery.png",
+        "sha256": "a84f248eeab504f77371f0b26dec9894ae01ea1b5c1e9e7c7b1a223f77602214"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\e2e-board-done-tests.png",
+        "sha256": "983c673c15d1a2300121957dc9d67a1448f6eb27e494144f3db3fd0c7c04a563"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\e2e-board-done-tasks.png",
+        "sha256": "d14f4684ca699d8456b252eb0f6d3e39bc4bcb6163179a33cb31575af24d65c1"
+      }
+    ]
+  },
+  "limitations": [
+    "One synthetic scenario; not exhaustive platform qualification.",
+    "Reviewer separation already off on My Board; the same Codex actor authored, executed and reviewed. No independent-review claim.",
+    "No production source, policy, skip or database was modified to obtain completion.",
+    "External runner is locally authorized unittest, not generic CI integration.",
+    "Canonical neighborhood read confirms projection for this Spec; it is not a full graph-health audit."
+  ],
+  "frictions": [
+    "Normal/Test cards require approved Spec, while implementation_plan authoring requires Draft; allocation needed a lifecycle roundtrip.",
+    "Spec Validation demanded an active Decision although the small scope was explicit in prose. The existing local-versus-HTTP choice was formalized, without fake tests.",
+    "Open UI retained old data after MCP changes, including an edition mismatch in Validation. Native Refresh synchronized; final UI/MCP values matched."
+  ],
+  "artifacts": {
+    "audit_path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\e2e-estoque-20261014\\audit.jsonl",
+    "audit_sha256": "8bdf9557ded49e96589a5ddb85bf30219453ac1a6f505a06b8e0917fc92cfdff",
+    "state_path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\e2e-estoque-20261014\\state.json",
+    "scripts_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\e2e-estoque-20261014"
+  }
+}
