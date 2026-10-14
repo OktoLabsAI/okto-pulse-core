@@ -732,6 +732,19 @@ def _implementation_cause_reasons(codes, record_id):
 
 
 _REASON_STATES = {
+    ReadinessReason.SCOPE_ALLOCATION_UNRESOLVED: UnitState.MISSING,
+    ReadinessReason.IMPLEMENTATION_MISSING: UnitState.MISSING,
+    ReadinessReason.IMPLEMENTATION_ASSOCIATION_MISSING: UnitState.MISSING,
+    ReadinessReason.VERIFICATION_PLAN_MISSING: UnitState.MISSING,
+    ReadinessReason.VERIFICATION_NOT_RUN: UnitState.MISSING,
+    ReadinessReason.VERIFICATION_INCONCLUSIVE: UnitState.MISSING,
+    ReadinessReason.VERIFICATION_ASSOCIATION_MISSING: UnitState.MISSING,
+    ReadinessReason.VERIFICATION_DEPENDENCY_PENDING: UnitState.MISSING,
+    ReadinessReason.DECISION_VERIFICATION_PENDING: UnitState.MISSING,
+    ReadinessReason.APPLICABLE_OBLIGATION_WAIVED: UnitState.MISSING,
+    ReadinessReason.LIFECYCLE_CARD_OPEN: UnitState.MISSING,
+    ReadinessReason.LIFECYCLE_GATE_PENDING: UnitState.MISSING,
+    ReadinessReason.HISTORICAL_COMPLETION_DIVERGED: UnitState.MISSING,
     ReadinessReason.VERIFICATION_CONFLICT: UnitState.CONFLICT,
     ReadinessReason.VERIFICATION_FAILED: UnitState.FAILED,
     ReadinessReason.ASSESSMENT_UNAVAILABLE: UnitState.UNKNOWN,
@@ -746,6 +759,26 @@ _REASON_STATES = {
     ReadinessReason.VERIFICATION_RECEIPT_INVALID: UnitState.STALE,
     ReadinessReason.IMPLEMENTATION_PARTIAL: UnitState.PARTIAL,
 }
+_DECISION_REASONS = {
+    'failed': ReadinessReason.VERIFICATION_FAILED,
+    'conflict': ReadinessReason.VERIFICATION_CONFLICT,
+    'inconclusive': ReadinessReason.VERIFICATION_INCONCLUSIVE,
+    'aborted': ReadinessReason.VERIFICATION_INCONCLUSIVE,
+    'unavailable': ReadinessReason.ASSESSMENT_UNAVAILABLE,
+    'revoked': ReadinessReason.VERIFICATION_RECEIPT_INVALID,
+    'planning_pending': ReadinessReason.DECISION_VERIFICATION_PENDING,
+    'inspection_pending': ReadinessReason.DECISION_VERIFICATION_PENDING,
+    'obligations_pending': ReadinessReason.DECISION_VERIFICATION_PENDING,
+}
+
+
+def readiness_reason_state(code):
+    try:
+        return _REASON_STATES[ReadinessReason(code)]
+    except (ValueError, TypeError, KeyError) as exc:
+        raise ReadinessIntegrityError('readiness_reason_unmapped') from exc
+
+
 _STATE_PRECEDENCE = (UnitState.CONFLICT, UnitState.FAILED, UnitState.UNKNOWN,
     UnitState.STALE, UnitState.PARTIAL, UnitState.MISSING, UnitState.SATISFIED)
 _KNOWN_ALLOCATION_GAPS = frozenset({
@@ -771,7 +804,7 @@ def _assessed_phase(*, satisfied=False, lifecycle=False, reasons=(), evidence_id
         r.code, r.native_reason_codes, r.source_ids, r.criterion_ids, r.scenario_ids,
         r.implementation_ids, tuple((b.obligation_ref, b.semantic_sha256) for b in r.bindings))))
     if state is None:
-        states = {_REASON_STATES.get(reason.code, UnitState.MISSING) for reason in reasons}
+        states = {readiness_reason_state(reason.code) for reason in reasons}
         state = UnitState.SATISFIED if satisfied else next(
             (value for value in _STATE_PRECEDENCE if value in states), UnitState.MISSING)
     return UnitPhaseAssessment(state, state,
@@ -824,13 +857,12 @@ def _verification_findings(context, obligation, row):
     if row.test_satisfied:
         return ()
     if obligation.family == 'decision':
-        state_reason = {
-            'failed': ReadinessReason.VERIFICATION_FAILED,
-            'conflict': ReadinessReason.VERIFICATION_CONFLICT,
-            'unavailable': ReadinessReason.ASSESSMENT_UNAVAILABLE,
-            'revoked': ReadinessReason.VERIFICATION_RECEIPT_INVALID,
-        }.get(row.decision_verification_status, ReadinessReason.DECISION_VERIFICATION_PENDING)
-        return (FactualReason(state_reason, source_ids=row.decision_review_ids),)
+        try:
+            state_reason = _DECISION_REASONS[row.decision_verification_status]
+        except (KeyError, TypeError) as exc:
+            raise ReadinessIntegrityError('readiness_native_reason_unmapped') from exc
+        return (FactualReason(state_reason, native_reason_codes=(row.decision_verification_status,),
+            source_ids=row.decision_review_ids, bindings=(obligation.binding,)),)
     reasons = [replace(item.reason, implementation_ids=(item.implementation_id,), bindings=(obligation.binding,))
         for item in row.scenario_findings]
     if context.admitted_methods is None:

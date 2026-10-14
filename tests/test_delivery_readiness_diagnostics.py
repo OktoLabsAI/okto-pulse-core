@@ -45,6 +45,12 @@ def test_closed_registry_and_unknown_reason_fail_explicitly():
         reason_definition('unmapped_native_failure')
     with pytest.raises(DiagnosticIntegrityError, match='readiness_tool_unregistered'):
         validate_diagnostic_registry(set())
+    from okto_pulse.core.domain.effective_delivery_coverage import readiness_reason_state
+    from okto_pulse.core.domain.delivery_assessment import ReadinessIntegrityError
+    for code in Reason:
+        assert readiness_reason_state(code) in UnitState
+    with pytest.raises(ReadinessIntegrityError, match='readiness_reason_unmapped'):
+        readiness_reason_state('unmapped_native_failure')
 
 
 def test_action_tools_and_argument_names_exist_in_live_registry_and_docs():

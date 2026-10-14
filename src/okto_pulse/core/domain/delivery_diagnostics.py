@@ -127,7 +127,7 @@ REASON_REGISTRY = MappingProxyType({item.code: item for item in (
     _reason('verification_plan_missing', 'A verificação aplicável de {subject} precisa ser qualificada.', ('resolve_scope',), fields=('entity_id', 'scenario_id')),
     _reason('verification_not_run', 'O cenário {subject} ainda não possui execução válida.', ('execute_verification',), preconditions=('native_scenario', 'implementation_base'), fields=('scenario_id',)),
     _reason('verification_failed', 'A verificação de {subject} falhou na base atual.', ('implement_contribution', 'execute_verification', 'review_decision'), fields=('scenario_id', 'observation_id')),
-    _reason('verification_inconclusive', 'A observação de {subject} não permite concluir a verificação.', ('execute_verification',), severity='medium', preconditions=('native_scenario', 'implementation_base'), fields=('scenario_id', 'observation_id')),
+    _reason('verification_inconclusive', 'A observação de {subject} não permite concluir a verificação.', ('execute_verification', 'review_decision'), severity='medium', fields=('scenario_id', 'observation_id')),
     _reason('verification_conflict', 'Há resultados correntes incompatíveis para {subject}.', ('resolve_verification_conflict', 'review_decision'), fields=('scenario_id', 'record_id')),
     _reason('verification_association_missing', 'O resultado válido de {subject} ainda não está associado à entrega.', ('associate_verification',), preconditions=('authenticated_current_result',), fields=('scenario_id', 'record_id')),
     _reason('verification_base_mismatch', 'A base observada por {subject} difere da base entregue.', ('associate_verification', 'execute_verification'), preconditions=('implementation_base',), fields=('source_ref', 'revision', 'scenario_id')),

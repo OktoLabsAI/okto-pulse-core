@@ -152,7 +152,7 @@ def test_owners_are_explicit_visible_facts_never_the_evidence_author():
     assert 'secret-person' not in repr(restricted)
 
 
-@pytest.mark.parametrize('status', ['failed', 'conflict', 'revoked', 'inspection_pending'])
+@pytest.mark.parametrize('status', ['failed', 'conflict', 'revoked', 'inspection_pending', 'inconclusive', 'aborted'])
 def test_scope_decision_uses_its_native_inspection_not_a_fictitious_test(status):
     from okto_pulse.core.domain.decision_verification import DecisionVerificationPlan, DecisionVerification
     from okto_pulse.core.domain.decision_review import DecisionInspectionState
@@ -172,6 +172,12 @@ def test_scope_decision_uses_its_native_inspection_not_a_fictitious_test(status)
     assert all(not d.test_card_ids for d in projection.details)
     assert any(f.text == 'Scope decision is coherent' for d in projection.details for f in d.expected)
     assert any(e.kind == 'inspection' and e.id == 'review' for d in projection.details for e in d.evidence_refs)
+    assert all(status in c.native_reason_codes for c in projection.graph.causes)
+    from okto_pulse.core.domain.delivery_assessment import ReadinessIntegrityError
+    unknown = replace(value, effective_context=replace(value.effective_context,
+        decision_inspections=(DecisionInspectionState('choice', 'd' * 64, 'unmapped_status', ('review',)),)))
+    with pytest.raises(ReadinessIntegrityError, match='readiness_native_reason_unmapped'):
+        assess_obligation_delivery(unknown)
 
 
 def test_registered_observation_text_remains_data_with_no_inferred_code_span():
@@ -227,3 +233,34 @@ def test_native_detail_summary_bounds_each_array_and_preserves_exact_totals():
     issue = render_diagnostic_issue(cause, detail, scope=value.scope, card_id=None, snapshot_id='a' * 64)
     assert len(issue.observed) == 10 and issue.observed_count == 25 and issue.observed_truncated
     assert len(detail.observed) == 25  # detail paging retains the remaining native facts
+
+
+def test_decision_obligation_dependency_disappears_when_existing_proof_is_associated():
+    from okto_pulse.core.domain.decision_verification import DecisionVerificationPlan, DecisionVerification
+    value = snapshot()
+    context = value.effective_context
+    binding = replace(value.obligations[0].binding, obligation_ref='fr:feature')
+    choice = replace(binding, obligation_ref='decision:reuse')
+    implementations = tuple(replace(i, fact=replace(i.fact, bindings=(binding,),
+        contributions=tuple(replace(c, binding=binding) for c in i.fact.contributions)),
+        scopes=tuple(replace(s, binding=binding) for s in i.scopes)) for i in context.implementations)
+    tests = tuple(replace(t, fact=replace(t.fact, bindings=(binding,))) for t in context.tests)
+    feature = replace(context.inventory.rows[0], binding=binding)
+    decision = replace(feature, binding=choice, family='decision', contributions=(),
+        decision_plan=DecisionVerificationPlan('reuse', DecisionVerification(obligation_refs=['fr:feature']), ()))
+    value = replace(value, obligations=(replace(value.obligations[0], binding=binding),
+        replace(value.obligations[0], binding=choice)), effective_context=replace(context,
+            inventory=replace(context.inventory, rows=(feature, decision))))
+    value = with_facts(value, implementations=implementations, tests=())
+    assessment = assess_obligation_delivery(value)
+    projection = compose_delivery_diagnostics(assessment, value,
+        permissions={'code_traceability.evidence.read': True, 'spec.tests.execute': True})
+    cause, _ = find(projection, 'decision_verification_pending')
+    dependencies = [c for c in projection.graph.causes if c.id in cause.depends_on_issue_ids]
+    assert dependencies and all(c.code == 'verification_association_missing' for c in dependencies)
+    review = next(a for a in projection.graph.actions if a.kind == 'review_decision')
+    assert review.state == 'waiting_dependency'
+    completed = with_facts(value, tests=tests)
+    result = assess_obligation_delivery(completed)
+    assert aggregate_delivery_metrics(result).verification.percent == 100
+    assert not compose_delivery_diagnostics(result, completed).graph.causes
