@@ -175,6 +175,7 @@ class ImplementationExecutionProof:
     blocking_progress_ids: tuple[str, ...] = ()
     blocking_progress_truncated: bool = False
     observed_at: datetime | None = None
+    rejection_reasons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -334,6 +335,21 @@ def delivery_waiver_current(item: DeliveryWaiverFact, scope: DeliveryScope,
 
 
 @dataclass(frozen=True, slots=True)
+class DeliveryRecordRejection:
+    """Rejected selected input remains inspectable without becoming a blocker.
+
+    Scope/selection and current valid proof determine its relevance. Merely
+    retaining an invalid historical record must not revoke a sufficient proof.
+    """
+    record_id: str
+    scope: DeliveryScope
+    card_id: str
+    kind: Literal['implementation', 'test']
+    bindings: tuple[DeliveryBinding, ...]
+    reason_codes: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class DeliveryEvidenceSnapshot:
     scope: DeliveryScope
     obligations: tuple[DeliveryObligation, ...]
@@ -343,6 +359,7 @@ class DeliveryEvidenceSnapshot:
     complete: bool = False
     # Server-resolved contract. Missing context is incomplete, never a fallback.
     effective_context: object | None = None
+    rejected_records: tuple[DeliveryRecordRejection, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -367,6 +384,7 @@ class DeliveryCoverageEvaluation:
     rows: tuple[DeliveryCoverageRow, ...]
     blockers: tuple[str, ...]
     rejected_record_ids: tuple[str, ...]
+    rejected_records: tuple[DeliveryRecordRejection, ...] = ()
 
     @property
     def allowed(self) -> bool:
@@ -424,7 +442,11 @@ def _evaluate_delivery_facts(
     test_index: dict[DeliveryBinding, set[str]] = {}
     tested_implementation_index: dict[DeliveryBinding, set[str]] = {}
     waiver_index: dict[tuple[DeliveryBinding, DeliveryPhase], set[str]] = {}
-    rejected: set[str] = set()
+    rejected: set[str] = {
+        item.record_id for item in snapshot.rejected_records if item.scope == snapshot.scope
+    }
+    if any(item.scope != snapshot.scope for item in snapshot.rejected_records):
+        blockers.append('delivery_record_scope_mismatch')
 
     for item in snapshot.implementations:
         valid = (

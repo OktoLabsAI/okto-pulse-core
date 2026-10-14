@@ -216,7 +216,8 @@ def evaluate_effective_snapshot(snapshot, *, require_lifecycle: bool = True):
         row.decision_verification_status, row.decision_review_ids, row.missing_scenarios,
         row.conflicting_scenario_receipts,
         row.scenario_findings,
-    ) for row in result.rows if row.binding in obligations), result.blockers, result.rejected_record_ids)
+    ) for row in result.rows if row.binding in obligations), result.blockers, result.rejected_record_ids,
+        tuple(item for item in snapshot.rejected_records if item.scope == snapshot.scope))
 
 
 def evaluate_effective_delivery_coverage(
@@ -287,7 +288,7 @@ def evaluate_effective_delivery_coverage(
     # unknown coverage, not a truncated population that could appear complete.
     if (
         len(inventory.rows) > 5000
-        or len(snapshot.implementations) + len(snapshot.tests) + len(snapshot.waivers)
+        or len(snapshot.implementations) + len(snapshot.tests) + len(snapshot.waivers) + len(snapshot.rejected_records)
         > 10000
         or sum(
             len(row.contributions)
