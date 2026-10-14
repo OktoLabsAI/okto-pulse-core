@@ -1,6 +1,6 @@
 """Native completion diagnostics inside the edition's authorized read snapshot."""
-from okto_pulse.core.domain.enums import CardStatus
-from okto_pulse.core.domain.code_traceability import CodeTraceabilitySubjectType, CodeTraceabilityContractError
+from okto_pulse.core.domain.enums import CardStatus, SpecStatus
+from okto_pulse.core.domain.code_traceability import CodeTraceabilitySubjectType, CodeTraceabilityContractError, CodeDeliveryContextRequired
 from okto_pulse.core.domain.delivery_inventory import delivery_digest
 from okto_pulse.core.domain.guideline_semantic_transition import PolicyTransitionDecision, PolicyTransitionReasonCode
 from okto_pulse.core.domain.sdlc_registry import transition_requires_policy_compliance
@@ -9,23 +9,29 @@ from okto_pulse.core.ports.guideline_policy import GuidelinePolicyPersistenceErr
 from okto_pulse.core.ports.code_traceability import CodeTraceabilityPersistenceError
 from okto_pulse.core.services.gate_contracts import GateContractError
 from okto_pulse.core.services.card_errors import CardOperationError
-from okto_pulse.core.services.main import GovernedCompletionBlocked, CompletionInfrastructureUnavailable, evaluate_code_traceability_transition
+from okto_pulse.core.services.main import (
+    GovernedCompletionBlocked, CompletionInfrastructureUnavailable,
+    evaluate_code_traceability_transition, evaluate_critical_context,
+)
+from okto_pulse.core.services.critical_context_guard import CriticalAction, CriticalContextDecision, FullContextGuardError
 from okto_pulse.core.services.code_traceability_gate import CodeTraceabilityGateEvaluation
 from okto_pulse.core.services.resource_gate_contracts import ResourceGateViolation
 
 
 class DeliveryReadinessLifecycleService:
-    def __init__(self, services, *, persistence, context, traceability_evaluator=evaluate_code_traceability_transition):
+    def __init__(self, services, *, persistence, context, traceability_evaluator=evaluate_code_traceability_transition,
+                 critical_context_evaluator=evaluate_critical_context):
         self.services, self.persistence, self.context = services, persistence, context
         self.traceability_evaluator = traceability_evaluator
+        self.critical_context_evaluator = critical_context_evaluator
 
     async def evaluate(self, batch, *, card_id=None):
         """Read existing gates; do not dry-run a move or recompute delivery proof.
 
-        A known blocker is authoritative negative evidence. Passing the subset
-        evaluated here is not final permission: source-context, critical-context
-        and other transition inputs still require the native transition surface.
-        This distinction also prevents a historical Done from authorizing itself.
+        A known blocker is authoritative negative evidence. Spec completion
+        reads share its native prerequisites; Card report inputs still require
+        the transition surface. Every mutation must independently reauthorize
+        and reload under its fence; a historical Done cannot authorize itself.
         """
         scope, access = batch.facts.scope, batch.access
         card = next((c for c in batch.cards if c.id == card_id), None) if card_id else None
@@ -34,10 +40,14 @@ class DeliveryReadinessLifecycleService:
         status = card.status if card else batch.spec_status
         status = getattr(status, 'value', status)
         traceability_basis = None
+        critical_basis = None
         def result(check, reasons, blockers=(), *, basis_digest=None):
             if traceability_basis is not None:
                 basis_digest = delivery_digest({'traceability': traceability_basis, 'policy': basis_digest})
+            if critical_basis is not None:
+                basis_digest = delivery_digest({'critical_context': critical_basis, 'native': basis_digest})
             return ReadinessNativeLifecycle(card_id, status, check, tuple(reasons),
+                other_blocker_count=0 if check == 'allowed' else None,
                 blocking_codes=tuple(blockers), basis_digest=basis_digest)
         if access is None:
             return result('not_evaluated', ('native_transition_permission_required',))
@@ -67,6 +77,7 @@ class DeliveryReadinessLifecycleService:
                 await self.services.cards.validate_completion_admission(subject, board)
                 await self.services.cards.validate_dependency_admission(subject, CardStatus.DONE)
             else:
+                self.services.specs.validate_transition_source_context(spec, SpecStatus.DONE)
                 await self.services.specs.validate_completion_gates(spec, board, read_only_preview=True)
         except CompletionInfrastructureUnavailable:
             return result('not_evaluated', ('native_completion_infrastructure_unavailable',))
@@ -76,7 +87,7 @@ class DeliveryReadinessLifecycleService:
             if details.get('nature') == 'source_unavailable':
                 return result('not_evaluated', (exc.code,))
             return result('blocked', (exc.code,), (exc.code,))
-        except (GovernedCompletionBlocked, ResourceGateViolation, CardOperationError) as exc:
+        except (GovernedCompletionBlocked, ResourceGateViolation, CardOperationError, CodeDeliveryContextRequired) as exc:
             return result('blocked', (exc.code,), (exc.code,))
         # Native read evaluation consumes admitted relational attestations only;
         # it never investigates files, invokes a runner or enforces a mutation.
@@ -136,5 +147,17 @@ class DeliveryReadinessLifecycleService:
                 return result('not_evaluated', ('native_completion_infrastructure_unavailable',), basis_digest=basis)
             except (GovernedCompletionBlocked, ResourceGateViolation) as exc:
                 return result('blocked', (exc.code,), (exc.code,), basis_digest=basis)
-        return result('not_evaluated', ('native_completion_report_required' if card else 'native_transition_context_required',),
+        try:
+            critical = await self.critical_context_evaluator(self.context, board_id=scope.board_id,
+                actor_id=access.actor_id, entity_type=entity, entity_id=subject.id,
+                critical_action=CriticalAction.CARD_CLOSEOUT if card else CriticalAction.SPEC_CLOSEOUT,
+                surface='service')
+        except FullContextGuardError as exc:
+            return result('not_evaluated', (exc.reason,), basis_digest=policy.observation_digest if policy else None)
+        if (not isinstance(critical, CriticalContextDecision) or critical.board_id != scope.board_id
+            or critical.actor_id != access.actor_id or critical.entity_type != entity
+            or critical.entity_id != subject.id or critical.outcome != 'allow'):
+            raise ReadinessReadError('readiness_assessment_unavailable', native_code='critical_context_preview_invalid')
+        critical_basis = critical.context_fingerprint
+        return result('not_evaluated' if card else 'allowed', ('native_completion_report_required',) if card else (),
             basis_digest=policy.observation_digest if policy else None)

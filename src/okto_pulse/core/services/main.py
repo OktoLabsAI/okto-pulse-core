@@ -1540,6 +1540,18 @@ async def _record_critical_context_decision(
     await _application_flush(db)
 
 
+async def evaluate_critical_context(
+    db: Any, *, board_id: str, actor_id: str, entity_type: str,
+    entity_id: str, critical_action: CriticalAction, surface: str = "service",
+) -> CriticalContextDecision:
+    """Resolve the native guard without its mutation audit or metric writer."""
+    return await FullContextCriticalActionGuard(
+        db, resolvers=build_default_full_context_resolvers(db),
+    ).authorize_and_resolve(board_id=board_id, actor_id=actor_id,
+        entity_type=entity_type, entity_id=entity_id,
+        critical_action=critical_action, surface=surface)
+
+
 async def _authorize_critical_context_or_raise(
     db: Any,
     *,
@@ -1562,12 +1574,9 @@ async def _authorize_critical_context_or_raise(
     of the read phase.
     """
 
-    guard = FullContextCriticalActionGuard(
-        db,
-        resolvers=build_default_full_context_resolvers(db),
-    )
     try:
-        decision = await guard.authorize_and_resolve(
+        decision = await evaluate_critical_context(
+            db,
             board_id=board_id,
             actor_id=actor_id,
             entity_type=entity_type,
@@ -11389,6 +11398,60 @@ class SpecService:
                 details={"spec_edition": int(spec.edition)},
             )
 
+    def validate_transition_source_context(self, spec, target: SpecStatus) -> None:
+        """Read the native source provenance/pin prerequisite for advancing."""
+        advancing = (
+            target is not SpecStatus.CANCELLED
+            and self._STATUS_ORDER[target] > self._STATUS_ORDER[spec.status]
+        )
+        if advancing:
+            delivery_context = _delivery_context_or_none(spec)
+            provenance = _spec_context_provenance_or_none(spec)
+            provenance_matches_lineage = bool(
+                provenance is not None
+                and delivery_context is provenance.value
+                and (
+                    (
+                        isinstance(
+                            provenance,
+                            DirectSpecDeliveryContextProvenance,
+                        )
+                        and provenance.source_spec_id == spec.id
+                        and getattr(spec, "refinement_id", None) is None
+                    )
+                    or (
+                        isinstance(provenance, SpecDeliveryContextProvenance)
+                        and provenance.source_refinement_id
+                        == getattr(spec, "refinement_id", None)
+                    )
+                )
+            )
+            source_context_is_pinned = bool(
+                delivery_context is not None
+                and provenance is not None
+                and _spec_source_context_manifest_matches(
+                    spec,
+                    delivery_context=delivery_context,
+                    provenance=provenance,
+                )
+            )
+            if (
+                delivery_context is None
+                or not provenance_matches_lineage
+                or not source_context_is_pinned
+            ):
+                # Legacy rows remain readable/editable in Draft, but a human
+                # must explicitly bootstrap a direct Spec (or govern a
+                # Refinement-linked rebase) before minting lifecycle facts.
+                raise CodeDeliveryContextRequired(
+                    details={
+                        "reason": "spec_advance_delivery_context_required",
+                        "from_status": spec.status.value,
+                        "to_status": target.value,
+                    }
+                )
+
+
     async def validate_completion_gates(self, spec, board, *, read_only_preview=False) -> None:
         """Shared native Spec completion checks, excluding delivery and Policy.
 
@@ -11598,56 +11661,7 @@ class SpecService:
                 f"Allowed transitions: {allowed_values}"
             )
 
-        advancing = (
-            data.status is not SpecStatus.CANCELLED
-            and self._STATUS_ORDER[data.status] > self._STATUS_ORDER[spec.status]
-        )
-        if advancing:
-            delivery_context = _delivery_context_or_none(spec)
-            provenance = _spec_context_provenance_or_none(spec)
-            provenance_matches_lineage = bool(
-                provenance is not None
-                and delivery_context is provenance.value
-                and (
-                    (
-                        isinstance(
-                            provenance,
-                            DirectSpecDeliveryContextProvenance,
-                        )
-                        and provenance.source_spec_id == spec.id
-                        and getattr(spec, "refinement_id", None) is None
-                    )
-                    or (
-                        isinstance(provenance, SpecDeliveryContextProvenance)
-                        and provenance.source_refinement_id
-                        == getattr(spec, "refinement_id", None)
-                    )
-                )
-            )
-            source_context_is_pinned = bool(
-                delivery_context is not None
-                and provenance is not None
-                and _spec_source_context_manifest_matches(
-                    spec,
-                    delivery_context=delivery_context,
-                    provenance=provenance,
-                )
-            )
-            if (
-                delivery_context is None
-                or not provenance_matches_lineage
-                or not source_context_is_pinned
-            ):
-                # Legacy rows remain readable/editable in Draft, but a human
-                # must explicitly bootstrap a direct Spec (or govern a
-                # Refinement-linked rebase) before minting lifecycle facts.
-                raise CodeDeliveryContextRequired(
-                    details={
-                        "reason": "spec_advance_delivery_context_required",
-                        "from_status": spec.status.value,
-                        "to_status": data.status.value,
-                    }
-                )
+        self.validate_transition_source_context(spec, data.status)
 
         # Load board for settings
         board = await _application_get(self.db, "board", spec.board_id)

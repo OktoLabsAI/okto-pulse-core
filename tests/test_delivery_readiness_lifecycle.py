@@ -2,7 +2,7 @@
 from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -20,6 +20,7 @@ from okto_pulse.core.services.delivery_readiness_lifecycle import DeliveryReadin
 from okto_pulse.core.services.gate_contracts import GateContractError
 from okto_pulse.core.services.main import CompletionInfrastructureUnavailable, GovernedCompletionBlocked
 from okto_pulse.core.services.resource_gate_contracts import ResourceGateViolation
+from okto_pulse.core.services.critical_context_guard import CriticalContextDecision, FullContextUnavailableError
 from test_delivery_obligation_assessment import snapshot
 from test_delivery_readiness_shared_evaluation import prepared
 from test_delivery_readiness_paging import Cursor
@@ -62,7 +63,8 @@ def environment(error=None):
     spec = SimpleNamespace(id='spec', board_id='board', edition=2, version=1, status=SpecStatus.IN_PROGRESS)
     checks = AsyncMock(side_effect=error)
     services = SimpleNamespace(specs=SimpleNamespace(get_spec=AsyncMock(return_value=spec),
-        validate_completion_gates=checks), boards=SimpleNamespace(get_board=AsyncMock(return_value=object())),
+        validate_completion_gates=checks, validate_transition_source_context=Mock()),
+        boards=SimpleNamespace(get_board=AsyncMock(return_value=object())),
         cards=SimpleNamespace(validate_completion_admission=AsyncMock(), _validate_cognitive_done=AsyncMock(),
             validate_completion_references=AsyncMock(), validate_dependency_admission=AsyncMock()),
         resource_gate=SimpleNamespace(validate_or_raise_entity_completion=AsyncMock()),
@@ -74,8 +76,13 @@ def environment(error=None):
         return services.specs.get_spec.return_value if entity == 'spec' else services.boards.get_board.return_value
     services.persistence = SimpleNamespace(get=AsyncMock(side_effect=get))
     services.traceability = AsyncMock(return_value=None)
+    def critical_context(_context, **kwargs):
+        return CriticalContextDecision(**kwargs, outcome='allow', reason='guard_disabled',
+            context_profile='not_required', context_fingerprint=None, context_resolved_at=None, latency_ms=0)
+    services.critical_context = AsyncMock(side_effect=critical_context)
     return batch, services, DeliveryReadinessLifecycleService(services,
-        persistence=services.persistence, context=object(), traceability_evaluator=services.traceability)
+        persistence=services.persistence, context=object(), traceability_evaluator=services.traceability,
+        critical_context_evaluator=services.critical_context)
 
 
 def card_environment():
@@ -143,12 +150,15 @@ async def test_unauthorized_native_preview_performs_no_gate_reads(missing):
 
 
 @pytest.mark.asyncio
-async def test_successful_subset_does_not_advertise_final_transition_authority():
+async def test_spec_native_prerequisites_allow_read_preview_without_enforcing_a_mutation():
     batch, services, evaluator = environment()
     native = await evaluator.evaluate(batch)
     services.specs.validate_completion_gates.assert_awaited_once()
-    assert native.check_status == 'not_evaluated' and native.blocking_codes == ()
-    assert native.reason_codes == ('native_transition_context_required',)
+    assert native.check_status == 'allowed' and native.blocking_codes == ()
+    assert native.reason_codes == () and native.other_blocker_count == 0
+    services.specs.validate_transition_source_context.assert_called_once_with(
+        services.specs.get_spec.return_value, SpecStatus.DONE)
+    services.critical_context.assert_awaited_once()
     assert native.basis_digest is None
     services.guidelines.preview_policy_transition.assert_not_awaited()
     services.guidelines.enforce_policy_transition.assert_not_awaited()
@@ -275,6 +285,38 @@ async def test_native_traceability_reuses_policy_without_leaking_details_or_redu
         receipt_currentness={'another-private-id': 'stale'})
     changed = await evaluator.evaluate(batch, card_id='ui')
     assert native.reason_codes == changed.reason_codes and native.basis_digest != changed.basis_digest
+
+
+@pytest.mark.asyncio
+async def test_native_critical_context_unavailable_keeps_scores_and_private_details_out():
+    batch, services, evaluator = card_environment()
+    decision = await services.critical_context(None, board_id='board', actor_id=batch.access.actor_id,
+        entity_type='card', entity_id='ui', critical_action='card.closeout', surface='service')
+    services.critical_context.side_effect = FullContextUnavailableError('Private context failure',
+        decision=replace(decision, outcome='deny', reason='full_context_unavailable'))
+    native = await evaluator.evaluate(batch, card_id='ui')
+    assert native.check_status == 'not_evaluated' and native.reason_codes == ('full_context_unavailable',)
+    assert not native.blocking_codes
+    context = EvaluatedDeliveryReadiness(replace(batch, native_lifecycle=native), actor_id='reader').context('ui')
+    assert context.implementation.percent == context.verification.percent == 100
+    assert 'Private context' not in context.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_native_critical_context_fingerprint_changes_snapshot_basis_without_time_noise():
+    batch, services, evaluator = card_environment()
+    decision = await services.critical_context(None, board_id='board', actor_id=batch.access.actor_id,
+        entity_type='card', entity_id='ui', critical_action='card.closeout', surface='service')
+    services.critical_context.side_effect = None
+    services.critical_context.return_value = replace(decision, reason='full_context_resolved',
+        context_fingerprint='ctx_sha256_v1:' + 'a' * 64, context_profile='full')
+    before = await evaluator.evaluate(batch, card_id='ui')
+    services.critical_context.return_value = replace(services.critical_context.return_value,
+        latency_ms=100, context_resolved_at='2026-10-14T12:00:00Z')
+    assert (await evaluator.evaluate(batch, card_id='ui')).basis_digest == before.basis_digest
+    services.critical_context.return_value = replace(services.critical_context.return_value,
+        context_fingerprint='ctx_sha256_v1:' + 'b' * 64)
+    assert (await evaluator.evaluate(batch, card_id='ui')).basis_digest != before.basis_digest
 
 
 @pytest.mark.asyncio
