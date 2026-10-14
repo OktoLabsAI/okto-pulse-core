@@ -16186,70 +16186,33 @@ async def okto_pulse_submit_spec_evaluation(
 
 
 @mcp.tool()
-async def okto_pulse_list_spec_evaluations(board_id: str, spec_id: str) -> str:
-    """
-    List all qualitative evaluations for a spec, with stale indication."""
+async def okto_pulse_list_spec_evaluations(
+    board_id: str, spec_id: str, view: Literal["all", "current", "previous"] = "all",
+    offset: int = 0, limit: int = 25,
+) -> str:
+    """Page native decomposition opinions with Current/Previous edition semantics."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-
     perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
-
-    from okto_pulse.core.application.use_cases import GetSpecCommand, GetSpecUseCase
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.application.use_cases.spec_crud import (
+        ListSpecEvaluationsCommand, ListSpecEvaluationsUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
+        command = ListSpecEvaluationsCommand(spec_id, view=view, offset=offset, limit=limit)
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            spec = (
-                await GetSpecUseCase().execute(
-                    GetSpecCommand(spec_id), actor=actor, uow=uow
-                )
-            ).spec
-            evaluations = spec.evaluations or []
-    except EntityNotFoundError:
-        return json.dumps({"error": "Spec not found"})
-
-    non_stale = [e for e in evaluations if not e.get("stale")]
-    approvals = [e for e in non_stale if e.get("recommendation") == "approve"]
-
-    summary = {
-        "total": len(evaluations),
-        "non_stale": len(non_stale),
-        "approvals": len(approvals),
-        "rejections": len(
-            [e for e in non_stale if e.get("recommendation") == "reject"]
-        ),
-        "request_changes": len(
-            [e for e in non_stale if e.get("recommendation") == "request_changes"]
-        ),
-        "avg_score_approvals": (
-            sum(e.get("overall_score", 0) for e in approvals) / len(approvals)
-            if approvals
-            else 0
-        ),
-        "stale_count": len(evaluations) - len(non_stale),
-    }
-
-    # Return summary view (without full dimensions)
-    eval_list = [
-        {
-            "id": e.get("id"),
-            "evaluator_id": e.get("evaluator_id"),
-            "evaluator_name": e.get("evaluator_name"),
-            "evaluator_type": e.get("evaluator_type"),
-            "overall_score": e.get("overall_score"),
-            "recommendation": e.get("recommendation"),
-            "stale": e.get("stale", False),
-            "created_at": e.get("created_at"),
-        }
-        for e in evaluations
-    ]
-
-    return json.dumps({"evaluations": eval_list, "summary": summary}, default=str)
+            result = await ListSpecEvaluationsUseCase().execute(command, actor=actor, uow=uow)
+        return json.dumps(result.data, default=str)
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
 
 
 @mcp.tool()

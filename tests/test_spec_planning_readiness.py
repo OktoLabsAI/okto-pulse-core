@@ -195,3 +195,21 @@ async def test_malformed_quality_edition_is_unavailable_not_authored_rejection()
     component = by_key(result)["spec_validation"]
     assert component.state == "unavailable"
     assert component.native_result is None and component.result_ids == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field,permission,key,method", [
+    ("integration_requirements", "spec.integration_requirements.read", "integration_coverage", "check_ir_coverage"),
+    ("observability_requirements", "spec.observability_requirements.read", "observability_coverage", "check_or_coverage"),
+    ("api_contracts", "spec.contracts.read", "contract_coverage", "check_contract_coverage"),
+    ("test_scenarios", "spec.tests.read", "test_card_coverage", "check_test_coverage"),
+])
+async def test_coverage_hides_native_diagnostics_without_component_read(field, permission, key, method):
+    inputs = rig()
+    setattr(inputs["spec"], field, [{"id": "protected", "title": "Confidential detail"}])
+    reader = getattr(inputs["cards"], method)
+    reader.side_effect = ValueError("Confidential detail has no linked card")
+    inputs["can_read"] = lambda leaf: leaf != permission
+    component = by_key(await read_spec_planning_readiness(**inputs))[key]
+    reader.assert_not_awaited()
+    assert component.state == "unavailable" and component.message is None

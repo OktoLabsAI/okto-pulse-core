@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — checkpoint parcial antes de reconciliar o planejamento
+
+Base publicada: Core 3dce9233 / Community 204c7f4a, feature/v0.4.0.
+Pedido atual: iniciar o planejamento detalhado; preservar o trabalho existente
+antes de revisar o documento único. Este checkpoint não encerra U2 ou U3.
+
+Trabalho já presente no checkout: proteção de leitura por componente no
+planning readiness; paginação Current/Previous da decomposição no serviço,
+use case, REST e MCP; resumo compacto de planejamento com destinos de correção;
+watcher/hook compartilhado de revisões e testes. O hook ainda não tem consumidor
+nas telas. Histórico/formulário composto, conflito explícito e sincronização
+visual continuam pendentes. Cliente de listagem ainda não expõe a paginação.
+Catálogo MCP regenerado pelo gerador oficial, sem edição manual.
+
+Conferência deste checkpoint, com PYTHONPATH explícito das duas src: 57 passes
+e uma falha em test_spec_planning_readiness.py,
+test_spec_evaluation_currentness.py e test_spec_evaluation_rest_parity.py.
+A falha é test_planner_without_evaluation_grant_cannot_approve_via_rest:
+assert_awaited_once_with esperava uma resolução de permissões e observou três
+após inclusão das autorizações de leitura. Investigar e testar o contrato de
+acesso antes de encerrar o incremento; não relaxar autorização para obter verde.
+Catálogo: cinco passes. Frontend: 20 passes em workspaceRevisionWatch e
+SpecValidationPanel. diff --check aprovado em ambos os repositórios.
+
+Este é WIP explícito, não release nem prova fim a fim. Closure, wheels,
+instalação e browser não foram requalificados neste checkpoint. Home e runtime
+do usuário não foram alterados. A revisão documental seguinte deve reconciliar
+o estado real e manter U1–U4 / UV01–UV24, sem criar novos alvos.
+
 ### 2026-10-14 — U2: composição pública e revisões leves de workspace
 
 Continuação U1–U4 / UV01–UV24 sobre Core 207da2bc / Community 31c82a4c.

@@ -23,6 +23,19 @@ PLANNING_COVERAGE_CHECKS = (
     ("code_evidence", "check_code_evidence_coverage", "skip_code_evidence_coverage", None),
 )
 
+_COVERAGE_READ_PERMISSIONS = {
+    "acceptance_coverage": ("spec.tests.read",),
+    "test_card_coverage": ("spec.tests.read", "card.entity.read"),
+    "business_coverage": ("spec.rules.read", "card.entity.read"),
+    "technical_coverage": ("card.entity.read",),
+    "contract_coverage": ("spec.contracts.read", "card.entity.read"),
+    "integration_coverage": ("spec.integration_requirements.read", "card.entity.read"),
+    "observability_coverage": ("spec.observability_requirements.read", "card.entity.read"),
+    "task_requirement_links": ("card.entity.read",),
+    "decision_verification": (),
+    "code_evidence": ("code_traceability.evidence.read", "code_traceability.investigation.read"),
+}
+
 
 async def require_planning_coverage(cards, spec, board, *, quality_enabled: bool) -> None:
     """Execute the existing predicates in their native order and retain errors."""
@@ -58,7 +71,8 @@ async def read_spec_planning_readiness(
                 native_result="off" if not enabled else "not_applicable",
             )
             return
-        if not can_read(permission):
+        permissions = (permission,) if isinstance(permission, str) else permission
+        if not all(can_read(item) for item in permissions):
             results[key] = SpecPlanningComponent.unreadable(key)
             return
         try:
@@ -167,12 +181,13 @@ async def read_spec_planning_readiness(
         if key == "acceptance_coverage":
             enabled = enabled and quality_enabled
         await observe(
-            key, "spec.entity.read", lambda method=method: getattr(cards, method)(spec, board),
+            key, ("spec.entity.read", *_COVERAGE_READ_PERMISSIONS[key]),
+            lambda method=method: getattr(cards, method)(spec, board),
             enabled=enabled, applicable=bool(getattr(spec, field, None)) if field else True,
             next_action=action("spec.entity.edit_fields", "review_planning_content"),
         )
     await observe(
-        "architecture", "spec.entity.read",
+        "architecture", ("spec.entity.read", "spec.architecture.read"),
         lambda: resources.validate_or_raise_spec_architecture_validation_resource(
             spec.board_id, spec.id, board=board, phase="spec_validation"),
         enabled=resources.is_spec_architecture_required_for_validation(board),

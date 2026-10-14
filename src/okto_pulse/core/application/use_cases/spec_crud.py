@@ -2015,10 +2015,15 @@ class SubmitSpecEvaluationUseCase:
 
 
 class ListSpecEvaluationsCommand:
-    __slots__ = ("spec_id",)
+    __slots__ = ("spec_id", "view", "offset", "limit")
 
-    def __init__(self, spec_id: str) -> None:
+    def __init__(self, spec_id: str, *, view: str = "all", offset: int = 0, limit: int = 25) -> None:
+        if view not in {"all", "current", "previous"}:
+            raise ValueError("spec_evaluation_view_invalid")
+        if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("spec_evaluation_pagination_invalid")
         self.spec_id = spec_id
+        self.view, self.offset, self.limit = view, offset, limit
 
 
 class ListSpecEvaluationsResult:
@@ -2041,8 +2046,13 @@ class ListSpecEvaluationsUseCase:
         uow: PulseUnitOfWork,
     ) -> ListSpecEvaluationsResult:
         try:
-            await _require_actor_board_spec(uow, command.spec_id, actor)
+            spec = await _require_actor_board_spec(uow, command.spec_id, actor)
         except EntityNotFoundError as exc:
             raise ValueError("Spec not found") from exc
-        result = await uow.services.specs.list_spec_evaluations(command.spec_id)
+        from okto_pulse.core.application.use_cases.authorization import PermissionRequirement, require_authorization
+        for permission in ("spec.entity.read", "spec.evaluations.read"):
+            await require_authorization(actor, PermissionRequirement(permission), uow=uow, board_id=spec.board_id)
+        result = await uow.services.specs.list_spec_evaluations(
+            command.spec_id, view=command.view, offset=command.offset, limit=command.limit,
+        )
         return ListSpecEvaluationsResult(result)

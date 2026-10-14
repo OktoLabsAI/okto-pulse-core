@@ -12976,18 +12976,25 @@ class SpecService:
         )
         return evaluation
 
-    async def list_spec_evaluations(self, spec_id: str) -> dict[str, Any]:
-        """List spec evaluations (newest first) with an active (non-stale) count."""
+    async def list_spec_evaluations(
+        self, spec_id: str, *, view: str = "all", offset: int = 0, limit: int = 25,
+    ) -> dict[str, Any]:
+        """Page native opinions by lifecycle edition without recomputing scores."""
+        if view not in {"all", "current", "previous"} or type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("spec_evaluation_pagination_invalid")
         spec = await self.get_spec(spec_id)
         if not spec:
             raise ValueError("Spec not found")
         evaluations = list(spec.evaluations or [])
         projected = [project_spec_evaluation(e, int(spec.edition)) for e in evaluations]
+        selected = [item for item in reversed(projected)
+                    if view == "all" or item["lifecycle_state"] == view]
         return {
             "spec_id": spec_id,
             "spec_status": spec.status.value,
             "current_edition": int(spec.edition),
-            "evaluations": list(reversed(projected)),
+            "evaluations": selected[offset:offset + limit],
+            "total": len(selected), "offset": offset, "limit": limit, "view": view,
             "active_count": sum(e["is_current"] for e in projected),
             "previous_count": sum(not e["is_current"] for e in projected),
         }
