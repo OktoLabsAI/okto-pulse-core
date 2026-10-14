@@ -605,6 +605,8 @@ raising the numbers.
 Args:
     board_id: Board ID
     spec_id: Spec ID (must be in 'approved' status)
+    idempotency_key: Required operation key (1..128 characters). Reuse the exact
+        key and authored payload after interruption; changing input requires a new key.
     expected_validation_edition: Current human lifecycle edition
     expected_spec_version: Current technical Spec version
     expected_head_revision: Current validation head revision
@@ -667,6 +669,14 @@ Returns:
     spec_status, planning_result (ready/blocked), decomposition_ids and planning_blockers.
     Native scores, thresholds and pinpoints remain available in validation history.
     No average is computed across quality and decomposition evaluations.
+
+Replay is scoped by authenticated actor and Spec. Identical input returns the
+original operation receipt without another review or promotion, even after a
+later lifecycle transition. Receipt state describes the original operation;
+read the current Spec/cycle for its present state. A reused key with different
+input conflicts. Replay rechecks Spec and assessment read permissions, including
+decomposition read when its IDs are returned. The receipt is committed atomically
+with both native histories and contains no duplicate scores, pinpoints or bodies.
 
 ## `okto_pulse_update_spec`
 

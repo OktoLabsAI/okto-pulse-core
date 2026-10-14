@@ -155,7 +155,22 @@ class _Specs:
 
     async def submit_spec_validation(self, **kwargs: object) -> dict[str, object]:
         self.submitted = kwargs["data"]
-        return {"id": "validation-1", **self.submitted}
+        return {
+            "validation_id": "validation-1", "validation_edition": 3, "is_current": True,
+            "outcome": "success", "spec_status": "approved", "planning_result": "blocked",
+            "decomposition_ids": [], "planning_blockers": ["decomposition_approval_missing"],
+        }
+
+
+class _Receipts:
+    def __init__(self):
+        self.rows = {}
+
+    async def get(self, scope):
+        return self.rows.get(scope)
+
+    async def save(self, receipt):
+        self.rows[receipt.scope] = receipt
 
 
 class _Uow:
@@ -164,6 +179,7 @@ class _Uow:
         self.services = SimpleNamespace(specs=self.specs)
         self.semantic_subject_projection = _Projection()
         self.commit_calls = 0
+        self.spec_validation_receipts = _Receipts()
 
     async def commit(self) -> None:
         self.commit_calls += 1
@@ -178,6 +194,7 @@ def _payload(
     anchor_ref: str | None = "ac_123",
 ) -> dict[str, object]:
     return {
+        "idempotency_key": "snapshot-review",
         "expected_validation_edition": 3,
         "expected_spec_version": 17,
         "expected_head_revision": 0,
@@ -220,8 +237,9 @@ async def test_submit_use_case_seals_snapshot_before_persistence() -> None:
         uow=uow,
     )
 
-    snapshot = result.payload["pinpoints"][0]["anchor_snapshot"]
-    assert result.payload["pinpoints"][0]["rationale"] == _payload()["pinpoints"][0]["rationale"]
+    assert result.payload["validation_id"] == "validation-1"
+    snapshot = uow.specs.submitted["pinpoints"][0]["anchor_snapshot"]
+    assert uow.specs.submitted["pinpoints"][0]["rationale"] == _payload()["pinpoints"][0]["rationale"]
     assert snapshot["availability_at_seal"] == "available"
     assert snapshot["label"].startswith("AC-1")
     assert uow.commit_calls == 1
@@ -256,7 +274,8 @@ async def test_all_anchor_kinds_are_sealed_from_authorized_projection(
         ),
         uow=uow,
     )
-    assert result.payload["pinpoints"][0]["anchor_snapshot"][
+    assert result.payload["validation_id"] == "validation-1"
+    assert uow.specs.submitted["pinpoints"][0]["anchor_snapshot"][
         "availability_at_seal"
     ] == "available"
 

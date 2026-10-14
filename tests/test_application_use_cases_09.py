@@ -35,6 +35,7 @@ from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 ACTOR = "uc09-actor"
 
 _VALID_VALIDATION_FENCES = {
+    "idempotency_key": "use-case-review",
     "expected_validation_edition": 1,
     "expected_spec_version": 1,
     "expected_head_revision": 0,

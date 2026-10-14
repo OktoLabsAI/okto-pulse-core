@@ -34,6 +34,13 @@ from okto_pulse.core.domain.spec_validation import (
     SpecValidationPinpoint,
 )
 from okto_pulse.core.domain.spec_evaluation import SpecEvaluationInput
+from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
+from okto_pulse.core.models.schemas import SpecValidationConclusionResponse
+from okto_pulse.core.ports.spec_validation_receipts import (
+    SpecValidationIdempotencyConflict,
+    SpecValidationOperationReceipt,
+    SpecValidationReceiptScope,
+)
 from okto_pulse.core.domain.guideline_policy import PolicyEntityType, PolicySubjectRef
 from okto_pulse.core.domain.quality_assessment import (
     FindingAnchorType,
@@ -66,6 +73,7 @@ _CANONICAL_SCORE_DIMENSIONS = (
     "ambiguity",
 )
 _CANONICAL_ALLOWED_FIELDS = {
+    "idempotency_key",
     "expected_validation_edition",
     "expected_spec_version",
     "expected_head_revision",
@@ -118,6 +126,9 @@ class SubmitSpecValidationCommand:
             raise CommandValidationError(
                 "Unknown spec validation fields: " + ", ".join(unknown)
             )
+        key = self.data.get("idempotency_key")
+        if not isinstance(key, str) or not 1 <= len(key) <= 128 or key != key.strip():
+            raise CommandValidationError("idempotency_key must contain 1..128 characters without surrounding whitespace")
         for field_name in (
             "expected_validation_edition",
             "expected_spec_version",
@@ -239,6 +250,31 @@ class SubmitSpecValidationUseCase:
         command.validate()
         await uow.begin_write()
         service = uow.services.specs
+        spec = await _require_actor_board_spec(uow, command.spec_id, actor)
+        scope = SpecValidationReceiptScope(
+            board_id=spec.board_id, spec_id=command.spec_id,
+            actor_id=actor.actor_id, actor_kind=actor.actor_kind,
+            idempotency_key=command.data["idempotency_key"],
+        )
+        authored_data = {key: value for key, value in command.data.items() if key != "idempotency_key"}
+        if authored_data.get("decomposition") is None:
+            authored_data.pop("decomposition", None)
+        request_digest = canonical_sha256(authored_data)
+        receipt = await uow.spec_validation_receipts.get(scope)
+        if receipt is not None:
+            # A replay reads an old operation, not a new evaluation or transition.
+            # Reauthorize its contents using this request's current identity.
+            for permission in (
+                "spec.entity.read", "spec.validation.read",
+                *(("spec.evaluations.read",) if receipt.result.decomposition_ids else ()),
+            ):
+                await require_authorization(
+                    actor, PermissionRequirement(permission), uow=uow, board_id=spec.board_id,
+                )
+            if receipt.request_digest != request_digest:
+                raise SpecValidationIdempotencyConflict("Idempotency key already used with different input.")
+            return SubmitSpecValidationResult(payload=receipt.result.model_dump(mode="json"))
+
         spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
         state = entity_state(spec)
         await require_authorization(
@@ -281,9 +317,15 @@ class SubmitSpecValidationUseCase:
             spec_id=command.spec_id,
             reviewer_id=actor.actor_id,
             reviewer_name=reviewer_name,
-            data={**command.data, "pinpoints": sealed_pinpoints},
+            data={**authored_data, "pinpoints": sealed_pinpoints},
             actor_type="agent" if actor.actor_kind == "agent" else "user",
             surface=actor.source,
         )
+        conclusion = SpecValidationConclusionResponse.model_validate({
+            key: result[key] for key in SpecValidationConclusionResponse.model_fields
+        })
+        await uow.spec_validation_receipts.save(SpecValidationOperationReceipt(
+            scope=scope, request_digest=request_digest, result=conclusion,
+        ))
         await commit(uow)
-        return SubmitSpecValidationResult(payload=result)
+        return SubmitSpecValidationResult(payload=conclusion.model_dump(mode="json"))

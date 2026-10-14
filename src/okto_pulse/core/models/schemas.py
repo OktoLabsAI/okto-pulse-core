@@ -4034,6 +4034,8 @@ class SpecValidationSubmit(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
+    idempotency_key: str = Field(min_length=1, max_length=128)
+
     expected_validation_edition: int = Field(
         ...,
         ge=1,

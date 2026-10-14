@@ -1,8 +1,8 @@
 # Validação unificada do planejamento da Spec
 
 Plano de 14 de outubro de 2026. **U1 implementado; U2 em andamento com conclusão
-composta e gate de promoção testados; U3–U4 pendentes.** Replay, manifesto e leitura
-integrada ainda faltam no U2. A comprovação completa pelo browser e MCP permanece
+composta, gate de promoção e replay transacional testados; U3–U4 pendentes.**
+Manifesto e leitura integrada ainda faltam no U2. A comprovação completa pelo browser e MCP permanece
 para U4; consultar os resultados e limites no checkpoint atual do ledger.
 
 Base: Core `57599196174a247510cef6b299ee51c0f50ce10f` e Community
@@ -367,7 +367,7 @@ e próximo passo exato. No E2E, registrar IDs/edições e evidências UI/MCP; n�
 alterar policies, scopes, skips ou percentuais para obter verde. Testes externos
 mockados precisam de execução observada para gerar prova autenticada.
 
-**Próxima ação de execução:** completar replay, manifesto/fences e leitura integrada
+**Próxima ação de execução:** completar manifesto/fences e leitura integrada
 do U2, conforme o checkpoint atual do ledger e §6.1. **Critério de conclusão:** U1–U4 e
 UV01–UV24 demonstrados, ledger atualizado e par de repositórios publicado. Esta
 sequência mantém o escopo acordado; os incrementos implementados e as provas

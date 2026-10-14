@@ -24,7 +24,7 @@ async def test_old_input_is_refused_before_flush_or_lookup(monkeypatch, field, v
 
 
 def test_transport_does_not_accept_predecessor_edition_alias():
-    payload = dict(expected_spec_edition=1, expected_spec_version=1, expected_head_revision=0,
+    payload = dict(idempotency_key='native-review', expected_spec_edition=1, expected_spec_version=1, expected_head_revision=0,
                    recommendation='approve')
     for metric in ('confidence', 'clarity', 'assertiveness', 'decidability', 'ambiguity'):
         payload[metric] = 90

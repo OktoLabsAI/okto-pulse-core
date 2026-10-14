@@ -59,6 +59,7 @@ ATTACKER = "spec-rest-scope-attacker"
 OTHER_OWNER = "spec-rest-scope-owner"
 
 VALIDATION = {
+    "idempotency_key": "scope-review",
     "expected_validation_edition": 1,
     "expected_spec_version": 1,
     "expected_head_revision": 0,
@@ -773,6 +774,7 @@ def _denied_uow() -> tuple[Any, Any, Any]:
         commit=AsyncMock(),
         rollback=AsyncMock(),
         synchronize=AsyncMock(),
+        begin_write=AsyncMock(),
     )
     actor = ActorContext(ATTACKER, "rest", realm_id="local")
     return uow, services, actor
@@ -842,7 +844,7 @@ async def test_denied_writes_stop_before_resolvers_children_writers_and_commit(
         ),
         (
             SubmitSpecValidationUseCase(),
-            SubmitSpecValidationCommand("foreign-spec", {}),
+            SubmitSpecValidationCommand("foreign-spec", VALIDATION),
         ),
     ]
     for use_case, command in commands:

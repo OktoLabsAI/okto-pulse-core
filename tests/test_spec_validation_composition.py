@@ -188,7 +188,7 @@ async def composition_client(db_factory, monkeypatch):
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[auth_deps.require_user] = lambda: USER_ID
     app.dependency_overrides[auth_deps.get_realm_id] = lambda: "local"
-    with TestClient(app, raise_server_exceptions=False) as client:
+    with TestClient(app) as client:
         yield client, spec_id
 
 
@@ -199,6 +199,7 @@ async def test_rest_composition_persists_both_native_histories(
 ):
     client, spec_id = composition_client
     response = client.post(f"/api/v1/specs/{spec_id}/validation", json={
+        "idempotency_key": "rest-composition",
         **_validation_payload(), "decomposition": decomposition_payload(recommendation),
     })
     assert response.status_code == 201, response.text
@@ -225,16 +226,22 @@ async def test_rest_technical_failure_rolls_back_both_reviews_and_promotion(
         raise RuntimeError("injected history outage after both native appends")
 
     monkeypatch.setattr(SpecService, "_record_history", fail_history)
-    response = client.post(f"/api/v1/specs/{spec_id}/validation", json={
-        **_validation_payload(), "decomposition": decomposition_payload(),
-    })
-    assert response.status_code == 500, response.text
+    with pytest.raises(RuntimeError, match="injected history outage"):
+        client.post(f"/api/v1/specs/{spec_id}/validation", json={
+            "idempotency_key": "rest-failure",
+            **_validation_payload(), "decomposition": decomposition_payload(),
+        })
     async with db_factory() as db:
         spec = await db.get(Spec, spec_id)
         assert spec.status == SpecStatus.APPROVED
         assert not spec.validations
         assert not spec.evaluations
         assert spec.current_validation_id is None
+        from sqlalchemy import select
+        from okto_pulse.community.adapters.sqlalchemy_models import SpecValidationOperationReceiptRow
+        assert (await db.execute(select(SpecValidationOperationReceiptRow).where(
+            SpecValidationOperationReceiptRow.spec_id == spec_id,
+        ))).scalars().all() == []
 
 
 @pytest.mark.asyncio
@@ -243,6 +250,7 @@ async def test_rest_rejects_forged_decomposition_identity_without_writes(
 ):
     client, spec_id = composition_client
     response = client.post(f"/api/v1/specs/{spec_id}/validation", json={
+        "idempotency_key": "rest-forgery",
         **_validation_payload(),
         "decomposition": {**decomposition_payload(), "evaluator_id": "someone-else"},
     })
@@ -251,3 +259,162 @@ async def test_rest_rejects_forged_decomposition_identity_without_writes(
         spec = await db.get(Spec, spec_id)
         assert spec.status == SpecStatus.APPROVED
         assert not spec.validations and not spec.evaluations
+
+
+@pytest.mark.asyncio
+async def test_rest_exact_replay_and_changed_input_conflict(composition_client, db_factory):
+    from sqlalchemy import select
+    from okto_pulse.community.adapters.sqlalchemy_models import SpecValidationOperationReceiptRow
+
+    client, spec_id = composition_client
+    payload = {**_validation_payload(), "idempotency_key": "exact-replay",
+               "decomposition": decomposition_payload()}
+    first = client.post(f"/api/v1/specs/{spec_id}/validation", json=payload)
+    assert first.status_code == 201, first.text
+    repeated = client.post(f"/api/v1/specs/{spec_id}/validation", json=payload)
+    assert repeated.status_code == 201, repeated.text
+    assert repeated.json() == first.json()
+    changed = client.post(f"/api/v1/specs/{spec_id}/validation", json={**payload, "clarity": 85})
+    assert changed.status_code == 409, changed.text
+    assert changed.json()["detail"]["code"] == "spec_validation_idempotency_conflict"
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        assert len(spec.validations) == len(spec.evaluations) == 1
+        rows = (await db.execute(select(SpecValidationOperationReceiptRow).where(
+            SpecValidationOperationReceiptRow.spec_id == spec_id,
+        ))).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].result == first.json()
+        assert "pinpoints" not in rows[0].result
+
+
+@pytest.mark.asyncio
+async def test_replay_after_reopening_returns_original_without_promoting(composition_client, db_factory):
+    client, spec_id = composition_client
+    payload = {**_validation_payload(), "idempotency_key": "original-edition",
+               "decomposition": decomposition_payload()}
+    first = client.post(f"/api/v1/specs/{spec_id}/validation", json=payload)
+    assert first.status_code == 201, first.text
+    reopened = client.post(f"/api/v1/specs/{spec_id}/move", json={"status": "draft"})
+    assert reopened.status_code == 200, reopened.text
+    repeated = client.post(f"/api/v1/specs/{spec_id}/validation", json=payload)
+    assert repeated.status_code == 201, repeated.text
+    assert repeated.json() == first.json()
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        assert spec.status == SpecStatus.DRAFT and spec.edition == 2
+        assert len(spec.validations) == len(spec.evaluations) == 1
+
+
+@pytest.mark.asyncio
+async def test_replay_requires_current_read_authority(composition_client, monkeypatch):
+    from unittest.mock import AsyncMock
+    from okto_pulse.core.application.service_catalog import CoreApplicationServiceCatalog
+    from okto_pulse.core.domain.permissions import PermissionSet
+
+    client, spec_id = composition_client
+    payload = {**_validation_payload(), "idempotency_key": "read-authority",
+               "decomposition": decomposition_payload()}
+    first = client.post(f"/api/v1/specs/{spec_id}/validation", json=payload)
+    assert first.status_code == 201, first.text
+    monkeypatch.setattr(CoreApplicationServiceCatalog, "resolve_user_permissions", AsyncMock(
+        return_value=PermissionSet({"spec": {"entity": {"read": True},
+                                             "validation": {"read": False}}}),
+    ))
+    repeated = client.post(f"/api/v1/specs/{spec_id}/validation", json=payload)
+    assert repeated.status_code == 403, repeated.text
+    assert first.json()["validation_id"] not in repeated.text
+
+
+@pytest.mark.asyncio
+async def test_simultaneous_identical_conclusions_have_one_receipt(composition_client, db_factory):
+    from concurrent.futures import ThreadPoolExecutor
+    from contextvars import copy_context
+    from sqlalchemy import select
+    from okto_pulse.community.adapters.sqlalchemy_models import SpecValidationOperationReceiptRow
+
+    client, spec_id = composition_client
+    payload = {**_validation_payload(), "idempotency_key": "concurrent-replay",
+               "decomposition": decomposition_payload()}
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = [pool.submit(copy_context().run, client.post, f"/api/v1/specs/{spec_id}/validation", json=payload)
+                   for _ in range(3)]
+        responses = [future.result(timeout=30) for future in futures]
+    assert all(response.status_code == 201 for response in responses), [r.text for r in responses]
+    assert responses[0].json() == responses[1].json() == responses[2].json()
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        assert len(spec.validations) == len(spec.evaluations) == 1
+        rows = (await db.execute(select(SpecValidationOperationReceiptRow).where(
+            SpecValidationOperationReceiptRow.spec_id == spec_id,
+        ))).scalars().all()
+        assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_failure_after_receipt_flush_rolls_back_and_can_retry_same_key(
+    composition_client, db_factory, monkeypatch,
+):
+    from sqlalchemy import select
+    from okto_pulse.community.adapters.sqlalchemy_models import SpecValidationOperationReceiptRow
+    from okto_pulse.community.adapters.sqlalchemy_spec_validation_receipts import CommunitySpecValidationReceiptStore
+
+    client, spec_id = composition_client
+    payload = {**_validation_payload(), "idempotency_key": "receipt-outage",
+               "decomposition": decomposition_payload()}
+    original = CommunitySpecValidationReceiptStore.save
+
+    async def save_then_fail(self, receipt):
+        await original(self, receipt)
+        raise RuntimeError("injected outage before commit")
+
+    monkeypatch.setattr(CommunitySpecValidationReceiptStore, "save", save_then_fail)
+    with pytest.raises(RuntimeError, match="injected outage"):
+        client.post(f"/api/v1/specs/{spec_id}/validation", json=payload)
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        assert spec.status == SpecStatus.APPROVED
+        assert not spec.validations and not spec.evaluations
+        assert (await db.execute(select(SpecValidationOperationReceiptRow).where(
+            SpecValidationOperationReceiptRow.spec_id == spec_id,
+        ))).scalars().all() == []
+    monkeypatch.setattr(CommunitySpecValidationReceiptStore, "save", original)
+    retry = client.post(f"/api/v1/specs/{spec_id}/validation", json=payload)
+    assert retry.status_code == 201, retry.text
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        assert spec.status == SpecStatus.VALIDATED
+        assert len(spec.validations) == len(spec.evaluations) == 1
+
+
+@pytest.mark.asyncio
+async def test_receipt_scope_does_not_cross_actor_or_realm(composition_client, db_factory):
+    from sqlalchemy import select
+    from okto_pulse.community.adapters.sqlalchemy_models import SpecValidationOperationReceiptRow
+    from okto_pulse.community.adapters.sqlalchemy_spec_validation_receipts import CommunitySpecValidationReceiptStore
+    from okto_pulse.core.domain.realm import RealmScope
+    from okto_pulse.core.ports.spec_validation_receipts import (
+        SpecValidationReceiptScope, SpecValidationIdempotencyConflict,
+    )
+
+    client, spec_id = composition_client
+    response = client.post(f"/api/v1/specs/{spec_id}/validation", json={
+        **_validation_payload(), "idempotency_key": "scoped-key",
+    })
+    assert response.status_code == 201, response.text
+    async with db_factory() as db:
+        row = (await db.execute(select(SpecValidationOperationReceiptRow).where(
+            SpecValidationOperationReceiptRow.spec_id == spec_id,
+        ))).scalar_one()
+        scope = SpecValidationReceiptScope(row.board_id, spec_id, row.actor_id, row.actor_kind, row.idempotency_key)
+        local = CommunitySpecValidationReceiptStore(db, RealmScope.local())
+        assert (await local.get(scope)).result.model_dump() == response.json()
+        assert await local.get(SpecValidationReceiptScope(
+            row.board_id, spec_id, "another-actor", row.actor_kind, row.idempotency_key,
+        )) is None
+        assert await local.get(SpecValidationReceiptScope(
+            row.board_id, spec_id, row.actor_id, "agent", row.idempotency_key,
+        )) is None
+        foreign = CommunitySpecValidationReceiptStore(db, RealmScope.tenant("other-realm"))
+        with pytest.raises(SpecValidationIdempotencyConflict, match="scope is unavailable"):
+            await foreign.get(scope)

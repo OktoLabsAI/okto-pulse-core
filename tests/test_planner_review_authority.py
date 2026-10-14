@@ -95,9 +95,18 @@ async def test_authenticated_mcp_composed_conclusion(_harness_env, monkeypatch, 
     )
     async with Client(host) as client:
         response = await client.call_tool('okto_pulse_submit_spec_validation', {
+            'idempotency_key': 'mcp-composition',
             'board_id': 'B1', 'spec_id': 'composed', **_validation_payload(),
             'decomposition': _evaluation_payload(review),
         }, raise_on_error=False)
+        if grant:
+            replay = await client.call_tool('okto_pulse_submit_spec_validation', {
+                'idempotency_key': 'mcp-composition',
+                'board_id': 'B1', 'spec_id': 'composed', **_validation_payload(),
+                'decomposition': _evaluation_payload(review),
+            }, raise_on_error=False)
+            assert not replay.is_error, replay
+            assert json.loads(replay.content[0].text)['data'] == json.loads(response.content[0].text)['data']
     async with factory() as db:
         spec = await db.get(Spec, 'composed')
         if not grant:
@@ -254,7 +263,7 @@ async def test_authenticated_planner_review_boundary_across_mcp_variants(
             assert 'permission_missing' in str(denied), denied
             assert await _snapshot(factory) == before
 
-        validation = {'expected_validation_edition': 1, 'expected_spec_version': 1,
+        validation = {'idempotency_key': 'planner-review', 'expected_validation_edition': 1, 'expected_spec_version': 1,
                       'expected_head_revision': 0, 'recommendation': 'approve'}
         for dimension in ('confidence', 'clarity', 'assertiveness', 'decidability', 'ambiguity'):
             validation[dimension] = 90

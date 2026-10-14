@@ -106,6 +106,11 @@ class _Uow:
         self.services = services
         self.boards = _Boards()
         self.commits = 0
+        from unittest.mock import AsyncMock
+        self.spec_validation_receipts = SimpleNamespace(get=AsyncMock(return_value=None))
+
+    async def begin_write(self) -> None:
+        pass
 
     async def commit(self) -> None:
         self.commits += 1
@@ -268,6 +273,7 @@ async def test_spec_validation_permission_denies_before_writer():
     uow = _Uow(_Services(permissions, specs=specs))
     actor = ActorContext("actor-1", "mcp", board_id=BOARD_ID, permissions=permissions)
     data = {
+        "idempotency_key": "permission-review",
         "expected_validation_edition": 1,
         "expected_spec_version": 1,
         "expected_head_revision": 0,

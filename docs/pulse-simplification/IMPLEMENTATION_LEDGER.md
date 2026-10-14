@@ -2,6 +2,70 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U2: replay durável e transacional da conclusão
+
+Base deste incremento: Core e8ba89d4 / Community 66e897fc, limpos e publicados.
+Community deste checkpoint publicado em e08415ab; registro acompanha o commit Core pareado.
+Objetivo ativo continua sendo o plano completo U1–U4, com UV01–UV24. U2 ainda
+precisa de manifesto de concorrência e leitura integrada; U3/U4 não estão prontos.
+
+idempotency_key é obrigatório no contrato único da conclusão REST/MCP/UI.
+O recibo é delimitado por Board, Spec, ator e tipo autenticado do ator; a tabela
+é exclusiva da operação de conclusão. Mesmo conteúdo canônico/chave retorna
+o recibo original, sem novo parecer, evento ou promoção; chave reutilizada com
+outro conteúdo gera spec_validation_idempotency_conflict. Replay reautoriza
+spec.entity.read e spec.validation.read, além de spec.evaluations.read quando
+devolve IDs de decomposição. Não exige escrever de novo para ler o recibo.
+O estado no recibo descreve a operação original: não é uma leitura do estado
+atual e não promove a Spec após reabertura.
+
+Porta pública Core SpecValidationReceiptStore ligada à UoW; adapter e tabela
+spec_validation_operation_receipts exclusivamente no Community. O recibo contém
+IDs, outcomes e bloqueios, sem duplicar textos/scores/pinpoints do histórico.
+Save, pareceres, atividade e promoção participam da mesma transação. O BEGIN
+IMMEDIATE já exposto no incremento anterior serializa as chamadas concorrentes
+do runtime Community; não substitui a comparação do manifesto ainda pendente.
+Schema nativo mudou: a assinatura do contrato atual recusa bases sem a tabela,
+sem conversão, criação parcial ou exclusão. Nenhum dado do usuário foi alterado.
+
+Frontend mantém uma chave por conteúdo efetivamente submetido, usando a mesma
+em retry após falha e gerando outra quando o conteúdo/fences mudam. O teste
+verifica os dois comportamentos sem reenvio automático. REST passou a traduzir
+PermissionDeniedError da conclusão/replay para 403; antes essa negação podia
+escapar como 500. Não houve mudança das permissões exigidas.
+
+Validação: 267 passed na regressão combinada (as onze suítes do checkpoint
+anterior mais test_application_use_cases_09, test_validation_cycle_contract,
+test_spec_rest_scope_hardening e test_card_sprint_core_authorization).
+XML .validation-v040/spec-unified-20261014/u2-replay.xml. Abrange três envios
+REST simultâneos com um único recibo/parecer de cada tipo, replay idêntico real
+MCP autenticado, conflito por conteúdo, reabertura para Draft sem nova promoção,
+perda de leitura, isolamento por ator/tipo/realm e falha após flush do recibo
+antes do commit, seguida de retry bem-sucedido. Fixtures continuam isolando
+a aceitação externa de lint: isso não substitui o ensaio U4.
+Community: 50 passed em test_current_relational_schema/test_cli_storage_guidance,
+incluindo recusa imutável de schema sem a tabela nova. Frontend: 21 passed em
+api.qualityAssessments/SpecChecklistPanel; depois de explicitar a configuração
+do fixture, SpecChecklistPanel repetido com 15 passed. npx tsc -b e Ruff F/E9 passaram.
+Todos os testes Python usaram as duas src explícitas; não a instalação antiga.
+
+Auditoria oficial: 8984 linhas de propriedade, zero findings e drift documental,
+oito budgets ZERO. READMEs regenerados oficialmente; prova em
+.validation-v040/spec-unified-20261014/closure-u2-replay.json. Catálogo gerado
+e gate de igualdade incluído na regressão. Wheels/runtime não foram auditados
+como parte deste resultado; permanecem no U4.
+
+Achados de testes corrigidos: testes em threads precisam copiar runtime context;
+Spec de fixture de reabertura precisava do execution_contract nativo. Fakes
+foram alinhados às capacidades públicas da UoW, sem relaxar gates de produto.
+
+Próximo passo: manifesto delimitado de revisões de Spec, Cards/plano, heads e
+autoridade; conferir sob a transação antes da conclusão e testar mudanças entre
+preflight/commit. Integrar essa autoridade à projeção pública do ciclo e à
+readiness; em seguida U3 e U4 conforme plano. Nenhuma instalação, reinício ou
+conferência visual foi alegada neste checkpoint parcial. Home e runtime atuais
+permaneceram intactos.
+
 ### 2026-10-14 — U2: conclusão composta e gate de promoção integrados
 
 Continuação do checkpoint Core 878a5b41 / Community 7801ae86, ambos limpos e

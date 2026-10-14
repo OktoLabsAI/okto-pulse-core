@@ -112,6 +112,9 @@ class SQLAlchemyUnitOfWork:
         # Export adapters are edition-owned. This relational test UoW only
         # exercises the public Core UoW shape, not export materialization.
         self.entity_exports = _UnsupportedEntityExportReadPort()
+        from okto_pulse.community.adapters.sqlalchemy_spec_validation_receipts import CommunitySpecValidationReceiptStore
+
+        self.spec_validation_receipts = CommunitySpecValidationReceiptStore(session, self.realm_scope)
         self.historical_archive_grants = _UnsupportedHistoricalArchiveGrants()
         self.historical_archive_reader = self.historical_archive_grants
         self.historical_context_reader = _UnsupportedHistoricalContextReader()

@@ -18603,6 +18603,7 @@ async def okto_pulse_get_task_validation(
 async def okto_pulse_submit_spec_validation(
     board_id: str,
     spec_id: str,
+    idempotency_key: str,
     expected_validation_edition: int,
     expected_spec_version: int,
     expected_head_revision: int,
@@ -18625,12 +18626,15 @@ async def okto_pulse_submit_spec_validation(
     Both review permissions are required when decomposition is supplied. Otherwise
     consumes Current independent reviews. Negative results remain in native history;
     promotion requires every applicable gate, not just passing quality scores.
+    Retry the same idempotency_key and payload for the original receipt; changed
+    input with that key conflicts. Replay rechecks read access and never promotes.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
 
     data = {
+        "idempotency_key": idempotency_key,
         "expected_validation_edition": expected_validation_edition,
         "expected_spec_version": expected_spec_version,
         "expected_head_revision": expected_head_revision,

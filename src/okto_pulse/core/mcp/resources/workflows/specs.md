@@ -219,6 +219,7 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
    `okto_pulse_get_allowed_transitions` before validation; that canonical
    readiness check detects a missing or failing Current result.
 5. Only then call `okto_pulse_submit_spec_validation` with the current fences,
+   a new `idempotency_key` for this authored conclusion,
    the five externally evaluated scores (confidence, clarity, assertiveness,
    decidability and ambiguity), a justification for each, optional
    metric-tagged pinpoints, and an approve/reject recommendation. Pulse records
@@ -238,6 +239,9 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
    not promote. A valid negative opinion is retained in history. Every applicable
    gate must pass before Validated, including decomposition when quality is off
    and a direct transition is used. No cross-evaluation score is computed.
+   After a transport interruption, retry the exact request with the same key.
+   The original receipt is returned without new facts or promotion; a changed
+   request with that key conflicts. A new opinion uses a new key and current fences.
 
 Checklist mode/template governance is human-owned in Board Config. Agents may
 read the binding and validation results and execute the configured immutable

@@ -7,6 +7,7 @@ from native_subject_testing import record_native_subject_authority
 from okto_pulse.community.adapters.sqlalchemy_checklist import CommunitySqlAlchemyChecklist
 from okto_pulse.core.domain.checklist import ChecklistBinding, ChecklistMode, ChecklistTargetType, ChecklistPhase
 from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+from okto_pulse.core.domain.execution_contract import SpecExecutionContract
 
 import pytest
 
@@ -98,6 +99,7 @@ async def _seed_board_and_spec(
         Board(
             id=board_id,
             name=f"E2E hardening {board_id}",
+            realm_id="local",
             owner_id=USER_ID,
             settings=board_settings or {},
         )
@@ -110,6 +112,10 @@ async def _seed_board_and_spec(
             architecture_adoption=ArchitectureAdoptionScope(
                 board_id=board_id, spec_id=spec_id, actor_id=USER_ID,
                 adopted_in_edition=1, inherited_resource_ids=(),
+            ).model_dump(mode="json"),
+            execution_contract=SpecExecutionContract(
+                board_id=board_id, spec_id=spec_id, actor_id=USER_ID,
+                adopted_in_edition=1, origin="new_spec",
             ).model_dump(mode="json"),
             status=spec_status,
             created_by=USER_ID,
