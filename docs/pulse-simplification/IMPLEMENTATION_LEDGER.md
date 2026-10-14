@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — planejamento reconciliado com o WIP real de U3
+
+Todo o trabalho preexistente foi publicado antes desta revisão: Core 46e9effb /
+Community b7a541bb, feature/v0.4.0. O plano único continua em
+SPEC_UNIFIED_VALIDATION_PLAN.md. Revisão documental, sem nova implementação de
+produto e sem alteração da instalação ou dos dados do usuário.
+
+O plano removeu do caminho crítico a correção arquitetural e a criação da API
+de revisões, já concluídas no par 3dce9233 / 204c7f4a. Identifica precisamente
+o WIP atual: permissões/paginação a qualificar, resumo parcial e hook sem
+consumidores. U1 está implementado, U2 parcial, U3 iniciado, U4 pendente.
+
+Resultado posterior da checagem TypeScript do checkpoint: tsc -b reprovou em
+SpecPlanningSummary.tsx:13 por String.replaceAll ausente do target atual.
+Somado à falha REST descrita abaixo, é impedimento para qualificar o WIP.
+Não elevar target nem reduzir autorização como atalho. Os 20 testes frontend
+e cinco de catálogo aprovados não anulam essas falhas.
+
+§6.2 agora determina arquivos, dependências e provas para: concluir listagem
+nativa; compor histórico e formulário; ligar atualização aos consumidores;
+proteger rascunhos/revisar base; comprovar UI/MCP; executar U4 isolado até Done/KG.
+Preserva todas as avaliações, critérios, severidades, thresholds, permissões
+e histórias. Sem média entre avaliações, Decision artificial, migração ou
+milestone adicional. UV01–UV24 permanece a matriz de fechamento.
+
+Próxima ação: resolver e testar os dois impedimentos do WIP, qualificar
+autorização/paginação, completar U3 e executar U4. A paginação de histórico é da
+resposta, não leitura indexada física; tokens de IDs conhecidos não comprovam
+descoberta de objetos novos na listagem. Ambas as limitações estão explícitas
+no plano para evitar falsa conclusão da sincronização.
+
+Verificação desta revisão: checker de links Markdown na raiz e git diff --check
+aprovados. Não foi executado novo browser/E2E para uma alteração documental.
+
 ### 2026-10-14 — checkpoint parcial antes de reconciliar o planejamento
 
 Base publicada: Core 3dce9233 / Community 204c7f4a, feature/v0.4.0.

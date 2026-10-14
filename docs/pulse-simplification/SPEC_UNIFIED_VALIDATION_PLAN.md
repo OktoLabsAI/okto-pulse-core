@@ -1,12 +1,15 @@
 # Validação unificada do planejamento da Spec
 
-Plano de 14 de outubro de 2026. **U1 implementado; U2 parcial; U3–U4 pendentes.**
-Checkpoint WIP anterior: Core `376f0237` / Community `31c82a4c`.
+Plano de 14 de outubro de 2026. **U1 implementado; U2 parcial; U3 iniciado; U4 pendente.**
+Checkpoint WIP atual: Core `46e9effb` / Community `b7a541bb`, publicado.
+Último par com composição e revisões leves qualificados:
+Core `3dce9233` / Community `204c7f4a`.
 Conclusão composta, replay e manifesto já possuem implementação e regressões.
 A leitura integrada e a consulta leve de revisões estão implementadas.
 O bloqueio arquitetural do WIP foi corrigido pelo catálogo público; closure
 voltou a ZERO nos oito budgets. Provas e par publicado constam no ledger.
-Interface integrada, sincronização externa e ensaio final permanecem pendentes.
+Há resumo e infraestrutura de atualização na interface, ainda incompletos.
+Integração da sincronização externa e ensaio final permanecem pendentes.
 A seção 6.2 define a sequência concreta sem ampliar o escopo.
 
 Base: Core `57599196174a247510cef6b299ee51c0f50ce10f` e Community
@@ -310,40 +313,41 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Atualização de execução:** composição pública e revisões leves de U2 foram
-implementadas e testadas. O bloqueio do diagnóstico abaixo foi eliminado, com
-oito budgets ZERO. Próxima implementação: U3; U4 deve comprovar a paridade
-integrada. Consultar o checkpoint de workspace no ledger. Os passos abaixo
-mantêm o escopo e não devem ser reimplementados quando já qualificados.
+**Base desta revisão:** Core `46e9effb` / Community `b7a541bb`, branch
+`feature/v0.4.0`, publicados antes da revisão documental. Preservam o trabalho
+local como WIP; **não são milestone aprovado nem release instalável**.
+O reach-in privado do checkpoint antigo foi corrigido no par
+`3dce9233` / `204c7f4a`, cuja closure confirmou oito budgets ZERO. Não repetir
+essa correção. O WIP posterior precisa de nova qualificação.
 
-Core `376f0237` / Community `31c82a4c`, branch `feature/v0.4.0`, publicados antes
-desta revisão documental. O checkpoint preserva todo o trabalho local; **não é
-milestone aprovado**. A auditoria arquitetural encontrou reach-in privado na
-composição da leitura integrada. Não instalar esse checkpoint no runtime do
-usuário nem interpretar os testes verdes como encerramento de U2.
+A conferência do WIP encontrou dois impedimentos objetivos: um teste REST de
+permissões espera uma resolução, mas recebe três após as verificações de leitura;
+e `SpecPlanningSummary.tsx` usa `String.replaceAll`, indisponível no target
+TypeScript atual. Tratar o primeiro com investigação do contrato e teste de
+autoridade efetiva; tratar o segundo localmente, sem elevar o target da aplicação
+para acomodar uma operação de formatação. Nenhum deles justifica alterar gates.
 
 | Frente | Já existe | Falta comprovar ou implementar |
 | --- | --- | --- |
 | U1 | Cards Not Started em Draft e remoção da exigência de existir Decision. | Percurso real UI/MCP no U4; não refazer a implementação. |
 | U2 — conclusão | Payload composto, permissões independentes, pareceres/históricos nativos, promoção condicionada, recibo/replay e manifesto obrigatório. | Paridade completa de todos os caminhos com os gates aplicáveis. |
-| U2 — leitura | `include_planning` em REST/MCP, 17 componentes e enumeração compartilhada de coberturas; tipos no cliente. | Corrigir composição arquitetural, qualificar leitura sem efeitos e completar metadados leves. |
-| U3 | Formulário envia manifesto e conserva a base quando há edição local; chave de retry estável. | Workspace integrado, fluxo de revisão de conflito e sincronização externa. |
+| U2 — leitura | `include_planning`, 17 componentes, composição pública sem escrita, revisões leves em lote e testes de custo/snapshot. WIP acrescenta permissões por componente e paginação nativa REST/MCP. | Qualificar o WIP de autorização/paginação, provar paridade e atualizar o cliente de histórico. |
+| U3 | Formulário envia manifesto e conserva a base quando há edição local; chave de retry estável. Resumo compacto ligado à Validation e watcher/hook com testes isolados. | Corrigir build; integrar histórico/decomposição e conclusão composta; conectar o hook aos consumidores, com revisão explícita de conflito e proteção dos formulários. |
 | U4 | Regressões parciais registradas no ledger. | Wheels, runtime compatível, browser e iniciativa nova até Done/KG; matriz UV01–UV24. |
 
 #### U2 — encerrar backend e contratos antes da interface
 
 Executar na ordem abaixo. Os itens detalham U2.3/U2.4, sem novos milestones.
 
-1. **Eliminar o bloqueio arquitetural da leitura.** Ponto exato:
-   `community/adapters/sqlalchemy_validation_cycle.py`, composição em
-   `_spec_cycle`. O acesso a `core.runtime_context` foi classificado como
-   `ungoverned_private_reach_in`; closure também registrou cinco itens de
-   proveniência, uma violação de import e `community_adapter_bridges=4`.
-   Usar composição por capacidade pública; se faltar contrato, expô-lo pelo
-   Core e implementá-lo no Community. Não autorizar imports privados, duplicar
-   regras ou elevar budget. Preservar a mesma sessão/snapshot. Saída: closure
-   com os oito budgets ZERO e testes provando ausência de escrita e de mudança
-   no contexto do chamador.
+1. **Qualificar o WIP de leitura e histórico.** A composição arquitetural já
+   está corrigida; preservar catálogo público e sessão/snapshot únicos.
+   Conferir permissões por componente em `spec_planning_readiness.py` e a
+   listagem em `spec_crud.py`, `services/main.py`, MCP e REST. Resolver a falha
+   do teste de paridade sem reduzir autorização; testar leitura negada,
+   Board distinto, paginação e Current/Previous. A listagem não recalcula
+   julgamentos nem aplica a antiga flag stale. A paginação atual limita a
+   resposta, mas ainda lê a coleção JSON nativa: não alegar paginação física
+   indexada nem abrir uma migração para este incremento.
 2. **Fechar paridade resumo/promoção.** Conferir `get_planning_readiness`,
    `submit_spec_validation`, `move_spec` e `allowed_transitions` contra os
    predicados nativos. A lista de coberturas já é compartilhada; isso não prova
@@ -353,13 +357,15 @@ Executar na ordem abaixo. Os itens detalham U2.3/U2.4, sem novos milestones.
    obrigações novas no caminho direto. `ready` não concede permissão nem muda
    lifecycle; bloqueio de promoção não impede registrar parecer válido negativo.
    Saída: UV04–UV17/UV22 pertinentes com persistência real, sem escrita parcial.
-3. **Completar metadados leves em lote.** Reutilizar revisões persistidas e
-   manifesto; inventariar somente os metadados ainda ausentes para Cards/Delivery
-   visíveis. Contrato por Board e IDs delimitados, com revisão e autorização,
-   sem corpos de avaliações/históricos. O `include_planning` executa gates:
-   reservá-lo para carga explícita/invalidação, nunca para polling. Saída:
-   detectar mudanças sem bump da Spec e demonstrar custo limitado por lote,
-   isolamento de Board e resposta segura após revogação.
+3. **Consumir os metadados leves já implementados.** O contrato por Board
+   aceita 1–50 IDs Spec/Card e retorna revisões, sem corpos de avaliações ou
+   execução de gates. Testes existentes demonstram custo limitado e mudanças
+   sem bump da Spec; completar a prova integrada, sem recriar a API.
+   `include_planning` executa gates: reservá-lo para carga explícita/invalidação,
+   nunca para polling. Revisão de autoridade não equivale a revisão da coleção:
+   ao integrar a listagem, verificar também descoberta de novos Cards/Specs
+   relevantes pelos caminhos existentes, sem presumir que IDs ainda não
+   assinados serão descobertos pelo hook.
 4. **Publicar U2 qualificado.** Rodar regressões afetadas, REST/MCP, frontend de
    contratos, catálogo gerado e closure. Registrar resultados e UV demonstrados
    no ledger; commit/push pareados. Não declarar browser/E2E concluídos por
@@ -390,6 +396,32 @@ Depende dos contratos U2 qualificados; o frontend não recalcula gates.
 4. **Qualificação visual e funcional.** Testes frontend e browser com mutações
    MCP simultâneas: UV18–UV21, troca de Spec, respostas fora de ordem, dirty form,
    histórico, foco, loading Pulse, erro/retry e permissões. Commit/push e ledger.
+
+#### Ordem concreta de integração de U3
+
+Os passos abaixo são tarefas do mesmo milestone U3, não novas frentes de produto.
+
+| Ordem | Arquivos/pontos de integração | Entrega e prova exigida |
+| --- | --- | --- |
+| 1 | `SpecPlanningSummary.tsx`, cliente `services/api.ts`, tipos de avaliações | Corrigir a formatação incompatível com o target; tipar paginação e corpos nativos completos. Tipos/build passam; resultado ausente continua unavailable. |
+| 2 | `SpecValidationPanel`, histórico da decomposição e `SpecModal` | Mostrar pareceres Current/Previous paginados com autoria, dimensões, justificativas e scores próprios; navegação de pendências respeita leitura e abre destino real. UV12/UV13/UV21. |
+| 3 | `SubmitSpecValidationModal` e resposta da API composta | Campo opcional tipado de decomposição apenas com permissão pertinente; consumir pareceres Current existentes sem copiá-los. Exibir separadamente registro e promoção. Testar negativo, bloqueio, conflito e retry. UV11/UV12/UV15/UV16/UV22. |
+| 4 | `useWorkspaceRevisions`, `SpecModal`, `SpecsPanel` e consumidores Card/Delivery visíveis | Conectar o hook hoje sem consumidores. Deduplicar por cliente autenticado/Board; invalidar dados afetados, inclusive allowed transitions e Coverage sem mudança de Spec.version. Painéis fechados carregam sob demanda. UV18/UV19. |
+| 5 | Formulários da Validation, inclusive Checklist, e submissão composta | Preservar campos e manifesto original; apresentar mudança externa e revisão explícita antes de aceitar nova base. Não incrementar chaves que remontam formulários sujos a cada polling. Revogação limpa conteúdo protegido. UV20. |
+| 6 | Testes dos componentes e browser contra runtime isolado | Observar mutação MCP e convergência visual, histórico completo, foco, navegação, offline/reconexão e perda de acesso. Não substituir esse ensaio pelos testes isolados do watcher. UV18–UV21. |
+
+A revisão explícita de conflito apresenta a necessidade de reler a edição e
+seus resultados; preservar o rascunho não significa validar automaticamente
+seus julgamentos contra a nova base. O usuário pode descartar o rascunho ou
+revisá-lo e confirmar a nova base. A confirmação gera nova tentativa, sem
+reutilizar a identidade de um request cujo conteúdo mudou. Não criar fusão
+semântica automática de pareceres.
+
+Não encerrar U3 enquanto existir qualquer uma destas lacunas: hook sem
+consumidor; botão de conclusão que não oferece o payload composto permitido;
+histórico reduzido a título/status; frontend recalculando gate; atualização que
+apaga rascunho; dados protegidos mantidos após revogação; build ou teste pertinente
+vermelho. O trabalho de U4 permanece obrigatório após esse fechamento.
 
 #### U4 — comprovar o percurso completo
 
@@ -477,8 +509,9 @@ e próximo passo exato. No E2E, registrar IDs/edições e evidências UI/MCP; n�
 alterar policies, scopes, skips ou percentuais para obter verde. Testes externos
 mockados precisam de execução observada para gerar prova autenticada.
 
-**Próxima ação de execução:** integrar Validation e sincronização externa U3
-sobre os contratos qualificados, conforme o ledger e §6.2.
+**Próxima ação de execução:** resolver os dois impedimentos registrados no WIP,
+qualificar autorização/paginação e completar a integração U3 na ordem do §6.2;
+depois executar U4. Não refazer composição pública ou API de revisões já provadas.
 **Critério de conclusão:** U1–U4 e
 UV01–UV24 demonstrados, ledger atualizado e par de repositórios publicado. Esta
 sequência mantém o escopo acordado; os incrementos implementados e as provas
