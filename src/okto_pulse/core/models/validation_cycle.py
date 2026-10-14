@@ -94,6 +94,8 @@ def project_validation_cycle(value: ValidationCycleSummary) -> dict[str, Any]:
             }
         )
     if value.subject_type.value == "spec":
+        if value.planning_manifest is not None:
+            payload["planning_manifest"] = value.planning_manifest.model_dump(mode="json")
         payload["checks"] = [
             project_validation_check_summary(item) for item in value.checks
         ]

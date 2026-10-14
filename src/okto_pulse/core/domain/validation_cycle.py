@@ -8,6 +8,8 @@ technical versions are available only through the result-scoped audit read.
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.spec_planning import SpecPlanningManifest
+
 import math
 import re
 from dataclasses import dataclass, field
@@ -377,6 +379,7 @@ class ValidationCycleSummary:
     previous_results: tuple[ValidationCycleResultSummary, ...] = ()
     checks: tuple[ValidationCycleCheckSummary, ...] = ()
     remaining_actions: tuple[str, ...] = ()
+    planning_manifest: SpecPlanningManifest | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.subject_type, AssessmentSubjectType):
@@ -429,6 +432,17 @@ class ValidationCycleSummary:
             else ValidationCycleResultType.AMBIGUITY_ASSESSMENT
         )
         primary_visible = primary_result_type in visible_sections
+        if self.planning_manifest is not None:
+            if (
+                self.subject_type is not AssessmentSubjectType.SPEC
+                or not primary_visible
+                or not isinstance(self.planning_manifest, SpecPlanningManifest)
+                or self.planning_manifest.spec_id != self.subject_id
+                or self.planning_manifest.edition != edition
+                or not isinstance(self.submission_fence, ValidationSubmissionFence)
+                or self.planning_manifest.spec_version != self.submission_fence.expected_subject_version
+            ):
+                raise ValidationCycleContractError("validation_cycle_planning_manifest_scope_mismatch")
         if primary_visible:
             if not isinstance(self.cycle_state, ValidationCycleState):
                 raise ValidationCycleContractError("validation_cycle_state_invalid")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import replace
 from typing import Mapping
 
 import pytest
@@ -20,6 +21,7 @@ from okto_pulse.core.application.use_cases.validation_cycle import (
 )
 from okto_pulse.core.domain.quality_assessment import AssessmentSubjectType
 from okto_pulse.core.domain.realm import RealmScope
+from okto_pulse.core.domain.spec_planning import SpecPlanningManifest
 from okto_pulse.core.domain.validation_cycle import (
     RequirementLintAnchor,
     RequirementLintPreflight,
@@ -56,6 +58,42 @@ from okto_pulse.core.domain.human_validation_cycle import (
 
 
 _DIGEST = "a" * 64
+
+
+def _planning_manifest(**overrides):
+    return SpecPlanningManifest.model_validate({
+        "board_id": "board-1", "spec_id": "spec-1", "edition": 3, "spec_version": 17,
+        "subject_incarnation": "a" * 32, "subject_revision": 7,
+        "authority_incarnation": "b" * 32, "authority_revision": 2,
+        **overrides,
+    })
+
+
+@pytest.mark.parametrize("overrides", [
+    {"subject_revision": True}, {"authority_revision": 0}, {"edition": "3"},
+    {"subject_incarnation": "missing"}, {"approved": True},
+])
+def test_planning_manifest_is_closed_and_not_a_client_approval(overrides):
+    with pytest.raises(ValueError):
+        _planning_manifest(**overrides)
+
+
+def test_planning_manifest_is_scoped_and_technical_only():
+    manifest = _planning_manifest()
+    cycle = ValidationCycleSummary(
+        subject_type=AssessmentSubjectType.SPEC, subject_id="spec-1", edition=3,
+        status="approved", cycle_state=ValidationCycleState.IN_PROGRESS,
+        current_result=None, previous_result_count=0, submission_fence=_fence(),
+        checks=_checks(), visible_sections=_spec_sections(), planning_manifest=manifest,
+    )
+    assert project_validation_cycle(cycle)["planning_manifest"] == manifest.model_dump()
+    assert cycle.current_result is None
+    for changed in ({"spec_id": "other"}, {"edition": 4}, {"spec_version": 18}):
+        with pytest.raises(ValidationCycleContractError, match="planning_manifest_scope_mismatch"):
+            replace(cycle, planning_manifest=_planning_manifest(**changed))
+    with pytest.raises(ValidationCycleContractError, match="planning_manifest_scope_mismatch"):
+        replace(cycle, visible_sections=(ValidationCycleResultType.REQUIREMENT_LINT,),
+                cycle_state=None, previous_result_count=None, submission_fence=None)
 
 
 def test_spec_validation_submit_rejects_historical_write_shapes() -> None:

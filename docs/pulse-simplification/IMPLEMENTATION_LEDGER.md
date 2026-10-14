@@ -2,6 +2,68 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U2: revisões transacionais e manifesto na leitura do ciclo
+
+Base deste incremento: Core 130dca86 / Community e08415ab. Escopo ativo continua
+U1–U4 / UV01–UV24; este checkpoint NÃO conclui U2 nem a entrega fim a fim.
+Community publicado em d3937da9; este registro acompanha o commit Core pareado.
+
+Core define SpecPlanningManifest fechado e imutável, com Board/Spec, edição,
+versão e revisões/incarnações do assunto e de sua autoridade. A porta pública
+SpecPlanningManifestPort está ligada à UoW; não contém SQL nem aprova avaliações.
+Community mantém validation_source_revisions e um censo explícito de fontes
+relacionais. Triggers de INSERT/UPDATE/DELETE avançam a revisão na mesma
+transação, cobrindo também writers SQL diretos, Card/plano sem bump da Spec,
+resultados e fontes compartilhadas de policy/permissão. Operações sem mudança
+efetiva e last_used_at do agente não invalidam. Exclusão do assunto remove seus
+metadados; recriação recebe outra incarnação e não reaproveita um token antigo.
+
+O reader consulta até 50 manifestos em uma única projeção indexada, sem carregar
+requisitos, avaliações ou histórico. Valida escopo/realm e recusa revisão
+ausente. require_current detecta divergência; **a conclusão ainda não o chama**.
+A leitura simples/em lote de Validation agora inclui planning_manifest somente
+com spec.validation.read. O REST aceita esse tipo fechado e responde 503 com
+spec_planning_manifest_unavailable quando falta autoridade de revisão.
+Tipos do frontend e teste do cliente preservam o objeto recebido.
+
+O ciclo usa o mesmo snapshot físico para conteúdo, resultados e manifesto.
+begin_community_consistent_read foi extraído da UoW e reutilizado sem alterar
+sua semântica; não cria outra UoW nem substitui o registro de persistência.
+Teste concorrente com WAL confirma que uma gravação entre a leitura dos checks
+e a do manifesto não mistura bases; a consulta seguinte observa a alteração.
+O lote de ciclos mantém custo constante por Board: sete SELECTs para uma ou
+cinquenta Specs, dos quais um é a projeção do manifesto. Isso não autoriza usar
+o ciclo completo como polling: U3 ainda precisa da projeção leve de metadados.
+
+Schema novo é criado apenas em base vazia; o fingerprint inclui tabela e
+triggers. Bases sem esses objetos são recusadas sem conversão ou exclusão.
+Home, instalação e processo do usuário não foram alterados.
+
+Provas já obtidas neste incremento: 95 testes Core em u2-manifest-core.xml
+(composição, contrato de ciclo, pinpoints, autoridade planner/MCP e catálogo);
+60 testes de armazenamento em u2-manifest-storage.xml e 60 de ciclo/UoW em
+u2-manifest-cycle.xml; 10 testes REST de autorização/projeção. Frontend: seis
+testes do API client e tsc -b passaram. Ruff F/E9 passou. Auditoria oficial do
+checkout: 8995 linhas, zero findings/drift documental e oito budgets ZERO em
+closure-u2-manifest.json; READMEs regenerados. Os XMLs estão em
+.validation-v040/spec-unified-20261014. A regressão conjunta identificou o novo
+fixture com sessão SQLAlchemy simples: corrigido para a fábrica semântica real
+do Community, sem relaxar regra de produto. Reexecução conjunta final aprovada:
+130 passed em u2-manifest-community.xml, incluindo os testes de armazenamento,
+manifesto, ciclo, REST e UoW no mesmo processo. A única advertência restante é
+a colisão de identidade ORM deliberada do teste de tradução de IntegrityError.
+Todos os testes Python usaram ambas as src via PYTHONPATH explícito; nenhum
+resultado foi atribuído ao runtime instalado. Links Markdown e diff --check
+passaram. Não foram executados novos testes visuais nem o U4 neste incremento.
+
+Próximo passo exato: tornar expected_planning_manifest obrigatório no comando,
+schemas REST/MCP e formulário; validar identidade e comparação sob begin_write
+antes dos efeitos, preservando replay. Disponibilizar a leitura correspondente
+ao agente MCP: a projeção de ciclo existente está ligada ao REST, não a uma tool
+MCP de ciclo. Depois completar predicado/resumo integrado ready/blocked/unavailable,
+U3 e U4. Não alegar que o writer já rejeita manifesto antigo, que o browser
+sincroniza com MCP ou que o ensaio completo foi executado neste checkpoint.
+
 ### 2026-10-14 — planejamento detalhado consolidado, sem mudança de produto
 
 Pedido atual: iniciar o planejamento detalhado da unificação, preservando todas

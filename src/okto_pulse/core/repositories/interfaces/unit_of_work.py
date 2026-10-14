@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     )
     from okto_pulse.core.ports.entity_export import EntityExportReadPort
     from okto_pulse.core.ports.spec_validation_receipts import SpecValidationReceiptStore
+    from okto_pulse.core.ports.spec_planning_manifest import SpecPlanningManifestPort
 
 
 class ConsistentReadContractError(RuntimeError):
@@ -56,6 +57,7 @@ class PulseUnitOfWork(RepositoryCatalog, Protocol):
     semantic_assessment_v2_capability: "SemanticAssessmentV2CapabilityPort"
     entity_exports: "EntityExportReadPort"
     spec_validation_receipts: "SpecValidationReceiptStore"
+    spec_planning_manifest: "SpecPlanningManifestPort"
 
     async def __aenter__(self) -> "PulseUnitOfWork": ...
 
