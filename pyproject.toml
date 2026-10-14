@@ -35,7 +35,7 @@ dev = [
     "build>=1.2.0,<2.0.0",
     # The standard Core fixtures exercise the Community-owned local persistence
     # and graph adapters. Keep that edition in the development path only.
-    "okto-pulse>=0.3.3,<1.0.0",
+    "okto-pulse==0.4.0",
     "pyright>=1.1.390,<2.0.0",
     "pytest>=8.0.0,<10.0.0",
     "pytest-asyncio>=0.24.0,<2.0.0",
@@ -57,6 +57,10 @@ Issues = "https://github.com/OktoLabsAI/okto-pulse-core/issues"
 [project.readme]
 file = "README.md"
 content-type = "text/markdown"
+
+[tool.uv.sources]
+# Paired local development only; published wheel dependencies remain versioned.
+okto-pulse = { path = "../okto_labs_pulse_community", editable = true }
 
 [build-system]
 requires = ["hatchling"]

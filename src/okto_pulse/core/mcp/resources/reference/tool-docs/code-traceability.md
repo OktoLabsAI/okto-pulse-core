@@ -1,5 +1,5 @@
 ---
-version: "1.3"
+version: "1.4"
 ---
 
 # Tool docs — Code Traceability
@@ -11,6 +11,12 @@ response has `contract_version="delivery-readiness/v1"`, independent
 implementation and verification metrics, native lifecycle status, causes and
 up to three next actions. Card verification includes associated proof from
 other Cards. A low score is a successful diagnostic read, not a query error.
+`metrics_version=2` is required by new readers. Each known phase uses
+`floor(100 * satisfied / applicable)`; waivers stay in the denominator without
+proof credit. Normal/Bug units are assigned contribution obligations, Test Card
+verification units are linked scenarios (implementation N/A), and Spec units are
+unique global obligations. Full formulas, examples and minimal action flow:
+`okto-pulse://reference/code-traceability`, **Current delivery readiness**.
 
 `phase` (`all`, `implementation`, `verification`, `lifecycle`) filters issues
 without changing metrics or gates. `limit` is 1..20 (default 20). Follow
@@ -109,6 +115,8 @@ The percentage is informational, never a lifecycle approval or an executor/revie
 progress notes and waivers add no credit. Revocation, stale receipts or changed
 scope remove credit. Missing explicit obligations or incomplete scope return
 `percent: null` with `scope_missing` or `scope_incomplete`, never a guessed zero.
+Those stages describe only the deprecated contract. Independent readiness proof
+does not wait for Done; its lifecycle assessment still reports open Cards/gates.
 
 ## `okto_pulse_record_delivery_evidence`
 

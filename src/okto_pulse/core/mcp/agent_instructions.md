@@ -84,6 +84,7 @@ Prefer soft-delete (`okto_pulse_archive_tree`, `okto_pulse_remove_spec_entity(ta
 Schemas: MCP `tools/list`. Catalog and exact args/results/examples: `okto-pulse://reference/tools_catalog`.
 
 Before Spec Done, use `okto_pulse_get_delivery_evidence` / `okto_pulse_record_delivery_evidence`: tasks prove code; **test cards** verify it. No implicit exemption. Protocol: `okto-pulse://reference/code-traceability`.
+Use `view="readiness"` for independent implementation/verification metrics and minimal next actions. Proof is separate from lifecycle: 100/100 does not authorize Done. N/A, unknown and human exceptions are distinct; never translate deprecated `delivery_completeness` stages into the new metrics. Follow paginated detail before claiming a complete diagnosis, and reuse valid existing proof when only association is missing.
 
 - **Validation & move gates**: `okto_pulse_move_{card,ideation,refinement,spec}`, `submit_{task_validation,spec_validation,spec_evaluation}`; coverage check: `okto_pulse_get_traceability_report`.
 - **Quality evidence**: read `okto-pulse://reference/quality-assessments` before recording ambiguity or using a receipt/currentness result in a gate decision.

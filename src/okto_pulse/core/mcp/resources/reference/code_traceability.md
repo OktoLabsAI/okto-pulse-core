@@ -1,5 +1,5 @@
 ---
-version: "1.2"
+version: "1.3"
 ---
 
 # Agent-mediated Code Traceability
@@ -19,6 +19,66 @@ change, not a citation-only edit. This exemption does not unlock editing outside
 Draft or relax receipt/subject version matching.
 
 ## Delivery evidence
+
+### Current delivery readiness
+
+Use `okto_pulse_get_delivery_evidence(board_id, spec_id, view="readiness")`;
+add `card_id` for one Card. The versioned response is `delivery-readiness/v1`
+with `metrics_version=2`. It separates implementation proof, verification proof
+and lifecycle. It does not average executor/reviewer scores or Card statuses.
+
+For each phase, `percent = floor(100 * satisfied / applicable)` when the
+population, allocation and that phase's evaluation are known. `satisfied` counts
+only current sufficient proof. `applicable` includes waived obligations: a waiver
+may admit a gate but does not earn proof credit. A declared partial contribution
+does not earn fractional credit. A total of 999/1000 is 99%, never 100%.
+
+Units depend on scope:
+- Normal and Bug Cards use their assigned contribution obligations, including
+  qualified inherited BR responsibility. Test evidence may come from another Card.
+- Test Cards have implementation `not_applicable`; verification counts their
+  linked required scenarios with current authenticated results.
+- A Spec uses its unique global obligation inventory and required contributions,
+  not the average of Card percentages. Decisions use their explicit verification
+  plan and need no artificial implementation Card or Test Card.
+
+`status="not_applicable"` has `percent=null` and an empty applicable population.
+It is not a waiver. `status="unknown"` also has `percent=null`, but explains an
+unresolved population, scope, permission or evaluation; never replace it by zero.
+Implementation can remain known when only verification is unavailable. Paginated
+diagnostics do not truncate the metric denominator. Completeness of population,
+scope, evaluation and response page are separate fields.
+
+Examples: 8/8 implemented and 6/8 verified means I=100%, V=75%. Complete current
+proof may yield 100/100 while required Cards or other lifecycle gates remain open.
+An effective human exception can permit completion with proof below 100%; it
+remains visible as an exception. Stored Done plus stale current evidence keeps
+Done history and reports current divergence; reads do not reopen anything.
+
+Minimal action flow:
+1. Read readiness in the intended scope; inspect `summary`, `issues`, lifecycle
+   and `next_actions`. A low percentage is a successful read, not an API failure.
+2. Follow the exact `detail_query` and `page.next_cursor` for omitted facts. The
+   summary exposes at most three next actions; a partial page is not a full audit.
+   Keep scope, phase, limit and snapshot pinned. Restart on stale snapshot/cursor.
+3. Resolve the actual cause using existing native operations. Associate existing
+   valid proof when only its association is missing; do not rerun work merely to
+   satisfy a narrative checkpoint or a manual resolved checkbox. Execute tests
+   only when real evidence is missing, stale, failing or otherwise insufficient.
+4. Re-read affected Card/Spec readiness. Every mutation reauthorizes and rechecks
+   native gates; a read action or 100/100 does not grant transition authority.
+
+The UI shows separate implementation and verification bars, both on the Card and
+in Delivery. "What is missing?" opens scoped causes, expected/observed facts and
+native links. Receipt links require the exact current scenario evidence pointer;
+an unavailable old receipt never opens a replacement result. Inspection links
+retain the full review batch. Exceptions open the Spec's Coverage > Implementation.
+
+The older `delivery_completeness` field is deprecated and retained unchanged for
+existing readers. Its 0/50/80/100 stages are not either new metric. New clients
+must reject an unavailable/incompatible readiness contract instead of translating
+that score. No evidence rewrite, backfill or storage migration accompanies this
+reader compatibility. Previous editions remain audit history, not current credit.
 
 **Mandatory before completing a Spec:** planning/context evidence is not proof of
 the delivered implementation. Call `okto_pulse_get_delivery_evidence(board_id,

@@ -1,5 +1,5 @@
 ---
-version: "1.3"
+version: "1.4"
 ---
 
 Knowledge Base placement, authority, and safe promotion are governed by
@@ -20,6 +20,14 @@ Planning Code Evidence links and Skip settings cannot satisfy this gate. Tests m
 cover the current implementation records, not a previous delivery. Do not reopen
 old done Specs merely to repair their evidence; retrospective associations are
 permitted. Follow `okto-pulse://reference/code-traceability` (Delivery evidence).
+
+Use `view="readiness"` for the current global obligation metrics, unresolved
+causes, current lifecycle assessment and bounded next actions. A Spec's values
+are not Card averages. Known proof at 100/100 can coexist with open required
+Cards or pending lifecycle gates. Waivers permit only their explicit gate scope
+and never increase proof percentages. Unknown and N/A both have null percentages
+but different meanings. Follow diagnostic/detail pagination before claiming a
+complete audit; no read closes Cards, executes tests or changes historical Done.
 
 Active Decisions need an explicit verification plan before validation/start:
 exact same-Spec obligation_refs and/or an observable inspection condition and
