@@ -2,6 +2,52 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U2: paridade de cobertura e autoridade do resultado de qualidade
+
+Retomada da implementação sobre Core `49520a4b` / Community `93769ff1`.
+Community deste incremento publicado: `16b8edef`; correção Core e provas seguem
+neste registro pareado.
+Turno anterior: progresso documental publicado; não comprovava entrega final.
+Imports de comportamento conferidos nas duas árvores src com PYTHONPATH explícito.
+
+Acrescentados 32 casos com persistência real: oito famílias de cobertura ×
+Spec Validation habilitada/desabilitada × REST/MCP. Leitura e writer veem a
+mesma pendência e preservam o diagnóstico. Recusa mantém estado, versão, edição
+e os dois históricos, sem recibo de operação. AC continua exclusivo da
+avaliação habilitada: no caminho desabilitado, não vira obrigação nova.
+Os mesmos 32 casos passaram novamente incluindo a consulta REST de allowed
+transitions: recusa de cobertura coincide; AC com quality habilitada aponta ao
+comando obrigatório de validação, enquanto AC com quality off não bloqueia.
+Lint externo usa o fixture de admissão existente; MCP exercita a função
+registrada e UoW real com identidade/permissões explícitas, sem alegar E2E de auth.
+
+Reprodução adicional do requisito de leitura malformada de U2: resultado sem
+outcome/conteúdo desconhecido ou ponteiro órfão virava blocked; ID corrente
+duplicado podia virar ready. Quatro testes falharam antes da correção.
+`quality_result` agora exige ponteiro válido, correspondência única e outcome
+nativo; inconsistência vira unavailable sem fabricar reprovação, aprovação ou
+ação de novo parecer. Nenhuma mudança em gates de promoção, policy ou histórico.
+
+Provas: 114 passes backend (composição, readiness, atualidade de decomposição e
+revisões); 15 passes em SpecValidationPanel, incluindo indisponibilidade versus
+parecer negativo e recuperação por refresh. tsc -b e Ruff F passaram.
+Na construção dos testes foram corrigidos o reseal da autoridade do fixture
+alterado e a leitura do envelope JSON; não houve relaxamento de gates.
+Detalhes e limites em `evidence-u2-read-write-parity-20261014.json`.
+Closure dos checkouts passou: 9.029 linhas de propriedade, zero findings/drift
+documental, oito budgets ZERO. Não houve reconstrução nem auditoria nova de wheels.
+
+Browser real 5274: resumo expandido distinguindo Required/Advisory/Off/Not
+applicable, Spec isolada ainda Approved. Screenshot inspecionado. O backend
+isolado 13040 não foi reiniciado: esta inspeção não é prova instalada da correção
+de head malformado. Cinco erros antigos de admissão/configuração na console,
+sem novo erro durante a inspeção. Home/processo 40020 do usuário intactos.
+
+Retomada exata: completar paridade U2 de Checklist/Policy/arquitetura/code evidence,
+alocação e suas projeções de allowed transitions com os casos existentes antes de acrescentar
+testes; depois concluir consumidores U3 e U4. Não repetir a matriz de cobertura
+nem declarar UV09/UV22 completos por esta prova parcial. Objetivo segue ativo.
+
 ### 2026-10-14 — planejamento detalhado reconciliado, sem alteração de produto
 
 Pedido atual: iniciar o planejamento detalhado da unificação. Primeiro foi

@@ -101,10 +101,18 @@ async def read_spec_planning_readiness(
 
     async def quality_result():
         pointer = getattr(spec, "current_validation_id", None)
-        rows = [row for row in (spec.validations or []) if row.get("id") == pointer]
-        if not rows:
+        if pointer is None:
             return None
-        row = rows[-1]
+        if not isinstance(pointer, str) or not pointer.strip():
+            raise ValueError("spec_validation_head_invalid")
+        rows = [row for row in (spec.validations or []) if row.get("id") == pointer]
+        # Missing/ambiguous authority is not a reviewer's negative opinion, nor
+        # may a duplicate head silently choose the last apparently positive row.
+        if len(rows) != 1:
+            raise ValueError("spec_validation_head_invalid")
+        row = rows[0]
+        if row.get("outcome") not in {"success", "failed"}:
+            raise ValueError("spec_validation_outcome_invalid")
         return row if require_spec_validation_edition(row) == spec.edition else None
 
     def interpret_quality(row):

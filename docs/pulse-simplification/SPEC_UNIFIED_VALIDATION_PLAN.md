@@ -2,9 +2,11 @@
 
 Plano de 14 de outubro de 2026. **U1 implementado; U2 parcial; U3 parcial; U4 pendente.**
 Revisão de planejamento sobre Core `1ce49fda` / Community `93769ff1`,
-ambos publicados em `feature/v0.4.0`. Esta revisão é documental; não representa
-nova implementação, execução de testes ou instalação. O pedido atual é detalhar
-o planejamento; a próxima ação de execução abaixo fica registrada para retomada.
+ambos publicados em `feature/v0.4.0`. Esse checkpoint foi documental; a execução
+foi retomada posteriormente. U2 ganhou 32 casos de paridade de cobertura REST/MCP
+e correção da projeção de resultado malformado: ver
+[evidência parcial U2](evidence-u2-read-write-parity-20261014.json).
+As demais famílias de gates, U3 completo e U4 permanecem pendentes.
 
 ### Leitura executiva do plano
 
@@ -597,7 +599,9 @@ e próximo passo exato. No E2E, registrar IDs/edições e evidências UI/MCP; n�
 alterar policies, scopes, skips ou percentuais para obter verde. Testes externos
 mockados precisam de execução observada para gerar prova autenticada.
 
-**Próxima ação de execução:** expandir revisões além da Validation/conclusão,
+**Próxima ação de execução:** completar a paridade U2 das famílias de gates ainda
+não demonstradas em conjunto, sem repetir os 32 casos de cobertura; expandir
+revisões além da Validation/conclusão,
 incluindo listas/novos objetos, Cards/Delivery, Coverage e demais leitores,
 protegendo os demais editores e comprovando os cenários restantes de §6.2;
 depois executar U4. Não refazer composição pública ou API de revisões já provadas.

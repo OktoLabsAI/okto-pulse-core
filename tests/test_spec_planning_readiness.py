@@ -198,6 +198,26 @@ async def test_malformed_quality_edition_is_unavailable_not_authored_rejection()
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("corruption", ["missing_outcome", "unknown_outcome", "duplicate_head", "dangling_head"])
+async def test_invalid_quality_head_is_unavailable_not_a_reviewer_verdict(corruption):
+    inputs = rig()
+    record = inputs["spec"].validations[0]
+    if corruption == "missing_outcome":
+        record.pop("outcome")
+    elif corruption == "unknown_outcome":
+        record["outcome"] = "not_a_native_outcome"
+    elif corruption == "duplicate_head":
+        inputs["spec"].validations.append(dict(record))
+    else:
+        inputs["spec"].current_validation_id = "absent"
+    result = await read_spec_planning_readiness(**inputs)
+    component = by_key(result)["spec_validation"]
+    assert result.state == component.state == "unavailable"
+    assert component.native_result is None and component.result_ids == ()
+    assert component.next_action is None  # A new authored review does not repair authority.
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("field,permission,key,method", [
     ("integration_requirements", "spec.integration_requirements.read", "integration_coverage", "check_ir_coverage"),
     ("observability_requirements", "spec.observability_requirements.read", "observability_coverage", "check_or_coverage"),

@@ -167,12 +167,141 @@ async def test_composed_permission_failure_writes_neither_review():
     assert uow.commit_calls == 0
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("surface", ["rest", "mcp"])
+@pytest.mark.parametrize("quality_enabled", [True, False])
+@pytest.mark.parametrize("field,component,entry", [
+    ("acceptance_criteria", "acceptance_coverage", {"id": "ac_missing", "text": "Observable outcome"}),
+    ("test_scenarios", "test_card_coverage", {"id": "ts_missing", "title": "Missing Test owner"}),
+    ("functional_requirements", "business_coverage", {"id": "fr_missing", "text": "Missing business coverage"}),
+    ("technical_requirements", "technical_coverage", {"id": "tr_missing", "text": "Missing technical owner"}),
+    ("api_contracts", "contract_coverage", {"id": "contract_missing", "method": "GET", "path": "/mock"}),
+    ("integration_requirements", "integration_coverage", {"id": "ir_missing", "title": "Missing integration owner"}),
+    ("observability_requirements", "observability_coverage", {"id": "or_missing", "title": "Missing observability owner"}),
+    ("decisions", "decision_verification", {"id": "decision_missing", "title": "Missing verification plan", "status": "active"}),
+])
+async def test_native_coverage_readiness_matches_promotion_and_rollback(
+    composition_client, db_factory, monkeypatch, surface, quality_enabled, field, component, entry,
+):
+    """U2 parity: the actual reader and writer see the same persisted gap.
+
+    Only external lint admission is isolated by composition_client. Coverage,
+    decomposition, checklist snapshot, REST/MCP UoW and rollback remain native.
+    MCP authentication is supplied explicitly; this is not a wire/auth E2E test.
+    AC coverage deliberately belongs only to enabled Spec quality validation.
+    """
+    from sqlalchemy import select
+    from sqlalchemy_test_models import Board
+    from native_subject_testing import record_native_subject_authority
+    from okto_pulse.community.adapters.sqlalchemy_models import SpecValidationOperationReceiptRow
+
+    client, spec_id, _ = composition_client
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        board = await db.get(Board, spec.board_id)
+        board.settings = {**board.settings, "require_spec_validation": quality_enabled}
+        setattr(spec, field, [entry])
+        for name, value in _direct_spec_context_fields(spec_id).items():
+            setattr(spec, name, value)
+        await record_native_subject_authority(db, rows=[spec], revision="coverage-parity")
+        await SpecService(db).submit_spec_evaluation(
+            spec_id, "independent-reviewer", "Independent reviewer", decomposition_payload(),
+        )
+        await db.commit()
+
+    async with db_factory() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        board = await db.get(Board, spec.board_id)
+        summary = await service.get_planning_readiness(
+            spec, board, can_read=lambda _: True, can_act=lambda _: True,
+        )
+        gap = next(item for item in summary.components if item.key == component)
+        applicable = quality_enabled or field != "acceptance_criteria"
+        assert gap.state == ("blocked" if applicable else "ready"), gap
+        if not applicable:
+            assert gap.mode == "off"
+        original_state = (spec.status, spec.version, spec.edition, spec.evaluations, spec.validations)
+        payload = {
+            **_validation_payload(), "expected_spec_version": spec.version,
+            "expected_planning_manifest": await current_manifest(db, spec_id),
+            "idempotency_key": "coverage-parity",
+        }
+
+    preview = client.get(f"/api/v1/boards/{board.id}/allowed-transitions", params={
+        "entity_type": "spec", "entity_id": spec_id,
+    })
+    assert preview.status_code == 200, preview.text
+    transition = next(item for item in preview.json()["allowed_transitions"] if item["to_status"] == "validated")
+    if quality_enabled and field == "acceptance_criteria":
+        # Direct-move preview points to the quality command; it does not claim
+        # that submitting a quality opinion will bypass its AC prerequisite.
+        assert "spec_validation_required" in transition["blocked_reason"]
+    elif applicable:
+        assert gap.message in transition["blocked_reason"]
+    else:
+        assert transition["blocked_reason"] is None
+
+    if surface == "rest":
+        response = client.post(
+            f"/api/v1/specs/{spec_id}/validation" if quality_enabled else f"/api/v1/specs/{spec_id}/move",
+            json=payload if quality_enabled else {"status": "validated"},
+        )
+        if applicable:
+            assert response.status_code in {400, 409}, response.text
+            # Compare decoded diagnosis, not JSON's escaped quotation marks.
+            detail = response.json()["detail"]
+            assert gap.message == (detail["message"] if isinstance(detail, dict) else detail), response.text
+        else:
+            assert response.status_code == 200, response.text
+    else:
+        import json
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        from okto_pulse.core.mcp import server
+        from okto_pulse.core.domain.spec_planning import SpecPlanningManifest
+
+        monkeypatch.setattr(server, "_get_agent_ctx", AsyncMock(return_value=SimpleNamespace(
+            agent_id=USER_ID, agent_name="Coverage parity reviewer", realm_id="local",
+            permissions=["spec.read", "spec.update", "spec.entity.read", "spec.entity.edit_fields",
+                         "spec.interact_in.approved", "spec.validation.submit", "spec.move.approved_to_validated"],
+        )))
+        if quality_enabled:
+            tool = await server.mcp.get_tool("okto_pulse_submit_spec_validation")
+            result = json.loads(await tool.fn(
+                board_id=board.id, spec_id=spec_id, **{
+                    **payload, "expected_planning_manifest": SpecPlanningManifest.model_validate(
+                        payload["expected_planning_manifest"],
+                    ),
+                },
+            ))
+        else:
+            tool = await server.mcp.get_tool("okto_pulse_move_spec")
+            result = json.loads(await tool.fn(board_id=board.id, spec_id=spec_id, status="validated"))
+        if applicable:
+            assert gap.message == result.get("message", result.get("detail", result.get("error"))), result
+        else:
+            assert result.get("success") is True and result["to_status"] == "validated", result
+
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        if applicable:
+            assert (spec.status, spec.version, spec.edition, spec.evaluations, spec.validations) == original_state
+            receipts = (await db.execute(select(SpecValidationOperationReceiptRow).where(
+                SpecValidationOperationReceiptRow.spec_id == spec_id,
+            ))).scalars().all()
+            assert receipts == []
+        else:
+            assert spec.status == SpecStatus.VALIDATED
+
+
 @pytest_asyncio.fixture
 async def composition_client(db_factory, monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from okto_pulse.community.api import auth_deps
     from okto_pulse.community.api.specs import router
+    from okto_pulse.community.api.allowed_transitions import router as transitions_router
     from okto_pulse.core.infra.database import get_db
 
     _install_current_external_requirement_lint(monkeypatch)
@@ -190,6 +319,7 @@ async def composition_client(db_factory, monkeypatch):
 
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
+    app.include_router(transitions_router, prefix="/api/v1")
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[auth_deps.require_user] = lambda: USER_ID
     app.dependency_overrides[auth_deps.get_realm_id] = lambda: "local"
