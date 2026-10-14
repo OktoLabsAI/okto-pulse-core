@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — detalhamento final da retomada da validação unificada
+
+Checkpoint prévio publicado: Core dee6610b / Community fc92616a, ambos na
+feature/v0.4.0. O código preexistente foi preservado como WIP, incluindo a falha
+conhecida do fixture de admissão. Esta revisão altera somente documentação;
+não prossegue com implementação, execução do produto ou instalação.
+
+SPEC_UNIFIED_VALIDATION_PLAN.md é o plano único. §6.2 foi reconciliado com os
+artefatos existentes: os dois impedimentos antigos já têm correção; o diagnóstico
+de Checklist ainda requer fixture com realm e comprovação REST/MCP/rollback.
+O histórico e o formulário composto existem, mas a sincronização não está
+integrada. Não reaplicar essas entregas nem declarar U3 encerrado.
+
+Sequência concreta: qualificar admissão e contratos append/listagem; completar
+paridade dos gates; conectar watcher aos leitores visíveis, permissões e revisão
+explícita dos formulários; testar UI aberta com mutação MCP; executar U4 isolado
+até Cards/Test/Spec Done e KG canonical. A tabela de integração delimita arquivos,
+consumidores e proteções para cada mudança, inclusive Card sem bump da Spec,
+descoberta de objetos novos, acesso revogado e respostas fora de ordem.
+
+Preservam-se U1–U4, UV01–UV24, todas as avaliações e suas dimensões/rubricas,
+severidades, thresholds, autoria, permissões e histórias. A unificação reúne a
+conclusão; não cria média entre avaliações nem dispensa controles de execução.
+Zero Decisions é permitido; Decision ativa mantém as exigências próprias.
+Nenhuma migração ou compatibilidade foi reintroduzida.
+
+Verificação desta revisão: leitura dirigida de código e artefatos existentes;
+links locais do plano e git diff --check. Não houve nova suíte ou E2E, pois não
+foi alterado código nesta revisão documental. Próxima execução começa no
+fixture de admissão, não na reconstrução dos componentes já presentes.
+
 ### 2026-10-14 — checkpoint U3 parcial preservado antes do planejamento
 
 Pedido atual: planejamento detalhado. Preservar o código já presente, sem

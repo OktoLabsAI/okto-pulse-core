@@ -1,14 +1,14 @@
 # Validação unificada do planejamento da Spec
 
 Plano de 14 de outubro de 2026. **U1 implementado; U2 parcial; U3 iniciado; U4 pendente.**
-Checkpoint WIP atual: Core `46e9effb` / Community `b7a541bb`, publicado.
+Checkpoint WIP atual: Core `dee6610b` / Community `fc92616a`, publicado.
 Último par com composição e revisões leves qualificados:
 Core `3dce9233` / Community `204c7f4a`.
 Conclusão composta, replay e manifesto já possuem implementação e regressões.
 A leitura integrada e a consulta leve de revisões estão implementadas.
 O bloqueio arquitetural do WIP foi corrigido pelo catálogo público; closure
 voltou a ZERO nos oito budgets. Provas e par publicado constam no ledger.
-Há resumo e infraestrutura de atualização na interface, ainda incompletos.
+Há resumo, histórico e formulário composto na interface, ainda em qualificação.
 Integração da sincronização externa e ensaio final permanecem pendentes.
 A seção 6.2 define a sequência concreta sem ampliar o escopo.
 
@@ -313,26 +313,34 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Base desta revisão:** Core `46e9effb` / Community `b7a541bb`, branch
+**Base desta revisão:** Core `dee6610b` / Community `fc92616a`, branch
 `feature/v0.4.0`, publicados antes da revisão documental. Preservam o trabalho
 local como WIP; **não são milestone aprovado nem release instalável**.
 O reach-in privado do checkpoint antigo foi corrigido no par
 `3dce9233` / `204c7f4a`, cuja closure confirmou oito budgets ZERO. Não repetir
 essa correção. O WIP posterior precisa de nova qualificação.
 
-A conferência do WIP encontrou dois impedimentos objetivos: um teste REST de
-permissões espera uma resolução, mas recebe três após as verificações de leitura;
-e `SpecPlanningSummary.tsx` usa `String.replaceAll`, indisponível no target
-TypeScript atual. Tratar o primeiro com investigação do contrato e teste de
-autoridade efetiva; tratar o segundo localmente, sem elevar o target da aplicação
-para acomodar uma operação de formatação. Nenhum deles justifica alterar gates.
+A conferência atual encontrou as correções dos dois impedimentos anteriores:
+o teste REST separa a verificação de leitura da escrita negada e a formatação
+usa expressão regular compatível com o target. O artefato
+`u3-opinions-core.xml` registra 48 passes. Não reaplicar essas correções.
+
+O impedimento atual é a qualificação do diagnóstico de Checklist não
+configurado: houve HTTP 500 na admissão Review → Approved em Board novo;
+o WIP introduz erro tipado pela porta e recusa acionável no serviço. Entretanto,
+`u3-admission-community.xml` registra três passes e uma falha de fixture
+(`boards.realm_id` ausente), antes de exercitar a correção. Corrigir a preparação
+com o realm nativo e comprovar recusa/rollback; não alterar o schema, criar
+binding automático ou dispensar gate para fazer esse teste passar.
+`closure-u3-interface.json` registra oito budgets ZERO e nenhum finding/drift.
+Essas evidências não encerram o milestone nem substituem o E2E.
 
 | Frente | Já existe | Falta comprovar ou implementar |
 | --- | --- | --- |
 | U1 | Cards Not Started em Draft e remoção da exigência de existir Decision. | Percurso real UI/MCP no U4; não refazer a implementação. |
 | U2 — conclusão | Payload composto, permissões independentes, pareceres/históricos nativos, promoção condicionada, recibo/replay e manifesto obrigatório. | Paridade completa de todos os caminhos com os gates aplicáveis. |
-| U2 — leitura | `include_planning`, 17 componentes, composição pública sem escrita, revisões leves em lote e testes de custo/snapshot. WIP acrescenta permissões por componente e paginação nativa REST/MCP. | Qualificar o WIP de autorização/paginação, provar paridade e atualizar o cliente de histórico. |
-| U3 | Formulário envia manifesto e conserva a base quando há edição local; chave de retry estável. Resumo compacto ligado à Validation e watcher/hook com testes isolados. | Corrigir build; integrar histórico/decomposição e conclusão composta; conectar o hook aos consumidores, com revisão explícita de conflito e proteção dos formulários. |
+| U2 — leitura | `include_planning`, 17 componentes, composição pública sem escrita, revisões leves em lote, permissões por componente, paginação REST/MCP e cliente tipado. Regressão de opiniões: 48 passes. | Completar matriz de paridade dos gates; corrigir fixture e qualificar diagnóstico/rollback da admissão sem Checklist. |
+| U3 | Resumo, histórico Current/Previous paginado, contribuição independente, payload opcional na conclusão, distinção registro/promoção e revisão explícita da base no formulário. Watcher/hook com testes isolados. | Conectar o hook aos consumidores e à revisão da base; proteger todos os formulários e reautorizar após mudança de acesso; qualificar os componentes integrados no browser. |
 | U4 | Regressões parciais registradas no ledger. | Wheels, runtime compatível, browser e iniciativa nova até Done/KG; matriz UV01–UV24. |
 
 #### U2 — encerrar backend e contratos antes da interface
@@ -341,10 +349,12 @@ Executar na ordem abaixo. Os itens detalham U2.3/U2.4, sem novos milestones.
 
 1. **Qualificar o WIP de leitura e histórico.** A composição arquitetural já
    está corrigida; preservar catálogo público e sessão/snapshot únicos.
-   Conferir permissões por componente em `spec_planning_readiness.py` e a
-   listagem em `spec_crud.py`, `services/main.py`, MCP e REST. Resolver a falha
-   do teste de paridade sem reduzir autorização; testar leitura negada,
-   Board distinto, paginação e Current/Previous. A listagem não recalcula
+   Preservar as regressões de permissões por componente em
+   `spec_planning_readiness.py` e da listagem em `spec_crud.py`, `services/main.py`,
+   MCP e REST. Mapear os testes existentes antes de acrescentar casos de leitura
+   negada, Board distinto, paginação e Current/Previous. Conferir tipos separados
+   para append e listagem: `lifecycle_state` é projeção de leitura, não campo
+   garantido pelo recibo de `submitSpecEvaluation`. A listagem não recalcula
    julgamentos nem aplica a antiga flag stale. A paginação atual limita a
    resposta, mas ainda lê a coleção JSON nativa: não alegar paginação física
    indexada nem abrir uma migração para este incremento.
@@ -356,6 +366,10 @@ Executar na ordem abaixo. Os itens detalham U2.3/U2.4, sem novos milestones.
    malformados. Lint/AC/recursos exclusivos da avaliação habilitada não viram
    obrigações novas no caminho direto. `ready` não concede permissão nem muda
    lifecycle; bloqueio de promoção não impede registrar parecer válido negativo.
+   Qualificar também a recusa de admissão sem Checklist: fixture com realm,
+   diagnóstico acionável REST/MCP e nenhuma alteração em estado, versão, edição,
+   avaliações, snapshots, atividade ou eventos. Reiniciar somente o runtime
+   isolado para observar a correção pelo browser; processo antigo não é prova.
    Saída: UV04–UV17/UV22 pertinentes com persistência real, sem escrita parcial.
 3. **Consumir os metadados leves já implementados.** O contrato por Board
    aceita 1–50 IDs Spec/Card e retorna revisões, sem corpos de avaliações ou
@@ -403,9 +417,9 @@ Os passos abaixo são tarefas do mesmo milestone U3, não novas frentes de produ
 
 | Ordem | Arquivos/pontos de integração | Entrega e prova exigida |
 | --- | --- | --- |
-| 1 | `SpecPlanningSummary.tsx`, cliente `services/api.ts`, tipos de avaliações | Corrigir a formatação incompatível com o target; tipar paginação e corpos nativos completos. Tipos/build passam; resultado ausente continua unavailable. |
-| 2 | `SpecValidationPanel`, histórico da decomposição e `SpecModal` | Mostrar pareceres Current/Previous paginados com autoria, dimensões, justificativas e scores próprios; navegação de pendências respeita leitura e abre destino real. UV12/UV13/UV21. |
-| 3 | `SubmitSpecValidationModal` e resposta da API composta | Campo opcional tipado de decomposição apenas com permissão pertinente; consumir pareceres Current existentes sem copiá-los. Exibir separadamente registro e promoção. Testar negativo, bloqueio, conflito e retry. UV11/UV12/UV15/UV16/UV22. |
+| 1 | `SpecPlanningSummary.tsx`, cliente `services/api.ts`, tipos de avaliações | Preservar a correção de formatação; conferir diferença append/listagem e rodar tipos/build. Resultado ausente continua unavailable. |
+| 2 | `SpecValidationPanel`, `SpecDecompositionHistory`, `SpecDecompositionPanel` e `SpecModal` | Qualificar o WIP de pareceres Current/Previous com autoria, dimensões, justificativas e scores próprios; navegação respeita leitura e abre destino real. UV12/UV13/UV21. |
+| 3 | `SubmitSpecValidationModal` e resposta da API composta | Qualificar campo opcional com permissão pertinente, reuso de Current e distinção registro/promoção já implementados. Testar negativo, bloqueio, conflito e retry. UV11/UV12/UV15/UV16/UV22. |
 | 4 | `useWorkspaceRevisions`, `SpecModal`, `SpecsPanel` e consumidores Card/Delivery visíveis | Conectar o hook hoje sem consumidores. Deduplicar por cliente autenticado/Board; invalidar dados afetados, inclusive allowed transitions e Coverage sem mudança de Spec.version. Painéis fechados carregam sob demanda. UV18/UV19. |
 | 5 | Formulários da Validation, inclusive Checklist, e submissão composta | Preservar campos e manifesto original; apresentar mudança externa e revisão explícita antes de aceitar nova base. Não incrementar chaves que remontam formulários sujos a cada polling. Revogação limpa conteúdo protegido. UV20. |
 | 6 | Testes dos componentes e browser contra runtime isolado | Observar mutação MCP e convergência visual, histórico completo, foco, navegação, offline/reconexão e perda de acesso. Não substituir esse ensaio pelos testes isolados do watcher. UV18–UV21. |
@@ -422,6 +436,25 @@ consumidor; botão de conclusão que não oferece o payload composto permitido;
 histórico reduzido a título/status; frontend recalculando gate; atualização que
 apaga rascunho; dados protegidos mantidos após revogação; build ou teste pertinente
 vermelho. O trabalho de U4 permanece obrigatório após esse fechamento.
+
+#### Integração delimitada da atualização externa
+
+Esta tabela concretiza os passos 4–6; não amplia os critérios UV18–UV20.
+
+| Mudança observada | Consumidor/ação | Proteção e prova |
+| --- | --- | --- |
+| Revisão da Spec ou resultados do ciclo | `SpecModal`, `SpecValidationPanel`, histórico e allowed transitions | Recarregar leituras afetadas sem remontar modal/formulários. Resposta de outra Spec/edição é descartada; histórico fechado só recarrega ao abrir. |
+| Card/alocação/Delivery sem mudança de `Spec.version` | `CardModal`, `KanbanBoard`, `SpecsPanel`, Coverage/Delivery e referências visíveis | Invalidar projeções pertinentes a partir das revisões autoritativas, sem calcular gates ou percentuais no frontend. Provar convergência por mutação MCP. |
+| Formulário de avaliação ou Checklist em edição | `SubmitSpecValidationModal`, `SpecDecompositionPanel`, `SpecChecklistPanel` | Conservar campos e base original; mostrar conflito e exigir revisão explícita. Não usar `workspaceReloadKey` para remontar formulário sujo. Testar também execução de Checklist aberta e resposta atrasada. |
+| Revisão de autoridade ou acesso negado | Watcher, `usePermissions` e leitores protegidos | Invalidar cache de permissões e cancelar respostas antigas; reautorizar antes de voltar a exibir conteúdo. O TTL atual de 60 s não comprova revogação. Preservar rascunhos ainda autorizados; retirar conteúdo cujo acesso foi perdido. |
+| Novo Card/Spec ainda não assinado | Listagens existentes de Board/Spec | Provar descoberta pelo fluxo de atualização da coleção; lote de IDs conhecidos não basta. Reutilizar mecanismos existentes e documentar qualquer lacuna antes de definir metadado adicional. |
+| Perda de conexão, troca de Board, retorno de foco | Watcher compartilhado e consumidores | Cancelar geração antiga, sinalizar dados desatualizados, retomar sem polling duplicado e sem repetir submissão. |
+
+O aceite no navegador exige duas superfícies simultâneas: UI aberta e mutação
+MCP autorizada sobre o mesmo runtime isolado. Conferir explicitamente a URL da
+API: `.env` do frontend pode apontar ao runtime do usuário apesar do proxy local.
+Registrar versões/processos, mutação, revisão observada e atualização visual;
+um teste isolado do watcher ou screenshot estático não encerra a sincronização.
 
 #### U4 — comprovar o percurso completo
 
@@ -509,8 +542,9 @@ e próximo passo exato. No E2E, registrar IDs/edições e evidências UI/MCP; n�
 alterar policies, scopes, skips ou percentuais para obter verde. Testes externos
 mockados precisam de execução observada para gerar prova autenticada.
 
-**Próxima ação de execução:** resolver os dois impedimentos registrados no WIP,
-qualificar autorização/paginação e completar a integração U3 na ordem do §6.2;
+**Próxima ação de execução:** corrigir o fixture de admissão e qualificar a
+recusa de Checklist/rollback, conferir contratos append/listagem e completar
+a integração U3 na ordem do §6.2;
 depois executar U4. Não refazer composição pública ou API de revisões já provadas.
 **Critério de conclusão:** U1–U4 e
 UV01–UV24 demonstrados, ledger atualizado e par de repositórios publicado. Esta
