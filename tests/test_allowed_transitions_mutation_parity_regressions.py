@@ -111,6 +111,12 @@ async def _persist(db_factory, *rows: object) -> None:
         await db.commit()
 
 
+def _decision_plan_populations():
+    """Explicit current-schema populations for the code-evidence gate fixtures."""
+    return dict(functional_requirements=[], technical_requirements=[], business_rules=[],
+        integration_requirements=[], observability_requirements=[], acceptance_criteria=[], api_contracts=[])
+
+
 async def _preview_transition(
     db,
     *,
@@ -172,6 +178,7 @@ async def test_spec_code_evidence_coverage_preview_matches_validated_mutation(
         Spec(
             id=spec_id,
             **_direct_spec_context_fields(spec_id),
+            **_decision_plan_populations(),
             board_id=board_id,
             title="Code Evidence coverage preview",
             status=SpecStatus.APPROVED,
@@ -182,6 +189,8 @@ async def test_spec_code_evidence_coverage_preview_matches_validated_mutation(
                     "title": "Use the current architecture",
                     "status": "active",
                     "linked_task_ids": ["traceability-placeholder"],
+                    "verification": {"inspection": {"condition": "Architecture decision is documented",
+                        "scope_refs": [{"kind": "spec", "id": spec_id}]}},
                 }
             ],
         ),
@@ -231,6 +240,7 @@ async def test_spec_code_evidence_coverage_rechecked_before_in_progress(
         Spec(
             id=spec_id,
             **_direct_spec_context_fields(spec_id),
+            **_decision_plan_populations(),
             board_id=board_id,
             title="Code Evidence start coverage",
             status=SpecStatus.VALIDATED,
@@ -242,6 +252,8 @@ async def test_spec_code_evidence_coverage_rechecked_before_in_progress(
                     "title": "Use the current architecture",
                     "status": "active",
                     "linked_task_ids": ["traceability-placeholder"],
+                    "verification": {"inspection": {"condition": "Architecture decision is documented",
+                        "scope_refs": [{"kind": "spec", "id": spec_id}]}},
                 }
             ],
         ),
@@ -297,6 +309,7 @@ async def test_spec_code_evidence_skip_does_not_mask_technical_failure_parity(
         Spec(
             id=spec_id,
             **_direct_spec_context_fields(spec_id),
+            **_decision_plan_populations(),
             board_id=board_id,
             title="Code Evidence technical failure",
             status=SpecStatus.APPROVED,
@@ -308,6 +321,8 @@ async def test_spec_code_evidence_skip_does_not_mask_technical_failure_parity(
                     "title": "Use the current architecture",
                     "status": "active",
                     "linked_task_ids": ["traceability-placeholder"],
+                    "verification": {"inspection": {"condition": "Architecture decision is documented",
+                        "scope_refs": [{"kind": "spec", "id": spec_id}]}},
                 }
             ],
         ),
@@ -483,6 +498,58 @@ async def test_spec_done_preview_uses_canonical_cognitive_gate(db_factory) -> No
         )
 
     assert "cognitive_consolidation_pending" in (done.blocked_reason or "")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('kind,status,archived,blocks', [
+    (CardType.NORMAL, CardStatus.IN_PROGRESS, False, True),
+    (CardType.NORMAL, CardStatus.CANCELLED, False, False),
+    (CardType.NORMAL, CardStatus.DONE, False, False),
+    (CardType.NORMAL, CardStatus.IN_PROGRESS, True, False),
+    (CardType.BUG, CardStatus.IN_PROGRESS, False, False),
+    (CardType.TEST, CardStatus.IN_PROGRESS, False, False),
+])
+async def test_shared_spec_completion_reads_authoritative_cards_without_writes(
+    db_factory, monkeypatch, kind, status, archived, blocks,
+):
+    from sqlalchemy import event
+
+    board_id, spec_id, card_id = _id('shared-board'), _id('shared-spec'), _id('shared-card')
+    await _persist(db_factory, _board(board_id),
+        Spec(id=spec_id, board_id=board_id, title='Shared completion gates',
+            status=SpecStatus.IN_PROGRESS, created_by=USER_ID),
+        Card(id=card_id, board_id=board_id, spec_id=spec_id, title='Native task',
+            card_type=kind, status=status, archived=archived, created_by=USER_ID))
+    cognitive = AsyncMock(side_effect=ValueError('cognitive_check_reached'))
+    monkeypatch.setattr(SpecService, '_validate_cognitive_done', cognitive)
+    async with db_factory() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        board = await main_service._application_get(db, 'board', board_id)
+        # A stale or partial loaded relationship must not be lifecycle authority.
+        spec.cards = []
+        statements = []
+        def observe(_conn, _cursor, statement, _parameters, _context, _many):
+            statements.append(statement)
+        event.listen(db.bind.sync_engine, 'before_cursor_execute', observe)
+        try:
+            with pytest.raises(ValueError) as preview:
+                await service.validate_completion_gates(spec, board, read_only_preview=True)
+            with pytest.raises(ValueError) as native:
+                await service.validate_completion_gates(spec, board)
+        finally:
+            event.remove(db.bind.sync_engine, 'before_cursor_execute', observe)
+        assert str(preview.value) == str(native.value)
+        assert ('linked task(s) are not yet done' in str(native.value)) is blocks
+        if blocks:
+            cognitive.assert_not_awaited()
+        else:
+            assert str(native.value) == 'cognitive_check_reached'
+            assert cognitive.await_args_list[0].kwargs == {'read_only_preview': True}
+            assert cognitive.await_args_list[1].kwargs == {}
+        assert statements and all(s.lstrip().upper().startswith('SELECT') for s in statements)
+        assert spec.status == SpecStatus.IN_PROGRESS
+        assert not db.new and not db.dirty and not db.deleted
 
 
 

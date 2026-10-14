@@ -285,11 +285,15 @@ async def _seed_fixture() -> tuple[str, str, str, str]:
                 business_rules=[],
                 api_contracts=[],
                 technical_requirements=[],
+                integration_requirements=[],
+                observability_requirements=[],
                 decisions=[
                     {
                         "id": "decision-af23",
                         "title": "Exercise transition preview",
                         "status": "active",
+                        "verification": {"inspection": {"condition": "Transition preview scope is documented",
+                            "scope_refs": [{"kind": "spec", "id": spec_id}]}},
                     }
                 ],
                 skip_decisions_coverage=True,

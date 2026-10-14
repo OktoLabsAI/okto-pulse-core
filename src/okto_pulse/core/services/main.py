@@ -11362,6 +11362,112 @@ class SpecService:
                 details={"spec_edition": int(spec.edition)},
             )
 
+    async def validate_completion_gates(self, spec, board, *, read_only_preview=False) -> None:
+        """Shared native Spec completion checks, excluding delivery and Policy.
+
+        Preview and mutation use the same checks and authoritative Card query.
+        Delivery remains separately assessed; Policy retains its read/fenced
+        paths. No status, history, event or transaction is written here.
+        """
+        # Enforce test coverage when moving to Done
+        skip_global = (
+            (board.settings or {}).get("skip_test_coverage_global", False)
+            if board
+            else False
+        )
+        if (
+            not spec.skip_test_coverage
+            and not skip_global
+        ):
+            criteria = spec.acceptance_criteria or []
+            scenarios = spec.test_scenarios or []
+            if criteria:
+                covered_indices: set[int] = set()
+                for scenario in scenarios:
+                    covered_indices |= resolve_linked_criteria_to_indices(
+                        scenario.get("linked_criteria"),
+                        criteria,
+                    )
+                uncovered = [
+                    f"[{i}] {_structured_ref_text(criterion)[:80]}..."
+                    for i, criterion in enumerate(criteria)
+                    if i not in covered_indices
+                ]
+                if uncovered:
+                    raise ValueError(
+                        f"Cannot move spec to 'done': {len(uncovered)} acceptance criteria lack test scenarios. "
+                        f"Uncovered: {'; '.join(uncovered[:5])}"
+                        f"{f' (and {len(uncovered) - 5} more)' if len(uncovered) > 5 else ''}. "
+                        f"Create test scenarios for all criteria, or set skip_test_coverage flag in the spec."
+                    )
+
+        # Enforce all linked tasks (non-bug) must be done/cancelled before spec can be done
+        from okto_pulse.core.services.missing_link_gate import (
+            evaluate_missing_links, require_missing_links_closed,
+        )
+
+        require_missing_links_closed(
+            await evaluate_missing_links(self.db, subject=spec, entity_type="spec",
+                                         settings=(board.settings or {}) if board else {}),
+            entity_type="spec", subject=spec,
+        )
+        pending_tasks = await _application_list(
+            self.db,
+            "card",
+            filters=(
+                _apf("spec_id", "eq", spec.id),
+                _apf("card_type", "eq", CardType.NORMAL),
+                _apf("archived", "is_false"),
+                _apf(
+                    "status",
+                    "not_in",
+                    [CardStatus.DONE, CardStatus.CANCELLED],
+                ),
+            ),
+        )
+        if pending_tasks:
+            task_list = "; ".join(
+                f"'{t.title}' ({t.status.value})" for t in pending_tasks[:5]
+            )
+            extra = (
+                f" (and {len(pending_tasks) - 5} more)"
+                if len(pending_tasks) > 5
+                else ""
+            )
+            raise ValueError(
+                f"Cannot move spec to 'done': {len(pending_tasks)} linked task(s) are not yet done or cancelled. "
+                f"Pending: {task_list}{extra}. "
+                f"Complete or cancel all linked tasks before finalizing the spec."
+            )
+
+        if read_only_preview:
+            await self._validate_cognitive_done(spec, board, read_only_preview=True)
+        else:
+            await self._validate_cognitive_done(spec, board)
+
+        resource_gate = ResourceGateService(self.db)
+        await resource_gate.validate_or_raise_spec_architecture_validation_resource(
+            spec.board_id,
+            spec.id,
+            board=board,
+            phase="spec_done",
+        )
+        await resource_gate.validate_or_raise_spec_resource_task_coverage(
+            spec.board_id,
+            spec.id,
+            phase="spec_done",
+            enabled=resource_gate.is_spec_resource_task_coverage_required(board),
+        )
+        # AFG na spec (investigacao 2026-06-10): specs com findings de
+        # arquitetura ativos completavam - o finding gate so rodava em
+        # card/ideation/refinement via entity_completion.
+        await resource_gate.validate_or_raise_architecture_findings(
+            spec.board_id,
+            "spec",
+            spec.id,
+            phase="spec_done",
+        )
+
     async def _validate_delivery_done(self, spec) -> None:
         from okto_pulse.core.services.delivery_evidence import require_spec_delivery
 
@@ -11601,103 +11707,8 @@ class SpecService:
 
             self._enforce_spec_evaluation_gate(spec, board)
 
-        # Enforce test coverage when moving to Done
-        skip_global = (
-            (board.settings or {}).get("skip_test_coverage_global", False)
-            if board
-            else False
-        )
-        if (
-            data.status == SpecStatus.DONE
-            and not spec.skip_test_coverage
-            and not skip_global
-        ):
-            criteria = spec.acceptance_criteria or []
-            scenarios = spec.test_scenarios or []
-            if criteria:
-                covered_indices: set[int] = set()
-                for scenario in scenarios:
-                    covered_indices |= resolve_linked_criteria_to_indices(
-                        scenario.get("linked_criteria"),
-                        criteria,
-                    )
-                uncovered = [
-                    f"[{i}] {_structured_ref_text(criterion)[:80]}..."
-                    for i, criterion in enumerate(criteria)
-                    if i not in covered_indices
-                ]
-                if uncovered:
-                    raise ValueError(
-                        f"Cannot move spec to 'done': {len(uncovered)} acceptance criteria lack test scenarios. "
-                        f"Uncovered: {'; '.join(uncovered[:5])}"
-                        f"{f' (and {len(uncovered) - 5} more)' if len(uncovered) > 5 else ''}. "
-                        f"Create test scenarios for all criteria, or set skip_test_coverage flag in the spec."
-                    )
-
-        # Enforce all linked tasks (non-bug) must be done/cancelled before spec can be done
         if data.status == SpecStatus.DONE:
-            from okto_pulse.core.services.missing_link_gate import (
-                evaluate_missing_links, require_missing_links_closed,
-            )
-
-            require_missing_links_closed(
-                await evaluate_missing_links(self.db, subject=spec, entity_type="spec",
-                                             settings=(board.settings or {}) if board else {}),
-                entity_type="spec", subject=spec,
-            )
-            pending_tasks = await _application_list(
-                self.db,
-                "card",
-                filters=(
-                    _apf("spec_id", "eq", spec_id),
-                    _apf("card_type", "eq", CardType.NORMAL),
-                    _apf("archived", "is_false"),
-                    _apf(
-                        "status",
-                        "not_in",
-                        [CardStatus.DONE, CardStatus.CANCELLED],
-                    ),
-                ),
-            )
-            if pending_tasks:
-                task_list = "; ".join(
-                    f"'{t.title}' ({t.status.value})" for t in pending_tasks[:5]
-                )
-                extra = (
-                    f" (and {len(pending_tasks) - 5} more)"
-                    if len(pending_tasks) > 5
-                    else ""
-                )
-                raise ValueError(
-                    f"Cannot move spec to 'done': {len(pending_tasks)} linked task(s) are not yet done or cancelled. "
-                    f"Pending: {task_list}{extra}. "
-                    f"Complete or cancel all linked tasks before finalizing the spec."
-                )
-
-            await self._validate_cognitive_done(spec, board)
-
-            resource_gate = ResourceGateService(self.db)
-            await resource_gate.validate_or_raise_spec_architecture_validation_resource(
-                spec.board_id,
-                spec.id,
-                board=board,
-                phase="spec_done",
-            )
-            await resource_gate.validate_or_raise_spec_resource_task_coverage(
-                spec.board_id,
-                spec.id,
-                phase="spec_done",
-                enabled=resource_gate.is_spec_resource_task_coverage_required(board),
-            )
-            # AFG na spec (investigacao 2026-06-10): specs com findings de
-            # arquitetura ativos completavam - o finding gate so rodava em
-            # card/ideation/refinement via entity_completion.
-            await resource_gate.validate_or_raise_architecture_findings(
-                spec.board_id,
-                "spec",
-                spec.id,
-                phase="spec_done",
-            )
+            await self.validate_completion_gates(spec, board)
 
         await GuidelineService(self.db).enforce_policy_transition(
             board_id=spec.board_id,

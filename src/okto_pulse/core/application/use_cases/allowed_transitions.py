@@ -917,78 +917,9 @@ class ListAllowedTransitionsUseCase:
                     return self._exception_reason(exc)
 
         if target_status == "done":
-            from okto_pulse.core.services.missing_link_gate import (
-                evaluate_missing_links, require_missing_links_closed,
-            )
-
-            require_missing_links_closed(
-                await evaluate_missing_links(services.specs.db, subject=spec, entity_type="spec", settings=board_settings),
-                entity_type="spec", subject=spec,
-            )
-            skip_global = bool(board_settings.get("skip_test_coverage_global", False))
-            if not bool(getattr(spec, "skip_test_coverage", False)) and not skip_global:
-                from okto_pulse.core.services.main import (
-                    _structured_ref_text,
-                    resolve_linked_criteria_to_indices,
-                )
-
-                criteria = list(getattr(spec, "acceptance_criteria", None) or [])
-                scenarios = list(getattr(spec, "test_scenarios", None) or [])
-                covered_indices: set[int] = set()
-                for scenario in scenarios:
-                    covered_indices |= resolve_linked_criteria_to_indices(
-                        scenario.get("linked_criteria"),
-                        criteria,
-                    )
-                uncovered = [
-                    f"[{index}] {_structured_ref_text(criterion)[:80]}..."
-                    for index, criterion in enumerate(criteria)
-                    if index not in covered_indices
-                ]
-                if uncovered:
-                    return (
-                        "coverage_incomplete: "
-                        f"{len(uncovered)} acceptance criteria lack test scenarios "
-                        f"({'; '.join(uncovered[:5])})."
-                    )
-            pending_cards = [
-                card
-                for card in (getattr(spec, "cards", None) or [])
-                if not bool(getattr(card, "archived", False))
-                and getattr(card, "card_type", CardType.NORMAL) == CardType.NORMAL
-                and card.status not in (CardStatus.DONE, CardStatus.CANCELLED)
-            ]
-            if pending_cards:
-                return (
-                    "cards_incomplete: complete or cancel every normal card "
-                    "before completing the spec."
-                )
             try:
-                await services.specs._validate_cognitive_done(
-                    spec,
-                    board,
-                    read_only_preview=True,
-                )
+                await services.specs.validate_completion_gates(spec, board, read_only_preview=True)
                 await services.specs._validate_delivery_done(spec)
-                gate = services.resource_gate
-                await gate.validate_or_raise_spec_architecture_validation_resource(
-                    spec.board_id,
-                    spec.id,
-                    board=board,
-                    phase="spec_done",
-                )
-                await gate.validate_or_raise_spec_resource_task_coverage(
-                    spec.board_id,
-                    spec.id,
-                    phase="spec_done",
-                    enabled=gate.is_spec_resource_task_coverage_required(board),
-                )
-                await gate.validate_or_raise_architecture_findings(
-                    spec.board_id,
-                    "spec",
-                    spec.id,
-                    phase="spec_done",
-                )
             except ValueError as exc:
                 return self._exception_reason(exc)
         return None
