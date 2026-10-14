@@ -38677,3 +38677,11 @@ No production SLA, manual screen-reader speech session, release, deployment, pro
 
 
 Resume/handoff: implementation and acceptance of this plan are complete. Production installation and release remain separate user actions. No requested plan milestone is deferred to a future agent.
+
+## 2026-10-14 — Card cover and Delivery progress layout
+
+User requested two independent metric blocks following the supplied visual reference. Community commit `896a06dd` changes the shared DeliveryReadinessView: Implementation and Verification sit side by side on both the Card cover and Delivery, including narrow screens. Each block presents its label, a prominent percentage on its own row, a thin independent track and subordinate counts. The established blue/green metric colors remain. Compact loading, unknown, N/A and error states retain stable overall height without fabricated percentages. Calculation, evidence, gates and lifecycle behavior are unchanged.
+
+Validation: 42 component tests passed across DeliveryReadiness, DeliveryReadinessDoD and CardDeliveryDoDPanel; targeted ESLint passed; TypeScript/Vite build and frontend-dist verification passed (79 files, tree SHA256 `c37d1b6be516d3636f01bec5d7f840f3304d63bf3b7fb5d77d286a8c3146ace3`). The existing Chromium E2E passed in 19.9 seconds with updated assertions for side-by-side alignment, label/percentage/track ordering and 6px tracks, plus existing accessibility, keyboard, native navigation, mobile overflow and loading/error stability checks.
+
+Visually inspected the actual compiled SPA browser captures: readiness-cover.png, readiness-delivery-light.png, readiness-delivery-dark-mobile.png and readiness-compact-error.png under Community/frontend/test-results/delivery-readiness-P08-U01-c4df2-separate-accessible-metrics-chromium/. The browser fixture intercepts API reads and rejects writes; no live user records were changed. The production process on port 8100 remains on its previous installed frontend; this checkpoint builds and packages the change but does not claim production reinstallation. Only the temporary preview server is stopped after verification.
