@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — planejamento detalhado consolidado, sem mudança de produto
+
+Pedido atual: iniciar o planejamento detalhado da unificação, preservando todas
+as avaliações, critérios e severidades. Conferidos os checkouts Core d30df58b /
+Community e08415ab: limpos em feature/v0.4.0. Push em ambos confirmou Everything
+up-to-date antes da revisão; não havia alterações pendentes para commit.
+
+SPEC_UNIFIED_VALIDATION_PLAN.md, seção 6.2, agora separa o checkpoint já
+implementado da sequência restante U2 → U3 → U4, com pontos de integração,
+dependências, provas de encerramento e limites. A tabela do diagnóstico inicial
+foi identificada como baseline, evitando confundi-la com comportamento atual.
+U1 não deve ser reimplementado. O escopo e a matriz UV01–UV24 permanecem iguais.
+
+Conferência dirigida de código: comando composto e seus fences atuais;
+ValidationSubmissionFence/ValidationCycleSummary; reader de ciclos e pontos de
+integração do formulário/modal. Artefatos existentes conferidos: u2-replay.xml
+com 267 testes, zero falhas/erros; closure-u2-replay.json com ok=true. São provas
+anteriores, não novos testes nem comprovação de U2/U3/U4 completos.
+
+Este incremento é exclusivamente documental. Nenhuma implementação, instalação,
+alteração de dados, policy ou execução de E2E ocorreu. Próxima execução segue
+U2: manifesto de revisões e leitura integrada; depois interface/sincronização
+U3 e qualificação real U4. Verificações deste incremento: git diff --check sem
+erros e scripts/check_markdown_links.py aprovado. Publicação acompanha o commit
+deste checkpoint; Community permanece em e08415ab, sem alteração documental.
+
 ### 2026-10-14 — U2: replay durável e transacional da conclusão
 
 Base deste incremento: Core e8ba89d4 / Community 66e897fc, limpos e publicados.

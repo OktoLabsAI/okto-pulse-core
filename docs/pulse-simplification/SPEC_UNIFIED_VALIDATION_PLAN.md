@@ -66,7 +66,10 @@ integral dos quatro documentos extensos nem nova execução do E2E. Antes de edi
 contratos compartilhados, cumprir a leitura integral exigida pelo pacote, sem
 buscar a ideação original e sem reabrir decisões já tomadas pelo usuário.
 
-### Achados confirmados no código
+### Achados do baseline anterior à implementação
+
+A tabela descreve o diagnóstico que originou o plano, não o estado atual de
+todos os caminhos. O checkpoint de execução está na seção 6.2 e no ledger.
 
 Os caminhos Core abaixo são relativos a `src/okto_pulse/core/`; os de frontend
 ao repositório Community.
@@ -271,8 +274,8 @@ metas novas para melhorias opcionais descobertas no caminho.
 ### 6.1 Ordem operacional e entregas verificáveis
 
 O detalhamento abaixo desdobra U1–U4; não adiciona features ou critérios ao escopo.
-Antes de continuar código, conferir o diff local do U1 contra o plano. Não
-tratar alterações existentes ou testes escritos como milestone entregue.
+Retomar pelo checkpoint da seção 6.2, sem reaplicar U1. Não tratar alterações
+existentes ou testes escritos como comprovação do ensaio integrado U4.
 
 | Ordem | Trabalho delimitado | Evidência para encerrar |
 | --- | --- | --- |
@@ -300,6 +303,83 @@ O checkpoint de cada milestone identifica o par exato Core/Community, os UV
 demonstrados e os ainda pendentes. Nenhum UV é concluído somente porque uma suíte
 genérica passou. U4 usa uma home descartável nova; não apagar, converter ou
 reabrir as iniciativas existentes do usuário para acomodar alterações de schema.
+
+### 6.2 Planejamento consolidado sobre o checkpoint publicado
+
+Conferência de 14/10/2026: Core `d30df58b` e Community `e08415ab`, ambos em
+`feature/v0.4.0`, sem alterações locais; push dos dois confirmou
+`Everything up-to-date` antes desta revisão documental. Esta revisão atende ao
+pedido de planejamento; não inicia outra alteração de comportamento.
+
+| Frente | Situação conferida | Trabalho restante |
+| --- | --- | --- |
+| U1 | Autoria de Cards em Draft e retirada da Decision obrigatória implementadas e registradas no ledger. | Exercitar os caminhos reais UI/MCP no U4; não implementar novamente. |
+| U2 — pareceres e recibo | Comando aceita decomposição tipada, usa autoria autenticada e recibo transacional; resultado distingue qualidade, promoção e bloqueios. Evidência existente `u2-replay.xml`: 267 testes, zero falhas/erros. | Completar manifesto, leitura integrada e comprovação dos predicados compartilhados. A suíte existente não comprova o U2 inteiro. |
+| U3 | Cliente acompanha o contrato composto e mantém chave estável para retry. | Workspace integrado e sincronização externa ainda pendentes; mudança do payload não significa interface concluída. |
+| U4 | Há evidência de regressões e closure do checkout (`closure-u2-replay.json`, `ok=true`). | Build final, auditoria dos wheels, paridade da instalação e novo ensaio completo UI/MCP ainda pendentes. |
+
+Executar a sequência abaixo dentro dos milestones existentes, com commit/push
+e ledger ao encerrá-los. Não criar milestones de produto adicionais.
+
+**U2 — terminar o contrato de conclusão e sua leitura.**
+
+1. Inventariar somente os dados que influenciam os gates desta conclusão:
+   Spec/edição, Cards e alocação do plano, resultados nativos e autoridade/policy
+   efetiva. Mapear seus writers e revisões existentes antes de acrescentar
+   persistência. O manifesto deve detectar alteração relevante sem depender
+   exclusivamente de `Spec.version`; não é uma nova avaliação nem histórico.
+2. Estender os tipos/portas públicos e implementar os metadados faltantes no
+   Community. Pontos de integração: `domain/validation_cycle.py`,
+   `ports/validation_cycle.py`, `application/use_cases/validation_cycle.py` e
+   `adapters/sqlalchemy_validation_cycle.py`. A projeção compartilhada atende
+   outros tipos de entidade: delimitar a ampliação à Spec e testar a regressão.
+3. Levar a base lida pelo cliente até `SubmitSpecValidationUseCase`, REST, MCP
+   e formulário. Conferir o manifesto sob a transação antes dos efeitos;
+   mudanças próprias da operação não podem produzir um falso conflito. Uma
+   alteração externa relevante exige nova leitura, sem retry automático sobre
+   outra base. Replay continua devolvendo o recibo original após reautorização.
+4. Conectar resumo, conclusão, transição direta e allowed transitions aos
+   mesmos julgamentos aplicáveis. Manter os gates de início/entrega em suas
+   fases. Expor `ready/blocked/unavailable`, razões e ações permitidas, com
+   leitura por componente e histórico nativo, sem score composto.
+5. Encerrar com persistência real: alteração de Card sem bump da Spec, novo
+   parecer, mudança de autoridade/policy, rollback e conclusão concorrente.
+   Demonstrar consultas delimitadas por lote para metadados e cobrir os UV
+   relacionados da seção 7; listar explicitamente o que depende ainda de U4.
+
+**U3 — compor a experiência e atualizar o que está aberto.** Depende da leitura
+e do manifesto U2, para evitar implementar regra de gate no frontend.
+
+1. Em `SpecModal`/painéis de Validation, apresentar resumo da edição, componentes
+   e ação principal de conclusão. Cada componente mantém score, dimensões,
+   justificativas, pinpoints, autor e Previous versions. Reutilizar formulários
+   e resultados; não exigir reenviar contribuições já aceitas de outro avaliador.
+2. Implementar o hook compartilhado de metadados descrito na seção 5 e ligar
+   client API, modal, lista/capas e consumidores visíveis. Não instalar polling
+   separado em cada painel nem consultar Coverage/KG completo periodicamente.
+3. Testar formulário sujo, revogação de acesso, resposta fora de ordem, troca de
+   Spec, foco e rede. Conferir visualmente navegação, loading, erro e retry no
+   browser, com alteração MCP simultânea; UV18–UV21 permanecem a referência.
+
+**U4 — comprovar a entrega do conjunto.** Depende de U2/U3 completos.
+
+1. Executar regressões afetadas, testes frontend/tipos/build, catálogo gerado e
+   closure do par de repositórios e wheels, mantendo os oito budgets em ZERO.
+2. Instalar o par em ambiente isolado com home nova; provar paridade dos arquivos
+   Python/frontend e iniciar processo posterior à instalação. Não substituir
+   silenciosamente a base de testes do usuário nem converter schema anterior.
+3. Percorrer iniciativa mock nova por UI e MCP até Spec/Cards/Tests Done, com
+   provas observadas, 100% onde aplicável e consulta/consolidação KG. Registrar
+   o que foi feito por cada superfície, incluindo as mutações MCP com UI aberta.
+4. Fechar a matriz UV01–UV24 com evidência identificável, commits pareados e
+   limitações reais. Não declarar entrega com manifesto, sincronização ou E2E
+   pendentes, mesmo que as regressões unitárias estejam verdes.
+
+Os riscos a controlar já pertencem ao escopo: promoção com base desatualizada,
+divergência entre resumo e gate, perda de autoria/histórico e sobrescrita de
+edição local. Melhorias opcionais descobertas durante a execução ficam fora
+desta entrega. Nenhuma avaliação, dimensão, severidade ou permissão será removida
+para simplificar a interface.
 
 ## 7. Matriz mínima de aceite
 
