@@ -13,6 +13,10 @@ from okto_pulse.core.domain.delivery_evidence import (
 from okto_pulse.core.domain.enums import CardType
 
 
+class ReadinessIntegrityError(ValueError):
+    """A missing factual mapping cannot be presented as a healthy assessment."""
+
+
 class ReadinessPhase(StrEnum):
     IMPLEMENTATION = "implementation"
     VERIFICATION = "verification"

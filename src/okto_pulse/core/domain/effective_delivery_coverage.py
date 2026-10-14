@@ -25,7 +25,7 @@ from okto_pulse.core.domain.delivery_verification import (
     NativeVerificationPopulation, ScenarioVerificationFinding, ScenarioDeliveryCheck, missing_scenario_reason,
 )
 from okto_pulse.core.domain.delivery_assessment import (
-    FactualReason, ReadinessReason, AssessmentCompleteness, DeliveryAssessment,
+    FactualReason, ReadinessReason, ReadinessIntegrityError, AssessmentCompleteness, DeliveryAssessment,
     ObligationAssessment, ScenarioAssessment, UnitPhaseAssessment, UnitState, apply_delivery_exceptions,
 )
 from okto_pulse.core.domain.delivery_evidence import DeliveryPhase
@@ -703,7 +703,23 @@ _IMPLEMENTATION_REASONS = {
     'delivery_execution_set_unresolved': ReadinessReason.IMPLEMENTATION_PROOF_STALE,
     'delivery_execution_base_conflict': ReadinessReason.IMPLEMENTATION_PROOF_STALE,
     'delivery_execution_set_ambiguous': ReadinessReason.IMPLEMENTATION_PROOF_STALE,
+    'delivery_record_payload_invalid': ReadinessReason.ASSESSMENT_UNAVAILABLE,
+    'delivery_record_card_scope_mismatch': ReadinessReason.ASSESSMENT_UNAVAILABLE,
+    'delivery_binding_payload_invalid': ReadinessReason.ASSESSMENT_UNAVAILABLE,
+    'delivery_implementation_payload_invalid': ReadinessReason.ASSESSMENT_UNAVAILABLE,
+    'delivery_implementation_context_unresolved': ReadinessReason.ASSESSMENT_UNAVAILABLE,
+    'delivery_contribution_scope_payload_invalid': ReadinessReason.ASSESSMENT_UNAVAILABLE,
 }
+
+
+def implementation_readiness_reason(code):
+    """Closed native rejection mapping; never silently absorb a new code."""
+    try:
+        return _IMPLEMENTATION_REASONS[code]
+    except (KeyError, TypeError) as exc:
+        raise ReadinessIntegrityError('readiness_native_reason_unmapped') from exc
+
+
 _REASON_STATES = {
     ReadinessReason.VERIFICATION_CONFLICT: UnitState.CONFLICT,
     ReadinessReason.VERIFICATION_FAILED: UnitState.FAILED,
@@ -775,7 +791,7 @@ def _implementation_findings(snapshot, obligation, row):
         if fact.blocking_progress_ids or fact.blocking_progress_truncated:
             codes.add('delivery_material_progress_unresolved')
         for code in sorted(codes):
-            reasons.append(FactualReason(_IMPLEMENTATION_REASONS.get(code, ReadinessReason.ASSESSMENT_UNAVAILABLE),
+            reasons.append(FactualReason(implementation_readiness_reason(code),
                 native_reason_codes=(code,), source_ids=(fact.id,)))
         if not issue and any(c.binding == binding and c.contribution == 'partial' for c in fact.contributions or ()):
             reasons.append(FactualReason(ReadinessReason.IMPLEMENTATION_PARTIAL, source_ids=(fact.id,)))
@@ -784,7 +800,7 @@ def _implementation_findings(snapshot, obligation, row):
             or rejection.card_id not in missing or binding not in rejection.bindings):
             continue
         for code in rejection.reason_codes:
-            reasons.append(FactualReason(_IMPLEMENTATION_REASONS.get(code, ReadinessReason.ASSESSMENT_UNAVAILABLE),
+            reasons.append(FactualReason(implementation_readiness_reason(code),
                 native_reason_codes=(code,), source_ids=(rejection.record_id,)))
     if not reasons:
         reasons.append(FactualReason(ReadinessReason.IMPLEMENTATION_PARTIAL if row.implementation_ids

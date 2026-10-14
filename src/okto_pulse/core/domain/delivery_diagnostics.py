@@ -6,15 +6,19 @@ receipts, executes an action, reads a repository or changes a score/authority.
 
 from dataclasses import dataclass, replace
 from enum import StrEnum
+import heapq
 import json
 from types import MappingProxyType
 
-from okto_pulse.core.domain.delivery_assessment import ReadinessPhase, ReadinessReason, UnitState
+from okto_pulse.core.domain.delivery_assessment import (
+    DeliveryAssessment, FactualReason, ReadinessIntegrityError, ReadinessPhase, ReadinessReason, UnitState,
+)
 from okto_pulse.core.domain.delivery_evidence import DeliveryScope
 from okto_pulse.core.domain.delivery_inventory import delivery_digest
+from okto_pulse.core.domain.enums import CardType
 
 
-class DiagnosticIntegrityError(ValueError):
+class DiagnosticIntegrityError(ReadinessIntegrityError):
     """An unmapped/inconsistent fact cannot become an empty diagnostic."""
 
 
@@ -54,10 +58,16 @@ class ActionDefinition:
     permission: str | None = None
     argument_fields: tuple[str, ...] = ()
     required_arguments: tuple[str, ...] = ()
+    preconditions: tuple[str, ...] = ()
 
 
 def _action(kind, message, surface, priority, tool=None, permission=None, arguments=(), required=()):
-    return ActionDefinition(ActionKind(kind), message, surface, priority, tool, permission, arguments, required)
+    preconditions = {
+        'associate_implementation': ('admitted_execution',),
+        'associate_verification': ('authenticated_current_result',),
+        'execute_verification': ('native_scenario', 'implementation_base'),
+    }.get(kind, ())
+    return ActionDefinition(ActionKind(kind), message, surface, priority, tool, permission, arguments, required, preconditions)
 
 
 ACTION_REGISTRY = MappingProxyType({item.kind: item for item in (
@@ -179,17 +189,29 @@ class ActionCandidate:
     permission_allowed: bool | None = None
     human_required: bool = False
     capability_available: bool = True
+    # Established by authorized native facts, never inferred from prose.
+    satisfied_preconditions: tuple[str, ...] = ()
 
     def __post_init__(self):
         try:
             definition = ACTION_REGISTRY[ActionKind(self.kind)]
-            arguments = json.loads(self.arguments_json)
+            arguments = json.loads(self.arguments_json, object_pairs_hook=_unique_json_object)
             if not isinstance(arguments, dict) or not set(arguments) <= set(definition.argument_fields):
                 raise ValueError('fields')
             normalized = json.dumps(arguments, sort_keys=True, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
         except (KeyError, ValueError, TypeError) as exc:
             raise DiagnosticIntegrityError('readiness_action_arguments_invalid') from exc
         object.__setattr__(self, 'arguments_json', normalized)
+        object.__setattr__(self, 'kind', ActionKind(self.kind))
+
+
+def _unique_json_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('duplicate_argument')
+        result[key] = value
+    return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,6 +275,122 @@ class DiagnosticGraph:
     actions: tuple[DiagnosticAction, ...]
     next_action_ids: tuple[str, ...]
     cycle_edges: tuple[tuple[str, str], ...]
+    action_cycle_edges: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class DiagnosticResolution:
+    """Exact authorized native context for one already evaluated reason.
+
+    The read composition resolves this from the same snapshot. It cannot
+    replace the factual reason, unit state, metric or native transition gate.
+    Missing context remains visible as requires_input, not a made-up command.
+    """
+    unit: DiagnosticUnit | None
+    phase: ReadinessPhase
+    reason: FactualReason
+    origin: CauseOrigin
+    actions: tuple[ActionCandidate, ...]
+
+
+def _assessment_units(assessment):
+    if assessment.card_type == CardType.TEST:
+        for row in assessment.scenarios:
+            if row.card_id != assessment.card_id:
+                raise DiagnosticIntegrityError('readiness_diagnostic_scope_invalid')
+            yield DiagnosticUnit('scenario', row.scenario_id, row.semantic_sha256,
+                row.spec_edition, row.card_id), ReadinessPhase.VERIFICATION, row.verification
+    else:
+        for row in assessment.obligations:
+            unit = DiagnosticUnit('obligation', row.binding.obligation_ref, row.binding.semantic_sha256,
+                row.spec_edition, assessment.card_id or '')
+            yield unit, ReadinessPhase.IMPLEMENTATION, row.implementation
+            yield unit, ReadinessPhase.VERIFICATION, row.verification
+
+
+def _unresolved_context(assessment, unit, phase, reason):
+    """Preserve actual identities while explicitly requesting native context.
+
+    No positive authenticity, permission, target, owner or code location is
+    inferred from an assessment. A result already admitted as association
+    missing keeps its association action; this fallback never asks for rerun.
+    """
+    definition = reason_definition(reason.code)
+    if len(reason.scenario_ids) == 1:
+        origin = CauseOrigin('scenario', reason.scenario_ids[0])
+    elif len(reason.source_ids) == 1:
+        origin = CauseOrigin('native_fact', reason.source_ids[0])
+    else:
+        origin = CauseOrigin(unit.unit if unit else 'spec', unit.ref if unit else assessment.scope.spec_id)
+    context = tuple(sorted(set((*reason.source_ids, *reason.criterion_ids, *reason.scenario_ids, origin.identity))))
+    known = {'board_id': assessment.scope.board_id, 'spec_id': assessment.scope.spec_id}
+    if assessment.card_id:
+        known['card_id'] = assessment.card_id
+    # Alternatives require a concrete native choice; do not propose every
+    # possible operation or turn an old-base report into admitted reuse.
+    preferred = {
+        ReadinessReason.VERIFICATION_FAILED: ActionKind.IMPLEMENT_CONTRIBUTION,
+        ReadinessReason.VERIFICATION_BASE_MISMATCH: ActionKind.ASSOCIATE_VERIFICATION,
+        ReadinessReason.VERIFICATION_METHOD_UNSUPPORTED: ActionKind.RESTORE_EVALUATION,
+    }.get(reason.code)
+    kinds = (preferred,) if preferred else definition.actions
+    actions = tuple(ActionCandidate(kind,
+        arguments_json=json.dumps({key: value for key, value in known.items()
+            if key in ACTION_REGISTRY[kind].argument_fields}, sort_keys=True),
+        context_refs=context, missing_inputs=('native_action_context',),
+    ) for kind in kinds)
+    return DiagnosticResolution(unit, phase, reason, origin, actions)
+
+
+def diagnose_delivery_assessment(assessment: DeliveryAssessment, *, resolutions=(), dependency_edges=()):
+    """Project the shared factual assessment; never recalculate delivery proof.
+
+    Every pending unit/factual phase must have a recoverable cause. Native
+    context may enrich each exact reason but cannot erase it or add a different
+    unit. The caller supplies canonical dependencies, never textual guesses.
+    Lifecycle diagnostics remain a separate native-transition concern.
+    """
+    indexed = {}
+    for resolution in resolutions:
+        key = (resolution.unit, resolution.phase, resolution.reason)
+        if key in indexed and indexed[key] != resolution:
+            raise DiagnosticIntegrityError('readiness_resolution_ambiguous')
+        indexed[key] = resolution
+    used, required, occurrences = set(), set(), []
+    for unit, phase, result in _assessment_units(assessment):
+        if unit.spec_edition != assessment.scope.edition:
+            raise DiagnosticIntegrityError('readiness_diagnostic_scope_invalid')
+        if result.state in {UnitState.SATISFIED, UnitState.NOT_APPLICABLE}:
+            continue
+        required.add((unit, phase))
+        if not result.reasons:
+            raise DiagnosticIntegrityError('readiness_unit_cause_missing')
+        for reason in result.reasons:
+            key = (unit, phase, reason)
+            resolution = indexed.get(key) or _unresolved_context(assessment, unit, phase, reason)
+            if key in indexed:
+                used.add(key)
+            occurrences.append(CauseOccurrence(reason.code, phase, result.intrinsic_state,
+                resolution.origin, (unit,), resolution.actions, reason.native_reason_codes,
+                reason.criterion_ids, reason.scenario_ids))
+    if set(indexed) - used:
+        raise DiagnosticIntegrityError('readiness_resolution_unrelated')
+    phases = (ReadinessPhase.VERIFICATION,) if assessment.card_type == CardType.TEST else (
+        ReadinessPhase.IMPLEMENTATION, ReadinessPhase.VERIFICATION)
+    for reason in assessment.reasons:
+        for phase in phases:
+            resolution = _unresolved_context(assessment, None, phase, reason)
+            occurrences.append(CauseOccurrence(reason.code, phase, UnitState.UNKNOWN,
+                resolution.origin, (), resolution.actions, reason.native_reason_codes,
+                reason.criterion_ids, reason.scenario_ids))
+    if not required and not occurrences and (
+        not assessment.completeness.population_known or not assessment.completeness.evaluation_complete
+    ):
+        # A missing population is not an empty healthy scope. This is a
+        # diagnostic integrity error, not manufactured units or zero coverage.
+        raise DiagnosticIntegrityError('readiness_assessment_cause_missing')
+    return build_diagnostic_graph(assessment.scope, tuple(occurrences), dependency_edges=dependency_edges,
+        required_units=tuple(required))
 
 
 def _action_key(candidate):
@@ -283,7 +421,6 @@ def _topology(nodes, edges, priorities):
         outgoing[prerequisite].add(dependent)
         incoming[dependent].add(prerequisite)
     indegree = {key: len(value) for key, value in incoming.items()}
-    import heapq
     ready = [(priorities[node], node) for node in nodes if not indegree[node]]
     heapq.heapify(ready)
     ordered = []
@@ -323,21 +460,32 @@ def _topology(nodes, edges, priorities):
     return tuple(ordered), cycles
 
 
-def build_diagnostic_graph(scope: DeliveryScope, occurrences: tuple[CauseOccurrence, ...], *, dependency_edges=()):
+def build_diagnostic_graph(scope: DeliveryScope, occurrences: tuple[CauseOccurrence, ...], *,
+                           dependency_edges=(), required_units=()):
     """Dependencies are exact native cause-ID relations supplied by composition.
 
     No dependency is inferred from prose. Caller capability changes action
     availability, never cause identity, proof states or metric counts.
     """
     validate_diagnostic_registry()
-    if len(occurrences) > 20000 or len(dependency_edges) > 20000:
+    if len(occurrences) > 20000 or len(dependency_edges) > 20000 or len(required_units) > 40000:
         raise DiagnosticIntegrityError('readiness_diagnostic_resolution_limit')
     grouped = {}
+    covered = set()
     for occurrence in occurrences:
         if not occurrence.origin.identity or any(unit.spec_edition != scope.edition for unit in occurrence.units):
             raise DiagnosticIntegrityError('readiness_diagnostic_scope_invalid')
+        if occurrence.intrinsic_state not in set(UnitState) - {UnitState.WAIVED}:
+            raise DiagnosticIntegrityError('readiness_intrinsic_state_invalid')
+        definition = reason_definition(occurrence.code)
+        if definition.actions and not occurrence.actions:
+            raise DiagnosticIntegrityError('readiness_diagnostic_action_missing')
+        covered.update((unit, occurrence.phase) for unit in occurrence.units)
         grouped.setdefault(cause_identity(scope, occurrence), []).append(occurrence)
+    if set(required_units) - covered:
+        raise DiagnosticIntegrityError('readiness_unit_cause_missing')
     causes, candidates, action_issues, action_units = {}, {}, {}, {}
+    preconditions_missing = {}
     precedence = (UnitState.CONFLICT, UnitState.FAILED, UnitState.UNKNOWN, UnitState.STALE,
         UnitState.PARTIAL, UnitState.MISSING, UnitState.SATISFIED, UnitState.NOT_APPLICABLE)
     for identity, rows in sorted(grouped.items()):
@@ -350,7 +498,12 @@ def build_diagnostic_graph(scope: DeliveryScope, occurrences: tuple[CauseOccurre
                 candidates.setdefault(action_id, []).append(candidate)
                 action_issues.setdefault(action_id, set()).add(identity)
                 action_units.setdefault(action_id, set()).update(row.units)
+                preconditions_missing.setdefault(action_id, set()).update(
+                    (set(reason_definition(row.code).preconditions) | set(ACTION_REGISTRY[candidate.kind].preconditions))
+                    - set(candidate.satisfied_preconditions))
                 action_ids.add(action_id)
+                if len(candidates) > 20000:
+                    raise DiagnosticIntegrityError('readiness_diagnostic_resolution_limit')
         definition = reason_definition(first.code)
         native_gate = {row.blocks_target_transition for row in rows}
         gate = True if True in native_gate else None if None in native_gate else False
@@ -367,9 +520,20 @@ def build_diagnostic_graph(scope: DeliveryScope, occurrences: tuple[CauseOccurre
     cause_order, cause_cycles = _topology(set(causes), edges, {key: 0 for key in causes})
     dependencies = {identity: set() for identity in causes}
     action_edges = set()
+    unresolved_predecessor = set()
     for dependent, prerequisite in edges:
         dependencies[dependent].add(prerequisite)
-        action_edges.update((a, b) for a in causes[dependent].action_ids for b in causes[prerequisite].action_ids if a != b)
+        for action in causes[dependent].action_ids:
+            # A single exact operation may resolve both issues. Do not invent
+            # self-dependency; real issue cycles remain unavailable below.
+            if action in causes[prerequisite].action_ids:
+                continue
+            if not causes[prerequisite].action_ids:
+                unresolved_predecessor.add(action)
+            for parent in causes[prerequisite].action_ids:
+                action_edges.add((action, parent))
+                if len(action_edges) > 20000:
+                    raise DiagnosticIntegrityError('readiness_diagnostic_resolution_limit')
     roots = {}
     for identity in cause_order:
         parents = dependencies[identity]
@@ -380,15 +544,20 @@ def build_diagnostic_graph(scope: DeliveryScope, occurrences: tuple[CauseOccurre
     cyclic_actions = {identity for edge in action_cycles for identity in edge}
     cyclic_causes = {identity for edge in cause_cycles for identity in edge}
     cyclic_actions.update(action for identity in cyclic_causes for action in causes[identity].action_ids)
+    action_parents = {identity: set() for identity in candidates}
+    for dependent, prerequisite in action_edges:
+        action_parents[dependent].add(prerequisite)
     actions = []
     for identity in action_order:
         choices = candidates[identity]
         candidate = choices[0]
         definition = ACTION_REGISTRY[candidate.kind]
         arguments = json.loads(candidate.arguments_json)
-        missing = set(definition.required_arguments) - set(arguments)
+        missing = {key for key in definition.required_arguments
+            if not arguments.get(key) or isinstance(arguments[key], str) and not arguments[key].strip()}
         missing.update(value for choice in choices for value in choice.missing_inputs)
-        parents = tuple(sorted(b for a, b in action_edges if a == identity))
+        missing.update(preconditions_missing[identity])
+        parents = tuple(sorted(action_parents[identity]))
         if identity in cyclic_actions or not all(choice.capability_available for choice in choices):
             state = ActionState.UNAVAILABLE
         elif any(choice.permission_allowed is False for choice in choices):
@@ -397,7 +566,7 @@ def build_diagnostic_graph(scope: DeliveryScope, occurrences: tuple[CauseOccurre
             state = ActionState.REQUIRES_HUMAN
         elif definition.permission and any(choice.permission_allowed is None for choice in choices):
             state = ActionState.UNAVAILABLE
-        elif parents or any(dependencies[issue] for issue in action_issues[identity]):
+        elif parents or identity in unresolved_predecessor:
             state = ActionState.WAITING_DEPENDENCY
         elif missing:
             state = ActionState.REQUIRES_INPUT
@@ -410,7 +579,8 @@ def build_diagnostic_graph(scope: DeliveryScope, occurrences: tuple[CauseOccurre
             tuple(sorted(set(candidate.context_refs))), len(action_units[identity])))
     ready = [action.id for action in actions if action.state == ActionState.READY]
     fallback = [action.id for action in actions if action.state != ActionState.WAITING_DEPENDENCY]
-    return DiagnosticGraph(tuple(causes[key] for key in cause_order), tuple(actions), tuple((ready or fallback)[:3]), cause_cycles)
+    return DiagnosticGraph(tuple(causes[key] for key in cause_order), tuple(actions),
+        tuple((ready or fallback or [action.id for action in actions])[:3]), cause_cycles, action_cycles)
 
 
 validate_diagnostic_registry()

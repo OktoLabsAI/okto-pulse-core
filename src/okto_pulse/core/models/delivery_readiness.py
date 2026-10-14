@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictBool, model_
 from okto_pulse.core.domain.delivery_assessment import (
     DeliveryState, MetricStatus, ReadinessPhase, ReadinessReason, UnitState,
 )
+from okto_pulse.core.domain.delivery_diagnostics import ActionKind
 
 Count = Annotated[int, Field(strict=True, ge=0)]
 Version = Annotated[int, Field(strict=True, ge=1)]
@@ -211,14 +212,6 @@ class ReadinessDetailQuery(ReadinessDTO):
     cursor: str | None = None
 
 
-ActionKind = Literal[
-    "resolve_scope", "implement_contribution", "complete_contribution", "associate_implementation",
-    "refresh_implementation_proof", "resolve_material_change", "execute_verification",
-    "associate_verification", "resolve_verification_conflict", "review_decision",
-    "complete_lifecycle", "resolve_native_gate", "restore_evaluation", "request_authorized_decision",
-]
-
-
 class ReadinessAction(ReadinessDTO):
     id: Identity
     kind: ActionKind
@@ -253,7 +246,8 @@ class ReadinessIssue(ReadinessDTO):
     score_impact: Literal["implementation", "verification", "both", "none", "unknown"]
     intrinsic_state: UnitState
     blocks_proof: StrictBool
-    blocks_target_transition: StrictBool
+    # An unevaluated native transition is neither allowed nor blocked.
+    blocks_target_transition: StrictBool | None
     message_code: Identity
     message_params: dict[str, JsonValue]
     message: str
