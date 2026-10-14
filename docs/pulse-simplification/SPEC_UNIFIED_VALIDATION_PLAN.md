@@ -19,11 +19,13 @@ Avanço de execução posterior: admissão sem Checklist também qualificada pel
 MCP (UoW real, identidade de teste) e Kanban integrado ao watcher de coleção,
 com descoberta autenticada UI/MCP e expansão preservada. Ver
 [prova parcial de Kanban](evidence-u3-kanban-sync-20261014.json).
-CardModal/EditableField/Delivery têm WIP preservado, ainda não qualificado:
-o ensaio anterior registra 77 passes e quatro falhas; mudanças posteriores de
-Delivery não estão cobertas por ele. Demais leitores/editores da Spec e U4
-continuam pendentes. A sequência de fechamento está em §6.2; não reimplementar
-o watcher nem apresentar esse checkpoint como entrega instalada.
+Avanço posterior de CardModal/EditableField/Delivery: Community `2a6324d3`
+resolveu as falhas anteriores e qualificou proteção de rascunhos com 137 passes,
+tipos e prova visual UI/MCP do título. Ver
+[prova parcial de Cards](evidence-u3-card-drafts-20261014.json).
+Demais consumidores de CardModal, leitores/editores da Spec e U4 continuam
+pendentes. A sequência de fechamento está em §6.2; não reimplementar o watcher
+nem apresentar esse checkpoint como entrega instalada.
 
 ### Leitura executiva do plano
 
@@ -592,11 +594,15 @@ que impeça um desses aceites é corrigido no próprio passo, com evidência.
 | 2d | Qualificar preservação de texto e seleção de evidências, inclusive obrigações/recibos removidos na fonte. | Formulário não perde campos nem troca expected_card_version, expected_spec_edition ou delivery_revision silenciosamente. Revisão explícita apresenta escolhas atuais; nenhuma submissão automática. Testes de Delivery e EditableField mais interação no CardModal. |
 | 2e | Conferir os consumidores montados de CardModal: Delivery/readiness, dependências, recursos/KB e histórico. Propagar a revisão somente onde faltar. | Mutação MCP aparece no leitor visível; painel fechado atualiza ao abrir. Browser mostra título remoto com rascunho local preservado e sem escrita involuntária. Registrar quais superfícies foram efetivamente exercitadas. |
 
-`u3-card-live.xml` anterior: 79 casos de CardModal, quatro falhas; dois casos
-de EditableField, ambos aprovados. Não cobre as alterações posteriores de
-Delivery. Após as correções, executar as suítes afetadas, tipos e lint, depois
-o ensaio UI/MCP isolado. Não repetir toda a qualificação de Kanban sem alteração
-ou regressão que justifique. O checkpoint continua vermelho até essas provas.
+Avanço `2a6324d3`: as quatro falhas de `u3-card-live.xml` foram resolvidas com
+o editor real. `u3-card-delivery-final.xml` registra 137 passes (CardModal 83,
+Delivery 33, Progress 19, EditableField 2), incluindo os cenários de 2a–2d;
+tipos passaram e lint terminou sem erros, com warnings registrados. Browser
+UI/MCP confirmou o título remoto com rascunho preservado. Não repetir essas
+provas sem alteração/falha nova. **2e e a visibilidade dos leitores ainda estão
+pendentes**: Activity, policy, KB/Knowledge, Architecture e Targets precisam
+consumir revisão sem rebase/remonta de editor; Delivery oculta deve adiar leitura.
+Essa prova parcial não encerra U3 nem substitui o E2E instalado U4.
 
 **Limite de concorrência:** CardUpdate não possui CAS genérico. A proteção de
 EditableField detecta mudança recebida pelo cliente e preserva rascunho; não

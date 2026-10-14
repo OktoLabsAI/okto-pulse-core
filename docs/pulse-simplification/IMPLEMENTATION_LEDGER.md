@@ -2,6 +2,49 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U3: rascunhos de Card/Delivery qualificados parcialmente
+
+Turno anterior: progresso documental publicado, sem entrega final. Retomada
+sobre Core `a5bf9f2e` / Community `37c34e10`. Community deste incremento:
+`2a6324d3`. Evidência em `evidence-u3-card-drafts-20261014.json`.
+
+Delivery distingue erro de leitura de erro de escrita: falha de refresh mantém
+rascunho e bloqueia envio/revisão até nova leitura bem-sucedida; retry de escrita
+mantém sua chave quando o conteúdo é idêntico. Acesso negado limpa dados e
+rascunho protegido. Seleção desaparecida exige correção após revisão explícita.
+Progress também conserva texto/base original, bloqueia envio durante leitura
+indisponível e mudança de estado/base, e deixa de remontar só por nova edição.
+Nenhum gate, score, schema ou permissão foi alterado.
+
+As quatro falhas do checkpoint foram resolvidas por testes de interação reais.
+A primeira execução teve dois casos ainda falhos porque o mock de EditableField
+era estático; removido esse mock, comprovadas edição Bug/Test e recusa de normal
+em Spec Done/Rejected. Testes adicionais: fila de invalidação durante thresholds,
+ausência de polling pesado, perda de acesso com resposta atrasada, rascunho de
+título remoto, revisão explícita dos fences Delivery/progresso, receipt removido,
+erro/retry e replay idêntico. Resultado final: **137 passes**, quatro suítes.
+`tsc -b` passou após corrigir import de tipo Spec no teste. ESLint exit 0 com
+14 warnings, sem erros; não alegar lint sem warnings. `git diff --check` passou.
+
+Browser real + MCP autenticado: Card c8a1a9b4-691c-5175-84be-1d512b6bdda4,
+Board isolado 7bbd65c3-8738-45a2-8fab-a5216ab7e98c, API/MCP 8200/8201.
+Título alterado por MCP chegou à capa e ao aviso do modal, preservando rascunho
+e aba Details. Captura inspecionada; descarte explícito mostrou valor remoto.
+Primeira tentativa foi interrompida pela queda do Vite 44604; confirmada ausência
+do processo/listener antes de reiniciar como 38836. O reload do ambiente dev
+não é prova de recuperação de rascunho; o ensaio válido usou nova edição local
+e outra mutação MCP. Runtime backend 27316 permaneceu, sem intervenção na home
+ou processo do usuário. Não houve implementação/prova/100% mockados artificialmente.
+
+Próximo passo de U3: fechar 2e e visibilidade dos consumidores. Conferência de
+código encontrou Activity sem revisão externa; policy refresh condicionado só a
+updated_at do Card; KB herdada recarregada só em loadCard; Architecture/Knowledge/
+Targets com leitores próprios e formulários que precisam preservar base antes
+de receber invalidação. Delivery lazy-keep também deve adiar refresh quando
+oculta. Não remontar esses formulários para resolver atualização. Em seguida,
+proteger/expandir SpecModal; completar U2 e U4 instalado até Done/KG. Não declarar
+U3 encerrado por esses 137 passes ou pela prova do título.
+
 ### 2026-10-14 — plano único reconciliado com o WIP de Cards
 
 Antes desta revisão documental, publicados Core `6b7a854a` / Community
