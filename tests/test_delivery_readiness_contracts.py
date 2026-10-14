@@ -89,7 +89,7 @@ def test_P01_models_reject_unknown_fields_and_mutation():
 
 
 def test_P01_reason_vocabulary_is_closed_and_satisfaction_requires_proof():
-    assert len(ReadinessReason) == 26
+    assert len(ReadinessReason) == 27
     with pytest.raises(ValueError):
         ReadinessReason("unmapped_native_error")
     with pytest.raises(ValueError, match="satisfied_without_proof"):

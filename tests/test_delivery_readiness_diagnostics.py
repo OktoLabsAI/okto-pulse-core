@@ -38,8 +38,8 @@ def scenario(identity, *, pending=False):
 
 
 def test_closed_registry_and_unknown_reason_fail_explicitly():
-    assert len(REASON_REGISTRY) == len(Reason) == 26
-    assert len(ACTION_REGISTRY) == len(ActionKind) == 14
+    assert len(REASON_REGISTRY) == len(Reason) == 27
+    assert len(ACTION_REGISTRY) == len(ActionKind) == 15
     validate_diagnostic_registry()
     with pytest.raises(DiagnosticIntegrityError, match='readiness_reason_unmapped'):
         reason_definition('unmapped_native_failure')

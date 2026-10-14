@@ -47,6 +47,13 @@ becomes stale; current qualification and diagnostics show the divergence.
 This read never executes tests, creates evidence, writes events or changes
 lifecycle. Subsequent mutations always reauthorize and recheck native gates.
 
+When the current state has no public direct transition to Done, the lifecycle
+issue is `lifecycle_transition_required`, not missing completion permission.
+Follow its read-only `inspect_lifecycle` action to
+`okto_pulse_get_allowed_transitions` with the supplied entity arguments, then
+use the native transition workflow and its gates. Repeating readiness cannot
+advance the lifecycle. This issue does not reduce either proof percentage.
+
 A rejected delivery transition includes `readiness_summary` and a valid
 `readiness_query`. Its `assessment_snapshot_id` fingerprints the factual
 assessment used by the rejected mutation; it is not a readiness cursor token.

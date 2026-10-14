@@ -35,6 +35,7 @@ class ActionKind(StrEnum):
     REVIEW_DECISION = 'review_decision'
     COMPLETE_LIFECYCLE = 'complete_lifecycle'
     RESOLVE_NATIVE_GATE = 'resolve_native_gate'
+    INSPECT_LIFECYCLE = 'inspect_lifecycle'
     RESTORE_EVALUATION = 'restore_evaluation'
     REQUEST_AUTHORIZED_DECISION = 'request_authorized_decision'
 
@@ -93,6 +94,9 @@ ACTION_REGISTRY = MappingProxyType({item.kind: item for item in (
         ('board_id', 'spec_id'), ('board_id', 'spec_id')),
     _action('complete_lifecycle', 'Concluir o card pela transição nativa disponível após conferir seus gates.', 'read_only', 5),
     _action('resolve_native_gate', 'Resolver o gate nativo identificado antes da conclusão.', 'read_only', 2),
+    _action('inspect_lifecycle', 'Consultar as transições permitidas e seus gates para avançar a partir do estado atual.', 'read_only', 1,
+        'okto_pulse_get_allowed_transitions', 'spec.entity.read',
+        ('board_id', 'entity_type', 'entity_id'), ('board_id', 'entity_type', 'entity_id')),
     _action('restore_evaluation', 'Restabelecer a leitura autorizada e consultar novamente a entrega.', 'read_only', 1,
         'okto_pulse_get_delivery_evidence', 'code_traceability.evidence.read',
         ('board_id', 'spec_id', 'card_id', 'view'), ('board_id', 'spec_id', 'view')),
@@ -142,6 +146,7 @@ REASON_REGISTRY = MappingProxyType({item.code: item for item in (
     _reason('applicable_obligation_waived', 'Uma dispensa substitui a prova de {subject}; isso não concede cobertura.', (), phase='implementation,verification', severity='medium', fields=('record_id',)),
     _reason('lifecycle_card_open', 'As provas de {subject} estão disponíveis; falta encerrar o card.', ('complete_lifecycle',), phase='lifecycle', severity='medium', preconditions=('native_transition',), fields=('entity_id',)),
     _reason('lifecycle_gate_pending', 'Um gate nativo ainda impede a conclusão de {subject}.', ('resolve_native_gate',), phase='lifecycle', fields=('entity_id',)),
+    _reason('lifecycle_transition_required', 'O estado atual de {subject} não permite conclusão direta.', ('inspect_lifecycle',), phase='lifecycle', severity='medium', fields=('entity_id',)),
     _reason('assessment_unavailable', 'Não foi possível avaliar {subject} com os fatos ou verificadores disponíveis.', ('restore_evaluation',), phase='implementation,verification,lifecycle'),
     _reason('historical_completion_diverged', 'A conclusão histórica de {subject} diverge da qualificação atual.', ('resolve_native_gate',), phase='lifecycle', fields=('entity_id',)),
 )})

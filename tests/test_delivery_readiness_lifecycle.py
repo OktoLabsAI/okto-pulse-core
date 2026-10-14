@@ -464,3 +464,45 @@ async def test_spec_native_blocker_is_not_inherited_by_card_context():
     reader = EvaluatedDeliveryReadiness(replace(batch, native_lifecycle=native), actor_id='reader')
     assert reader.context('ui').lifecycle.check_status == 'not_evaluated'
     assert not any(c.code == 'lifecycle_gate_pending' for c in reader.diagnostics('ui').graph.causes)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('card_type', ['normal', 'bug', 'test'])
+async def test_unstarted_card_guides_native_transitions_without_permission_retry_or_proof_penalty(card_type):
+    batch, services, evaluator = card_environment()
+    batch = replace(batch, cards=tuple(replace(c, status=CardStatus.NOT_STARTED, card_type=card_type)
+        if c.id == 'ui' else c for c in batch.cards),
+        access=replace(batch.access, completion_states=frozenset()))
+    baseline = EvaluatedDeliveryReadiness(batch, actor_id='reader').context('ui')
+    native = await evaluator.evaluate(batch, card_id='ui')
+    assert native.check_status == 'blocked'
+    assert native.blocking_codes == ('native_completion_transition_required',)
+    evaluated = EvaluatedDeliveryReadiness(replace(batch, native_lifecycle=native), actor_id='reader')
+    context = evaluated.context('ui')
+    assert context.implementation == baseline.implementation
+    assert context.verification == baseline.verification
+    page = PreparedDeliveryReadiness(context, evaluated.diagnostics('ui'), cursor=Cursor()).page(
+        ReadinessReadQuery(board_id='board', spec_id='spec', card_id='ui'), actor_id='reader')
+    issue = next(item for item in page.issues if item.code == 'lifecycle_transition_required')
+    assert issue.phase == 'lifecycle' and issue.score_impact == 'none'
+    assert not issue.blocks_proof and issue.blocks_target_transition
+    action = next(item for item in page.next_actions if item.kind == 'inspect_lifecycle')
+    assert action.arguments == {'board_id': 'board', 'entity_type': 'card', 'entity_id': 'ui'}
+    assert action.pulse_tool == 'okto_pulse_get_allowed_transitions'
+    assert action.execution_surface == 'read_only' and action.state == 'ready'
+    assert not any(item.kind == 'restore_evaluation' and issue.id in item.issue_ids for item in page.next_actions)
+    services.persistence.get.assert_not_awaited()
+    services.cards.validate_completion_admission.assert_not_awaited()
+    services.guidelines.preview_policy_transition.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('card_id', [None, 'ui'])
+async def test_missing_completion_authority_on_a_public_edge_remains_not_evaluated(card_id):
+    batch, services, evaluator = card_environment() if card_id else environment()
+    batch = replace(batch, access=replace(batch.access, completion_states=frozenset()))
+    native = await evaluator.evaluate(batch, card_id=card_id)
+    assert native.check_status == 'not_evaluated'
+    assert native.reason_codes == ('native_transition_permission_required',)
+    assert not native.blocking_codes
+    services.persistence.get.assert_not_awaited()

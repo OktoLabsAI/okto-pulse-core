@@ -4,7 +4,7 @@ from okto_pulse.core.domain.code_traceability import CodeTraceabilitySubjectType
 from okto_pulse.core.domain.delivery_inventory import delivery_digest
 from okto_pulse.core.domain.bug_learning_policy import LEARNING_CAPTURE_REQUIRED, requires_bug_learning_capture
 from okto_pulse.core.domain.guideline_semantic_transition import PolicyTransitionDecision, PolicyTransitionReasonCode
-from okto_pulse.core.domain.sdlc_registry import transition_requires_policy_compliance
+from okto_pulse.core.domain.sdlc_registry import is_transition_allowed, transition_requires_policy_compliance
 from okto_pulse.core.ports.delivery_readiness import ReadinessNativeLifecycle, ReadinessReadError
 from okto_pulse.core.ports.guideline_policy import GuidelinePolicyPersistenceError
 from okto_pulse.core.ports.code_traceability import CodeTraceabilityPersistenceError
@@ -61,8 +61,18 @@ class DeliveryReadinessLifecycleService:
         if card:
             access.require('card.entity.read')
         entity = 'card' if card else 'spec'
-        if status != 'done' and (not access.spec_write_access or (entity, str(status)) not in access.completion_states):
-            return result('not_evaluated', ('native_transition_permission_required',))
+        if status != 'done':
+            if not access.spec_write_access:
+                return result('not_evaluated', ('native_transition_permission_required',))
+            # A missing public lifecycle edge is not a missing permission or
+            # unavailable evaluation. Guide the reader to native transitions;
+            # never synthesize an edge or preview completion-only gates here.
+            if not is_transition_allowed(entity, str(status), 'done',
+                    card_type=card.card_type if card else None):
+                code = 'native_completion_transition_required'
+                return result('blocked', (code,), (code,))
+            if (entity, str(status)) not in access.completion_states:
+                return result('not_evaluated', ('native_transition_permission_required',))
         if batch.unavailable_reason_codes:
             return result('not_evaluated', batch.unavailable_reason_codes)
         # Scalar records only: readiness does not need the modal's relationship

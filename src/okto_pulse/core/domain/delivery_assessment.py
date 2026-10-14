@@ -80,6 +80,7 @@ class ReadinessReason(StrEnum):
     APPLICABLE_OBLIGATION_WAIVED = "applicable_obligation_waived"
     LIFECYCLE_CARD_OPEN = "lifecycle_card_open"
     LIFECYCLE_GATE_PENDING = "lifecycle_gate_pending"
+    LIFECYCLE_TRANSITION_REQUIRED = "lifecycle_transition_required"
     ASSESSMENT_UNAVAILABLE = "assessment_unavailable"
     HISTORICAL_COMPLETION_DIVERGED = "historical_completion_diverged"
 

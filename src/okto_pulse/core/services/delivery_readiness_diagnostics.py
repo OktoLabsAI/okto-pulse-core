@@ -472,10 +472,17 @@ def compose_delivery_diagnostics(assessment, snapshot, *, spec_assessment=None, 
                 edges.update((identity, parent) for parent in by_ref[reference] if parent != identity)
     if native_lifecycle and native_lifecycle.blocking_codes:
         entity, identity = ('card', assessment.card_id) if assessment.card_id else ('spec', snapshot.scope.spec_id)
-        occurrence = CauseOccurrence(ReadinessReason.LIFECYCLE_GATE_PENDING, ReadinessPhase.LIFECYCLE,
+        transition_required = 'native_completion_transition_required' in native_lifecycle.blocking_codes
+        action = (ActionCandidate(ActionKind.INSPECT_LIFECYCLE,
+            arguments_json=json.dumps({'board_id': snapshot.scope.board_id,
+                'entity_type': entity, 'entity_id': identity}),
+            context_refs=(f'{entity}:{identity}',),
+            permission_allowed=permissions.get('spec.entity.read')) if transition_required else
+            ActionCandidate(ActionKind.RESOLVE_NATIVE_GATE, context_refs=(f'{entity}:{identity}',)))
+        occurrence = CauseOccurrence(ReadinessReason.LIFECYCLE_TRANSITION_REQUIRED if transition_required else
+            ReadinessReason.LIFECYCLE_GATE_PENDING, ReadinessPhase.LIFECYCLE,
             UnitState.MISSING, CauseOrigin(entity, identity), (),
-            actions=(ActionCandidate(ActionKind.RESOLVE_NATIVE_GATE,
-                context_refs=(f'{entity}:{identity}',)),),
+            actions=(action,),
             native_reason_codes=native_lifecycle.blocking_codes, blocks_proof=False,
             blocks_target_transition=True)
         key = cause_identity(snapshot.scope, occurrence)
