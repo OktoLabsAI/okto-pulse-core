@@ -2,6 +2,45 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — planejamento da validação unificada; execução não iniciada
+
+Pedido atual: iniciar planejamento detalhado após commit/push de todo o trabalho
+anterior. Checkpoint prévio publicado: Core 57599196174a247510cef6b299ee51c0f50ce10f
+e Community 34fcf7ec8a617151df32ca403478cd39594cee56, ambos feature/v0.4.0 e limpos.
+
+Plano concreto: [SPEC_UNIFIED_VALIDATION_PLAN.md](SPEC_UNIFIED_VALIDATION_PLAN.md).
+Escopo fechado nos três atritos do E2E: autoria de Task/Test em Draft e conclusão
+conjunta de Spec Validation/decomposição; retirada apenas da existência obrigatória
+de Decision; sincronização da UI após mutações MCP. Todas as avaliações, rubricas,
+severidades, thresholds, autoria, história e permissões continuam existentes.
+
+Conferência estática confirmou a separação atual: Spec Validation em Approved
+promove a Validated; decomposição só é registrada em Validated e bloqueia início.
+O plano antecipa a decomposição para Approved e consulta o conjunto antes de promover.
+Preserva estados, admissão do ciclo/snapshot, gates de início e de entrega. A média
+atual entre aprovações da própria decomposição permanece; não há média nova entre
+avaliações distintas. Rejeição ativa da mesma edição continua bloqueando. Reabrir
+Draft continua criando nova edição, sem reaproveitamento implícito de pareceres.
+
+U1: autoria/Decision e caracterização; U2: caso de uso integrado, resumo, fences,
+atomicidade e replay; U3: workspace Validation e atualização externa com proteção
+de formulários; U4: testes integrados, auditoria, catálogo, build e E2E UI/MCP.
+Matriz UV01–UV24 e arquivos/suítes afetados estão no plano. Cada milestone deverá
+registrar testes, commit e push; não há autorização implícita para relaxar gates.
+
+Este turno produziu somente documentação. Sem alteração de código, policy, Board,
+storage, instalação ou processo; nenhum teste de comportamento foi executado.
+O assessment usou o documento de entrada, seções dirigidas do pacote, código e
+evidência E2E já registrada. Antes de implementar contratos compartilhados, ainda
+cumprir a leitura integral dos quatro documentos exigida pelo pacote; não buscar
+a ideação original, nem reintroduzir migração/compatibilidade.
+
+Retomada: executar U1 a partir do plano, sem repetir o E2E anterior nem alterar
+as iniciativas concluídas. A solicitação deste turno foi planejamento; U1–U4
+continuam pendentes de execução. Validação documental: links locais e símbolos
+de referência conferidos, diff sem whitespace inválido. Este registro e o plano
+são publicados juntos em um commit documental do Core.
+
 ### 2026-10-14 — E2E novo concluído da ideação a Done, UI e MCP em 100%
 
 Pedido: criar uma iniciativa mock nova e percorrer todo o SDLC, incluindo
