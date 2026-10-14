@@ -40,6 +40,7 @@ class DiagnosticDetail:
     test_card_ids: tuple[str, ...]
     owner: str | None = None
     owner_state: str = 'restricted'
+    detail_state: str = 'available'
 
 
 @dataclass(frozen=True, slots=True)
@@ -482,7 +483,7 @@ def render_diagnostic_issue(cause, detail, *, scope, card_id, snapshot_id):
         intrinsic_state=cause.intrinsic_state, blocks_proof=cause.blocks_proof,
         blocks_target_transition=cause.blocks_target_transition, message_code=cause.message_code,
         message_params={'subject': cause.origin.identity}, message=cause.message, native_reason_codes=cause.native_reason_codes,
-        owner=detail.owner, owner_state=detail.owner_state,
+        owner=detail.owner, owner_state=detail.owner_state, detail_state=detail.detail_state,
         root_cause_id=cause.root_cause_id, depends_on_issue_ids=cause.depends_on_issue_ids, action_ids=cause.action_ids,
         detail_query=ReadinessDetailQuery(board_id=scope.board_id, spec_id=scope.spec_id, card_id=card_id,
             snapshot_id=snapshot_id, issue_id=cause.id), **values)

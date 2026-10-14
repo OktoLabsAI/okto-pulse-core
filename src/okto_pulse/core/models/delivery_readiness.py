@@ -281,6 +281,7 @@ class ReadinessAction(ReadinessDTO):
 
 
 class ReadinessIssue(ReadinessDTO):
+    detail_state: Literal['available', 'restricted'] = 'available'
     id: Identity
     code: ReadinessReason
     phase: ReadinessPhase
@@ -427,6 +428,7 @@ class ReadinessDetailCounts(ReadinessDTO):
 
 
 class DeliveryReadinessDetail(DeliveryReadinessContext):
+    detail_state: Literal['available', 'restricted'] = 'available'
     issue_id: Identity
     entry_counts: ReadinessDetailCounts
     entries: Annotated[tuple[ReadinessDetailEntry, ...], Field(max_length=20)]

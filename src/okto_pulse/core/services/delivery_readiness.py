@@ -4,22 +4,99 @@ Pagination never evaluates proof or a transition and never changes metrics.
 The caller supplies the native gate/lifecycle result; signing is a public port
 implemented by the edition. Use the same serialization at REST/MCP boundaries.
 """
-from dataclasses import asdict
+from dataclasses import asdict, replace
+import json
 
-from okto_pulse.core.domain.delivery_diagnostics import DiagnosticIntegrityError
+from okto_pulse.core.domain.delivery_diagnostics import ACTION_REGISTRY, ActionKind, ActionState, CauseOrigin, DiagnosticIntegrityError
 from okto_pulse.core.domain.delivery_evidence import DeliveryScope
 from okto_pulse.core.domain.delivery_inventory import delivery_digest
 from okto_pulse.core.models.delivery_readiness import (
     DeliveryReadiness, DeliveryReadinessContext, DeliveryReadinessDetail, ReadinessCursorBinding,
     ReadinessDetailCounts, ReadinessDetailEntry, ReadinessPage, ReadinessReadQuery, ReadinessRelation,
 )
-from okto_pulse.core.ports.delivery_readiness import DeliveryReadinessCursorPort, ReadinessReadError
+from okto_pulse.core.ports.delivery_readiness import (
+    DeliveryReadinessCursorPort, ReadinessAccessDenied, ReadinessReadError,
+)
 from okto_pulse.core.services.delivery_readiness_diagnostics import (
-    NativeDeliveryDiagnostics, render_diagnostic_action, render_diagnostic_issue, render_diagnostic_unit,
+    DiagnosticOwner, NativeDeliveryDiagnostics, compose_delivery_diagnostics,
+    render_diagnostic_action, render_diagnostic_issue, render_diagnostic_unit,
 )
 
 SUMMARY_MAX_BYTES = 32 * 1024
 DETAIL_MAX_BYTES = 128 * 1024
+
+
+def compose_authorized_delivery_diagnostics(assessment, batch, *, actor_id, spec_assessment=None):
+    """Enrich only through current, same-snapshot native authority.
+
+    Aggregate facts/units remain intact. Restricted detail is explicit, never a
+    false empty healthy population or a lower score. Unit references are already
+    part of the authorized Spec/evidence contract; private content is removed
+    from details, action arguments, context refs and the cause's display origin.
+    This function does not grant authority for a future write or transition.
+    """
+    access, scope = batch.access, batch.facts.scope
+    if access is None:
+        raise ReadinessAccessDenied('code_traceability.evidence.read')
+    if access.actor_id != actor_id or access.board_id != scope.board_id:
+        raise ReadinessReadError('readiness_scope_mismatch')
+    access.require('code_traceability.evidence.read')
+    access.require('spec.entity.read')
+    if assessment.card_id is not None:
+        access.require('card.entity.read')
+        if assessment.card_id not in {c.id for c in batch.cards}:
+            raise ReadinessReadError('readiness_scope_mismatch')
+    can_cards = access.allows('card.entity.read')
+    can_owners = can_cards and access.allows('agent.entity.read')
+    can_targets = access.allows('code_traceability.target.read')
+    can_receipts = access.allows('code_traceability.investigation.read')
+    can_tests = access.allows('spec.tests.read')
+    projection = compose_delivery_diagnostics(assessment, batch.facts, spec_assessment=spec_assessment,
+        permissions={a.permission: access.allows(a.permission) for a in ACTION_REGISTRY.values() if a.permission},
+        owners=tuple(DiagnosticOwner('card', c.id, c.assignee_id if can_owners else None, can_owners) for c in batch.cards),
+        card_versions={c.id: c.version for c in batch.cards}, procedures=batch.scenarios if can_tests else ())
+    causes = {c.id: c for c in projection.graph.causes}
+    restricted, details = set(), []
+    for detail in projection.details:
+        cause = causes[detail.issue_id]
+        has_targets = cause.origin.kind == 'execution' or any(
+            f.target_id or f.execution_id or f.source_ref for f in (*detail.expected, *detail.observed))
+        has_tests = bool(cause.scenario_ids or any(u.unit == 'scenario' for u in cause.units))
+        has_cards = bool(detail.implementation_card_ids or detail.test_card_ids)
+        if ((has_targets and not (can_targets and can_receipts)) or (has_tests and not can_tests)
+            or (has_cards and not can_cards)):
+            restricted.add(cause.id)
+            # Redact the complete native detail if one of its required APIs is
+            # restricted. Partial proof payloads can be misleading or leak the
+            # same content through report text and cross-referenced IDs.
+            detail = replace(detail, expected=(), observed=(), evidence_refs=(), pinpoints=(),
+                implementation_card_ids=detail.implementation_card_ids if can_cards else (),
+                test_card_ids=detail.test_card_ids if can_cards else (), owner=None,
+                owner_state='restricted', detail_state='restricted')
+        details.append(detail)
+    actions = []
+    for action in projection.graph.actions:
+        # Native scenario execution/admission requires writable Spec membership;
+        # associating an existing result uses its separate delivery-record path.
+        # Do not make the latter inherit a gate that its native API does not have.
+        if action.kind == ActionKind.EXECUTE_VERIFICATION and not access.spec_write_access:
+            action = replace(action, state=ActionState.FORBIDDEN)
+        if restricted.intersection(action.issue_ids):
+            arguments = json.loads(action.arguments_json)
+            visible = {key: value for key, value in arguments.items()
+                if key in {'board_id', 'spec_id', 'spec_edition'} or key == 'card_id' and can_cards}
+            action = replace(action, arguments_json=json.dumps(visible, sort_keys=True), context_refs=(),
+                responsible_card_ids=action.responsible_card_ids if can_cards else (),
+                missing_inputs=('authorized_detail_context',),
+                state=ActionState.FORBIDDEN if action.state == ActionState.FORBIDDEN else ActionState.UNAVAILABLE)
+        actions.append(action)
+    ready = [a.id for a in actions if a.state == ActionState.READY]
+    fallback = [a.id for a in actions if a.state != ActionState.WAITING_DEPENDENCY]
+    graph = replace(projection.graph, actions=tuple(actions),
+        causes=tuple(replace(c, origin=CauseOrigin('spec', scope.spec_id)) if c.id in restricted else c
+            for c in projection.graph.causes),
+        next_action_ids=tuple((ready or fallback or [a.id for a in actions])[:3]))
+    return replace(projection, graph=graph, details=tuple(details))
 
 
 def serialize_readiness_response(response: DeliveryReadiness | DeliveryReadinessDetail) -> bytes:
@@ -31,6 +108,7 @@ def _detail_identity(detail):
     return {name: [value.model_dump(mode='json') for value in getattr(detail, name)]
         for name in ('expected', 'observed', 'evidence_refs', 'pinpoints')} | {
             'id': detail.issue_id, 'owner': detail.owner, 'owner_state': detail.owner_state,
+            'detail_state': detail.detail_state,
             'implementation_card_ids': detail.implementation_card_ids, 'test_card_ids': detail.test_card_ids}
 
 
@@ -168,6 +246,7 @@ class PreparedDeliveryReadiness:
             for kind in ('affected_unit', 'evidence', 'pinpoint', 'action')})
         def construct(size):
             return DeliveryReadinessDetail(**self.context.model_dump(), issue_id=query.issue_id, entry_counts=counts,
+                detail_state=self.details[query.issue_id].detail_state,
                 entries=entries[offset:offset + size],
                 page=self._page(binding, total=len(entries), offset=offset, returned=size))
         return self._fit(total=len(entries), offset=offset, limit=query.limit, maximum=DETAIL_MAX_BYTES,

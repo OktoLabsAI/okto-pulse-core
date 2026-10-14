@@ -81,6 +81,7 @@ ACTION_REGISTRY = MappingProxyType({item.kind: item for item in (
     _action('refresh_implementation_proof', 'Atualizar somente a observação de implementação afetada.', 'external_agent', 1),
     _action('resolve_material_change', 'Concluir ou reobservar a alteração material registrada.', 'external_agent', 1),
     _action('execute_verification', 'Executar a verificação existente na base exigida e registrar o resultado real.', 'external_agent', 4,
+        permission='spec.tests.execute',
         arguments=('board_id', 'spec_id', 'card_id', 'spec_edition', 'scenarios', 'implementation_bases'),
         required=('scenarios', 'implementation_bases')),
     _action('associate_verification', 'Associar o resultado válido às implementações exatas, sem repetir a execução.', 'pulse_tool', 0,

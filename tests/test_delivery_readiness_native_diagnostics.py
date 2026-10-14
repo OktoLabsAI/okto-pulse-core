@@ -101,7 +101,7 @@ def test_D04_test_view_reuses_spec_implementation_root_without_N_plus_one():
     value = damaged_snapshot()
     spec = assess_obligation_delivery(value)
     test = assess_test_delivery(value, card_id='test-card-1', scenario_ids=('scenario-ui', 'scenario-authorization'))
-    projection = compose_delivery_diagnostics(test, value, spec_assessment=spec)
+    projection = compose_delivery_diagnostics(test, value, spec_assessment=spec, permissions={'spec.tests.execute': True})
     _, detail = find(projection, 'verification_dependency_pending')
     assert detail.implementation_card_ids == ('ui',)
     execute = [a for a in projection.graph.actions if a.kind == 'execute_verification']
@@ -291,7 +291,8 @@ def test_external_guidance_includes_only_its_authored_procedure_and_exact_evalua
         pytest.fail('guidance composition must not reevaluate or execute proof')
     monkeypatch.setattr('okto_pulse.core.domain.effective_delivery_coverage.evaluate_effective_facts', forbidden)
     unrelated = replace(procedures[0], id='unrelated', notes='Do not disclose unrelated procedure')
-    projection = compose_delivery_diagnostics(assessment, value, procedures=(*procedures, unrelated))
+    projection = compose_delivery_diagnostics(assessment, value, procedures=(*procedures, unrelated),
+        permissions={'spec.tests.execute': True})
     assert projection.graph.actions
     for action in projection.graph.actions:
         dto = render_diagnostic_action(action)
@@ -318,9 +319,9 @@ def test_missing_authored_procedure_is_input_pending_without_score_changes(missi
     value, procedures = execution_procedure_case()
     assessment = assess_obligation_delivery(value)
     metrics = aggregate_delivery_metrics(assessment)
-    complete = compose_delivery_diagnostics(assessment, value, procedures=procedures)
+    complete = compose_delivery_diagnostics(assessment, value, procedures=procedures, permissions={'spec.tests.execute': True})
     partial = () if missing == 'procedure' else tuple(replace(p, **{missing: None}) for p in procedures)
-    incomplete = compose_delivery_diagnostics(assessment, value, procedures=partial)
+    incomplete = compose_delivery_diagnostics(assessment, value, procedures=partial, permissions={'spec.tests.execute': True})
     # Cause grouping includes its remedy. Missing guidance changes that identity,
     # but not the measured failure, affected units or exact expected base.
     assert sorted(((c.code, c.units, c.origin) for c in complete.graph.causes), key=repr) == sorted(

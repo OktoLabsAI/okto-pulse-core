@@ -34,7 +34,7 @@ def scenario(identity, *, pending=False):
     return CauseOccurrence(Reason.VERIFICATION_DEPENDENCY_PENDING if pending else Reason.VERIFICATION_FAILED,
         Phase.VERIFICATION, UnitState.MISSING if pending else UnitState.FAILED,
         CauseOrigin('scenario', identity), (unit(identity),),
-        (ActionCandidate(ActionKind.EXECUTE_VERIFICATION, context_refs=(identity,)),), scenario_ids=(identity,))
+        (ActionCandidate(ActionKind.EXECUTE_VERIFICATION, context_refs=(identity,), permission_allowed=True),), scenario_ids=(identity,))
 
 
 def test_closed_registry_and_unknown_reason_fail_explicitly():
