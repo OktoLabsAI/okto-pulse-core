@@ -2,6 +2,53 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U3: Validation conectada ao MCP, rascunho e autoridade
+
+Community publicado: `93769ff1`; este registro preserva a evidência pareada no Core.
+
+Continuação sobre Core 0be31681 / Community 264610a1. Turno anterior classificado
+como progresso: recusa de admissão e preservação do Checklist implementadas,
+testadas, inspecionadas e publicadas. Objetivo integral permanece ativo.
+
+SpecModal consome useWorkspaceRevisions enquanto Validation ou a conclusão
+está aberta. Atualiza Spec, allowed transitions, histórico/resultados e revisão
+do formulário, sem remonta nem mudança de aba. Ao sair dessa superfície ou
+trocar de Spec, invalida respostas pendentes. Erro de atualização fica explícito;
+negação de leitura remove conteúdo e editores. Polling continua limitado aos
+metadados existentes, nunca a Coverage ou ao cálculo periódico de gates.
+
+usePermissions ganhou refresh explícito do Board que ignora TTL, notifica
+consumidores montados e protege o cache contra resposta antiga. Falha depois de
+mudança conhecida de autoridade falha fechado. A Spec oculta seu conteúdo
+durante reautorização sem desmontar o formulário; preserva rascunho ainda
+autorizado e fecha quando a leitura deixa de ser permitida. Resposta de outro
+Board não é aceita. O formulário recebe revisões externas e mantém a base
+original até revisão explícita. Conflito não aparece mais como gate “unknown”.
+
+Prova real no runtime isolado 8200/8201 e Vite 5274: MCP autenticado registrou
+eval_87302a51 (request_changes, 20); surgiu na aba Task decomposition já aberta,
+sem Refresh. Com justificativa humana em edição, MCP registrou eval_4475e46f;
+o texto foi preservado e a revisão explícita da nova base apareceu. Ambas as
+operações mantiveram Approved; não houve submissão nem aprovação humana
+fabricada. Evidência: evidence-u3-live-validation-sync-20261014.json. A credencial
+de bootstrap permaneceu no handoff privado, fora do Git e dos outputs.
+
+Regressões: 76 passes navegação/dependências, 77 permissões/watcher/quality/activity,
+40 Checklist/Validation e quatro casos dirigidos de sincronização/reautorização
+(dois já pertencem à suíte de 76). tsc -b passou. Execuções paralelas iniciais
+excederam limites em sete testes anteriores; os reruns com um worker passaram
+sem alterar os limites. Dois novos testes precisaram corrigir o fixture de
+transição permitida e limpar o mock diferido entre casos; depois passaram.
+Não houve mudança Python, catálogo ou dependências neste incremento; closure
+anterior continua a referência, sem alegar nova auditoria de wheels.
+
+Retomada: o hook já tem consumidor real na Validation/conclusão — não refazer.
+Expandir para listas de Board, Cards/Delivery, Coverage e demais leitores;
+provar descoberta de objetos novos e mudança só de Card sem bump da Spec;
+proteger demais editores e conferir revogação/offline/reconexão no fluxo completo.
+Completar paridade U2 e U4 instalado até Done/KG. Esta prova parcial não encerra
+UV18–UV20 nem U3/U4. Home, instalação e processo do usuário não foram alterados.
+
 ### 2026-10-14 — U3: admissão acionável e preservação do Checklist
 
 Continuação da implementação sobre Core cb9aea11 / Community fc92616a.

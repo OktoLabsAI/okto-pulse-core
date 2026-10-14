@@ -1,0 +1,58 @@
+{
+  "scope": "Partial UV18/UV20: live Spec Validation workspace and composed review draft",
+  "baseline": {"core": "0be31681", "community": "264610a1"},
+  "runtime": {
+    "api": "http://127.0.0.1:8200",
+    "mcp": "http://127.0.0.1:8201/mcp",
+    "frontend": "http://127.0.0.1:5274",
+    "api_process": 13040,
+    "source_runtime": true,
+    "isolated_home": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-browser-home",
+    "user_runtime_unchanged": true
+  },
+  "board_id": "0b21a5a9-e3b8-4035-b4b6-08a65f165a5a",
+  "spec_id": "216a3d13-be16-4c0b-949f-e50b76ae903d",
+  "spec_edition": 1,
+  "mcp_observations": [
+    {
+      "evaluation_id": "eval_87302a51",
+      "created_at": "2026-10-14T22:16:25.547804+00:00",
+      "actor": "Local Agent",
+      "recommendation": "request_changes",
+      "overall_score": 20,
+      "status_before": "approved",
+      "status_after": "approved",
+      "ui_before": "No current decomposition opinions.",
+      "ui_after": "Local Agent, Edition 1, request changes, score 20, visible on the already-open Task decomposition tab without Refresh."
+    },
+    {
+      "evaluation_id": "eval_4475e46f",
+      "created_at": "2026-10-14T22:20:26.227791+00:00",
+      "recommendation": "request_changes",
+      "overall_score": 20,
+      "status_before": "approved",
+      "status_after": "approved",
+      "ui_before": "Composed validation form open with an authored Confidence justification.",
+      "ui_after": "Exact justification preserved, original basis retained, conflict displayed and explicit review of the new basis required. No validation submitted."
+    }
+  ],
+  "frontend_verification": {
+    "validation_navigation_and_dependencies": {"passed": 76, "workers": 1},
+    "permissions_watcher_quality_activity": {"passed": 77, "workers": 1},
+    "checklist_and_validation_panels": {"passed": 40, "workers": 1},
+    "targeted_live_sync_and_authority_cases": {"passed": 4, "skipped_unselected": 62},
+    "typescript_build": "passed",
+    "initial_parallel_runs": "Seven timeout failures in preexisting navigation tests. Sequential reruns passed without changing their limits.",
+    "test_fixture_correction": "New authority tests require an allowed validation transition and reset their deferred permission mock between cases. Corrected; all four targeted cases passed."
+  },
+  "screenshots": [
+    "okto_labs_pulse_community/output/playwright/u3-live-mcp-decomposition.png",
+    "okto_labs_pulse_community/output/playwright/u3-live-mcp-dirty-conflict-final.png"
+  ],
+  "native_mcp_receipts": ["u3-live-mcp-opinion.json", "u3-live-mcp-opinion-dirty.json"],
+  "remaining": [
+    "Extend revision consumers beyond the Validation view and conclusion modal to Board lists, Cards/Delivery, Coverage and other planned readers.",
+    "Prove new-object discovery, Card-only changes without Spec.version bump, other dirty editors, permission revocation in the complete integrated flow, and offline/reconnect.",
+    "Complete U2 parity audit and U4 installed mock SDLC through Done and canonical KG."
+  ]
+}

@@ -13,7 +13,10 @@ Há resumo, histórico e formulário composto na interface, ainda em qualificaç
 Admissão sem Checklist já tem recusa acionável comprovada; refresh da Validation
 preserva o rascunho do Checklist. Evidência em
 [ensaio parcial U3](evidence-u3-checklist-20261014.json).
-Integração da sincronização externa e ensaio final permanecem pendentes.
+Validation/conclusão já consomem revisões: parecer MCP apareceu sem Refresh e
+mudança concorrente preservou rascunho com revisão explícita da base. Ver
+[prova parcial de sincronização](evidence-u3-live-validation-sync-20261014.json).
+Expansão aos demais consumidores e ensaio final permanecem pendentes.
 A seção 6.2 define a sequência concreta sem ampliar o escopo.
 
 Base: Core `57599196174a247510cef6b299ee51c0f50ce10f` e Community
@@ -344,7 +347,7 @@ Essas evidências não encerram o milestone nem substituem o E2E.
 | U1 | Cards Not Started em Draft e remoção da exigência de existir Decision. | Percurso real UI/MCP no U4; não refazer a implementação. |
 | U2 — conclusão | Payload composto, permissões independentes, pareceres/históricos nativos, promoção condicionada, recibo/replay e manifesto obrigatório. | Paridade completa de todos os caminhos com os gates aplicáveis. |
 | U2 — leitura | `include_planning`, 17 componentes, composição pública sem escrita, revisões leves em lote, permissões por componente, paginação REST/MCP e cliente tipado. Regressão de opiniões: 48 passes. Admissão sem Checklist comprovada por REST/browser e rollback nativo. | Completar matriz de paridade dos gates e superfície MCP. |
-| U3 | Resumo, histórico Current/Previous paginado, contribuição independente, payload opcional na conclusão, distinção registro/promoção e revisão explícita da base no formulário. Watcher/hook com testes isolados. | Conectar o hook aos consumidores e à revisão da base; proteger todos os formulários e reautorizar após mudança de acesso; qualificar os componentes integrados no browser. |
+| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão; refresh de permissões com proteção de respostas antigas. Provas MCP/UI de atualização e rascunho. | Expandir aos demais consumidores, proteger os demais formulários e comprovar descoberta de objetos novos, Card sem bump da Spec, revogação/offline/reconexão no fluxo completo. |
 | U4 | Regressões parciais registradas no ledger. | Wheels, runtime compatível, browser e iniciativa nova até Done/KG; matriz UV01–UV24. |
 
 #### U2 — encerrar backend e contratos antes da interface
@@ -424,7 +427,7 @@ Os passos abaixo são tarefas do mesmo milestone U3, não novas frentes de produ
 | 1 | `SpecPlanningSummary.tsx`, cliente `services/api.ts`, tipos de avaliações | Preservar a correção de formatação; conferir diferença append/listagem e rodar tipos/build. Resultado ausente continua unavailable. |
 | 2 | `SpecValidationPanel`, `SpecDecompositionHistory`, `SpecDecompositionPanel` e `SpecModal` | Qualificar o WIP de pareceres Current/Previous com autoria, dimensões, justificativas e scores próprios; navegação respeita leitura e abre destino real. UV12/UV13/UV21. |
 | 3 | `SubmitSpecValidationModal` e resposta da API composta | Qualificar campo opcional com permissão pertinente, reuso de Current e distinção registro/promoção já implementados. Testar negativo, bloqueio, conflito e retry. UV11/UV12/UV15/UV16/UV22. |
-| 4 | `useWorkspaceRevisions`, `SpecModal`, `SpecsPanel` e consumidores Card/Delivery visíveis | Conectar o hook hoje sem consumidores. Deduplicar por cliente autenticado/Board; invalidar dados afetados, inclusive allowed transitions e Coverage sem mudança de Spec.version. Painéis fechados carregam sob demanda. UV18/UV19. |
+| 4 | `useWorkspaceRevisions`, `SpecModal`, `SpecsPanel` e consumidores Card/Delivery visíveis | Expandir o hook já integrado à Validation/conclusão. Deduplicar por cliente autenticado/Board; invalidar dados afetados, inclusive allowed transitions e Coverage sem mudança de Spec.version. Painéis fechados carregam sob demanda. UV18/UV19. |
 | 5 | Formulários da Validation, inclusive Checklist, e submissão composta | Preservar campos e manifesto original; apresentar mudança externa e revisão explícita antes de aceitar nova base. Não incrementar chaves que remontam formulários sujos a cada polling. Revogação limpa conteúdo protegido. UV20. |
 | 6 | Testes dos componentes e browser contra runtime isolado | Observar mutação MCP e convergência visual, histórico completo, foco, navegação, offline/reconexão e perda de acesso. Não substituir esse ensaio pelos testes isolados do watcher. UV18–UV21. |
 
@@ -435,8 +438,8 @@ revisá-lo e confirmar a nova base. A confirmação gera nova tentativa, sem
 reutilizar a identidade de um request cujo conteúdo mudou. Não criar fusão
 semântica automática de pareceres.
 
-Não encerrar U3 enquanto existir qualquer uma destas lacunas: hook sem
-consumidor; botão de conclusão que não oferece o payload composto permitido;
+Não encerrar U3 enquanto existir qualquer uma destas lacunas: consumidor previsto
+sem atualização; botão de conclusão que não oferece o payload composto permitido;
 histórico reduzido a título/status; frontend recalculando gate; atualização que
 apaga rascunho; dados protegidos mantidos após revogação; build ou teste pertinente
 vermelho. O trabalho de U4 permanece obrigatório após esse fechamento.
@@ -546,9 +549,9 @@ e próximo passo exato. No E2E, registrar IDs/edições e evidências UI/MCP; n�
 alterar policies, scopes, skips ou percentuais para obter verde. Testes externos
 mockados precisam de execução observada para gerar prova autenticada.
 
-**Próxima ação de execução:** conectar revisões aos consumidores e à revisão
-explícita dos formulários, com invalidação segura de permissões e prova de
-convergência MCP/UI, na ordem do §6.2;
+**Próxima ação de execução:** expandir revisões além da Validation/conclusão,
+incluindo listas/novos objetos, Cards/Delivery, Coverage e demais leitores,
+protegendo os demais editores e comprovando os cenários restantes de §6.2;
 depois executar U4. Não refazer composição pública ou API de revisões já provadas.
 **Critério de conclusão:** U1–U4 e
 UV01–UV24 demonstrados, ledger atualizado e par de repositórios publicado. Esta
