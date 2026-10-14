@@ -2,6 +2,26 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — planejamento reconciliado com a suíte nativa pendente
+
+Antes da edição do plano, publicados Core `1d0c3862` e Community `a0c247bd`.
+Mantido `SPEC_UNIFIED_VALIDATION_PLAN.md` como fonte única para a unificação.
+Atualizados baseline, ordem executável e condição de saída de U2; §6.2 agora
+discrimina os três grupos das 61 falhas, arquivos, hipóteses, reproduções e
+critérios para distinguir defeito de fixture de defeito do produto. O ensaio
+original encerrado foi lido, não reexecutado nem apresentado como verde.
+
+Escopo preservado: U1 já implementado; fechar U2, integrar os consumidores U3
+restantes e qualificar U4 até Done/KG. Mesmas avaliações, rubricas, severidades,
+thresholds, permissões, autoria e histórico; conclusão única sem média geral.
+Decision continua opcional; Decision existente mantém verificação própria.
+Nenhuma nova feature, migração ou milestone. Nenhuma alteração de produto após
+o checkpoint. Verificação documental: `git diff --check`.
+
+Próxima execução: reproduzir população de Decisions/obrigações no seed nativo
+e writer público; resolver os grupos conforme §6.2 sem mascarar indisponibilidade.
+Somente após paridade U2 qualificada, fechar U3 e executar o E2E instalado U4.
+
 ### 2026-10-14 — checkpoint anterior à revisão do planejamento: U2 não qualificado
 
 Pedido vigente: planejamento detalhado, sem iniciar novas alterações de produto.
