@@ -5,9 +5,10 @@ The use case reauthorizes access and filters detail visibility before rendering.
 """
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Literal, Protocol
 
 from okto_pulse.core.domain.delivery_diagnostics import ACTION_REGISTRY
+from okto_pulse.core.domain.delivery_assessment import resolve_delivery_gate_policy as resolve_delivery_gate_policy
 from okto_pulse.core.domain.delivery_evidence import DeliveryEvidenceSnapshot
 from okto_pulse.core.domain.enums import CardStatus, CardType
 from okto_pulse.core.models.delivery_readiness import ReadinessCursorBinding
@@ -129,6 +130,8 @@ class ReadinessSnapshot:
     access: ReadinessAccess | None = None
     # Explicit capacity/unavailability, never a successfully truncated universe.
     unavailable_reason_codes: tuple[str, ...] = ()
+    delivery_gate_mode: Literal['blocking', 'advisory'] = 'blocking'
+    skip_delivery_evidence: bool = False
 
 
 class DeliveryReadinessReadPort(Protocol):

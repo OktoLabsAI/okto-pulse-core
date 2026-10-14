@@ -12,6 +12,7 @@ from okto_pulse.core.domain.delivery_evidence import DeliveryScope
 from okto_pulse.core.domain.delivery_inventory import delivery_digest
 from okto_pulse.core.domain.delivery_assessment import (
     AssessmentCompleteness, DeliveryAssessment, FactualReason, ReadinessReason,
+    aggregate_delivery_metrics, assess_delivery_gate, qualify_delivery,
 )
 from okto_pulse.core.domain.effective_delivery_coverage import EvaluatedDeliverySnapshot
 from okto_pulse.core.domain.enums import CardType
@@ -79,6 +80,61 @@ class EvaluatedDeliveryReadiness:
             self._diagnostics[card_id] = compose_authorized_delivery_diagnostics(assessment, self._batch,
                 actor_id=self._actor_id, spec_assessment=self._assessments[None])
         return self._diagnostics[card_id]
+
+    def context(self, card_id=None):
+        """Compose current facts; never advertise a transition not evaluated.
+
+        Native transition composition must supply its own complete, read-only
+        evaluation. Until then its missing context remains explicit, even when
+        both proof metrics are complete. This is not a dry-run of a mutation.
+        """
+        assessment = self.assessment(card_id)
+        batch, card = self._batch, self._cards.get(card_id)
+        metrics = aggregate_delivery_metrics(assessment)
+        gate = assess_delivery_gate(assessment, mode=batch.delivery_gate_mode,
+            spec_override=batch.skip_delivery_evidence)
+        status = card.status if card else batch.spec_status
+        qualification = qualify_delivery(assessment, gate=gate, stored_status=status,
+            lifecycle_check='not_evaluated', metrics=metrics)
+        diagnostic = self.diagnostics(card_id)
+        unit_counts = (metrics.implementation.unresolved, metrics.verification.unresolved)
+        # Count canonical units once even if both of their phases are pending.
+        unresolved = None if any(n is None for n in unit_counts) else (
+            sum(s.verification.state not in {'satisfied', 'not_applicable'} for s in assessment.scenarios)
+            if card and card.card_type == CardType.TEST else
+            sum(any(p.state not in {'satisfied', 'not_applicable'} for p in (r.implementation, r.verification))
+                for r in assessment.obligations))
+        message_code = ('historical_completion_diverged' if qualification.historical_divergence
+            else qualification.state.value)
+        messages = {
+            'unknown': 'Não foi possível avaliar a entrega com os fatos atuais.',
+            'implementation_pending': 'Há contribuições de implementação pendentes.',
+            'verification_pending': 'A implementação está comprovada; falta verificação aplicável.',
+            'verification_failed': 'Há falha ou conflito na verificação atual.',
+            'ready': 'Provas completas; confira os gates na transição nativa para concluir.',
+            'ready_with_exceptions': 'O gate de entrega admite ressalvas; confira os demais gates na transição nativa.',
+            'not_applicable': 'O escopo conhecido não possui fase de entrega aplicável.',
+            'historical_completion_diverged': 'O status Done foi preservado, mas a qualificação atual da entrega diverge.',
+        }
+        scope = assessment.scope
+        return DeliveryReadinessContext(
+            scope=dict(board_id=scope.board_id, spec_id=scope.spec_id, spec_edition=scope.edition,
+                spec_version=batch.spec_version, card_id=card_id, card_type=card.card_type if card else None,
+                card_version=card.version if card else None), snapshot_id=batch.snapshot_id,
+            evaluated_at=batch.evaluated_at, scope_complete=assessment.completeness.population_known
+                and assessment.completeness.scope_resolved,
+            evaluation_complete=assessment.completeness.evaluation_complete,
+            implementation=asdict(metrics.implementation), verification=asdict(metrics.verification),
+            delivery_state=qualification.state, proof_complete=qualification.proof_complete,
+            delivery_gate=dict(status=gate.status, mode=gate.mode, exception_applied=bool(gate.exception_refs),
+                exception_refs=gate.exception_refs),
+            lifecycle=dict(stored_status=status, check_status='not_evaluated', other_blocker_count=None,
+                qualification_is_current=qualification.qualification_is_current,
+                reason_codes=('native_transition_context_required',),
+                context_refs=(f'card:{card.id}' if card else f'spec:{scope.spec_id}',)),
+            summary=dict(message_code=message_code, message=messages[message_code],
+                unresolved_units=unresolved, root_causes=len(diagnostic.graph.causes), lifecycle_pending=None,
+                exceptions=len(gate.exception_refs)))
 
 
 def compose_authorized_delivery_diagnostics(assessment, batch, *, actor_id, spec_assessment=None):

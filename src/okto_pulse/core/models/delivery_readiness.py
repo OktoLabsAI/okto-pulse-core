@@ -112,6 +112,8 @@ class DeliveryLifecycle(ReadinessDTO):
     check_status: Literal["allowed", "blocked", "not_evaluated"]
     other_blocker_count: Count | None
     qualification_is_current: StrictBool | None
+    reason_codes: tuple[Identity, ...] = ()
+    context_refs: tuple[Identity, ...] = ()
 
 
 class ReadinessSummary(ReadinessDTO):

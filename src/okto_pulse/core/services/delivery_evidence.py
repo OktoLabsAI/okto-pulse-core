@@ -6,7 +6,7 @@ from okto_pulse.core.domain.delivery_evidence import (
     CardDeliveryScope,
     DeliveryScope,
 )
-from okto_pulse.core.domain.delivery_assessment import assess_delivery_gate, assess_obligation_delivery
+from okto_pulse.core.domain.delivery_assessment import assess_delivery_gate, assess_obligation_delivery, resolve_delivery_gate_policy
 from okto_pulse.core.ports.relational_application import (
     require_relational_application_adapter,
 )
@@ -76,16 +76,7 @@ async def require_spec_delivery(
 def resolve_delivery_gate_mode(board: object | None) -> str:
     """Resolve the current policy; refuse incompatible values without conversion."""
     settings = getattr(board, "settings", None) if board is not None else None
-    if settings is None:
-        settings = {}
-    if not isinstance(settings, Mapping):
-        raise ValueError("delivery_evidence_policy_invalid")
-    if "delivery_evidence_gate" not in settings:
-        return "blocking"
-    value = settings["delivery_evidence_gate"]
-    if not isinstance(value, str) or value not in {"advisory", "blocking"}:
-        raise ValueError("delivery_evidence_policy_invalid")
-    return value
+    return resolve_delivery_gate_policy(settings)
 
 
 async def require_card_delivery(

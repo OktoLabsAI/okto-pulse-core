@@ -5,6 +5,7 @@ proof predicates; these values describe their result, not a second proof engine.
 """
 
 from dataclasses import dataclass, replace
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Literal
 
@@ -335,6 +336,18 @@ class DeliveryGateAssessment:
         return self.status == 'allowed'
 
 
+def resolve_delivery_gate_policy(settings: Mapping | None) -> Literal['blocking', 'advisory']:
+    """One native policy resolver for mutation and read-snapshot composition."""
+    if settings is None:
+        settings = {}
+    if not isinstance(settings, Mapping):
+        raise ValueError('delivery_evidence_policy_invalid')
+    value = settings.get('delivery_evidence_gate', 'blocking')
+    if not isinstance(value, str) or value not in {'blocking', 'advisory'}:
+        raise ValueError('delivery_evidence_policy_invalid')
+    return value
+
+
 def assess_delivery_gate(assessment: DeliveryAssessment, *, mode='blocking', spec_override=False) -> DeliveryGateAssessment:
     """Native delivery gate policy over assessed facts, never score thresholds.
 
@@ -379,3 +392,54 @@ def assess_delivery_gate(assessment: DeliveryAssessment, *, mode='blocking', spe
     bypass = mode == 'advisory' or is_spec and spec_override
     status = 'allowed' if not blockers or bypass else 'unknown' if any(b.unknown for b in blockers) else 'blocked'
     return DeliveryGateAssessment(status, mode, tuple(sorted(exceptions)), tuple(blockers))
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryQualification:
+    """Current technical state; neither a transition nor a persisted status."""
+    state: DeliveryState
+    proof_complete: bool | None
+    qualification_is_current: bool | None
+    historical_divergence: bool
+
+
+def qualify_delivery(assessment: DeliveryAssessment, *, gate: DeliveryGateAssessment,
+                     stored_status: str, lifecycle_check: Literal['allowed', 'blocked', 'not_evaluated'],
+                     metrics: DeliveryMetrics | None = None) -> DeliveryQualification:
+    """Compose native outcomes without deriving authorization from a score.
+
+    The caller evaluates other native gates, or explicitly leaves them
+    unevaluated. A stored Done never supplies missing proof or current authority.
+    Effective exceptions retain their factual deficit and never increase scores.
+    """
+    if lifecycle_check not in {'allowed', 'blocked', 'not_evaluated'}:
+        raise ValueError('readiness_lifecycle_check_invalid')
+    metrics = metrics or aggregate_delivery_metrics(assessment)
+    phases = (metrics.implementation, metrics.verification)
+    uncertain = any(p.status == MetricStatus.UNKNOWN for p in phases)
+    proof = None if uncertain else all(p.unresolved == 0 for p in phases)
+    excepted = gate.allowed and bool(gate.exception_refs) and proof is False
+    if uncertain or gate.status == 'unknown':
+        qualified = None
+    elif (proof is False and not excepted) or not gate.allowed or lifecycle_check == 'blocked':
+        qualified = False
+    else:
+        qualified = True if lifecycle_check == 'allowed' else None
+    done = stored_status == 'done'
+    if uncertain:
+        state = DeliveryState.UNKNOWN
+    elif excepted:
+        state = (DeliveryState.DELIVERED_WITH_EXCEPTIONS if done and qualified is True
+                 else DeliveryState.READY_WITH_EXCEPTIONS)
+    elif any(p.counts_by_state.failed or p.counts_by_state.conflict for p in (metrics.verification,)):
+        state = DeliveryState.VERIFICATION_FAILED
+    elif metrics.implementation.unresolved:
+        state = DeliveryState.IMPLEMENTATION_PENDING
+    elif metrics.verification.unresolved:
+        state = DeliveryState.VERIFICATION_PENDING
+    elif all(p.status == MetricStatus.NOT_APPLICABLE for p in phases):
+        state = DeliveryState.NOT_APPLICABLE
+    else:
+        state = DeliveryState.DELIVERED if done and qualified is True else DeliveryState.READY
+    return DeliveryQualification(state, proof, qualified,
+        done and (proof is not True and not excepted or qualified is False))
