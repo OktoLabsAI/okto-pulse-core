@@ -4,6 +4,7 @@ from okto_pulse.core.domain.sdlc_registry import transition_requires_policy_comp
 from okto_pulse.core.ports.delivery_readiness import ReadinessNativeLifecycle, ReadinessReadError
 from okto_pulse.core.ports.guideline_policy import GuidelinePolicyPersistenceError
 from okto_pulse.core.services.gate_contracts import GateContractError
+from okto_pulse.core.services.card_errors import CardOperationError
 from okto_pulse.core.services.main import GovernedCompletionBlocked, CompletionInfrastructureUnavailable
 from okto_pulse.core.services.resource_gate_contracts import ResourceGateViolation
 
@@ -52,7 +53,9 @@ class DeliveryReadinessLifecycleService:
         else:
             subject = spec
         try:
-            if not card:
+            if card:
+                await self.services.cards.validate_completion_admission(subject, board)
+            else:
                 await self.services.specs.validate_completion_gates(spec, board, read_only_preview=True)
         except CompletionInfrastructureUnavailable:
             return result('not_evaluated', ('native_completion_infrastructure_unavailable',))
@@ -62,7 +65,7 @@ class DeliveryReadinessLifecycleService:
             if details.get('nature') == 'source_unavailable':
                 return result('not_evaluated', (exc.code,))
             return result('blocked', (exc.code,), (exc.code,))
-        except (GovernedCompletionBlocked, ResourceGateViolation) as exc:
+        except (GovernedCompletionBlocked, ResourceGateViolation, CardOperationError) as exc:
             return result('blocked', (exc.code,), (exc.code,))
         policy = None
         if transition_requires_policy_compliance(entity, status, 'done'):
@@ -92,5 +95,17 @@ class DeliveryReadinessLifecycleService:
             if not policy.allowed:
                 codes = tuple(c.value for c in policy.reason_codes) if can_read else ('policy_compliance_blocked',)
                 return result('blocked', codes, codes, basis_digest=policy.observation_digest)
+        if card:
+            # These are the same native read checks used by allowed-transitions
+            # and move_card. No report is submitted and no gate is dry-run.
+            basis = policy.observation_digest if policy else None
+            try:
+                await self.services.cards._validate_cognitive_done(subject, board, read_only_preview=True)
+                await self.services.resource_gate.validate_or_raise_entity_completion(
+                    scope.board_id, 'card', subject.id, phase='card_done')
+            except CompletionInfrastructureUnavailable:
+                return result('not_evaluated', ('native_completion_infrastructure_unavailable',), basis_digest=basis)
+            except (GovernedCompletionBlocked, ResourceGateViolation) as exc:
+                return result('blocked', (exc.code,), (exc.code,), basis_digest=basis)
         return result('not_evaluated', ('native_completion_report_required' if card else 'native_transition_context_required',),
             basis_digest=policy.observation_digest if policy else None)

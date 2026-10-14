@@ -6167,6 +6167,147 @@ class CardService:
             records=records,
         )
 
+    async def validate_completion_admission(
+        self, card: ApplicationRecord, board: ApplicationRecord | None,
+    ) -> None:
+        """Read existing task-validation and test-evidence prerequisites for Done.
+
+        Shared with readiness; never append a report, mutate status or fence.
+        Other completion gates remain in their native order in move_card.
+        """
+        old_status = card.status
+        board_settings = (board.settings or {}) if board else {}
+        skip_global = board_settings.get("skip_test_coverage_global", False)
+
+        # --- Task Validation Gate: block in_progressâ†’done when gate active ---
+        if (
+            old_status
+            in (
+                CardStatus.IN_PROGRESS,
+                CardStatus.STARTED,
+                CardStatus.NOT_STARTED,
+                CardStatus.VALIDATION,
+            )
+            and getattr(card, "card_type", CardType.NORMAL) != CardType.TEST
+        ):
+            spec_for_gate = (
+                await _application_get(self.db, "spec", card.spec_id)
+                if card.spec_id
+                else None
+            )
+            gate_config = self._resolve_validation_config(
+                card, spec_for_gate, board_settings
+            )
+            validation_block = validation_gate_block(
+                CardTransitionFacts(
+                    card_id=card.id,
+                    old_status=old_status,
+                    new_status=CardStatus.DONE,
+                    card_type=getattr(card, "card_type", CardType.NORMAL),
+                    validation_required=bool(gate_config["required"]),
+                )
+            )
+            if validation_block is not None:
+                raise CardOperationError(validation_block.code, validation_block.detail,
+                    remediation=validation_block.remediation)
+
+        # Test-card completion is fail-closed over the persisted reference set.
+        # An empty set, a missing spec, or a dangling scenario id is an
+        # inconsistency â€” never evidence that all linked scenarios passed.
+        if (
+            getattr(card, "card_type", CardType.NORMAL) == CardType.TEST
+            and not skip_global
+        ):
+            scenario_ids = [str(value) for value in (card.test_scenario_ids or [])]
+            spec_for_test_scenarios = (
+                await _application_get(self.db, "spec", card.spec_id)
+                if card.spec_id
+                else None
+            )
+            stale: list[dict[str, Any]] = []
+            if not scenario_ids:
+                stale.append(
+                    {
+                        "id": None,
+                        "title": "No test scenario is linked to this test card",
+                        "status": "missing",
+                    }
+                )
+            elif spec_for_test_scenarios is None:
+                stale.extend(
+                    {
+                        "id": scenario_id,
+                        "title": f"Unresolved test scenario {scenario_id}",
+                        "status": "missing",
+                    }
+                    for scenario_id in scenario_ids
+                )
+            else:
+                all_scenarios = {
+                    str(s["id"]): s
+                    for s in (spec_for_test_scenarios.test_scenarios or [])
+                    if isinstance(s, dict) and s.get("id") is not None
+                }
+                for scenario_id in scenario_ids:
+                    scenario = all_scenarios.get(scenario_id)
+                    if scenario is None:
+                        stale.append(
+                            {
+                                "id": scenario_id,
+                                "title": f"Unresolved test scenario {scenario_id}",
+                                "status": "missing",
+                            }
+                        )
+                        continue
+                    if scenario.get("status") in (
+                        "draft",
+                        "ready",
+                    ) or not scenario_has_authenticated_required_evidence(
+                        board_id=card.board_id,
+                        spec_id=card.spec_id,
+                        scenario=scenario,
+                        acceptance_criteria=list(
+                            spec_for_test_scenarios.acceptance_criteria or []
+                        ),
+                    ):
+                        stale.append(
+                            {
+                                "id": scenario_id,
+                                "title": scenario.get("title", scenario_id),
+                                "status": scenario.get("status"),
+                            }
+                        )
+            pending_scenarios = tuple(
+                PendingScenario(
+                    scenario_id=str(scenario.get("id") or "__unlinked__"),
+                    title=str(scenario["title"]),
+                    status=str(scenario.get("status") or "missing"),
+                )
+                for scenario in stale
+            )
+            completion_block = test_completion_block(
+                CardTransitionFacts(
+                    card_id=card.id,
+                    old_status=old_status,
+                    new_status=CardStatus.DONE,
+                    card_type=CardType.TEST,
+                    spec_id=card.spec_id,
+                    pending_scenarios=pending_scenarios,
+                )
+            )
+            if completion_block is not None:
+                from okto_pulse.core.services.gate_contracts import (
+                    incomplete_test_card_completion_error,
+                )
+
+                raise incomplete_test_card_completion_error(
+                    card_id=card.id,
+                    current_status=old_status.value if old_status else None,
+                    pending_scenarios=stale,
+                    board_id=card.board_id,
+                    spec_id=card.spec_id,
+                )
+
     async def move_card(
         self, card_id: str, user_id: str, data: CardMove, actor_name: str | None = None
     ) -> ApplicationRecord | None:
@@ -6297,7 +6438,6 @@ class CardService:
         # Load board settings for governance
         board = await _application_get(self.db, "board", card.board_id)
         board_settings = board.settings or {} if board else {}
-        skip_global = board_settings.get("skip_test_coverage_global", False)
 
         if data.status is CardStatus.DONE:
             from okto_pulse.core.services.missing_link_gate import (
@@ -6395,135 +6535,8 @@ class CardService:
                 card, spec_for_requirement_gate, board
             )
 
-        # --- Task Validation Gate: block in_progressâ†’done when gate active ---
-        if (
-            data.status == CardStatus.DONE
-            and old_status
-            in (
-                CardStatus.IN_PROGRESS,
-                CardStatus.STARTED,
-                CardStatus.NOT_STARTED,
-                CardStatus.VALIDATION,
-            )
-            and getattr(card, "card_type", CardType.NORMAL) != CardType.TEST
-        ):
-            spec_for_gate = (
-                await _application_get(self.db, "spec", card.spec_id)
-                if card.spec_id
-                else None
-            )
-            gate_config = self._resolve_validation_config(
-                card, spec_for_gate, board_settings
-            )
-            validation_block = validation_gate_block(
-                CardTransitionFacts(
-                    card_id=card.id,
-                    old_status=old_status,
-                    new_status=data.status,
-                    card_type=getattr(card, "card_type", CardType.NORMAL),
-                    validation_required=bool(gate_config["required"]),
-                )
-            )
-            if validation_block is not None:
-                raise ValueError(validation_block.detail)
-
-        # Test-card completion is fail-closed over the persisted reference set.
-        # An empty set, a missing spec, or a dangling scenario id is an
-        # inconsistency â€” never evidence that all linked scenarios passed.
-        if (
-            data.status == CardStatus.DONE
-            and getattr(card, "card_type", CardType.NORMAL) == CardType.TEST
-            and not skip_global
-        ):
-            scenario_ids = [str(value) for value in (card.test_scenario_ids or [])]
-            spec_for_test_scenarios = (
-                await _application_get(self.db, "spec", card.spec_id)
-                if card.spec_id
-                else None
-            )
-            stale: list[dict[str, Any]] = []
-            if not scenario_ids:
-                stale.append(
-                    {
-                        "id": None,
-                        "title": "No test scenario is linked to this test card",
-                        "status": "missing",
-                    }
-                )
-            elif spec_for_test_scenarios is None:
-                stale.extend(
-                    {
-                        "id": scenario_id,
-                        "title": f"Unresolved test scenario {scenario_id}",
-                        "status": "missing",
-                    }
-                    for scenario_id in scenario_ids
-                )
-            else:
-                all_scenarios = {
-                    str(s["id"]): s
-                    for s in (spec_for_test_scenarios.test_scenarios or [])
-                    if isinstance(s, dict) and s.get("id") is not None
-                }
-                for scenario_id in scenario_ids:
-                    scenario = all_scenarios.get(scenario_id)
-                    if scenario is None:
-                        stale.append(
-                            {
-                                "id": scenario_id,
-                                "title": f"Unresolved test scenario {scenario_id}",
-                                "status": "missing",
-                            }
-                        )
-                        continue
-                    if scenario.get("status") in (
-                        "draft",
-                        "ready",
-                    ) or not scenario_has_authenticated_required_evidence(
-                        board_id=card.board_id,
-                        spec_id=card.spec_id,
-                        scenario=scenario,
-                        acceptance_criteria=list(
-                            spec_for_test_scenarios.acceptance_criteria or []
-                        ),
-                    ):
-                        stale.append(
-                            {
-                                "id": scenario_id,
-                                "title": scenario.get("title", scenario_id),
-                                "status": scenario.get("status"),
-                            }
-                        )
-            pending_scenarios = tuple(
-                PendingScenario(
-                    scenario_id=str(scenario.get("id") or "__unlinked__"),
-                    title=str(scenario["title"]),
-                    status=str(scenario.get("status") or "missing"),
-                )
-                for scenario in stale
-            )
-            completion_block = test_completion_block(
-                CardTransitionFacts(
-                    card_id=card.id,
-                    old_status=old_status,
-                    new_status=data.status,
-                    card_type=CardType.TEST,
-                    spec_id=card.spec_id,
-                    pending_scenarios=pending_scenarios,
-                )
-            )
-            if completion_block is not None:
-                from okto_pulse.core.services.gate_contracts import (
-                    incomplete_test_card_completion_error,
-                )
-
-                raise incomplete_test_card_completion_error(
-                    card_id=card.id,
-                    current_status=old_status.value if old_status else None,
-                    pending_scenarios=stale,
-                    board_id=card.board_id,
-                    spec_id=card.spec_id,
-                )
+        if data.status == CardStatus.DONE:
+            await self.validate_completion_admission(card, board)
 
         # --- Bug card: block execution-level moves without linked regression tests ---
         # Gate triggers when the bug first crosses into execution level or beyond

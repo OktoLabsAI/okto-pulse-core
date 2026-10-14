@@ -63,6 +63,8 @@ def environment(error=None):
     checks = AsyncMock(side_effect=error)
     services = SimpleNamespace(specs=SimpleNamespace(get_spec=AsyncMock(return_value=spec),
         validate_completion_gates=checks), boards=SimpleNamespace(get_board=AsyncMock(return_value=object())),
+        cards=SimpleNamespace(validate_completion_admission=AsyncMock(), _validate_cognitive_done=AsyncMock()),
+        resource_gate=SimpleNamespace(validate_or_raise_entity_completion=AsyncMock()),
         guidelines=SimpleNamespace(preview_policy_transition=AsyncMock(return_value=policy_decision()),
             enforce_policy_transition=AsyncMock()))
     async def get(_context, *, entity, record_id):
@@ -216,6 +218,44 @@ async def test_card_policy_success_still_requires_native_report_and_other_inputs
     assert native.basis_digest == services.guidelines.preview_policy_transition.return_value.observation_digest
     services.specs.validate_completion_gates.assert_not_awaited()
     services.guidelines.enforce_policy_transition.assert_not_awaited()
+    services.cards._validate_cognitive_done.assert_awaited_once_with(services.card_subject,
+        services.boards.get_board.return_value, read_only_preview=True)
+    services.resource_gate.validate_or_raise_entity_completion.assert_awaited_once_with('board', 'card', 'ui', phase='card_done')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('gate', ['cognitive', 'resource', 'unavailable'])
+async def test_card_native_cognitive_and_resource_checks_preserve_policy_basis_and_proof(gate):
+    batch, services, evaluator = card_environment()
+    if gate == 'resource':
+        services.resource_gate.validate_or_raise_entity_completion.side_effect = ResourceGateViolation('resource_gate_blocked', 'Private resource')
+    else:
+        services.cards._validate_cognitive_done.side_effect = (CompletionInfrastructureUnavailable('Private engine')
+            if gate == 'unavailable' else GovernedCompletionBlocked('cognitive_pending', 'Private cognitive content'))
+    native = await evaluator.evaluate(batch, card_id='ui')
+    assert native.basis_digest == services.guidelines.preview_policy_transition.return_value.observation_digest
+    assert native.check_status == ('not_evaluated' if gate == 'unavailable' else 'blocked')
+    assert native.reason_codes == ({'cognitive': 'cognitive_pending', 'resource': 'resource_gate_blocked',
+        'unavailable': 'native_completion_infrastructure_unavailable'}[gate],)
+    context = EvaluatedDeliveryReadiness(replace(batch, native_lifecycle=native), actor_id='reader').context('ui')
+    assert context.implementation.percent == context.verification.percent == 100
+    assert 'Private' not in context.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_task_validation_admission_is_native_lifecycle_deficit_not_proof_deficit():
+    from okto_pulse.core.services.card_errors import CardOperationError
+    batch, services, evaluator = card_environment()
+    services.cards.validate_completion_admission.side_effect = CardOperationError(
+        'task_validation_required', 'Private gate context')
+    native = await evaluator.evaluate(batch, card_id='ui')
+    assert native.blocking_codes == ('task_validation_required',)
+    context = EvaluatedDeliveryReadiness(replace(batch, native_lifecycle=native), actor_id='reader').context('ui')
+    assert context.implementation.percent == context.verification.percent == 100
+    assert context.lifecycle.check_status == 'blocked'
+    assert context.summary.message_code == 'lifecycle_gate_pending'
+    services.guidelines.preview_policy_transition.assert_not_awaited()
+    assert 'Private' not in repr(native)
 
 
 @pytest.mark.asyncio
