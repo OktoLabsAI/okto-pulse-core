@@ -1,17 +1,23 @@
 """Native completion diagnostics inside the edition's authorized read snapshot."""
+from okto_pulse.core.domain.enums import CardStatus
+from okto_pulse.core.domain.code_traceability import CodeTraceabilitySubjectType, CodeTraceabilityContractError
+from okto_pulse.core.domain.delivery_inventory import delivery_digest
 from okto_pulse.core.domain.guideline_semantic_transition import PolicyTransitionDecision, PolicyTransitionReasonCode
 from okto_pulse.core.domain.sdlc_registry import transition_requires_policy_compliance
 from okto_pulse.core.ports.delivery_readiness import ReadinessNativeLifecycle, ReadinessReadError
 from okto_pulse.core.ports.guideline_policy import GuidelinePolicyPersistenceError
+from okto_pulse.core.ports.code_traceability import CodeTraceabilityPersistenceError
 from okto_pulse.core.services.gate_contracts import GateContractError
 from okto_pulse.core.services.card_errors import CardOperationError
-from okto_pulse.core.services.main import GovernedCompletionBlocked, CompletionInfrastructureUnavailable
+from okto_pulse.core.services.main import GovernedCompletionBlocked, CompletionInfrastructureUnavailable, evaluate_code_traceability_transition
+from okto_pulse.core.services.code_traceability_gate import CodeTraceabilityGateEvaluation
 from okto_pulse.core.services.resource_gate_contracts import ResourceGateViolation
 
 
 class DeliveryReadinessLifecycleService:
-    def __init__(self, services, *, persistence, context):
+    def __init__(self, services, *, persistence, context, traceability_evaluator=evaluate_code_traceability_transition):
         self.services, self.persistence, self.context = services, persistence, context
+        self.traceability_evaluator = traceability_evaluator
 
     async def evaluate(self, batch, *, card_id=None):
         """Read existing gates; do not dry-run a move or recompute delivery proof.
@@ -27,7 +33,10 @@ class DeliveryReadinessLifecycleService:
             raise ReadinessReadError('readiness_scope_mismatch')
         status = card.status if card else batch.spec_status
         status = getattr(status, 'value', status)
+        traceability_basis = None
         def result(check, reasons, blockers=(), *, basis_digest=None):
+            if traceability_basis is not None:
+                basis_digest = delivery_digest({'traceability': traceability_basis, 'policy': basis_digest})
             return ReadinessNativeLifecycle(card_id, status, check, tuple(reasons),
                 blocking_codes=tuple(blockers), basis_digest=basis_digest)
         if access is None:
@@ -54,7 +63,9 @@ class DeliveryReadinessLifecycleService:
             subject = spec
         try:
             if card:
+                await self.services.cards.validate_completion_references(subject, board)
                 await self.services.cards.validate_completion_admission(subject, board)
+                await self.services.cards.validate_dependency_admission(subject, CardStatus.DONE)
             else:
                 await self.services.specs.validate_completion_gates(spec, board, read_only_preview=True)
         except CompletionInfrastructureUnavailable:
@@ -67,6 +78,24 @@ class DeliveryReadinessLifecycleService:
             return result('blocked', (exc.code,), (exc.code,))
         except (GovernedCompletionBlocked, ResourceGateViolation, CardOperationError) as exc:
             return result('blocked', (exc.code,), (exc.code,))
+        # Native read evaluation consumes admitted relational attestations only;
+        # it never investigates files, invokes a runner or enforces a mutation.
+        try:
+            traceability = await self.traceability_evaluator(self.context, board=board, subject=subject,
+                subject_type=CodeTraceabilitySubjectType(entity), from_status=status, to_status='done', enforce=False)
+        except (CodeTraceabilityPersistenceError, CodeTraceabilityContractError) as exc:
+            return result('not_evaluated', (getattr(exc, 'code', 'code_investigation_currentness_unknown'),))
+        if traceability is not None:
+            if not isinstance(traceability, CodeTraceabilityGateEvaluation):
+                raise ReadinessReadError('readiness_assessment_unavailable', native_code='code_traceability_preview_invalid')
+            traceability_basis = delivery_digest(traceability.as_dict())
+            if not traceability.allowed:
+                codes = tuple(sorted({item.code for item in traceability.blockers if item.blocking}))
+                if not codes:
+                    raise ReadinessReadError('readiness_assessment_unavailable', native_code='code_traceability_blocker_missing')
+                if 'code_investigation_currentness_unknown' in codes:
+                    return result('not_evaluated', codes)
+                return result('blocked', codes, codes)
         policy = None
         if transition_requires_policy_compliance(entity, status, 'done'):
             try:

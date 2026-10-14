@@ -561,8 +561,10 @@ async def evaluate_code_traceability_transition(
             item.card_id for item in context.targets if item.card_id != subject_id
         }
         blocking: list[str] = []
-        for card_id in sorted(external_card_ids):
-            external = await _application_get(db, "card", card_id)
+        external_cards = await _application_list(db, "card", filters=(
+            _apf("id", "in", sorted(external_card_ids)),
+        )) if external_card_ids else []
+        for external in external_cards:
             status = getattr(external, "status", None)
             if str(getattr(status, "value", status)).lower() in {
                 "started",
@@ -570,8 +572,8 @@ async def evaluate_code_traceability_transition(
                 "validation",
                 "rejected",
             }:
-                blocking.append(card_id)
-        blocking_card_ids = tuple(blocking)
+                blocking.append(external.id)
+        blocking_card_ids = tuple(sorted(blocking))
     evaluation = projection_service.evaluate_transition_context(
         context,
         settings,
@@ -4243,6 +4245,22 @@ class CardService:
         ]
         return len(blocking) == 0, blocking
 
+    async def validate_dependency_admission(
+        self, card: ApplicationRecord, target: CardStatus,
+    ) -> None:
+        """Read the native forward-transition prerequisite without mutating."""
+        if (self._STATUS_ORDER.get(target, 0) <= self._STATUS_ORDER.get(card.status, 0)
+                or target == CardStatus.CANCELLED):
+            return
+        deps_met, blocking = await self.check_dependencies_met(card.id)
+        if not deps_met:
+            raise CardOperationError(
+                "dependencies_incomplete",
+                "Card dependencies must be done or cancelled before advancing.",
+                remediation="complete_blocking_dependencies",
+                facts={"card_id": card.id, "blocking_dependencies": blocking},
+            )
+
     async def _would_create_cycle(self, card_id: str, new_dep_id: str) -> bool:
         """Check if adding card_id -> new_dep_id would create a cycle.
         A cycle exists if new_dep_id (directly or transitively) depends on card_id.
@@ -6167,6 +6185,20 @@ class CardService:
             records=records,
         )
 
+    async def validate_completion_references(
+        self, card: ApplicationRecord, board: ApplicationRecord | None,
+    ) -> None:
+        """Use source-authoritative references, never graph projection state."""
+        from okto_pulse.core.services.missing_link_gate import (
+            evaluate_missing_links, require_missing_links_closed,
+        )
+
+        require_missing_links_closed(
+            await evaluate_missing_links(self.db, subject=card, entity_type="card",
+                settings=(board.settings or {}) if board else {}),
+            entity_type="card", subject=card,
+        )
+
     async def validate_completion_admission(
         self, card: ApplicationRecord, board: ApplicationRecord | None,
     ) -> None:
@@ -6440,14 +6472,7 @@ class CardService:
         board_settings = board.settings or {} if board else {}
 
         if data.status is CardStatus.DONE:
-            from okto_pulse.core.services.missing_link_gate import (
-                evaluate_missing_links, require_missing_links_closed,
-            )
-
-            require_missing_links_closed(
-                await evaluate_missing_links(self.db, subject=card, entity_type="card", settings=board_settings),
-                entity_type="card", subject=card,
-            )
+            await self.validate_completion_references(card, board)
             from okto_pulse.core.domain.bug_learning_policy import (
                 LEARNING_CAPTURE_REQUIRED, requires_bug_learning_capture,
             )
@@ -7155,18 +7180,7 @@ class CardService:
             pending_conclusion_entry = conclusion_entry
 
         # Block forward moves if dependencies not met
-        if new_level > old_level and data.status != CardStatus.CANCELLED:
-            deps_met, blocking = await self.check_dependencies_met(card_id)
-            if not deps_met:
-                raise CardOperationError(
-                    "dependencies_incomplete",
-                    "Card dependencies must be done or cancelled before advancing.",
-                    remediation="complete_blocking_dependencies",
-                    facts={
-                        "card_id": card_id,
-                        "blocking_dependencies": blocking,
-                    },
-                )
+        await self.validate_dependency_admission(card, data.status)
 
         if data.status == CardStatus.DONE:
             # FR-3 also applies when human task validation is disabled. Evaluate

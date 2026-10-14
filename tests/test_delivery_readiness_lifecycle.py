@@ -63,7 +63,8 @@ def environment(error=None):
     checks = AsyncMock(side_effect=error)
     services = SimpleNamespace(specs=SimpleNamespace(get_spec=AsyncMock(return_value=spec),
         validate_completion_gates=checks), boards=SimpleNamespace(get_board=AsyncMock(return_value=object())),
-        cards=SimpleNamespace(validate_completion_admission=AsyncMock(), _validate_cognitive_done=AsyncMock()),
+        cards=SimpleNamespace(validate_completion_admission=AsyncMock(), _validate_cognitive_done=AsyncMock(),
+            validate_completion_references=AsyncMock(), validate_dependency_admission=AsyncMock()),
         resource_gate=SimpleNamespace(validate_or_raise_entity_completion=AsyncMock()),
         guidelines=SimpleNamespace(preview_policy_transition=AsyncMock(return_value=policy_decision()),
             enforce_policy_transition=AsyncMock()))
@@ -72,8 +73,9 @@ def environment(error=None):
             return services.card_subject
         return services.specs.get_spec.return_value if entity == 'spec' else services.boards.get_board.return_value
     services.persistence = SimpleNamespace(get=AsyncMock(side_effect=get))
+    services.traceability = AsyncMock(return_value=None)
     return batch, services, DeliveryReadinessLifecycleService(services,
-        persistence=services.persistence, context=object())
+        persistence=services.persistence, context=object(), traceability_evaluator=services.traceability)
 
 
 def card_environment():
@@ -240,6 +242,39 @@ async def test_card_native_cognitive_and_resource_checks_preserve_policy_basis_a
     context = EvaluatedDeliveryReadiness(replace(batch, native_lifecycle=native), actor_id='reader').context('ui')
     assert context.implementation.percent == context.verification.percent == 100
     assert 'Private' not in context.model_dump_json()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('mode', ['blocking', 'advisory', 'unavailable'])
+async def test_native_traceability_reuses_policy_without_leaking_details_or_reducing_proof(mode):
+    from okto_pulse.core.domain.code_traceability import CodeTraceabilityEnforcement
+    from okto_pulse.core.services.code_traceability_gate import (
+        CodeTraceabilityGateEvaluation, CodeTraceabilityGateBlocker, CodeTraceabilityGatePhase,
+        EvidenceDispositionCoverage, TargetEntityCoverage,
+    )
+    batch, services, evaluator = card_environment()
+    code = 'code_investigation_currentness_unknown' if mode == 'unavailable' else 'implementation_target_execution_missing'
+    services.traceability.return_value = CodeTraceabilityGateEvaluation(
+        mode=CodeTraceabilityEnforcement.ADVISORY if mode == 'advisory' else CodeTraceabilityEnforcement.BLOCKING,
+        phases=(CodeTraceabilityGatePhase.CARD_EXECUTION,), allowed=mode == 'advisory', passed=False,
+        blockers=(CodeTraceabilityGateBlocker(code, 'Private source details', mode != 'advisory', {'target': 'private-id'}),),
+        evidence_coverage=EvidenceDispositionCoverage(0, 0, 0, ()),
+        target_coverage=TargetEntityCoverage(0, 0, ()), receipt_currentness={}, resolution_freshness={})
+    native = await evaluator.evaluate(batch, card_id='ui')
+    assert services.traceability.await_args.kwargs['enforce'] is False
+    assert native.check_status == ('blocked' if mode == 'blocking' else 'not_evaluated')
+    assert native.blocking_codes == ((code,) if mode == 'blocking' else ())
+    assert native.basis_digest
+    if mode != 'advisory':
+        services.guidelines.preview_policy_transition.assert_not_awaited()
+        assert native.reason_codes == (code,)
+    context = EvaluatedDeliveryReadiness(replace(batch, native_lifecycle=native), actor_id='reader').context('ui')
+    assert context.implementation.percent == context.verification.percent == 100
+    assert 'private-id' not in context.model_dump_json() and 'Private source' not in context.model_dump_json()
+    services.traceability.return_value = replace(services.traceability.return_value,
+        receipt_currentness={'another-private-id': 'stale'})
+    changed = await evaluator.evaluate(batch, card_id='ui')
+    assert native.reason_codes == changed.reason_codes and native.basis_digest != changed.basis_digest
 
 
 @pytest.mark.asyncio
