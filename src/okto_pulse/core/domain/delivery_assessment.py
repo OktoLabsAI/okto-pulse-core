@@ -405,15 +405,20 @@ class DeliveryQualification:
 
 def qualify_delivery(assessment: DeliveryAssessment, *, gate: DeliveryGateAssessment,
                      stored_status: str, lifecycle_check: Literal['allowed', 'blocked', 'not_evaluated'],
-                     metrics: DeliveryMetrics | None = None) -> DeliveryQualification:
+                     metrics: DeliveryMetrics | None = None,
+                     native_completion_recorded: bool = False) -> DeliveryQualification:
     """Compose native outcomes without deriving authorization from a score.
 
     The caller evaluates other native gates, or explicitly leaves them
-    unevaluated. A stored Done never supplies missing proof or current authority.
+    unevaluated. An authorized observation of native completion can establish
+    lifecycle history, independently of permission for a prospective transition.
+    A stored Done never supplies missing proof or current write authority.
     Effective exceptions retain their factual deficit and never increase scores.
     """
     if lifecycle_check not in {'allowed', 'blocked', 'not_evaluated'}:
         raise ValueError('readiness_lifecycle_check_invalid')
+    if native_completion_recorded and stored_status != 'done':
+        raise ValueError('readiness_native_completion_invalid')
     metrics = metrics or aggregate_delivery_metrics(assessment)
     phases = (metrics.implementation, metrics.verification)
     uncertain = any(p.status == MetricStatus.UNKNOWN for p in phases)
@@ -424,7 +429,7 @@ def qualify_delivery(assessment: DeliveryAssessment, *, gate: DeliveryGateAssess
     elif (proof is False and not excepted) or not gate.allowed or lifecycle_check == 'blocked':
         qualified = False
     else:
-        qualified = True if lifecycle_check == 'allowed' else None
+        qualified = True if lifecycle_check == 'allowed' or native_completion_recorded else None
     done = stored_status == 'done'
     if uncertain:
         state = DeliveryState.UNKNOWN

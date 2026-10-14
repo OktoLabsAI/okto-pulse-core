@@ -13,7 +13,7 @@ from okto_pulse.core.domain.guideline_semantic_transition import (
     PolicyTransitionSnapshot, SemanticBindingComplianceSnapshot, evaluate_policy_transition,
 )
 from okto_pulse.core.models.delivery_readiness import ReadinessReadQuery
-from okto_pulse.core.ports.delivery_readiness import ReadinessReadError
+from okto_pulse.core.ports.delivery_readiness import ReadinessAccessDenied, ReadinessReadError
 from okto_pulse.core.ports.guideline_policy import GuidelinePolicySubjectConflict
 from okto_pulse.core.services.delivery_readiness import EvaluatedDeliveryReadiness, PreparedDeliveryReadiness
 from okto_pulse.core.services.delivery_readiness_lifecycle import DeliveryReadinessLifecycleService
@@ -91,6 +91,57 @@ def card_environment():
     services.card_subject = SimpleNamespace(id='ui', spec_id='spec', board_id='board',
         policy_version=1, status=CardStatus.IN_PROGRESS)
     return batch, services, evaluator
+
+
+def completed_environment(card_id):
+    batch, services, evaluator = card_environment() if card_id else environment()
+    batch = replace(batch, access=replace(batch.access, spec_write_access=False, completion_states=frozenset()))
+    if card_id:
+        batch = replace(batch, cards=tuple(replace(c, status=CardStatus.DONE) if c.id == card_id else c
+            for c in batch.cards))
+        services.card_subject.status = CardStatus.DONE
+    else:
+        batch = replace(batch, spec_status='done')
+        services.specs.get_spec.return_value.status = SpecStatus.DONE
+    return batch, services, evaluator
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('card_id', [None, 'ui'])
+async def test_done_is_observed_without_new_transition_permission_or_gate_evaluation(card_id):
+    batch, services, evaluator = completed_environment(card_id)
+    native = await evaluator.evaluate(batch, card_id=card_id)
+    assert native.completion_recorded and native.check_status == 'not_evaluated'
+    assert native.reason_codes == ('native_completion_recorded',) and not native.required_inputs
+    reader = EvaluatedDeliveryReadiness(replace(batch, native_lifecycle=native), actor_id='reader')
+    context = reader.context(card_id)
+    assert context.delivery_state == 'delivered' and context.lifecycle.qualification_is_current is True
+    assert context.lifecycle.stored_status == 'done' and context.lifecycle.check_status == 'not_evaluated'
+    assert context.implementation.percent == context.verification.percent == 100
+    assert not reader.diagnostics(card_id).graph.actions
+    services.specs.validate_completion_gates.assert_not_awaited()
+    services.cards.validate_completion_admission.assert_not_awaited()
+    services.guidelines.preview_policy_transition.assert_not_awaited()
+    services.traceability.assert_not_awaited()
+    services.critical_context.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('card_id', [None, 'ui'])
+async def test_done_observation_requires_current_read_authority_and_same_snapshot(card_id):
+    batch, services, evaluator = completed_environment(card_id)
+    operation = 'card.entity.read' if card_id else 'spec.entity.read'
+    denied = replace(batch, access=replace(batch.access,
+        allowed_operations=batch.access.allowed_operations - {operation}))
+    with pytest.raises(ReadinessAccessDenied):
+        await evaluator.evaluate(denied, card_id=card_id)
+    services.persistence.get.assert_not_awaited()
+    if card_id:
+        services.card_subject.policy_version += 1
+    else:
+        services.specs.get_spec.return_value.version += 1
+    with pytest.raises(ReadinessReadError, match='readiness_snapshot_changed'):
+        await evaluator.evaluate(batch, card_id=card_id)
 
 
 @pytest.mark.asyncio

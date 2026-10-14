@@ -43,18 +43,25 @@ class DeliveryReadinessLifecycleService:
         status = getattr(status, 'value', status)
         traceability_basis = None
         critical_basis = None
-        def result(check, reasons, blockers=(), *, basis_digest=None, required_inputs=()):
+        def result(check, reasons, blockers=(), *, basis_digest=None, required_inputs=(), completion_recorded=False):
             if traceability_basis is not None:
                 basis_digest = delivery_digest({'traceability': traceability_basis, 'policy': basis_digest})
             if critical_basis is not None:
                 basis_digest = delivery_digest({'critical_context': critical_basis, 'native': basis_digest})
             return ReadinessNativeLifecycle(card_id, status, check, tuple(reasons),
                 other_blocker_count=0 if check == 'allowed' else None,
-                blocking_codes=tuple(blockers), basis_digest=basis_digest, required_inputs=tuple(required_inputs))
+                blocking_codes=tuple(blockers), basis_digest=basis_digest, required_inputs=tuple(required_inputs),
+                completion_recorded=completion_recorded)
         if access is None:
             return result('not_evaluated', ('native_transition_permission_required',))
+        if access.board_id != scope.board_id:
+            raise ReadinessReadError('readiness_scope_mismatch')
+        access.require('code_traceability.evidence.read')
+        access.require('spec.entity.read')
+        if card:
+            access.require('card.entity.read')
         entity = 'card' if card else 'spec'
-        if not access.spec_write_access or (entity, str(status)) not in access.completion_states:
+        if status != 'done' and (not access.spec_write_access or (entity, str(status)) not in access.completion_states):
             return result('not_evaluated', ('native_transition_permission_required',))
         if batch.unavailable_reason_codes:
             return result('not_evaluated', batch.unavailable_reason_codes)
@@ -73,6 +80,12 @@ class DeliveryReadinessLifecycleService:
                 raise ReadinessReadError('readiness_snapshot_changed')
         else:
             subject = spec
+        if status == 'done':
+            # Native persisted status is the lifecycle authority. There is no
+            # Done -> Done transition to authorize, nor a new report to demand.
+            # Qualification separately evaluates current proof and exceptions;
+            # loss of proof must not rewrite this historical completion.
+            return result('not_evaluated', ('native_completion_recorded',), completion_recorded=True)
         try:
             if card:
                 await self.services.cards.validate_completion_references(subject, board)

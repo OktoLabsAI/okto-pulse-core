@@ -142,6 +142,9 @@ class ReadinessNativeLifecycle:
     blocking_codes: tuple[str, ...] = ()
     basis_digest: str | None = None
     required_inputs: tuple[str, ...] = ()
+    # Persisted native completion observed in the authorized snapshot. This
+    # records lifecycle history only, never current proof or write authority.
+    completion_recorded: bool = False
 
 
 @dataclass(frozen=True, slots=True)

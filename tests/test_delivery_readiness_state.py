@@ -43,6 +43,29 @@ def test_full_proof_does_not_claim_an_unevaluated_or_blocked_native_closure(chec
     assert result.historical_divergence == (qualified is False)
 
 
+@pytest.mark.parametrize('kind,state,qualified', [
+    ('current', 'delivered', True), ('missing_contribution', 'implementation_pending', False),
+    ('missing_association', 'verification_pending', False), ('failed', 'verification_failed', False),
+    ('incomplete', 'unknown', None), ('stale', 'implementation_pending', False),
+])
+def test_recorded_completion_retains_history_but_never_substitutes_for_current_proof(kind, state, qualified):
+    assessment = assess_obligation_delivery(changed(kind))
+    result = qualify_delivery(assessment, gate=assess_delivery_gate(assessment), stored_status='done',
+        lifecycle_check='not_evaluated', native_completion_recorded=True)
+    assert result.state == state and result.qualification_is_current is qualified
+    assert result.historical_divergence == (kind != 'current')
+
+
+def test_recorded_completion_cannot_qualify_an_open_entity_or_override_a_known_native_blocker():
+    assessment = assess_obligation_delivery(snapshot())
+    with pytest.raises(ValueError, match='readiness_native_completion_invalid'):
+        qualify_delivery(assessment, gate=assess_delivery_gate(assessment), stored_status='in_progress',
+            lifecycle_check='not_evaluated', native_completion_recorded=True)
+    result = qualify_delivery(assessment, gate=assess_delivery_gate(assessment), stored_status='done',
+        lifecycle_check='blocked', native_completion_recorded=True)
+    assert result.qualification_is_current is False and result.historical_divergence
+
+
 @pytest.mark.parametrize('stored', ['in_progress', 'done'])
 @pytest.mark.parametrize('policy', [{'mode': 'advisory'}, {'spec_override': True}, {}])
 def test_only_effective_exceptions_change_label_without_changing_proof(stored, policy):

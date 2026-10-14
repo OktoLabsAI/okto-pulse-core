@@ -106,7 +106,8 @@ class EvaluatedDeliveryReadiness:
         native = self._native_lifecycle(card_id)
         check = native.check_status if native else 'not_evaluated'
         qualification = qualify_delivery(assessment, gate=gate, stored_status=status,
-            lifecycle_check=check, metrics=metrics)
+            lifecycle_check=check, metrics=metrics,
+            native_completion_recorded=native.completion_recorded if native else False)
         diagnostic = self.diagnostics(card_id)
         unit_counts = (metrics.implementation.unresolved, metrics.verification.unresolved)
         # Count canonical units once even if both of their phases are pending.

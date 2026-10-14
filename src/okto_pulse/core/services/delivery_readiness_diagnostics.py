@@ -453,7 +453,8 @@ def compose_delivery_diagnostics(assessment, snapshot, *, spec_assessment=None, 
         key = cause_identity(snapshot.scope, occurrence)
         occurrences.append(occurrence)
         details[key].append(DiagnosticDetail(key, (), (), (), (), (), ()))
-    elif native_lifecycle and native_lifecycle.check_status == 'not_evaluated':
+    elif (native_lifecycle and native_lifecycle.check_status == 'not_evaluated'
+          and not native_lifecycle.completion_recorded):
         entity, identity = ('card', assessment.card_id) if assessment.card_id else ('spec', snapshot.scope.spec_id)
         needs_input = bool(native_lifecycle.required_inputs)
         action = (ActionCandidate(ActionKind.COMPLETE_LIFECYCLE,
