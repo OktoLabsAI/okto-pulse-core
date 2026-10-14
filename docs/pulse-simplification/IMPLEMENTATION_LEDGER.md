@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — planejamento detalhado atualizado após qualificação nativa
+
+Antes de editar o plano, publicados Core `72db3266` / Community `c79f0191` em
+`feature/v0.4.0`, preservando o trabalho preexistente descrito abaixo. Capturas
+temporárias do Playwright permanecem como evidência local, fora do produto.
+
+`SPEC_UNIFIED_VALIDATION_PLAN.md` continua sendo a fonte única. A revisão retira
+as 61 falhas já resolvidas do caminho crítico e registra o resultado final de
+90 passes, sem afirmar qualificação integral de U2. §6.2 contém matriz finita
+das famílias de gates, testes existentes, confronto entre leitura/escrita e
+prova faltante. Casos já provados devem ser referenciados, não reimplementados.
+
+U3 passa a discriminar o restante: Kanban por `card_collection`; CardModal sem
+o timer pesado concorrente; proteção dos editores antes de expandir SpecModal;
+Coverage invalidado também por mudança de Card. Riscos concretos conferidos no
+código: refresh fecha View all no Kanban; chaves com `spec.version` remontam
+editores; revisão de Coverage baseada só na Spec não detecta toda mudança de
+Card. Resolver esses pontos dentro de UV18–UV20, sem nova frente de produto.
+
+U4 permanece build/instalação pareada isolada, paridade byte a byte, frontend,
+catálogo e closure com oito budgets ZERO; iniciativa mock UI/MCP até Tasks,
+Tests e Spec Done, percentuais aplicáveis e KG canonical. Todas as avaliações,
+critérios, severidades, thresholds, permissões e históricos continuam. Não há
+média geral nem migração. Nenhum milestone ou requisito adicional.
+
+Verificação desta revisão: leitura dos diffs/fontes pertinentes, XMLs e relatório
+closure existentes, inspeção de captura já produzida e `git diff --check`.
+Não houve nova execução de testes de comportamento, implementação, instalação
+ou mutação UI/MCP. Próxima execução: mapear os casos à matriz U2 e preencher
+somente lacunas; seguir a sequência concreta U3 e então U4. Planejamento entregue.
+
 ### 2026-10-14 — checkpoint preservado antes da nova revisão detalhada
 
 Pedido atual: planejamento detalhado, sem continuar implementação. Conferidos
