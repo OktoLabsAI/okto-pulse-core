@@ -12,7 +12,8 @@ from okto_pulse.core.domain.validation_cycle import (
     ValidationCycleSubjectRef,
     ValidationTechnicalAudit,
 )
-from okto_pulse.core.ports.validation_cycle import ValidationCycleReadPort
+from okto_pulse.core.ports.validation_cycle import ValidationCycleReadPort, ValidationCycleReadAccessDenied
+from okto_pulse.core.domain.workspace_revisions import WorkspaceRevisions, WorkspaceRevisionsQuery
 
 
 def _required_id(value: object, code: str) -> str:
@@ -101,6 +102,22 @@ class GetValidationTechnicalAuditCommand:
 class ValidationCycleReadUseCases:
     def __init__(self, *, reader: ValidationCycleReadPort) -> None:
         self._reader = reader
+
+    async def get_workspace_revisions(
+        self, query: WorkspaceRevisionsQuery, *, actor: ActorContext,
+    ) -> WorkspaceRevisions:
+        if actor.board_id is not None and actor.board_id != query.board_id:
+            raise ValidationCycleReadAccessDenied()
+        result = await self._reader.get_workspace_revisions(
+            query, actor_id=actor.actor_id, realm_scope=actor.require_realm_scope(),
+        )
+        if not isinstance(result, WorkspaceRevisions):
+            raise RuntimeError("workspace_revision_reader_result_invalid")
+        if result.board_id != query.board_id or [
+            (item.subject_type, item.subject_id) for item in result.subjects
+        ] != [(item.subject_type, item.subject_id) for item in query.subjects]:
+            raise RuntimeError("workspace_revision_reader_scope_mismatch")
+        return result
 
     async def get_cycle(
         self,

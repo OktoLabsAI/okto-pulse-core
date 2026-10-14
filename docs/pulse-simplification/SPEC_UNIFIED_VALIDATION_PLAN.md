@@ -1,12 +1,13 @@
 # Validação unificada do planejamento da Spec
 
 Plano de 14 de outubro de 2026. **U1 implementado; U2 parcial; U3–U4 pendentes.**
-Checkpoint publicado antes desta revisão: Core `376f0237` / Community `31c82a4c`.
+Checkpoint WIP anterior: Core `376f0237` / Community `31c82a4c`.
 Conclusão composta, replay e manifesto já possuem implementação e regressões.
-A leitura integrada foi publicada como WIP: testes funcionais passam, mas o gate
-arquitetural reprovou a composição do reader. Corrigir esse bloqueio é a primeira
-ação de U2. Interface integrada, sincronização externa e ensaio final permanecem
-pendentes. A seção 6.2 define a sequência concreta sem ampliar o escopo.
+A leitura integrada e a consulta leve de revisões estão implementadas.
+O bloqueio arquitetural do WIP foi corrigido pelo catálogo público; closure
+voltou a ZERO nos oito budgets. Provas e par publicado constam no ledger.
+Interface integrada, sincronização externa e ensaio final permanecem pendentes.
+A seção 6.2 define a sequência concreta sem ampliar o escopo.
 
 Base: Core `57599196174a247510cef6b299ee51c0f50ce10f` e Community
 `34fcf7ec8a617151df32ca403478cd39594cee56`, branch `feature/v0.4.0`.
@@ -309,6 +310,12 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
+**Atualização de execução:** composição pública e revisões leves de U2 foram
+implementadas e testadas. O bloqueio do diagnóstico abaixo foi eliminado, com
+oito budgets ZERO. Próxima implementação: U3; U4 deve comprovar a paridade
+integrada. Consultar o checkpoint de workspace no ledger. Os passos abaixo
+mantêm o escopo e não devem ser reimplementados quando já qualificados.
+
 Core `376f0237` / Community `31c82a4c`, branch `feature/v0.4.0`, publicados antes
 desta revisão documental. O checkpoint preserva todo o trabalho local; **não é
 milestone aprovado**. A auditoria arquitetural encontrou reach-in privado na
@@ -470,9 +477,9 @@ e próximo passo exato. No E2E, registrar IDs/edições e evidências UI/MCP; n�
 alterar policies, scopes, skips ou percentuais para obter verde. Testes externos
 mockados precisam de execução observada para gerar prova autenticada.
 
-**Próxima ação de execução:** corrigir a composição arquitetural da leitura
-integrada, qualificar a paridade dos gates e concluir metadados leves conforme
-o checkpoint do ledger e §6.2. **Critério de conclusão:** U1–U4 e
+**Próxima ação de execução:** integrar Validation e sincronização externa U3
+sobre os contratos qualificados, conforme o ledger e §6.2.
+**Critério de conclusão:** U1–U4 e
 UV01–UV24 demonstrados, ledger atualizado e par de repositórios publicado. Esta
 sequência mantém o escopo acordado; os incrementos implementados e as provas
 efetivamente obtidas permanecem identificados no ledger.

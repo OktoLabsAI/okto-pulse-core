@@ -2,6 +2,52 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U2: composição pública e revisões leves de workspace
+
+Continuação U1–U4 / UV01–UV24 sobre Core 207da2bc / Community 31c82a4c.
+Community pareado: 204c7f4a; este registro acompanha o commit Core do incremento.
+O bloqueio arquitetural foi corrigido sem exceção: o reader usa o catálogo
+público de serviços sobre sua sessão de leitura, sem segunda UoW nem import de
+runtime_context. A sessão recebe o RealmScope validado. Teste real confirma
+ausência de DML/commit e preservação de providers; observabilidade nativa pode
+criar somente seu buffer delimitado. Nenhum mecanismo entrou no Core.
+
+A leitura integrada admite avaliador com spec.entity.read/spec.evaluations.read
+sem ampliar autoridade: resultado/manifesto de qualidade permanecem ocultos.
+Sem include_planning, a autorização anterior é preservada. Testes adicionais
+usam julgamentos nativos de policy blocking/advisory, ausência de recibo,
+indisponibilidade e transição sem exigência, mantendo IDs/razões. Avaliações
+desabilitadas não exigem permissão de leitura.
+
+get_workspace_revisions amplia a porta e use case existentes; REST POST
+/workspace-revisions/query e cliente frontend tipado. Consulta 1–50 identidades
+únicas Spec/Card de um Board, reautoriza e recusa escopo/realm divergente.
+Retorna revisão/incarnação de autoridade/assuntos, sem payloads, avaliações,
+histórico ou execução de gates. Ausente do Board autorizado tem token null;
+assunto existente sem revisão falha fechado com 503. Não é nova aprovação.
+Projeção indexada: duas consultas de dados para um/cinquenta itens, com
+autorização isolada no fixture (não se afirma custo zero de autorização real).
+Alteração/exclusão de Card é detectada sem bump de Spec.version; teste WAL
+confirma snapshot único de autoridade/revisões durante escrita concorrente.
+
+Provas: 136 passes Core em u2-workspace-core.xml; 61 Community em
+u2-workspace-community.xml; quatro casos adicionais em u2-workspace-extra.xml.
+Frontend API: oito passes; tsc -b e Ruff F/E9 aprovados. Artefatos em
+.validation-v040/spec-unified-20261014. Python usou ambas as src. Uma execução
+inicial conjunta dos dois repos misturou seus conftests e falhou na composição
+do fixture; as regressões por repo passaram. O teste nativo expôs realm ausente
+na sessão; o adapter foi corrigido sem relaxar guardas. O teste distingue
+observabilidade de substituição de providers.
+
+Closure oficial: closure-u2-workspace.json, ok=true, 9026 linhas, zero findings
+e drift documental, oito budgets ZERO; READMEs regenerados. Catálogo passou no
+gate da regressão. Home, instalação e processo seguem intactos. Não houve
+inspeção visual ou E2E instalado neste incremento.
+
+Retomada: U3 compõe Validation, contribuição de decomposição, revisão explícita
+de conflito e hook compartilhado de metadados. U4 ainda deve comprovar paridade
+integrada e completar UV01–UV24. API de revisões não significa UI sincronizada.
+
 ### 2026-10-14 — plano detalhado reconciliado, com bloqueio arquitetural explícito
 
 Pedido: iniciar planejamento detalhado da unificação. Antes desta revisão,

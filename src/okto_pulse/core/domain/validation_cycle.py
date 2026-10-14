@@ -418,7 +418,7 @@ class ValidationCycleSummary:
         visible_sections = tuple(self.visible_sections)
         allowed_sections = set(default_sections)
         if (
-            not visible_sections
+            (not visible_sections and self.planning_readiness is None)
             or len(set(visible_sections)) != len(visible_sections)
             or any(
                 not isinstance(item, ValidationCycleResultType)

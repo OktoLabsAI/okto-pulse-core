@@ -140,3 +140,58 @@ async def test_shared_coverage_writer_keeps_native_error_and_order():
 def test_aggregate_refuses_an_incomplete_component_census():
     with pytest.raises(ValueError, match="census_incomplete"):
         SpecPlanningReadiness((SpecPlanningComponent("spec_validation", "ready", "blocking", True),))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case,state,mode", [
+    ("blocking_pass", "ready", "blocking"),
+    ("blocking_fail", "blocked", "blocking"),
+    ("advisory_fail", "ready", "advisory"),
+    ("missing", "blocked", "blocking"),
+    ("unavailable", "unavailable", None),
+    ("off", "ready", "off"),
+])
+async def test_policy_projection_preserves_native_judgment(case, state, mode):
+    from test_skb3_semantic_policy_transition_gate import _binding_snapshot, _transition_snapshot
+    from okto_pulse.core.domain.guideline_policy import GuidelineEnforcement
+    from okto_pulse.core.domain.guideline_semantic_transition import evaluate_policy_transition
+
+    binding = _binding_snapshot(
+        score=40 if case.endswith("fail") else 90,
+        enforcement=GuidelineEnforcement.ADVISORY if case == "advisory_fail" else GuidelineEnforcement.BLOCKING,
+        include_receipt=case not in {"missing", "unavailable"},
+        assessment_available=case != "unavailable",
+        assessment_error_code="assessment_service_unavailable" if case == "unavailable" else None,
+    )
+    native = evaluate_policy_transition(
+        _transition_snapshot((binding,)), "review" if case == "off" else "validated",
+    )
+    inputs = rig()
+    inputs["policy"].return_value = native
+    result = await read_spec_planning_readiness(**inputs)
+    component = by_key(result)["policy_compliance"]
+    assert component.state == state, component
+    assert component.mode == mode
+    assert component.native_result == native.reason_code.value
+    if case != "off":
+        assert component.result_ids == native.receipt_ids
+        assert component.reason_codes == tuple(reason.value for reason in native.reason_codes)
+
+
+@pytest.mark.asyncio
+async def test_disabled_quality_and_decomposition_do_not_require_read_permissions():
+    inputs = rig()
+    inputs["board"].settings = {"require_spec_validation": False, "auto_validate": True}
+    inputs["can_read"] = lambda permission: permission not in {"spec.validation.read", "spec.evaluations.read", "spec.quality.read"}
+    result = await read_spec_planning_readiness(**inputs)
+    assert result.state == "ready"
+
+
+@pytest.mark.asyncio
+async def test_malformed_quality_edition_is_unavailable_not_authored_rejection():
+    inputs = rig()
+    inputs["spec"].validations[0]["validation_edition"] = 2
+    result = await read_spec_planning_readiness(**inputs)
+    component = by_key(result)["spec_validation"]
+    assert component.state == "unavailable"
+    assert component.native_result is None and component.result_ids == ()
