@@ -45,8 +45,9 @@ Args:
     spec_id: REQUIRED — Spec ID to link this card to. Normal cards
         are blocked when the Spec is Done. Bug cards retain their own
         origin, regression and lifecycle controls.
-        Test cards are allowed once the spec is approved/validated or
-        later, including regression tests for a bug on a locked spec.
+        Normal and Test cards may be planned in Draft with status not_started.
+        Test cards are also allowed in approved/validated and later, including
+        regression tests for a bug on a locked spec. Execution maturity gates remain.
         For bug cards, this is auto-resolved from the origin task if not provided.
     description: Card description (optional). Supports Markdown and Mermaid diagrams (```mermaid code blocks).
     details: Card details/rich text (optional). Supports Markdown and Mermaid diagrams.

@@ -294,13 +294,19 @@ async def test_cross_spec_requirement_link_does_not_satisfy_card_gate(db_factory
 
 
 @pytest.mark.asyncio
-async def test_spec_validation_requires_active_decision_even_when_decision_coverage_skipped(db_factory):
+async def test_spec_planning_does_not_require_an_artificial_decision(db_factory):
     board_id, spec_id, card_id = await _seed_card_case(db_factory, link_card_to_fr=True)
     async with db_factory() as db:
         spec = await db.get(Spec, spec_id)
         assert spec is not None
         spec.status = SpecStatus.APPROVED
         spec.decisions = []
+        # This gate resolves all potential proof references, even with no Decisions.
+        spec.technical_requirements = []
+        spec.business_rules = []
+        spec.integration_requirements = []
+        spec.observability_requirements = []
+        spec.api_contracts = []
         await db.commit()
 
     async with db_factory() as db:
@@ -308,8 +314,18 @@ async def test_spec_validation_requires_active_decision_even_when_decision_cover
         spec = await db.get(Spec, spec_id)
         board = await db.get(Board, board_id)
         assert spec is not None and board is not None
-        with pytest.raises(ValueError, match="at least one active Decision"):
-            await service.check_decision_presence(spec)
+        await service.check_decisions_coverage(spec, board)
+        spec.decisions = [{"id": "dec-missing-plan", "title": "A real decision", "status": "active"}]
+        with pytest.raises(ValueError, match="decision_verification_plan_incomplete"):
+            await service.check_decisions_coverage(spec, board)
+        spec.decisions = [{
+            "id": "dec-scope", "title": "Scope inspection", "status": "active",
+            "verification": {"inspection": {
+                "condition": "The Spec explicitly limits the application to local use.",
+                "scope_refs": [{"kind": "spec", "id": spec_id}],
+            }},
+        }]
+        await service.check_decisions_coverage(spec, board)
 
 
 @pytest.mark.asyncio

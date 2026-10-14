@@ -182,6 +182,65 @@ async def _seed_board(db_factory) -> None:
 class TestCardCreation:
     """AC-1: Card creation with various field combinations."""
 
+    @pytest.mark.parametrize("card_type", ["normal", "test"])
+    async def test_plan_cards_in_draft_without_starting_execution(self, db_factory, card_type):
+        """UV01: draft authoring includes cards and canonical scenario links."""
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            spec = (await db.execute(select(Spec).where(Spec.board_id == BOARD_ID))).scalars().one()
+            spec.status = SpecStatus.DRAFT
+            await db.flush()
+            card = await CardService(db).create_card(
+                BOARD_ID, USER_ID, CardCreate(
+                    title="Plan work before validation", spec_id=spec.id,
+                    card_type=card_type, status=CardStatus.NOT_STARTED,
+                    test_scenario_ids=["ts-001"] if card_type == "test" else None,
+                ),
+            )
+            assert card.status == CardStatus.NOT_STARTED
+            assert spec.status == SpecStatus.DRAFT
+            if card_type == "test":
+                scenario = next(s for s in spec.test_scenarios if s["id"] == "ts-001")
+                assert card.id in scenario["linked_task_ids"]
+
+    @pytest.mark.parametrize("card_type", ["normal", "test"])
+    async def test_draft_card_cannot_be_created_started(self, db_factory, card_type):
+        """UV02: early authoring must never admit the execution-start edge."""
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            spec = (await db.execute(select(Spec).where(Spec.board_id == BOARD_ID))).scalars().one()
+            spec.status = SpecStatus.DRAFT
+            await db.flush()
+            before = set((await db.execute(select(Card.id))).scalars())
+            with pytest.raises(CardOperationError) as exc:
+                await CardService(db).create_card(
+                    BOARD_ID, USER_ID, CardCreate(
+                        title="Cannot execute a draft", spec_id=spec.id,
+                        card_type=card_type, status=CardStatus.STARTED,
+                        test_scenario_ids=["ts-001"] if card_type == "test" else None,
+                    ),
+                )
+            assert exc.value.code == "spec_status_too_early"
+            assert set((await db.execute(select(Card.id))).scalars()) == before
+
+    @pytest.mark.parametrize("card_type,target", [
+        ("normal", CardStatus.STARTED), ("test", CardStatus.IN_PROGRESS),
+    ])
+    async def test_planned_card_cannot_start_until_spec_is_mature(self, db_factory, card_type, target):
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            spec = (await db.execute(select(Spec).where(Spec.board_id == BOARD_ID))).scalars().one()
+            spec.status = SpecStatus.DRAFT
+            await db.flush()
+            service = CardService(db)
+            card = await service.create_card(BOARD_ID, USER_ID, CardCreate(
+                title="Planned only", spec_id=spec.id, card_type=card_type,
+                test_scenario_ids=["ts-001"] if card_type == "test" else None,
+            ))
+            with pytest.raises(ValueError, match="must be at least"):
+                await service.move_card(card.id, USER_ID, CardMove(status=target))
+            assert card.status == CardStatus.NOT_STARTED
+
     async def test_create_normal_card_with_all_fields(self, db_factory):
         """Create a normal card with title, description, details, priority, labels."""
         await _seed_board(db_factory)
@@ -844,6 +903,24 @@ class TestCardValidationReportGate:
 @pytest.mark.asyncio
 class TestCardUpdates:
     """AC-3: Card field updates."""
+
+    @pytest.mark.parametrize("status", [CardStatus.STARTED, CardStatus.IN_PROGRESS, CardStatus.DONE])
+    async def test_reassigning_execution_to_draft_is_rejected_before_mutation(self, db_factory, status):
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            card = (await db.execute(select(Card).where(Card.board_id == BOARD_ID))).scalars().first()
+            card.status = status
+            old_spec_id = card.spec_id
+            draft = Spec(id=str(uuid.uuid4()), board_id=BOARD_ID, title="Draft planning",
+                         status=SpecStatus.DRAFT, created_by=USER_ID)
+            db.add(draft)
+            await db.flush()
+            before_events = set((await db.execute(select(DomainEventRow.id))).scalars())
+            with pytest.raises(CardOperationError) as exc:
+                await CardService(db).update_card(card.id, USER_ID, CardUpdate(spec_id=draft.id))
+            assert exc.value.code == "spec_status_too_early"
+            assert card.spec_id == old_spec_id
+            assert set((await db.execute(select(DomainEventRow.id))).scalars()) == before_events
 
     async def test_update_title_and_description(self, db_factory):
         """Update card title and description."""

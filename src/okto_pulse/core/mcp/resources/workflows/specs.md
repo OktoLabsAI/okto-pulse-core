@@ -206,8 +206,8 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
 
 **The order that actually works:**
 
-1. Populate the spec in `draft` → move through `review` → `approved`.
-2. **With the spec in `approved`, create the test cards** (`okto_pulse_create_card(card_type="test", test_scenario_ids=...)` — the server rejects test card creation before `approved`) and **link each scenario** to a test card via `okto_pulse_link_task(target_type="scenario", ...)` until `scenario_task_linkage_pct = 100`. The validation gate fails on any scenario without a linked `card_type="test"` card.
+1. Populate the spec in `draft`, including its implementation plan and Task/Test Cards. Cards created in Draft must remain `not_started`; authoring does not permit execution.
+2. Create Test Cards with `okto_pulse_create_card(card_type="test", test_scenario_ids=...)`. Creation links the selected scenarios atomically; do not repeat those links. Use `okto_pulse_link_task(target_type="scenario", ...)` only for additional associations. Reach `scenario_task_linkage_pct = 100`, then move through `review` → `approved`. The validation gate fails on any scenario without a linked `card_type="test"` card.
 3. Iterate until ALL deterministic gates are green — the complete gate enumeration is the one in `okto-pulse://reference/spec_gates` (single source; it includes more gates than just AC/FR coverage).
 4. Read the configured binding with
    `okto_pulse_get_checklist_binding(board_id, spec_id)`. When mode is `advisory` or

@@ -3508,7 +3508,8 @@ class CardService:
                 )
 
         # Enforce: spec status rules for card creation
-        # - Normal tasks: spec must be 'approved' or 'in_progress'
+        # - Draft permits planning normal/test cards, never starting execution.
+        # - Normal tasks: also allowed in 'approved' or 'in_progress'
         # - Bug cards: also allowed when spec is 'done'
         # - Test cards: also allowed when spec is 'validated'
         spec = await _application_get(self.db, "spec", data.spec_id)
@@ -3524,24 +3525,33 @@ class CardService:
             status_msg = "'approved', 'in_progress', or 'done'"
         elif card_type_val == "test":
             allowed_statuses = {
+                SpecStatus.DRAFT,
                 SpecStatus.APPROVED,
                 SpecStatus.VALIDATED,
                 SpecStatus.IN_PROGRESS,
                 SpecStatus.DONE,
             }
-            status_msg = "'approved', 'validated', 'in_progress', or 'done'"
+            status_msg = "'draft', 'approved', 'validated', 'in_progress', or 'done'"
         else:
             allowed_statuses = {
+                SpecStatus.DRAFT,
                 SpecStatus.APPROVED,
                 SpecStatus.IN_PROGRESS,
                 SpecStatus.DONE,
             }
-            status_msg = "'approved', 'in_progress', or 'done'"
+            status_msg = "'draft', 'approved', 'in_progress', or 'done'"
 
         if spec.status not in allowed_statuses:
             raise ValueError(
                 f"{card_type_val.capitalize()} cards can only be created for specs in {status_msg} status. "
                 f"Spec '{spec.title}' is currently '{spec.status.value}'."
+            )
+
+        if spec.status == SpecStatus.DRAFT and data.status != CardStatus.NOT_STARTED:
+            raise CardOperationError(
+                "spec_status_too_early",
+                "Cards planned in a Draft Spec must remain Not Started.",
+                remediation="Complete Spec planning and validation before starting work.",
             )
 
         # Validate test_scenario_ids against spec and board caps for test cards.
@@ -3888,6 +3898,14 @@ class CardService:
             next_spec = await _application_get(self.db, "spec", next_spec_id)
             if not next_spec or next_spec.board_id != card.board_id:
                 raise ValueError("Spec not found on this board")
+            if next_spec_id != card.spec_id and next_spec.status == SpecStatus.DRAFT:
+                next_type = update_data.get("card_type", card.card_type)
+                if card.status != CardStatus.NOT_STARTED or next_type == CardType.BUG:
+                    raise CardOperationError(
+                        "spec_status_too_early",
+                        "Only Not Started Task/Test Cards may be assigned to a Draft Spec.",
+                        remediation="Complete Spec planning and validation before starting work.",
+                    )
 
         await require_normal_card_spec_content_allowed(
             self.db, board_id=card.board_id, card_type=card.card_type,
@@ -6136,23 +6154,6 @@ class CardService:
                 f"okto_pulse_link_task(target_type='fr'|'tr'|'rule'|'ir'|'or', ...), "
                 f"or use the human-only card/board skip in the UI."
             )
-
-    async def check_decision_presence(self, spec: "Spec") -> None:
-        """Require at least one active Decision before spec validation/progress."""
-        decisions = list(spec.decisions or [])
-        active = [
-            d
-            for d in decisions
-            if isinstance(d, dict)
-            and str(d.get("status", "active")).lower() == "active"
-        ]
-        if active:
-            return
-        raise ValueError(
-            f"Cannot validate spec: spec '{spec.title}' must include at least "
-            f"one active Decision. REQUIRED ACTION: add a Decision with "
-            f"okto_pulse_add_decision before validating the spec."
-        )
 
     async def check_decisions_coverage(
         self, spec: "Spec", board: "Board | None"
@@ -11702,7 +11703,6 @@ class SpecService:
             await card_service.check_ir_coverage(spec, board)
             await card_service.check_or_coverage(spec, board)
             await card_service.check_task_requirement_links_for_spec(spec, board)
-            await card_service.check_decision_presence(spec)
             await card_service.check_decisions_coverage(spec, board)
             await card_service.check_code_evidence_coverage(spec, board)
 
@@ -11752,7 +11752,6 @@ class SpecService:
             await card_service.check_ir_coverage(spec, board)
             await card_service.check_or_coverage(spec, board)
             await card_service.check_task_requirement_links_for_spec(spec, board)
-            await card_service.check_decision_presence(spec)
             await card_service.check_decisions_coverage(spec, board)
             await card_service.check_code_evidence_coverage(spec, board)
 
@@ -12355,7 +12354,6 @@ class SpecService:
             await card_service.check_ir_coverage(spec, board)
             await card_service.check_or_coverage(spec, board)
             await card_service.check_task_requirement_links_for_spec(spec, board)
-            await card_service.check_decision_presence(spec)
             await card_service.check_decisions_coverage(spec, board)
             await card_service.check_code_evidence_coverage(spec, board)
             resource_gate = ResourceGateService(self.db)

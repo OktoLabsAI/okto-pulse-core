@@ -2,6 +2,49 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U1 implementado e testado; conclusão unificada ainda pendente
+
+Objetivo ativo: implementar SPEC_UNIFIED_VALIDATION_PLAN.md integralmente,
+incluindo U2–U4 e ensaio real UI/MCP; não confundir este checkpoint com entrega
+final. Leitura integral do pacote e dos complementos de corte de legado e
+verificação de Decisions concluída durante a caracterização que antecedeu os
+diffs do U1. A ideação original não foi procurada.
+
+Task/Test podem nascer Not Started em Draft; o formulário oferece essas Specs,
+limita o status e limpa a seleção Draft ao trocar para Bug. Cenários escolhidos
+no Test continuam vinculados pela criação nativa, sem segundo comando redundante.
+Criação Started em Draft é recusada, mover os Cards planejados para execução
+continua bloqueado por maturidade, e update_card não permite reassociar trabalho
+já iniciado a Draft. link_card mantém sua restrição anterior de estados; não
+foi ampliado para executar trabalho em Draft. Removido somente o predicado
+check_decision_presence e seus consumidores; Decision existente continua exigindo
+plano válido, inclusive admitindo inspeção sem Task/Test artificial.
+
+Validação concluída com PYTHONPATH apontando explicitamente para ambas as src:
+- pytest test_card_lifecycle, test_task_requirement_link_gate, test_checklist,
+  test_spec_dependencies_core e test_mcp_tools_catalog_drift: 209 passed.
+- Dois testes adicionais de tentativa de início dos Cards planejados: 2 passed.
+- Frontend CreateCardModal.knowledgePropagation: 13 passed; npx tsc -b passou.
+- Catálogo regenerado pelo gerador oficial; diff-check Core/Community passou.
+Evidências XML: PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u1-core.xml
+e u1-execution-negative.xml. A comparação inicial instalada, anterior às mudanças
+de código, confirmou 861 Python Core e 323 Community sem diferenças. Estes testes
+usaram checkout; a instalação existente agora não representa o novo código.
+
+Falhas intermediárias resolvidas: fixture Decision sem todas as coleções;
+expectativa frontend exigindo card_type=normal apesar do default canônico; teste
+estático de dependências procurando uma chamada já extraída para helper no
+baseline. Este último continua verificando a delegação e a ordem antes da escrita.
+Os testes Draft usam flush/rollback para não deixar seu estado no banco da suíte.
+
+Community publicado em 2019c51c. Este registro acompanha o commit Core do U1.
+UV01–UV03 têm provas de serviço/componente; o percurso real pelo browser/MCP e
+as transições completas de uma iniciativa nova permanecem para U4. Nenhuma
+instalação, reinício, mudança de Board ou dados reais nesta etapa.
+Próximo passo: U2.1, extrair regra de decomposição preservando a média nativa e
+rejeições Current, depois integrar avaliação em Approved e operação composta
+com autorização, concorrência, replay e rollback, conforme §§4 e 6.1 do plano.
+
 ### 2026-10-14 — detalhamento operacional e reconciliação do estado local
 
 Pedido desta rodada: iniciar o planejamento detalhado da unificação. Plano

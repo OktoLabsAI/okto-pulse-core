@@ -1,8 +1,8 @@
 # Validação unificada do planejamento da Spec
 
-Plano de 14 de outubro de 2026. **Planejamento detalhado consolidado; nenhum
-milestone de implementação concluído.** Há alterações locais parciais do U1,
-ainda não qualificadas nem publicadas; consultar o checkpoint atual no ledger.
+Plano de 14 de outubro de 2026. **U1 implementado com testes de backend e
+frontend; U2–U4 pendentes.** A comprovação completa pelo browser e MCP permanece
+para U4; consultar os resultados e limites no checkpoint atual do ledger.
 
 Base: Core `57599196174a247510cef6b299ee51c0f50ce10f` e Community
 `34fcf7ec8a617151df32ca403478cd39594cee56`, branch `feature/v0.4.0`.

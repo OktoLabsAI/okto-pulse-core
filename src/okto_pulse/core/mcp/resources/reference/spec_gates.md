@@ -501,6 +501,9 @@ After a spec reaches `validated`, it must undergo qualitative evaluation before 
 
 ## Decisions Coverage Gate
 
+There is no minimum number of Decisions. Do not invent a Decision solely to
+advance a Spec. An empty collection does not waive any other planning gate.
+
 `check_decisions_coverage` rejects active Decisions without a complete explicit
 verification plan: exact active obligation_refs in the same Spec and/or inspection
 condition with bounded scope_refs. Task links are contextual and confer no proof.
