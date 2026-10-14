@@ -2,6 +2,41 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — checkpoint de CardModal/Delivery antes da revisão do plano
+
+Pedido vigente: planejamento detalhado, sem continuar a implementação.
+Preservado o código preexistente no Community `37c34e10`, sobre `3b44cf30`;
+Core anterior `a24a57d0`. Este registro acompanha o checkpoint, não uma release.
+Snapshots temporários do Playwright permanecem fora dos commits de produto.
+
+O WIP troca o timer pesado de CardModal pelo watcher de revisões, guarda
+invalidação pendente e acrescenta reautorização/limpeza de acesso. O título usa
+EditableField, que passa a preservar rascunho quando o valor remoto muda.
+Delivery recebe revisão externa e mantém a base original do formulário até
+revisão explícita. Nenhuma dessas mudanças foi implementada nesta revisão;
+foram conferidos os diffs e preservados sem modificá-los.
+
+Artefato anterior lido, não reexecutado: `u3-card-live.xml`, em
+`PULSE_REFACTOR/.validation-v040/spec-unified-20261014/`. Registra 81 testes,
+77 passes e quatro falhas: três casos de restrição por tipo em Spec Done e
+um caso de rework em Rejected esperam o atributo contenteditable, retirado
+pela substituição do editor. Isso explica a asserção que falhou, mas não prova
+que as permissões do novo editor estejam corretas. Retomar com testes de
+interação/autorização, sem eliminar os cenários. EditableField isolado tem dois
+passes. As alterações posteriores de Delivery não estão qualificadas por esse
+XML; build, lint e browser do conjunto final também permanecem pendentes.
+
+Risco concreto para fechar no mesmo passo U3: falha de recarga em Delivery
+conserva dados anteriores e termina loading; os guards não distinguem erro de
+leitura de erro de submissão. Impedir envio/revisão sobre leitura não confirmada,
+mantendo rascunho e retry. CardUpdate continua sem CAS genérico: proteção visual
+não é prova de concorrência no servidor. Preservar os fences nativos de Delivery.
+
+Verificação deste checkpoint: leitura dos diffs/XML e `git diff --check`.
+Nenhum teste novo, instalação, reinício ou mutação UI/MCP. Próximo passo deste
+pedido: reconciliar o plano único com esse WIP e seus critérios de conclusão,
+sem ampliar U1–U4/UV01–UV24 nem iniciar correções de produto.
+
 ### 2026-10-14 — U2 admissão MCP e U3 Kanban sincronizado
 
 Retomada de implementação sobre Core `5008286e` / Community `c79f0191`.
