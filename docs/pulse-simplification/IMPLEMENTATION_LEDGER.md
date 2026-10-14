@@ -38606,3 +38606,74 @@ Starting pair: Core 79e3bf84 / Community 590fbbb9. Requested commit/push checkpo
 - No production installation/restart, reset, release or migration. Disposable runtime/browser evidence stays local; .playwright-cli/ and output/ are not implementation artifacts.
 
 Resume: investigate U09's concrete accessibility-tree mismatch, rerun the enhanced installed browser flow, reconcile INV-13 and perform final P11 acceptance review. Local evidence is under PULSE_REFACTOR/.validation-v040, notably community-wheel-readiness-p11-copy-final.xml, community-installed-browser-p11.xml and community-installed-browser-ax-p11.xml. The current checkpoint deliberately preserves the failing AX assertion for reproducibility; it does not claim the entire plan complete.
+
+## P11 final acceptance — 2026-10-14
+
+Final implementation pair: Core fda7e9cb2af62d6f51cf4257c6f550babcb47bed / Community e052d1ad683f18852c54690a2a04793a85c263b8. Subsequent commits finalize this report/matrix only. P00–P11 are complete against the normative plan, including all 96 cases and all 15 invariants; individual evidence remains in the paired acceptance matrix.
+
+### Resolution of U09
+
+The installed DOM already carried the intended aria-valuetext. A minimal static HTML reproduction isolated the empty CDP AX valuetext to system Chrome 155.0.8059.79, including with accessibility launch flags; no Pulse API, React code or database was involved. Playwright-managed Chromium 147.0.7727.15 exposes the value, but its CDP projection corrupted the non-ASCII separator in the initial text. The view now supplies a spoken form such as "42%, 3 of 7 applicable obligations", while visual counters/layout remain unchanged. Both DOM and actual AX names, numeric value, min/max and full textual value are asserted. The installed test uses the same managed Chromium as the main E2E project, with zero retries and unchanged timeouts. No assertion was replaced with an empty/partial value or waived.
+
+Earlier failed installed AX runs and the compiled test's initially stale expected wording are retained as failed attempts. Final compiled flow: one passed, 19.8s total. Final installed flow: one passed, 93.597s harness duration, preserving three prior records and adding exactly one human Test association without inflating either metric. Final screenshots were inspected: separate bars, unobscured compact error and dark narrow layout. U09/INV-13 are satisfied for the plan's automated browser accessibility outputs; no manual speech-session claim or additional approval gate is introduced.
+
+### Final validation and artifacts
+
+- Core delivery/canonical regression: 918 passed. Additional Bug lifecycle/regression: 60 passed. Final catalog, SK-A manifest, agent instructions and old/new delivery contracts: 71 passed in 12.71s.
+- Community broad delivery regression: 395 passed and four signed-fixture failures; after correcting the missing execution basis, the complete affected suite passed all 10. No product authority was relaxed and the broad run is not relabelled green. Additional native suites: 30 passed; acceptance/performance: 7 passed. All 108 Python test functions named in the matrix have a matched passing JUnit result.
+- Complete frontend regression: 2,655 passed in 284 files. After the final accessible-text-only change, all 42 affected component tests passed in 7.39s; targeted ESLint, TypeScript/production build and packaged frontend verification passed. Existing bundle-size/Browserslist warnings remain visible.
+- Final wheel gate: 6 passed in 220.11s. Source/wheel/install parity covers 922 Core and 409 Community members, including the rebuilt SPA. Final source/wheel closure passed: 8,964 ownership rows, zero findings/documentation findings, all eight architectural budgets ZERO.
+- Packaged frontend: 79 files; tree SHA-256 37ed32176420298c4e46e3c017743fb3b70cf48d720a57d2ae0d1d846e6a1d81.
+- Final Core wheel SHA-256: 820e36167dc9f4475f804ce3af6bdfd59045a9956b29a08d4958956ca8921463.
+- Final Community wheel SHA-256: 8465c6638b7168dd6ec088093dfcedff41af5b7820fcf65d6cef2e8243bcb532.
+- Actual installed MCP HTTP: 284 tools / 284 canonical / zero aliases / 54 resources / 13 SK-A tools. Readiness adds no MCP tool. Both changelogs now document the new projection and retained deprecated maturity contract.
+- Native performance, SQL count, read-only evidence and exact UTF-8 payload measurements remain in the matrix; they are local fixture measurements, not a production SLA.
+
+### Concrete final commands
+
+All shell commands used rtk proxy. Earlier sections retain the implementation command history.
+
+- python -X utf8 PULSE_REFACTOR/.validation-v040/run_readiness_tests.py core -q tests/test_mcp_tools_catalog_drift.py tests/test_ska_tool_manifest.py tests/test_agent_instruction_contracts.py tests/test_delivery_evidence_contract.py tests/test_delivery_completeness.py
+- npm run test -- src/components/code-traceability/__tests__/DeliveryReadiness.test.tsx src/components/code-traceability/__tests__/DeliveryReadinessDoD.test.tsx src/components/code-traceability/__tests__/CardDeliveryDoDPanel.test.tsx
+- npx eslint src/components/code-traceability/DeliveryReadinessView.tsx src/components/code-traceability/__tests__/DeliveryReadiness.test.tsx tests/e2e/installed-delivery.spec.ts playwright.installed-delivery.config.ts
+- npm run build and npm run verify:frontend-dist, as separate invocations.
+- npm run preview -- --host 127.0.0.1 --port 5174 --strictPort, then npm run test:e2e -- tests/e2e/delivery-readiness.spec.ts --project=chromium; preview stopped afterwards.
+- run_readiness_tests.py community -q tests/test_release_artifact_gate.py with basetemp p11-installed-accessible and the previously verified local Grafx wheel supplied through OKTO_E2E_GRAFX_WHEEL.
+- run_readiness_tests.py community -q tests/test_installed_delivery_browser.py with PULSE_NATIVE_INSTALLED_PYTHON and PULSE_NATIVE_WHEEL_DIR from that new release-artifact-gate directory, and PULSE_NATIVE_DELIVERY_FIXTURE=p11-native-context-fresh/test_inherited_br_promoted_ir_0.
+- python -m okto_pulse.community.saas_closure --core-repo <local Core> --community-repo <local Community> --core-wheel <final Core wheel> --community-wheel <final Community wheel>, with both source roots in PYTHONPATH.
+
+Local artifacts under PULSE_REFACTOR/.validation-v040: core-final-docs-p11.xml, community-wheel-accessible-p11.xml, community-installed-accessible-browser-p11.xml, p11-installed-accessible/.../release-artifact-evidence.json and p11-installed-accessible-browser/.../installed-browser-result.json. Browser captures and AX JSON stay local rather than implementation inputs.
+
+## Final requirement audit
+
+The numbered implementation steps below are reconciled with the current source and actual test assertions. The paired [acceptance matrix](../DELIVERY_READINESS_ACCEPTANCE_MATRIX.md) provides the individual M01–M24, V01–V24, D01–D10, G01–G12, S01–S12, U01–U10 and R01–R04 cases and INV-01–INV-15 evidence.
+
+| Plan steps | Implemented boundary and acceptance evidence |
+|---|---|
+| P00.1–P00.4 | Original HEADs, consumer search and installed/source byte parity are recorded above. Native signed fixtures reproduced complementary-failure/base mismatch, override permission and pre-Done DoD defects as expected RED. The same regressions now pass. |
+| P01.1–P01.4 | Closed immutable domain/DTO contracts, explicit nulls/count equations and the shared effective factual evaluator are exercised by delivery_readiness_contracts, effective_delivery_coverage and delivery_completeness suites. Domain imports remain infrastructure-free. |
+| P02.1–P02.4 | Canonical obligation/scenario units, bounded and inherited contributions, fallback, Decision N/A, floor arithmetic and immutable waiver disposition are covered by M01–M24 and R04. No card averaging or status credit. |
+| P03.1–P03.5 | Native current positive/negative/unbound outcomes, criterion-level reports, exact canonical source/revision, retries/conflicts and typed rejections are covered by V01–V24, native mixed-verification and multi-Card suites. Admission and historical read share base checks. |
+| P04.1–P04.5 | Closed reason/action registries, templates, authorized evidence/locations, deterministic grouping, dependency graph/cycles, permission-aware reuse and missing-cause integrity errors are covered by D01–D10, V17/V18 and diagnostics suites. Registry validation rejects unknown tools. |
+| P05.1–P05.5 | Community consistent batch read, injected clock, one race retry, authenticated cursor, bounded summary/detail, visibility and measurement are covered by S06–S12, authorization, batch and paging suites. Near-limit SQL count and payload measurements are recorded below/in the matrix. |
+| P06.1–P06.5 | Card implementation-only and Spec complete-phase predicates use the shared assessment. Native fence/prospective report/rollback, protected override and read-only lifecycle composition are covered by G01–G12 and real native closeout/report tests. Existing Bug regression remains active. |
+| P07.1–P07.4 | Existing REST/MCP query routes readiness before Card history; closed query fields, significant nulls, structured errors and valid tool references are covered by S01–S05/S12, routing/error/registry suites and installed MCP probe. No readiness tool was added. |
+| P08.1–P08.4 | Clients/board summaries consume delivery-readiness/v1. Shared two-bar view supports normal/Bug/Test/Spec, explicit N/A/unknown, historical Done and consistent DoD. U01–U05/U10, component regression and compiled/installed browser runs pass. |
+| P09.1–P09.4 | Diagnosis groups, copy/pagination, exact native links, direct modal entry/focus, cross-Card refresh and stale response suppression are covered by U06–U09, native navigation and event tests. Final captures cover dark 390x844 and unobscured compact error. |
+| P10.1–P10.4 | Tool/reference docs, Card/Spec workflows, agent instructions, generated manifests, paired 0.4.0 locks and packaged frontend are updated. Catalog/manifest/instruction/deprecated-contract checks pass. Both changelogs identify retained legacy maturity; new UI never converts it. |
+| P11.1–P11.4 | All 96 cases and 15 invariants are reconciled. Broad relevant regression, native mutation/read scenarios, final packaged SPA, measured performance/SQL/payloads, installed MCP and source/wheel closure are recorded. Reports retain failed attempts and their actual resolutions. |
+
+### Integrated paths required by P11.2
+
+- Gradual implementation, cross-Card verification and duplicate association: incremental/evidence/report suites, native batch/scenario/acceptance tests, and the installed SPA's real form write with unchanged 42%/42% for 3/7 obligations.
+- Failure/correction/retry and existing proof without binding: native signed verification tests retain complementary failure, native retry history and association-first guidance; a new run is not required for an existing valid result.
+- N/A, waiver and override: native immutable exception/read/authority tests plus gate and UI tests distinguish structural/authorized N/A, retained applicable risk and advisory policy without manufactured proof.
+- Incompatible version, complete proof with open lifecycle and historical Done divergence: U02/U04/U10, native historical tests and real SpecService closeout cover unchanged metrics, native closure, revoked current proof and preserved history.
+- These paths combine native persistence/emission/transport tests with browser presentation tests. The compiled navigation fixture intercepts API reads and rejects writes; the installed-SPA fixture uses actual HTTP/persistence and a disposable same-format native snapshot. Neither is presented as an unobserved production run.
+
+### Validation boundaries
+
+No production SLA, manual screen-reader speech session, release, deployment, production reinstall or production data mutation is claimed. Browser accessibility acceptance checks DOM semantics, actual browser AX values, keyboard/focus, axe, reduced motion, light/dark and narrow layout. The system-Chrome CDP limitation is documented separately from those passing checks. Historical ledger entries are preserved as dated checkpoints; this final audit supersedes their provisional statuses.
+
+
+Resume/handoff: implementation and acceptance of this plan are complete. Production installation and release remain separate user actions. No requested plan milestone is deferred to a future agent.
