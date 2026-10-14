@@ -6,7 +6,7 @@ from okto_pulse.core.domain.delivery_completeness import calculate_delivery_comp
 from okto_pulse.core.domain.delivery_evidence import DeliveryBinding, DeliveryContribution, DeliveryObligation, evaluate_delivery_coverage
 from okto_pulse.core.domain.effective_delivery_coverage import EffectiveDeliveryContext, DeliveryScopeAttestation
 from okto_pulse.core.domain.enums import CardStatus
-from test_effective_delivery_coverage import case
+from test_effective_delivery_coverage import case, planned_scenarios
 from test_delivery_evidence_domain import SNAPSHOT
 
 
@@ -37,11 +37,16 @@ def test_invalid_or_partial_evidence_loses_credit(change):
     value = snapshot(1,1)
     scoped = value.effective_context.implementations[0]
     fact = scoped.fact
-    if change == 'stale': fact = replace(fact, executions=tuple(replace(p,current_accepted_execution=False) for p in fact.executions))
-    if change == 'scope': scoped = replace(scoped, scopes=(replace(scoped.scopes[0],scope_sha256='b'*64),))
-    if change == 'foreign': fact = replace(fact,card_id='other')
-    if change == 'rejected': fact = replace(fact,card_status=CardStatus.REJECTED)
-    if change == 'partial': fact = replace(fact,contributions=tuple(replace(c,contribution='partial') for c in fact.contributions))
+    if change == 'stale':
+        fact = replace(fact, executions=tuple(replace(p,current_accepted_execution=False) for p in fact.executions))
+    if change == 'scope':
+        scoped = replace(scoped, scopes=(replace(scoped.scopes[0],scope_sha256='b'*64),))
+    if change == 'foreign':
+        fact = replace(fact,card_id='other')
+    if change == 'rejected':
+        fact = replace(fact,card_status=CardStatus.REJECTED)
+    if change == 'partial':
+        fact = replace(fact,contributions=tuple(replace(c,contribution='partial') for c in fact.contributions))
     facts = () if change == 'revoked' else (fact,)
     value = replace(value, implementations=facts,effective_context=replace(value.effective_context,implementations=() if change=='revoked' else (replace(scoped,fact=fact),)))
     assert calculate_delivery_completeness(value,'ui').percent == 0
@@ -71,7 +76,8 @@ def with_verifications(value, count=1, *, accepted=False):
         bindings=s.fact.bindings, verified_implementation_ids=(s.fact.id,)))
         for i, s in enumerate(implementations[:count]))
     return replace(value, implementations=tuple(s.fact for s in implementations), tests=tuple(s.fact for s in tests),
-        effective_context=replace(value.effective_context, implementations=implementations, tests=tests))
+        effective_context=replace(value.effective_context, implementations=implementations, tests=tests,
+            required_scenarios=planned_scenarios(tests)))
 
 
 def test_verification_before_done_and_acceptance_use_distinct_predicates():
@@ -99,12 +105,18 @@ def test_example_four_equal_obligations_yields_45_and_stable_scope():
 def test_invalid_verification_drops_to_implementation_without_erasing_history(change):
     value = with_verifications(snapshot(1, 1))
     scoped = value.effective_context.tests[0]
-    if change == 'failed': scoped = replace(scoped, fact=replace(scoped.fact, result='failed'))
-    if change == 'stale': scoped = replace(scoped, fact=replace(scoped.fact, current_verified_run=False))
-    if change == 'foreign_base': scoped = replace(scoped, fact=replace(scoped.fact, verified_implementation_ids=('other',)))
-    if change == 'wrong_criterion': scoped = replace(scoped, criterion_ids=('unrelated',))
-    if change == 'wrong_method': scoped = replace(scoped, verification_method='unsupported')
-    if change == 'cancelled': scoped = replace(scoped, fact=replace(scoped.fact, card_status=CardStatus.CANCELLED))
+    if change == 'failed':
+        scoped = replace(scoped, fact=replace(scoped.fact, result='failed'))
+    if change == 'stale':
+        scoped = replace(scoped, fact=replace(scoped.fact, current_verified_run=False))
+    if change == 'foreign_base':
+        scoped = replace(scoped, fact=replace(scoped.fact, verified_implementation_ids=('other',)))
+    if change == 'wrong_criterion':
+        scoped = replace(scoped, criterion_ids=('unrelated',))
+    if change == 'wrong_method':
+        scoped = replace(scoped, verification_method='unsupported')
+    if change == 'cancelled':
+        scoped = replace(scoped, fact=replace(scoped.fact, card_status=CardStatus.CANCELLED))
     value = replace(value, tests=(scoped.fact,), effective_context=replace(value.effective_context, tests=(scoped,)))
     assert calculate_delivery_completeness(value, 'ui').percent == 50
     assert len(value.tests) == 1
@@ -114,6 +126,7 @@ def test_foreign_card_contributions_do_not_inflate_denominator_or_credit():
     from okto_pulse.core.domain.effective_delivery_coverage import EffectiveDeliveryContext
     inventory, implementations, tests = case()
     value = replace(SNAPSHOT, implementations=tuple(s.fact for s in implementations), tests=tuple(s.fact for s in tests),
-        effective_context=EffectiveDeliveryContext(inventory, implementations, tests, frozenset({'automated_test'})))
+        effective_context=EffectiveDeliveryContext(inventory, implementations, tests, frozenset({'automated_test'}),
+            required_scenarios=planned_scenarios(tests)))
     result = calculate_delivery_completeness(value, 'ui')
     assert (result.total, result.percent) == (1, 100)

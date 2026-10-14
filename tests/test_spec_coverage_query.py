@@ -15,7 +15,7 @@ from test_delivery_evidence_domain import SNAPSHOT as FACT_SNAPSHOT, SCOPE, BIND
 from okto_pulse.core.domain.effective_delivery_coverage import DeliveryScopeAttestation, ScopedImplementationFact, ScopedTestFact
 from okto_pulse.core.domain.effective_delivery_inventory import EffectiveDeliveryInventory, EffectiveDeliveryObligation
 from okto_pulse.core.domain.implementation_responsibility import ImplementationResponsibilityPlan, RequirementContribution
-from test_effective_delivery_coverage import case as adopted_case
+from test_effective_delivery_coverage import case as adopted_case, planned_scenarios
 
 def native_delivery_snapshot(**changes):
     """Declare the native inventory and its exact admitted fact population."""
@@ -39,6 +39,7 @@ def native_delivery_snapshot(**changes):
         ) for fact in snapshot.implementations),
         tuple(ScopedTestFact(fact, ("ac",), "automated_test") for fact in snapshot.tests),
         frozenset({"automated_test"}),
+        required_scenarios=planned_scenarios((ScopedTestFact(VERIFIED_TEST, ("ac",), "automated_test"),)),
     )
     return replace(snapshot, effective_context=context)
 
@@ -109,7 +110,8 @@ def test_waiver_satisfies_an_obligation_but_is_never_presented_as_proof():
 def test_partial_contribution_is_not_whole_requirement_credit():
     inventory, implementations, tests = adopted_case()
     snapshot = native_delivery_snapshot(implementations=(implementations[0].fact,), tests=(tests[0].fact,),
-        effective_context=EffectiveDeliveryContext(inventory, implementations[:1], tests[:1], frozenset({'automated_test'})))
+        effective_context=EffectiveDeliveryContext(inventory, implementations[:1], tests[:1], frozenset({'automated_test'}),
+            required_scenarios=planned_scenarios(tests)))
     result = project_spec_coverage(QUERY, source(snapshot))
     row = result['items'][0]
     assert row['implementation'] == row['verification'] == 'partial'
@@ -118,16 +120,19 @@ def test_partial_contribution_is_not_whole_requirement_credit():
     assert result['delivery']['counts']['implementation_proven'] == 0
 
 
-@pytest.mark.parametrize('damage', ['context', 'inventory', 'methods', 'population'])
+@pytest.mark.parametrize('damage', ['context', 'inventory', 'methods', 'population', 'scenarios'])
 def test_adopted_unavailable_authority_cannot_appear_as_complete_zero(damage):
     inventory, implementations, tests = adopted_case()
-    context = EffectiveDeliveryContext(inventory, implementations, tests, frozenset({'automated_test'}))
+    context = EffectiveDeliveryContext(inventory, implementations, tests, frozenset({'automated_test'}),
+        required_scenarios=planned_scenarios(tests))
     if damage == 'context':
         context = object()
     elif damage == 'inventory':
         context = replace(context, inventory=replace(inventory, population_complete=False))
     elif damage == 'methods':
         context = replace(context, admitted_methods=None)
+    elif damage == 'scenarios':
+        context = replace(context, required_scenarios=None)
     else:
         context = replace(context, implementations=())
     snapshot = native_delivery_snapshot(implementations=tuple(row.fact for row in implementations),

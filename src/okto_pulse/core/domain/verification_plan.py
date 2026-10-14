@@ -7,6 +7,7 @@ Implementation contributions, dependencies and semantic approval remain separate
 
 from collections import defaultdict
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 from okto_pulse.core.domain.enums import CardStatus, TestScenarioStatus
 from okto_pulse.core.domain.requirement_verification_resolution import INACTIVE_STATES
@@ -18,6 +19,35 @@ from okto_pulse.core.domain.test_scenarios import (
 
 MAX_PLAN_NODES = 5000
 MAX_PLAN_LINKS = 4096
+
+
+@dataclass(frozen=True, slots=True)
+class RequiredVerificationScenario:
+    """Native planning facts, independent of selected delivery records/results."""
+
+    scenario_id: str
+    criterion_ids: tuple[str, ...]
+    method: str | None
+    test_card_ids: tuple[str, ...]
+    complete: bool
+
+
+def required_verification_scenarios(qualification):
+    """Read the complete canonical topology, including supplemental ACs.
+
+    None means population unknown; () means a known empty population. Never
+    reconstruct required scenarios from the subset that has delivery bindings.
+    """
+    if qualification.get("planning_population_complete") is not True:
+        return None
+    rows = qualification.get("scenario_plans")
+    if not isinstance(rows, list) or len(rows) > MAX_PLAN_NODES:
+        return None
+    return tuple(RequiredVerificationScenario(
+        row["scenario_id"], tuple(row["criterion_ids"]), row["method"],
+        tuple(row["test_card_ids"]),
+        row["method_plan_complete"] and not row["work_blockers"],
+    ) for row in rows)
 
 
 def _identity(value):
@@ -119,6 +149,7 @@ def resolve_verification_plan(
     if supported is None:
         issue("verification_method_capability_unavailable")
     by_criterion = defaultdict(list)
+    scenario_plans = []
     scenario_links = 0
     for identity, scenario in sorted(scenario_rows.items()):
         links = scenario.get("linked_criteria")
@@ -160,6 +191,7 @@ def resolve_verification_plan(
             if by_scenario[identity]
             else ["verification_test_card_required"],
         }
+        active_criteria = []
         for criterion_id in sorted(set(links)):
             criterion = criterion_rows.get(criterion_id)
             # The active-obligation population governs planning. Keeping a
@@ -176,6 +208,9 @@ def resolve_verification_plan(
                 )
                 continue
             by_criterion[criterion_id].append(planned)
+            active_criteria.append(criterion_id)
+        if active_criteria:
+            scenario_plans.append({**planned, "criterion_ids": active_criteria})
 
     rows = []
     expansion = 0
@@ -231,6 +266,7 @@ def resolve_verification_plan(
             method_ready and all(r["verification_work_complete"] for r in rows)
         ),
         "planning_population_complete": population_complete,
+        "scenario_plans": scenario_plans,
         "planning_issues": issues,
         "planning_issue_count": issue_count,
         "planning_issues_truncated": issue_count > len(issues),

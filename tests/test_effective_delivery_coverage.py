@@ -23,6 +23,7 @@ from okto_pulse.core.domain.implementation_responsibility import (
     RequirementContribution,
 )
 from okto_pulse.core.ports.delivery_inventory import default_delivery_inventory_policy
+from okto_pulse.core.domain.verification_plan import RequiredVerificationScenario
 from test_delivery_evidence_domain import BINDING, IMPLEMENTATION, SNAPSHOT, TEST
 
 
@@ -57,7 +58,8 @@ def case():
     tests = tuple(
         ScopedTestFact(
             replace(
-                TEST, id="test-" + p.card_id, verified_implementation_ids=(p.card_id,)
+                TEST, id="test-" + p.card_id, scenario_id="scenario-" + p.card_id,
+                verified_implementation_ids=(p.card_id,)
             ),
             p.criterion_ids,
             "automated_test",
@@ -65,6 +67,22 @@ def case():
         for p in planned
     )
     return inventory, implementations, tests
+
+
+def planned_scenarios(tests):
+    """Explicit native topology for controlled domain fixtures, not production."""
+    plans = {}
+    for item in tests:
+        previous = plans.get(item.fact.scenario_id)
+        if previous is not None:
+            assert previous.method == item.verification_method
+        plans[item.fact.scenario_id] = RequiredVerificationScenario(
+            item.fact.scenario_id,
+            tuple(sorted(set(item.criterion_ids) | set(previous.criterion_ids if previous else ()))),
+            item.verification_method,
+            tuple(sorted({item.fact.card_id} | set(previous.test_card_ids if previous else ()))), True,
+        )
+    return tuple(plans.values())
 
 
 def evaluate(
@@ -86,6 +104,7 @@ def evaluate(
         implementations=implementations,
         tests=tests,
         admitted_methods=methods,
+        required_scenarios=planned_scenarios(tests),
     )
 
 

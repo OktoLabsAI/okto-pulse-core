@@ -104,9 +104,9 @@ class DefaultDeliveryInventoryPolicy:
         from okto_pulse.core.domain.execution_plan import resolve_spec_execution_plan
         return resolve_spec_execution_plan(spec=spec, cards=cards, admitted_methods=admitted_methods)
 
-    def effective_coverage(self, *, inventory, snapshot, implementations, tests, admitted_methods):
+    def effective_coverage(self, *, inventory, snapshot, implementations, tests, admitted_methods, required_scenarios=None):
         from okto_pulse.core.domain.effective_delivery_coverage import evaluate_effective_delivery_coverage
-        return evaluate_effective_delivery_coverage(inventory=inventory, snapshot=snapshot,
+        return evaluate_effective_delivery_coverage(inventory=inventory, snapshot=snapshot, required_scenarios=required_scenarios,
             implementations=implementations, tests=tests, admitted_methods=admitted_methods)
 
     def spec_obligations(self, spec: object) -> tuple[DeliveryObligation, ...]:

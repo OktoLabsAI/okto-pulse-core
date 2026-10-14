@@ -66,6 +66,7 @@ def test_marker_mismatch_is_not_legacy_fallback(change):
 
 
 def adopted_snapshot(implementations=None, tests=None):
+    from test_effective_delivery_coverage import planned_scenarios
     inventory, defaults, runs = case()
     implementations = defaults if implementations is None else implementations
     tests = runs if tests is None else tests
@@ -74,7 +75,8 @@ def adopted_snapshot(implementations=None, tests=None):
         implementations=tuple(item.fact for item in implementations),
         tests=tuple(item.fact for item in tests),
         effective_context=EffectiveDeliveryContext(
-            inventory, implementations, tests, frozenset({"automated_test"})
+            inventory, implementations, tests, frozenset({"automated_test"}),
+            required_scenarios=planned_scenarios(runs),
         ),
     )
 

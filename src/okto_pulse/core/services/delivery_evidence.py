@@ -139,6 +139,8 @@ async def require_card_delivery(
     # become vacuous success when the gate collects missing implementations.
     structural_blockers = set(evaluation.blockers) - {
         "delivery_implementation_missing", "delivery_test_result_missing",
+        "delivery_verification_scenario_population_unavailable",
+        "delivery_verification_run_conflict",
     }
     if structural_blockers:
         raise ValueError(

@@ -8,6 +8,7 @@ runtime provider, cache or registration side effect.
 
 from typing import Protocol
 from okto_pulse.core.domain.execution_plan import SpecExecutionPlan
+from okto_pulse.core.domain.verification_plan import RequiredVerificationScenario
 from okto_pulse.core.domain.effective_delivery_inventory import EffectiveDeliveryInventory
 
 from okto_pulse.core.domain.delivery_evidence import DeliveryObligation, DeliveryEvidenceSnapshot
@@ -21,7 +22,8 @@ class DeliveryInventoryPolicy(Protocol):
 
     def effective_coverage(self, *, inventory: EffectiveDeliveryInventory, snapshot: DeliveryEvidenceSnapshot,
                            implementations: tuple[ScopedImplementationFact, ...], tests: tuple[ScopedTestFact, ...],
-                           admitted_methods: frozenset[str] | None) -> EffectiveDeliveryCoverage: ...
+                           admitted_methods: frozenset[str] | None,
+                           required_scenarios: tuple[RequiredVerificationScenario, ...] | None = None) -> EffectiveDeliveryCoverage: ...
 
     def effective_inventory(self, *, spec: object, cards: list[dict], qualification: dict) -> EffectiveDeliveryInventory: ...
 

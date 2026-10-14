@@ -5,7 +5,7 @@ import pytest
 from okto_pulse.core.domain.delivery_evidence import require_test_result_admission, evaluate_delivery_coverage, DeliveryContribution
 from okto_pulse.core.domain.enums import CardStatus, TestScenarioStatus as Result
 from test_delivery_evidence_domain import SNAPSHOT as BASE, SCOPE
-from test_effective_delivery_coverage import case
+from test_effective_delivery_coverage import case, planned_scenarios
 from okto_pulse.core.domain.effective_delivery_coverage import EffectiveDeliveryContext
 
 inventory, implementations, tests = case()
@@ -16,7 +16,8 @@ BINDING = IMPLEMENTATION.bindings[0]
 
 def snapshot(proof=IMPLEMENTATION, test=TEST):
     return replace(BASE, implementations=(proof,), tests=(test,), effective_context=EffectiveDeliveryContext(
-        inventory, (replace(implementations[0], fact=proof),), (replace(tests[0], fact=test),), frozenset({"automated_test"})))
+        inventory, (replace(implementations[0], fact=proof),), (replace(tests[0], fact=test),), frozenset({"automated_test"}),
+        required_scenarios=planned_scenarios(tests)))
 
 SNAPSHOT = snapshot()
 

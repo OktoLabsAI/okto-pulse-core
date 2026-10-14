@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import pytest
 
-from okto_pulse.core.domain.verification_plan import resolve_verification_plan
+from okto_pulse.core.domain.verification_plan import resolve_verification_plan, required_verification_scenarios
 from okto_pulse.core.application.use_cases.requirement_verification import (
     GetRequirementVerificationCommand,
     project_requirement_verification,
@@ -205,3 +205,20 @@ def test_retired_criterion_history_does_not_add_work_to_active_plan(status):
     )
     assert result["method_plan_complete"] and result["verification_work_complete"]
     assert data == before
+    assert {row.scenario_id for row in required_verification_scenarios(result)} == {'ts'}
+
+
+def test_required_population_includes_supplemental_ac_without_requirement_path():
+    data = population()
+    data['acceptance_criteria'].append({'id': 'standalone', 'text': 'Supplemental condition'})
+    result = plan(data, scenarios=[scenario(), scenario(id='extra', linked_criteria=['standalone'])],
+                  cards=[card(test_scenario_ids=['ts', 'extra'])])
+    required = {row.scenario_id: row for row in required_verification_scenarios(result)}
+    assert required['extra'].criterion_ids == ('standalone',)
+    assert required['extra'].complete
+    assert required['extra'].test_card_ids == ('test-card',)
+
+
+def test_required_population_distinguishes_unknown_from_known_empty():
+    assert required_verification_scenarios(plan(scenarios=None)) is None
+    assert required_verification_scenarios(plan(scenarios=[])) == ()
