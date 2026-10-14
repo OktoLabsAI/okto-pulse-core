@@ -298,3 +298,9 @@ def assess_obligation_delivery(snapshot, *, card_id=None, card_type=None) -> Del
     """
     from okto_pulse.core.domain.effective_delivery_coverage import assess_effective_obligations
     return assess_effective_obligations(snapshot, card_id=card_id, card_type=card_type)
+
+
+def assess_test_delivery(snapshot, *, card_id: str, scenario_ids: tuple[str, ...] | None) -> DeliveryAssessment:
+    """Evaluate native Card assignments; caller supplies the authorized Card's IDs."""
+    from okto_pulse.core.domain.effective_delivery_coverage import assess_effective_scenarios
+    return assess_effective_scenarios(snapshot, card_id=card_id, scenario_ids=scenario_ids)

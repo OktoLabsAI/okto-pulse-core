@@ -166,6 +166,46 @@ def test_irrelevant_rejected_history_cannot_lower_sufficient_current_proof():
         aggregate_delivery_metrics(assess_obligation_delivery(value)))
 
 
+def test_M23_equivalent_complete_record_keeps_all_ids_without_requiring_duplicate_test():
+    value = snapshot()
+    original = value.effective_context.implementations[0]
+    alias = replace(original, fact=replace(original.fact, id='same-proof-new-association', actor_id='another-author'))
+    value = with_facts(value, implementations=(*value.effective_context.implementations, alias))
+    result = assess_obligation_delivery(value)
+    metrics = aggregate_delivery_metrics(result)
+    assert metrics.implementation.total == metrics.verification.total == 1
+    assert metrics.implementation.percent == metrics.verification.percent == 100
+    assert 'same-proof-new-association' in result.obligations[0].implementation.evidence_ids
+    assert alias.fact.actor_id == 'another-author'
+
+
+@pytest.mark.parametrize('change', ['execution', 'target', 'revision', 'partial', 'scope'])
+def test_M23_near_equivalent_record_never_borrows_verification(change):
+    value = snapshot()
+    original = value.effective_context.implementations[0]
+    fact = replace(original.fact, id='different-proof')
+    if change == 'execution':
+        fact = replace(fact, executions=(replace(fact.executions[0], execution_id='new-execution'),),
+            contributions=(replace(fact.contributions[0], execution_ids=('new-execution',)),))
+    elif change == 'target':
+        fact = replace(fact, executions=(replace(fact.executions[0], target_id='new-target'),))
+    elif change == 'revision':
+        fact = replace(fact, executions=(replace(fact.executions[0], result_revision='d' * 40),))
+    elif change == 'partial':
+        fact = replace(fact, contributions=(replace(fact.contributions[0], contribution='partial'),))
+    different = replace(original, fact=fact)
+    if change == 'scope':
+        different = replace(different, scopes=(replace(different.scopes[0], scope_sha256='d' * 64),))
+    value = with_facts(value, implementations=(*value.effective_context.implementations, different))
+    from okto_pulse.core.domain.effective_delivery_coverage import evaluate_effective_facts
+    checks = evaluate_effective_facts(value, require_lifecycle=False).scenario_checks
+    assert not any(check.implementation_id == 'different-proof' and check.satisfied for check in checks)
+    metrics = aggregate_delivery_metrics(assess_obligation_delivery(value))
+    # Invalid/partial historical alternatives do not invalidate the good proof;
+    # a distinct complete current execution requires its own observation.
+    assert metrics.verification.percent == (100 if change in {'partial', 'scope'} else 0)
+
+
 def test_actual_receipt_revocation_removes_credit_and_retains_native_cause():
     value = snapshot()
     damaged = replace(value.effective_context.implementations[0], fact=replace(value.implementations[0],

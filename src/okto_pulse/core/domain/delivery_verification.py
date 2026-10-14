@@ -63,6 +63,23 @@ class ScenarioVerificationFinding:
     reason: FactualReason
 
 
+@dataclass(frozen=True, slots=True)
+class ScenarioDeliveryCheck:
+    """One evaluated native scenario/criterion/contribution join.
+
+    A missing implementation remains a required check. Consumers group these
+    already evaluated facts; they do not authenticate or infer new proof.
+    """
+    binding: DeliveryBinding
+    contribution_card_id: str | None
+    criterion_id: str
+    scenario_id: str
+    implementation_id: str | None
+    satisfied: bool
+    test_ids: tuple[str, ...] = ()
+    reasons: tuple[FactualReason, ...] = ()
+
+
 def verification_sources_issue(observed: tuple[tuple[str, str], ...],
                                expected: tuple[tuple[str, str], ...]) -> Literal[
                                    'verification_base_unresolved', 'verification_base_mismatch'] | None:

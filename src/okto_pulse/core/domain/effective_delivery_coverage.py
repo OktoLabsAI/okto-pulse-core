@@ -22,11 +22,11 @@ from okto_pulse.core.domain.enums import CardType, TestScenarioStatus
 from okto_pulse.core.domain.decision_review import DecisionInspectionState
 from okto_pulse.core.domain.verification_plan import RequiredVerificationScenario
 from okto_pulse.core.domain.delivery_verification import (
-    NativeVerificationPopulation, ScenarioVerificationFinding, missing_scenario_reason,
+    NativeVerificationPopulation, ScenarioVerificationFinding, ScenarioDeliveryCheck, missing_scenario_reason,
 )
 from okto_pulse.core.domain.delivery_assessment import (
     FactualReason, ReadinessReason, AssessmentCompleteness, DeliveryAssessment,
-    ObligationAssessment, UnitPhaseAssessment, UnitState, apply_delivery_exceptions,
+    ObligationAssessment, ScenarioAssessment, UnitPhaseAssessment, UnitState, apply_delivery_exceptions,
 )
 from okto_pulse.core.domain.delivery_evidence import DeliveryPhase
 
@@ -122,6 +122,7 @@ class EffectiveDeliveryCoverage:
     rows: tuple[EffectiveDeliveryCoverageRow, ...]
     blockers: tuple[str, ...]
     rejected_record_ids: tuple[str, ...]
+    scenario_checks: tuple[ScenarioDeliveryCheck, ...] = ()
 
     @property
     def allowed(self):
@@ -204,14 +205,19 @@ def contribution_verification_criteria(obligation, contribution):
     return contribution.criterion_ids
 
 
-def evaluate_effective_snapshot(snapshot, *, require_lifecycle: bool = True):
+def evaluate_effective_facts(snapshot, *, require_lifecycle: bool = True):
+    """Shared detailed result for obligation and scenario projections."""
     context = snapshot.effective_context
     if not isinstance(context, EffectiveDeliveryContext):
-        return DeliveryCoverageEvaluation((), ('delivery_effective_context_unavailable',), ())
-    result = evaluate_effective_delivery_coverage(inventory=context.inventory, snapshot=snapshot,
+        return EffectiveDeliveryCoverage((), ('delivery_effective_context_unavailable',), ())
+    return evaluate_effective_delivery_coverage(inventory=context.inventory, snapshot=snapshot,
         implementations=context.implementations, tests=context.tests, admitted_methods=context.admitted_methods,
         decision_inspections=context.decision_inspections, require_lifecycle=require_lifecycle,
         required_scenarios=context.required_scenarios, native_verification=context.native_verification)
+
+
+def evaluate_effective_snapshot(snapshot, *, require_lifecycle: bool = True):
+    result = evaluate_effective_facts(snapshot, require_lifecycle=require_lifecycle)
     obligations = {item.binding: item for item in snapshot.obligations}
     return DeliveryCoverageEvaluation(tuple(ScopedDeliveryCoverageRow(
         obligations[row.binding], row.implementation_ids, row.test_ids,
@@ -405,6 +411,7 @@ def evaluate_effective_delivery_coverage(
             rejected.add(fact.id)
 
     result = []
+    scenario_checks = []
     relevant_tests = set()
     by_test_binding = {}
     current_receipts = {}
@@ -427,8 +434,25 @@ def evaluate_effective_delivery_coverage(
             blockers.add("delivery_contribution_allocation_invalid")
         by_card = accepted.get(binding, {})
         ids = {identity for values in by_card.values() for identity in values}
+        # Distinct associations can name rigorously the same admitted proof.
+        # Keep every ID/author; observe the equivalence class only after the
+        # named member passes the existing test predicate. No commit ancestry,
+        # text similarity, partial declarations or cross-Card equivalence.
+        groups = {}
+        for identity in sorted(ids):
+            implementation = actual_implementations[identity]
+            contribution = next(c for c in implementation.contributions if c.binding == binding)
+            scope_digest = next(s.scope_sha256 for s in scoped_implementations[identity].scopes if s.binding == binding)
+            executions = tuple(sorted((p.execution_id, p.target_id, p.target_revision,
+                p.source_ref, p.result_revision, p.relative_path)
+                for p in implementation.executions if p.execution_id in contribution.execution_ids))
+            key = (implementation.scope, implementation.card_id, binding, scope_digest,
+                contribution.contribution, executions)
+            groups.setdefault(key, set()).add(identity)
+        equivalent = {identity: values for values in groups.values() for identity in values}
         missing_cards = set(required) - set(by_card)
         observed = {identity: set() for identity in ids}
+        observed_by = {}
         tested = set()
         test_ids = set()
         for test in by_test_binding.get(binding, ()):
@@ -444,7 +468,8 @@ def evaluate_effective_delivery_coverage(
             # test_ids if another implementation lacks tests, so evaluate each
             # admitted run against only the IDs that it explicitly names.
             named = ids.intersection(fact.verified_implementation_ids)
-            checks += len(named) * max(1, len(test.criterion_ids))
+            equivalent_named = set().union(*(equivalent[identity] for identity in named))
+            checks += len(equivalent_named) * max(1, len(test.criterion_ids))
             if checks > 20000:
                 return EffectiveDeliveryCoverage(
                     (), ("delivery_effective_resolution_limit",), ()
@@ -490,7 +515,7 @@ def evaluate_effective_delivery_coverage(
             if not check.rows[0].test_satisfied:
                 continue
             relevant = False
-            for identity in named:
+            for identity in equivalent_named:
                 planned = required[actual_implementations[identity].card_id]
                 criteria = set(contribution_verification_criteria(obligation, planned))
                 covered = criteria.intersection(passing if passing is not None else test.criterion_ids)
@@ -508,6 +533,8 @@ def evaluate_effective_delivery_coverage(
                 if criteria and not covered:
                     continue
                 observed[identity].update((criterion, fact.scenario_id) for criterion in covered)
+                for criterion in covered:
+                    observed_by.setdefault((identity, criterion, fact.scenario_id), set()).add(fact.id)
                 tested.add(identity)
                 relevant = True
             if relevant:
@@ -564,6 +591,29 @@ def evaluate_effective_delivery_coverage(
                 ):
                     reason = replace(reason, code=ReadinessReason.LIFECYCLE_CARD_OPEN)
             findings.append(ScenarioVerificationFinding(identity, criterion, scenario_id, reason))
+        missing_reasons = {(f.implementation_id, f.criterion_id, f.scenario_id): f.reason for f in findings}
+        for card_id, contribution in sorted(required.items()):
+            for criterion in contribution_verification_criteria(obligation, contribution):
+                for scenario_id in sorted(by_criterion.get(criterion, ())):
+                    for identity in sorted(by_card.get(card_id, ())) or (None,):
+                        key = (identity, criterion, scenario_id)
+                        evidence = tuple(sorted(observed_by.get(key, ())))
+                        reason = missing_reasons.get(key)
+                        if identity is None:
+                            reason = FactualReason(ReadinessReason.VERIFICATION_DEPENDENCY_PENDING,
+                                source_ids=(card_id,), criterion_ids=(criterion,), scenario_ids=(scenario_id,))
+                        scenario_checks.append(ScenarioDeliveryCheck(binding, card_id, criterion,
+                            scenario_id, identity, bool(evidence), evidence, (reason,) if reason else ()))
+                        if len(scenario_checks) > 20000:
+                            return EffectiveDeliveryCoverage((), ('delivery_effective_resolution_limit',), ())
+        if not required and obligation.family == 'ac':
+            criterion = binding.obligation_ref.removeprefix('ac:')
+            for scenario_id in sorted(by_criterion.get(criterion, ())):
+                scenario_checks.append(ScenarioDeliveryCheck(binding, None, criterion, scenario_id, None, False,
+                    reasons=(FactualReason(ReadinessReason.SCOPE_ALLOCATION_UNRESOLVED,
+                        criterion_ids=(criterion,), scenario_ids=(scenario_id,)),)))
+                if len(scenario_checks) > 20000:
+                    return EffectiveDeliveryCoverage((), ('delivery_effective_resolution_limit',), ())
         implementation_waivers = base.implementation_waiver_ids if base else ()
         test_waivers = base.test_waiver_ids if base else ()
         if conflicting_receipts and not test_waivers:
@@ -634,7 +684,7 @@ def evaluate_effective_delivery_coverage(
     rejected.difference_update(relevant_tests)
     rejected.update(set(actual_tests) - relevant_tests)
     return EffectiveDeliveryCoverage(
-        tuple(result), tuple(sorted(blockers)), tuple(sorted(rejected))
+        tuple(result), tuple(sorted(blockers)), tuple(sorted(rejected)), tuple(scenario_checks)
     )
 
 
@@ -853,3 +903,111 @@ def assess_effective_obligations(snapshot, *, card_id=None, card_type=None):
     return DeliveryAssessment(snapshot.scope, AssessmentCompleteness(population_known, scope_resolved,
         implementation_complete and verification_complete, True, implementation_complete, verification_complete),
         tuple(values), card_id=card_id, card_type=card_type)
+
+
+def _combine_scenario_checks(phases):
+    """Group evaluated joins, preserving exceptions and intrinsic state."""
+    reasons = tuple(reason for phase in phases for reason in phase.reasons)
+    evidence = tuple(identity for phase in phases for identity in phase.evidence_ids)
+    active = tuple(phase for phase in phases if phase.state != UnitState.NOT_APPLICABLE)
+    intrinsic_states = {phase.intrinsic_state for phase in phases}
+    intrinsic = next((state for state in _STATE_PRECEDENCE if state in intrinsic_states), UnitState.MISSING)
+    result = _assessed_phase(satisfied=intrinsic == UnitState.SATISFIED,
+        lifecycle=bool(active) and all(p.lifecycle_satisfied is True for p in active),
+        state=intrinsic, reasons=reasons, evidence_ids=evidence)
+    exceptions = tuple(sorted({identity for p in phases for identity in p.exception_ids}))
+    unused = tuple(sorted({identity for p in phases for identity in p.unused_exception_ids}))
+    if phases and not active:
+        return replace(result, state=UnitState.NOT_APPLICABLE, exception_ids=exceptions, unused_exception_ids=unused)
+    if active and all(p.proof_satisfied is True for p in active):
+        return replace(result, state=UnitState.SATISFIED, intrinsic_state=UnitState.SATISFIED,
+            proof_satisfied=True, exception_ids=exceptions, unused_exception_ids=unused)
+    pending = [phase for phase in active if phase.proof_satisfied is not True]
+    if pending and all(phase.state == UnitState.WAIVED for phase in pending):
+        return replace(result, state=UnitState.WAIVED, exception_ids=exceptions, unused_exception_ids=unused)
+    if result.state == UnitState.MISSING and any(phase.proof_satisfied is True for phase in active):
+        result = replace(result, state=UnitState.PARTIAL, intrinsic_state=UnitState.PARTIAL)
+    return replace(result, exception_ids=exceptions, unused_exception_ids=unused)
+
+
+def assess_effective_scenarios(snapshot, *, card_id, scenario_ids):
+    """Test Card denominator: assigned native scenarios, never obligations/cards.
+
+    Sufficiency comes exclusively from the shared scenario/contribution joins.
+    A passing complement cannot hide a failure and a native passing result
+    without the required delivery associations cannot receive automatic credit.
+    """
+    if not isinstance(card_id, str) or not card_id.strip():
+        raise ValueError('delivery_scenario_assessment_scope_invalid')
+    context = snapshot.effective_context
+    if (not isinstance(context, EffectiveDeliveryContext) or not isinstance(scenario_ids, tuple)
+        or not scenario_ids or len(scenario_ids) > 5000
+        or any(not isinstance(identity, str) or not identity.strip() for identity in scenario_ids)):
+        return DeliveryAssessment(snapshot.scope, AssessmentCompleteness(False, False, False, True), (),
+            reasons=(FactualReason(ReadinessReason.SCOPE_UNAVAILABLE),), card_id=card_id, card_type=CardType.TEST)
+    facts_complete = snapshot.complete if snapshot.facts_complete is None else snapshot.facts_complete
+    proof_snapshot = replace(snapshot, waivers=(), complete=facts_complete)
+    proof = evaluate_effective_facts(proof_snapshot, require_lifecycle=False)
+    lifecycle = evaluate_effective_facts(proof_snapshot, require_lifecycle=True)
+    by_scenario = {}
+    for check in proof.scenario_checks:
+        by_scenario.setdefault(check.scenario_id, []).append(check)
+
+    def check_key(check):
+        return (check.binding, check.contribution_card_id, check.criterion_id, check.scenario_id, check.implementation_id)
+
+    completed = {check_key(check) for check in lifecycle.scenario_checks if check.satisfied}
+    runs = {}
+    native = context.native_verification
+    foreign = False
+    for run in native.runs if native is not None else ():
+        if run.scope != snapshot.scope:
+            foreign = True
+            continue
+        runs.setdefault(run.scenario_id, []).append(run)
+    plans = {}
+    for plan in context.required_scenarios or ():
+        if isinstance(plan, RequiredVerificationScenario):
+            plans.setdefault(plan.scenario_id, []).append(plan)
+    population_known = bool(native and native.complete) and context.inventory.population_complete and not foreign
+    unavailable = tuple(sorted(set(proof.blockers) & (_UNEVALUABLE | _VERIFICATION_UNEVALUABLE)))
+    scope_resolved = True
+    values, top_reasons = [], []
+    for identity in sorted(set(scenario_ids)):
+        current = runs.get(identity, ())
+        digests = {run.scenario_sha256 for run in current if run.scenario_sha256}
+        if len(digests) != 1 or any(not run.scenario_sha256 for run in current):
+            # Never invent a semantic identity for an absent/malformed subject.
+            population_known = scope_resolved = False
+            top_reasons.append(FactualReason(ReadinessReason.SCOPE_UNAVAILABLE, scenario_ids=(identity,)))
+            continue
+        definitions = plans.get(identity, ())
+        plan = definitions[0] if len(definitions) == 1 else None
+        applicable = by_scenario.get(identity, ())
+        phases = []
+        for check in applicable:
+            phase = _assessed_phase(satisfied=check.satisfied, lifecycle=check_key(check) in completed,
+                reasons=check.reasons, evidence_ids=check.test_ids)
+            if unavailable or not facts_complete or foreign:
+                phase = _assessed_phase(state=UnitState.UNKNOWN, reasons=(FactualReason(
+                    ReadinessReason.ASSESSMENT_UNAVAILABLE,
+                    native_reason_codes=unavailable or ('delivery_facts_incomplete',)),))
+            phases.append(apply_delivery_exceptions(phase, scope=snapshot.scope, binding=check.binding,
+                phase=DeliveryPhase.TEST, waivers=snapshot.waivers))
+        assigned = plan is not None and card_id in plan.test_card_ids
+        covered = {check.criterion_id for check in applicable}
+        if not assigned or not applicable or not plan.criterion_ids or set(plan.criterion_ids) - covered:
+            scope_resolved = False
+            phases.append(_assessed_phase(reasons=(FactualReason(
+                ReadinessReason.VERIFICATION_PLAN_MISSING if not assigned else ReadinessReason.SCOPE_ALLOCATION_UNRESOLVED,
+                criterion_ids=tuple(sorted(set(plan.criterion_ids) - covered)) if plan else (),
+                scenario_ids=(identity,)),)))
+        if not phases:
+            phases.append(_assessed_phase(reasons=(FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE),)))
+        verification = _combine_scenario_checks(phases)
+        values.append(ScenarioAssessment(identity, next(iter(digests)), snapshot.scope.edition, card_id, verification))
+    evaluation_complete = all(row.verification.state == UnitState.NOT_APPLICABLE
+        or row.verification.proof_satisfied is not None for row in values)
+    return DeliveryAssessment(snapshot.scope, AssessmentCompleteness(population_known, scope_resolved,
+        evaluation_complete, True, True, evaluation_complete), (), tuple(top_reasons),
+        card_id=card_id, card_type=CardType.TEST, scenarios=tuple(values))
