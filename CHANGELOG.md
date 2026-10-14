@@ -6,6 +6,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- Current delivery readiness through the existing delivery-evidence query:
+  independent implementation/verification counts, canonical obligation and
+  scenario units, deterministic causes, native evidence references and bounded
+  next actions. Metrics and transition gates share factual assessments;
+  lifecycle closure, N/A, risk acceptance and unavailable evidence stay distinct.
+
+### Fixed
+
+- Required complementary verification failures remain visible without Delivery
+  bindings. Specialized reports must observe the delivered canonical source and
+  revision. Both changes to `skip_delivery_evidence` require coverage authority.
+
+### Deprecated
+
+- `delivery_completeness` is the retained legacy maturity projection, not the
+  new verification percentage or a gate. Consumers should use
+  `delivery_readiness` (`delivery-readiness/v1`, `metrics_version=2`). Historical
+  records are unchanged; no evidence migration or rewrite is performed.
+
+### Earlier unreleased changes
+
 - The KG stale reconciler dropped live card rows again: production source
   readers emit `task`/`test`/`bug` artifact types for cards, and the sweep's
   governed-type filter treated them as foreign, classifying every live card as
