@@ -34,7 +34,7 @@ class ReadinessAccessDenied(AuthorizationDenied):
 READINESS_PERMISSION_OPERATIONS = frozenset({
     'code_traceability.evidence.read', 'code_traceability.target.read',
     'code_traceability.investigation.read', 'spec.entity.read', 'spec.tests.read',
-    'card.entity.read', 'agent.entity.read',
+    'card.entity.read', 'agent.entity.read', 'guidelines.assessments.read',
     *(a.permission for a in ACTION_REGISTRY.values() if a.permission),
 })
 
@@ -140,6 +140,7 @@ class ReadinessNativeLifecycle:
     reason_codes: tuple[str, ...]
     other_blocker_count: int | None = None
     blocking_codes: tuple[str, ...] = ()
+    basis_digest: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

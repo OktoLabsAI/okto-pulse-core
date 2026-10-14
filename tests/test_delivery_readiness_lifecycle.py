@@ -1,13 +1,20 @@
 """P06 native gate deficits are same-snapshot diagnostics, not proof deficits."""
 from dataclasses import replace
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
-from okto_pulse.core.domain.enums import SpecStatus
+from okto_pulse.core.domain.enums import CardStatus, SpecStatus
+from okto_pulse.core.domain.guideline_policy import GuidelineEnforcement, PolicyEntityType, PolicySubjectRef
+from okto_pulse.core.domain.guideline_semantic_currentness import NativeSemanticAssessmentCurrentSnapshot
+from okto_pulse.core.domain.guideline_semantic_transition import (
+    PolicyTransitionSnapshot, SemanticBindingComplianceSnapshot, evaluate_policy_transition,
+)
 from okto_pulse.core.models.delivery_readiness import ReadinessReadQuery
 from okto_pulse.core.ports.delivery_readiness import ReadinessReadError
+from okto_pulse.core.ports.guideline_policy import GuidelinePolicySubjectConflict
 from okto_pulse.core.services.delivery_readiness import EvaluatedDeliveryReadiness, PreparedDeliveryReadiness
 from okto_pulse.core.services.delivery_readiness_lifecycle import DeliveryReadinessLifecycleService
 from okto_pulse.core.services.gate_contracts import GateContractError
@@ -31,18 +38,48 @@ def test_native_cognitive_factory_failure_is_typed_unavailability():
     assert isinstance(caught.value.__cause__, RuntimeError)
 
 
+def policy_decision(mode='ready', *, subject_id='ui', digest='a' * 64):
+    bindings = ()
+    if mode != 'ready':
+        current = NativeSemanticAssessmentCurrentSnapshot(
+            subject=PolicySubjectRef(board_id='board', entity_type=PolicyEntityType.CARD,
+                subject_id=subject_id, subject_version=1), subject_content_digest=digest,
+            guideline_id='private-guideline', guideline_revision_id='private-revision',
+            guideline_revision_digest=digest, binding_id='private-binding', binding_revision=1,
+            binding_configuration_digest=digest)
+        bindings = (SemanticBindingComplianceSnapshot(binding_id='private-binding',
+            guideline_id='private-guideline', enforcement=GuidelineEnforcement.BLOCKING,
+            applicable_metric_count=1, current_snapshot=current, assessment_available=mode != 'unavailable',
+            assessment_error_code='source_unavailable' if mode == 'unavailable' else None),)
+    return evaluate_policy_transition(PolicyTransitionSnapshot(board_id='board',
+        entity_type=PolicyEntityType.CARD, subject_id=subject_id, expected_from_status='in_progress',
+        bindings=bindings, evaluated_at=datetime(2026, 10, 14, tzinfo=timezone.utc)), 'done')
+
+
 def environment(error=None):
     batch = prepared(snapshot())
     batch = replace(batch, access=replace(batch.access, completion_states=frozenset({('spec', 'in_progress')})))
     spec = SimpleNamespace(id='spec', board_id='board', edition=2, version=1, status=SpecStatus.IN_PROGRESS)
     checks = AsyncMock(side_effect=error)
     services = SimpleNamespace(specs=SimpleNamespace(get_spec=AsyncMock(return_value=spec),
-        validate_completion_gates=checks), boards=SimpleNamespace(get_board=AsyncMock(return_value=object())))
+        validate_completion_gates=checks), boards=SimpleNamespace(get_board=AsyncMock(return_value=object())),
+        guidelines=SimpleNamespace(preview_policy_transition=AsyncMock(return_value=policy_decision()),
+            enforce_policy_transition=AsyncMock()))
     async def get(_context, *, entity, record_id):
+        if entity == 'card':
+            return services.card_subject
         return services.specs.get_spec.return_value if entity == 'spec' else services.boards.get_board.return_value
     services.persistence = SimpleNamespace(get=AsyncMock(side_effect=get))
     return batch, services, DeliveryReadinessLifecycleService(services,
         persistence=services.persistence, context=object())
+
+
+def card_environment():
+    batch, services, evaluator = environment()
+    batch = replace(batch, access=replace(batch.access, completion_states=frozenset({('card', 'in_progress')})))
+    services.card_subject = SimpleNamespace(id='ui', spec_id='spec', board_id='board',
+        policy_version=1, status=CardStatus.IN_PROGRESS)
+    return batch, services, evaluator
 
 
 @pytest.mark.asyncio
@@ -108,6 +145,86 @@ async def test_successful_subset_does_not_advertise_final_transition_authority()
     services.specs.validate_completion_gates.assert_awaited_once()
     assert native.check_status == 'not_evaluated' and native.blocking_codes == ()
     assert native.reason_codes == ('native_transition_context_required',)
+    assert native.basis_digest is None
+    services.guidelines.preview_policy_transition.assert_not_awaited()
+    services.guidelines.enforce_policy_transition.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('details', [False, True])
+@pytest.mark.parametrize('mode', ['missing', 'unavailable', 'persistence'])
+async def test_native_policy_preview_preserves_proof_and_its_detail_authorization(mode, details):
+    batch, services, evaluator = card_environment()
+    operations = batch.access.allowed_operations - {'guidelines.assessments.read'}
+    if details:
+        operations |= {'guidelines.assessments.read'}
+    batch = replace(batch, access=replace(batch.access, allowed_operations=frozenset(operations)))
+    if mode == 'persistence':
+        services.guidelines.preview_policy_transition.side_effect = GuidelinePolicySubjectConflict('Private source error')
+    else:
+        services.guidelines.preview_policy_transition.return_value = policy_decision(mode)
+    native = await evaluator.evaluate(batch, card_id='ui')
+    services.guidelines.preview_policy_transition.assert_awaited_once_with(board_id='board',
+        entity_type='card', subject_id='ui', from_status='in_progress', to_status='done')
+    services.guidelines.enforce_policy_transition.assert_not_awaited()
+    expected = ('policy_compliance_receipt_missing' if details else 'policy_compliance_blocked') if mode == 'missing' else (
+        'policy_assessment_unavailable' if details else 'native_completion_infrastructure_unavailable')
+    assert native.reason_codes == (expected,)
+    assert native.check_status == ('blocked' if mode == 'missing' else 'not_evaluated')
+    assert native.blocking_codes == ((expected,) if mode == 'missing' else ())
+    reader = EvaluatedDeliveryReadiness(replace(batch, native_lifecycle=native), actor_id='reader')
+    context = reader.context('ui')
+    assert context.implementation.percent == context.verification.percent == 100
+    assert context.delivery_gate.status == 'allowed'
+    assert context.lifecycle.qualification_is_current is (False if mode == 'missing' else None)
+    page = PreparedDeliveryReadiness(context, reader.diagnostics('ui'), cursor=Cursor()).page(
+        ReadinessReadQuery(board_id='board', spec_id='spec', card_id='ui'), actor_id='reader')
+    assert 'private-' not in page.model_dump_json()
+    if mode == 'missing':
+        issue = next(i for i in page.issues if i.code == 'lifecycle_gate_pending')
+        assert issue.score_impact == 'none' and not issue.blocks_proof
+        assert issue.blocks_target_transition
+
+
+@pytest.mark.asyncio
+async def test_native_policy_basis_changes_even_when_result_codes_do_not():
+    batch, services, evaluator = card_environment()
+    services.guidelines.preview_policy_transition.return_value = policy_decision('missing')
+    before = await evaluator.evaluate(batch, card_id='ui')
+    services.guidelines.preview_policy_transition.return_value = policy_decision('missing', digest='b' * 64)
+    after = await evaluator.evaluate(batch, card_id='ui')
+    assert before.reason_codes == after.reason_codes
+    assert before.basis_digest != after.basis_digest
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('invalid', [None, 'foreign', 'untyped'])
+async def test_missing_or_foreign_policy_preview_never_grants_permission(invalid):
+    batch, services, evaluator = card_environment()
+    services.guidelines.preview_policy_transition.return_value = (
+        policy_decision(subject_id='foreign') if invalid == 'foreign' else invalid)
+    with pytest.raises(ReadinessReadError):
+        await evaluator.evaluate(batch, card_id='ui')
+
+
+@pytest.mark.asyncio
+async def test_card_policy_success_still_requires_native_report_and_other_inputs():
+    batch, services, evaluator = card_environment()
+    native = await evaluator.evaluate(batch, card_id='ui')
+    assert native.check_status == 'not_evaluated'
+    assert native.reason_codes == ('native_completion_report_required',)
+    assert native.basis_digest == services.guidelines.preview_policy_transition.return_value.observation_digest
+    services.specs.validate_completion_gates.assert_not_awaited()
+    services.guidelines.enforce_policy_transition.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_card_version_is_checked_before_policy_preview():
+    batch, services, evaluator = card_environment()
+    services.card_subject.policy_version = 2
+    with pytest.raises(ReadinessReadError, match='readiness_snapshot_changed'):
+        await evaluator.evaluate(batch, card_id='ui')
+    services.guidelines.preview_policy_transition.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -486,6 +486,19 @@ def test_threshold_failure_blocks_but_exact_current_waiver_unblocks() -> None:
     assert ready.blocking_metric_count == 0
 
 
+def test_observation_identity_excludes_clock_but_preserves_expiration_and_native_fence() -> None:
+    failed = _binding_snapshot(score=60)
+    waived = replace(failed, waivers=(_approved_waiver(failed),))
+    before = _transition_snapshot((waived,))
+    later = replace(before, evaluated_at=before.evaluated_at + timedelta(seconds=1))
+    expired = replace(before, evaluated_at=NOW + timedelta(days=2))
+    assert before.fence_digest != later.fence_digest
+    assert before.observation_digest == later.observation_digest
+    assert before.observation_digest != expired.observation_digest
+    assert evaluate_policy_transition(before, 'validated').allowed
+    assert not evaluate_policy_transition(expired, 'validated').allowed
+
+
 def test_human_skip_unblocks_only_its_exact_current_binding() -> None:
     failed = _binding_snapshot(score=60)
     skipped = replace(failed, skip=_human_skip(failed))

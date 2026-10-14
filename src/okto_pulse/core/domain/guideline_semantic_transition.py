@@ -1065,6 +1065,7 @@ class PolicyTransitionSnapshot:
     advisory_issue_count: int = field(init=False)
     skipped_binding_count: int = field(init=False)
     fence_digest: str = field(init=False)
+    observation_digest: str = field(init=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -1168,27 +1169,22 @@ class PolicyTransitionSnapshot:
         }
         for field_name, value in count_fields.items():
             object.__setattr__(self, field_name, value)
-        object.__setattr__(
-            self,
-            "fence_digest",
-            canonical_sha256(
-                {
-                    "contract": POLICY_TRANSITION_CONTRACT_VERSION,
-                    "board_id": self.board_id,
-                    "entity_type": self.entity_type.value,
-                    "subject_id": self.subject_id,
-                    "expected_from_status": self.expected_from_status,
-                    "subject_available": self.subject_available,
-                    "evaluated_at": evaluated_at.isoformat(),
-                    "bindings": [
-                        _binding_snapshot_payload(item) for item in bindings
-                    ],
-                    "binding_decisions": [
-                        item.to_payload() for item in decisions
-                    ],
-                }
-            ),
-        )
+        fence_payload = {
+            "contract": POLICY_TRANSITION_CONTRACT_VERSION,
+            "board_id": self.board_id,
+            "entity_type": self.entity_type.value,
+            "subject_id": self.subject_id,
+            "expected_from_status": self.expected_from_status,
+            "subject_available": self.subject_available,
+            "evaluated_at": evaluated_at.isoformat(),
+            "bindings": [_binding_snapshot_payload(item) for item in bindings],
+            "binding_decisions": [item.to_payload() for item in decisions],
+        }
+        object.__setattr__(self, "fence_digest", canonical_sha256(fence_payload))
+        # Read pagination compares facts and time-dependent outcomes, not the
+        # wall-clock tick. The original time-bound mutation fence is unchanged.
+        object.__setattr__(self, "observation_digest", canonical_sha256(
+            {key: value for key, value in fence_payload.items() if key != "evaluated_at"}))
 
 
 @dataclass(frozen=True, slots=True)
@@ -1215,6 +1211,7 @@ class PolicyTransitionDecision:
     skipped_binding_count: int
     fence_digest: str
     decision_digest: str = field(init=False)
+    observation_digest: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.entity_type, PolicyEntityType):
@@ -1514,6 +1511,9 @@ class PolicyTransitionDecision:
                 "policy_transition_decision_fence_digest_invalid",
             ),
         )
+        if self.observation_digest is not None:
+            object.__setattr__(self, "observation_digest", _sha256(
+                self.observation_digest, "policy_transition_observation_digest_invalid"))
         object.__setattr__(
             self,
             "decision_digest",
@@ -1665,6 +1665,7 @@ def _decision(
         advisory_issue_count=snapshot.advisory_issue_count,
         skipped_binding_count=snapshot.skipped_binding_count,
         fence_digest=snapshot.fence_digest,
+        observation_digest=snapshot.observation_digest,
     )
 
 
