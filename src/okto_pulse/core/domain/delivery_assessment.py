@@ -6,6 +6,7 @@ proof predicates; these values describe their result, not a second proof engine.
 
 from dataclasses import dataclass, replace
 from enum import StrEnum
+from typing import Literal
 
 from okto_pulse.core.domain.delivery_evidence import (
     DeliveryBinding, DeliveryScope, DeliveryWaiverFact, DeliveryPhase, delivery_waiver_current,
@@ -312,3 +313,69 @@ def assess_test_delivery(snapshot, *, card_id: str, scenario_ids: tuple[str, ...
     """Evaluate native Card assignments; caller supplies the authorized Card's IDs."""
     from okto_pulse.core.domain.effective_delivery_coverage import assess_effective_scenarios
     return assess_effective_scenarios(snapshot, card_id=card_id, scenario_ids=scenario_ids)
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryGateBlocker:
+    phase: ReadinessPhase
+    binding: DeliveryBinding | None
+    reasons: tuple[FactualReason, ...]
+    unknown: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryGateAssessment:
+    status: Literal['allowed', 'blocked', 'unknown']
+    mode: Literal['blocking', 'advisory']
+    exception_refs: tuple[str, ...]
+    blockers: tuple[DeliveryGateBlocker, ...]
+
+    @property
+    def allowed(self):
+        return self.status == 'allowed'
+
+
+def assess_delivery_gate(assessment: DeliveryAssessment, *, mode='blocking', spec_override=False) -> DeliveryGateAssessment:
+    """Native delivery gate policy over assessed facts, never score thresholds.
+
+    Normal/bug completion owns implementation only. Spec completion additionally
+    owns verification and the evidence's native Card lifecycle. Test completion
+    has no gate in this seam; its existing execution/transition gates apply.
+    Advisory and the Spec-only override retain deficits without changing facts.
+    This verdict conveys neither actor authority nor other lifecycle gates.
+    """
+    if mode not in {'blocking', 'advisory'}:
+        raise ValueError('delivery_evidence_policy_invalid')
+    if assessment.card_type == CardType.TEST:
+        return DeliveryGateAssessment('allowed', mode, (), ())
+    is_spec = assessment.card_id is None
+    phases = (ReadinessPhase.IMPLEMENTATION, ReadinessPhase.VERIFICATION) if is_spec else (ReadinessPhase.IMPLEMENTATION,)
+    blockers, exceptions = [], set()
+    if not assessment.completeness.population_known or not assessment.obligations:
+        blockers.append(DeliveryGateBlocker(ReadinessPhase.IMPLEMENTATION, None,
+            assessment.reasons or (FactualReason(ReadinessReason.SCOPE_UNAVAILABLE),), True))
+    elif not assessment.completeness.scope_resolved:
+        blockers.append(DeliveryGateBlocker(ReadinessPhase.IMPLEMENTATION, None,
+            assessment.reasons or (FactualReason(ReadinessReason.SCOPE_ALLOCATION_UNRESOLVED),)))
+    for row in assessment.obligations:
+        for phase in phases:
+            value = row.implementation if phase == ReadinessPhase.IMPLEMENTATION else row.verification
+            if value.state == UnitState.NOT_APPLICABLE:
+                continue
+            if value.state == UnitState.WAIVED and value.proof_satisfied is not None:
+                exceptions.update(value.exception_ids)
+                continue
+            if value.proof_satisfied is not True:
+                blockers.append(DeliveryGateBlocker(phase, row.binding, value.reasons or
+                    (FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE),), value.proof_satisfied is None))
+            elif is_spec and value.lifecycle_satisfied is not True:
+                blockers.append(DeliveryGateBlocker(ReadinessPhase.LIFECYCLE, row.binding,
+                    (FactualReason(ReadinessReason.LIFECYCLE_CARD_OPEN,
+                        bindings=(row.binding,)),), value.lifecycle_satisfied is None))
+    if blockers and mode == 'advisory':
+        exceptions.add(f'board:{assessment.scope.board_id}:delivery_evidence_gate:advisory')
+    elif blockers and is_spec and spec_override:
+        exceptions.add(f'spec:{assessment.scope.spec_id}:skip_delivery_evidence')
+    bypass = mode == 'advisory' or is_spec and spec_override
+    status = 'allowed' if not blockers or bypass else 'unknown' if any(b.unknown for b in blockers) else 'blocked'
+    return DeliveryGateAssessment(status, mode, tuple(sorted(exceptions)), tuple(blockers))

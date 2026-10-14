@@ -553,6 +553,7 @@ def _spec_update_permission_requirements(spec, data: SpecUpdate) -> set[str]:
         "skip_ir_coverage",
         "skip_or_coverage",
         "skip_code_evidence_coverage",
+        "skip_delivery_evidence",
     } & fields_set:
         required.add("spec.entity.edit_coverage_flags")
 

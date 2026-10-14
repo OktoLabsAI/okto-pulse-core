@@ -5,13 +5,21 @@ from collections.abc import Mapping
 from okto_pulse.core.domain.delivery_evidence import (
     CardDeliveryScope,
     DeliveryScope,
-    evaluate_delivery_coverage,
-    implementation_binding_ready,
 )
+from okto_pulse.core.domain.delivery_assessment import assess_delivery_gate, assess_obligation_delivery
 from okto_pulse.core.ports.relational_application import (
     require_relational_application_adapter,
 )
-from okto_pulse.core.domain.effective_delivery_coverage import implementation_scope_current
+
+class DeliveryGateBlocked(ValueError):
+    """Typed assessed deficits retained for native error envelopes/diagnostics."""
+    def __init__(self, assessment, gate):
+        self.assessment, self.gate = assessment, gate
+        codes = sorted({code for blocker in gate.blockers for reason in blocker.reasons
+            for code in (reason.native_reason_codes or (reason.code,))})
+        missing = sorted({b.binding.obligation_ref for b in gate.blockers if b.binding})
+        super().__init__('delivery_evidence_incomplete: ' + ', '.join(codes)
+            + '; obligations=' + ', '.join(missing[:20]))
 
 def delivery_store(session: object):
     factory = getattr(
@@ -59,19 +67,10 @@ async def require_spec_delivery(
     if for_update:
         await store.lock_scope(scope)
     snapshot = await store.load_snapshot(scope)
-    result = evaluate_delivery_coverage(snapshot)
+    assessment = assess_obligation_delivery(snapshot)
+    result = assess_delivery_gate(assessment)
     if not result.allowed:
-        missing = [
-            row.obligation.binding.obligation_ref
-            for row in result.rows
-            if not row.implementation_satisfied or not row.test_satisfied
-        ]
-        raise ValueError(
-            "delivery_evidence_incomplete: "
-            + ", ".join(result.blockers)
-            + "; obligations="
-            + ", ".join(missing[:20])
-        )
+        raise DeliveryGateBlocked(assessment, result)
 
 
 def resolve_delivery_gate_mode(board: object | None) -> str:
@@ -106,12 +105,9 @@ async def require_card_delivery(
     (BR-5), and test cards are never gated by this seam. ``advisory`` mode
     never raises: the verdict stays visible through the card snapshot.
 
-    ``evaluate_delivery_coverage`` only credits implementation facts whose
-    card is already DONE — a status the completing card cannot have while
-    this gate runs (AC ac_c41b1fa3: record proof, then move). The gate
-    therefore accepts chain-valid proof (``current_accepted_execution``)
-    with an explicit complete contribution bound to
-    the obligation. The same completion predicate applies at the spec rollup.
+    The shared factual assessment accepts current complete implementation
+    before DONE. Verification and lifecycle retain their own typed phases;
+    neither is reclassified through a list of exception strings here.
     """
     if resolve_delivery_gate_mode(board) != "blocking":
         return
@@ -129,40 +125,7 @@ async def require_card_delivery(
     snapshot = await store.load_card_snapshot(scope, **(
         {"prospective_report": prospective_report} if prospective_report is not None else {}
     ))
-    if snapshot.complete is not True or not snapshot.obligations:
-        raise ValueError(
-            "delivery_evidence_incomplete: delivery_projection_incomplete"
-        )
-    evaluation = evaluate_delivery_coverage(snapshot)
-    # Only phase incompleteness has a Card-specific interpretation below.
-    # Structural unknowns may intentionally return no rows; they must never
-    # become vacuous success when the gate collects missing implementations.
-    structural_blockers = set(evaluation.blockers) - {
-        "delivery_implementation_missing", "delivery_test_result_missing",
-        "delivery_verification_scenario_population_unavailable",
-        "delivery_verification_run_conflict",
-        "delivery_verification_run_population_unavailable",
-    }
-    if structural_blockers:
-        raise ValueError(
-            "delivery_evidence_incomplete: " + ", ".join(sorted(structural_blockers))
-        )
-    # The card DoD covers the implementation phase only — the evaluator's
-    # test-phase blockers (delivery_test_result_missing) are rollup concerns
-    # (BR-5). Evaluator-valid proof always satisfies; beyond that, chain-valid
-    # proof (accepted committed execution) with an explicit complete contribution satisfies
-    # the DoD even before the DONE status lands (see docstring).
-    missing = [
-        row.obligation.binding.obligation_ref
-        for row in evaluation.rows
-        if not row.implementation_satisfied
-        and not any(
-            implementation_binding_ready(fact, row.obligation.binding)
-            and implementation_scope_current(snapshot, fact, row.obligation.binding)
-            for fact in snapshot.implementations
-        )
-    ]
-    if missing:
-        raise ValueError(
-            "delivery_evidence_incomplete: obligations=" + ", ".join(missing[:20])
-        )
+    assessment = assess_obligation_delivery(snapshot, card_id=card.id, card_type=card_type)
+    result = assess_delivery_gate(assessment)
+    if not result.allowed:
+        raise DeliveryGateBlocked(assessment, result)

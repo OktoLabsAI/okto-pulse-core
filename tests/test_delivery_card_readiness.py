@@ -34,7 +34,7 @@ async def test_current_complete_implementation_can_finish_before_done_or_passing
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mutation", ["resolution_limit", "ambiguous_identity", "missing_context", "unknown_method_registry"])
+@pytest.mark.parametrize("mutation", ["resolution_limit", "ambiguous_identity", "missing_context"])
 async def test_structural_unknown_cannot_be_mistaken_for_no_missing_obligations(monkeypatch, mutation):
     snapshot = ready_snapshot()
     context = snapshot.effective_context
@@ -47,10 +47,15 @@ async def test_structural_unknown_cannot_be_mistaken_for_no_missing_obligations(
                            effective_context=replace(context, implementations=context.implementations * 2))
     elif mutation == "missing_context":
         snapshot = replace(snapshot, effective_context=False)
-    else:
-        snapshot = replace(snapshot, effective_context=replace(context, admitted_methods=None))
     with pytest.raises(ValueError, match="delivery_evidence_incomplete"):
         await require(snapshot, monkeypatch)
+
+
+@pytest.mark.asyncio
+async def test_unavailable_verification_registry_does_not_block_ready_implementation(monkeypatch):
+    snapshot = ready_snapshot()
+    snapshot = replace(snapshot, effective_context=replace(snapshot.effective_context, admitted_methods=None))
+    await require(snapshot, monkeypatch)
 
 
 @pytest.mark.asyncio
