@@ -2,6 +2,44 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — checkpoint anterior à revisão do planejamento: U2 não qualificado
+
+Pedido vigente: planejamento detalhado, sem iniciar novas alterações de produto.
+Foram conferidos e preservados os diffs já existentes sobre Core `a626dcfa` /
+Community `16b8edef`. Community do checkpoint: `a0c247bd`.
+Core preserva a correção de leitura de Code Evidence: o skip de cobertura não
+oculta indisponibilidade/incompletude da projeção nativa. Inclui nove combinações
+de skip/projeção e dois casos de leitura negada. Community preserva a atualização
+dos testes de transporte de Checklist para a conclusão composta e o teste visual
+de Code Evidence indisponível. Nenhuma nova implementação foi feita neste turno.
+
+Artefatos anteriores conferidos em
+`PULSE_REFACTOR/.validation-v040/spec-unified-20261014/`:
+
+- `u2-contract-regressions.xml`: 390 testes, zero falhas/erros.
+- `u2-checklist-native.xml`: 56 testes, zero falhas/erros.
+- `u2-native-validation-regressions.xml`: 89 testes, **61 falhas**, zero erros;
+  execução encerrada. Não há job pendente a aguardar neste ensaio.
+
+Das 61 falhas, 56 apresentam `decision_verification_population_unavailable`
+diretamente ou no desencontro da mensagem esperada; duas recebem razão genérica
+antes do cenário pretendido; três são expectativas de transporte anteriores ao
+contrato composto. Essa classificação orienta investigação, não prova que todas
+sejam defeitos de fixture. Não substituir população desconhecida por lista vazia
+nem dispensar gate para fazer a suíte passar. Primeiro reproduzir o seed completo
+e o writer público e verificar os campos autoritativos.
+
+Não foram executados novos testes de comportamento nesta revisão. O registro
+de 16 passes frontend do trabalho anterior não foi reexecutado aqui. `git diff
+--check` passou nos dois repositórios. Closure, wheels, instalação e E2E finais
+continuam pendentes; este é um checkpoint de trabalho, não uma release qualificada.
+Snapshots temporários do Playwright ficam fora dos commits de produto.
+
+Retomada: reconciliar as falhas nativas antes de fechar U2, completar os
+consumidores U3 e executar U4 conforme o plano único. Preservar U1 e as provas
+parciais; não repetir a implementação nem declarar UV completos por contagem
+agregada de testes. Home/processo do usuário não foram alterados neste turno.
+
 ### 2026-10-14 — U2: paridade de cobertura e autoridade do resultado de qualidade
 
 Retomada da implementação sobre Core `49520a4b` / Community `93769ff1`.

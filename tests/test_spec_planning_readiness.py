@@ -233,3 +233,71 @@ async def test_coverage_hides_native_diagnostics_without_component_read(field, p
     component = by_key(await read_spec_planning_readiness(**inputs))[key]
     reader.assert_not_awaited()
     assert component.state == "unavailable" and component.message is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("skip", ["none", "spec", "board"])
+@pytest.mark.parametrize("projection", ["complete", "unavailable", "incomplete"])
+async def test_code_evidence_summary_preserves_native_integrity_even_with_skip(monkeypatch, skip, projection):
+    from okto_pulse.core.domain.code_traceability import (
+        CodeTraceabilityContext, CodeTraceabilityContractError, CodeTraceabilitySubjectType,
+        CodeTraceabilityProjectionProfile, CodeTraceabilityContextScope, CodeTraceabilityOmittedContent,
+        CODE_TRACEABILITY_CONTEXT_COLLECTION_LIMITS,
+    )
+    from okto_pulse.core.ports import relational_application
+    from okto_pulse.core.ports.relational_application import RelationalApplicationAdapterMissing
+    from okto_pulse.core.services.main import CardService
+
+    inputs = rig()
+    inputs["spec"].version = 1
+    inputs["spec"].skip_code_evidence_coverage = skip == "spec"
+    inputs["board"].settings["skip_code_evidence_coverage_global"] = skip == "board"
+    context = CodeTraceabilityContext(
+        board_id="board", subject_id="spec", subject_version=1,
+        subject_type=CodeTraceabilitySubjectType.SPEC,
+        profile=CodeTraceabilityProjectionProfile.FULL, context_scope=CodeTraceabilityContextScope.GATE,
+        omitted_content_manifest=() if projection != "incomplete" else (
+            CodeTraceabilityOmittedContent(collection="evidence", included_count=0,
+                hard_limit=CODE_TRACEABILITY_CONTEXT_COLLECTION_LIMITS["evidence"]),
+        ),
+    )
+    read_port = NS(
+        spec_context=AsyncMock(return_value=context),
+        refinement_context=AsyncMock(side_effect=AssertionError("Unexpected Refinement read")),
+        card_context=AsyncMock(side_effect=AssertionError("Unexpected Card read")),
+    )
+
+    def adapter():
+        if projection == "unavailable":
+            raise RelationalApplicationAdapterMissing("Private storage diagnostic")
+        return NS(code_traceability_read=lambda _: read_port)
+
+    monkeypatch.setattr(relational_application, "require_relational_application_adapter", adapter)
+    native_check = AsyncMock(wraps=CardService(object()).check_code_evidence_coverage)
+    inputs["cards"].check_code_evidence_coverage = native_check
+    summary = await read_spec_planning_readiness(**inputs)
+    component = by_key(summary)["code_evidence"]
+    native_check.assert_awaited_once()
+    if projection == "complete":
+        assert component.state == "ready"
+        assert component.mode == ("blocking" if skip == "none" else "off")
+        assert component.native_result == ("passed" if skip == "none" else "off")
+        await require_planning_coverage(inputs["cards"], inputs["spec"], inputs["board"], quality_enabled=True)
+    else:
+        assert component.state == "unavailable"
+        assert component.native_result is None and component.next_action is None
+        assert "Private storage" not in str(summary.to_dict())
+        with pytest.raises(CodeTraceabilityContractError):
+            await require_planning_coverage(inputs["cards"], inputs["spec"], inputs["board"], quality_enabled=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("permission", ["code_traceability.evidence.read", "code_traceability.investigation.read"])
+async def test_code_evidence_skip_does_not_disclose_projection_without_read_permission(permission):
+    inputs = rig()
+    inputs["spec"].skip_code_evidence_coverage = True
+    inputs["can_read"] = lambda leaf: leaf != permission
+    component = by_key(await read_spec_planning_readiness(**inputs))["code_evidence"]
+    inputs["cards"].check_code_evidence_coverage.assert_not_awaited()
+    assert component.state == "unavailable"
+    assert component.native_result is None and component.message is None

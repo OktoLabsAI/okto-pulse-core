@@ -6,6 +6,7 @@ from okto_pulse.core.domain.spec_planning_readiness import (
 )
 from okto_pulse.core.domain.spec_evaluation import spec_evaluation_is_current
 from okto_pulse.core.domain.spec_validation import require_spec_validation_edition
+from okto_pulse.core.domain.code_traceability import CodeTraceabilityContractError
 
 
 # Shared enumeration for the authoritative coverage writers and this projection.
@@ -81,10 +82,13 @@ async def read_spec_planning_readiness(
                 key, "ready", "blocking", True, native_result="passed",
             ))
         except ValueError as exc:
-            if key in {"spec_validation", "decomposition", "policy_compliance", "curated_checklist"}:
+            projection_unavailable = isinstance(exc, CodeTraceabilityContractError) and exc.code in {
+                "code_investigation_currentness_unknown", "code_traceability_projection_incomplete",
+            }
+            if projection_unavailable or key in {"spec_validation", "decomposition", "policy_compliance", "curated_checklist"}:
                 results[key] = SpecPlanningComponent(
                     key, "unavailable", None, None,
-                    reason_codes=(key + "_authority_invalid",),
+                    reason_codes=(exc.code if projection_unavailable else key + "_authority_invalid",),
                 )
                 return
             results[key] = SpecPlanningComponent(
@@ -184,6 +188,16 @@ async def read_spec_planning_readiness(
         )
 
     await observe("policy_compliance", "guidelines.assessments.read", policy, interpret=interpret_policy)
+
+    def interpret_code_evidence(evaluation):
+        # The native predicate checks projection integrity even when the human
+        # coverage skip applies. Only its successful result may report Off.
+        skipped = getattr(evaluation, "evidence_coverage_skipped", False) is True
+        return SpecPlanningComponent(
+            "code_evidence", "ready", "off" if skipped else "blocking", True,
+            native_result="off" if skipped else "passed",
+        )
+
     for key, method, skip, field in PLANNING_COVERAGE_CHECKS:
         enabled = not (skip and (getattr(spec, skip, False) or settings.get(skip + "_global", False)))
         if key == "acceptance_coverage":
@@ -191,8 +205,9 @@ async def read_spec_planning_readiness(
         await observe(
             key, ("spec.entity.read", *_COVERAGE_READ_PERMISSIONS[key]),
             lambda method=method: getattr(cards, method)(spec, board),
-            enabled=enabled, applicable=bool(getattr(spec, field, None)) if field else True,
+            enabled=enabled or key == "code_evidence", applicable=bool(getattr(spec, field, None)) if field else True,
             next_action=action("spec.entity.edit_fields", "review_planning_content"),
+            interpret=interpret_code_evidence if key == "code_evidence" else None,
         )
     await observe(
         "architecture", ("spec.entity.read", "spec.architecture.read"),
