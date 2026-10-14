@@ -807,20 +807,9 @@ class ListAllowedTransitionsUseCase:
 
         if target_status in {"validated", "in_progress"}:
             card_service = services.cards
-            checks = (
-                card_service.check_test_coverage,
-                card_service.check_rules_coverage,
-                card_service.check_trs_coverage,
-                card_service.check_contract_coverage,
-                card_service.check_ir_coverage,
-                card_service.check_or_coverage,
-                card_service.check_task_requirement_links_for_spec,
-            )
+            from okto_pulse.core.services.spec_planning_readiness import require_planning_coverage
             try:
-                for check in checks:
-                    await check(spec, board)
-                await card_service.check_decisions_coverage(spec, board)
-                await card_service.check_code_evidence_coverage(spec, board)
+                await require_planning_coverage(card_service, spec, board, quality_enabled=False)
             except ValueError as exc:
                 return self._exception_reason(exc)
 

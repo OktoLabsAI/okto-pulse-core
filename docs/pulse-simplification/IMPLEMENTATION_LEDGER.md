@@ -2,6 +2,54 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — checkpoint da leitura integrada antes da revisão do plano
+
+Base: Core 405487c3 / Community f3761e0b, feature/v0.4.0. O pedido atual é
+planejamento detalhado. As alterações de produto já presentes no checkout
+foram preservadas e qualificadas para checkpoint; não foi iniciada outra
+feature. U2 permanece parcial e U3/U4 continuam pendentes.
+Community pareado deste checkpoint: 31c82a4c; este registro acompanha o Core.
+
+O incremento acrescenta projeção explícita de planning_readiness ao ciclo da
+Spec, com 17 componentes, resultados/IDs nativos, aplicabilidade, modo, razões
+e ações permitidas. ready/blocked/unavailable não é score nem autorização de
+lifecycle. Um bloqueio impede promoção, sem transformar parecer negativo válido
+em erro técnico. Componentes protegidos não expõem resultados sem leitura.
+REST/MCP aceitam include_planning; o cliente o solicita explicitamente. Essa
+consulta executa gates e não será usada como polling leve.
+
+Os predicados de cobertura passam a compartilhar uma enumeração entre writers,
+prévia de transição e projeção. A aplicabilidade anterior é preservada: AC,
+lint e recursos exigidos pela validação de qualidade não viram exigências novas
+na transição direta quando essa avaliação está desligada. Checklist, policy,
+arquitetura e decomposição mantêm os julgamentos nativos. O reader compõe os
+serviços sobre a mesma sessão/snapshot, em escopo próprio de runtime.
+
+Evidências existentes conferidas: u2-readiness-core.xml, 121 passes; e
+u2-readiness-community.xml, 54 passes, ambos sem falhas/erros. Reexecução do
+checkpoint: 16 passes de readiness/MCP em u2-readiness-checkpoint.xml; 27 testes
+frontend em API client/SpecChecklistPanel; tsc -b e Ruff F/E9 aprovados.
+Python executado com as duas src explícitas. Artefatos ficam em
+.validation-v040/spec-unified-20261014. Esses resultados não comprovam o fluxo
+instalado nem encerram os critérios UV01–UV24.
+
+Retomada: qualificar paridade completa resumo/writers, modos de policy e
+falhas de autoridade; provar ausência de efeitos de escrita/restauração de
+contexto na leitura; concluir metadados leves, workspace/sincronização U3 e
+ensaio U4. O fixture MCP isola a aceitação de lint e não demonstra uma conclusão
+positiva real de todos os gates. Home, instalação e processo não foram alterados.
+Auditoria oficial do checkpoint REPROVADA: o import de current_runtime_values e
+runtime_value_scope em community/adapters/sqlalchemy_validation_cycle.py foi
+classificado como ungoverned_private_reach_in. O relatório acusa cinco itens de
+proveniência, uma violação de import e community_adapter_bridges=4 (limite ZERO).
+Não houve regeneração dos READMEs nem alteração de budgets. Os testes funcionais
+verdes não encerram essa regressão arquitetural. Primeiro trabalho de retomada:
+compor a leitura pela capacidade pública adequada, mantendo o snapshot e a
+ausência de efeitos, e executar novamente closure antes de considerar U2 apto.
+O commit deste estado é checkpoint parcial solicitado, não milestone aprovado.
+Este checkpoint será seguido pela atualização do plano único, com a mesma
+matriz de aceite e sem ampliar o escopo.
+
 ### 2026-10-14 — U2: manifesto obrigatório na conclusão e leitura MCP
 
 Base: Core 8d71c5f6 / Community d3937da9. Este incremento continua U2;

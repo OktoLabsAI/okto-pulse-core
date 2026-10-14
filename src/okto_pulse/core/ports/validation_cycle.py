@@ -59,6 +59,7 @@ class ValidationCycleReadPort(Protocol):
         actor_id: str,
         realm_scope: RealmScope,
         board_id: str | None = None,
+        include_planning: bool = False,
     ) -> ValidationCycleSummary: ...
 
     async def get_validation_cycles(

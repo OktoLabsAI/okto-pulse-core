@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 from okto_pulse.core.application.scope import QueryScope
 from okto_pulse.core.domain.spec_content_lock import SpecLockedError as SpecLockedError
+from okto_pulse.core.services.spec_planning_readiness import require_planning_coverage
 from okto_pulse.core.domain.spec_evaluation import (
     SpecEvaluationInput, evaluate_spec_decomposition,
     previous_spec_evaluations, project_spec_evaluation,
@@ -11373,7 +11374,7 @@ class SpecService:
                 stale_reasons=stale_reasons,
             )
 
-    async def _enforce_spec_requirement_lint_gate(self, spec: Spec) -> None:
+    async def _enforce_spec_requirement_lint_gate(self, spec: Spec):
         """Require accepted external lint evidence for this lifecycle edition."""
 
         from okto_pulse.core.domain.quality_assessment import (
@@ -11399,6 +11400,39 @@ class SpecService:
                 "Requirement Lint is required for the current Spec edition.",
                 details={"spec_edition": int(spec.edition)},
             )
+        return current
+
+    async def require_planning_lint(self, spec):
+        """Expose the same edition-bound prerequisite used by conclusion."""
+        return await self._enforce_spec_requirement_lint_gate(spec)
+
+    async def get_planning_readiness(self, spec, board, *, can_read, can_act):
+        """Read native planning judgments; caller owns scope and snapshot."""
+        from okto_pulse.core.ports.relational_application import require_relational_application_adapter
+        from okto_pulse.core.services.checklist import ChecklistService
+        from okto_pulse.core.domain.checklist import ChecklistPhase
+        from okto_pulse.core.services.spec_planning_readiness import read_spec_planning_readiness
+
+        async def checklist():
+            persistence = require_relational_application_adapter().checklists(self.db)
+            decision = await ChecklistService().evaluate_spec_gate(
+                board_id=spec.board_id, spec_id=spec.id, persistence=persistence,
+            )
+            current = await persistence.get_current(
+                board_id=spec.board_id, spec_id=spec.id,
+                phase=ChecklistPhase.SPEC_VALIDATION, spec_edition=int(spec.edition),
+            )
+            return decision, None if current is None else current[0].id
+
+        return await read_spec_planning_readiness(
+            spec=spec, board=board, specs=self, cards=CardService(self.db),
+            resources=ResourceGateService(self.db), checklist=checklist,
+            policy=lambda: GuidelineService(self.db).preview_policy_transition(
+                board_id=spec.board_id, entity_type="spec", subject_id=spec.id,
+                from_status=spec.status.value, to_status=SpecStatus.VALIDATED.value,
+            ),
+            can_read=can_read, can_act=can_act,
+        )
 
     def validate_transition_source_context(self, spec, target: SpecStatus) -> None:
         """Read the native source provenance/pin prerequisite for advancing."""
@@ -11667,15 +11701,7 @@ class SpecService:
         # Enforce coverage gates when moving to validated
         if data.status == SpecStatus.VALIDATED:
             card_service = CardService(self.db)
-            await card_service.check_test_coverage(spec, board)
-            await card_service.check_rules_coverage(spec, board)
-            await card_service.check_trs_coverage(spec, board)
-            await card_service.check_contract_coverage(spec, board)
-            await card_service.check_ir_coverage(spec, board)
-            await card_service.check_or_coverage(spec, board)
-            await card_service.check_task_requirement_links_for_spec(spec, board)
-            await card_service.check_decisions_coverage(spec, board)
-            await card_service.check_code_evidence_coverage(spec, board)
+            await require_planning_coverage(card_service, spec, board, quality_enabled=False)
 
             # Spec Validation Gate: when enabled, the only path to validated is via
             # submit_spec_validation (which runs the semantic gate). Direct move_spec
@@ -11716,15 +11742,7 @@ class SpecService:
             and spec.status == SpecStatus.VALIDATED
         ):
             card_service = CardService(self.db)
-            await card_service.check_test_coverage(spec, board)
-            await card_service.check_rules_coverage(spec, board)
-            await card_service.check_trs_coverage(spec, board)
-            await card_service.check_contract_coverage(spec, board)
-            await card_service.check_ir_coverage(spec, board)
-            await card_service.check_or_coverage(spec, board)
-            await card_service.check_task_requirement_links_for_spec(spec, board)
-            await card_service.check_decisions_coverage(spec, board)
-            await card_service.check_code_evidence_coverage(spec, board)
+            await require_planning_coverage(card_service, spec, board, quality_enabled=False)
 
             self._enforce_spec_evaluation_gate(spec, board)
 
@@ -12337,16 +12355,7 @@ class SpecService:
         # checks the same thing, but by then the spec is already locked).
         try:
             card_service = CardService(self.db)
-            await card_service.check_ac_scenario_coverage(spec, board)
-            await card_service.check_test_coverage(spec, board)
-            await card_service.check_rules_coverage(spec, board)
-            await card_service.check_trs_coverage(spec, board)
-            await card_service.check_contract_coverage(spec, board)
-            await card_service.check_ir_coverage(spec, board)
-            await card_service.check_or_coverage(spec, board)
-            await card_service.check_task_requirement_links_for_spec(spec, board)
-            await card_service.check_decisions_coverage(spec, board)
-            await card_service.check_code_evidence_coverage(spec, board)
+            await require_planning_coverage(card_service, spec, board, quality_enabled=True)
             resource_gate = ResourceGateService(self.db)
             await resource_gate.validate_or_raise_spec_architecture_validation_resource(
                 spec.board_id,

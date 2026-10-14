@@ -28,6 +28,7 @@ class GetValidationCycleCommand:
     include_previous: bool = False
     offset: int = 0
     limit: int = 25
+    include_planning: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.subject_type, AssessmentSubjectType):
@@ -39,6 +40,10 @@ class GetValidationCycleCommand:
         )
         if not isinstance(self.include_previous, bool):
             raise ValueError("validation_cycle_include_previous_invalid")
+        if not isinstance(self.include_planning, bool) or (
+            self.include_planning and self.subject_type is not AssessmentSubjectType.SPEC
+        ):
+            raise ValueError("validation_cycle_include_planning_invalid")
         if (
             not isinstance(self.offset, int)
             or isinstance(self.offset, bool)
@@ -112,6 +117,7 @@ class ValidationCycleReadUseCases:
             actor_id=actor.actor_id,
             realm_scope=actor.require_realm_scope(),
             board_id=actor.board_id,
+            include_planning=command.include_planning,
         )
         if not isinstance(result, ValidationCycleSummary):
             raise RuntimeError("validation_cycle_reader_result_invalid")
@@ -120,6 +126,7 @@ class ValidationCycleReadUseCases:
             or result.subject_id != command.subject_id
             or (not command.include_previous and result.previous_results)
             or len(result.previous_results) > command.limit
+            or (result.planning_readiness is not None) != command.include_planning
         ):
             raise RuntimeError("validation_cycle_reader_scope_mismatch")
         return result

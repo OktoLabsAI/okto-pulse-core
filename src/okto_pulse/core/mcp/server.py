@@ -18605,6 +18605,7 @@ async def okto_pulse_get_task_validation(
 async def okto_pulse_get_spec_validation_cycle(
     board_id: str, spec_id: str, include_previous: bool = False,
     offset: int = 0, limit: int = 25,
+    include_planning: bool = False,
 ) -> str:
     """Read current native validation components and the planning submission manifest.
 
@@ -18630,7 +18631,7 @@ async def okto_pulse_get_spec_validation_cycle(
 
     try:
         cycle = await ValidationCycleReadUseCases(reader=get_validation_cycle_reader()).get_cycle(
-            GetValidationCycleCommand(AssessmentSubjectType.SPEC, spec_id, include_previous, offset, limit),
+            GetValidationCycleCommand(AssessmentSubjectType.SPEC, spec_id, include_previous, offset, limit, include_planning),
             actor=MCPAdapterContract.actor(ctx, board_id=board_id),
         )
         return json.dumps({"outcome": "success", "data": project_validation_cycle(cycle)})

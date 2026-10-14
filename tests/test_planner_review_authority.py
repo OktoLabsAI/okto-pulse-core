@@ -107,9 +107,14 @@ async def test_authenticated_mcp_composed_conclusion(_harness_env, monkeypatch, 
     )
     async with Client(host) as client:
         cycle_response = await client.call_tool('okto_pulse_get_spec_validation_cycle', {
-            'board_id': 'B1', 'spec_id': 'composed',
+            'board_id': 'B1', 'spec_id': 'composed', 'include_planning': True,
         })
         cycle = json.loads(cycle_response.content[0].text)['data']
+        components = {item['key']: item for item in cycle['planning_readiness']['components']}
+        assert components['spec_validation']['state'] == 'blocked'
+        assert components['decomposition']['state'] == 'blocked'
+        assert components['decomposition']['result_ids'] == []
+        assert cycle['planning_readiness']['state'] != 'ready'
         manifest = cycle['planning_manifest']
         denied_scope = await client.call_tool('okto_pulse_get_spec_validation_cycle', {
             'board_id': 'B1', 'spec_id': 'other-board-spec',

@@ -574,6 +574,9 @@ Args:
     board_id: Authenticated Board ID.
     spec_id: Spec in that Board.
     include_previous: Include bounded historical summaries; default false.
+    include_planning: Include native planning admission components and their
+        combined ready/blocked/unavailable state; default false. This performs
+        the applicable gate reads and is not a lightweight polling request.
     offset: Previous-result offset, at least zero.
     limit: Previous-result page size, 1..100; default 25.
 
