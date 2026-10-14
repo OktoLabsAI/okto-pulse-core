@@ -2,6 +2,51 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — checkpoint preservado antes da nova revisão detalhada
+
+Pedido atual: planejamento detalhado, sem continuar implementação. Conferidos
+os diffs preexistentes sobre Core `dadea7bc` / Community `a0c247bd` e os artefatos
+locais encerrados; nenhuma nova mudança de produto foi feita nesta revisão.
+
+O WIP corrige fixtures de validação nativa: IR/OR explicitamente vazios como no
+writer público, plano da Decision do fixture e aprovação de decomposição nativa
+preparada explicitamente. O helper genérico de submissão não cria aprovação.
+Qualidade positiva sem decomposição aprovada permanece Approved. Testes de
+transporte passam a exigir manifesto/chave e recibo composto; sem compatibilidade
+ou relaxamento de gates. A suíte antes com 61 falhas registra agora **90 passes**.
+
+Também preserva revisões de `spec_collection`/`card_collection` por Board, com
+permissão de leitura da entidade, metadados transacionais, rollback e recusa de
+token ausente. A mecânica fica no Community; Core expõe somente o contrato.
+SpecsPanel usa o watcher compartilhado para descobrir novos objetos, preservar
+formulário/filtros e limpar conteúdo após perda de acesso. Ainda não integra
+Kanban, CardModal nem os demais leitores/editores da Spec. A mudança do schema
+foi exercitada em home isolada nova; não há migração de bases existentes.
+
+Artefatos conferidos, sem reexecução nesta revisão:
+
+- `u2-native-validation-final.xml`: 90 passes, zero falhas/erros.
+- `u3-collection-contract.xml`: 11 passes; `u3-collection-native.xml`: 8 passes.
+- `u3-collection-regressions.xml`: 79 passes, zero falhas/erros.
+- `closure-u3-collections.json`: ok, 9.030 linhas, oito budgets ZERO,
+  nenhum finding ou drift documental; não é auditoria dos wheels.
+
+O contexto de execução anterior registra ainda 16 passes de SpecValidationPanel,
+16 de SpecsPanel/watcher e `tsc -b` aprovado; não foram reexecutados aqui.
+Conferida visualmente a captura `u3-collection-recovery-draft.png`: três Specs
+na lista e título digitado preservado no formulário aberto. As criações MCP e
+o ensaio offline ocorreram no runtime isolado anterior, não nesta revisão.
+A segunda criação, apesar do título mencionar reconexão, ocorreu online; a
+terceira corresponde ao ensaio offline. Não atribuir essa prova a todos os
+consumidores nem ao pacote instalado. IDs, hashes e limites em
+`evidence-u2-u3-checkpoint-20261014.json`.
+
+Próximo passo documental: reconciliar §6.2 do plano único com esses resultados,
+retirar a triagem já resolvida do caminho crítico e delimitar a sequência restante
+U2 → U3 → U4. Não refazer U1, composição ou API de revisões. A qualificação final
+instalada e o percurso completo até Done/KG continuam pendentes. Instalação,
+home e processo do usuário não foram alterados nesta revisão.
+
 ### 2026-10-14 — planejamento reconciliado com a suíte nativa pendente
 
 Antes da edição do plano, publicados Core `1d0c3862` e Community `a0c247bd`.

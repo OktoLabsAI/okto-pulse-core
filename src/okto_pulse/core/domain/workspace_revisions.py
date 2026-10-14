@@ -9,7 +9,9 @@ class _ClosedModel(BaseModel):
 
 
 class WorkspaceSubjectRef(_ClosedModel):
-    subject_type: Literal["spec", "card"]
+    # Collection refs use the Board ID and detect new/deleted objects without
+    # enumerating records or confusing collection freshness with authority.
+    subject_type: Literal["spec", "card", "spec_collection", "card_collection"]
     subject_id: str = Field(min_length=1, max_length=255, pattern=r"\S")
 
 
@@ -32,6 +34,9 @@ class WorkspaceRevisionsQuery(_ClosedModel):
         identities = [(item.subject_type, item.subject_id) for item in self.subjects]
         if len(set(identities)) != len(identities):
             raise ValueError("workspace_revision_subject_duplicate")
+        if any(item.subject_type.endswith("_collection") and item.subject_id != self.board_id
+               for item in self.subjects):
+            raise ValueError("workspace_revision_collection_board_mismatch")
         return self
 
 

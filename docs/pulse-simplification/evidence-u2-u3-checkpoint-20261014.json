@@ -1,0 +1,174 @@
+{
+  "date": "2026-10-14",
+  "scope": "Reconciliation of existing artifacts, not a new test execution or release qualification",
+  "base": {
+    "core": "dadea7bc",
+    "community": "a0c247bd"
+  },
+  "suites": [
+    {
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-native-validation-final.xml",
+      "sha256": "aecd437033ebf1ffca7223796b4c17a341aa76bc816e64db1fc84e3d521a3a5d",
+      "results": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "90",
+          "time": "173.970",
+          "timestamp": "2026-10-14T19:57:23.297611-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collection-contract.xml",
+      "sha256": "fb0e65260ff5095221d0fa5f5c37e33f6193fdbc07aa08055e6ec7874752681e",
+      "results": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "11",
+          "time": "5.539",
+          "timestamp": "2026-10-14T20:00:36.573868-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collection-native.xml",
+      "sha256": "7a795f9a082a10d4c158d2eb25cd316bd769aee903d989406f1f1169c0b3a847",
+      "results": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "8",
+          "time": "40.888",
+          "timestamp": "2026-10-14T20:00:33.555892-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collection-regressions.xml",
+      "sha256": "b97506f1fcfd5fe528f527f13a6c22cf7729983982b2b01ff1fddf2108379089",
+      "results": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "79",
+          "time": "438.289",
+          "timestamp": "2026-10-14T20:03:43.602310-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    }
+  ],
+  "closure": {
+    "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\closure-u3-collections.json",
+    "sha256": "c8b70fd8cb0891aa1886763e151317f0ebeed7cc5cf6c578fde448f1775a7154",
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": [],
+    "ownership_rows": 9030,
+    "wheels_audited": false
+  },
+  "browser": {
+    "scope": "Existing source runtime/Vite evidence only, not installed E2E",
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_ids": [
+      "2baa5f88-eb1a-4aac-9aeb-453707cef290",
+      "217ee87f-fadb-4060-9034-85b740ecf292",
+      "7ddcdf04-bf5c-405f-9446-c10f0b46143c"
+    ],
+    "inspected_screenshot": "okto_labs_pulse_community/output/playwright/u3-collection-recovery-draft.png",
+    "observed_in_screenshot": "Three Specs listed behind open New Spec form; authored title retained. Screenshot alone does not prove offline/reconnection or MCP authorization.",
+    "limitation": "The second Spec title mentions reconnection but it was created online; only third creation belongs to the recorded offline experiment."
+  },
+  "pending": [
+    "Full U2 gate parity mapping",
+    "Remaining U3 consumers and dirty editors",
+    "Installed paired build and complete UI/MCP SDLC to Done/canonical KG"
+  ]
+}

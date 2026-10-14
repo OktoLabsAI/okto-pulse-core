@@ -20,10 +20,20 @@ def query():
     [], [{"subject_type": "ideation", "subject_id": "x"}],
     [{"subject_type": "spec", "subject_id": "x"}] * 2,
     [{"subject_type": "spec", "subject_id": str(index)} for index in range(51)],
+    [{"subject_type": "spec_collection", "subject_id": "another-board"}],
+    [{"subject_type": "card_collection", "subject_id": "another-board"}],
 ])
 def test_workspace_revision_query_has_closed_bounded_population(subjects):
     with pytest.raises(ValueError):
         WorkspaceRevisionsQuery(board_id="board", subjects=subjects)
+
+
+@pytest.mark.parametrize("kind", ["spec_collection", "card_collection"])
+def test_workspace_collection_query_uses_its_authorized_board_identity(kind):
+    result = WorkspaceRevisionsQuery(board_id="board", subjects=[
+        {"subject_type": kind, "subject_id": "board"},
+    ])
+    assert result.subjects[0].subject_id == result.board_id
 
 
 @pytest.mark.asyncio
