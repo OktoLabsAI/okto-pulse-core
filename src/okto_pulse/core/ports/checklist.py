@@ -70,6 +70,12 @@ class ChecklistBindingConflict(ChecklistPersistenceError):
     code = "checklist_binding_conflict"
 
 
+class ChecklistBoardBindingMissing(ChecklistBindingConflict):
+    """Validation admission requires explicit Board governance before freezing."""
+
+    code = "checklist_board_binding_missing"
+
+
 class ChecklistIdempotencyConflict(ChecklistPersistenceError):
     code = "checklist_idempotency_conflict"
 

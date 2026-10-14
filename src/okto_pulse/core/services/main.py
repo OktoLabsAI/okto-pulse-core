@@ -439,7 +439,21 @@ async def _apply_quality_assessment_lifecycle_transition(
         heads=heads,
         receipts=receipts,
     )
-    await persistence.apply_lifecycle_plan(plan)
+    from okto_pulse.core.ports.checklist import ChecklistBoardBindingMissing
+
+    try:
+        await persistence.apply_lifecycle_plan(plan)
+    except ChecklistBoardBindingMissing as exc:
+        # Missing governance is an actionable refusal, not a transport failure.
+        # The caller's UoW still rolls back the entire attempted admission.
+        raise GateContractError(
+            code=exc.code, gate_type="spec_checklist", entity_type=subject_type,
+            entity_id=subject_id, current_status=before_status,
+            blocked_transition=after_status,
+            message="Configure the Spec Checklist in Board settings before admitting this Spec to validation. No transition was applied.",
+            operator_action="Configure the Spec Checklist in Board settings, then retry the transition.",
+            next_action={"action": "configure_board_checklist", "board_id": board_id},
+        ) from exc
 
 
 async def evaluate_code_traceability_transition(

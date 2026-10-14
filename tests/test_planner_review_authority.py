@@ -192,6 +192,18 @@ async def test_authenticated_mcp_can_record_decomposition_in_approved_without_pr
             'board_id': 'B1', 'spec_id': 'review-approved', **_evaluation_payload(),
         }, raise_on_error=False)
         assert not response.is_error, response
+        listed = await client.call_tool('okto_pulse_list_spec_evaluations', {
+            'board_id': 'B1', 'spec_id': 'review-approved', 'view': 'current', 'limit': 1,
+        }, raise_on_error=False)
+        assert not listed.is_error, listed
+        envelope = json.loads(listed.content[0].text)
+        assert envelope['outcome'] == 'success', envelope
+        page = envelope['data']
+        assert page['total'] == page['active_count'] == 1
+        assert page['previous_count'] == 0
+        assert page['evaluations'][0]['lifecycle_state'] == 'current'
+        assert page['evaluations'][0]['dimensions']['test_coverage_quality']['score'] == 93
+        assert page['evaluations'][0]['evaluator_id'] == 'A1'
     async with factory() as db:
         spec = await db.get(Spec, 'review-approved')
         assert spec.status == SpecStatus.APPROVED

@@ -172,6 +172,8 @@ def test_planner_without_evaluation_grant_cannot_approve_via_rest(
         CoreApplicationServiceCatalog, "resolve_user_permissions", permissions,
     )
     before = client.get(f"/api/v1/specs/{spec_id}/evaluations").json()
+    # Isolate the attempted write from the independently authorized read above.
+    permissions.reset_mock()
     response = client.post(
         f"/api/v1/specs/{spec_id}/evaluations", json=_evaluation_payload(),
     )
@@ -179,6 +181,54 @@ def test_planner_without_evaluation_grant_cannot_approve_via_rest(
     assert "spec.evaluations.submit" in response.text
     permissions.assert_awaited_once_with(USER_ID, _board)
     assert client.get(f"/api/v1/specs/{spec_id}/evaluations").json() == before
+
+
+@pytest.mark.parametrize('denied', ['entity', 'evaluations'])
+def test_decomposition_history_does_not_leak_without_both_read_grants(
+    spec_eval_client, monkeypatch, denied,
+):
+    from unittest.mock import AsyncMock
+    from okto_pulse.core.application.service_catalog import CoreApplicationServiceCatalog
+    from okto_pulse.core.domain.permissions import PermissionSet
+
+    client, spec_id, _draft, _board = spec_eval_client
+    assert client.post(f'/api/v1/specs/{spec_id}/evaluations', json=_evaluation_payload()).status_code == 201
+    flags = {'entity': {'read': True}, 'evaluations': {'read': True}}
+    flags[denied]['read'] = False
+    monkeypatch.setattr(CoreApplicationServiceCatalog, 'resolve_user_permissions',
+                        AsyncMock(return_value=PermissionSet({'spec': flags})))
+    response = client.get(f'/api/v1/specs/{spec_id}/evaluations?view=all&limit=1')
+    assert response.status_code == 403, response.text
+    assert f'spec.{denied}.read' in response.text
+    assert 'Breakdown executavel' not in response.text
+    assert 'evaluations' not in response.json() or isinstance(response.json()['evaluations'], str)
+
+
+@pytest.mark.asyncio
+async def test_decomposition_pages_preserve_complete_native_opinions_and_edition(
+    spec_eval_client, db_factory,
+):
+    client, spec_id, _draft, _board = spec_eval_client
+    path = f'/api/v1/specs/{spec_id}/evaluations'
+    previous = client.post(path, json=_evaluation_payload('reject')).json()['evaluation']
+    # Isolate the projection contract; lifecycle reopening has its own real tests.
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        spec.edition = 2
+        await db.commit()
+    first = client.post(path, json=_evaluation_payload()).json()['evaluation']
+    second = client.post(path, json=_evaluation_payload('request_changes')).json()['evaluation']
+    page = client.get(path, params={'view': 'current', 'limit': 1}).json()
+    assert page['total'] == 2 and page['active_count'] == 2 and page['previous_count'] == 1
+    assert page['evaluations'] == [{**second, 'is_current': True, 'lifecycle_state': 'current'}]
+    following = client.get(path, params={'view': 'current', 'limit': 1, 'offset': 1}).json()
+    assert following['evaluations'] == [{**first, 'is_current': True, 'lifecycle_state': 'current'}]
+    older = client.get(path, params={'view': 'previous', 'limit': 1}).json()
+    assert older['evaluations'] == [{**previous, 'is_current': False, 'lifecycle_state': 'previous'}]
+    assert older['total'] == 1 and older['current_edition'] == 2
+    assert client.get(path, params={'offset': 10}).json()['evaluations'] == []
+    for query in ({'limit': 101}, {'offset': -1}, {'view': 'stale'}):
+        assert client.get(path, params=query).status_code == 422
 
 
 def test_rest_content_and_move_cannot_forge_evaluation(spec_eval_client, monkeypatch):

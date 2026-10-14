@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — checkpoint U3 parcial preservado antes do planejamento
+
+Pedido atual: planejamento detalhado. Preservar o código já presente, sem
+continuar sua implementação nesta revisão. Base publicada: Core 5dc5b8d3 /
+Community b7a541bb. Este checkpoint não encerra U2/U3 nem qualifica instalação.
+
+WIP encontrado: histórico nativo paginado da decomposição, contribuição
+independente, payload opcional na conclusão unificada, revisão explícita da
+base no formulário e correções de tipos/testes de leitura. O watcher continua
+sem consumidores. A sincronização externa e a proteção de todos os formulários
+continuam pendentes; os novos componentes não comprovam UV18–UV20.
+
+Artefatos existentes conferidos em
+PULSE_REFACTOR/.validation-v040/spec-unified-20261014:
+u3-opinions-core.xml tem 48 passes; u3-admission-community.xml tem três passes
+e uma falha de preparação: NOT NULL constraint failed: boards.realm_id.
+O teste falhou antes de comprovar o diagnóstico de admissão e o rollback.
+closure-u3-interface.json: ok=true, zero findings, zero drift documental,
+oito budgets ZERO. Não foi executada nova suíte nesta revisão documental.
+
+O WIP inclui tratamento tipado de Board sem binding de Checklist, após HTTP
+500 observado no runtime isolado. A correção não está qualificada: corrigir o
+fixture com realm real, verificar recusa acionável/rollback e repetir no browser
+com processo atualizado. Não criar configuração automática nem dispensar gate.
+Artefato visual existente: Community/output/playwright/u3-decomposition-draft.png;
+apenas inspeção parcial, sem comprovar conclusão positiva ou ensaio U4.
+
+Retomada: qualificar esse impedimento e contratos de leitura/escrita; completar
+integração U3; executar U4. A revisão seguinte atualiza o plano único com estas
+evidências, preservando U1–U4 e UV01–UV24. Home, instalação e processo do usuário
+não foram alterados nesta revisão. Capturas locais não fazem parte do produto.
+
 ### 2026-10-14 — planejamento reconciliado com o WIP real de U3
 
 Todo o trabalho preexistente foi publicado antes desta revisão: Core 46e9effb /
