@@ -9,17 +9,31 @@ from typing import Protocol
 
 from okto_pulse.core.domain.delivery_evidence import DeliveryEvidenceSnapshot
 from okto_pulse.core.domain.enums import CardStatus, CardType
+from okto_pulse.core.models.delivery_readiness import ReadinessCursorBinding
 
 
 class ReadinessReadError(ValueError):
-    def __init__(self, code: str, *, native_code: str | None = None):
+    def __init__(self, code: str, *, native_code: str | None = None, identity: str | None = None):
         super().__init__(code)
         self.code = code
         self.native_code = native_code
+        self.identity = identity
 
 
 class ReadinessClock(Protocol):
     def now(self) -> datetime: ...
+
+
+class DeliveryReadinessCursorPort(Protocol):
+    def encode(self, binding: ReadinessCursorBinding, offset: int) -> str: ...
+
+    def decode(self, token: str, binding: ReadinessCursorBinding) -> int:
+        """Authenticate actor/scope/filter and reject a changed projection base.
+
+        No authorization is obtained from a token. The caller authorizes each
+        read before supplying the current binding, never trusting cursor IDs.
+        """
+        ...
 
 
 @dataclass(frozen=True, slots=True)

@@ -13,7 +13,7 @@ from okto_pulse.core.domain.delivery_diagnostics import (
     DiagnosticGraph, DiagnosticIntegrityError, assessment_diagnostic_units,
     build_diagnostic_graph, cause_identity, reason_definition,
 )
-from okto_pulse.core.domain.delivery_evidence import DeliveryBinding
+from okto_pulse.core.domain.delivery_evidence import DeliveryBinding, DeliveryScope
 from okto_pulse.core.domain.effective_delivery_coverage import EffectiveDeliveryContext
 from okto_pulse.core.models.delivery_readiness import (
     ReadinessAction, ReadinessDetailQuery, ReadinessEvidenceRef, ReadinessFact,
@@ -46,6 +46,8 @@ class DiagnosticDetail:
 class NativeDeliveryDiagnostics:
     graph: DiagnosticGraph
     details: tuple[DiagnosticDetail, ...]
+    scope: DeliveryScope
+    card_id: str | None = None
 
 
 def _unique(values):
@@ -396,15 +398,19 @@ def compose_delivery_diagnostics(assessment, snapshot, *, spec_assessment=None, 
             _unique(v for row in rows for v in row.evidence_refs), _unique(v for row in rows for v in row.pinpoints),
             tuple(sorted({v for row in rows for v in row.implementation_card_ids})),
             tuple(sorted({v for row in rows for v in row.test_card_ids})), owner, owner_state))
-    return NativeDeliveryDiagnostics(graph, tuple(merged))
+    return NativeDeliveryDiagnostics(graph, tuple(merged), snapshot.scope, assessment.card_id)
+
+
+def render_diagnostic_unit(unit):
+    return ReadinessUnitRef(unit=unit.unit, ref=unit.ref, semantic_sha256=_digest(unit.semantic_sha256),
+        spec_edition=unit.spec_edition, card_id=unit.card_id or None)
 
 
 def render_diagnostic_issue(cause, detail, *, scope, card_id, snapshot_id):
     """Bounded issue summary. Full arrays remain in DiagnosticDetail for paging."""
     def bounded(field, count, values):
         return {field: values[:10], count: len(values), field + '_truncated': len(values) > 10}
-    units = tuple(ReadinessUnitRef(unit=u.unit, ref=u.ref, semantic_sha256=_digest(u.semantic_sha256),
-        spec_edition=u.spec_edition, card_id=u.card_id or None) for u in cause.units)
+    units = tuple(render_diagnostic_unit(u) for u in cause.units)
     impacts = set(cause.phases) - {ReadinessPhase.LIFECYCLE}
     impact = 'both' if len(impacts) == 2 else next(iter(impacts)) if impacts else 'none'
     if units and all(unit.unit == 'scenario' for unit in units):

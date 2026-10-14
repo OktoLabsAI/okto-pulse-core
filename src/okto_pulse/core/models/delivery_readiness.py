@@ -220,6 +220,39 @@ class ReadinessDetailQuery(ReadinessDTO):
     cursor: str | None = None
 
 
+class ReadinessReadQuery(ReadinessDTO):
+    """Internal current-edition query, shared by summary and detail paging."""
+    board_id: Identity
+    spec_id: Identity
+    card_id: Identity | None = None
+    view: Literal['readiness'] = 'readiness'
+    phase: PhaseFilter = 'all'
+    snapshot_id: Digest | None = None
+    issue_id: Identity | None = None
+    limit: Annotated[int, Field(strict=True, ge=1, le=20)] = 20
+    cursor: Annotated[str, Field(strict=True, min_length=1, max_length=8192)] | None = None
+
+    @model_validator(mode='after')
+    def detail_requires_snapshot(self):
+        if self.issue_id is not None and self.snapshot_id is None:
+            raise ValueError('readiness_query_invalid')
+        return self
+
+
+class ReadinessCursorBinding(ReadinessDTO):
+    actor_id: Identity
+    board_id: Identity
+    spec_id: Identity
+    card_id: Identity | None
+    spec_edition: Version
+    snapshot_id: Digest
+    projection_id: Digest
+    view: Literal['readiness'] = 'readiness'
+    phase: PhaseFilter
+    issue_id: Identity | None
+    limit: Annotated[int, Field(strict=True, ge=1, le=20)]
+
+
 class ReadinessAction(ReadinessDTO):
     id: Identity
     kind: ActionKind
@@ -311,7 +344,7 @@ class ReadinessIssue(ReadinessDTO):
         return self
 
 
-class DeliveryReadiness(ReadinessDTO):
+class DeliveryReadinessContext(ReadinessDTO):
     contract_version: Literal["delivery-readiness/v1"] = "delivery-readiness/v1"
     metrics_version: Literal[2] = 2
     scope: ReadinessScope
@@ -326,15 +359,22 @@ class DeliveryReadiness(ReadinessDTO):
     delivery_gate: DeliveryGate
     lifecycle: DeliveryLifecycle
     summary: ReadinessSummary
+    mutation_reauthorization_required: Literal[True] = True
+
+    @model_validator(mode='after')
+    def utc_time(self):
+        if self.evaluated_at.utcoffset() is None or self.evaluated_at.utcoffset().total_seconds() != 0:
+            raise ValueError('readiness_utc_time_required')
+        return self
+
+
+class DeliveryReadiness(DeliveryReadinessContext):
     issues: Annotated[tuple[ReadinessIssue, ...], Field(max_length=20)]
     next_actions: Annotated[tuple[ReadinessAction, ...], Field(max_length=3)]
     page: ReadinessPage
-    mutation_reauthorization_required: Literal[True] = True
 
     @model_validator(mode="after")
     def coherent_snapshot(self):
-        if self.evaluated_at.utcoffset() is None or self.evaluated_at.utcoffset().total_seconds() != 0:
-            raise ValueError("readiness_utc_time_required")
         if self.page.returned != len(self.issues):
             raise ValueError("readiness_page_count_mismatch")
         for issue in self.issues:
@@ -342,4 +382,60 @@ class DeliveryReadiness(ReadinessDTO):
             if (query.snapshot_id, query.board_id, query.spec_id, query.card_id) != (
                     self.snapshot_id, self.scope.board_id, self.scope.spec_id, self.scope.card_id):
                 raise ValueError("readiness_issue_snapshot_mismatch")
+        return self
+
+
+class ReadinessRelation(ReadinessDTO):
+    kind: Literal['criterion', 'scenario', 'implementation_card', 'test_card', 'native_reason',
+        'issue_dependency', 'cause_cycle', 'action_cycle']
+    source_id: Identity
+    target_id: Identity | None = None
+
+    @model_validator(mode='after')
+    def edge_shape(self):
+        edge = self.kind in {'issue_dependency', 'cause_cycle', 'action_cycle'}
+        if edge != (self.target_id is not None):
+            raise ValueError('readiness_relation_invalid')
+        return self
+
+
+class ReadinessDetailEntry(ReadinessDTO):
+    id: Identity
+    type: Literal['affected_unit', 'evidence', 'pinpoint', 'action']
+    section: Literal['affected_units', 'evidence_refs', 'expected', 'observed', 'relations', 'pinpoints', 'actions']
+    value: ReadinessUnitRef | ReadinessEvidenceRef | ReadinessFact | ReadinessRelation | ReadinessPinpoint | ReadinessAction
+
+    @model_validator(mode='after')
+    def closed_entry_shape(self):
+        expected = {
+            'affected_units': ('affected_unit', ReadinessUnitRef),
+            'evidence_refs': ('evidence', ReadinessEvidenceRef),
+            'expected': ('evidence', ReadinessFact), 'observed': ('evidence', ReadinessFact),
+            'relations': ('evidence', ReadinessRelation),
+            'pinpoints': ('pinpoint', ReadinessPinpoint), 'actions': ('action', ReadinessAction),
+        }[self.section]
+        if self.type != expected[0] or not isinstance(self.value, expected[1]):
+            raise ValueError('readiness_detail_entry_invalid')
+        return self
+
+
+class ReadinessDetailCounts(ReadinessDTO):
+    affected_unit: Count
+    evidence: Count
+    pinpoint: Count
+    action: Count
+
+
+class DeliveryReadinessDetail(DeliveryReadinessContext):
+    issue_id: Identity
+    entry_counts: ReadinessDetailCounts
+    entries: Annotated[tuple[ReadinessDetailEntry, ...], Field(max_length=20)]
+    page: ReadinessPage
+
+    @model_validator(mode='after')
+    def entry_page(self):
+        if self.page.returned != len(self.entries) or self.page.total != sum(self.entry_counts.model_dump().values()):
+            raise ValueError('readiness_detail_count_mismatch')
+        if len({e.id for e in self.entries}) != len(self.entries):
+            raise ValueError('readiness_detail_duplicate_entry')
         return self
