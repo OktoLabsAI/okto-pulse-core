@@ -12,6 +12,7 @@ from okto_pulse.core.domain.delivery_evidence import (
     TestDeliveryFact,
     _evaluate_delivery_facts,
     implementation_binding_ready,
+    implementation_binding_proof_issue,
     delivery_proof_lifecycle_eligible,
 )
 from okto_pulse.core.domain.effective_delivery_inventory import (
@@ -23,7 +24,11 @@ from okto_pulse.core.domain.verification_plan import RequiredVerificationScenari
 from okto_pulse.core.domain.delivery_verification import (
     NativeVerificationPopulation, ScenarioVerificationFinding, missing_scenario_reason,
 )
-from okto_pulse.core.domain.delivery_assessment import FactualReason, ReadinessReason
+from okto_pulse.core.domain.delivery_assessment import (
+    FactualReason, ReadinessReason, AssessmentCompleteness, DeliveryAssessment,
+    ObligationAssessment, UnitPhaseAssessment, UnitState, apply_delivery_exceptions,
+)
+from okto_pulse.core.domain.delivery_evidence import DeliveryPhase
 
 
 @dataclass(frozen=True, slots=True)
@@ -631,3 +636,220 @@ def evaluate_effective_delivery_coverage(
     return EffectiveDeliveryCoverage(
         tuple(result), tuple(sorted(blockers)), tuple(sorted(rejected))
     )
+
+
+# Closed native code mappings; diagnostic prose never establishes semantics.
+_IMPLEMENTATION_REASONS = {
+    'delivery_record_revoked': ReadinessReason.IMPLEMENTATION_PROOF_REVOKED,
+    'delivery_investigation_receipt_revoked': ReadinessReason.IMPLEMENTATION_PROOF_REVOKED,
+    'delivery_material_progress_unresolved': ReadinessReason.MATERIAL_PROGRESS_UNRESOLVED,
+    'delivery_execution_superseded': ReadinessReason.IMPLEMENTATION_PROOF_STALE,
+    'delivery_target_revision_changed': ReadinessReason.IMPLEMENTATION_PROOF_STALE,
+    'delivery_target_unresolved': ReadinessReason.IMPLEMENTATION_PROOF_STALE,
+    'delivery_investigation_receipt_unresolved': ReadinessReason.IMPLEMENTATION_PROOF_STALE,
+    'delivery_execution_base_mismatch': ReadinessReason.IMPLEMENTATION_PROOF_STALE,
+    'delivery_execution_binding_invalid': ReadinessReason.IMPLEMENTATION_PROOF_STALE,
+    'delivery_accepted_committed_task_execution_required': ReadinessReason.IMPLEMENTATION_PROOF_STALE,
+    'delivery_execution_set_unresolved': ReadinessReason.IMPLEMENTATION_PROOF_STALE,
+    'delivery_execution_base_conflict': ReadinessReason.IMPLEMENTATION_PROOF_STALE,
+    'delivery_execution_set_ambiguous': ReadinessReason.IMPLEMENTATION_PROOF_STALE,
+}
+_REASON_STATES = {
+    ReadinessReason.VERIFICATION_CONFLICT: UnitState.CONFLICT,
+    ReadinessReason.VERIFICATION_FAILED: UnitState.FAILED,
+    ReadinessReason.ASSESSMENT_UNAVAILABLE: UnitState.UNKNOWN,
+    ReadinessReason.SCOPE_UNAVAILABLE: UnitState.UNKNOWN,
+    ReadinessReason.VERIFICATION_BASE_UNRESOLVED: UnitState.UNKNOWN,
+    ReadinessReason.VERIFICATION_METHOD_UNSUPPORTED: UnitState.UNKNOWN,
+    ReadinessReason.SCOPE_CONTRACT_CHANGED: UnitState.STALE,
+    ReadinessReason.IMPLEMENTATION_PROOF_REVOKED: UnitState.STALE,
+    ReadinessReason.IMPLEMENTATION_PROOF_STALE: UnitState.STALE,
+    ReadinessReason.MATERIAL_PROGRESS_UNRESOLVED: UnitState.STALE,
+    ReadinessReason.VERIFICATION_BASE_MISMATCH: UnitState.STALE,
+    ReadinessReason.VERIFICATION_RECEIPT_INVALID: UnitState.STALE,
+    ReadinessReason.IMPLEMENTATION_PARTIAL: UnitState.PARTIAL,
+}
+_STATE_PRECEDENCE = (UnitState.CONFLICT, UnitState.FAILED, UnitState.UNKNOWN,
+    UnitState.STALE, UnitState.PARTIAL, UnitState.MISSING, UnitState.SATISFIED)
+_KNOWN_ALLOCATION_GAPS = frozenset({
+    'delivery_inventory_work_unassigned', 'delivery_inventory_allocation_unresolved',
+    'implementation_plan_required', 'implementation_contribution_card_unavailable',
+    'implementation_contribution_scope_uncovered', 'implementation_contribution_links_changed',
+})
+_UNEVALUABLE = frozenset({
+    'delivery_effective_resolution_limit', 'delivery_scoped_population_mismatch',
+    'delivery_effective_inventory_mismatch', 'delivery_obligations_ambiguous',
+    'delivery_record_scope_mismatch', 'delivery_projection_incomplete',
+    'delivery_record_identity_ambiguous',
+})
+_VERIFICATION_UNEVALUABLE = frozenset({
+    'delivery_verification_methods_unavailable',
+    'delivery_verification_scenario_population_unavailable',
+    'delivery_verification_run_population_unavailable',
+})
+
+
+def _assessed_phase(*, satisfied=False, lifecycle=False, reasons=(), evidence_ids=(), state=None):
+    reasons = tuple(sorted(set(reasons), key=lambda r: (
+        r.code, r.native_reason_codes, r.source_ids, r.criterion_ids, r.scenario_ids)))
+    if state is None:
+        states = {_REASON_STATES.get(reason.code, UnitState.MISSING) for reason in reasons}
+        state = UnitState.SATISFIED if satisfied else next(
+            (value for value in _STATE_PRECEDENCE if value in states), UnitState.MISSING)
+    return UnitPhaseAssessment(state, state,
+        None if state == UnitState.UNKNOWN else satisfied, lifecycle,
+        reasons=reasons, evidence_ids=tuple(sorted(set(evidence_ids))))
+
+
+def _implementation_findings(snapshot, obligation, row):
+    """Classify missing contributions after the canonical proof evaluation."""
+    if row.implementation_satisfied:
+        return ()
+    reasons = []
+    missing = set(row.missing_card_ids)
+    binding = obligation.binding
+    for fact in snapshot.implementations:
+        if fact.scope != snapshot.scope or fact.card_id not in missing:
+            continue
+        if binding not in fact.bindings:
+            if any(value.obligation_ref == binding.obligation_ref for value in fact.bindings):
+                reasons.append(FactualReason(ReadinessReason.SCOPE_CONTRACT_CHANGED, source_ids=(fact.id,)))
+            continue
+        if not implementation_scope_current(snapshot, fact, binding):
+            reasons.append(FactualReason(ReadinessReason.SCOPE_CONTRACT_CHANGED, source_ids=(fact.id,)))
+            continue
+        issue = implementation_binding_proof_issue(fact, binding)
+        codes = {code for proof in fact.executions for code in proof.rejection_reasons}
+        if issue:
+            codes.add(issue)
+        if fact.blocking_progress_ids or fact.blocking_progress_truncated:
+            codes.add('delivery_material_progress_unresolved')
+        for code in sorted(codes):
+            reasons.append(FactualReason(_IMPLEMENTATION_REASONS.get(code, ReadinessReason.ASSESSMENT_UNAVAILABLE),
+                native_reason_codes=(code,), source_ids=(fact.id,)))
+        if not issue and any(c.binding == binding and c.contribution == 'partial' for c in fact.contributions or ()):
+            reasons.append(FactualReason(ReadinessReason.IMPLEMENTATION_PARTIAL, source_ids=(fact.id,)))
+    for rejection in snapshot.rejected_records:
+        if (rejection.scope != snapshot.scope or rejection.kind != 'implementation'
+            or rejection.card_id not in missing or binding not in rejection.bindings):
+            continue
+        for code in rejection.reason_codes:
+            reasons.append(FactualReason(_IMPLEMENTATION_REASONS.get(code, ReadinessReason.ASSESSMENT_UNAVAILABLE),
+                native_reason_codes=(code,), source_ids=(rejection.record_id,)))
+    if not reasons:
+        reasons.append(FactualReason(ReadinessReason.IMPLEMENTATION_PARTIAL if row.implementation_ids
+            else ReadinessReason.IMPLEMENTATION_MISSING, source_ids=tuple(sorted(missing))))
+    return tuple(reasons)
+
+
+def _verification_findings(context, obligation, row):
+    if row.test_satisfied:
+        return ()
+    if obligation.family == 'decision':
+        state_reason = {
+            'failed': ReadinessReason.VERIFICATION_FAILED,
+            'conflict': ReadinessReason.VERIFICATION_CONFLICT,
+            'unavailable': ReadinessReason.ASSESSMENT_UNAVAILABLE,
+            'revoked': ReadinessReason.VERIFICATION_RECEIPT_INVALID,
+        }.get(row.decision_verification_status, ReadinessReason.DECISION_VERIFICATION_PENDING)
+        return (FactualReason(state_reason, source_ids=row.decision_review_ids),)
+    reasons = [item.reason for item in row.scenario_findings]
+    if context.admitted_methods is None:
+        reasons.append(FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE,
+            native_reason_codes=('delivery_verification_methods_unavailable',)))
+    if context.native_verification is not None and not context.native_verification.complete:
+        reasons.append(FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE,
+            native_reason_codes=('delivery_verification_run_population_unavailable',)))
+    if context.required_scenarios is None and any(
+        contribution_verification_criteria(obligation, c) for c in obligation.contributions
+    ):
+        reasons.append(FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE,
+            native_reason_codes=('delivery_verification_scenario_population_unavailable',)))
+    if row.missing_card_ids:
+        reasons.append(FactualReason(ReadinessReason.VERIFICATION_DEPENDENCY_PENDING,
+            source_ids=row.missing_card_ids))
+    if row.missing_criteria and not row.missing_scenarios and not reasons:
+        reasons.append(FactualReason(ReadinessReason.VERIFICATION_PLAN_MISSING,
+            criterion_ids=tuple(sorted({criterion for _, criterion in row.missing_criteria}))))
+    if not reasons:
+        reasons.append(FactualReason(ReadinessReason.VERIFICATION_NOT_RUN))
+    return tuple(reasons)
+
+
+def assess_effective_obligations(snapshot, *, card_id=None, card_type=None):
+    """Produce factual Spec/normal/bug units using the existing evaluator.
+
+    No proof checks are replaced by score rules. Scope is narrowed to the
+    Card's contribution; tests from other Cards remain available. Exceptions
+    are applied after proof-only evaluation and cannot manufacture credit.
+    """
+    if (card_id is None) != (card_type is None) or card_type not in {None, CardType.NORMAL, CardType.BUG}:
+        raise ValueError('delivery_obligation_assessment_scope_invalid')
+    context = snapshot.effective_context
+    if not isinstance(context, EffectiveDeliveryContext):
+        return DeliveryAssessment(snapshot.scope, AssessmentCompleteness(False, False, False, True), (),
+            reasons=(FactualReason(ReadinessReason.SCOPE_UNAVAILABLE),), card_id=card_id, card_type=card_type)
+    full_rows = context.inventory.rows
+    bindings = tuple(item.binding for item in full_rows)
+    population_known = bool(full_rows) and context.inventory.population_complete and (
+        len(set(bindings)) == len(bindings)
+        and len({b.obligation_ref for b in bindings}) == len(bindings)
+        and set(bindings) == {item.binding for item in snapshot.obligations})
+    rows = full_rows if card_id is None else tuple(replace(row,
+        contributions=tuple(c for c in row.contributions if c.card_id == card_id))
+        for row in full_rows if row.family != 'decision' and (card_id in row.declared_card_ids
+            or any(c.card_id == card_id for c in row.contributions)))
+    selected = {row.binding for row in rows}
+    scoped_context = replace(context, inventory=replace(context.inventory, rows=rows))
+    facts_complete = snapshot.complete if snapshot.facts_complete is None else snapshot.facts_complete
+    proof_snapshot = replace(snapshot, waivers=(), complete=facts_complete,
+        obligations=tuple(o for o in snapshot.obligations if o.binding in selected), effective_context=scoped_context)
+    proof = evaluate_effective_snapshot(proof_snapshot, require_lifecycle=False)
+    lifecycle = evaluate_effective_snapshot(proof_snapshot, require_lifecycle=True)
+    proof_rows = {row.obligation.binding: row for row in proof.rows}
+    lifecycle_rows = {row.obligation.binding: row for row in lifecycle.rows}
+    unavailable = tuple(sorted(set(proof.blockers) & _UNEVALUABLE))
+    values = []
+    scope_resolved = bool(rows) and not context.inventory.issues
+    for obligation in rows:
+        row = proof_rows.get(obligation.binding)
+        final = lifecycle_rows.get(obligation.binding)
+        if row is None or unavailable or not facts_complete:
+            implementation = verification = _assessed_phase(state=UnitState.UNKNOWN,
+                reasons=(FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE,
+                    native_reason_codes=unavailable or ('delivery_facts_incomplete',)),))
+        elif obligation.blockers:
+            scope_resolved = False
+            known_gap = set(obligation.blockers) <= _KNOWN_ALLOCATION_GAPS
+            reason = FactualReason(ReadinessReason.SCOPE_ALLOCATION_UNRESOLVED if known_gap
+                else ReadinessReason.ASSESSMENT_UNAVAILABLE, native_reason_codes=obligation.blockers)
+            implementation = verification = _assessed_phase(reasons=(reason,))
+        else:
+            implementation = _assessed_phase(satisfied=row.implementation_satisfied,
+                lifecycle=bool(final and final.implementation_satisfied), evidence_ids=row.implementation_ids,
+                reasons=_implementation_findings(proof_snapshot, obligation, row))
+            verification = _assessed_phase(satisfied=row.test_satisfied,
+                lifecycle=bool(final and final.test_satisfied), evidence_ids=(*row.test_ids, *row.decision_review_ids),
+                reasons=_verification_findings(scoped_context, obligation, row))
+            verification_unavailable = tuple(sorted(set(proof.blockers) & _VERIFICATION_UNEVALUABLE))
+            if verification_unavailable and obligation.family != 'decision':
+                verification = _assessed_phase(reasons=(*verification.reasons,
+                    FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE,
+                        native_reason_codes=verification_unavailable)), evidence_ids=verification.evidence_ids)
+        if obligation.family == 'decision':
+            implementation = _assessed_phase(state=UnitState.NOT_APPLICABLE)
+        implementation = apply_delivery_exceptions(implementation, scope=snapshot.scope,
+            binding=obligation.binding, phase=DeliveryPhase.IMPLEMENTATION, waivers=snapshot.waivers)
+        verification = apply_delivery_exceptions(verification, scope=snapshot.scope,
+            binding=obligation.binding, phase=DeliveryPhase.TEST, waivers=snapshot.waivers)
+        values.append(ObligationAssessment(obligation.binding, snapshot.scope.edition,
+            tuple(sorted({c.card_id for c in obligation.contributions})), implementation, verification))
+    # Accepted risk cannot turn unavailable proof into a known measurement.
+    # Authorized N/A is resolved first and legitimately removes applicability.
+    implementation_complete = all(row.implementation.state == UnitState.NOT_APPLICABLE
+        or row.implementation.proof_satisfied is not None for row in values)
+    verification_complete = all(row.verification.state == UnitState.NOT_APPLICABLE
+        or row.verification.proof_satisfied is not None for row in values)
+    return DeliveryAssessment(snapshot.scope, AssessmentCompleteness(population_known, scope_resolved,
+        implementation_complete and verification_complete, True, implementation_complete, verification_complete),
+        tuple(values), card_id=card_id, card_type=card_type)

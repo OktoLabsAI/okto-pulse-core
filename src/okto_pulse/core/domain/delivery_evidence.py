@@ -360,6 +360,9 @@ class DeliveryEvidenceSnapshot:
     # Server-resolved contract. Missing context is incomplete, never a fallback.
     effective_context: object | None = None
     rejected_records: tuple[DeliveryRecordRejection, ...] = ()
+    # Legacy complete also includes planning. New assessments distinguish a
+    # fully read ledger from an unresolved verification plan/allocation.
+    facts_complete: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)

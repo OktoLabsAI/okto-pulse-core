@@ -80,6 +80,8 @@ def test_observation_time_and_scope_remain_required_after_exact_base_match():
         'verification_observation_predates_implementation',)
     assert classify(replace(RUN, observed_at=None)).code == Reason.VERIFICATION_BASE_UNRESOLVED
     assert classify(replace(RUN, scope=replace(SCOPE, edition=SCOPE.edition + 1))).code == Reason.VERIFICATION_RECEIPT_INVALID
+    assert not classify(replace(RUN, scope=replace(SCOPE, board_id='private'), receipt_id='private-receipt')).source_ids
+    assert not classify(RUN, replace(RUN, scope=replace(SCOPE, board_id='private'), receipt_id='private-receipt')).source_ids
 
 
 def test_missing_expected_source_and_conflicting_source_revisions_fail_closed():

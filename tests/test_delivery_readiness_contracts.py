@@ -129,7 +129,10 @@ def test_P01_domain_foundation_has_no_infrastructure_imports():
     import okto_pulse.core.domain.delivery_assessment as domain
     tree = ast.parse(Path(domain.__file__).read_text(encoding="utf-8"))
     modules = [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
-    assert set(modules) <= {"dataclasses", "enum", "okto_pulse.core.domain.delivery_evidence", "okto_pulse.core.domain.enums"}
+    modules.extend(alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names)
+    # P02 composes the canonical pure evaluator; no adapter/mechanism is added.
+    assert set(modules) <= {"dataclasses", "enum", "okto_pulse.core.domain.delivery_evidence",
+        "okto_pulse.core.domain.enums", "okto_pulse.core.domain.effective_delivery_coverage"}
 
 
 def pinpoint(**changes):

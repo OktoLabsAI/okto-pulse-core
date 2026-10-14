@@ -105,11 +105,11 @@ def missing_scenario_reason(*, scope: DeliveryScope, binding: DeliveryBinding,
             if current_runs is None else current_runs)
     if not runs:
         return reason(ReadinessReason.VERIFICATION_NOT_RUN)
+    if any(run.scope != scope for run in runs):
+        return reason(ReadinessReason.VERIFICATION_RECEIPT_INVALID, native=('verification_scope_mismatch',))
     if len(set(runs)) != 1:
         return reason(ReadinessReason.VERIFICATION_CONFLICT, runs)
     run = runs[0]
-    if run.scope != scope:
-        return reason(ReadinessReason.VERIFICATION_RECEIPT_INVALID, runs, ('verification_scope_mismatch',))
     if run.rejection_reason is not None:
         return reason(run.rejection_reason, runs, run.native_reason_codes)
     if run.outcome is None and not run.receipt_id:

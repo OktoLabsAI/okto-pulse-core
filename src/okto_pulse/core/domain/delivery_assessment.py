@@ -86,6 +86,10 @@ class AssessmentCompleteness:
     scope_resolved: bool
     evaluation_complete: bool
     page_complete: bool
+    # A missing verifier must not erase independently evaluated implementation.
+    # None keeps existing callers' conservative whole-assessment completeness.
+    implementation_complete: bool | None = None
+    verification_complete: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,12 +274,27 @@ def aggregate_delivery_metrics(assessment: DeliveryAssessment) -> DeliveryMetric
         for key in sorted(identities)
     )
     options = dict(population_known=population_known,
-        evaluation_complete=assessment.completeness.evaluation_complete,
         reason_codes=tuple(reason.code for reason in assessment.reasons))
+    def phase_complete(value):
+        return assessment.completeness.evaluation_complete if value is None else value
+
     implementation = (
         _phase_metric((), unit="obligation", population_known=True, evaluation_complete=True)
-        if is_test else _phase_metric(tuple(row.implementation for row in rows), unit="obligation", **options)
+        if is_test else _phase_metric(tuple(row.implementation for row in rows), unit="obligation",
+            evaluation_complete=phase_complete(assessment.completeness.implementation_complete), **options)
     )
     verification = _phase_metric(tuple(row.verification for row in rows),
-        unit="scenario" if is_test else "obligation", **options)
+        unit="scenario" if is_test else "obligation",
+        evaluation_complete=phase_complete(assessment.completeness.verification_complete), **options)
     return DeliveryMetrics(implementation, verification)
+
+
+def assess_obligation_delivery(snapshot, *, card_id=None, card_type=None) -> DeliveryAssessment:
+    """Spec/normal/bug projection of the shared evaluator, not a proof engine.
+
+    Imported at the orchestration boundary to keep immutable types usable by
+    the evaluator without a module initialization cycle. Test scenario units
+    have a different denominator and must not call this obligation projection.
+    """
+    from okto_pulse.core.domain.effective_delivery_coverage import assess_effective_obligations
+    return assess_effective_obligations(snapshot, card_id=card_id, card_type=card_type)
