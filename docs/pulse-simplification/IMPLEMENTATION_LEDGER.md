@@ -2,6 +2,51 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U2 admissão MCP e U3 Kanban sincronizado
+
+Retomada de implementação sobre Core `5008286e` / Community `c79f0191`.
+Incremento Community publicado: `3b44cf30`; registro pareado neste commit Core.
+Turno anterior: progresso documental publicado. Origem dos imports comprovada
+nas duas árvores src, com PYTHONPATH explícito antes dos testes de comportamento.
+
+Fechada a lacuna de admissão sem Checklist no MCP: o teste chama a ferramenta
+registrada sobre UoW relacional real, com identidade de teste explícita. REST e
+MCP devolvem a mesma recusa acionável, sem mudar estado/versão/edição, pareceres,
+snapshots, histórico, atividade ou eventos. Dois passes em
+`u2-admission-rest-mcp.xml`. Não se trata de ensaio de autenticação wire.
+
+Kanban passa a assinar `card_collection` no watcher compartilhado. Mudança
+externa atualiza colunas e readiness sem desmontar a expansão View all;
+preserva filtros. Reautoriza em mudança de autoridade, oculta conteúdo durante
+a consulta sem desmontar formulários e limpa dados/modal após perda de acesso.
+Gerações impedem que respostas antigas repovoem o Board. Uma mudança adicional
+durante reautorização não pode dispensá-la. O refresh manual mantém seu
+comportamento existente. Paginação aguarda o batch de colunas, preserva a janela
+válida e recupera a janela mais próxima se uma exclusão esvaziar a página atual.
+Não foram alterados gates, scores ou semântica de entrega.
+
+Testes frontend: 17 passes (Kanban refresh, paginação e nove regressões do
+formulário DnD/impact evidence). Após acrescentar recuperação de página inválida,
+as duas suítes afetadas passaram com nove casos; XML `u3-kanban-refresh.xml`.
+Ruff F do teste backend passou. ESLint dos arquivos alterados passou após
+extrair a referência estável de setPagination; não adicionar o objeto inteiro
+de paginação como dependência, pois reiniciaria o efeito a cada render.
+`tsc -b` passou; sem novo build instalado nesta etapa.
+
+Browser real + MCP autenticado no runtime isolado 27316, API/MCP 8200/8201 e
+Vite 5274: o primeiro Card surgiu na lista vazia sem Refresh. Criados 11 Cards
+mock Not Started em Spec Draft para exercitar View all; com a coluna expandida,
+o 12º Card criado via MCP apareceu e o paginador mudou para 1–12, mantendo a
+expansão. Capturas inspecionadas; IDs, passos e limites em
+`evidence-u3-kanban-sync-20261014.json`. Nenhuma prova de implementação/teste foi
+inventada. Instalação/home/processo 40020 do usuário intactos.
+
+Não encerra U2/U3: falta completar o mapa finito de paridade, CardModal,
+proteção/expansão dos editores e leitores da Spec e o ensaio integrado restante.
+Próxima integração: substituir o timer pesado de CardModal pelo watcher;
+depois proteger editores antes de ativar atualização global da Spec. U4 instalado
+até Done/KG continua obrigatório; não refazer a descoberta de Specs/Cards.
+
 ### 2026-10-14 — planejamento detalhado atualizado após qualificação nativa
 
 Antes de editar o plano, publicados Core `72db3266` / Community `c79f0191` em

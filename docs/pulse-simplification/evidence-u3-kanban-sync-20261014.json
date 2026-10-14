@@ -1,0 +1,113 @@
+{
+  "date": "2026-10-14",
+  "scope": "Partial U2 admission parity and U3 Kanban integration; not installed U4 qualification",
+  "base": {
+    "core": "5008286e",
+    "community": "c79f0191"
+  },
+  "backend": {
+    "suite": "Community/tests/test_spec_admission_missing_checklist.py",
+    "artifact": "D:/Projetos/Techridy/PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u2-admission-rest-mcp.xml",
+    "passed": 2,
+    "proof": "REST and registered MCP tool return actionable checklist_board_binding_missing; state, version, edition, reviews, snapshots, activity and events unchanged",
+    "limit": "MCP identity supplied explicitly to native UoW test; authenticated transport is not proved by this test"
+  },
+  "frontend": {
+    "initial_run": {
+      "files": [
+        "KanbanBoard.refresh.test.tsx",
+        "KanbanBoard.impactEvidence.test.tsx",
+        "KanbanColumnPage.test.tsx"
+      ],
+      "passed": 17
+    },
+    "after_page_recovery_change": {
+      "files": [
+        "KanbanBoard.refresh.test.tsx",
+        "KanbanColumnPage.test.tsx"
+      ],
+      "passed": 9,
+      "artifact": "D:/Projetos/Techridy/PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-kanban-refresh.xml"
+    },
+    "proof": [
+      "Collection update refreshes filtered expanded column without collapse",
+      "Late columns response cannot repopulate protected data after access loss",
+      "Collection update racing authorization still requires a new successful authorization",
+      "Remembered page removed by deletion returns to the nearest valid page",
+      "Existing DnD report and impact-evidence refusals retain typed content"
+    ]
+  },
+  "browser_mcp": {
+    "ui_url": "http://127.0.0.1:5274/",
+    "api_url": "http://127.0.0.1:8200/",
+    "mcp_url": "http://127.0.0.1:8201/mcp",
+    "runtime_pid": 27316,
+    "vite_pid": 44604,
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "2baa5f88-eb1a-4aac-9aeb-453707cef290",
+    "first_card_id": "c8a1a9b4-691c-5175-84be-1d512b6bdda4",
+    "last_card_id": "2bf71dc7-1521-53fd-a636-0e3fce8e9d2f",
+    "actions": [
+      "Open Tasks with zero Cards",
+      "Authenticated MCP creates Card 01 Not Started in Draft Spec",
+      "Open UI discovers Card without manual Refresh; screenshot inspected",
+      "Authenticated MCP creates Cards 02 through 11 for pagination probe",
+      "Expand Not Started using View all; 11 Cards shown",
+      "Authenticated MCP creates Card 12 while column stays expanded",
+      "Open UI updates to 12 Cards and keeps Show fewer and pagination; snapshot and screenshot inspected"
+    ],
+    "screenshots": [
+      "okto_labs_pulse_community/output/playwright/u3-kanban-mcp-discovery.png",
+      "okto_labs_pulse_community/output/playwright/u3-kanban-expanded-mcp.png"
+    ],
+    "snapshots": [
+      "okto_labs_pulse_community/output/playwright/u3-kanban-before-expand.yml",
+      "okto_labs_pulse_community/output/playwright/u3-kanban-expanded-before.yml",
+      "okto_labs_pulse_community/output/playwright/u3-kanban-expanded-after.yml"
+    ],
+    "native_receipts": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-kanban-card-{1..12}.json",
+    "limit": "Source runtime and Vite. Mock Cards have no delivered work or passing evidence. No Done or canonical qualification claimed. User runtime untouched."
+  },
+  "remaining": [
+    "Complete finite U2 parity mapping and missing native gate combinations",
+    "CardModal shared metadata integration replacing heavy 10-second refresh",
+    "Protect Spec editors and expand synchronization beyond Validation, including Coverage on Card changes",
+    "Complete U3 integrated permission/offline/dirty-form and visual scenarios",
+    "U4 exact installed pair, final regression and complete UI/MCP SDLC to Done/canonical KG"
+  ],
+  "artifacts": [
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-admission-rest-mcp.xml",
+      "sha256": "cc37782e9d4577362261b52c8681174603f96ea4815fd1fb283015a8769ac684"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-kanban-refresh.xml",
+      "sha256": "6171418cf19ddbbbd0f368deca6348f8ca58ed327f63da4a71ac5f2874b82366"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-kanban-mcp-discovery.png",
+      "sha256": "cbd545e22d86ed2a2cd84d5efa8d1c04296fafd94c766cac2c67765f6a014917"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-kanban-expanded-mcp.png",
+      "sha256": "e16e0f7ff78d93946a70a799df10f5a13bcf383cf13a4131b332fa2899a14e18"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-kanban-before-expand.yml",
+      "sha256": "d421ebaf8c10d9553ca5daf00d13a8581026f459fa317337b792996caf4a164f"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-kanban-expanded-before.yml",
+      "sha256": "1a06ad64031368d61add742a0df48dd7ab7c7cf7b91e4b0a2bdbb78a775b683f"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-kanban-expanded-after.yml",
+      "sha256": "a3162638fd5284c82d79c551666c93fde38df5339670ffc64ce52296ab470c26"
+    }
+  ],
+  "static_checks": {
+    "typescript": "tsc -b passed",
+    "eslint": "changed Kanban components/tests passed",
+    "ruff": "test_spec_admission_missing_checklist.py --select F passed"
+  }
+}

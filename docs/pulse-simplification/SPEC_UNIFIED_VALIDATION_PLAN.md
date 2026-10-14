@@ -15,6 +15,12 @@ Isso não encerra a paridade de todas as famílias de gates nem a sincronizaçã
 de todos os consumidores. Esta revisão é documental: não executa novas mudanças
 de produto nem novos testes de comportamento.
 
+Avanço de execução posterior: admissão sem Checklist também qualificada pelo
+MCP (UoW real, identidade de teste) e Kanban integrado ao watcher de coleção,
+com descoberta autenticada UI/MCP e expansão preservada. Ver
+[prova parcial de Kanban](evidence-u3-kanban-sync-20261014.json).
+CardModal, demais leitores/editores da Spec e U4 continuam pendentes.
+
 ### Leitura executiva do plano
 
 **Resultado:** preparar Spec e Cards juntos e concluir a validação do planejamento
@@ -31,7 +37,7 @@ gates de execução/entrega. Não redesenhar Ideação/Refinamento, percentuais 
 | --- | --- | --- |
 | U1 — preservar | Reutilizar autoria de Cards Not Started em Draft e Decision opcional já implementadas. | Não reimplementar; confirmar ambos no percurso U4, incluindo recusa de execução prematura. |
 | U2 — fechar paridade | Preservar a correção da suíte nativa e confrontar leitura, conclusão composta, transição direta e ações permitidas para os mesmos dados/policies. Completar somente casos não demonstrados de gates, permissões, concorrência e replay. | Suítes pertinentes verdes; resultados nativos e estado persistido equivalentes nas entradas REST/MCP; nenhum bypass ou efeito parcial. Detalhamento em §6.2 e UV04–UV17/UV22. |
-| U3 — completar integração | Reutilizar o watcher e as coleções já integradas ao SpecsPanel; conectar Kanban, Cards/Delivery, Coverage e demais leitores previstos, protegendo editores e revalidando acesso. Qualificar resumo, formulário e histórico existentes. | Mutação MCP observada na UI aberta, inclusive mudança só de Card; formulário preservado, perda de acesso tratada e recuperação de rede comprovada. UV18–UV21. |
+| U3 — completar integração | Reutilizar o watcher e as coleções já integradas ao SpecsPanel/Kanban; conectar CardModal/Delivery, Coverage e demais leitores previstos, protegendo editores e revalidando acesso. Qualificar resumo, formulário e histórico existentes. | Mutação MCP observada na UI aberta, inclusive mudança só de Card; formulário preservado, perda de acesso tratada e recuperação de rede comprovada. UV18–UV21. |
 | U4 — qualificar entrega | Executar regressões e auditoria, construir/instalar o par exato isoladamente e tramitar uma iniciativa mock nova até Done e KG canonical. | Matriz UV01–UV24 com evidências, oito budgets ZERO, paridade do pacote instalado, ledger e commits/pushes completos. |
 
 Cada linha usa as tarefas já discriminadas em §6.1/§6.2; não cria milestones
@@ -391,7 +397,7 @@ Essas evidências não encerram o milestone nem substituem o E2E.
 | U1 | Cards Not Started em Draft e remoção da exigência de existir Decision. | Percurso real UI/MCP no U4; não refazer a implementação. |
 | U2 — conclusão | Payload composto, permissões independentes, pareceres/históricos nativos, promoção condicionada, recibo/replay e manifesto obrigatório. | Paridade completa de todos os caminhos com os gates aplicáveis. |
 | U2 — leitura | `include_planning`, 17 componentes, composição pública sem escrita, revisões leves em lote, permissões por componente, paginação REST/MCP e cliente tipado. Revisões de coleções Spec/Card por Board; 11 passes do contrato, 79 de manifesto/leitura/transporte. Admissão sem Checklist comprovada por REST/browser e rollback nativo. | Completar matriz de paridade dos gates e superfície MCP; não recriar metadados de coleção. |
-| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão e ao SpecsPanel; refresh de permissões com proteção de respostas antigas. Prova parcial de novas Specs na lista e rascunho preservado. | Conectar Kanban/CardModal e demais leitores da Spec; proteger os demais formulários; comprovar Card sem bump da Spec, revogação/offline/reconexão no fluxo completo. |
+| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão, SpecsPanel e Kanban; refresh de permissões com proteção de respostas antigas. Provas parciais de novas Specs/Cards, rascunho e expansão preservados. | Conectar CardModal e demais leitores da Spec; proteger os demais formulários; comprovar progresso de Card sem bump da Spec, revogação/offline/reconexão no fluxo completo. |
 | U4 | Regressões parciais registradas no ledger. | Wheels, runtime compatível, browser e iniciativa nova até Done/KG; matriz UV01–UV24. |
 
 #### U2 — encerrar backend e contratos antes da interface
@@ -477,7 +483,7 @@ permitidas. Comparar razão, estado e efeitos persistidos; não somente HTTP 2xx
 | Família / UV | Ponto de partida existente | Conferência restante delimitada |
 | --- | --- | --- |
 | Qualidade/decomposição; UV04–06/10/12/13 | Core `test_spec_validation_composition.py`, `test_spec_evaluation_currentness.py`; Community `test_spec_validation_native_gate.py` | Relacionar os casos de aprovação, rejeição ativa, média nativa, autoria distinta e qualidade off aos caminhos públicos. Não duplicar os casos já provados. |
-| Lint/Checklist; UV07/08 | Community `test_spec_admission_missing_checklist.py`, `test_checklist_frozen_gate_characterization.py`, `test_sqlalchemy_checklist.py` | Provar que leitura e ambas as formas de promoção preservam os modos e snapshot; concluir o caso MCP de admissão sem binding, sem qualquer escrita parcial. |
+| Lint/Checklist; UV07/08 | Community `test_spec_admission_missing_checklist.py` (REST/MCP, dois passes), `test_checklist_frozen_gate_characterization.py`, `test_sqlalchemy_checklist.py` | Provar que leitura e ambas as formas de promoção preservam os modos e snapshot. Admissão sem binding já recusa sem escrita parcial em REST/MCP; não repetir a implementação. |
 | Policy; UV09/10/11 | Community `test_skb_b10_policy_transition_rest.py`; Core `test_spec_planning_readiness.py` | Relacionar julgamento nativo e conclusão composta/direta, inclusive autoridade indisponível, leitura negada e advisory. O teste isolado do resumo não comprova todos os writers. |
 | Arquitetura/Code Evidence/alocação; UV09/22 | Core `test_spec_validation_composition.py`, `test_spec_planning_readiness.py`; Community `test_spec_validation_lifecycle_gate.py` | Reaproveitar os 32 casos de cobertura; fechar somente diferenças não demonstradas com os mesmos dados. Skip de cobertura não oculta projeção inválida; não exigir código implementado antes da execução. |
 | Concorrência/replay/permissões; UV11/14–16 | Core `test_spec_validation_composition.py`; Community `test_spec_planning_manifest.py`, `test_validation_cycle_routes_authorization.py` | Mapear fence, rollback, chave/recibo, escopo e reautorização. Falha técnica não deixa parecer parcial; replay não promove novamente nem ignora acesso atual. |
@@ -542,6 +548,10 @@ semântica automática de pareceres.
    coluna expandida, filtros e página quando válidos, descartando cursor inválido.
    Reutilizar a geração/AbortController existentes; limpar store e respostas
    pendentes quando o acesso for perdido.
+   **Implementado e parcialmente qualificado:** descoberta UI/MCP de Cards e
+   expansão preservada, testes de filtro, resposta antiga, corrida de autoridade
+   e recuperação de página inválida. Não reaplicar; completar a prova de barras
+   com entrega real e os cenários integrados restantes junto de CardModal/U4.
 2. Em `CardModal.tsx`, substituir o timer pesado de 10 s de `silentRefresh` pelo
    watcher compartilhado do Card e da Spec pertinente. Invalidar Delivery,
    readiness e dependências afetadas; leitura completa só após mudança ou ação
@@ -581,7 +591,7 @@ Esta tabela concretiza os passos 4–6; não amplia os critérios UV18–UV20.
 | Card/alocação/Delivery sem mudança de `Spec.version` | `CardModal`, `KanbanBoard`, `SpecsPanel`, Coverage/Delivery e referências visíveis | Invalidar projeções pertinentes a partir das revisões autoritativas, sem calcular gates ou percentuais no frontend. Provar convergência por mutação MCP. |
 | Formulário de avaliação ou Checklist em edição | `SubmitSpecValidationModal`, `SpecDecompositionPanel`, `SpecChecklistPanel` | Conservar campos e base original; mostrar conflito e exigir revisão explícita. Não usar `workspaceReloadKey` para remontar formulário sujo. Testar também execução de Checklist aberta e resposta atrasada. |
 | Revisão de autoridade ou acesso negado | Watcher, `usePermissions` e leitores protegidos | Invalidar cache de permissões e cancelar respostas antigas; reautorizar antes de voltar a exibir conteúdo. O TTL atual de 60 s não comprova revogação. Preservar rascunhos ainda autorizados; retirar conteúdo cujo acesso foi perdido. |
-| Novo Card/Spec ainda não assinado | Listagens existentes de Board/Spec | Usar os tokens de coleção já existentes: SpecsPanel integrado, Kanban pendente. Provar descoberta de Card também; lote de IDs conhecidos não basta. Sem novo metadado ou varredura de todos os objetos. |
+| Novo Card/Spec ainda não assinado | Listagens existentes de Board/Spec | Tokens de coleção integrados em SpecsPanel e Kanban, descoberta comprovada parcialmente por UI/MCP. Preservar essa implementação; completar os cenários integrados sem novo metadado ou varredura de todos os objetos. |
 | Perda de conexão, troca de Board, retorno de foco | Watcher compartilhado e consumidores | Cancelar geração antiga, sinalizar dados desatualizados, retomar sem polling duplicado e sem repetir submissão. |
 
 O aceite no navegador exige duas superfícies simultâneas: UI aberta e mutação
@@ -678,8 +688,8 @@ mockados precisam de execução observada para gerar prova autenticada.
 
 **Próxima ação de execução:** mapear os casos existentes à matriz finita de
 paridade U2 em §6.2 e completar somente as lacunas demonstradas, preservando
-os 90 passes nativos e os 32 casos de cobertura. Depois integrar Kanban →
-CardModal → proteção dos editores/expansão de SpecModal → ensaio integrado U3;
+os 90 passes nativos e os 32 casos de cobertura. Preservar a integração Kanban
+e seguir CardModal → proteção dos editores/expansão de SpecModal → ensaio integrado U3;
 executar U4 instalado até Done/KG. Não refazer composição pública, API de revisões,
 coleções ou SpecsPanel já implementados. Esta revisão termina no planejamento;
 não iniciou esses passos nem reinstalou o runtime do usuário.
