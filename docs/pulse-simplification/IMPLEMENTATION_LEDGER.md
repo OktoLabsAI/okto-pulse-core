@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — plano único reconciliado com o WIP de Cards
+
+Antes desta revisão documental, publicados Core `6b7a854a` / Community
+`37c34e10`. O checkpoint preserva trabalho incompleto; não significa testes
+verdes nem release qualificada. Não houve nova implementação neste pedido.
+
+Atualizado `SPEC_UNIFIED_VALIDATION_PLAN.md`, mantendo U1–U4 e UV01–UV24.
+A revisão registra a admissão REST/MCP já demonstrada e retira sua repetição
+da fila. U2 continua com a matriz finita de paridade; U3 agora distingue WIP de
+CardModal/Delivery de integração ausente e define os passos 2a–2e: interação e
+permissões do novo editor, erro de leitura sem rebase/envio, invalidação pendente,
+base nativa de Delivery e consumidores visíveis/fechados. Proteção de editores
+da Spec precede expansão global de refresh; U4 instalado/UI/MCP permanece final.
+
+Mantidas todas as avaliações, critérios, severidades, thresholds, autoria,
+permissões e histórias. A conclusão é única, sem média geral nem superavaliador.
+Decision ausente não exige criação artificial; Decision existente mantém plano
+e verificação. Nenhuma mudança de schema, migração, gate ou método de prova
+nesta revisão. A ausência de CAS genérico de CardUpdate é limite explícito;
+não criar novo projeto de concorrência nem atribuir essa garantia ao frontend.
+
+Validação documental: conferência dos diffs, resultados XML já existentes e
+`git diff --check`. Nenhum teste de comportamento novo ou ensaio visual, build,
+instalação, reinício ou alteração da home. Artefato anterior permanece com
+77 passes/quatro falhas e não qualifica o último WIP Delivery.
+
+Retomada: fechar apenas as lacunas mapeadas de U2, corrigir/qualificar os passos
+2a–2e de U3, proteger/expandir SpecModal e executar U4 até Done/KG. Planejamento
+entregue; execução dessas correções não iniciada nesta revisão.
+
 ### 2026-10-14 — checkpoint de CardModal/Delivery antes da revisão do plano
 
 Pedido vigente: planejamento detalhado, sem continuar a implementação.

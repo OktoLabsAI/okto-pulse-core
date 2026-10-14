@@ -1,7 +1,7 @@
 # Validação unificada do planejamento da Spec
 
 Plano de 14 de outubro de 2026. **U1 implementado; U2 parcial; U3 parcial; U4 pendente.**
-Revisão de planejamento sobre Core `72db3266` / Community `c79f0191`,
+Revisão de planejamento sobre Core `6b7a854a` / Community `37c34e10`,
 ambos publicados em `feature/v0.4.0` antes desta revisão. O checkpoint preserva
 trabalho parcial; não é uma release qualificada. U2 ganhou 32 casos de paridade de cobertura REST/MCP
 e correção da projeção de resultado malformado: ver
@@ -19,7 +19,11 @@ Avanço de execução posterior: admissão sem Checklist também qualificada pel
 MCP (UoW real, identidade de teste) e Kanban integrado ao watcher de coleção,
 com descoberta autenticada UI/MCP e expansão preservada. Ver
 [prova parcial de Kanban](evidence-u3-kanban-sync-20261014.json).
-CardModal, demais leitores/editores da Spec e U4 continuam pendentes.
+CardModal/EditableField/Delivery têm WIP preservado, ainda não qualificado:
+o ensaio anterior registra 77 passes e quatro falhas; mudanças posteriores de
+Delivery não estão cobertas por ele. Demais leitores/editores da Spec e U4
+continuam pendentes. A sequência de fechamento está em §6.2; não reimplementar
+o watcher nem apresentar esse checkpoint como entrega instalada.
 
 ### Leitura executiva do plano
 
@@ -366,7 +370,7 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint atual:** Core `72db3266` / Community `c79f0191`, branch
+**Checkpoint atual:** Core `6b7a854a` / Community `37c34e10`, branch
 `feature/v0.4.0`, publicados antes desta revisão documental. Inclui a prova
 parcial de sincronização indicada no cabeçalho; **não encerra U2/U3 nem qualifica
 release instalável**. O checkpoint de UI anterior foi
@@ -387,8 +391,9 @@ incluindo recusa acionável REST e rollback integral; browser confirmou 409 sem
 avanço. O refresh da Validation preservou o rascunho do Checklist no browser;
 40 testes frontend passaram. Não criar binding automático nem dispensar gate.
 Integração automática e reautorização já têm implementação/prova parcial na
-Validation; a expansão aos demais consumidores e a paridade MCP completa seguem
-pendentes, conforme a tabela abaixo.
+Validation; a admissão sem Checklist também foi comprovada no MCP em UoW real.
+A expansão aos demais consumidores e a paridade completa das outras famílias
+seguem pendentes, conforme a tabela abaixo.
 `closure-u3-interface.json` registra oito budgets ZERO e nenhum finding/drift.
 Essas evidências não encerram o milestone nem substituem o E2E.
 
@@ -397,7 +402,7 @@ Essas evidências não encerram o milestone nem substituem o E2E.
 | U1 | Cards Not Started em Draft e remoção da exigência de existir Decision. | Percurso real UI/MCP no U4; não refazer a implementação. |
 | U2 — conclusão | Payload composto, permissões independentes, pareceres/históricos nativos, promoção condicionada, recibo/replay e manifesto obrigatório. | Paridade completa de todos os caminhos com os gates aplicáveis. |
 | U2 — leitura | `include_planning`, 17 componentes, composição pública sem escrita, revisões leves em lote, permissões por componente, paginação REST/MCP e cliente tipado. Revisões de coleções Spec/Card por Board; 11 passes do contrato, 79 de manifesto/leitura/transporte. Admissão sem Checklist comprovada por REST/browser e rollback nativo. | Completar matriz de paridade dos gates e superfície MCP; não recriar metadados de coleção. |
-| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão, SpecsPanel e Kanban; refresh de permissões com proteção de respostas antigas. Provas parciais de novas Specs/Cards, rascunho e expansão preservados. | Conectar CardModal e demais leitores da Spec; proteger os demais formulários; comprovar progresso de Card sem bump da Spec, revogação/offline/reconexão no fluxo completo. |
+| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão, SpecsPanel e Kanban; refresh de permissões com proteção de respostas antigas. CardModal/EditableField/Delivery em WIP, com quatro falhas conhecidas no ensaio anterior. | Qualificar esse WIP e fechar os consumidores restantes; proteger os editores da Spec antes de expandir suas leituras; comprovar progresso de Card sem bump da Spec, revogação/offline/reconexão no fluxo completo. |
 | U4 | Regressões parciais registradas no ledger. | Wheels, runtime compatível, browser e iniciativa nova até Done/KG; matriz UV01–UV24. |
 
 #### U2 — encerrar backend e contratos antes da interface
@@ -439,10 +444,10 @@ Executar na ordem abaixo. Os itens detalham U2.3/U2.4, sem novos milestones.
    malformados. Lint/AC/recursos exclusivos da avaliação habilitada não viram
    obrigações novas no caminho direto. `ready` não concede permissão nem muda
    lifecycle; bloqueio de promoção não impede registrar parecer válido negativo.
-   Qualificar também a recusa de admissão sem Checklist: fixture com realm,
-   diagnóstico acionável REST/MCP e nenhuma alteração em estado, versão, edição,
-   avaliações, snapshots, atividade ou eventos. Reiniciar somente o runtime
-   isolado para observar a correção pelo browser; processo antigo não é prova.
+   A recusa de admissão sem Checklist já tem fixture com realm e dois passes
+   REST/MCP em `u2-admission-rest-mcp.xml`, sem alteração em estado, versão,
+   edição, avaliações, snapshots, atividade ou eventos. Referenciar essa prova;
+   não refazer o diagnóstico. A autenticação wire continua parte de U4.
    Saída: UV04–UV17/UV22 pertinentes com persistência real, sem escrita parcial.
 3. **Consumir os metadados leves já implementados.** O contrato por Board
    aceita 1–50 referências Spec/Card ou coleção Spec/Card e retorna revisões,
@@ -552,11 +557,13 @@ semântica automática de pareceres.
    expansão preservada, testes de filtro, resposta antiga, corrida de autoridade
    e recuperação de página inválida. Não reaplicar; completar a prova de barras
    com entrega real e os cenários integrados restantes junto de CardModal/U4.
-2. Em `CardModal.tsx`, substituir o timer pesado de 10 s de `silentRefresh` pelo
-   watcher compartilhado do Card e da Spec pertinente. Invalidar Delivery,
+2. Qualificar o WIP de `CardModal.tsx`, `EditableField.tsx` e
+   `CardDeliveryDoDPanel.tsx`. A substituição do timer pesado de 10 s pelo watcher,
+   a fila de invalidação e a base congelada do formulário já estão escritas.
+   Fechar os casos abaixo antes de considerá-las entregues. Invalidar Delivery,
    readiness e dependências afetadas; leitura completa só após mudança ou ação
-   explícita. Preservar aba/rascunho e versão original de submissão. Não manter
-   ambos os timers nem recarregar painéis fechados.
+   explícita. Preservar aba/rascunho e os controles nativos de cada operação.
+   Não manter ambos os timers nem recarregar painéis fechados.
 3. Em `SpecModal.tsx`, preparar primeiro a proteção dos editores. Hoje as chaves
    de `TextRequirementsTab` e `RequirementVerificationPanel` incluem
    `spec.version`; habilitar polling global sem mudar isso remonta formulários.
@@ -574,6 +581,29 @@ semântica automática de pareceres.
 Esses passos encerram a integração já prevista; não criam serviço de eventos,
 framework de formulários ou redesign de outras áreas. Um problema reproduzido
 que impeça um desses aceites é corrigido no próprio passo, com evidência.
+
+**Fechamento delimitado do WIP CardModal/Delivery (passo 2):**
+
+| Ordem | Trabalho concreto | Prova de saída |
+| --- | --- | --- |
+| 2a | Atualizar os quatro testes que ainda procuram contenteditable no título, agora renderizado por EditableField. Preservar as populações normal/bug/test em Spec Done e rework Rejected. | Testar interação: quem pode editar abre o campo e salva; quem não pode não abre nem chama updateCard. Não basta trocar a asserção de atributo ou excluir cenários. |
+| 2b | Separar falha de leitura de Delivery de erro de submissão. O WIP conserva dados antigos após erro e encerra loading; isso não permite confirmar uma base atual. | Refresh falho mantém rascunho, sinaliza desatualização e bloqueia envio/revisão da base até leitura bem-sucedida. Retry de escrita continua disponível quando a leitura está válida. Testar falha inicial, refresh falho e resposta atrasada. |
+| 2c | Conferir fila de invalidação durante carregamento de thresholds, mudança de autoridade e troca de Card/Board. | Revisão pendente produz recarga; resposta antiga não repovoa dados; perda de acesso fecha/limpa conteúdo; nenhuma leitura pesada periódica sem mudança. |
+| 2d | Qualificar preservação de texto e seleção de evidências, inclusive obrigações/recibos removidos na fonte. | Formulário não perde campos nem troca expected_card_version, expected_spec_edition ou delivery_revision silenciosamente. Revisão explícita apresenta escolhas atuais; nenhuma submissão automática. Testes de Delivery e EditableField mais interação no CardModal. |
+| 2e | Conferir os consumidores montados de CardModal: Delivery/readiness, dependências, recursos/KB e histórico. Propagar a revisão somente onde faltar. | Mutação MCP aparece no leitor visível; painel fechado atualiza ao abrir. Browser mostra título remoto com rascunho local preservado e sem escrita involuntária. Registrar quais superfícies foram efetivamente exercitadas. |
+
+`u3-card-live.xml` anterior: 79 casos de CardModal, quatro falhas; dois casos
+de EditableField, ambos aprovados. Não cobre as alterações posteriores de
+Delivery. Após as correções, executar as suítes afetadas, tipos e lint, depois
+o ensaio UI/MCP isolado. Não repetir toda a qualificação de Kanban sem alteração
+ou regressão que justifique. O checkpoint continua vermelho até essas provas.
+
+**Limite de concorrência:** CardUpdate não possui CAS genérico. A proteção de
+EditableField detecta mudança recebida pelo cliente e preserva rascunho; não
+garante ausência de corrida entre leitura e escrita no servidor. Não usar
+Spec.version como versão do Card nem declarar CAS implementado. Os fences da
+conclusão composta e de Delivery continuam obrigatórios e devem ser testados
+pelos seus contratos reais; não ampliar esta revisão para um CAS global.
 
 Não encerrar U3 enquanto existir qualquer uma destas lacunas: consumidor previsto
 sem atualização; botão de conclusão que não oferece o payload composto permitido;
@@ -689,7 +719,8 @@ mockados precisam de execução observada para gerar prova autenticada.
 **Próxima ação de execução:** mapear os casos existentes à matriz finita de
 paridade U2 em §6.2 e completar somente as lacunas demonstradas, preservando
 os 90 passes nativos e os 32 casos de cobertura. Preservar a integração Kanban
-e seguir CardModal → proteção dos editores/expansão de SpecModal → ensaio integrado U3;
+e qualificar o WIP CardModal/Delivery (passos 2a–2e) → proteger editores/expandir
+SpecModal → ensaio integrado U3;
 executar U4 instalado até Done/KG. Não refazer composição pública, API de revisões,
 coleções ou SpecsPanel já implementados. Esta revisão termina no planejamento;
 não iniciou esses passos nem reinstalou o runtime do usuário.
