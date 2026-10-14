@@ -600,8 +600,12 @@ Delivery 33, Progress 19, EditableField 2), incluindo os cenários de 2a–2d;
 tipos passaram e lint terminou sem erros, com warnings registrados. Browser
 UI/MCP confirmou o título remoto com rascunho preservado. Não repetir essas
 provas sem alteração/falha nova. **2e e a visibilidade dos leitores ainda estão
-pendentes**: Activity, policy, KB/Knowledge, Architecture e Targets precisam
-consumir revisão sem rebase/remonta de editor; Delivery oculta deve adiar leitura.
+pendentes**: KB/Knowledge, Architecture e Targets precisam consumir revisão sem
+rebase/remonta de editor. Community `77394617` já adia Delivery/readiness oculta,
+atualiza Activity e reconsulta autoridade de transição sem depender do timestamp
+do Card. Cinco suítes/146 casos com resultado final aprovado, tipos e lint
+registrados no ledger. A arquitetura do Card é somente leitura; os writers de
+Knowledge e Targets exigem preservação da base antes de conectar invalidação.
 Essa prova parcial não encerra U3 nem substitui o E2E instalado U4.
 
 **Limite de concorrência:** CardUpdate não possui CAS genérico. A proteção de

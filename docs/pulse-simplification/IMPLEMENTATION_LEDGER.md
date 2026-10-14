@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U3: Delivery oculta, Activity e autoridade de transição
+
+Continuação no mesmo turno; Community `77394617`, sobre `2a6324d3`.
+Delivery recebe active do CardModal. Desativar a aba cancela/adia projeção e
+readiness, inclusive invalidação por evento; reabrir lê a revisão atual sem
+desmontar o formulário. Retornar aos mesmos dados não cria obrigação de revisar
+de novo: a comparação usa a base nativa do formulário, não identidade do objeto
+da resposta. Nova revisão/alteração relevante continua exigindo revisão explícita.
+
+Activity recebe revisão externa e descarta respostas após saída/troca; aba
+fechada continua sem consultas. CardModal atualiza autoridade de transição após
+invalidação mesmo que updated_at do Card permaneça igual: policy/Spec pode mudar
+sem esse timestamp. Nenhuma alteração no julgamento dos gates.
+
+Qualificação: `u3-card-visible-readers.xml` tem 84 passes CardModal, 17
+DeliveryReadiness, um DeliveryReadinessDoD e nove useDeliveryReadiness. O primeiro
+ensaio de Delivery registrou uma falha no retorno à mesma base; a suíte afetada
+foi reexecutada com a comparação final em `u3-delivery-visibility-final.xml`:
+35 passes. Assim, cinco suítes/146 casos possuem resultado final aprovado, sem
+somar os reruns como casos distintos. `tsc -b` passou; ESLint exit 0, 13 warnings,
+zero erros. `git diff --check` passou. Alternância real Delivery/Details conferida
+na UI isolada; o adiamento de requests é comprovado pelos testes, não pela
+consulta de performance que não forneceu evidência utilizável no browser.
+
+Estado exato de retomada: U3 2e ainda não completo. Próximos consumidores:
+KB herdada, Knowledge, Architecture e Targets. Architecture de Card é snapshot
+somente leitura (`cardSnapshotReadOnly`); não supor editor de arquitetura no
+Card. Knowledge tem writer e expected_revision, portanto preservar sua base
+antes de conectar revisões. AddTargetForm também precisa preservar base de
+Spec/projeção. Corrigir respostas antigas/visibilidade nesses leitores, depois
+proteger/expandir SpecModal. U2 paridade e U4 instalado/UI/MCP até Done/KG seguem
+pendentes. Não reinstalar o runtime do usuário nem declarar entrega final.
+
 ### 2026-10-14 — U3: rascunhos de Card/Delivery qualificados parcialmente
 
 Turno anterior: progresso documental publicado, sem entrega final. Retomada
