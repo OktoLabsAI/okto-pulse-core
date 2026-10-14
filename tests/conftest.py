@@ -381,10 +381,16 @@ class _CoreTestSchemaLifecycle:
                 # service call, after this schema snapshot was already created.
                 from okto_pulse.community.adapters import sqlalchemy_models  # noqa: F401
 
+                from sqlalchemy import inspect
+                from okto_pulse.community.adapters.sqlite_validation_revisions import install_validation_revision_triggers
+                revisions_exist = await conn.run_sync(lambda sync: inspect(sync).has_table("validation_source_revisions"))
+
                 # SK-B's immutable policy authority is an edition extension.
                 # Cross-repo integration runs compose it explicitly while
                 # pure-Core runs remain independent of Community.
                 await conn.run_sync(CommunityBase.metadata.create_all)
+                if not revisions_exist:
+                    await conn.run_sync(lambda sync: install_validation_revision_triggers(sync, CommunityBase.metadata))
 
 
 class _CoreTestRelationalEffects(RelationalEffectsPort):

@@ -32,6 +32,7 @@ from okto_pulse.core.application.use_cases.submit_spec_validation import (
 )
 from okto_pulse.core.domain.permissions import PermissionSet
 from okto_pulse.core.domain.enums import CardType
+from spec_planning_fixtures import manifest_payload
 
 
 BOARD_ID = "board-1"
@@ -274,6 +275,7 @@ async def test_spec_validation_permission_denies_before_writer():
     actor = ActorContext("actor-1", "mcp", board_id=BOARD_ID, permissions=permissions)
     data = {
         "idempotency_key": "permission-review",
+        "expected_planning_manifest": manifest_payload("spec-1"),
         "expected_validation_edition": 1,
         "expected_spec_version": 1,
         "expected_head_revision": 0,

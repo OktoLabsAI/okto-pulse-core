@@ -4029,12 +4029,16 @@ class RecordedSpecValidationPinpointResponse(RecordedSpecValidationPinpoint):
 from okto_pulse.core.domain.spec_evaluation import SpecEvaluationInput
 
 
+from okto_pulse.core.domain.spec_planning import SpecPlanningManifest
+
+
 class SpecValidationSubmit(BaseModel):
     """Canonical five-dimensional Spec Validation submission."""
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     idempotency_key: str = Field(min_length=1, max_length=128)
+    expected_planning_manifest: SpecPlanningManifest
 
     expected_validation_edition: int = Field(
         ...,

@@ -8,6 +8,7 @@ import pytest
 import pytest_asyncio
 
 from sqlalchemy_test_models import Spec, SpecStatus
+from spec_planning_fixtures import current_manifest
 from okto_pulse.core.services.main import SpecService
 from okto_pulse.core.models.schemas import SpecMove
 from okto_pulse.core.ports.application_persistence import get_application_persistence_port
@@ -178,6 +179,10 @@ async def composition_client(db_factory, monkeypatch):
     async with db_factory() as db:
         _, spec_id = await _seed_board_and_spec(db)
         await db.commit()
+        payload = {
+            **_validation_payload(),
+            "expected_planning_manifest": await current_manifest(db, spec_id),
+        }
 
     async def override_db():
         async with db_factory() as db:
@@ -189,7 +194,7 @@ async def composition_client(db_factory, monkeypatch):
     app.dependency_overrides[auth_deps.require_user] = lambda: USER_ID
     app.dependency_overrides[auth_deps.get_realm_id] = lambda: "local"
     with TestClient(app) as client:
-        yield client, spec_id
+        yield client, spec_id, payload
 
 
 @pytest.mark.asyncio
@@ -197,10 +202,10 @@ async def composition_client(db_factory, monkeypatch):
 async def test_rest_composition_persists_both_native_histories(
     composition_client, db_factory, recommendation, status,
 ):
-    client, spec_id = composition_client
+    client, spec_id, base_payload = composition_client
     response = client.post(f"/api/v1/specs/{spec_id}/validation", json={
         "idempotency_key": "rest-composition",
-        **_validation_payload(), "decomposition": decomposition_payload(recommendation),
+        **base_payload, "decomposition": decomposition_payload(recommendation),
     })
     assert response.status_code == 201, response.text
     result = response.json()
@@ -220,7 +225,7 @@ async def test_rest_composition_persists_both_native_histories(
 async def test_rest_technical_failure_rolls_back_both_reviews_and_promotion(
     composition_client, db_factory, monkeypatch,
 ):
-    client, spec_id = composition_client
+    client, spec_id, base_payload = composition_client
 
     async def fail_history(*args, **kwargs):
         raise RuntimeError("injected history outage after both native appends")
@@ -229,7 +234,7 @@ async def test_rest_technical_failure_rolls_back_both_reviews_and_promotion(
     with pytest.raises(RuntimeError, match="injected history outage"):
         client.post(f"/api/v1/specs/{spec_id}/validation", json={
             "idempotency_key": "rest-failure",
-            **_validation_payload(), "decomposition": decomposition_payload(),
+            **base_payload, "decomposition": decomposition_payload(),
         })
     async with db_factory() as db:
         spec = await db.get(Spec, spec_id)
@@ -248,10 +253,10 @@ async def test_rest_technical_failure_rolls_back_both_reviews_and_promotion(
 async def test_rest_rejects_forged_decomposition_identity_without_writes(
     composition_client, db_factory,
 ):
-    client, spec_id = composition_client
+    client, spec_id, base_payload = composition_client
     response = client.post(f"/api/v1/specs/{spec_id}/validation", json={
         "idempotency_key": "rest-forgery",
-        **_validation_payload(),
+        **base_payload,
         "decomposition": {**decomposition_payload(), "evaluator_id": "someone-else"},
     })
     assert response.status_code == 422, response.text
@@ -266,8 +271,8 @@ async def test_rest_exact_replay_and_changed_input_conflict(composition_client, 
     from sqlalchemy import select
     from okto_pulse.community.adapters.sqlalchemy_models import SpecValidationOperationReceiptRow
 
-    client, spec_id = composition_client
-    payload = {**_validation_payload(), "idempotency_key": "exact-replay",
+    client, spec_id, base_payload = composition_client
+    payload = {**base_payload, "idempotency_key": "exact-replay",
                "decomposition": decomposition_payload()}
     first = client.post(f"/api/v1/specs/{spec_id}/validation", json=payload)
     assert first.status_code == 201, first.text
@@ -290,8 +295,8 @@ async def test_rest_exact_replay_and_changed_input_conflict(composition_client, 
 
 @pytest.mark.asyncio
 async def test_replay_after_reopening_returns_original_without_promoting(composition_client, db_factory):
-    client, spec_id = composition_client
-    payload = {**_validation_payload(), "idempotency_key": "original-edition",
+    client, spec_id, base_payload = composition_client
+    payload = {**base_payload, "idempotency_key": "original-edition",
                "decomposition": decomposition_payload()}
     first = client.post(f"/api/v1/specs/{spec_id}/validation", json=payload)
     assert first.status_code == 201, first.text
@@ -312,8 +317,8 @@ async def test_replay_requires_current_read_authority(composition_client, monkey
     from okto_pulse.core.application.service_catalog import CoreApplicationServiceCatalog
     from okto_pulse.core.domain.permissions import PermissionSet
 
-    client, spec_id = composition_client
-    payload = {**_validation_payload(), "idempotency_key": "read-authority",
+    client, spec_id, base_payload = composition_client
+    payload = {**base_payload, "idempotency_key": "read-authority",
                "decomposition": decomposition_payload()}
     first = client.post(f"/api/v1/specs/{spec_id}/validation", json=payload)
     assert first.status_code == 201, first.text
@@ -333,8 +338,8 @@ async def test_simultaneous_identical_conclusions_have_one_receipt(composition_c
     from sqlalchemy import select
     from okto_pulse.community.adapters.sqlalchemy_models import SpecValidationOperationReceiptRow
 
-    client, spec_id = composition_client
-    payload = {**_validation_payload(), "idempotency_key": "concurrent-replay",
+    client, spec_id, base_payload = composition_client
+    payload = {**base_payload, "idempotency_key": "concurrent-replay",
                "decomposition": decomposition_payload()}
     with ThreadPoolExecutor(max_workers=3) as pool:
         futures = [pool.submit(copy_context().run, client.post, f"/api/v1/specs/{spec_id}/validation", json=payload)
@@ -359,8 +364,8 @@ async def test_failure_after_receipt_flush_rolls_back_and_can_retry_same_key(
     from okto_pulse.community.adapters.sqlalchemy_models import SpecValidationOperationReceiptRow
     from okto_pulse.community.adapters.sqlalchemy_spec_validation_receipts import CommunitySpecValidationReceiptStore
 
-    client, spec_id = composition_client
-    payload = {**_validation_payload(), "idempotency_key": "receipt-outage",
+    client, spec_id, base_payload = composition_client
+    payload = {**base_payload, "idempotency_key": "receipt-outage",
                "decomposition": decomposition_payload()}
     original = CommunitySpecValidationReceiptStore.save
 
@@ -397,9 +402,9 @@ async def test_receipt_scope_does_not_cross_actor_or_realm(composition_client, d
         SpecValidationReceiptScope, SpecValidationIdempotencyConflict,
     )
 
-    client, spec_id = composition_client
+    client, spec_id, base_payload = composition_client
     response = client.post(f"/api/v1/specs/{spec_id}/validation", json={
-        **_validation_payload(), "idempotency_key": "scoped-key",
+        **base_payload, "idempotency_key": "scoped-key",
     })
     assert response.status_code == 201, response.text
     async with db_factory() as db:
@@ -418,3 +423,74 @@ async def test_receipt_scope_does_not_cross_actor_or_realm(composition_client, d
         foreign = CommunitySpecValidationReceiptStore(db, RealmScope.tenant("other-realm"))
         with pytest.raises(SpecValidationIdempotencyConflict, match="scope is unavailable"):
             await foreign.get(scope)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["card", "authority", "review"])
+async def test_conclusion_refuses_changed_planning_basis_without_partial_writes(
+    composition_client, db_factory, change,
+):
+    from sqlalchemy import select
+    from okto_pulse.community.adapters.sqlalchemy_models import SpecValidationOperationReceiptRow
+    from sqlalchemy_test_models import Board, Card
+
+    client, spec_id, base_payload = composition_client
+    basis = base_payload["expected_planning_manifest"]
+    async with db_factory() as db:
+        if change == "card":
+            db.add(Card(id="new-planned-task", board_id=basis["board_id"], spec_id=spec_id,
+                        title="Additional planned work", created_by=USER_ID))
+        elif change == "authority":
+            board = await db.get(Board, basis["board_id"])
+            board.settings = {**board.settings, "min_spec_confidence": 95}
+        else:
+            await SpecService(db).submit_spec_evaluation(
+                spec_id, "other-reviewer", "Other reviewer", decomposition_payload(),
+            )
+            await get_application_persistence_port().flush(db)
+        await db.commit()
+        changed = await current_manifest(db, spec_id)
+        assert changed != basis
+        if change != "review":
+            assert changed["spec_version"] == basis["spec_version"]
+        before = await db.get(Spec, spec_id)
+        evaluations = before.evaluations
+
+    response = client.post(f"/api/v1/specs/{spec_id}/validation", json={
+        **base_payload, "idempotency_key": "stale-planning-basis",
+        "decomposition": decomposition_payload(),
+    })
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "spec_planning_manifest_conflict"
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        assert spec.status == SpecStatus.APPROVED
+        assert not spec.validations
+        assert spec.evaluations == evaluations
+        assert (await db.execute(select(SpecValidationOperationReceiptRow).where(
+            SpecValidationOperationReceiptRow.spec_id == spec_id,
+        ))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field,value,status", [
+    ("missing", None, 422), ("spec_id", "other-spec", 400),
+    ("board_id", "other-board", 409), ("edition", 2, 400),
+])
+async def test_conclusion_requires_a_manifest_for_its_exact_scope(
+    composition_client, db_factory, field, value, status,
+):
+    client, spec_id, base_payload = composition_client
+    payload = {**base_payload, "idempotency_key": "invalid-basis"}
+    if field == "missing":
+        payload.pop("expected_planning_manifest")
+    else:
+        payload["expected_planning_manifest"] = {
+            **payload["expected_planning_manifest"], field: value,
+        }
+    response = client.post(f"/api/v1/specs/{spec_id}/validation", json=payload)
+    assert response.status_code == status, response.text
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        assert spec.status == SpecStatus.APPROVED
+        assert not spec.validations and not spec.evaluations

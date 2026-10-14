@@ -126,6 +126,7 @@ def test_spec_validation_submit_rejects_historical_write_shapes() -> None:
 def _canonical_spec_validation_payload() -> dict[str, object]:
     return {
         "idempotency_key": "cycle-review",
+        "expected_planning_manifest": _planning_manifest().model_dump(mode="json"),
         "expected_validation_edition": 3,
         "expected_spec_version": 17,
         "expected_head_revision": 0,

@@ -8,7 +8,7 @@ from sqlalchemy import func, select, update
 
 from okto_pulse.community.adapters.mcp_host import CommunityMcpHostProvider
 from okto_pulse.community.adapters.sqlalchemy_models import (
-    Agent, Board, Spec, QualityAssessmentReceiptRow, ProjectStructureMutationReceiptRow,
+    Agent, AgentBoard, Board, Spec, QualityAssessmentReceiptRow, ProjectStructureMutationReceiptRow,
     PermissionPreset,
 )
 from okto_pulse.community.adapters.sqlalchemy_unit_of_work import CommunityUnitOfWorkFactory
@@ -28,6 +28,7 @@ from okto_pulse.core.ports.permission_policy import (
 from okto_pulse.core.runtime_registry import register_unit_of_work_factory
 from test_r08d_auth_replay_gates import _harness_env, _seed, _db_mod
 from test_spec_evaluation_rest_parity import _direct_spec_context_fields, _evaluation_payload
+from spec_planning_fixtures import manifest_payload
 
 __all__ = ['_harness_env']
 
@@ -53,12 +54,23 @@ async def test_authenticated_mcp_composed_conclusion(_harness_env, monkeypatch, 
     _install_current_external_requirement_lint(monkeypatch)
     factory = _db_mod.get_session_factory()
     register_unit_of_work_factory(CommunityUnitOfWorkFactory(factory))
+    from okto_pulse.community.adapters.sqlalchemy_validation_cycle import CommunitySqlAlchemyValidationCycleReader
+    from okto_pulse.core.ports.validation_cycle import register_validation_cycle_reader
+    register_validation_cycle_reader(CommunitySqlAlchemyValidationCycleReader(factory))
     async with factory() as db:
         root = next(row for row in builtin_permission_presets() if row['name'] == 'Full Control')
         db.add(PermissionPreset(id='compose-root', name=root['name'], flags=root['flags'], is_builtin=True))
         agent = await db.get(Agent, 'A1')
         agent.preset_id = 'compose-root'
         agent.permission_flags = {} if grant else {'spec': {'evaluations': {'submit': False}}}
+        db.add(AgentBoard(id='compose-other-board', agent_id='A1', board_id='B2', granted_by='owner'))
+        db.add(Spec(
+            id='other-board-spec', board_id='B2', title='Other Board content', created_by='A2',
+            architecture_adoption=ArchitectureAdoptionScope(
+                board_id='B2', spec_id='other-board-spec', adopted_in_edition=1,
+                actor_id='A2', inherited_resource_ids=(),
+            ).model_dump(mode='json'),
+        ))
         db.add(Spec(
             architecture_adoption=ArchitectureAdoptionScope(
                 board_id='B1', spec_id='composed', adopted_in_edition=1,
@@ -94,14 +106,26 @@ async def test_authenticated_mcp_composed_conclusion(_harness_env, monkeypatch, 
         server.mcp, resource_catalog=frozen, projection_identity=frozen.identity,
     )
     async with Client(host) as client:
+        cycle_response = await client.call_tool('okto_pulse_get_spec_validation_cycle', {
+            'board_id': 'B1', 'spec_id': 'composed',
+        })
+        cycle = json.loads(cycle_response.content[0].text)['data']
+        manifest = cycle['planning_manifest']
+        denied_scope = await client.call_tool('okto_pulse_get_spec_validation_cycle', {
+            'board_id': 'B1', 'spec_id': 'other-board-spec',
+        }, raise_on_error=False)
+        assert 'validation_subject_not_found' in str(denied_scope), denied_scope
+        assert 'Other Board content' not in str(denied_scope)
         response = await client.call_tool('okto_pulse_submit_spec_validation', {
             'idempotency_key': 'mcp-composition',
+            'expected_planning_manifest': manifest,
             'board_id': 'B1', 'spec_id': 'composed', **_validation_payload(),
             'decomposition': _evaluation_payload(review),
         }, raise_on_error=False)
         if grant:
             replay = await client.call_tool('okto_pulse_submit_spec_validation', {
                 'idempotency_key': 'mcp-composition',
+                'expected_planning_manifest': manifest,
                 'board_id': 'B1', 'spec_id': 'composed', **_validation_payload(),
                 'decomposition': _evaluation_payload(review),
             }, raise_on_error=False)
@@ -264,7 +288,8 @@ async def test_authenticated_planner_review_boundary_across_mcp_variants(
             assert await _snapshot(factory) == before
 
         validation = {'idempotency_key': 'planner-review', 'expected_validation_edition': 1, 'expected_spec_version': 1,
-                      'expected_head_revision': 0, 'recommendation': 'approve'}
+                      'expected_head_revision': 0, 'recommendation': 'approve',
+                      'expected_planning_manifest': manifest_payload('approved', 'B1')}
         for dimension in ('confidence', 'clarity', 'assertiveness', 'decidability', 'ambiguity'):
             validation[dimension] = 90
             validation[dimension + '_justification'] = 'Attempted unauthorized approval'

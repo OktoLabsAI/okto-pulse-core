@@ -2,8 +2,8 @@
 
 Plano de 14 de outubro de 2026. **U1 implementado; U2 em andamento com conclusão
 composta, gate de promoção e replay transacional testados; U3–U4 pendentes.**
-Revisões persistidas e manifesto na leitura REST do ciclo foram implementados;
-a exigência do manifesto na conclusão e o resumo integrado dos gates ainda faltam
+Revisões persistidas, manifesto obrigatório na conclusão REST/MCP/UI e leitura
+MCP do ciclo foram implementados; o resumo integrado dos gates ainda falta
 no U2. A comprovação completa pelo browser e MCP permanece
 para U4; consultar os resultados e limites no checkpoint atual do ledger.
 
@@ -308,17 +308,17 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento consolidado sobre o checkpoint publicado
 
-Conferência atual de 14/10/2026: Core `f1223c29` e Community `d3937da9`, ambos
-em `feature/v0.4.0`, com HEAD igual ao respectivo tracking branch local. Há
-alterações locais de implementação de U2 ainda não publicadas nem qualificadas
-como incremento concluído. Esta revisão atende ao pedido de planejamento;
-não modifica comportamento nem declara essas alterações prontas.
+Baseline da retomada de 14/10/2026: Core `f1223c29` e Community `d3937da9`,
+ambos em `feature/v0.4.0`; a reconciliação documental foi publicada no Core
+`8d71c5f6`. O incremento seguinte aplica o manifesto à conclusão e à leitura
+MCP. O ledger registra seus commits e provas; U2 completo, U3 e U4 continuam
+pendentes. Não confundir essa qualificação parcial com a entrega integrada.
 
 | Frente | Situação conferida | Trabalho restante |
 | --- | --- | --- |
 | U1 | Autoria de Cards em Draft e retirada da Decision obrigatória implementadas e registradas no ledger. | Exercitar os caminhos reais UI/MCP no U4; não implementar novamente. |
 | U2 — pareceres e recibo | Comando aceita decomposição tipada, usa autoria autenticada e recibo transacional; resultado distingue qualidade, promoção e bloqueios. Evidência existente `u2-replay.xml`: 267 testes, zero falhas/erros. | Completar leitura integrada e comprovação dos predicados compartilhados. A suíte existente não comprova o U2 inteiro. |
-| U2 — manifesto | Tipos/porta, revisões persistidas e leitura REST consistente publicados. Evidências anteriores: 95 testes Core, 130 Community, seis frontend e checagem de tipos, conforme ledger. | Qualificar o trabalho local que exige manifesto na conclusão, expõe leitura MCP e preserva a base do formulário; depois concluir resumo e metadados leves. Nenhum resultado anterior comprova as alterações locais atuais. |
+| U2 — manifesto | Tipos/porta, revisões persistidas e leitura REST consistente publicados. Incremento atual exige manifesto na conclusão, expõe leitura MCP delimitada ao Board e preserva a base do formulário sujo. Evidências e publicação específicas no ledger. | Concluir resumo e metadados leves. As provas anteriores de persistência não substituem a qualificação do novo contrato de conclusão. |
 | U3 | Cliente acompanha o contrato composto e mantém chave estável para retry. | Workspace integrado e sincronização externa ainda pendentes; mudança do payload não significa interface concluída. |
 | U4 | Há evidência de regressões e closure do checkout publicado (`closure-u2-manifest.json`, `ok=true`, oito budgets ZERO). | Build final, auditoria dos wheels, paridade da instalação e novo ensaio completo UI/MCP ainda pendentes. |
 
@@ -327,15 +327,16 @@ e ledger ao encerrá-los. Não criar milestones de produto adicionais.
 
 **U2 — terminar o contrato de conclusão e sua leitura.**
 
-Retomada imediata: conferir o diff local da conclusão, schemas REST/MCP,
-leitura delimitada ao Board e formulário. Atualizar os fixtures dos consumidores
-para obter o manifesto da fonte real nos testes de persistência; completar os
-casos de manifesto ausente, identidade divergente, mudança de Card sem bump da
-Spec, alteração de autoridade e replay após mudança de estado. Regenerar o
-catálogo pela ferramenta oficial. A passagem deste incremento exige paridade
-REST/MCP, testes frontend do payload e da preservação de formulário sujo,
-checagem de tipos e ausência de deriva arquitetural. Não publicar essas
-alterações como concluídas com base apenas nas suítes do commit anterior.
+O incremento do manifesto qualifica conclusão, schemas REST/MCP, leitura
+delimitada ao Board e base do formulário. Seus testes usam a fonte real na
+persistência e cobrem manifesto ausente, identidade divergente, Card sem bump
+da Spec, alteração de autoridade e replay após mudança de estado. Catálogo,
+frontend, tipos e closure têm provas próprias no ledger.
+
+Retomada imediata: implementar a leitura integrada dos julgamentos aplicáveis
+do item 4 e a projeção leve de metadados. Não usar o estado de Spec Validation
+isoladamente como resultado agregado do planejamento, nem consultar o ciclo
+completo periodicamente para sincronizar o workspace.
 
 Os itens 1–2 abaixo já possuem implementação publicada do manifesto; conferir
 seus limites ao integrar os demais gates, sem reimplementar o que está entregue.
@@ -464,8 +465,8 @@ e próximo passo exato. No E2E, registrar IDs/edições e evidências UI/MCP; n�
 alterar policies, scopes, skips ou percentuais para obter verde. Testes externos
 mockados precisam de execução observada para gerar prova autenticada.
 
-**Próxima ação de execução:** exigir o manifesto na conclusão REST/MCP/UI,
-expor sua leitura ao MCP e concluir o resumo integrado do U2, conforme o
+**Próxima ação de execução:** concluir o resumo integrado do U2 e a projeção
+leve de metadados para sincronização, conforme o
 checkpoint atual do ledger e §6.1. **Critério de conclusão:** U1–U4 e
 UV01–UV24 demonstrados, ledger atualizado e par de repositórios publicado. Esta
 sequência mantém o escopo acordado; os incrementos implementados e as provas

@@ -235,6 +235,7 @@ Semantic guideline protocol:
 - `okto_pulse_get_spec_context` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_spec_evaluation` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_spec_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
+- `okto_pulse_get_spec_validation_cycle` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_list_spec_evaluations` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_list_spec_validations` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_move_spec` — docs: `okto-pulse://reference/tool-docs/spec`

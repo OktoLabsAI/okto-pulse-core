@@ -18,6 +18,13 @@ class SpecPlanningManifestConflict(SpecValidationConflictError):
 class SpecPlanningManifestUnavailable(RuntimeError):
     code = "spec_planning_manifest_unavailable"
 
+    def to_error_dict(self) -> dict[str, object]:
+        return {
+            "outcome": "error", "error_code": self.code, "code": self.code,
+            "message": "Planning revision authority is unavailable.",
+            "category": "unavailable", "retryable": False,
+        }
+
 
 class SpecPlanningManifestPort(Protocol):
     """Read 1..50 manifests from the caller's authoritative transaction.

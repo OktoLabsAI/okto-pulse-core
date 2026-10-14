@@ -5,6 +5,7 @@ import pytest
 
 from okto_pulse.core.services import main
 from okto_pulse.core.models.schemas import SpecValidationSubmit
+from spec_planning_fixtures import manifest_payload
 
 
 @pytest.mark.asyncio
@@ -25,7 +26,7 @@ async def test_old_input_is_refused_before_flush_or_lookup(monkeypatch, field, v
 
 def test_transport_does_not_accept_predecessor_edition_alias():
     payload = dict(idempotency_key='native-review', expected_spec_edition=1, expected_spec_version=1, expected_head_revision=0,
-                   recommendation='approve')
+                   recommendation='approve', expected_planning_manifest=manifest_payload('spec'))
     for metric in ('confidence', 'clarity', 'assertiveness', 'decidability', 'ambiguity'):
         payload[metric] = 90
         payload[metric+'_justification'] = 'Independent reviewer justification'

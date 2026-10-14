@@ -115,6 +115,8 @@ class SQLAlchemyUnitOfWork:
         from okto_pulse.community.adapters.sqlalchemy_spec_validation_receipts import CommunitySpecValidationReceiptStore
 
         self.spec_validation_receipts = CommunitySpecValidationReceiptStore(session, self.realm_scope)
+        from okto_pulse.community.adapters.sqlalchemy_spec_planning_manifest import CommunitySpecPlanningManifest
+        self.spec_planning_manifest = CommunitySpecPlanningManifest(session, self.realm_scope)
         self.historical_archive_grants = _UnsupportedHistoricalArchiveGrants()
         self.historical_archive_reader = self.historical_archive_grants
         self.historical_context_reader = _UnsupportedHistoricalContextReader()

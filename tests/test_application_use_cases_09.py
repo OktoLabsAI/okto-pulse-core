@@ -31,11 +31,13 @@ from okto_pulse.core.application.use_cases import (
 from okto_pulse.core.models import BoardCreate, IdeationMove
 from sqlalchemy_test_models import Board, Ideation, IdeationStatus
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
+from spec_planning_fixtures import manifest_payload
 
 ACTOR = "uc09-actor"
 
 _VALID_VALIDATION_FENCES = {
     "idempotency_key": "use-case-review",
+    "expected_planning_manifest": manifest_payload("s1"),
     "expected_validation_edition": 1,
     "expected_spec_version": 1,
     "expected_head_revision": 0,
@@ -245,7 +247,10 @@ async def test_submit_spec_validation_missing_spec_raises_not_found(db_factory):
     async with db_factory() as db:
         with pytest.raises(EntityNotFoundError) as exc_info:
             await SubmitSpecValidationUseCase().execute(
-                SubmitSpecValidationCommand("missing-spec", _VALID_VALIDATION_PAYLOAD),
+                SubmitSpecValidationCommand("missing-spec", {
+                    **_VALID_VALIDATION_PAYLOAD,
+                    "expected_planning_manifest": manifest_payload("missing-spec"),
+                }),
                 actor=ActorContext(ACTOR, "rest"),
                 uow=_wrap_uow(db),
             )

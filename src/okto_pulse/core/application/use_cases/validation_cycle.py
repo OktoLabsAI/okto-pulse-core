@@ -111,6 +111,7 @@ class ValidationCycleReadUseCases:
             limit=command.limit,
             actor_id=actor.actor_id,
             realm_scope=actor.require_realm_scope(),
+            board_id=actor.board_id,
         )
         if not isinstance(result, ValidationCycleSummary):
             raise RuntimeError("validation_cycle_reader_result_invalid")
@@ -134,6 +135,7 @@ class ValidationCycleReadUseCases:
                 subjects=command.subjects,
                 actor_id=actor.actor_id,
                 realm_scope=actor.require_realm_scope(),
+                board_id=actor.board_id,
             )
         )
         if any(not isinstance(item, ValidationCycleSummary) for item in results):

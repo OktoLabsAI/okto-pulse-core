@@ -562,6 +562,35 @@ Args:
 Returns:
     JSON with created evaluation details
 
+## `okto_pulse_get_spec_validation_cycle`
+
+Read the current validation cycle and the planning basis before concluding a
+Spec. Requires Board access and the native read permission for each component.
+The requested Spec must belong to `board_id`, even if the agent can access
+other Boards. Unreadable components are omitted; an unavailable required basis
+must never be treated as approval.
+
+Args:
+    board_id: Authenticated Board ID.
+    spec_id: Spec in that Board.
+    include_previous: Include bounded historical summaries; default false.
+    offset: Previous-result offset, at least zero.
+    limit: Previous-result page size, 1..100; default 25.
+
+Returns:
+    Current native results, visible sections, submission_fence and, with
+    spec.validation.read, planning_manifest. Pass that complete manifest
+    unchanged as expected_planning_manifest to the conclusion. Map the fence's
+    expected_subject_version to expected_spec_version. A manifest detects
+    changes to planning inputs and authority, including changes that do not
+    advance Spec.version; it is not a score or approval. Missing revision
+    authority returns spec_planning_manifest_unavailable instead of a token.
+
+After a conflict, inspect the updated planning inputs before authoring a new
+conclusion. Do not silently refresh the token and retry an unchanged judgment.
+For an interrupted request, replay the exact original payload and operation key;
+the original receipt remains readable subject to current read authorization.
+
 ## `okto_pulse_submit_spec_validation`
 
 Submit a Spec Validation Gate record for a spec in 'approved' status.
@@ -610,6 +639,9 @@ Args:
     expected_validation_edition: Current human lifecycle edition
     expected_spec_version: Current technical Spec version
     expected_head_revision: Current validation head revision
+    expected_planning_manifest: Required complete planning_manifest from
+        okto_pulse_get_spec_validation_cycle, for the same Board/Spec, edition
+        and technical version. Compared transactionally before recording.
     confidence: Score 0-100 — reliability and evidence coverage of the evaluator's whole-current-edition assessment; NOT Spec quality
     confidence_justification: Why this confidence score (min 10 chars)
     clarity: Score 0-100 — how self-contained and understandable the problem, solution, scope, actors, terms, flows and errors are

@@ -40,6 +40,7 @@ from okto_pulse.core.application.use_cases.submit_spec_validation import (
 )
 from okto_pulse.core.domain.enums import CardType
 from okto_pulse.core.models.schemas import SpecUpdate
+from spec_planning_fixtures import manifest_payload
 from sqlalchemy_test_models import (
     ActivityLog,
     Board,
@@ -60,6 +61,7 @@ OTHER_OWNER = "spec-rest-scope-owner"
 
 VALIDATION = {
     "idempotency_key": "scope-review",
+    "expected_planning_manifest": manifest_payload("foreign-spec"),
     "expected_validation_edition": 1,
     "expected_spec_version": 1,
     "expected_head_revision": 0,
@@ -358,6 +360,13 @@ def _request(
     path: str,
     **kwargs: Any,
 ):
+    if method == "POST" and path.endswith("/validation") and "json" in kwargs:
+        # Valid shape for each target, so this probes authorization, not an
+        # unrelated mismatch between the route and the submitted identity.
+        kwargs["json"] = {
+            **kwargs["json"],
+            "expected_planning_manifest": manifest_payload(path.split("/")[1]),
+        }
     return client.request(method, f"{PREFIX}/{path.lstrip('/')}", **kwargs)
 
 

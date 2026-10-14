@@ -34,6 +34,8 @@ from okto_pulse.core.domain.spec_validation import (
     SpecValidationPinpoint,
 )
 from okto_pulse.core.domain.spec_evaluation import SpecEvaluationInput
+from okto_pulse.core.domain.spec_planning import SpecPlanningManifest
+from okto_pulse.core.ports.spec_planning_manifest import SpecPlanningManifestConflict
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 from okto_pulse.core.models.schemas import SpecValidationConclusionResponse
 from okto_pulse.core.ports.spec_validation_receipts import (
@@ -74,6 +76,7 @@ _CANONICAL_SCORE_DIMENSIONS = (
 )
 _CANONICAL_ALLOWED_FIELDS = {
     "idempotency_key",
+    "expected_planning_manifest",
     "expected_validation_edition",
     "expected_spec_version",
     "expected_head_revision",
@@ -138,6 +141,18 @@ class SubmitSpecValidationCommand:
             minimum = 0 if field_name == "expected_head_revision" else 1
             if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
                 raise CommandValidationError(f"{field_name} is invalid")
+
+        try:
+            manifest = SpecPlanningManifest.model_validate(self.data.get("expected_planning_manifest"))
+        except ValueError as exc:
+            raise CommandValidationError("expected_planning_manifest is required and must be valid") from exc
+        if (
+            manifest.spec_id != self.spec_id
+            or manifest.edition != self.data["expected_validation_edition"]
+            or manifest.spec_version != self.data["expected_spec_version"]
+        ):
+            raise CommandValidationError("expected_planning_manifest scope does not match submission")
+        self.data["expected_planning_manifest"] = manifest.model_dump(mode="json")
 
         missing = [
             field
@@ -298,6 +313,14 @@ class SubmitSpecValidationUseCase:
                 uow=uow,
                 board_id=spec.board_id,
             )
+        manifest = SpecPlanningManifest.model_validate(command.data["expected_planning_manifest"])
+        if manifest.board_id != spec.board_id:
+            raise SpecPlanningManifestConflict("Planning manifest belongs to a different Board.")
+        # begin_write precedes all authoritative reads. The edition must retain
+        # that write fence until the single commit below. Check before our own
+        # native appends advance the source revisions; replay above reads its
+        # original receipt and must never be rejected just for an older basis.
+        await uow.spec_planning_manifest.require_current(manifest)
         # MCP supplies the resolved agent name (actor.actor_name); REST leaves it
         # None and we resolve it here — preserving each surface's reviewer_name.
         reviewer_name = actor.actor_name or await _resolve_reviewer_name(
@@ -317,7 +340,10 @@ class SubmitSpecValidationUseCase:
             spec_id=command.spec_id,
             reviewer_id=actor.actor_id,
             reviewer_name=reviewer_name,
-            data={**authored_data, "pinpoints": sealed_pinpoints},
+            data={
+                **{key: value for key, value in authored_data.items() if key != "expected_planning_manifest"},
+                "pinpoints": sealed_pinpoints,
+            },
             actor_type="agent" if actor.actor_kind == "agent" else "user",
             surface=actor.source,
         )

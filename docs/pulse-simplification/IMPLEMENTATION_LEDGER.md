@@ -2,6 +2,69 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U2: manifesto obrigatório na conclusão e leitura MCP
+
+Base: Core 8d71c5f6 / Community d3937da9. Este incremento continua U2;
+não encerra U1–U4 nem comprova a entrega fim a fim.
+Community pareado: f3761e0b; este registro acompanha o commit Core do incremento.
+
+expected_planning_manifest passa a ser obrigatório no comando de conclusão,
+schema REST, tool MCP e cliente frontend. Identidade de Spec/edição/versão é
+validada no comando; Board e revisões autoritativas são conferidos sob a
+transação antes de pareceres, eventos ou promoção. O digest de idempotência
+inclui o manifesto. Replay reautoriza a leitura e devolve o recibo original,
+sem rejeitá-lo só porque o planejamento mudou após a operação original.
+Manifesto indisponível tem erro próprio; REST o traduz para 503, sem aprovação.
+
+Nova tool okto_pulse_get_spec_validation_cycle usa o read model público
+existente. O caso de uso propaga o Board do ator; reader simples e em lote
+recusam outro Board/realm antes de projetar conteúdo, mesmo quando o ator possui
+acesso a ambos. As permissões individuais continuam ocultando componentes e
+manifesto. A documentação ensina leitura, envio da base exata, conflito e
+replay. Catálogo é regenerado pelo gerador oficial, com classificação da tool.
+
+O formulário envia a base consultada. Atualização de readiness com draft sujo
+não troca silenciosamente o manifesto: mantém os campos, sinaliza conflito e
+bloqueia envio. Draft limpo pode adotar a nova leitura. Recuperação integrada,
+sincronização e experiência completa de revisão da nova base continuam em U3.
+
+Fixtures de persistência leem manifestos reais; somente testes isolados de
+schema/autorização usam valores sintéticos. Corrigidos fixtures que misturavam
+sessão de teste Core com mapper nativo sujeito à guarda semântica e que
+enviavam identidade diferente da rota em testes de autorização. Nenhuma guarda
+de produto foi relaxada. Novos casos cobrem Card sem bump de Spec, policy,
+parecer concorrente, ausência/escopo de manifesto e ausência de escrita parcial.
+
+Validação: regressão Core conjunta com 150 cenários produziu 147 passes e três
+falhas de preparação no fixture MCP (Spec adicional sem architecture_adoption).
+Corrigido o contrato obrigatório do fixture; reexecução de toda a suíte MCP:
+cinco passes, incluindo os três casos, leitura pública, escopo de Board,
+permissões independentes, conclusão e replay. Não foi relaxado o schema. Provas:
+u2-manifest-submit-core.xml conserva o diagnóstico inicial;
+u2-manifest-submit-mcp.xml contém a reexecução aprovada. Os demais 147 cenários
+incluem comando, composição REST, concorrência, autorização, contratos e drift
+do catálogo. Community: 52 passes em u2-manifest-submit-community.xml, leitura
+simples/lote, escopo/realm, snapshot consistente e REST. Artefatos em
+.validation-v040/spec-unified-20261014.
+
+Frontend: 26 testes aprovados, incluindo manifesto ausente/estrangeiro, refresh
+limpo e preservação de draft sujo; API client reexecutado após ajuste do ID do
+fixture: seis passes. tsc -b e Ruff F/E9 dos arquivos afetados aprovados.
+Catálogo regenerado e seu gate aprovado. diff --check dos dois repos aprovado.
+Closure oficial do checkout:
+closure-u2-manifest-submit.json, ok=true, 9006 linhas, zero findings/drift
+documental e oito budgets ZERO; READMEs regenerados. Links Markdown aprovados.
+Todos os testes Python usaram ambas as src via PYTHONPATH explícito.
+
+Home, instalação e processo do usuário não foram alterados. Ainda não houve
+ensaio visual desta alteração nem novo E2E instalado; eles permanecem
+obrigatórios no U3/U4. Resultados do checkout não são prova do runtime instalado.
+
+Próxima implementação: resumo ready/blocked/unavailable por componente,
+aplicabilidade/efeito e predicados comuns de promoção; projeção leve delimitada
+para U3. Depois workspace/sincronização e U4 conforme UV01–UV24. Não tratar a
+leitura MCP do ciclo como conclusão automática ou como polling leve.
+
 ### 2026-10-14 — planejamento: checkpoint reconciliado com o trabalho local
 
 Pedido atual: iniciar o planejamento detalhado. O documento existente

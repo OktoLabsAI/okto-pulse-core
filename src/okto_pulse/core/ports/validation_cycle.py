@@ -58,6 +58,7 @@ class ValidationCycleReadPort(Protocol):
         limit: int,
         actor_id: str,
         realm_scope: RealmScope,
+        board_id: str | None = None,
     ) -> ValidationCycleSummary: ...
 
     async def get_validation_cycles(
@@ -66,6 +67,7 @@ class ValidationCycleReadPort(Protocol):
         subjects: tuple[ValidationCycleSubjectRef, ...],
         actor_id: str,
         realm_scope: RealmScope,
+        board_id: str | None = None,
     ) -> tuple[ValidationCycleSummary, ...]:
         """Return summary-only cycles for 1..50 subjects in request order."""
 

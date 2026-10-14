@@ -218,7 +218,10 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
    `okto_pulse_get_checklist_receipt`. Re-run the full Spec context or
    `okto_pulse_get_allowed_transitions` before validation; that canonical
    readiness check detects a missing or failing Current result.
-5. Only then call `okto_pulse_submit_spec_validation` with the current fences,
+5. Read `okto_pulse_get_spec_validation_cycle(board_id, spec_id)` after preparing
+   the applicable inputs. Pass its `planning_manifest` unchanged as the required
+   `expected_planning_manifest`, together with the corresponding submission
+   fences, to `okto_pulse_submit_spec_validation`. Use
    a new `idempotency_key` for this authored conclusion,
    the five externally evaluated scores (confidence, clarity, assertiveness,
    decidability and ambiguity), a justification for each, optional

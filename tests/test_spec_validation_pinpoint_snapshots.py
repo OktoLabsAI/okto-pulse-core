@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from spec_validation_fixtures import native_validation
+from spec_planning_fixtures import manifest_payload, ManifestDouble
 
 import pytest
 
@@ -180,6 +181,7 @@ class _Uow:
         self.semantic_subject_projection = _Projection()
         self.commit_calls = 0
         self.spec_validation_receipts = _Receipts()
+        self.spec_planning_manifest = ManifestDouble()
 
     async def commit(self) -> None:
         self.commit_calls += 1
@@ -195,6 +197,7 @@ def _payload(
 ) -> dict[str, object]:
     return {
         "idempotency_key": "snapshot-review",
+        "expected_planning_manifest": manifest_payload("spec-1", edition=3, version=17),
         "expected_validation_edition": 3,
         "expected_spec_version": 17,
         "expected_head_revision": 0,

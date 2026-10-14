@@ -205,6 +205,8 @@ KnowledgePropagationEnvelopeInput = Annotated[
 # Keep the MCP transport schema exact and compact.  The shared command performs
 # the cross-field anchor invariant validation after host-level shape validation.
 from okto_pulse.core.domain.spec_evaluation import SpecEvaluationInput
+from okto_pulse.core.domain.spec_planning import SpecPlanningManifest
+from okto_pulse.core.ports.spec_planning_manifest import SpecPlanningManifestUnavailable
 
 
 SpecValidationPinpointInput = Annotated[
@@ -18600,6 +18602,47 @@ async def okto_pulse_get_task_validation(
 
 
 @mcp.tool()
+async def okto_pulse_get_spec_validation_cycle(
+    board_id: str, spec_id: str, include_previous: bool = False,
+    offset: int = 0, limit: int = 25,
+) -> str:
+    """Read current native validation components and the planning submission manifest.
+
+    Reads are limited to the authenticated Board and each component's read
+    permission. A manifest is a freshness token, never an approval. Pass it
+    unchanged as expected_planning_manifest when concluding planning.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, "board.read")
+    if perm_err:
+        return _perm_error(perm_err)
+    from okto_pulse.core.application.use_cases.validation_cycle import (
+        GetValidationCycleCommand, ValidationCycleReadUseCases,
+    )
+    from okto_pulse.core.domain.quality_assessment import AssessmentSubjectType
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.models.validation_cycle import project_validation_cycle
+    from okto_pulse.core.ports.validation_cycle import (
+        ValidationCycleReadError, get_validation_cycle_reader,
+    )
+
+    try:
+        cycle = await ValidationCycleReadUseCases(reader=get_validation_cycle_reader()).get_cycle(
+            GetValidationCycleCommand(AssessmentSubjectType.SPEC, spec_id, include_previous, offset, limit),
+            actor=MCPAdapterContract.actor(ctx, board_id=board_id),
+        )
+        return json.dumps({"outcome": "success", "data": project_validation_cycle(cycle)})
+    except SpecPlanningManifestUnavailable as exc:
+        return json.dumps(exc.to_error_dict())
+    except ValidationCycleReadError as exc:
+        return json.dumps({"outcome": "error", "error_code": exc.code, "retryable": False})
+    except (TypeError, ValueError) as exc:
+        return MCPAdapterContract.error(exc)
+
+
+@mcp.tool()
 async def okto_pulse_submit_spec_validation(
     board_id: str,
     spec_id: str,
@@ -18607,6 +18650,7 @@ async def okto_pulse_submit_spec_validation(
     expected_validation_edition: int,
     expected_spec_version: int,
     expected_head_revision: int,
+    expected_planning_manifest: SpecPlanningManifest,
     confidence: int,
     confidence_justification: str,
     clarity: int,
@@ -18638,6 +18682,7 @@ async def okto_pulse_submit_spec_validation(
         "expected_validation_edition": expected_validation_edition,
         "expected_spec_version": expected_spec_version,
         "expected_head_revision": expected_head_revision,
+        "expected_planning_manifest": expected_planning_manifest.model_dump(mode="json"),
     }
     data.update(
         {
@@ -18697,6 +18742,8 @@ async def okto_pulse_submit_spec_validation(
         )
     except EntityNotFoundError:
         return json.dumps({"error": "Spec not found"})
+    except SpecPlanningManifestUnavailable as exc:
+        return json.dumps(exc.to_error_dict())
     except SpecValidationConflictError as exc:
         _observe_mcp_validation_edition_conflict(
             exc,
