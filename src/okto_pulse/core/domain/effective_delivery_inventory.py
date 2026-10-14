@@ -81,12 +81,20 @@ class EffectiveDeliveryInventory:
     def card_obligations(self, card_id):
         if not self.population_complete:
             raise ValueError("delivery_inventory_population_unavailable")
-        return tuple(
-            row
-            for row in self.rows
-            if row.family != "decision" and (card_id in row.declared_card_ids
-            or any(fact.card_id == card_id for fact in row.contributions))
-        )
+        return tuple(row for row in self.rows if row.family != "decision"
+            and (card_id in row.declared_card_ids or any(f.card_id == card_id for f in row.contributions)))
+
+    def card_obligation_index(self):
+        """Index canonical allocation once when projecting an entire Spec."""
+        if not self.population_complete:
+            raise ValueError("delivery_inventory_population_unavailable")
+        result = {}
+        for row in self.rows:
+            if row.family == "decision":
+                continue
+            for card_id in set(row.declared_card_ids) | {fact.card_id for fact in row.contributions}:
+                result.setdefault(card_id, []).append(row)
+        return {card_id: tuple(rows) for card_id, rows in result.items()}
 
 
 def resolve_effective_delivery_inventory(*, spec, cards, qualification):

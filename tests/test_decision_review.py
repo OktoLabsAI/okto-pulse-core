@@ -48,3 +48,26 @@ def test_scope_executor_cannot_review_with_enforced_separation():
     result = evaluate_decision_reviewer_separation(board=SimpleNamespace(settings={}), reviewer_id='executor',
         author_ids=('author',), authors_known=True, executor_ids=('executor',))
     assert not result.allowed and 'decision_scope_executor' in result.conflicts
+
+
+def test_inspection_basis_preserves_observation_time_with_canonical_timezone():
+    from datetime import datetime, timedelta, timezone
+    from test_delivery_obligation_assessment import snapshot, with_facts
+    from okto_pulse.core.domain.decision_review import decision_inspection_basis
+    from okto_pulse.core.domain.decision_verification import DecisionVerificationPlan, DecisionVerification
+    value = snapshot()
+    row = replace(value.effective_context.inventory.rows[0], family='decision',
+        decision_plan=DecisionVerificationPlan('choice', DecisionVerification(inspection={
+            'condition': 'Inspect the current delivery',
+            'scope_refs': [{'kind': 'spec', 'id': value.scope.spec_id}]}), ()))
+    spec = SimpleNamespace(id=value.scope.spec_id, edition=value.scope.edition)
+    def basis(moment):
+        first, *rest = value.effective_context.implementations
+        proofs = tuple(replace(p, observed_at=moment) for p in first.fact.executions)
+        current = with_facts(value, implementations=(replace(first, fact=replace(first.fact, executions=proofs)), *rest))
+        return decision_inspection_basis(spec=spec, snapshot=current, row=row, separation_mode='enforce')
+    utc = datetime(2026, 10, 13, 12, tzinfo=timezone.utc)
+    assert basis(utc) == basis(utc.astimezone(timezone(timedelta(hours=-3))))
+    assert basis(utc) != basis(utc + timedelta(seconds=1))
+    with pytest.raises(ValueError, match='decision_inspection_timestamp_timezone_required'):
+        basis(utc.replace(tzinfo=None))

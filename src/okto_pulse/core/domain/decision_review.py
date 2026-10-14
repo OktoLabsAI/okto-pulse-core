@@ -1,6 +1,7 @@
 """Pure resolution of current Decision observations and their material scope."""
 
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 
 from okto_pulse.core.domain.delivery_inventory import delivery_digest
 
@@ -38,6 +39,19 @@ def resolve_decision_inspection(decision_id, scope_sha256, facts):
     return DecisionInspectionState(decision_id, scope_sha256, status, tuple(sorted(f.record_id for f in heads)))
 
 
+def _inspection_json_value(value):
+    """Canonicalize native observation times without discarding proof inputs."""
+    if isinstance(value, datetime):
+        if value.utcoffset() is None:
+            raise ValueError('decision_inspection_timestamp_timezone_required')
+        return value.astimezone(timezone.utc).isoformat()
+    if isinstance(value, dict):
+        return {key: _inspection_json_value(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_inspection_json_value(item) for item in value]
+    return value
+
+
 def decision_inspection_basis(*, spec, snapshot, row, separation_mode):
     """Seal observed parts and their current proof, excluding reviews/comments.
 
@@ -70,7 +84,7 @@ def decision_inspection_basis(*, spec, snapshot, row, separation_mode):
         if full:
             semantic["definition"] = {name: getattr(spec, name, None) for name in
                 ("title", "description", "context", "project_structure", "architecture_adoption", "execution_contract")}
-        digest = delivery_digest(semantic)
+        digest = delivery_digest(_inspection_json_value(semantic))
         sources.append({"reference": f"spec:{spec.id}" if full else scope.id,
                         "revision": f"edition:{spec.edition}", "sha256": digest})
     return {"scope_sha256": delivery_digest({"scope": asdict(snapshot.scope), "decision": asdict(row.binding),
