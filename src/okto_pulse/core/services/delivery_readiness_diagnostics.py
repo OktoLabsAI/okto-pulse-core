@@ -90,6 +90,7 @@ class _SnapshotIndex:
         self.waivers = _index((f for f in snapshot.waivers if f.scope == self.scope), lambda f: f.id)
         context = self.context if isinstance(self.context, EffectiveDeliveryContext) else None
         self.obligations = _index(context.inventory.rows if context else (), lambda r: r.binding)
+        self.scoped_implementations = _index(context.implementations if context else (), lambda r: r.fact.id)
         self.plans = _index(context.required_scenarios or () if context else (), lambda r: r.scenario_id)
         self.inspections = _index(context.decision_inspections if context else (), lambda r: r.decision_id)
         self.runs = defaultdict(list)
@@ -137,6 +138,20 @@ class _SnapshotIndex:
         proofs = []
         for fact in facts:
             evidence.append(ReadinessEvidenceRef(kind='record', id=fact.id, source_ref=None, revision=None))
+            if reason.code == ReadinessReason.SCOPE_CONTRACT_CHANGED:
+                refs = {binding.obligation_ref for binding in bindings}
+                for binding in bindings:
+                    expected.extend(ReadinessFact(obligation_ref=binding.obligation_ref,
+                        semantic_sha256=binding.semantic_sha256, scope_sha256=c.scope_sha256, card_id=c.card_id)
+                        for c in self.obligations[binding].contributions if c.card_id == fact.card_id)
+                scoped = self.scoped_implementations.get(fact.id)
+                observed.extend(ReadinessFact(record_id=fact.id, card_id=fact.card_id,
+                    obligation_ref=b.obligation_ref, semantic_sha256=b.semantic_sha256) for b in fact.bindings
+                    if b.obligation_ref in refs)
+                if scoped:
+                    observed.extend(ReadinessFact(record_id=fact.id, card_id=fact.card_id,
+                        obligation_ref=s.binding.obligation_ref, semantic_sha256=s.binding.semantic_sha256,
+                        scope_sha256=s.scope_sha256) for s in scoped.scopes if s.binding.obligation_ref in refs)
             selected = {identity for c in fact.contributions if c.binding in bindings for identity in c.execution_ids}
             if reason.code == ReadinessReason.SCOPE_CONTRACT_CHANGED:
                 selected.update(identity for c in fact.contributions if any(
@@ -234,8 +249,39 @@ class _SnapshotIndex:
         return detail, origin, bindings, tuple(proofs), tuple(runs), decision
 
 
+def _verification_procedure_arguments(index, scenario_ids, procedures, proofs):
+    """Return authored procedures and exact evaluated bases, never commands.
+
+    Procedures are authorized metadata from the same read snapshot. Missing
+    text remains missing; an observation or another scenario cannot replace it.
+    """
+    scenarios, missing = [], []
+    for identity in sorted(set(scenario_ids)):
+        procedure, plan = procedures.get(identity), index.plans.get(identity)
+        if procedure is None:
+            missing.append(f'scenarios.{identity}')
+            continue
+        if (plan is None or procedure.verification_method != plan.method
+                or set(procedure.criterion_ids) != set(plan.criterion_ids)):
+            raise DiagnosticIntegrityError('readiness_diagnostic_snapshot_mismatch')
+        item = dict(scenario_id=identity, verification_method=plan.method,
+            criterion_ids=sorted(set(plan.criterion_ids)))
+        for field in ('title', 'given', 'when', 'then', 'notes'):
+            value = getattr(procedure, field)
+            if value is not None:
+                item[field] = value
+            if field in {'given', 'when', 'then'} and (not isinstance(value, str) or not value.strip()):
+                missing.append(f'scenarios.{identity}.{field}')
+        scenarios.append(item)
+    bases = _index(proofs, lambda p: p.execution_id)
+    return dict(spec_edition=index.scope.edition, scenarios=scenarios,
+        implementation_bases=[dict(execution_id=p.execution_id, target_id=p.target_id,
+            target_revision=p.target_revision, source_ref=p.source_ref, revision=p.result_revision)
+            for _, p in sorted(bases.items())]), missing
+
+
 def _actions(index, assessment, unit, phase, reason, detail, origin, bindings, proofs, runs, decision,
-             permissions, card_versions):
+             permissions, card_versions, procedures):
     definition = reason_definition(reason.code)
     if not definition.actions:
         return ()
@@ -270,6 +316,9 @@ def _actions(index, assessment, unit, phase, reason, detail, origin, bindings, p
     if card_id:
         known['card_id'] = card_id
     missing = []
+    if kind == ActionKind.EXECUTE_VERIFICATION:
+        execution_context, missing = _verification_procedure_arguments(index, scenario_ids, procedures, proofs)
+        known.update(execution_context)
     if kind == ActionKind.ASSOCIATE_VERIFICATION:
         known['evidence'] = {'kind': 'test', 'expected_spec_edition': index.scope.edition,
             'obligation_refs': sorted({b.obligation_ref for b in bindings}),
@@ -299,6 +348,9 @@ def _actions(index, assessment, unit, phase, reason, detail, origin, bindings, p
     context.update(p.result_revision for p in proofs if p.result_revision)
     if kind in {ActionKind.IMPLEMENT_CONTRIBUTION, ActionKind.COMPLETE_CONTRIBUTION, ActionKind.RESOLVE_SCOPE}:
         context.update(b.obligation_ref for b in bindings)
+    if reason.code == ReadinessReason.SCOPE_CONTRACT_CHANGED:
+        context.update(digest for item in (*detail.expected, *detail.observed)
+            for digest in (item.semantic_sha256, item.scope_sha256) if digest)
     context.update(p.method for p in plans if p.method)
     supported = index.context.admitted_methods if isinstance(index.context, EffectiveDeliveryContext) else None
     capable = kind != ActionKind.EXECUTE_VERIFICATION or (
@@ -309,7 +361,8 @@ def _actions(index, assessment, unit, phase, reason, detail, origin, bindings, p
         capability_available=capable, satisfied_preconditions=tuple(sorted(preconditions))),)
 
 
-def compose_delivery_diagnostics(assessment, snapshot, *, spec_assessment=None, permissions=None, owners=(), card_versions=None):
+def compose_delivery_diagnostics(assessment, snapshot, *, spec_assessment=None, permissions=None, owners=(),
+                                 card_versions=None, procedures=()):
     """Compose already evaluated native facts, without per-unit queries/evaluation.
 
     Test views can receive the shared Spec assessment to explain implementation
@@ -320,13 +373,14 @@ def compose_delivery_diagnostics(assessment, snapshot, *, spec_assessment=None, 
         raise DiagnosticIntegrityError('readiness_diagnostic_scope_invalid')
     index = _SnapshotIndex(snapshot)
     owner_index = _index(owners, lambda o: (o.entity_type, o.entity_id))
+    procedure_index = _index(procedures, lambda p: p.id)
     permissions, card_versions = permissions or {}, card_versions or {}
     occurrences, details, relations, required = [], defaultdict(list), [], set()
 
     def add(unit, phase, result, reason):
         detail, origin, bindings, proofs, runs, decision = index.details(unit, phase, reason)
         actions = _actions(index, assessment, unit, phase, reason, detail, origin, bindings, proofs, runs, decision,
-            permissions, card_versions)
+            permissions, card_versions, procedure_index)
         occurrence = CauseOccurrence(reason.code, phase, result.intrinsic_state, origin,
             (unit,) if unit else (), actions, reason.native_reason_codes, reason.criterion_ids, reason.scenario_ids)
         identity = cause_identity(snapshot.scope, occurrence)

@@ -7,6 +7,7 @@ import pytest
 from okto_pulse.core.domain.delivery_assessment import assess_obligation_delivery, assess_test_delivery, aggregate_delivery_metrics
 from okto_pulse.core.domain.delivery_diagnostics import DiagnosticIntegrityError
 from okto_pulse.core.models.delivery_evidence import CardDeliveryEvidenceInput
+from okto_pulse.core.ports.delivery_readiness import ReadinessScenarioProcedure
 from okto_pulse.core.services.delivery_readiness_diagnostics import (
     DiagnosticOwner, compose_delivery_diagnostics, render_diagnostic_action, render_diagnostic_issue,
 )
@@ -264,3 +265,114 @@ def test_decision_obligation_dependency_disappears_when_existing_proof_is_associ
     result = assess_obligation_delivery(completed)
     assert aggregate_delivery_metrics(result).verification.percent == 100
     assert not compose_delivery_diagnostics(result, completed).graph.causes
+
+
+def execution_procedure_case(method='automated_test'):
+    value = with_facts(snapshot(), tests=())
+    context = value.effective_context
+    native = context.native_verification
+    plans = tuple(replace(p, method=method) for p in context.required_scenarios)
+    runs = tuple(replace(run, method=method,
+        sources=tuple(replace(source, revision='d' * 40) for source in run.sources)) for run in native.runs)
+    value = replace(value, effective_context=replace(context, required_scenarios=plans,
+        admitted_methods=frozenset({method}), native_verification=replace(native, runs=runs)))
+    procedures = tuple(ReadinessScenarioProcedure(p.scenario_id, 'Recorded title', method,
+        'Given the delivered revision', 'Observe the public result', 'The expected result holds',
+        'Authored note: <script>data only</script>', p.criterion_ids) for p in plans)
+    return value, procedures
+
+
+@pytest.mark.parametrize('method', ['automated_test', 'inspection', 'static_analysis', 'demonstration'])
+def test_external_guidance_includes_only_its_authored_procedure_and_exact_evaluated_base(method, monkeypatch):
+    value, procedures = execution_procedure_case(method)
+    assessment = assess_obligation_delivery(value)
+    metrics = aggregate_delivery_metrics(assessment)
+    def forbidden(*args, **kwargs):
+        pytest.fail('guidance composition must not reevaluate or execute proof')
+    monkeypatch.setattr('okto_pulse.core.domain.effective_delivery_coverage.evaluate_effective_facts', forbidden)
+    unrelated = replace(procedures[0], id='unrelated', notes='Do not disclose unrelated procedure')
+    projection = compose_delivery_diagnostics(assessment, value, procedures=(*procedures, unrelated))
+    assert projection.graph.actions
+    for action in projection.graph.actions:
+        dto = render_diagnostic_action(action)
+        assert dto.kind == 'execute_verification' and dto.state == 'ready'
+        assert dto.execution_surface == 'external_agent' and dto.pulse_tool is None
+        assert dto.arguments['board_id'] == value.scope.board_id
+        assert dto.arguments['spec_edition'] == value.scope.edition
+        assert len(dto.arguments['scenarios']) == 1
+        item = dto.arguments['scenarios'][0]
+        original = next(p for p in procedures if p.id == item['scenario_id'])
+        assert item == dict(scenario_id=original.id, verification_method=method,
+            criterion_ids=sorted(original.criterion_ids), title=original.title, given=original.given,
+            when=original.when, then=original.then, notes=original.notes)
+        bases = dto.arguments['implementation_bases']
+        assert bases and all(b['revision'] == 'c' * 40 for b in bases)
+        assert all(b['target_id'] and b['target_revision'] >= 1 and b['execution_id'] for b in bases)
+        assert 'unrelated' not in dto.model_dump_json()
+        assert not {'receipt', 'justification', 'idempotency_key', 'result', 'command'} & dto.arguments.keys()
+    assert aggregate_delivery_metrics(assessment) == metrics
+
+
+@pytest.mark.parametrize('missing', ['procedure', 'given', 'when', 'then'])
+def test_missing_authored_procedure_is_input_pending_without_score_changes(missing):
+    value, procedures = execution_procedure_case()
+    assessment = assess_obligation_delivery(value)
+    metrics = aggregate_delivery_metrics(assessment)
+    complete = compose_delivery_diagnostics(assessment, value, procedures=procedures)
+    partial = () if missing == 'procedure' else tuple(replace(p, **{missing: None}) for p in procedures)
+    incomplete = compose_delivery_diagnostics(assessment, value, procedures=partial)
+    # Cause grouping includes its remedy. Missing guidance changes that identity,
+    # but not the measured failure, affected units or exact expected base.
+    assert sorted(((c.code, c.units, c.origin) for c in complete.graph.causes), key=repr) == sorted(
+        ((c.code, c.units, c.origin) for c in incomplete.graph.causes), key=repr)
+    assert all(a.state == 'requires_input' for a in incomplete.graph.actions)
+    assert all(any(key.startswith('scenarios.') for key in a.missing_inputs) for a in incomplete.graph.actions)
+    assert all(a.state == 'ready' for a in complete.graph.actions)
+    assert aggregate_delivery_metrics(assessment) == metrics
+
+
+@pytest.mark.parametrize('drift', ['method', 'criteria', 'duplicate'])
+def test_procedure_drift_is_not_mixed_into_evaluated_snapshot(drift):
+    value, procedures = execution_procedure_case()
+    altered = replace(procedures[0], **({'verification_method': 'inspection'} if drift == 'method'
+        else {'criterion_ids': ('foreign-criterion',)} if drift == 'criteria' else {'notes': 'different procedure'}))
+    supplied = (*procedures, altered) if drift == 'duplicate' else (altered, *procedures[1:])
+    with pytest.raises(DiagnosticIntegrityError, match='readiness_diagnostic_(snapshot_mismatch|identity_ambiguous)'):
+        compose_delivery_diagnostics(assess_obligation_delivery(value), value, procedures=supplied)
+
+
+def test_current_result_prefers_association_even_when_procedure_is_supplied():
+    value = with_facts(snapshot(), tests=())
+    _, procedures = execution_procedure_case()
+    projection = compose_delivery_diagnostics(assess_obligation_delivery(value), value, procedures=procedures,
+        permissions={'spec.tests.execute': True})
+    assert all(a.kind == 'associate_verification' for a in projection.graph.actions)
+    assert all('scenarios' not in render_diagnostic_action(a).arguments for a in projection.graph.actions)
+
+
+@pytest.mark.parametrize('change', ['definition', 'contribution'])
+def test_changed_scope_explains_current_and_recorded_digests_without_foreign_bindings(change):
+    value = snapshot()
+    context = value.effective_context
+    original = context.implementations[0]
+    current_binding = original.fact.bindings[0]
+    if change == 'definition':
+        old_binding = replace(current_binding, semantic_sha256='e' * 64)
+        original = replace(original, fact=replace(original.fact, bindings=(old_binding,),
+            contributions=tuple(replace(c, binding=old_binding) for c in original.fact.contributions)),
+            scopes=tuple(replace(s, binding=old_binding) for s in original.scopes))
+    else:
+        original = replace(original, scopes=tuple(replace(s, scope_sha256='e' * 64) for s in original.scopes))
+    value = with_facts(value, implementations=(original, context.implementations[1]))
+    assessment = assess_obligation_delivery(value)
+    projection = compose_delivery_diagnostics(assessment, value)
+    cause, detail = find(projection, 'scope_contract_changed')
+    assert cause.intrinsic_state == 'stale'
+    current_scope = context.inventory.rows[0].contributions[0].scope_sha256
+    assert any(f.semantic_sha256 == current_binding.semantic_sha256 and f.scope_sha256 == current_scope
+        for f in detail.expected)
+    assert any(getattr(f, 'semantic_sha256' if change == 'definition' else 'scope_sha256') == 'e' * 64
+        and f.record_id == original.fact.id for f in detail.observed)
+    assert all(f.obligation_ref in {None, current_binding.obligation_ref} for f in detail.observed)
+    assert 'e' * 64 in next(a for a in projection.graph.actions if a.id in cause.action_ids).context_refs
+    assert aggregate_delivery_metrics(assessment).implementation.percent == 0

@@ -142,9 +142,14 @@ def test_d09_permissions_change_availability_not_facts_or_identity():
 def test_missing_native_preconditions_never_recommend_immediate_retest():
     graph = build_diagnostic_graph(SCOPE, (scenario('s-1'),))
     assert graph.actions[0].state == ActionState.REQUIRES_INPUT
-    assert set(graph.actions[0].missing_inputs) == {'native_scenario', 'implementation_base'}
+    assert set(graph.actions[0].missing_inputs) == {
+        'native_scenario', 'implementation_base', 'scenarios', 'implementation_bases'}
     row = scenario('s-1')
-    row = replace(row, actions=(replace(row.actions[0], satisfied_preconditions=('native_scenario', 'implementation_base')),))
+    row = replace(row, actions=(replace(row.actions[0],
+        arguments_json=json.dumps({'scenarios': [{'scenario_id': 's-1', 'given': 'Recorded precondition',
+            'when': 'Recorded action', 'then': 'Recorded expectation'}],
+            'implementation_bases': [{'execution_id': 'execution-1', 'source_ref': 'repo:fixture', 'revision': 'a' * 40}]}),
+        satisfied_preconditions=('native_scenario', 'implementation_base')),))
     assert build_diagnostic_graph(SCOPE, (row,)).actions[0].state == ActionState.READY
 
 
