@@ -127,6 +127,8 @@ class ReadinessSnapshot:
     cards: tuple[ReadinessCard, ...]
     scenarios: tuple[ReadinessScenarioProcedure, ...] = ()
     access: ReadinessAccess | None = None
+    # Explicit capacity/unavailability, never a successfully truncated universe.
+    unavailable_reason_codes: tuple[str, ...] = ()
 
 
 class DeliveryReadinessReadPort(Protocol):

@@ -935,13 +935,19 @@ class EvaluatedDeliverySnapshot:
         context = snapshot.effective_context
         self.context = context if isinstance(context, EffectiveDeliveryContext) else None
         rows = context.inventory.rows if self.context else ()
+        bindings = tuple(row.binding for row in rows)
+        self.population_known = bool(rows) and context.inventory.population_complete and (
+            len(set(bindings)) == len(bindings)
+            and len({b.obligation_ref for b in bindings}) == len(bindings)
+            and set(bindings) == {item.binding for item in snapshot.obligations})
         self.inventory_rows = _group_by(rows, lambda row: row.binding)
         self.card_rows = {}
         for row in rows:
             if row.family != 'decision':
-                for identity in set(row.declared_card_ids) | {c.card_id for c in row.contributions}:
+                contributions = _group_by(row.contributions, lambda c: c.card_id)
+                for identity in set(row.declared_card_ids) | contributions.keys():
                     self.card_rows.setdefault(identity, []).append(replace(row,
-                        contributions=tuple(c for c in row.contributions if c.card_id == identity)))
+                        contributions=contributions.get(identity, ())))
         self.implementations = _group_by(snapshot.implementations, lambda fact: fact.card_id)
         self.rejections = _group_by(snapshot.rejected_records, lambda fact: fact.card_id)
         self.scoped_implementations = _group_by(context.implementations if self.context else (), lambda row: row.fact.id)
@@ -974,14 +980,10 @@ def assess_effective_obligations(snapshot, *, card_id=None, card_type=None, _eva
         return DeliveryAssessment(snapshot.scope, AssessmentCompleteness(False, False, False, True), (),
             reasons=(FactualReason(ReadinessReason.SCOPE_UNAVAILABLE),), card_id=card_id, card_type=card_type)
     full_rows = context.inventory.rows
-    bindings = tuple(item.binding for item in full_rows)
-    population_known = bool(full_rows) and context.inventory.population_complete and (
-        len(set(bindings)) == len(bindings)
-        and len({b.obligation_ref for b in bindings}) == len(bindings)
-        and set(bindings) == {item.binding for item in snapshot.obligations})
     evaluation = _evaluation or EvaluatedDeliverySnapshot(snapshot)
     if evaluation.snapshot is not snapshot:
         raise ReadinessIntegrityError('readiness_assessment_snapshot_mismatch')
+    population_known = evaluation.population_known
     rows = full_rows if card_id is None else tuple(evaluation.card_rows.get(card_id, ()))
     scoped_context = replace(context, inventory=replace(context.inventory, rows=rows))
     facts_complete, proof_snapshot = evaluation.facts_complete, evaluation.proof_snapshot

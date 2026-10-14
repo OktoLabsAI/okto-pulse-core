@@ -10,6 +10,11 @@ import json
 from okto_pulse.core.domain.delivery_diagnostics import ACTION_REGISTRY, ActionKind, ActionState, CauseOrigin, DiagnosticIntegrityError
 from okto_pulse.core.domain.delivery_evidence import DeliveryScope
 from okto_pulse.core.domain.delivery_inventory import delivery_digest
+from okto_pulse.core.domain.delivery_assessment import (
+    AssessmentCompleteness, DeliveryAssessment, FactualReason, ReadinessReason,
+)
+from okto_pulse.core.domain.effective_delivery_coverage import EvaluatedDeliverySnapshot
+from okto_pulse.core.domain.enums import CardType
 from okto_pulse.core.models.delivery_readiness import (
     DeliveryReadiness, DeliveryReadinessContext, DeliveryReadinessDetail, ReadinessCursorBinding,
     ReadinessDetailCounts, ReadinessDetailEntry, ReadinessPage, ReadinessReadQuery, ReadinessRelation,
@@ -24,6 +29,56 @@ from okto_pulse.core.services.delivery_readiness_diagnostics import (
 
 SUMMARY_MAX_BYTES = 32 * 1024
 DETAIL_MAX_BYTES = 128 * 1024
+
+
+class EvaluatedDeliveryReadiness:
+    """Authorized, request-local Spec evaluation shared by its Card projections.
+
+    Construct again after every read, including a cursor continuation. Neither
+    this object nor its assessments authorize a transition or survive a new
+    batch. Native gate/lifecycle context is composed separately.
+    """
+    def __init__(self, batch, *, actor_id):
+        access, scope = batch.access, batch.facts.scope
+        if access is None:
+            raise ReadinessAccessDenied('code_traceability.evidence.read')
+        if access.actor_id != actor_id or access.board_id != scope.board_id:
+            raise ReadinessReadError('readiness_scope_mismatch')
+        access.require('code_traceability.evidence.read')
+        access.require('spec.entity.read')
+        self._cards = {card.id: card for card in batch.cards}
+        if len(self._cards) != len(batch.cards):
+            raise ReadinessReadError('readiness_assessment_unavailable', native_code='readiness_duplicate_card')
+        self._batch, self._actor_id = batch, actor_id
+        self._evaluation = None if batch.unavailable_reason_codes else EvaluatedDeliverySnapshot(batch.facts)
+        self._assessments = {None: self._evaluation.obligations() if self._evaluation else self._unavailable()}
+        self._diagnostics = {}
+
+    def _unavailable(self, card=None):
+        return DeliveryAssessment(self._batch.facts.scope, AssessmentCompleteness(False, False, False, True), (),
+            reasons=(FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE,
+                native_reason_codes=self._batch.unavailable_reason_codes),),
+            card_id=card.id if card else None, card_type=card.card_type if card else None)
+
+    def assessment(self, card_id=None):
+        if card_id is not None:
+            self._batch.access.require('card.entity.read')
+            card = self._cards.get(card_id)
+            if card is None or card.card_type not in {CardType.NORMAL, CardType.BUG, CardType.TEST}:
+                raise ReadinessReadError('readiness_scope_mismatch')
+            if card_id not in self._assessments:
+                self._assessments[card_id] = (self._unavailable(card) if self._evaluation is None else
+                    self._evaluation.scenarios(card_id=card_id, scenario_ids=card.scenario_ids)
+                    if card.card_type == CardType.TEST else
+                    self._evaluation.obligations(card_id=card_id, card_type=card.card_type))
+        return self._assessments[card_id]
+
+    def diagnostics(self, card_id=None):
+        assessment = self.assessment(card_id)
+        if card_id not in self._diagnostics:
+            self._diagnostics[card_id] = compose_authorized_delivery_diagnostics(assessment, self._batch,
+                actor_id=self._actor_id, spec_assessment=self._assessments[None])
+        return self._diagnostics[card_id]
 
 
 def compose_authorized_delivery_diagnostics(assessment, batch, *, actor_id, spec_assessment=None):
