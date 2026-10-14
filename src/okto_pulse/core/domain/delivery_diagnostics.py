@@ -95,7 +95,7 @@ ACTION_REGISTRY = MappingProxyType({item.kind: item for item in (
     _action('resolve_native_gate', 'Resolver o gate nativo identificado antes da conclusão.', 'read_only', 2),
     _action('restore_evaluation', 'Restabelecer a leitura autorizada e consultar novamente a entrega.', 'read_only', 1,
         'okto_pulse_get_delivery_evidence', 'code_traceability.evidence.read',
-        ('board_id', 'spec_id'), ('board_id', 'spec_id')),
+        ('board_id', 'spec_id', 'card_id', 'view'), ('board_id', 'spec_id', 'view')),
     _action('request_authorized_decision', 'Solicitar a decisão à autoridade nativa responsável.', 'human_decision', 6),
 )})
 
@@ -328,7 +328,8 @@ def _unresolved_context(assessment, unit, phase, reason):
     else:
         origin = CauseOrigin(unit.unit if unit else 'spec', unit.ref if unit else assessment.scope.spec_id)
     context = tuple(sorted(set((*reason.source_ids, *reason.criterion_ids, *reason.scenario_ids, origin.identity))))
-    known = {'board_id': assessment.scope.board_id, 'spec_id': assessment.scope.spec_id}
+    known = {'board_id': assessment.scope.board_id, 'spec_id': assessment.scope.spec_id,
+        'view': 'readiness'}
     if assessment.card_id:
         known['card_id'] = assessment.card_id
     # Alternatives require a concrete native choice; do not propose every

@@ -278,6 +278,15 @@ def test_unknown_population_is_explained_without_fabricating_units():
     graph = diagnose_delivery_assessment(assessment)
     assert graph.causes and all(c.units == () for c in graph.causes)
     assert graph.next_action_ids
+    import json
+    from okto_pulse.core.models.delivery_evidence import DeliveryEvidenceReadQuery
+    actions = [action for action in graph.actions if action.kind == ActionKind.RESTORE_EVALUATION]
+    assert actions
+    for action in actions:
+        query = DeliveryEvidenceReadQuery(**json.loads(action.arguments_json))
+        assert query.view == 'readiness'
+        assert query.spec_id == assessment.scope.spec_id
+        assert query.card_id == assessment.card_id
     with pytest.raises(DiagnosticIntegrityError, match='readiness_assessment_cause_missing'):
         diagnose_delivery_assessment(replace(assessment, reasons=()))
 

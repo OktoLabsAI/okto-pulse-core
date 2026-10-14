@@ -314,6 +314,9 @@ def _actions(index, assessment, unit, phase, reason, detail, origin, bindings, p
     responsible = detail.test_card_ids if verification else detail.implementation_card_ids
     card_id = assessment.card_id if assessment.card_id in responsible else responsible[0] if len(responsible) == 1 else None
     known = {'board_id': index.scope.board_id, 'spec_id': index.scope.spec_id}
+    if kind == ActionKind.RESTORE_EVALUATION:
+        known['view'] = 'readiness'
+        card_id = assessment.card_id
     if card_id:
         known['card_id'] = card_id
     missing = []
@@ -460,7 +463,9 @@ def compose_delivery_diagnostics(assessment, snapshot, *, spec_assessment=None, 
         action = (ActionCandidate(ActionKind.COMPLETE_LIFECYCLE,
             context_refs=(f'{entity}:{identity}',), missing_inputs=native_lifecycle.required_inputs)
             if needs_input else ActionCandidate(ActionKind.RESTORE_EVALUATION,
-                arguments_json=json.dumps({'board_id': snapshot.scope.board_id, 'spec_id': snapshot.scope.spec_id}),
+                arguments_json=json.dumps({'board_id': snapshot.scope.board_id,
+                    'spec_id': snapshot.scope.spec_id, 'view': 'readiness',
+                    **({'card_id': assessment.card_id} if assessment.card_id else {})}),
                 context_refs=(f'{entity}:{identity}',),
                 permission_allowed=permissions.get('code_traceability.evidence.read')))
         occurrence = CauseOccurrence(

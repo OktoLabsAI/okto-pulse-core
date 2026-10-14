@@ -381,7 +381,7 @@ async def test_unavailable_native_context_has_read_guidance_without_proof_penalt
     assert issue.phase == 'lifecycle' and issue.score_impact == 'none'
     assert not issue.blocks_proof and issue.blocks_target_transition is None
     action = next(item for item in page.next_actions if item.kind == 'restore_evaluation')
-    assert action.arguments == {'board_id': 'board', 'spec_id': 'spec'}
+    assert action.arguments == {'board_id': 'board', 'spec_id': 'spec', 'view': 'readiness'}
     assert 'Private native' not in page.model_dump_json()
 
 
@@ -398,6 +398,12 @@ async def test_native_critical_context_unavailable_keeps_scores_and_private_deta
     context = EvaluatedDeliveryReadiness(replace(batch, native_lifecycle=native), actor_id='reader').context('ui')
     assert context.implementation.percent == context.verification.percent == 100
     assert 'Private context' not in context.model_dump_json()
+    evaluated = EvaluatedDeliveryReadiness(replace(batch, native_lifecycle=native), actor_id='reader')
+    page = PreparedDeliveryReadiness(context, evaluated.diagnostics('ui'), cursor=Cursor()).page(
+        ReadinessReadQuery(board_id='board', spec_id='spec', card_id='ui'), actor_id='reader')
+    action = next(item for item in page.next_actions if item.kind == 'restore_evaluation')
+    assert action.arguments == {
+        'board_id': 'board', 'spec_id': 'spec', 'card_id': 'ui', 'view': 'readiness'}
 
 
 @pytest.mark.asyncio

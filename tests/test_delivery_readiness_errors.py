@@ -11,8 +11,16 @@ from okto_pulse.core.mcp.code_traceability_tools import _error_outcome
 from okto_pulse.core.models.delivery_evidence import DeliveryEvidenceReadQuery
 from okto_pulse.core.models.delivery_report import DeliveryReportRejected
 from okto_pulse.core.ports.delivery_readiness import ReadinessAccessDenied, ReadinessReadError
-from okto_pulse.core.services.delivery_evidence import DeliveryGateBlocked
+from okto_pulse.core.application.delivery_errors import DeliveryGateBlocked
 from test_delivery_obligation_assessment import snapshot, with_facts
+
+
+def test_edition_error_contracts_are_public_without_exposing_service_internals():
+    from okto_pulse.core.application.boundary.public_contract_manifest import is_public_core_contract
+    assert is_public_core_contract(DeliveryGateBlocked.__module__ + '.DeliveryGateBlocked')
+    assert is_public_core_contract(project_readiness_error.__module__ + '.project_readiness_error')
+    assert is_public_core_contract(project_readiness_error.__module__ + '.READINESS_ERRORS')
+    assert not is_public_core_contract('okto_pulse.core.services.delivery_evidence.delivery_store')
 
 
 @pytest.mark.parametrize('card_id', [None, 'ui'])

@@ -18,6 +18,7 @@ from okto_pulse.core.models.bug_clusters import BugClustersRequest
 from okto_pulse.core.models.spec_coverage_query import SpecCoverageRequest
 from okto_pulse.core.models.decision_impact import DecisionImpactRequest
 from okto_pulse.core.domain.decision_verification import DecisionVerification
+from okto_pulse.core.models.schemas import SpecValidationPinpoint as SpecValidationPinpointSchema
 from okto_pulse.core.models.lineage_query import LineageRequest
 from importlib.resources import files as package_files
 from types import SimpleNamespace
@@ -203,8 +204,6 @@ KnowledgePropagationEnvelopeInput = Annotated[
 
 # Keep the MCP transport schema exact and compact.  The shared command performs
 # the cross-field anchor invariant validation after host-level shape validation.
-from okto_pulse.core.models.schemas import SpecValidationPinpoint as SpecValidationPinpointSchema
-
 SpecValidationPinpointInput = Annotated[
     dict[str, Any],
     WithJsonSchema(SpecValidationPinpointSchema.model_json_schema()),
@@ -4765,7 +4764,7 @@ async def okto_pulse_move_card(
         except LearningCaptureTargetConflict as e:
             return json.dumps({'error': e.code, **e.to_dict(), 'blocked_by_dependencies': False})
         except ValueError as e:
-            from okto_pulse.core.services.delivery_evidence import DeliveryGateBlocked
+            from okto_pulse.core.application.delivery_errors import DeliveryGateBlocked
             if isinstance(e, DeliveryGateBlocked):
                 return MCPAdapterContract.error(e)
             return json.dumps({"error": str(e), "blocked_by_dependencies": False})
@@ -11206,7 +11205,7 @@ async def okto_pulse_move_spec(
     except LifecycleTransitionConflictError as e:
         return MCPAdapterContract.error(e)
     except ValueError as e:
-        from okto_pulse.core.services.delivery_evidence import DeliveryGateBlocked
+        from okto_pulse.core.application.delivery_errors import DeliveryGateBlocked
         if isinstance(e, DeliveryGateBlocked):
             return MCPAdapterContract.error(e)
         return json.dumps({"error": str(e)})
