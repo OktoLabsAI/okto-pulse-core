@@ -46,7 +46,7 @@ same transaction; their IDs, authors, scores, verdicts, explanations and dates
 remain intact. Every evaluation records its native edition; reopening preserves
 that original edition.
 
-The new edition requires its own applicable approval before execution under
+The new edition requires its own applicable approval before validation and execution under
 the existing policy. An approval does not override an active rejection in the
 same edition. Correct a rejected plan through authorized reopening and review
 the corrected edition. `okto_pulse_list_spec_evaluations` exposes Current and
@@ -79,7 +79,16 @@ When the board has `require_spec_validation=true`, advancing from `approved` to 
 5. If coverage passes, the gate computes `outcome` atomically:
    - `outcome=failed` if ANY threshold is violated OR `recommendation=reject`
    - `outcome=success` ONLY if all thresholds pass AND `recommendation=approve`
-6. On `success`, the spec is atomically promoted to `validated` AND enters **content lock**.
+6. Promotion additionally requires the Current decomposition gate. Supply an
+   optional typed `decomposition` review in the same request (both submit
+   permissions and critical contexts required), or consume independent Current
+   reviews already recorded in Approved. A valid negative opinion is persisted
+   without promotion. The response distinguishes native quality `outcome` from
+   `planning_result`, `planning_blockers` and `spec_status`. Approved already
+   locks content; reopen to Draft to correct it under the existing edition rules.
+   A direct transition with `require_spec_validation=false` also checks applicable
+   decomposition. Its native mean and rejection veto are unchanged; there is no
+   aggregate score across different evaluations.
 
 **Thresholds (defaults 70/80/80/80/30):**
 

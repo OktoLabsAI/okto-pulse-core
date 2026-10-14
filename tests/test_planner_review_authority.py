@@ -33,6 +33,92 @@ __all__ = ['_harness_env']
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("review,grant", [("approve", True), ("reject", True), ("approve", False)])
+async def test_authenticated_mcp_composed_conclusion(_harness_env, monkeypatch, review, grant):
+    from datetime import datetime, timezone
+    from okto_pulse.community.adapters.sqlalchemy_semantic_guideline_assessment import (
+        CommunitySqlAlchemySemanticGuidelineAssessment,
+    )
+    from okto_pulse.core.domain.guideline_policy import PolicyEntityType
+    from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
+    from okto_pulse.community.adapters.sqlalchemy_checklist import CommunitySqlAlchemyChecklist
+    from okto_pulse.core.domain.checklist import (
+        ChecklistBinding, ChecklistMode, ChecklistTargetType, ChecklistPhase,
+    )
+    from test_e2e_regression_hardening import (
+        _install_current_external_requirement_lint, _validation_payload,
+    )
+
+    await _seed(_harness_env)
+    _install_current_external_requirement_lint(monkeypatch)
+    factory = _db_mod.get_session_factory()
+    register_unit_of_work_factory(CommunityUnitOfWorkFactory(factory))
+    async with factory() as db:
+        root = next(row for row in builtin_permission_presets() if row['name'] == 'Full Control')
+        db.add(PermissionPreset(id='compose-root', name=root['name'], flags=root['flags'], is_builtin=True))
+        agent = await db.get(Agent, 'A1')
+        agent.preset_id = 'compose-root'
+        agent.permission_flags = {} if grant else {'spec': {'evaluations': {'submit': False}}}
+        db.add(Spec(
+            architecture_adoption=ArchitectureAdoptionScope(
+                board_id='B1', spec_id='composed', adopted_in_edition=1,
+                actor_id='A1', inherited_resource_ids=(),
+            ).model_dump(mode='json'),
+            id='composed', board_id='B1', title='Composed planning',
+            status=SpecStatus.APPROVED, created_by='A1',
+            functional_requirements=[], acceptance_criteria=[], test_scenarios=[],
+            business_rules=[], technical_requirements=[], api_contracts=[],
+            integration_requirements=[], observability_requirements=[], decisions=[],
+        ))
+        await db.flush()
+        await CommunitySqlAlchemySemanticGuidelineAssessment(db).record_semantic_subject_mutation(
+            board_id='B1', entity_type=PolicyEntityType.SPEC, subject_id='composed',
+            actor_id='A1', idempotency_key='fixture-composed',
+            request_digest=canonical_sha256({'fixture': 'composed'}),
+            changed_at=datetime.now(timezone.utc),
+        )
+        checklist = CommunitySqlAlchemyChecklist(db)
+        await checklist.apply_binding_cas(
+            ChecklistBinding(board_id='B1', mode=ChecklistMode.OFF, version=1),
+            expected_version=0, expected_digest=None,
+        )
+        await checklist.freeze_validation_binding(
+            board_id='B1', spec_id='composed', spec_edition=1,
+            target_type=ChecklistTargetType.SPEC, phase=ChecklistPhase.SPEC_VALIDATION,
+        )
+        await db.commit()
+    monkeypatch.setattr(server, 'active_api_key_credential',
+                        lambda: McpCredential(source='x_api_key_header', value='kA1'))
+    frozen = freeze_mcp_resource_catalog(server.effective_resource_catalog())
+    host = CommunityMcpHostProvider().materialize_catalog(
+        server.mcp, resource_catalog=frozen, projection_identity=frozen.identity,
+    )
+    async with Client(host) as client:
+        response = await client.call_tool('okto_pulse_submit_spec_validation', {
+            'board_id': 'B1', 'spec_id': 'composed', **_validation_payload(),
+            'decomposition': _evaluation_payload(review),
+        }, raise_on_error=False)
+    async with factory() as db:
+        spec = await db.get(Spec, 'composed')
+        if not grant:
+            assert 'spec.evaluations.submit' in str(response), response
+            assert spec.status == SpecStatus.APPROVED
+            assert not spec.evaluations and not spec.validations
+            return
+        assert not response.is_error, response
+        envelope = json.loads(response.content[0].text)
+        assert envelope['outcome'] == 'success', envelope
+        payload = envelope['data']
+        assert payload['outcome'] == 'success', payload
+        assert payload['planning_result'] == ('ready' if review == 'approve' else 'blocked')
+        assert payload['spec_status'] == spec.status.value
+        assert spec.status == (SpecStatus.VALIDATED if review == 'approve' else SpecStatus.APPROVED)
+        assert len(spec.evaluations) == len(spec.validations) == 1
+        assert spec.evaluations[0]['evaluator_type'] == 'agent'
+        assert spec.evaluations[0]['evaluator_id'] == spec.validations[0]['reviewer_id'] == 'A1'
+
+
+@pytest.mark.asyncio
 async def test_authenticated_mcp_can_record_decomposition_in_approved_without_promotion(
     _harness_env, monkeypatch,
 ):

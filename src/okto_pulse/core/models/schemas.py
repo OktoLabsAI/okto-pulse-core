@@ -4026,6 +4026,9 @@ class RecordedSpecValidationPinpointResponse(RecordedSpecValidationPinpoint):
     anchor_snapshot: SpecValidationAnchorSnapshotResponse
 
 
+from okto_pulse.core.domain.spec_evaluation import SpecEvaluationInput
+
+
 class SpecValidationSubmit(BaseModel):
     """Canonical five-dimensional Spec Validation submission."""
 
@@ -4049,6 +4052,22 @@ class SpecValidationSubmit(BaseModel):
     ambiguity_justification: str = Field(..., min_length=10)
     recommendation: Literal["approve", "reject"]
     pinpoints: list[SpecValidationPinpoint] | None = None
+    decomposition: SpecEvaluationInput | None = None
+
+
+class SpecValidationConclusionResponse(BaseModel):
+    """Operation receipt fields; native assessments retain their own histories."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    validation_id: str
+    validation_edition: int
+    is_current: bool
+    outcome: Literal["success", "failed"]
+    spec_status: Literal["approved", "validated"]
+    planning_result: Literal["ready", "blocked"]
+    decomposition_ids: list[str]
+    planning_blockers: list[str]
 
 
 class SpecValidationThresholds(BaseModel):

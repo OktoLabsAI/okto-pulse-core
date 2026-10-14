@@ -870,50 +870,23 @@ class ListAllowedTransitionsUseCase:
                     "spec_dependencies_incomplete: "
                     f"{guidance} ({dependency_readiness.blocking_count} blocking)."
                 )
-            auto_validate = bool(board_settings.get("auto_validate", False))
-            skip_qualitative = bool(getattr(spec, "skip_qualitative_validation", False))
-            if not auto_validate and not skip_qualitative:
-                evaluations = [
-                    item
-                    for item in (getattr(spec, "evaluations", None) or [])
-                    if not item.get("stale")
-                ]
-                rejections = [
-                    item
-                    for item in evaluations
-                    if item.get("recommendation") == "reject"
-                ]
-                if rejections:
-                    return (
-                        "spec_evaluation_rejected: replace the rejecting "
-                        "evaluation before starting the spec."
-                    )
-                approvals = [
-                    item
-                    for item in evaluations
-                    if item.get("recommendation") == "approve"
-                ]
-                if not approvals:
-                    return (
-                        "spec_evaluation_required: submit at least one approving "
-                        "Spec Evaluation before starting the spec."
-                    )
-                threshold = getattr(
-                    spec, "validation_threshold", None
-                ) or board_settings.get("validation_threshold_global", 70)
-                average = sum(item.get("overall_score", 0) for item in approvals) / len(
-                    approvals
-                )
-                if average < threshold:
-                    return (
-                        "spec_evaluation_below_threshold: average approval "
-                        f"score {average:.0f} is below {threshold}."
-                    )
-            if spec.status == SpecStatus.VALIDATED:
-                try:
-                    await services.specs.require_execution_contract_ready(spec)
-                except ValueError as exc:
-                    return self._exception_reason(exc)
+        if target_status in {"validated", "in_progress"}:
+            verdict = services.specs.spec_decomposition_verdict(spec, board)
+            try:
+                verdict.require_allowed(target=target_status)
+            except ValueError as exc:
+                code = {
+                    "rejected": "spec_evaluation_rejected",
+                    "approval_missing": "spec_evaluation_required",
+                    "score_below_threshold": "spec_evaluation_below_threshold",
+                }[verdict.blocker]
+                return f"{code}: {exc}"
+
+        if target_status == "in_progress" and spec.status == SpecStatus.VALIDATED:
+            try:
+                await services.specs.require_execution_contract_ready(spec)
+            except ValueError as exc:
+                return self._exception_reason(exc)
 
         if target_status == "done":
             try:

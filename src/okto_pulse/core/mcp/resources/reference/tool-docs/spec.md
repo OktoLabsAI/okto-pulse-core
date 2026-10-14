@@ -546,7 +546,7 @@ Multiple evaluators can submit independent evaluations.
 
 Args:
     board_id: Board ID
-    spec_id: Spec ID (must be in 'validated' status)
+    spec_id: Spec ID (must be in 'approved' or 'validated' status)
     breakdown_completeness: Score 0-100 — do tasks cover the spec scope?
     breakdown_justification: Why this score
     granularity: Score 0-100 — are tasks properly sized?
@@ -581,9 +581,17 @@ with the specific coverage violation. If coverage passes, it computes outcome:
 - FAILED if any threshold violated OR recommendation=reject
 - SUCCESS only if ALL thresholds pass AND recommendation=approve
 
-On SUCCESS, the spec is atomically promoted from 'approved' to 'validated'
-and enters the content lock (update_spec and related tools will raise
-SpecLockedError). Same-edition lifecycle moves and Code
+Quality SUCCESS is an individual result, not a promotion. The Spec moves from
+'approved' to 'validated' only when the applicable decomposition gate also
+passes: Current approval(s), sufficient native average, and no Current reject.
+An optional typed `decomposition` payload records both opinions atomically;
+otherwise the operation consumes Current independent reviews without changing
+their authorship. Joint submission requires both `spec.validation.submit` and
+`spec.evaluations.submit`, including each critical context. A valid negative
+opinion remains in its native history and keeps the Spec Approved. Technical
+failure rolls back both records and any promotion.
+
+Approved already locks content. Same-edition lifecycle moves and Code
 Investigation/Evidence/waiver events preserve Current. To edit after a success,
 move the spec to draft; that opens a new edition, clears Current, and preserves
 the full history. An explicit successor submission is the only other operation
@@ -612,6 +620,9 @@ Args:
     ambiguity_justification: Why this ambiguity score (min 10 chars)
     pinpoints: Optional closed list of compact actionable findings
     recommendation: One of: approve, reject
+    decomposition: Optional object with the native fields documented for
+        okto_pulse_submit_spec_evaluation above (without board_id/spec_id).
+        Evaluator identity and edition are server-owned; extra fields are rejected.
 
 Scoring contract:
     Use a 0-100 integer scale, not 1-5. A value like 5 is treated as 5/100 and
@@ -636,8 +647,8 @@ Scoring contract:
     requires a pinpoint for each threshold violation and for an exceptional
     blocker behind reject when all scores pass.
     Pulse validates and stores the evaluator's result but does not perform the
-    evaluation. Historical score/summary and completeness shapes remain
-    readable history, but are not accepted for new submissions.
+    evaluation. Only the current native schema is accepted; no legacy converters
+    or alternative historical shapes are supported.
 
 Coverage contract:
     FR coverage is computed from business_rules[].linked_requirements. Direct
@@ -652,8 +663,10 @@ Coverage contract:
     and remediates coverage; skip changes remain human UI/REST decisions.
 
 Returns:
-    JSON with validation result, outcome, threshold violations, and resolved thresholds.
-    On success, spec_status becomes "validated".
+    JSON with validation_id, validation_edition, is_current, native quality outcome,
+    spec_status, planning_result (ready/blocked), decomposition_ids and planning_blockers.
+    Native scores, thresholds and pinpoints remain available in validation history.
+    No average is computed across quality and decomposition evaluations.
 
 ## `okto_pulse_update_spec`
 

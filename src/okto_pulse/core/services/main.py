@@ -11796,6 +11796,7 @@ class SpecService:
         # a concurrent PASS -> FAIL replacement cannot be promoted.
         if data.status == SpecStatus.VALIDATED:
             await self._enforce_spec_checklist_gate(spec, surface="move_spec")
+            self.spec_decomposition_verdict(spec, board).require_allowed(target="validated")
         if data.status == SpecStatus.DONE:
             from okto_pulse.core.services.delivery_evidence import require_spec_delivery
 
@@ -12193,13 +12194,16 @@ class SpecService:
         reviewer_id: str,
         reviewer_name: str,
         data: dict,
+        *,
+        actor_type: str = "user",
+        surface: str = "service",
     ) -> dict:
         """Submit a Spec Validation Gate record for a spec in 'approved' status.
 
-        Mirrors CardService.submit_task_validation: runs coverage gates as
-        pre-requisite, computes outcome atomically, appends to spec.validations
-        array (append-only history), sets current_validation_id, and on success
-        atomically moves spec.status to validated.
+        Runs coverage prerequisites and records the native quality outcome.
+        Optionally appends an authorized decomposition review in the same unit
+        of work. Promotion additionally requires the Current decomposition gate;
+        a quality success alone is never a claim that planning is validated.
 
         Outcome rule: failed if any threshold violated OR recommendation=reject;
         success only if ALL thresholds ok AND recommendation=approve.
@@ -12211,11 +12215,15 @@ class SpecService:
             "confidence", "confidence_justification", "clarity", "clarity_justification",
             "assertiveness", "assertiveness_justification", "decidability",
             "decidability_justification", "ambiguity", "ambiguity_justification",
-            "recommendation", "pinpoints",
+            "recommendation", "pinpoints", "decomposition",
         }
         unknown = sorted(set(data).difference(allowed_fields))
         if unknown:
             raise ValueError("Unknown spec validation fields: " + ", ".join(unknown))
+        decomposition_input = (
+            SpecEvaluationInput.model_validate(data["decomposition"]).model_dump()
+            if data.get("decomposition") is not None else None
+        )
 
         # Preserve read-your-writes when callers intentionally compose more
         # than one service command in the same UoW. The late fence must compare
@@ -12288,9 +12296,7 @@ class SpecService:
                 details={"reason": "gate_disabled"},
             )
 
-        critical_actor_type = (
-            "agent" if reviewer_name and "agent" in reviewer_name.lower() else "user"
-        )
+        critical_actor_type = actor_type
         critical_actor_name = reviewer_name or await resolve_actor_name(
             self.db, reviewer_id, spec.board_id
         )
@@ -12301,11 +12307,25 @@ class SpecService:
             entity_type="spec",
             entity_id=spec.id,
             critical_action=CriticalAction.SPEC_SUBMIT_VALIDATION,
-            surface="service",
+            surface=surface,
             actor_type=critical_actor_type,
             actor_name=critical_actor_name,
             defer_success_audit=True,
         )
+        decomposition_context_decision = None
+        if decomposition_input is not None:
+            decomposition_context_decision = await _authorize_critical_context_or_raise(
+                self.db,
+                board_id=spec.board_id,
+                actor_id=reviewer_id,
+                entity_type="spec",
+                entity_id=spec.id,
+                critical_action=CriticalAction.SPEC_SUBMIT_EVALUATION,
+                surface=surface,
+                actor_type=critical_actor_type,
+                actor_name=critical_actor_name,
+                defer_success_audit=True,
+            )
 
         # Finding count is advisory, but one externally accepted lint result
         # is mandatory for the exact human lifecycle edition.
@@ -12550,6 +12570,27 @@ class SpecService:
             actor_type=critical_actor_type,
         )
 
+        # Consume the authoritative reviews after the shared lifecycle fence.
+        # A negative review is an authored fact: retain both native records,
+        # but never expose an intermediate Validated state.
+        spec = await self.get_spec(spec_id)
+        submitted_decomposition_id = None
+        if decomposition_input is not None:
+            await _record_critical_context_decision(
+                self.db, decision=decomposition_context_decision,
+                actor_name=critical_actor_name, actor_type=critical_actor_type,
+            )
+            submitted_decomposition = await self._append_spec_evaluation(
+                spec, actor_id=reviewer_id, actor_name=critical_actor_name,
+                actor_type=critical_actor_type, data=decomposition_input,
+            )
+            submitted_decomposition_id = submitted_decomposition["id"]
+        decomposition = self.spec_decomposition_verdict(spec, board)
+        promote = outcome == "success" and decomposition.allowed
+        decomposition_ids = list(decomposition.current_ids)
+        if submitted_decomposition_id and submitted_decomposition_id not in decomposition_ids:
+            decomposition_ids.append(submitted_decomposition_id)
+
         # Build the immutable validation record. Human edition is independent
         # from the technical subject version, while head_revision advances for
         # each attempt within the same edition.
@@ -12613,9 +12654,9 @@ class SpecService:
         spec.mark_dirty("validations")
         spec.current_validation_id = validation_id
 
-        # Atomic state transition on success â€” same transaction as the persist.
+        # Quality and decomposition keep independent outcomes and native histories.
         old_status = spec.status
-        if outcome == "success":
+        if promote:
             spec.status = SpecStatus.VALIDATED
             from okto_pulse.core.events import publish as event_publish
             from okto_pulse.core.events.types import SpecMoved, SpecSemanticChanged
@@ -12644,9 +12685,7 @@ class SpecService:
         await self._log_activity(
             board_id=spec.board_id,
             action="spec_validation_submitted",
-            actor_type="agent"
-            if reviewer_name and "agent" in reviewer_name.lower()
-            else "user",
+            actor_type=critical_actor_type,
             actor_id=reviewer_id,
             actor_name=reviewer_name,
             details={
@@ -12688,11 +12727,7 @@ class SpecService:
             action="validation_submitted",
             actor_id=reviewer_id,
             actor_name=reviewer_name,
-            actor_type=(
-                "agent"
-                if reviewer_name and "agent" in reviewer_name.lower()
-                else "user"
-            ),
+            actor_type=critical_actor_type,
             changes=history_changes,
             summary=(
                 f"Validation submitted: {outcome} "
@@ -12707,6 +12742,12 @@ class SpecService:
             "spec_status": spec.status.value,
             "active": True,
             "lifecycle_state": "current",
+            "planning_result": "ready" if promote else "blocked",
+            "decomposition_ids": decomposition_ids,
+            "planning_blockers": (
+                (["spec_validation_failed"] if outcome != "success" else [])
+                + (["decomposition_" + decomposition.blocker] if decomposition.blocker else [])
+            ),
         }
 
     async def list_spec_validations(

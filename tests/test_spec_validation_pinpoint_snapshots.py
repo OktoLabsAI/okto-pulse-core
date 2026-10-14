@@ -168,6 +168,9 @@ class _Uow:
     async def commit(self) -> None:
         self.commit_calls += 1
 
+    async def begin_write(self) -> None:
+        pass
+
 
 def _payload(
     *,

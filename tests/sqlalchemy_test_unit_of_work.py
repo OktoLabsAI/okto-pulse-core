@@ -137,6 +137,14 @@ class SQLAlchemyUnitOfWork:
     async def rollback(self) -> None:
         await get_application_persistence_port().rollback(self._session)
 
+    async def begin_write(self) -> None:
+        """Exercise the edition's real write-intent implementation in tests."""
+        from okto_pulse.community.adapters.sqlalchemy_unit_of_work import CommunityUnitOfWork
+
+        # This method only needs the session; do not construct another UoW and
+        # replace this fixture's scoped persistence registry/record mappings.
+        await CommunityUnitOfWork.begin_write(self)
+
     async def begin_consistent_read(self) -> None:
         """Test-adapter implementation of the explicit composite-read port."""
 

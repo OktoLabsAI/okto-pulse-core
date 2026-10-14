@@ -2,6 +2,71 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U2: conclusão composta e gate de promoção integrados
+
+Continuação do checkpoint Core 878a5b41 / Community 7801ae86, ambos limpos e
+publicados antes deste incremento. O objetivo permanece U1–U4 e UV01–UV24;
+este registro NÃO declara U2 completo nem entrega fim a fim.
+Community publicado em 66e897fc; este registro acompanha o commit Core pareado.
+
+SubmitSpecValidationUseCase, REST e MCP agora aceitam decomposition opcional
+pelo mesmo SpecEvaluationInput. Envio conjunto exige spec.validation.submit
+E spec.evaluations.submit, além dos dois critical contexts. Identidade/tipo do
+avaliador vêm do ActorContext autenticado, sem heurística pelo nome exibido.
+Os dois pareceres são gravados pelos writers nativos na mesma UoW, sem commit
+intermediário. Qualidade success sozinha não promove: ausência de aprovação,
+rejeição Current ou média insuficiente de decomposição mantém Approved. Parecer
+negativo válido permanece no histórico; falha técnica reverte ambos e a promoção.
+Parecer independente de outro avaliador é consumido sem copiar ou reatribuir autoria.
+
+move_spec com require_spec_validation desligado agora aplica a mesma regra de
+decomposição sob fence. Allowed transitions deixou de duplicar a regra e usa
+o julgamento nativo com a edição correta; não recomenda substituir rejeição
+na mesma edição. Os skips existentes não fabricam avaliação. A resposta comum
+REST/MCP separa outcome, planning_result, planning_blockers, spec_status e IDs
+dos pareceres; o resultado agregado não foi adicionado ao histórico nativo.
+Tipos do cliente frontend acompanham esse contrato. Documentação oficial das
+tools, workflow e gates atualizada; catálogo regenerado pelo gerador oficial.
+
+PulseUnitOfWork agora expõe begin_write, capacidade já existente no Community.
+A conclusão a chama antes das leituras, inclusive MCP. Isso reutiliza o write
+intent SQLite do adapter; NÃO substitui o manifesto/fences ainda pendentes e
+não qualifica concorrência geral por si só. Nenhum mecanismo concreto entrou
+no Core, nenhum schema/banco/home foi migrado ou apagado.
+
+Provas: 189 passed nas suítes test_spec_validation_composition,
+test_e2e_regression_hardening, test_spec_validation_current_input,
+test_spec_validation_pinpoint_snapshots, test_spec_validation_native_history,
+test_spec_evaluation_currentness, test_spec_evaluation_rest_parity,
+test_planner_review_authority, test_af23_allowed_transitions,
+test_allowed_transitions_mutation_parity_regressions e test_mcp_tools_catalog_drift.
+XML: .validation-v040/spec-unified-20261014/u2-composition.xml. Testes usaram
+PYTHONPATH explícito das duas src, com checagem de origem do conftest.
+REST real prova sucesso, negativo persistido, identidade forjada recusada e
+rollback após falha de histórico. Host FastMCP real com credencial/grants
+persistidos prova envio composto, autoria agent e falta da segunda permissão.
+Lint externo nesses testes é uma fixture de resultado aceito; não confundir
+com ensaio completo de análise externa. Frontend: 20 passed em
+api.qualityAssessments e SpecChecklistPanel; npx tsc -b e Ruff F/E9 passaram.
+Auditoria oficial dos checkouts: 8973 linhas de propriedade, zero findings,
+zero drift documental e os oito budgets ZERO. READMEs regenerados pela projeção
+oficial. Prova: .validation-v040/spec-unified-20261014/closure-u2-composition.json.
+Wheels e runtime final continuam pendentes de qualificação em U4.
+
+Falhas de teste resolvidas: Decision artificial antiga removida do fixture;
+flush dos ApplicationRecords pelo contrato público; fixture MCP com modelos
+de produção precisava registrar autoridade semântica explicitamente; o UoW de
+teste passou a reutilizar begin_write sem construir outro UoW e substituir seu
+registry. Rodada combinada final passou, incluindo ambos os transportes.
+
+Próximo passo obrigatório: completar U2.2–U2.4 com recibo durável por
+ator/Spec/operação, replay idêntico com reautorização, conflito de payload,
+manifesto incluindo Cards/plano, heads e autoridade, leitura integrada e testes
+de concorrência real. Depois U3 (workspace/refresh/formulários) e U4 (builds,
+wheels, instalação isolada, browser+MCP e mock completo até Done/KG). Nenhuma
+instalação ou conferência visual deste incremento: runtime existente permanece
+na versão anteriormente instalada, e a interface completa ainda não foi alterada.
+
 ### 2026-10-14 — U2 em andamento: decomposição preparada em Approved
 
 Checkpoint publicado desta etapa: Core 18cb5994 / Community 31220ac5.

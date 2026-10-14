@@ -204,6 +204,9 @@ KnowledgePropagationEnvelopeInput = Annotated[
 
 # Keep the MCP transport schema exact and compact.  The shared command performs
 # the cross-field anchor invariant validation after host-level shape validation.
+from okto_pulse.core.domain.spec_evaluation import SpecEvaluationInput
+
+
 SpecValidationPinpointInput = Annotated[
     dict[str, Any],
     WithJsonSchema(SpecValidationPinpointSchema.model_json_schema()),
@@ -18615,8 +18618,14 @@ async def okto_pulse_submit_spec_validation(
     ambiguity_justification: str,
     recommendation: Literal["approve", "reject"],
     pinpoints: list[SpecValidationPinpointInput] | None = None,
+    decomposition: SpecEvaluationInput | None = None,
 ) -> str:
-    """Record five evaluator scores, rationales and optional metric pinpoints."""
+    """Conclude planning with native quality scores and optional decomposition review.
+
+    Both review permissions are required when decomposition is supplied. Otherwise
+    consumes Current independent reviews. Negative results remain in native history;
+    promotion requires every applicable gate, not just passing quality scores.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -18640,6 +18649,7 @@ async def okto_pulse_submit_spec_validation(
             "ambiguity_justification": ambiguity_justification,
             "recommendation": recommendation,
             **({"pinpoints": pinpoints} if pinpoints is not None else {}),
+            **({"decomposition": decomposition.model_dump()} if decomposition is not None else {}),
         }
     )
 
@@ -18673,12 +18683,12 @@ async def okto_pulse_submit_spec_validation(
                 uow=uow,
             )
         payload = result.payload
+        from okto_pulse.core.models.schemas import SpecValidationConclusionResponse
+
         return json.dumps(
-            {
-                "validation_id": payload["validation_id"],
-                "validation_edition": payload["validation_edition"],
-                "is_current": payload["is_current"],
-            },
+            SpecValidationConclusionResponse.model_validate({
+                key: payload[key] for key in SpecValidationConclusionResponse.model_fields
+            }).model_dump(),
             default=str,
         )
     except EntityNotFoundError:

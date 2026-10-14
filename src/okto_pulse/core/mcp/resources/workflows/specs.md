@@ -230,6 +230,15 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
    or incompatible snapshot is refused and is never reconstructed from current
    mutable Spec content.
 
+   Supply the optional typed `decomposition` review only when authorized to
+   submit both kinds of evaluation. Otherwise prepare it independently in
+   Approved with `okto_pulse_submit_spec_evaluation`; the conclusion consumes
+   Current reviews under their original authorship. Check `planning_result`,
+   `planning_blockers` and `spec_status`: quality `outcome=success` alone does
+   not promote. A valid negative opinion is retained in history. Every applicable
+   gate must pass before Validated, including decomposition when quality is off
+   and a direct transition is used. No cross-evaluation score is computed.
+
 Checklist mode/template governance is human-owned in Board Config. Agents may
 read the binding and validation results and execute the configured immutable
 template, but must not attempt to mutate its binding or author checklist
@@ -252,11 +261,11 @@ computation, content lock, and the reopen path (`okto_pulse_move_spec` back to
 Investigation/Evidence/waiver events preserve Current; they do not open a new
 human validation edition.
 
-## 2.3b Spec Evaluation — Quality Gate for Execution
+## 2.3b Spec Evaluation — Decomposition in Unified Planning Validation
 
 Record **qualitative evaluation** via `okto_pulse_submit_spec_evaluation` in `approved` or `validated`: 4 dimensions + `overall_score`, each 0-100 with mandatory justification, and a `recommendation` of `approve` | `request_changes` | `reject`. Recording a review does not promote the Spec. The existing Current judgment is reused at execution admission; do not repeat an evaluation merely because the Spec advanced from Approved to Validated in the same edition.
 
-**Single source for the evaluation gate** — signature, dimension definitions, the full recommendation semantics (including `request_changes` and the `skip_qualitative_validation` escape), and enforcement of validated → in_progress: `okto-pulse://reference/spec_gates`.
+**Single source for the evaluation gate** — signature, dimension definitions, the full recommendation semantics (including `request_changes` and the `skip_qualitative_validation` escape), and enforcement at validation and execution admission: `okto-pulse://reference/spec_gates`.
 
 ## 2.3c Coverage Progress — Zero-Friction Gate Tracking
 

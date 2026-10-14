@@ -31,10 +31,9 @@ from okto_pulse.core.application.use_cases.spec_crud import (
 )
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 from okto_pulse.core.domain.spec_validation import (
-    SpecValidationMetric,
     SpecValidationPinpoint,
-    SpecValidationPinpointAnchorType,
 )
+from okto_pulse.core.domain.spec_evaluation import SpecEvaluationInput
 from okto_pulse.core.domain.guideline_policy import PolicyEntityType, PolicySubjectRef
 from okto_pulse.core.domain.quality_assessment import (
     FindingAnchorType,
@@ -72,6 +71,7 @@ _CANONICAL_ALLOWED_FIELDS = {
     "expected_head_revision",
     *_CANONICAL_REQUIRED_FIELDS,
     "pinpoints",
+    "decomposition",
 }
 
 
@@ -153,6 +153,13 @@ class SubmitSpecValidationCommand:
                     f"{dimension}_justification must be at least 10 characters"
                 )
         self.data["pinpoints"] = _canonical_pinpoints(self.data.get("pinpoints"))
+        if self.data.get("decomposition") is not None:
+            try:
+                self.data["decomposition"] = SpecEvaluationInput.model_validate(
+                    self.data["decomposition"]
+                ).model_dump()
+            except ValueError as exc:
+                raise CommandValidationError(str(exc)) from exc
 
 
 class SubmitSpecValidationResult:
@@ -229,9 +236,10 @@ class SubmitSpecValidationUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> SubmitSpecValidationResult:
+        command.validate()
+        await uow.begin_write()
         service = uow.services.specs
         spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
-        command.validate()
         state = entity_state(spec)
         await require_authorization(
             actor,
@@ -243,6 +251,17 @@ class SubmitSpecValidationUseCase:
             uow=uow,
             board_id=spec.board_id,
         )
+        if command.data.get("decomposition") is not None:
+            await require_authorization(
+                actor,
+                PermissionRequirement(
+                    "spec.evaluations.submit",
+                    entity="spec" if state is not None else None,
+                    state=state,
+                ),
+                uow=uow,
+                board_id=spec.board_id,
+            )
         # MCP supplies the resolved agent name (actor.actor_name); REST leaves it
         # None and we resolve it here — preserving each surface's reviewer_name.
         reviewer_name = actor.actor_name or await _resolve_reviewer_name(
@@ -263,6 +282,8 @@ class SubmitSpecValidationUseCase:
             reviewer_id=actor.actor_id,
             reviewer_name=reviewer_name,
             data={**command.data, "pinpoints": sealed_pinpoints},
+            actor_type="agent" if actor.actor_kind == "agent" else "user",
+            surface=actor.source,
         )
         await commit(uow)
         return SubmitSpecValidationResult(payload=result)

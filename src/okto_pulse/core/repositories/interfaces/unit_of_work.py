@@ -65,6 +65,16 @@ class PulseUnitOfWork(RepositoryCatalog, Protocol):
 
     async def rollback(self) -> None: ...
 
+    async def begin_write(self) -> None:
+        """Establish the edition's write transaction before mutation reads.
+
+        Idempotent within this unit of work. Concrete locking/isolation belongs
+        to the edition; callers still supply semantic version and head fences.
+        This is write intent, not a replacement for those conflict checks.
+        """
+
+        ...
+
     async def begin_consistent_read(self) -> None:
         """Start (or reuse) one transaction-wide consistent read snapshot.
 
