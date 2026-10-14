@@ -288,6 +288,53 @@ async def test_native_traceability_reuses_policy_without_leaking_details_or_redu
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('card_type,learning_mode,impact_mode', [
+    ('normal', 'blocking', 'off'), ('bug', 'advisory', 'off'),
+    ('bug', 'blocking', 'off'), ('bug', 'blocking', 'require'),
+])
+async def test_report_inputs_explain_native_handoff_without_demanding_new_proof(card_type, learning_mode, impact_mode):
+    batch, services, evaluator = card_environment()
+    batch = replace(batch, cards=tuple(replace(card, card_type=card_type) if card.id == 'ui' else card for card in batch.cards))
+    services.boards.get_board.return_value = SimpleNamespace(settings={
+        'bug_learning_closeout': learning_mode, 'impact_evidence_mode': impact_mode})
+    native = await evaluator.evaluate(batch, card_id='ui')
+    assert native.check_status == 'not_evaluated' and not native.blocking_codes
+    assert 'conclusion' in native.required_inputs
+    assert ('learning_submission' in native.required_inputs) == (card_type == 'bug' and learning_mode == 'blocking')
+    assert ('impact_evidence_or_delivery_selection_reuse_impact' in native.required_inputs) == (impact_mode == 'require')
+    assert ('bug_learning_capture_required' in native.reason_codes) == (card_type == 'bug' and learning_mode == 'blocking')
+    evaluated = EvaluatedDeliveryReadiness(replace(batch, native_lifecycle=native), actor_id='reader')
+    context = evaluated.context('ui')
+    assert context.implementation.percent == context.verification.percent == 100
+    page = PreparedDeliveryReadiness(context, evaluated.diagnostics('ui'), cursor=Cursor()).page(
+        ReadinessReadQuery(board_id='board', spec_id='spec', card_id='ui'), actor_id='reader')
+    issue = next(item for item in page.issues if item.code == 'lifecycle_card_open')
+    assert issue.score_impact == 'none' and not issue.blocks_proof
+    assert issue.blocks_target_transition is None and issue.affected_unit_count == 0
+    action = next(item for item in page.next_actions if item.kind == 'complete_lifecycle')
+    assert action.state == 'requires_input'
+    assert set(native.required_inputs) <= set(action.missing_inputs)
+    assert action.context_refs == ('card:ui',)
+    services.guidelines.enforce_policy_transition.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unavailable_native_context_has_read_guidance_without_proof_penalty():
+    batch, services, evaluator = environment(CompletionInfrastructureUnavailable('Private native storage'))
+    native = await evaluator.evaluate(batch)
+    evaluated = EvaluatedDeliveryReadiness(replace(batch, native_lifecycle=native), actor_id='reader')
+    context = evaluated.context()
+    page = PreparedDeliveryReadiness(context, evaluated.diagnostics(), cursor=Cursor()).page(
+        ReadinessReadQuery(board_id='board', spec_id='spec'), actor_id='reader')
+    issue = next(item for item in page.issues if item.code == 'assessment_unavailable')
+    assert issue.phase == 'lifecycle' and issue.score_impact == 'none'
+    assert not issue.blocks_proof and issue.blocks_target_transition is None
+    action = next(item for item in page.next_actions if item.kind == 'restore_evaluation')
+    assert action.arguments == {'board_id': 'board', 'spec_id': 'spec'}
+    assert 'Private native' not in page.model_dump_json()
+
+
+@pytest.mark.asyncio
 async def test_native_critical_context_unavailable_keeps_scores_and_private_details_out():
     batch, services, evaluator = card_environment()
     decision = await services.critical_context(None, board_id='board', actor_id=batch.access.actor_id,

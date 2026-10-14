@@ -141,6 +141,7 @@ class ReadinessNativeLifecycle:
     other_blocker_count: int | None = None
     blocking_codes: tuple[str, ...] = ()
     basis_digest: str | None = None
+    required_inputs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

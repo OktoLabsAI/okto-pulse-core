@@ -2,6 +2,7 @@
 from okto_pulse.core.domain.enums import CardStatus, SpecStatus
 from okto_pulse.core.domain.code_traceability import CodeTraceabilitySubjectType, CodeTraceabilityContractError, CodeDeliveryContextRequired
 from okto_pulse.core.domain.delivery_inventory import delivery_digest
+from okto_pulse.core.domain.bug_learning_policy import LEARNING_CAPTURE_REQUIRED, requires_bug_learning_capture
 from okto_pulse.core.domain.guideline_semantic_transition import PolicyTransitionDecision, PolicyTransitionReasonCode
 from okto_pulse.core.domain.sdlc_registry import transition_requires_policy_compliance
 from okto_pulse.core.ports.delivery_readiness import ReadinessNativeLifecycle, ReadinessReadError
@@ -16,6 +17,7 @@ from okto_pulse.core.services.main import (
 from okto_pulse.core.services.critical_context_guard import CriticalAction, CriticalContextDecision, FullContextGuardError
 from okto_pulse.core.services.code_traceability_gate import CodeTraceabilityGateEvaluation
 from okto_pulse.core.services.resource_gate_contracts import ResourceGateViolation
+from okto_pulse.core.services.impact_evidence import resolve_impact_evidence_mode
 
 
 class DeliveryReadinessLifecycleService:
@@ -41,14 +43,14 @@ class DeliveryReadinessLifecycleService:
         status = getattr(status, 'value', status)
         traceability_basis = None
         critical_basis = None
-        def result(check, reasons, blockers=(), *, basis_digest=None):
+        def result(check, reasons, blockers=(), *, basis_digest=None, required_inputs=()):
             if traceability_basis is not None:
                 basis_digest = delivery_digest({'traceability': traceability_basis, 'policy': basis_digest})
             if critical_basis is not None:
                 basis_digest = delivery_digest({'critical_context': critical_basis, 'native': basis_digest})
             return ReadinessNativeLifecycle(card_id, status, check, tuple(reasons),
                 other_blocker_count=0 if check == 'allowed' else None,
-                blocking_codes=tuple(blockers), basis_digest=basis_digest)
+                blocking_codes=tuple(blockers), basis_digest=basis_digest, required_inputs=tuple(required_inputs))
         if access is None:
             return result('not_evaluated', ('native_transition_permission_required',))
         entity = 'card' if card else 'spec'
@@ -159,5 +161,16 @@ class DeliveryReadinessLifecycleService:
             or critical.entity_id != subject.id or critical.outcome != 'allow'):
             raise ReadinessReadError('readiness_assessment_unavailable', native_code='critical_context_preview_invalid')
         critical_basis = critical.context_fingerprint
-        return result('not_evaluated' if card else 'allowed', ('native_completion_report_required',) if card else (),
-            basis_digest=policy.observation_digest if policy else None)
+        required_inputs, reasons = [], []
+        if card:
+            reasons.append('native_completion_report_required')
+            required_inputs.extend(('conclusion', 'completeness', 'completeness_justification',
+                'drift', 'drift_justification'))
+            if requires_bug_learning_capture(getattr(board, 'settings', None), card.card_type):
+                reasons.append(LEARNING_CAPTURE_REQUIRED)
+                required_inputs.append('learning_submission')
+            if resolve_impact_evidence_mode(board)[0] == 'require':
+                reasons.append('impact_evidence_required')
+                required_inputs.append('impact_evidence_or_delivery_selection_reuse_impact')
+        return result('not_evaluated' if card else 'allowed', reasons,
+            basis_digest=policy.observation_digest if policy else None, required_inputs=required_inputs)
