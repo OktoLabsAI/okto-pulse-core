@@ -3,8 +3,55 @@ from copy import deepcopy
 import pytest
 
 from okto_pulse.core.domain.spec_evaluation import (
-    spec_evaluation_is_current, previous_spec_evaluations, project_spec_evaluation,
+    evaluate_spec_decomposition, spec_evaluation_is_current,
+    previous_spec_evaluations, project_spec_evaluation,
 )
+
+
+def _review(identity, recommendation, score, *, edition=2, stale=False):
+    return {"id": identity, "recommendation": recommendation, "overall_score": score,
+            "spec_edition": edition, "stale": stale, "evaluator_name": identity}
+
+
+def test_decomposition_uses_only_current_approvals_and_preserves_native_average():
+    rows = [_review("a", "approve", 60), _review("b", "approve", 80),
+            _review("changes", "request_changes", 0),
+            _review("old", "reject", 0, edition=1),
+            _review("stale", "reject", 0, stale=True)]
+    original = deepcopy(rows)
+    verdict = evaluate_spec_decomposition(rows, edition=2, required=True, threshold=70)
+    assert verdict.allowed
+    assert verdict.current_ids == ("a", "b", "changes")
+    assert verdict.approval_ids == ("a", "b")
+    assert verdict.average_approval_score == 70
+    assert rows == original
+    verdict = evaluate_spec_decomposition(rows, edition=2, required=True, threshold=71)
+    assert verdict.blocker == "score_below_threshold"
+    with pytest.raises(ValueError, match="average approval score"):
+        verdict.require_allowed(target="validated")
+
+
+def test_current_rejection_is_not_superseded_by_later_approval():
+    rows = [_review("reject", "reject", 0), _review("approve", "approve", 100)]
+    verdict = evaluate_spec_decomposition(rows, edition=2, required=True, threshold=70)
+    assert not verdict.allowed and verdict.rejection_ids == ("reject",)
+    with pytest.raises(ValueError, match="Reopen the Spec"):
+        verdict.require_allowed()
+    assert evaluate_spec_decomposition(rows, edition=3, required=True, threshold=70).blocker == "approval_missing"
+
+
+@pytest.mark.parametrize("rows", [[], [_review("request", "request_changes", 100)]])
+def test_request_changes_does_not_supply_the_required_approval(rows):
+    verdict = evaluate_spec_decomposition(rows, edition=2, required=True, threshold=70)
+    assert verdict.blocker == "approval_missing"
+    with pytest.raises(ValueError, match="no evaluation with 'approve'"):
+        verdict.require_allowed()
+
+
+def test_disabled_decomposition_is_not_a_manufactured_approval():
+    verdict = evaluate_spec_decomposition([], edition=2, required=False, threshold=70)
+    assert verdict.allowed and not verdict.required
+    assert verdict.approval_ids == () and verdict.average_approval_score is None
 
 
 @pytest.mark.parametrize('recorded,expected', [(2, True), (1, False)])

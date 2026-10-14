@@ -254,7 +254,7 @@ human validation edition.
 
 ## 2.3b Spec Evaluation — Quality Gate for Execution
 
-After a spec reaches `validated`, it must undergo **qualitative evaluation** via `okto_pulse_submit_spec_evaluation` before moving to `in_progress`: 4 dimensions + `overall_score`, each 0-100 with mandatory justification, and a `recommendation` of `approve` | `request_changes` | `reject`.
+Record **qualitative evaluation** via `okto_pulse_submit_spec_evaluation` in `approved` or `validated`: 4 dimensions + `overall_score`, each 0-100 with mandatory justification, and a `recommendation` of `approve` | `request_changes` | `reject`. Recording a review does not promote the Spec. The existing Current judgment is reused at execution admission; do not repeat an evaluation merely because the Spec advanced from Approved to Validated in the same edition.
 
 **Single source for the evaluation gate** — signature, dimension definitions, the full recommendation semantics (including `request_changes` and the `skip_qualitative_validation` escape), and enforcement of validated → in_progress: `okto-pulse://reference/spec_gates`.
 

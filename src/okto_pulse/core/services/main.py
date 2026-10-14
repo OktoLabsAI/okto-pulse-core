@@ -16,7 +16,8 @@ from typing import Any, Callable
 from okto_pulse.core.application.scope import QueryScope
 from okto_pulse.core.domain.spec_content_lock import SpecLockedError as SpecLockedError
 from okto_pulse.core.domain.spec_evaluation import (
-    spec_evaluation_is_current, previous_spec_evaluations, project_spec_evaluation,
+    SpecEvaluationInput, evaluate_spec_decomposition,
+    previous_spec_evaluations, project_spec_evaluation,
 )
 from okto_pulse.core.application.artifact_propagation import (
     propagate_artifacts,
@@ -11576,54 +11577,24 @@ class SpecService:
         await require_spec_delivery(self.db, spec, board=board)
 
     def _enforce_spec_evaluation_gate(self, spec, board) -> None:
-        # Qualitative validation gate
+        self.spec_decomposition_verdict(spec, board).require_allowed()
+
+    @staticmethod
+    def spec_decomposition_verdict(spec, board):
+        """The same native judgment is consumed by promotion, start and summaries."""
         auto_validate = (
             (board.settings or {}).get("auto_validate", False) if board else False
         )
         skip_qualitative = getattr(spec, "skip_qualitative_validation", False)
-        if not auto_validate and not skip_qualitative:
-            evaluations = [
-                e for e in (spec.evaluations or [])
-                if spec_evaluation_is_current(e, int(spec.edition))
-            ]
-            approvals = [
-                e for e in evaluations if e.get("recommendation") == "approve"
-            ]
-            rejections = [
-                e for e in evaluations if e.get("recommendation") == "reject"
-            ]
-            if rejections:
-                reject_names = ", ".join(
-                    e.get("evaluator_name", e.get("evaluator_id", "?"))
-                    for e in rejections
-                )
-                raise ValueError(
-                    f"Cannot move spec to 'in_progress': {len(rejections)} evaluation(s) "
-                    f"with 'reject' recommendation exist (by: {reject_names}). "
-                    "Reopen the Spec to Draft, correct its plan and obtain "
-                    "new evaluations for the new edition."
-                )
-            if not approvals:
-                raise ValueError(
-                    "Cannot move spec to 'in_progress': no evaluation with "
-                    "'approve' recommendation found. At least one approval is required. "
-                    "Submit an evaluation via okto_pulse_submit_spec_evaluation."
-                )
-            threshold = (
-                getattr(spec, "validation_threshold", None)
-                or (board.settings or {}).get("validation_threshold_global", 70)
-                if board
-                else 70
-            )
-            avg_score = sum(e.get("overall_score", 0) for e in approvals) / len(
-                approvals
-            )
-            if avg_score < threshold:
-                raise ValueError(
-                    f"Cannot move spec to 'in_progress': average approval score "
-                    f"({avg_score:.0f}) is below threshold ({threshold}). "
-                    f"Submit additional evaluations with higher scores or lower the threshold."
-                )
+        threshold = (
+            getattr(spec, "validation_threshold", None)
+            or (board.settings or {}).get("validation_threshold_global", 70)
+            if board else 70
+        )
+        return evaluate_spec_decomposition(
+            spec.evaluations or [], edition=int(spec.edition),
+            required=not auto_validate and not skip_qualitative, threshold=threshold,
+        )
 
 
     async def move_spec(
@@ -12851,7 +12822,7 @@ class SpecService:
         actor_type: str = "user",
         surface: str = "service",
     ) -> dict:
-        """Submit a qualitative evaluation for a spec in 'validated' status.
+        """Append a decomposition review in Approved or Validated without promoting.
 
         Caminho de escrita ÃšNICO da spec evaluation â€” consumido pelo endpoint
         REST ``POST /specs/{id}/evaluations`` e pelo MCP tool
@@ -12865,24 +12836,13 @@ class SpecService:
         spec = await self.get_spec(spec_id)
         if not spec:
             raise ValueError("Spec not found")
-        if spec.status != SpecStatus.VALIDATED:
+        if spec.status not in (SpecStatus.APPROVED, SpecStatus.VALIDATED):
             raise ValueError(
-                f"Spec must be in 'validated' status to submit evaluations "
+                f"Spec must be in 'approved' or 'validated' status to submit evaluations "
                 f"(currently '{spec.status.value}')"
             )
 
-        recommendation = data.get("recommendation")
-        if recommendation not in self.SPEC_EVALUATION_RECOMMENDATIONS:
-            raise ValueError(
-                "Recommendation must be one of: "
-                + ", ".join(self.SPEC_EVALUATION_RECOMMENDATIONS)
-            )
-        score_fields = [name for name, _ in self.SPEC_EVALUATION_DIMENSIONS]
-        score_fields.append("overall_score")
-        for name in score_fields:
-            score = int(data[name])
-            if not (0 <= score <= 100):
-                raise ValueError(f"{name} must be between 0 and 100")
+        data = SpecEvaluationInput.model_validate(data).model_dump()
 
         await _authorize_critical_context_or_raise(
             self.db,
@@ -12896,8 +12856,6 @@ class SpecService:
             actor_name=actor_name,
         )
 
-        import uuid as _uuid
-
         # Share the lifecycle fence with reopen/start. A review must not be
         # appended to another edition or overwrite another review's ledger.
         if not await _application_fence(
@@ -12909,6 +12867,23 @@ class SpecService:
             raise LifecycleTransitionConflictError("spec", spec.id)
 
         spec = await self.get_spec(spec_id)
+        return await self._append_spec_evaluation(
+            spec, actor_id=actor_id, actor_name=actor_name,
+            actor_type=actor_type, data=data,
+        )
+
+    async def _append_spec_evaluation(
+        self, spec, *, actor_id: str, actor_name: str, actor_type: str,
+        data: dict,
+    ) -> dict:
+        """Append a validated native review inside the caller's authorized fence.
+
+        No promotion or commit occurs here. The independent and composed paths
+        share this append so they preserve exactly the same authorship/history.
+        """
+        import uuid as _uuid
+
+        spec_id = spec.id
         evaluation = {
             "id": f"eval_{_uuid.uuid4().hex[:8]}",
             "spec_id": spec_id,
@@ -12926,7 +12901,7 @@ class SpecService:
             },
             "overall_score": int(data["overall_score"]),
             "overall_justification": data["overall_justification"],
-            "recommendation": recommendation,
+            "recommendation": data["recommendation"],
             "stale": False,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -12946,7 +12921,7 @@ class SpecService:
                 "spec_id": spec_id,
                 "evaluation_id": evaluation["id"],
                 "overall_score": evaluation["overall_score"],
-                "recommendation": recommendation,
+                "recommendation": evaluation["recommendation"],
             },
         )
         return evaluation

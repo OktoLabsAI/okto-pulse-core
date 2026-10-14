@@ -16095,7 +16095,7 @@ async def okto_pulse_submit_spec_evaluation(
     recommendation: str,
 ) -> str:
     """
-    Submit a qualitative evaluation for a spec in 'validated' status.
+    Submit a decomposition evaluation in 'approved' or 'validated' status.
     Multiple evaluators can submit independent evaluations."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:

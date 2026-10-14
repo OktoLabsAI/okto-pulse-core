@@ -32,6 +32,52 @@ from test_spec_evaluation_rest_parity import _direct_spec_context_fields, _evalu
 __all__ = ['_harness_env']
 
 
+@pytest.mark.asyncio
+async def test_authenticated_mcp_can_record_decomposition_in_approved_without_promotion(
+    _harness_env, monkeypatch,
+):
+    await _seed(_harness_env)
+    factory = _db_mod.get_session_factory()
+    register_unit_of_work_factory(CommunityUnitOfWorkFactory(factory))
+    async with factory() as db:
+        root = next(row for row in builtin_permission_presets() if row['name'] == 'Full Control')
+        db.add(PermissionPreset(id='review-root', name=root['name'], flags=root['flags'], is_builtin=True))
+        agent = await db.get(Agent, 'A1')
+        agent.preset_id = 'review-root'
+        agent.permission_flags = {}
+        db.add(Spec(
+            architecture_adoption=ArchitectureAdoptionScope(
+                board_id='B1', spec_id='review-approved', adopted_in_edition=1,
+                actor_id='A1', inherited_resource_ids=(),
+            ).model_dump(mode='json'),
+            id='review-approved', board_id='B1', title='Review planning',
+            status=SpecStatus.APPROVED, created_by='A1',
+            functional_requirements=[], acceptance_criteria=[], test_scenarios=[],
+            business_rules=[], technical_requirements=[], api_contracts=[],
+            integration_requirements=[], observability_requirements=[], decisions=[],
+        ))
+        await db.commit()
+    monkeypatch.setattr(server, 'active_api_key_credential',
+                        lambda: McpCredential(source='x_api_key_header', value='kA1'))
+    frozen = freeze_mcp_resource_catalog(server.effective_resource_catalog())
+    host = CommunityMcpHostProvider().materialize_catalog(
+        server.mcp, resource_catalog=frozen, projection_identity=frozen.identity,
+    )
+    async with Client(host) as client:
+        response = await client.call_tool('okto_pulse_submit_spec_evaluation', {
+            'board_id': 'B1', 'spec_id': 'review-approved', **_evaluation_payload(),
+        }, raise_on_error=False)
+        assert not response.is_error, response
+    async with factory() as db:
+        spec = await db.get(Spec, 'review-approved')
+        assert spec.status == SpecStatus.APPROVED
+        assert len(spec.evaluations) == 1
+        assert spec.evaluations[0]['evaluator_id'] == 'A1'
+        assert spec.evaluations[0]['evaluator_type'] == 'agent'
+        assert spec.evaluations[0]['spec_edition'] == spec.edition
+        assert not spec.validations
+
+
 async def _snapshot(factory):
     async with factory() as db:
         rows = (await db.execute(select(Spec).order_by(Spec.id))).scalars().all()
@@ -86,11 +132,11 @@ async def test_authenticated_planner_review_boundary_across_mcp_variants(
                 id=spec_id, board_id='B1', title=spec_id, status=state, created_by='A1',
                 functional_requirements=[], acceptance_criteria=[], test_scenarios=[],
                 business_rules=[], api_contracts=[], evaluations=[],
+                technical_requirements=[], integration_requirements=[], observability_requirements=[],
                 skip_test_coverage=True, skip_rules_coverage=True, skip_trs_coverage=True,
                 skip_contract_coverage=True, skip_ir_coverage=True, skip_or_coverage=True,
                 skip_decisions_coverage=True,
-                decisions=[{'id': 'dec_seed', 'title': 'Explicit fixture decision',
-                            'rationale': 'Isolate approval boundary', 'status': 'active'}],
+                decisions=[],
                 **_direct_spec_context_fields(spec_id),
             ))
         await db.commit()
@@ -114,12 +160,13 @@ async def test_authenticated_planner_review_boundary_across_mcp_variants(
         assert 'submit_spec_evaluation' not in names
         assert 'okto_pulse_submit_spec_evaluation' not in tool_inventory_document(server.mcp)["aliases"].values()
         before = await _snapshot(factory)
-        denied = await client.call_tool('okto_pulse_submit_spec_evaluation', {
-            'board_id': 'B1', 'spec_id': 'validated', **_evaluation_payload(),
-        }, raise_on_error=False)
-        assert 'spec.evaluations.submit' in str(denied), denied
-        assert 'permission_missing' in str(denied), denied
-        assert await _snapshot(factory) == before
+        for state in ('approved', 'validated'):
+            denied = await client.call_tool('okto_pulse_submit_spec_evaluation', {
+                'board_id': 'B1', 'spec_id': state, **_evaluation_payload(),
+            }, raise_on_error=False)
+            assert 'spec.evaluations.submit' in str(denied), denied
+            assert 'permission_missing' in str(denied), denied
+            assert await _snapshot(factory) == before
 
         validation = {'expected_validation_edition': 1, 'expected_spec_version': 1,
                       'expected_head_revision': 0, 'recommendation': 'approve'}

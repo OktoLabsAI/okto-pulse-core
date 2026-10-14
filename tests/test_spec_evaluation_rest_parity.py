@@ -92,6 +92,7 @@ async def spec_eval_client(db_factory):
             functional_requirements=[{"id": "fr_one", "text": "FR1"}],
             acceptance_criteria=[{"id": "ac_one", "text": "AC1"}],
             test_scenarios=[], business_rules=[], api_contracts=[],
+            technical_requirements=[], integration_requirements=[], observability_requirements=[],
             # Skips de cobertura: o teste isola o gate QUALITATIVO de
             # in_progress (evaluations) — os gates de cobertura têm suíte
             # própria.
@@ -99,11 +100,7 @@ async def spec_eval_client(db_factory):
             skip_trs_coverage=True, skip_contract_coverage=True,
             skip_ir_coverage=True, skip_or_coverage=True,
             skip_decisions_coverage=True,
-            # O gate decision-required (spec 4028ebd4) ignora o skip acima e
-            # roda antes do gate qualitativo de evaluations sob teste.
-            decisions=[{"id": "dec_seed", "title": "Seed decision",
-                        "rationale": "Decision de fixture p/ o gate decision-required.",
-                        "status": "active"}],
+            decisions=[],
             **_direct_spec_context_fields(validated_spec_id),
         ))
         db.add(Spec(
@@ -255,11 +252,45 @@ def test_rest_evaluation_satisfies_in_progress_gate(spec_eval_client, monkeypatc
     planning.assert_awaited_once()
 
 
-def test_evaluation_rejected_outside_validated_status(spec_eval_client):
+def test_evaluation_rejected_in_draft(spec_eval_client):
     client, _validated, draft_spec_id, _board = spec_eval_client
     resp = client.post(f"/api/v1/specs/{draft_spec_id}/evaluations", json=_evaluation_payload())
     assert resp.status_code == 409
-    assert "must be in 'validated' status" in resp.text
+    assert "must be in 'approved' or 'validated' status" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_evaluation_in_approved_does_not_promote_and_keeps_authorship(spec_eval_client, db_factory):
+    client, spec_id, _draft, _board = spec_eval_client
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        spec.status = SpecStatus.APPROVED
+        await db.commit()
+    response = client.post(f"/api/v1/specs/{spec_id}/evaluations", json=_evaluation_payload())
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["status_before"] == body["status_after"] == "approved"
+    assert not body["state_changed"]
+    assert body["evaluation"]["evaluator_id"] == USER_ID
+    assert body["evaluation"]["spec_edition"] == 1
+    assert body["next_action"]["tool"] == "okto_pulse_submit_spec_validation"
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        assert spec.status == SpecStatus.APPROVED
+        assert len(spec.evaluations) == 1
+        assert not spec.validations
+
+
+@pytest.mark.parametrize("field,value", [
+    ("overall_score", True), ("overall_score", "90"),
+    ("evaluator_id", "forged"), ("overall_justification", "short"),
+])
+def test_decomposition_payload_has_one_strict_contract(spec_eval_client, field, value):
+    client, spec_id, _draft, _board = spec_eval_client
+    data = {**_evaluation_payload(), field: value}
+    response = client.post(f"/api/v1/specs/{spec_id}/evaluations", json=data)
+    assert response.status_code == 422, response.text
+    assert client.get(f"/api/v1/specs/{spec_id}/evaluations").json()["evaluations"] == []
 
 
 def test_evaluation_validates_scores_and_recommendation(spec_eval_client):

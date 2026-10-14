@@ -910,21 +910,27 @@ def spec_evaluation_success_envelope(
     """submit_spec_evaluation is append-only and does NOT change the spec status.
     The success body reports the independently-captured before/after status (so a
     future regression that changed status surfaces as state_changed=true) and points
-    at the operator's next step (move_spec to in_progress) -- never an auto-transition."""
+    at conclusion in Approved or execution admission in Validated; never an auto-transition."""
+    next_action = (
+        {
+            "tool": "okto_pulse_submit_spec_validation",
+            "params": {"spec_id": spec_id},
+            "hint": "Decomposition recorded. Conclude the applicable Spec validation gates before execution.",
+        }
+        if status_after == "approved"
+        else {
+            "tool": "okto_pulse_move_spec",
+            "params": {"spec_id": spec_id, "status": "in_progress"},
+            "hint": "Evaluation recorded (append-only). Move the spec to in_progress when ready to begin execution.",
+        }
+    )
     return {
         "success": True,
         "evaluation": evaluation,
         "state_changed": status_before != status_after,
         "status_before": status_before,
         "status_after": status_after,
-        "next_action": {
-            "tool": "okto_pulse_move_spec",
-            "params": {"spec_id": spec_id, "status": "in_progress"},
-            "hint": (
-                "Evaluation recorded (append-only). Move the spec to in_progress when "
-                "ready to begin execution."
-            ),
-        },
+        "next_action": next_action,
     }
 
 

@@ -2,6 +2,53 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U2 em andamento: decomposição preparada em Approved
+
+U1 publicado: Core 0eaa8b84 / Community 2019c51c. Neste incremento do U2,
+SpecEvaluationInput é contrato tipado compartilhado por REST e serviço/MCP;
+recusa campos extras/identidade enviada pelo cliente e scores não inteiros.
+O writer admite Approved e Validated, preservando autoria, edição, histórico
+append-only e o fence existente. Extraído _append_spec_evaluation sem commit
+ou promoção, para ser reutilizado pela conclusão composta. Approved recebe
+orientação de concluir a validação, não de iniciar execução imediatamente.
+
+evaluate_spec_decomposition centraliza o julgamento nativo: média somente das
+aprovações Current, qualquer rejeição Current bloqueia, request_changes não
+vira veto adicional nem fornece a aprovação exigida. Previous não contribui;
+gate desativado não fabrica parecer. O gate de início já consome essa função.
+Este incremento ainda NÃO conecta a decomposição à promoção para Validated.
+
+Validação: 42 passed em test_spec_evaluation_currentness,
+test_spec_evaluation_rest_parity, test_planner_review_authority e catálogo.
+Inclui chamada real ao host MCP autenticado com persistência Community: parecer
+gravado em Approved, evaluator_type=agent correto, sem Spec Validation nem
+promoção. Negação de autoridade confirmada em Approved e Validated. REST cobre
+mesma autoria/estado, input inválido e ausência de efeitos. Fixtures antigas
+foram corrigidas para declarar as coleções vazias reais e remover Decision
+artificial; nenhum gate foi desligado para o cenário novo. Ruff F/E9 passou.
+XML: .validation-v040/spec-unified-20261014/u2-decomposition.xml. Catálogo
+regenerado oficialmente; diff-check passou. Community 31220ac5 publicado;
+este checkpoint acompanha o commit Core da etapa. Não houve instalação.
+
+Próximo trabalho obrigatório: U2.2–U2.4. Acrescentar payload opcional tipado à
+conclusão; exigir as duas permissões quando ambos os pareceres forem enviados;
+usar identidade autenticada e os dois critical contexts. Registrar os fatos
+válidos negativos sem promover, e reverter integralmente falhas técnicas.
+Implementar replay por ator/Spec/operação e manifesto que inclua Cards/plano,
+heads e autoridade, com rechecagem sob transação. Encaminhar também move_spec
+e allowed transitions ao predicado comum. Depois U3 e U4; nenhum UV completo
+UI/MCP fim a fim foi alegado neste incremento.
+
+Achados para a implementação transacional, sem decisão adicional de produto:
+CommunityUnitOfWork já possui begin_write (BEGIN IMMEDIATE no runtime SQLite),
+mas essa capacidade não consta do Protocol PulseUnitOfWork e o MCP não a chama
+como o REST. SemanticSubjectVersionRow possui head_revision/content_digest;
+Spec.version não avança em todo append de parecer. Spec/Card updated_at sozinho
+não serve como fence (func.now pode ter resolução de segundos). Reutilizar
+portas/revisões nativas e garantir serialização; não substituir pelo relógio,
+hash de todos os textos ou polling de histórico completo. A capacidade precisa
+ser pública para o Core; qualquer mecânica nova permanece em Community.
+
 ### 2026-10-14 — U1 implementado e testado; conclusão unificada ainda pendente
 
 Objetivo ativo: implementar SPEC_UNIFIED_VALIDATION_PLAN.md integralmente,

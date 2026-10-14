@@ -466,7 +466,9 @@ Exact arguments and result envelopes are documented in
 
 ## Spec Evaluation Gate — `okto_pulse_submit_spec_evaluation`
 
-After a spec reaches `validated`, it must undergo qualitative evaluation before moving to `in_progress`.
+Qualitative evaluation can be recorded in `approved` or `validated`. Recording
+does not promote the Spec. A Current evaluation is reused when starting work;
+advancing to Validated in the same edition does not require another review.
 
 **Tool:** `okto_pulse_submit_spec_evaluation(board_id, spec_id, breakdown_completeness, breakdown_justification, granularity, granularity_justification, dependency_coherence, dependency_justification, test_coverage_quality, test_coverage_justification, overall_score, overall_justification, recommendation)`
 

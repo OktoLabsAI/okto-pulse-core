@@ -541,7 +541,7 @@ Returns:
 
 ## `okto_pulse_submit_spec_evaluation`
 
-Submit a qualitative evaluation for a spec in 'validated' status.
+Submit a decomposition evaluation in 'approved' or 'validated' status.
 Multiple evaluators can submit independent evaluations.
 
 Args:

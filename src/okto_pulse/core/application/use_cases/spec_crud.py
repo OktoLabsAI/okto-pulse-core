@@ -1947,7 +1947,7 @@ class SubmitSpecEvaluationResult:
 
 
 class SubmitSpecEvaluationUseCase:
-    """Submit a qualitative evaluation for a spec in 'validated' status (write).
+    """Submit a decomposition evaluation in Approved or Validated (write).
     ``EntityNotFoundError("spec")`` when the spec is missing (adapter → 404);
     resolves the evaluator display name best-effort (any failure falls back to the
     actor id, exactly as the legacy endpoint); ``submit_spec_evaluation``'s
