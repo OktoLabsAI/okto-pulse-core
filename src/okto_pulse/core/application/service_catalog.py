@@ -705,6 +705,15 @@ class CoreApplicationServiceCatalog:
             context=self.__relational_context)
 
     @cached_property
+    def delivery_readiness(self):  # noqa: ANN201
+        from okto_pulse.core.ports.relational_application import require_relational_application_adapter
+        from okto_pulse.core.services.delivery_readiness import DeliveryReadinessService
+
+        adapter = require_relational_application_adapter()
+        return DeliveryReadinessService(adapter.delivery_readiness_read(self.__relational_context),
+            adapter.delivery_readiness_cursor(self.__relational_context))
+
+    @cached_property
     def code_traceability_read(self):  # noqa: ANN201
         from okto_pulse.core.ports.relational_application import (
             require_relational_application_adapter,

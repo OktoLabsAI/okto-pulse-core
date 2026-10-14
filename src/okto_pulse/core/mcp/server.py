@@ -4765,6 +4765,9 @@ async def okto_pulse_move_card(
         except LearningCaptureTargetConflict as e:
             return json.dumps({'error': e.code, **e.to_dict(), 'blocked_by_dependencies': False})
         except ValueError as e:
+            from okto_pulse.core.services.delivery_evidence import DeliveryGateBlocked
+            if isinstance(e, DeliveryGateBlocked):
+                return MCPAdapterContract.error(e)
             return json.dumps({"error": str(e), "blocked_by_dependencies": False})
 
         if not updated:
@@ -11203,6 +11206,9 @@ async def okto_pulse_move_spec(
     except LifecycleTransitionConflictError as e:
         return MCPAdapterContract.error(e)
     except ValueError as e:
+        from okto_pulse.core.services.delivery_evidence import DeliveryGateBlocked
+        if isinstance(e, DeliveryGateBlocked):
+            return MCPAdapterContract.error(e)
         return json.dumps({"error": str(e)})
 
 

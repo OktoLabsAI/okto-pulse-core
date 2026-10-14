@@ -20,6 +20,7 @@ from okto_pulse.core.ports.traceability import (
 
 
 if TYPE_CHECKING:
+    from okto_pulse.core.services.delivery_readiness import DeliveryReadinessService
     from okto_pulse.core.ports.spec_coverage_query import SpecCoverageQuery
     from okto_pulse.core.ports.decision_impact import DecisionImpactQuery
     from okto_pulse.core.ports.lineage_query import LineageQuery
@@ -143,6 +144,9 @@ class ApplicationServiceCatalog(Protocol):
 
     @property
     def delivery_readiness_lifecycle(self): ...
+
+    @property
+    def delivery_readiness(self) -> DeliveryReadinessService: ...
 
     @property
     def code_traceability_read(self) -> "CodeTraceabilityReadPort": ...

@@ -56,7 +56,11 @@ class DeliveryReportRejected(ValueError):
         self.code = getattr(error, "code", None) or "delivery_report_rejected"
         serialize = getattr(error, "to_dict", None)
         self.gate = serialize() if callable(serialize) else getattr(error, "details", {})
+        project = getattr(error, 'to_error_dict', None)
+        self.delivery_error = project() if self.code == 'delivery_evidence_incomplete' and callable(project) else None
 
     def to_error_dict(self):
+        if self.delivery_error is not None:
+            return self.delivery_error
         return dict(code=self.code, message=str(self), details={"report_gate": self.gate},
                     remediation=[dict(action="resolve_card_report_gate", tool="okto_pulse_get_card")])

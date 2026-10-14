@@ -6,6 +6,40 @@ version: "1.3"
 
 ## `okto_pulse_get_delivery_evidence`
 
+Use `view="readiness"` for the current Spec or an optional `card_id`. The
+response has `contract_version="delivery-readiness/v1"`, independent
+implementation and verification metrics, native lifecycle status, causes and
+up to three next actions. Card verification includes associated proof from
+other Cards. A low score is a successful diagnostic read, not a query error.
+
+`phase` (`all`, `implementation`, `verification`, `lifecycle`) filters issues
+without changing metrics or gates. `limit` is 1..20 (default 20). Follow
+`page.next_cursor` with the same scope/filter/limit. Use an issue's
+`detail_query` unchanged to retrieve its paged facts, evidence and pinpoints;
+detail requires both `issue_id` and `snapshot_id`. Restart the query after
+`readiness_cursor_stale` or `readiness_snapshot_changed`. Every page reloads
+current permissions and facts; no cursor grants access or write authority.
+
+Readiness rejects `record_id` and `edition`. `phase` other than `all`,
+`issue_id` and `snapshot_id` are exclusive to readiness. `progress` remains
+the default: without `card_id`, it returns the existing Spec projection;
+with a Card it pages checkpoints. `ledger` pages all Card records and
+`resume` provides accumulated Card context. Use the history views for previous
+editions or an original `record_id`; historical records gain no current credit.
+
+`percent: null` means unknown or not applicable, according to metric status.
+Neither a waiver nor Done creates proof. Done history is preserved when proof
+becomes stale; current qualification and diagnostics show the divergence.
+This read never executes tests, creates evidence, writes events or changes
+lifecycle. Subsequent mutations always reauthorize and recheck native gates.
+
+A rejected delivery transition includes `readiness_summary` and a valid
+`readiness_query`. Its `assessment_snapshot_id` fingerprints the factual
+assessment used by the rejected mutation; it is not a readiness cursor token.
+Run the supplied query after rejection to establish the current authorized
+snapshot before requesting details. Errors never embed the entire evidence
+population or automatically execute a recovery action.
+
 Decisions have a separate adherence result. They reuse explicitly selected
 obligation proofs and/or an authenticated inspection; they do not require their
 own implementation or Test Card. A pending Decision cannot be completed by an
@@ -57,7 +91,8 @@ omissions. Revoked checkpoints remain labeled history. This is not a complete
 resume manifest; `recovery_verified` is always false. Check your own access to
 the declared workspace before claiming that earlier changes were recovered.
 
-Normal tasks expose `delivery_completeness`: equal-weight assigned obligations
+The existing projection retains deprecated `delivery_completeness`; new consumers
+must use readiness metrics. Normal tasks expose `delivery_completeness`: equal-weight assigned obligations
 at exclusive stages `planned` (0), `implemented` (50), `verified` (80),
 `accepted` (100), plus `total`, `percent` and `scope_sha256`. The percentage is
 the floored average. Verification needs current authenticated test evidence

@@ -21,7 +21,7 @@ from okto_pulse.core.models.delivery_readiness import (
     ReadinessDetailCounts, ReadinessDetailEntry, ReadinessPage, ReadinessReadQuery, ReadinessRelation,
 )
 from okto_pulse.core.ports.delivery_readiness import (
-    DeliveryReadinessCursorPort, ReadinessAccessDenied, ReadinessReadError,
+    DeliveryReadinessCursorPort, DeliveryReadinessReadPort, ReadinessActor, ReadinessAccessDenied, ReadinessReadError,
 )
 from okto_pulse.core.services.delivery_readiness_diagnostics import (
     DiagnosticOwner, NativeDeliveryDiagnostics, compose_delivery_diagnostics,
@@ -30,6 +30,19 @@ from okto_pulse.core.services.delivery_readiness_diagnostics import (
 
 SUMMARY_MAX_BYTES = 32 * 1024
 DETAIL_MAX_BYTES = 128 * 1024
+
+
+class DeliveryReadinessService:
+    """Compose a fresh authorized read; never reuse it as mutation authority."""
+    def __init__(self, reader: DeliveryReadinessReadPort, cursor: DeliveryReadinessCursorPort):
+        self.reader, self.cursor = reader, cursor
+
+    async def read(self, query: ReadinessReadQuery, *, actor: ReadinessActor):
+        batch = await self.reader.load(board_id=query.board_id, spec_id=query.spec_id,
+            card_id=query.card_id, actor=actor)
+        evaluated = EvaluatedDeliveryReadiness(batch, actor_id=actor.actor_id)
+        return PreparedDeliveryReadiness(evaluated.context(query.card_id), evaluated.diagnostics(query.card_id),
+            cursor=self.cursor).page(query, actor_id=actor.actor_id)
 
 
 class EvaluatedDeliveryReadiness:

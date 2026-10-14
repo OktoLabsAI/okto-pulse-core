@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from .mcp_auth import AgentAuthSession
 
 if TYPE_CHECKING:
+    from .delivery_readiness import DeliveryReadinessReadPort, DeliveryReadinessCursorPort
     from .spec_coverage_query import SpecCoverageReadPort
     from .bug_clusters import BugClustersReadPort
     from .checklist import ChecklistPersistencePort
@@ -197,6 +198,14 @@ class RelationalApplicationAdapter(Protocol):
 
     def delivery_evidence(self, session: Any):
         """Return transaction-scoped delivery proof persistence and projection."""
+        ...
+
+    def delivery_readiness_read(self, session: Any) -> DeliveryReadinessReadPort:
+        """Return the edition's authorized, consistent DeliveryReadinessReadPort."""
+        ...
+
+    def delivery_readiness_cursor(self, session: Any) -> DeliveryReadinessCursorPort:
+        """Return the edition-owned DeliveryReadinessCursorPort."""
         ...
 
 

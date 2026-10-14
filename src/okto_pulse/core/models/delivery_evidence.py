@@ -7,6 +7,7 @@ from pydantic_core import PydanticCustomError
 
 from okto_pulse.core.domain.delivery_progress import DeliveryProgress
 from okto_pulse.core.models.code_traceability import ImplementationTargetExecutionFields
+from okto_pulse.core.models.delivery_readiness import Digest, PhaseFilter, ReadinessReadQuery
 
 Identity = Annotated[str, Field(min_length=1, max_length=512, pattern=r"\S")]
 ClientReference = Annotated[str, Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")]
@@ -61,14 +62,25 @@ class DeliveryEvidenceReadQuery(DeliveryEvidenceQuery):
     """Read controls are separate from inherited write contracts."""
 
     card_id: Identity | None = None
-    view: Literal["progress", "ledger", "resume"] = "progress"
+    view: Literal["progress", "ledger", "resume", "readiness"] = "progress"
     edition: int | None = Field(default=None, ge=1)
     cursor: str | None = Field(default=None, min_length=1, max_length=8192)
     record_id: Identity | None = None
     limit: int = Field(default=20, ge=1, le=20)
+    phase: PhaseFilter = 'all'
+    issue_id: Identity | None = None
+    snapshot_id: Digest | None = None
 
     @model_validator(mode="after")
     def scoped_history(self):
+        if self.view == 'readiness':
+            if self.record_id is not None or self.edition is not None:
+                raise PydanticCustomError('readiness_query_invalid', 'Readiness accepts only the current edition, without record_id.')
+            if self.issue_id is not None and self.snapshot_id is None:
+                raise PydanticCustomError('readiness_query_invalid', 'Readiness detail requires snapshot_id.')
+            return self
+        if self.phase != 'all' or self.issue_id is not None or self.snapshot_id is not None:
+            raise PydanticCustomError('readiness_query_invalid', 'phase, issue_id and snapshot_id require view=readiness.')
         if self.card_id is None and (self.cursor or self.record_id or self.limit != 20 or self.view != "progress" or self.edition is not None):
             raise ValueError("delivery_history_card_required")
         if self.cursor and self.record_id:
@@ -76,6 +88,9 @@ class DeliveryEvidenceReadQuery(DeliveryEvidenceQuery):
         if self.view == "resume" and (self.cursor or self.record_id or self.edition is not None):
             raise ValueError("delivery_resume_use_history_for_detail")
         return self
+
+    def readiness_query(self) -> ReadinessReadQuery:
+        return ReadinessReadQuery.model_validate(self.model_dump(exclude={'record_id', 'edition'}))
 
 
 class DeliveryEvidenceInput(BaseModel):

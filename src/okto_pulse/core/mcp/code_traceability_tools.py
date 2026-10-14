@@ -21,6 +21,8 @@ from pydantic import Field, SecretStr, ValidationError
 from okto_pulse.core.models.delivery_evidence import card_delivery_command, DeliveryBatchEntryError, DeliveryEvidenceReadQuery
 from okto_pulse.core.models.delivery_report import CardDeliveryRecordInput
 from okto_pulse.core.models.decision_review import DecisionReviewInput, DecisionReviewCommand, DecisionReviewQuery
+from okto_pulse.core.inbound.delivery_readiness_error import READINESS_ERRORS, project_readiness_error
+from okto_pulse.core.ports.delivery_readiness import ReadinessReadError
 
 from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
@@ -186,11 +188,15 @@ def _decode_cursor(cursor: str | None) -> CodeTraceabilityPageCursor | None:
 
 
 def _error_outcome(error: Exception) -> McpToolOutcome:
-    if isinstance(error, CodeTraceabilityContractError):
+    if isinstance(error, READINESS_ERRORS):
+        projected = project_readiness_error(error)
+    elif isinstance(error, CodeTraceabilityContractError):
         projected = error.as_dict()
     elif hasattr(error, "to_error_dict"):
         projected = getattr(error, "to_error_dict")()
     elif isinstance(error, ValidationError):
+        if any(issue['type'] == 'readiness_query_invalid' for issue in error.errors()):
+            return _error_outcome(ReadinessReadError('readiness_query_invalid'))
         for issue in error.errors(include_input=False, include_url=False):
             context = issue.get("ctx")
             cause = context.get("error") if isinstance(context, Mapping) else None
@@ -248,7 +254,7 @@ def _error_outcome(error: Exception) -> McpToolOutcome:
     return McpToolOutcome.error(
         code=str(projected.get("code") or "code_traceability_error"),
         message=str(projected.get("message") or "Code Traceability failed."),
-        retryable=str(projected.get("code") or "").endswith("_conflict"),
+        retryable=bool(projected.get('retryable', str(projected.get("code") or "").endswith("_conflict"))),
         next_action=next_action,
         details={
             **dict(projected.get("details") or {}),
@@ -887,26 +893,29 @@ def register_code_traceability_tools(
         board_id: BoundedId, spec_id: BoundedId, card_id: BoundedId | None = None,
         cursor: Annotated[str, Field(min_length=1, max_length=8192)] | None = None,
         record_id: BoundedId | None = None, limit: Annotated[int, Field(ge=1, le=20)] = 20,
-        view: Literal["progress", "ledger", "resume"] = "progress",
+        view: Literal["progress", "ledger", "resume", "readiness"] = "progress",
         edition: Annotated[int, Field(ge=1)] | None = None,
+        phase: Literal['all', 'implementation', 'verification', 'lifecycle'] = 'all',
+        issue_id: BoundedId | None = None,
+        snapshot_id: Digest | None = None,
     ) -> McpToolOutcome:
-        """Read delivery obligations/current proof before completing a Spec.
-
-        Planning Code Evidence is not delivery. Tasks/bugs record code; only TEST
-        cards with authenticated passing scenarios verify it. Read
-        okto-pulse://reference/code-traceability, section Delivery evidence.
-        With card_id, read bounded progress history, newest first. Follow
-        next_cursor or pass record_id for full detail. Each call reauthorizes;
-        stale cursors require restart. view=resume adds accumulated Card facts,
-        current obligations, proof manifests and recovery limits without a KG read.
-        view=ledger pages all Card records or their original detail. History
-        views accept edition for previous editions; historical data never gains
-        current credit. Notes never prove recovery or completion; final gates remain separate.
+        """Read delivery proof, history or current readiness for a Spec/optional Card.
+        view=readiness returns independent implementation/verification metrics,
+        bounded causes and next actions. Detail requires issue_id + snapshot_id.
+        Readiness is current-edition only; history uses progress/ledger/resume.
+        Every page reauthorizes; mutations independently recheck native gates.
+        Read okto-pulse://reference/tool-docs/code-traceability for query rules.
         """
         from okto_pulse.core.application.use_cases.delivery_evidence import GetDeliveryEvidenceUseCase
 
-        command = DeliveryEvidenceReadQuery(board_id=board_id, spec_id=spec_id,
-            card_id=card_id, cursor=cursor, record_id=record_id, limit=limit, view=view, edition=edition)
+        try:
+            command = DeliveryEvidenceReadQuery(board_id=board_id, spec_id=spec_id,
+                card_id=card_id, cursor=cursor, record_id=record_id, limit=limit, view=view, edition=edition,
+                phase=phase, issue_id=issue_id, snapshot_id=snapshot_id)
+        except ValidationError as exc:
+            if view == 'readiness':
+                raise ReadinessReadError('readiness_query_invalid') from exc
+            raise
         return await _execute(board_id, command, GetDeliveryEvidenceUseCase())
 
     async def okto_pulse_record_delivery_evidence(board_id: BoundedId, card_id: BoundedId, spec_id: BoundedId, evidence: CardDeliveryRecordInput) -> McpToolOutcome:

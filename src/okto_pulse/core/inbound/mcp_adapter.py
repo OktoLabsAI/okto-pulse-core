@@ -24,6 +24,7 @@ from okto_pulse.core.domain.human_validation_cycle import (
 from okto_pulse.core.inbound.policy_transition_error import (
     project_policy_transition_rejection,
 )
+from okto_pulse.core.services.delivery_evidence import DeliveryGateBlocked
 
 
 class MCPAdapterContract:
@@ -57,6 +58,8 @@ class MCPAdapterContract:
     @staticmethod
     def error(exc: Exception) -> str:
         """Map a domain/use case error to the MCP JSON error envelope."""
+        if isinstance(exc, DeliveryGateBlocked):
+            return json.dumps({'error': exc.code, **exc.to_error_dict()})
         if isinstance(exc, PolicyTransitionRejected):
             return json.dumps(project_policy_transition_rejection(exc))
         if isinstance(exc, LifecycleTransitionConflictError):
