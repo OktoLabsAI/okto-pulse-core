@@ -1,4 +1,4 @@
-"""P04: deterministic causes and executable guidance, independent of scores."""
+"""P04 readiness: deterministic causes and guidance, independent of scores."""
 import asyncio
 from dataclasses import replace
 from itertools import permutations

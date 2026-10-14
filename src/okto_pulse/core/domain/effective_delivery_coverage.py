@@ -720,6 +720,17 @@ def implementation_readiness_reason(code):
         raise ReadinessIntegrityError('readiness_native_reason_unmapped') from exc
 
 
+def _implementation_cause_reasons(codes, record_id):
+    """Retain a generic predicate failure under its concrete native cause."""
+    codes = set(codes)
+    generic = 'delivery_accepted_committed_task_execution_required'
+    inherited = (generic,) if generic in codes and len(codes) > 1 else ()
+    if inherited:
+        codes.remove(generic)
+    return tuple(FactualReason(implementation_readiness_reason(code),
+        native_reason_codes=tuple(sorted((code, *inherited))), source_ids=(record_id,)) for code in sorted(codes))
+
+
 _REASON_STATES = {
     ReadinessReason.VERIFICATION_CONFLICT: UnitState.CONFLICT,
     ReadinessReason.VERIFICATION_FAILED: UnitState.FAILED,
@@ -757,7 +768,8 @@ _VERIFICATION_UNEVALUABLE = frozenset({
 
 def _assessed_phase(*, satisfied=False, lifecycle=False, reasons=(), evidence_ids=(), state=None):
     reasons = tuple(sorted(set(reasons), key=lambda r: (
-        r.code, r.native_reason_codes, r.source_ids, r.criterion_ids, r.scenario_ids)))
+        r.code, r.native_reason_codes, r.source_ids, r.criterion_ids, r.scenario_ids,
+        r.implementation_ids, tuple((b.obligation_ref, b.semantic_sha256) for b in r.bindings))))
     if state is None:
         states = {_REASON_STATES.get(reason.code, UnitState.MISSING) for reason in reasons}
         state = UnitState.SATISFIED if satisfied else next(
@@ -774,6 +786,7 @@ def _implementation_findings(snapshot, obligation, row):
     reasons = []
     missing = set(row.missing_card_ids)
     binding = obligation.binding
+    processed = set()
     for fact in snapshot.implementations:
         if fact.scope != snapshot.scope or fact.card_id not in missing:
             continue
@@ -781,27 +794,26 @@ def _implementation_findings(snapshot, obligation, row):
             if any(value.obligation_ref == binding.obligation_ref for value in fact.bindings):
                 reasons.append(FactualReason(ReadinessReason.SCOPE_CONTRACT_CHANGED, source_ids=(fact.id,)))
             continue
+        processed.add(fact.id)
         if not implementation_scope_current(snapshot, fact, binding):
             reasons.append(FactualReason(ReadinessReason.SCOPE_CONTRACT_CHANGED, source_ids=(fact.id,)))
             continue
         issue = implementation_binding_proof_issue(fact, binding)
-        codes = {code for proof in fact.executions for code in proof.rejection_reasons}
+        selected_ids = {identity for contribution in fact.contributions if contribution.binding == binding
+            for identity in contribution.execution_ids}
+        codes = {code for proof in fact.executions if proof.execution_id in selected_ids for code in proof.rejection_reasons}
         if issue:
             codes.add(issue)
         if fact.blocking_progress_ids or fact.blocking_progress_truncated:
             codes.add('delivery_material_progress_unresolved')
-        for code in sorted(codes):
-            reasons.append(FactualReason(implementation_readiness_reason(code),
-                native_reason_codes=(code,), source_ids=(fact.id,)))
+        reasons.extend(_implementation_cause_reasons(codes, fact.id))
         if not issue and any(c.binding == binding and c.contribution == 'partial' for c in fact.contributions or ()):
             reasons.append(FactualReason(ReadinessReason.IMPLEMENTATION_PARTIAL, source_ids=(fact.id,)))
     for rejection in snapshot.rejected_records:
         if (rejection.scope != snapshot.scope or rejection.kind != 'implementation'
-            or rejection.card_id not in missing or binding not in rejection.bindings):
+            or rejection.card_id not in missing or binding not in rejection.bindings or rejection.record_id in processed):
             continue
-        for code in rejection.reason_codes:
-            reasons.append(FactualReason(implementation_readiness_reason(code),
-                native_reason_codes=(code,), source_ids=(rejection.record_id,)))
+        reasons.extend(_implementation_cause_reasons(rejection.reason_codes, rejection.record_id))
     if not reasons:
         reasons.append(FactualReason(ReadinessReason.IMPLEMENTATION_PARTIAL if row.implementation_ids
             else ReadinessReason.IMPLEMENTATION_MISSING, source_ids=tuple(sorted(missing))))
@@ -819,7 +831,8 @@ def _verification_findings(context, obligation, row):
             'revoked': ReadinessReason.VERIFICATION_RECEIPT_INVALID,
         }.get(row.decision_verification_status, ReadinessReason.DECISION_VERIFICATION_PENDING)
         return (FactualReason(state_reason, source_ids=row.decision_review_ids),)
-    reasons = [item.reason for item in row.scenario_findings]
+    reasons = [replace(item.reason, implementation_ids=(item.implementation_id,), bindings=(obligation.binding,))
+        for item in row.scenario_findings]
     if context.admitted_methods is None:
         reasons.append(FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE,
             native_reason_codes=('delivery_verification_methods_unavailable',)))
@@ -1003,7 +1016,8 @@ def assess_effective_scenarios(snapshot, *, card_id, scenario_ids):
         phases = []
         for check in applicable:
             phase = _assessed_phase(satisfied=check.satisfied, lifecycle=check_key(check) in completed,
-                reasons=check.reasons, evidence_ids=check.test_ids)
+                reasons=tuple(replace(reason, implementation_ids=(check.implementation_id,) if check.implementation_id else (),
+                    bindings=(check.binding,)) for reason in check.reasons), evidence_ids=check.test_ids)
             if unavailable or not facts_complete or foreign:
                 phase = _assessed_phase(state=UnitState.UNKNOWN, reasons=(FactualReason(
                     ReadinessReason.ASSESSMENT_UNAVAILABLE,

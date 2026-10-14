@@ -192,12 +192,20 @@ class ReadinessFact(ReadinessDTO):
     source_ref: Identity | None = None
     revision: Identity | None = None
     record_id: Identity | None = None
+    receipt_id: Identity | None = None
     scenario_id: Identity | None = None
     criterion_id: Identity | None = None
     verification_method: Identity | None = None
     outcome: Identity | None = None
     scope_sha256: Digest | None = None
     native_reason_codes: tuple[str, ...] = ()
+    obligation_ref: Identity | None = None
+    semantic_sha256: Digest | None = None
+    execution_id: Identity | None = None
+    target_id: Identity | None = None
+    observation_id: Identity | None = None
+    card_id: Identity | None = None
+    text: str | None = None
 
 
 class ReadinessDetailQuery(ReadinessDTO):
@@ -269,8 +277,12 @@ class ReadinessIssue(ReadinessDTO):
     test_card_ids_truncated: StrictBool
     owner: Identity | None
     owner_state: Literal["known", "unassigned", "restricted"]
-    expected: tuple[ReadinessFact, ...]
-    observed: tuple[ReadinessFact, ...]
+    expected: Annotated[tuple[ReadinessFact, ...], Field(max_length=10)]
+    expected_count: Count
+    expected_truncated: StrictBool
+    observed: Annotated[tuple[ReadinessFact, ...], Field(max_length=10)]
+    observed_count: Count
+    observed_truncated: StrictBool
     evidence_refs: Annotated[tuple[ReadinessEvidenceRef, ...], Field(max_length=10)]
     evidence_count: Count
     evidence_refs_truncated: StrictBool
@@ -287,7 +299,7 @@ class ReadinessIssue(ReadinessDTO):
         pairs = (("affected_units", "affected_unit_count"), ("criterion_ids", "criterion_count"),
             ("scenario_ids", "scenario_count"), ("implementation_card_ids", "implementation_card_count"),
             ("test_card_ids", "test_card_count"), ("evidence_refs", "evidence_count"),
-            ("pinpoints", "pinpoint_count"))
+            ("pinpoints", "pinpoint_count"), ("expected", "expected_count"), ("observed", "observed_count"))
         for field, count in pairs:
             values, total = getattr(self, field), getattr(self, count)
             if len(values) > total or getattr(self, field + "_truncated") != (len(values) < total):

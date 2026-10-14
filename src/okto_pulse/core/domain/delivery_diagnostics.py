@@ -66,6 +66,7 @@ def _action(kind, message, surface, priority, tool=None, permission=None, argume
         'associate_implementation': ('admitted_execution',),
         'associate_verification': ('authenticated_current_result',),
         'execute_verification': ('native_scenario', 'implementation_base'),
+        'review_decision': ('native_decision_plan',),
     }.get(kind, ())
     return ActionDefinition(ActionKind(kind), message, surface, priority, tool, permission, arguments, required, preconditions)
 
@@ -125,13 +126,13 @@ REASON_REGISTRY = MappingProxyType({item.code: item for item in (
     _reason('material_progress_unresolved', 'A alteração material de {subject} ainda invalida a base.', ('resolve_material_change',), phase='implementation', fields=('record_id', 'target_id')),
     _reason('verification_plan_missing', 'A verificação aplicável de {subject} precisa ser qualificada.', ('resolve_scope',), fields=('entity_id', 'scenario_id')),
     _reason('verification_not_run', 'O cenário {subject} ainda não possui execução válida.', ('execute_verification',), preconditions=('native_scenario', 'implementation_base'), fields=('scenario_id',)),
-    _reason('verification_failed', 'A verificação de {subject} falhou na base atual.', ('implement_contribution', 'execute_verification'), preconditions=('native_scenario', 'implementation_base'), fields=('scenario_id', 'observation_id')),
+    _reason('verification_failed', 'A verificação de {subject} falhou na base atual.', ('implement_contribution', 'execute_verification', 'review_decision'), fields=('scenario_id', 'observation_id')),
     _reason('verification_inconclusive', 'A observação de {subject} não permite concluir a verificação.', ('execute_verification',), severity='medium', preconditions=('native_scenario', 'implementation_base'), fields=('scenario_id', 'observation_id')),
-    _reason('verification_conflict', 'Há resultados correntes incompatíveis para {subject}.', ('resolve_verification_conflict',), fields=('scenario_id', 'record_id')),
+    _reason('verification_conflict', 'Há resultados correntes incompatíveis para {subject}.', ('resolve_verification_conflict', 'review_decision'), fields=('scenario_id', 'record_id')),
     _reason('verification_association_missing', 'O resultado válido de {subject} ainda não está associado à entrega.', ('associate_verification',), preconditions=('authenticated_current_result',), fields=('scenario_id', 'record_id')),
     _reason('verification_base_mismatch', 'A base observada por {subject} difere da base entregue.', ('associate_verification', 'execute_verification'), preconditions=('implementation_base',), fields=('source_ref', 'revision', 'scenario_id')),
     _reason('verification_base_unresolved', 'A fonte ou revisão observada por {subject} não pôde ser resolvida.', ('refresh_implementation_proof',), fields=('source_ref', 'scenario_id')),
-    _reason('verification_receipt_invalid', 'O recibo de {subject} não é válido para este escopo.', ('execute_verification',), preconditions=('native_scenario', 'implementation_base'), fields=('scenario_id', 'record_id')),
+    _reason('verification_receipt_invalid', 'O recibo de {subject} não é válido para este escopo.', ('execute_verification', 'review_decision'), fields=('scenario_id', 'record_id')),
     _reason('verification_method_unsupported', 'O método de verificação de {subject} está indisponível.', ('restore_evaluation', 'request_authorized_decision'), fields=('scenario_id',)),
     _reason('verification_dependency_pending', 'A verificação de {subject} aguarda a implementação ou base exigida.', ('execute_verification',), preconditions=('implementation_base',), fields=('scenario_id', 'target_id')),
     _reason('decision_verification_pending', 'A Decision {subject} aguarda as provas ou inspeções do seu plano.', ('review_decision',), preconditions=('native_decision_plan',), fields=('entity_id', 'record_id')),
@@ -293,7 +294,8 @@ class DiagnosticResolution:
     actions: tuple[ActionCandidate, ...]
 
 
-def _assessment_units(assessment):
+def assessment_diagnostic_units(assessment):
+    """Canonical factual phases for enrichment by the read composition."""
     if assessment.card_type == CardType.TEST:
         for row in assessment.scenarios:
             if row.card_id != assessment.card_id:
@@ -357,7 +359,7 @@ def diagnose_delivery_assessment(assessment: DeliveryAssessment, *, resolutions=
             raise DiagnosticIntegrityError('readiness_resolution_ambiguous')
         indexed[key] = resolution
     used, required, occurrences = set(), set(), []
-    for unit, phase, result in _assessment_units(assessment):
+    for unit, phase, result in assessment_diagnostic_units(assessment):
         if unit.spec_edition != assessment.scope.edition:
             raise DiagnosticIntegrityError('readiness_diagnostic_scope_invalid')
         if result.state in {UnitState.SATISFIED, UnitState.NOT_APPLICABLE}:

@@ -104,6 +104,10 @@ class FactualReason:
     source_ids: tuple[str, ...] = ()
     criterion_ids: tuple[str, ...] = ()
     scenario_ids: tuple[str, ...] = ()
+    # Exact evaluated joins retained for diagnostics. These are not new proof
+    # inputs and never reconstruct an execution from a matching timestamp.
+    implementation_ids: tuple[str, ...] = ()
+    bindings: tuple[DeliveryBinding, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
