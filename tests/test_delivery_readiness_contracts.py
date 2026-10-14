@@ -157,6 +157,17 @@ def test_P01_pinpoint_allows_entity_only_and_requires_versioned_evidence_for_lin
             ReadinessPinpoint.model_validate(span | dict(relative_path=path))
 
 
+@pytest.mark.parametrize('missing', ['source_obligation_ref', 'source_scope_sha256', 'obligation_ref', 'scope_sha256', 'card_id'])
+def test_M15_derived_provenance_requires_both_ends_of_the_native_contribution(missing):
+    from okto_pulse.core.models.delivery_readiness import ReadinessFact
+    value = dict(obligation_ref='br:rule', scope_sha256='a' * 64, card_id='task',
+        source_obligation_ref='fr:requirement', source_scope_sha256='b' * 64)
+    assert ReadinessFact(**value).source_obligation_ref == 'fr:requirement'
+    del value[missing]
+    with pytest.raises(ValueError):
+        ReadinessFact(**value)
+
+
 def test_P01_response_roundtrip_keeps_nulls_and_rejects_schema_drift():
     unknown = metric(satisfied=0, missing=0, unknown=1, status="unknown")
     data = dict(scope=dict(board_id="b", spec_id="s", card_id=None, card_type=None,

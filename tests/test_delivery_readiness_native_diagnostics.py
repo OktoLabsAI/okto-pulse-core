@@ -20,6 +20,23 @@ def find(projection, code):
     return cause, detail
 
 
+def test_R02_material_checkpoint_diagnostic_names_actual_progress_and_affected_target():
+    value = snapshot()
+    own = value.effective_context.implementations[0]
+    proof = replace(own.fact.executions[0], current_accepted_execution=False,
+        blocking_progress_ids=('material-checkpoint',),
+        rejection_reasons=('delivery_material_progress_unresolved',))
+    own = replace(own, fact=replace(own.fact, executions=(proof,),
+        blocking_progress_ids=('material-checkpoint',)))
+    value = with_facts(value, implementations=(own, *value.effective_context.implementations[1:]))
+    assessed = assess_obligation_delivery(value)
+    assert aggregate_delivery_metrics(assessed).implementation.percent == 0
+    _, detail = find(compose_delivery_diagnostics(assessed, value), 'material_progress_unresolved')
+    assert any(fact.record_id == 'material-checkpoint' and fact.target_id == proof.target_id
+        and fact.execution_id == proof.execution_id for fact in detail.observed)
+    assert any(ref.kind == 'record' and ref.id == 'material-checkpoint' for ref in detail.evidence_refs)
+
+
 def rendered(projection, value, *, card_id=None):
     details = {d.issue_id: d for d in projection.details}
     return tuple(render_diagnostic_issue(c, details[c.id], scope=value.scope,

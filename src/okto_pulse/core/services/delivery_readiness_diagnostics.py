@@ -14,6 +14,8 @@ from okto_pulse.core.domain.delivery_diagnostics import (
     build_diagnostic_graph, cause_identity, reason_definition,
 )
 from okto_pulse.core.domain.delivery_evidence import DeliveryBinding, DeliveryScope
+from okto_pulse.core.domain.delivery_inventory import COLLECTIONS
+from okto_pulse.core.domain.criterion_verification import VERIFICATION_REQUIREMENT_FIELDS
 from okto_pulse.core.domain.effective_delivery_coverage import EffectiveDeliveryContext
 from okto_pulse.core.models.delivery_readiness import (
     ReadinessAction, ReadinessDetailQuery, ReadinessEvidenceRef, ReadinessFact,
@@ -136,6 +138,19 @@ class _SnapshotIndex:
         for binding in bindings:
             expected.append(ReadinessFact(obligation_ref=binding.obligation_ref, semantic_sha256=binding.semantic_sha256,
                 outcome='complete' if phase == ReadinessPhase.IMPLEMENTATION else 'passed'))
+            prefixes = {kind: prefix for kind, field in VERIFICATION_REQUIREMENT_FIELDS.items()
+                for prefix, collection in COLLECTIONS if collection == field}
+            for contribution in self.obligations[binding].contributions:
+                if unit and unit.card_id and contribution.card_id != unit.card_id:
+                    continue
+                for source in contribution.sources:
+                    if source.requirement_type not in prefixes:
+                        raise DiagnosticIntegrityError('readiness_contribution_source_unresolved')
+                    expected.append(ReadinessFact(obligation_ref=binding.obligation_ref,
+                        semantic_sha256=binding.semantic_sha256, card_id=contribution.card_id,
+                        scope_sha256=contribution.scope_sha256,
+                        source_obligation_ref=f'{prefixes[source.requirement_type]}:{source.requirement_id}',
+                        source_scope_sha256=source.scope_sha256))
         proofs = []
         for fact in facts:
             evidence.append(ReadinessEvidenceRef(kind='record', id=fact.id, source_ref=None, revision=None))
@@ -161,6 +176,16 @@ class _SnapshotIndex:
                 if proof.execution_id not in selected:
                     continue
                 proofs.append(proof)
+                if reason.code == ReadinessReason.MATERIAL_PROGRESS_UNRESOLVED:
+                    for checkpoint_id in proof.blocking_progress_ids:
+                        observed.append(ReadinessFact(record_id=checkpoint_id, card_id=fact.card_id,
+                            execution_id=proof.execution_id, target_id=proof.target_id,
+                            source_ref=proof.source_ref or None, revision=proof.result_revision or None,
+                            native_reason_codes=('delivery_material_progress_unresolved',)))
+                        evidence.append(ReadinessEvidenceRef(kind='record', id=checkpoint_id,
+                            source_ref=None, revision=None))
+                        pinpoints.append(_pinpoint('card', fact.card_id, record_id=checkpoint_id,
+                            target_id=proof.target_id, execution_id=proof.execution_id))
                 if phase == ReadinessPhase.VERIFICATION:
                     expected.append(ReadinessFact(source_ref=proof.source_ref or None, revision=proof.result_revision or None,
                         execution_id=proof.execution_id, target_id=proof.target_id, record_id=fact.id, card_id=fact.card_id,

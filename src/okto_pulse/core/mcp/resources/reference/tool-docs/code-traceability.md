@@ -20,6 +20,14 @@ detail requires both `issue_id` and `snapshot_id`. Restart the query after
 `readiness_cursor_stale` or `readiness_snapshot_changed`. Every page reloads
 current permissions and facts; no cursor grants access or write authority.
 
+For inherited responsibility, `expected` facts retain the destination
+`obligation_ref`, Card and contribution digest together with
+`source_obligation_ref` and `source_scope_sha256`. This is the qualified native
+FR-to-BR path, not a new allocation or evidence requirement. Material-change
+issues identify the actual checkpoint records and affected Target/execution in
+`observed`, evidence references and pinpoints. Follow detail pagination to recover
+all entries; the compact legacy progress list is not the complete diagnostic.
+
 Readiness rejects `record_id` and `edition`. `phase` other than `all`,
 `issue_id` and `snapshot_id` are exclusive to readiness. `progress` remains
 the default: without `card_id`, it returns the existing Spec projection;

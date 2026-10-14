@@ -203,11 +203,23 @@ class ReadinessFact(ReadinessDTO):
     native_reason_codes: tuple[str, ...] = ()
     obligation_ref: Identity | None = None
     semantic_sha256: Digest | None = None
+    source_obligation_ref: Identity | None = None
+    source_scope_sha256: Digest | None = None
     execution_id: Identity | None = None
     target_id: Identity | None = None
     observation_id: Identity | None = None
     card_id: Identity | None = None
     text: str | None = None
+
+    @model_validator(mode='after')
+    def contribution_source_is_complete(self):
+        if (self.source_obligation_ref is None) != (self.source_scope_sha256 is None):
+            raise ValueError('readiness_contribution_source_incomplete')
+        if self.source_obligation_ref is not None and not all(
+            (self.obligation_ref, self.scope_sha256, self.card_id)
+        ):
+            raise ValueError('readiness_contribution_destination_required')
+        return self
 
 
 class ReadinessDetailQuery(ReadinessDTO):
