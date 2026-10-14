@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — planejamento detalhado reconciliado, sem alteração de produto
+
+Pedido atual: iniciar o planejamento detalhado da unificação. Primeiro foi
+preservado/publicado o trabalho pendente: Core `1ce49fda`, pareado com Community
+`93769ff1`. Em seguida, conferidos o plano existente, o documento de entrada do
+pacote, os pontos de composição/replay, a integração do watcher e os nomes dos
+casos de teste existentes. Esta revisão não alega releitura integral do pacote
+nem nova execução dos testes documentados nos checkpoints anteriores.
+
+Atualizado `SPEC_UNIFIED_VALIDATION_PLAN.md`, mantendo-o como documento único:
+resumo executivo, base atual, distinção entre implementado e ainda não
+comprovado, ordem finita U1–U4 e pontos de partida para a paridade U2. Corrigida
+a descrição antiga que ainda tratava toda integração automática/reautorização
+como pendente; Validation já tem prova parcial, demais consumidores não.
+
+Todas as avaliações, critérios, severidades, thresholds, autoria, permissões e
+históricos são preservados; a conclusão é unificada sem média geral. Não se
+reimplementa U1 ou o comando composto. Próxima execução: fechar paridade U2,
+completar integração U3 e qualificar U4, usando UV01–UV24 existentes. Nenhuma
+nova feature, milestone, compatibilidade ou migração foi acrescentada.
+
+Verificação desta revisão: consistência documental e `git diff --check`.
+Não houve mudança de código, novo ensaio de comportamento, build, instalação ou
+reinício. Os resultados anteriores continuam atribuídos aos seus checkpoints;
+o E2E final da unificação permanece pendente. Encerramento deste pedido somente
+no planejamento, sem iniciar nova implementação.
+
 ### 2026-10-14 — U3: Validation conectada ao MCP, rascunho e autoridade
 
 Community publicado: `93769ff1`; este registro preserva a evidência pareada no Core.

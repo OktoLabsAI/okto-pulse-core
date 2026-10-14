@@ -1,6 +1,37 @@
 # Validação unificada do planejamento da Spec
 
-Plano de 14 de outubro de 2026. **U1 implementado; U2 parcial; U3 iniciado; U4 pendente.**
+Plano de 14 de outubro de 2026. **U1 implementado; U2 parcial; U3 parcial; U4 pendente.**
+Revisão de planejamento sobre Core `1ce49fda` / Community `93769ff1`,
+ambos publicados em `feature/v0.4.0`. Esta revisão é documental; não representa
+nova implementação, execução de testes ou instalação. O pedido atual é detalhar
+o planejamento; a próxima ação de execução abaixo fica registrada para retomada.
+
+### Leitura executiva do plano
+
+**Resultado:** preparar Spec e Cards juntos e concluir a validação do planejamento
+em um único ponto. Todas as avaliações continuam existindo, com seus critérios,
+severidades, thresholds, permissões, autores e históricos próprios. A conclusão
+consulta o conjunto aplicável; não substitui os resultados por uma média geral.
+Contribuições de pessoas/agentes diferentes continuam possíveis antes da conclusão.
+
+**Escopo fechado:** unificar a conclusão, retirar somente a obrigação de existir
+Decision e corrigir a atualização da interface após operações MCP. Preservar os
+gates de execução/entrega. Não redesenhar Ideação/Refinamento, percentuais ou KG.
+
+| Sequência de retomada | Trabalho restante concreto | Condição para avançar |
+| --- | --- | --- |
+| U1 — preservar | Reutilizar autoria de Cards Not Started em Draft e Decision opcional já implementadas. | Não reimplementar; confirmar ambos no percurso U4, incluindo recusa de execução prematura. |
+| U2 — fechar paridade | Confrontar leitura, conclusão composta, transição direta e ações permitidas para os mesmos dados/policies. Completar somente casos não demonstrados de gates, permissões, concorrência e replay. | Resultados nativos e estado persistido equivalentes nas entradas REST/MCP; nenhum bypass ou efeito parcial. Detalhamento em §6.2 e UV04–UV17/UV22. |
+| U3 — completar integração | Expandir o watcher existente para listas/novos objetos, Cards/Delivery, Coverage e demais leitores previstos; preservar editores e revalidar acesso. Qualificar resumo, formulário e histórico existentes. | Mutação MCP observada na UI aberta, inclusive mudança só de Card; formulário preservado, perda de acesso tratada e recuperação de rede comprovada. UV18–UV21. |
+| U4 — qualificar entrega | Executar regressões e auditoria, construir/instalar o par exato isoladamente e tramitar uma iniciativa mock nova até Done e KG canonical. | Matriz UV01–UV24 com evidências, oito budgets ZERO, paridade do pacote instalado, ledger e commits/pushes completos. |
+
+Cada linha usa as tarefas já discriminadas em §6.1/§6.2; não cria milestones
+adicionais. O fim é U4 comprovado. Melhorias opcionais encontradas durante o
+trabalho não ampliam este escopo. Divergência material de autoridade/gate/histórico
+segue a investigação do pacote antes de qualquer mudança semântica não autorizada.
+
+### Histórico dos checkpoints
+
 Base do checkpoint de UI: Core `dee6610b` / Community `fc92616a`, publicado.
 Avanço posterior de Checklist: Community `264610a1` e registro pareado no ledger.
 Último par com composição e revisões leves qualificados:
@@ -320,9 +351,11 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Base desta revisão:** Core `dee6610b` / Community `fc92616a`, branch
-`feature/v0.4.0`, publicados antes da revisão documental. Preservam o trabalho
-local como WIP; **não são milestone aprovado nem release instalável**.
+**Checkpoint atual:** Core `1ce49fda` / Community `93769ff1`, branch
+`feature/v0.4.0`, publicados antes desta revisão documental. Inclui a prova
+parcial de sincronização indicada no cabeçalho; **não encerra U2/U3 nem qualifica
+release instalável**. O checkpoint de UI anterior foi
+Core `dee6610b` / Community `fc92616a`.
 O reach-in privado do checkpoint antigo foi corrigido no par
 `3dce9233` / `204c7f4a`, cuja closure confirmou oito budgets ZERO. Não repetir
 essa correção. O WIP posterior precisa de nova qualificação.
@@ -338,7 +371,9 @@ de GateContractError, corrigido. `u3-checklist-native.xml` registra 20 passes,
 incluindo recusa acionável REST e rollback integral; browser confirmou 409 sem
 avanço. O refresh da Validation preservou o rascunho do Checklist no browser;
 40 testes frontend passaram. Não criar binding automático nem dispensar gate.
-Integração automática, reautorização e paridade MCP completa seguem pendentes.
+Integração automática e reautorização já têm implementação/prova parcial na
+Validation; a expansão aos demais consumidores e a paridade MCP completa seguem
+pendentes, conforme a tabela abaixo.
 `closure-u3-interface.json` registra oito budgets ZERO e nenhum finding/drift.
 Essas evidências não encerram o milestone nem substituem o E2E.
 
@@ -391,6 +426,19 @@ Executar na ordem abaixo. Os itens detalham U2.3/U2.4, sem novos milestones.
    contratos, catálogo gerado e closure. Registrar resultados e UV demonstrados
    no ledger; commit/push pareados. Não declarar browser/E2E concluídos por
    testes de serviço ou pelo fixture MCP que isola a aceitação externa de lint.
+
+Ponto de partida da conferência, localizado no checkout desta revisão:
+`tests/test_spec_validation_composition.py` já contém casos de resultados
+negativos, reuso de outro avaliador, rejeição corrente, promoção direta, REST,
+rollback, replay e conflito de manifesto; `tests/test_spec_planning_readiness.py`
+cobre resumo, componentes ocultos, indisponibilidade, modos e ausência de score
+combinado; `tests/test_workspace_revisions_contract.py` cobre população limitada
+e escopo. No Community, `tests/test_spec_planning_manifest.py` cobre o adapter.
+Localizar esses casos não equivale a executá-los nem encerra a matriz. Mapear
+UV → caso → resultado registrado antes de acrescentar testes; ampliar as suítes
+somente nas lacunas. Conferir os métodos `get_planning_readiness`,
+`submit_spec_validation`, `move_spec` e os consumidores de ações permitidas,
+sem criar outra implementação de gates.
 
 #### U3 — compor Validation e sincronizar a interface
 
