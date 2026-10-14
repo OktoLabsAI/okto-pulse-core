@@ -47,6 +47,18 @@ Próxima integração: substituir o timer pesado de CardModal pelo watcher;
 depois proteger editores antes de ativar atualização global da Spec. U4 instalado
 até Done/KG continua obrigatório; não refazer a descoberta de Specs/Cards.
 
+Conferência inicial de CardModal, sem alteração ainda: `silentRefresh` já possui
+geração de resposta e notifica readiness, mas pode ignorar invalidação enquanto
+carrega thresholds; a integração deve guardar a invalidação pendente. O título
+é contentEditable com salvamento onBlur, e `EditableField` redefine draft quando
+value muda. Proteger ambos antes de ativar atualização por metadados. Os testes
+de polling em CardModal.test.tsx devem passar a acionar mudança de revisão,
+mantendo as provas de resposta antiga e threshold autoritativo. CardUpdate não
+expõe expected_spec_version; não alegar um fence inexistente para edição do Card
+nem reutilizar a versão da Spec como se fosse a versão do Card. Tratar as bases
+de escrita pelo contrato da operação, sem inventar compatibilidade ou rebase
+automático. Essa conferência delimita o passo já previsto em U3, não o encerra.
+
 ### 2026-10-14 — planejamento detalhado atualizado após qualificação nativa
 
 Antes de editar o plano, publicados Core `72db3266` / Community `c79f0191` em
