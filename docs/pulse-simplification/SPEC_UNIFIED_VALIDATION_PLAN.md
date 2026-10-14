@@ -1,7 +1,8 @@
 # Validação unificada do planejamento da Spec
 
 Plano de 14 de outubro de 2026. **U1 implementado; U2 parcial; U3 iniciado; U4 pendente.**
-Checkpoint WIP atual: Core `dee6610b` / Community `fc92616a`, publicado.
+Base do checkpoint de UI: Core `dee6610b` / Community `fc92616a`, publicado.
+Avanço posterior de Checklist: Community `264610a1` e registro pareado no ledger.
 Último par com composição e revisões leves qualificados:
 Core `3dce9233` / Community `204c7f4a`.
 Conclusão composta, replay e manifesto já possuem implementação e regressões.
@@ -9,6 +10,9 @@ A leitura integrada e a consulta leve de revisões estão implementadas.
 O bloqueio arquitetural do WIP foi corrigido pelo catálogo público; closure
 voltou a ZERO nos oito budgets. Provas e par publicado constam no ledger.
 Há resumo, histórico e formulário composto na interface, ainda em qualificação.
+Admissão sem Checklist já tem recusa acionável comprovada; refresh da Validation
+preserva o rascunho do Checklist. Evidência em
+[ensaio parcial U3](evidence-u3-checklist-20261014.json).
 Integração da sincronização externa e ensaio final permanecem pendentes.
 A seção 6.2 define a sequência concreta sem ampliar o escopo.
 
@@ -325,13 +329,13 @@ o teste REST separa a verificação de leitura da escrita negada e a formataçã
 usa expressão regular compatível com o target. O artefato
 `u3-opinions-core.xml` registra 48 passes. Não reaplicar essas correções.
 
-O impedimento atual é a qualificação do diagnóstico de Checklist não
-configurado: houve HTTP 500 na admissão Review → Approved em Board novo;
-o WIP introduz erro tipado pela porta e recusa acionável no serviço. Entretanto,
-`u3-admission-community.xml` registra três passes e uma falha de fixture
-(`boards.realm_id` ausente), antes de exercitar a correção. Corrigir a preparação
-com o realm nativo e comprovar recusa/rollback; não alterar o schema, criar
-binding automático ou dispensar gate para fazer esse teste passar.
+O diagnóstico de Checklist não configurado foi qualificado após este checkpoint:
+o fixture passou a informar realm nativo e a reprodução revelou import ausente
+de GateContractError, corrigido. `u3-checklist-native.xml` registra 20 passes,
+incluindo recusa acionável REST e rollback integral; browser confirmou 409 sem
+avanço. O refresh da Validation preservou o rascunho do Checklist no browser;
+40 testes frontend passaram. Não criar binding automático nem dispensar gate.
+Integração automática, reautorização e paridade MCP completa seguem pendentes.
 `closure-u3-interface.json` registra oito budgets ZERO e nenhum finding/drift.
 Essas evidências não encerram o milestone nem substituem o E2E.
 
@@ -339,7 +343,7 @@ Essas evidências não encerram o milestone nem substituem o E2E.
 | --- | --- | --- |
 | U1 | Cards Not Started em Draft e remoção da exigência de existir Decision. | Percurso real UI/MCP no U4; não refazer a implementação. |
 | U2 — conclusão | Payload composto, permissões independentes, pareceres/históricos nativos, promoção condicionada, recibo/replay e manifesto obrigatório. | Paridade completa de todos os caminhos com os gates aplicáveis. |
-| U2 — leitura | `include_planning`, 17 componentes, composição pública sem escrita, revisões leves em lote, permissões por componente, paginação REST/MCP e cliente tipado. Regressão de opiniões: 48 passes. | Completar matriz de paridade dos gates; corrigir fixture e qualificar diagnóstico/rollback da admissão sem Checklist. |
+| U2 — leitura | `include_planning`, 17 componentes, composição pública sem escrita, revisões leves em lote, permissões por componente, paginação REST/MCP e cliente tipado. Regressão de opiniões: 48 passes. Admissão sem Checklist comprovada por REST/browser e rollback nativo. | Completar matriz de paridade dos gates e superfície MCP. |
 | U3 | Resumo, histórico Current/Previous paginado, contribuição independente, payload opcional na conclusão, distinção registro/promoção e revisão explícita da base no formulário. Watcher/hook com testes isolados. | Conectar o hook aos consumidores e à revisão da base; proteger todos os formulários e reautorizar após mudança de acesso; qualificar os componentes integrados no browser. |
 | U4 | Regressões parciais registradas no ledger. | Wheels, runtime compatível, browser e iniciativa nova até Done/KG; matriz UV01–UV24. |
 
@@ -542,9 +546,9 @@ e próximo passo exato. No E2E, registrar IDs/edições e evidências UI/MCP; n�
 alterar policies, scopes, skips ou percentuais para obter verde. Testes externos
 mockados precisam de execução observada para gerar prova autenticada.
 
-**Próxima ação de execução:** corrigir o fixture de admissão e qualificar a
-recusa de Checklist/rollback, conferir contratos append/listagem e completar
-a integração U3 na ordem do §6.2;
+**Próxima ação de execução:** conectar revisões aos consumidores e à revisão
+explícita dos formulários, com invalidação segura de permissões e prova de
+convergência MCP/UI, na ordem do §6.2;
 depois executar U4. Não refazer composição pública ou API de revisões já provadas.
 **Critério de conclusão:** U1–U4 e
 UV01–UV24 demonstrados, ledger atualizado e par de repositórios publicado. Esta

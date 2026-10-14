@@ -1,0 +1,42 @@
+{
+  "scope": "U3 partial: actionable admission refusal and checklist draft preservation",
+  "baseline": {"core": "cb9aea11", "community": "fc92616a"},
+  "runtime": {
+    "source_roots": ["okto_labs_pulse_core/src", "okto_labs_pulse_community/src"],
+    "api": "http://127.0.0.1:8200",
+    "mcp": "http://127.0.0.1:8201/mcp",
+    "frontend": "http://127.0.0.1:5274",
+    "api_process": 13040,
+    "api_process_started_local": "2026-10-14T18:55:20-03:00",
+    "data_home": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-browser-home",
+    "user_runtime_unchanged": true,
+    "installed_wheel_e2e": false
+  },
+  "subject": {
+    "board_id": "0b21a5a9-e3b8-4035-b4b6-08a65f165a5a",
+    "spec_id": "216a3d13-be16-4c0b-949f-e50b76ae903d",
+    "edition": 1,
+    "final_status_observed": "approved"
+  },
+  "observations": [
+    "Review to Approved without Board Checklist configuration returned HTTP 409 and instructions to configure Board settings; Spec stayed Review.",
+    "A request during isolated runtime startup returned proxy 502; after startup completed, the native refusal was verified. It is not counted as feature validation.",
+    "Configured Blocking Checklist through the authenticated Board settings UI in the isolated home, then admitted the Spec through its Approved action.",
+    "Started the native Checklist, selected Fail on Scope and boundaries and entered a mock inspection anchor. No Checklist result was submitted.",
+    "Refresh validation cycle preserved the selected Fail and the exact draft anchor; the Spec remained Approved and validation remained blocked."
+  ],
+  "automated_evidence": {
+    "community_native": {"artifact": "u3-checklist-native.xml", "passed": 20, "failed": 0},
+    "frontend": {"suites": ["SpecChecklistPanel.test.tsx", "SpecValidationPanel.test.tsx"], "passed": 40, "failed": 0},
+    "closure": {"artifact": "closure-u3-checklist.json", "ok": true, "ownership_rows": 9029, "findings": 0, "documentation_findings": 0, "all_eight_budgets": 0}
+  },
+  "screenshots": [
+    "okto_labs_pulse_community/output/playwright/u3-admission-actionable-refusal.png",
+    "okto_labs_pulse_community/output/playwright/u3-checklist-draft-preserved.png"
+  ],
+  "limits": [
+    "The refusal text is preserved in the browser snapshot; its transient toast had disappeared by screenshot capture.",
+    "No full MCP/UI convergence proof: useWorkspaceRevisions still needs integration with consumers and permission invalidation.",
+    "No complete U4 initiative, 100% delivery, installed wheels or canonical KG proof in this evidence."
+  ]
+}

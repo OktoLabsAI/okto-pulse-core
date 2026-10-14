@@ -440,6 +440,7 @@ async def _apply_quality_assessment_lifecycle_transition(
         receipts=receipts,
     )
     from okto_pulse.core.ports.checklist import ChecklistBoardBindingMissing
+    from okto_pulse.core.services.gate_contracts import GateContractError
 
     try:
         await persistence.apply_lifecycle_plan(plan)

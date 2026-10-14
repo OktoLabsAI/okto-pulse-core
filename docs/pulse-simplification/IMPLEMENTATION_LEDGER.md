@@ -2,6 +2,52 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U3: admissão acionável e preservação do Checklist
+
+Continuação da implementação sobre Core cb9aea11 / Community fc92616a.
+Community pareado publicado: 264610a1; a correção Core acompanha este registro.
+O turno anterior foi progresso: planejamento reconciliado e checkpoints
+publicados. Este incremento implementa e comprova parte de U3; não encerra U3/U4.
+
+O fixture de admissão recebeu realm_id local explícito. Ao alcançar o caminho
+real, revelou NameError no tratamento de ChecklistBoardBindingMissing: faltava
+importar GateContractError. Import corrigido no Core. O teste nativo agora
+comprova HTTP 409 com próxima ação e rollback integral de estado/versão/edição,
+pareceres, snapshots, atividade e eventos. Nenhuma policy automática ou skip.
+O tipo do recibo de append de decomposição deixou de prometer lifecycle_state,
+que pertence à projeção da listagem.
+
+Checklist: refresh por revisão substitui a remonta do componente. Rascunho e
+base da execução permanecem; mudança da base bloqueia submit e exige revisão
+explícita antes de iniciar outra execução sobre a base atual. Mesmo template e
+edição permitem preservar os campos; nova edição exige descarte explícito,
+sem copiar julgamento silenciosamente. Respostas atrasadas e perda de acesso
+não restauram dados protegidos. Falha de leitura conserva rascunho autorizado,
+desabilita envio e oferece retry. Seção fechada adia suas leituras. Lint/policy
+também deixam de depender de remonta no refresh da Validation.
+
+Provas: 20 passes Community em u3-checklist-native.xml (admissão, snapshot e
+adapter de Checklist); 40 passes frontend em SpecChecklistPanel e
+SpecValidationPanel. Casos novos cobrem mudança externa com rascunho completo,
+troca de edição, resposta atrasada após revogação e painel oculto. Ruff F821 do
+serviço passou; tsc -b aprovado e catálogo MCP com cinco passes. Closure:
+9029 linhas, nenhum finding/drift, oito budgets ZERO,
+READMEs regenerados. Artefatos em .validation-v040/spec-unified-20261014.
+
+Browser Playwright real: processo isolado 13040, portas 8200/8201 e Vite 5274
+com API relativa no mesmo ambiente. Recusa acionável observada; depois Board
+isolado configurado Blocking pela UI e Spec admitida em Approved. Preenchimento
+parcial Fail/anchor conservado após Refresh validation cycle, sem submissão nem
+aprovação fabricada. Um 502 durante startup antecedeu o ensaio válido; não foi
+usado como prova. Evidência: evidence-u3-checklist-20261014.json. Instalação,
+home e processo do usuário ficaram intactos.
+
+Retomada exata: conectar useWorkspaceRevisions aos consumidores Spec/Board/Card
+e às revisões dos formulários; invalidar permissões de modo seguro, preservar
+rascunhos ainda autorizados e provar convergência MCP/UI. O hook continua sem
+consumidores, portanto UV18–UV20 não estão encerrados. Completar paridade U2,
+depois U4 instalado até Done/KG; não refazer o diagnóstico de admissão corrigido.
+
 ### 2026-10-14 — detalhamento final da retomada da validação unificada
 
 Checkpoint prévio publicado: Core dee6610b / Community fc92616a, ambos na
