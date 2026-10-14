@@ -4,6 +4,15 @@
 
 ### 2026-10-14 — U2 em andamento: decomposição preparada em Approved
 
+Checkpoint publicado desta etapa: Core 18cb5994 / Community 31220ac5.
+Auditoria executável posterior: 8968 linhas de propriedade, zero findings,
+zero findings documentais e todos os oito budgets ZERO. A primeira rodada
+detectou somente drift dos READMEs; ambos foram regenerados com
+render_saas_closure_readme e reconferidos por validate_saas_closure_readmes
+sobre novo relatório oficial. Prova: .validation-v040/spec-unified-20261014/
+closure-u2-final.json. Este é um audit dos checkouts; wheels e runtime final
+ainda pertencem ao U4 e não foram qualificados por esse resultado.
+
 U1 publicado: Core 0eaa8b84 / Community 2019c51c. Neste incremento do U2,
 SpecEvaluationInput é contrato tipado compartilhado por REST e serviço/MCP;
 recusa campos extras/identidade enviada pelo cliente e scores não inteiros.
