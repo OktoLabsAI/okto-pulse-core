@@ -11,6 +11,7 @@ from okto_pulse.core.domain.delivery_diagnostics import ACTION_REGISTRY
 from okto_pulse.core.domain.delivery_assessment import resolve_delivery_gate_policy as resolve_delivery_gate_policy
 from okto_pulse.core.domain.delivery_evidence import DeliveryEvidenceSnapshot
 from okto_pulse.core.domain.enums import CardStatus, CardType
+from okto_pulse.core.domain.sdlc_registry import lifecycle_definition, transition_contracts, transition_permission_flag
 from okto_pulse.core.models.delivery_readiness import ReadinessCursorBinding
 from okto_pulse.core.ports.authentication import AuthorizationDenied
 from okto_pulse.core.ports.permission_policy import DefaultPermissionPolicy, PermissionContext, PermissionSet
@@ -54,6 +55,7 @@ class ReadinessAccess:
     realm_id: str
     allowed_operations: frozenset[str]
     spec_write_access: bool = False
+    completion_states: frozenset[tuple[str, str]] = frozenset()
 
     def allows(self, operation: str) -> bool:
         return operation in self.allowed_operations
@@ -77,7 +79,14 @@ def resolve_readiness_access(*, actor: ReadinessActor, board_id: str, realm_id: 
     return ReadinessAccess(actor.actor_id, board_id, realm_id, frozenset(operation
         for operation in READINESS_PERMISSION_OPERATIONS
         if policy.evaluate(PermissionContext(operation=operation, permissions=permissions)).allowed),
-        spec_write_access is True)
+        spec_write_access is True,
+        frozenset((entity, state.value) for entity in ('spec', 'card')
+            for state in lifecycle_definition(entity).status_enum
+            if any(edge.to_status == 'done' and edge.visibility == 'public'
+                for edge in transition_contracts(entity, state.value))
+            and policy.evaluate(PermissionContext(
+                operation=transition_permission_flag(entity, state.value, 'done'),
+                entity=entity, state=state.value, permissions=permissions)).allowed))
 
 
 class ReadinessClock(Protocol):
@@ -119,6 +128,21 @@ class ReadinessScenarioProcedure:
 
 
 @dataclass(frozen=True, slots=True)
+class ReadinessNativeLifecycle:
+    """Same-snapshot native read outcome, never a mutation authorization token.
+
+    A short-circuit blocker proves blocking but not the total blocker count.
+    Reason codes are native machine fields; no parsing of error prose.
+    """
+    card_id: str | None
+    stored_status: str
+    check_status: Literal['allowed', 'blocked', 'not_evaluated']
+    reason_codes: tuple[str, ...]
+    other_blocker_count: int | None = None
+    blocking_codes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class ReadinessSnapshot:
     facts: DeliveryEvidenceSnapshot
     snapshot_id: str
@@ -132,6 +156,7 @@ class ReadinessSnapshot:
     unavailable_reason_codes: tuple[str, ...] = ()
     delivery_gate_mode: Literal['blocking', 'advisory'] = 'blocking'
     skip_delivery_evidence: bool = False
+    native_lifecycle: ReadinessNativeLifecycle | None = None
 
 
 class DeliveryReadinessReadPort(Protocol):

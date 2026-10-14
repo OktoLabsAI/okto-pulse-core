@@ -363,7 +363,7 @@ def _actions(index, assessment, unit, phase, reason, detail, origin, bindings, p
 
 
 def compose_delivery_diagnostics(assessment, snapshot, *, spec_assessment=None, permissions=None, owners=(),
-                                 card_versions=None, procedures=()):
+                                 card_versions=None, procedures=(), native_lifecycle=None):
     """Compose already evaluated native facts, without per-unit queries/evaluation.
 
     Test views can receive the shared Spec assessment to explain implementation
@@ -442,6 +442,17 @@ def compose_delivery_diagnostics(assessment, snapshot, *, spec_assessment=None, 
         if decision and decision.decision_plan and decision.decision_plan.verification:
             for reference in decision.decision_plan.verification.obligation_refs:
                 edges.update((identity, parent) for parent in by_ref[reference] if parent != identity)
+    if native_lifecycle and native_lifecycle.blocking_codes:
+        entity, identity = ('card', assessment.card_id) if assessment.card_id else ('spec', snapshot.scope.spec_id)
+        occurrence = CauseOccurrence(ReadinessReason.LIFECYCLE_GATE_PENDING, ReadinessPhase.LIFECYCLE,
+            UnitState.MISSING, CauseOrigin(entity, identity), (),
+            actions=(ActionCandidate(ActionKind.RESOLVE_NATIVE_GATE,
+                context_refs=(f'{entity}:{identity}',)),),
+            native_reason_codes=native_lifecycle.blocking_codes, blocks_proof=False,
+            blocks_target_transition=True)
+        key = cause_identity(snapshot.scope, occurrence)
+        occurrences.append(occurrence)
+        details[key].append(DiagnosticDetail(key, (), (), (), (), (), ()))
     graph = build_diagnostic_graph(snapshot.scope, tuple(occurrences), dependency_edges=tuple(edges), required_units=tuple(required))
     merged = []
     for cause in graph.causes:

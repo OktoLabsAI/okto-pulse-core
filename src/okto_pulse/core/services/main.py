@@ -11369,6 +11369,8 @@ class SpecService:
         Delivery remains separately assessed; Policy retains its read/fenced
         paths. No status, history, event or transaction is written here.
         """
+        from okto_pulse.core.services.gate_contracts import GateContractError
+
         # Enforce test coverage when moving to Done
         skip_global = (
             (board.settings or {}).get("skip_test_coverage_global", False)
@@ -11394,11 +11396,15 @@ class SpecService:
                     if i not in covered_indices
                 ]
                 if uncovered:
-                    raise ValueError(
+                    raise GateContractError(
+                        code="coverage_incomplete", gate_type="spec_completion",
+                        entity_type="spec", entity_id=spec.id, blocked_transition="done",
+                        message=(
                         f"Cannot move spec to 'done': {len(uncovered)} acceptance criteria lack test scenarios. "
                         f"Uncovered: {'; '.join(uncovered[:5])}"
                         f"{f' (and {len(uncovered) - 5} more)' if len(uncovered) > 5 else ''}. "
                         f"Create test scenarios for all criteria, or set skip_test_coverage flag in the spec."
+                        ),
                     )
 
         # Enforce all linked tasks (non-bug) must be done/cancelled before spec can be done
@@ -11434,10 +11440,14 @@ class SpecService:
                 if len(pending_tasks) > 5
                 else ""
             )
-            raise ValueError(
+            raise GateContractError(
+                code="cards_incomplete", gate_type="spec_completion",
+                entity_type="spec", entity_id=spec.id, blocked_transition="done",
+                message=(
                 f"Cannot move spec to 'done': {len(pending_tasks)} linked task(s) are not yet done or cancelled. "
                 f"Pending: {task_list}{extra}. "
                 f"Complete or cancel all linked tasks before finalizing the spec."
+                ),
             )
 
         if read_only_preview:

@@ -81,6 +81,15 @@ class EvaluatedDeliveryReadiness:
                 actor_id=self._actor_id, spec_assessment=self._assessments[None])
         return self._diagnostics[card_id]
 
+    def _native_lifecycle(self, card_id):
+        native = self._batch.native_lifecycle
+        if native is None or native.card_id != card_id:
+            return None
+        status = self._cards[card_id].status if card_id else self._batch.spec_status
+        if native.stored_status != status:
+            raise ReadinessReadError('readiness_snapshot_changed')
+        return native
+
     def context(self, card_id=None):
         """Compose current facts; never advertise a transition not evaluated.
 
@@ -94,8 +103,10 @@ class EvaluatedDeliveryReadiness:
         gate = assess_delivery_gate(assessment, mode=batch.delivery_gate_mode,
             spec_override=batch.skip_delivery_evidence)
         status = card.status if card else batch.spec_status
+        native = self._native_lifecycle(card_id)
+        check = native.check_status if native else 'not_evaluated'
         qualification = qualify_delivery(assessment, gate=gate, stored_status=status,
-            lifecycle_check='not_evaluated', metrics=metrics)
+            lifecycle_check=check, metrics=metrics)
         diagnostic = self.diagnostics(card_id)
         unit_counts = (metrics.implementation.unresolved, metrics.verification.unresolved)
         # Count canonical units once even if both of their phases are pending.
@@ -106,15 +117,20 @@ class EvaluatedDeliveryReadiness:
                 for r in assessment.obligations))
         message_code = ('historical_completion_diverged' if qualification.historical_divergence
             else qualification.state.value)
+        if qualification.proof_complete is True and check == 'blocked' and not qualification.historical_divergence:
+            message_code = 'lifecycle_gate_pending'
         messages = {
             'unknown': 'Não foi possível avaliar a entrega com os fatos atuais.',
             'implementation_pending': 'Há contribuições de implementação pendentes.',
             'verification_pending': 'A implementação está comprovada; falta verificação aplicável.',
             'verification_failed': 'Há falha ou conflito na verificação atual.',
             'ready': 'Provas completas; confira os gates na transição nativa para concluir.',
+            'delivered': 'Entrega concluída com qualificação atual.',
             'ready_with_exceptions': 'O gate de entrega admite ressalvas; confira os demais gates na transição nativa.',
+            'delivered_with_exceptions': 'Entrega concluída com ressalvas efetivas.',
             'not_applicable': 'O escopo conhecido não possui fase de entrega aplicável.',
             'historical_completion_diverged': 'O status Done foi preservado, mas a qualificação atual da entrega diverge.',
+            'lifecycle_gate_pending': 'Provas completas; um gate nativo ainda impede o encerramento.',
         }
         scope = assessment.scope
         return DeliveryReadinessContext(
@@ -128,9 +144,10 @@ class EvaluatedDeliveryReadiness:
             delivery_state=qualification.state, proof_complete=qualification.proof_complete,
             delivery_gate=dict(status=gate.status, mode=gate.mode, exception_applied=bool(gate.exception_refs),
                 exception_refs=gate.exception_refs),
-            lifecycle=dict(stored_status=status, check_status='not_evaluated', other_blocker_count=None,
+            lifecycle=dict(stored_status=status, check_status=check,
+                other_blocker_count=native.other_blocker_count if native else None,
                 qualification_is_current=qualification.qualification_is_current,
-                reason_codes=('native_transition_context_required',),
+                reason_codes=native.reason_codes if native else ('native_transition_context_required',),
                 context_refs=(f'card:{card.id}' if card else f'spec:{scope.spec_id}',)),
             summary=dict(message_code=message_code, message=messages[message_code],
                 unresolved_units=unresolved, root_causes=len(diagnostic.graph.causes), lifecycle_pending=None,
@@ -162,10 +179,14 @@ def compose_authorized_delivery_diagnostics(assessment, batch, *, actor_id, spec
     can_targets = access.allows('code_traceability.target.read')
     can_receipts = access.allows('code_traceability.investigation.read')
     can_tests = access.allows('spec.tests.read')
+    native = batch.native_lifecycle
+    if native is not None and native.card_id != assessment.card_id:
+        native = None
     projection = compose_delivery_diagnostics(assessment, batch.facts, spec_assessment=spec_assessment,
         permissions={a.permission: access.allows(a.permission) for a in ACTION_REGISTRY.values() if a.permission},
         owners=tuple(DiagnosticOwner('card', c.id, c.assignee_id if can_owners else None, can_owners) for c in batch.cards),
-        card_versions={c.id: c.version for c in batch.cards}, procedures=batch.scenarios if can_tests else ())
+        card_versions={c.id: c.version for c in batch.cards}, procedures=batch.scenarios if can_tests else (),
+        native_lifecycle=native)
     causes = {c.id: c for c in projection.graph.causes}
     restricted, details = set(), []
     for detail in projection.details:

@@ -142,6 +142,9 @@ class ApplicationServiceCatalog(Protocol):
     def delivery_evidence(self): ...
 
     @property
+    def delivery_readiness_lifecycle(self): ...
+
+    @property
     def code_traceability_read(self) -> "CodeTraceabilityReadPort": ...
 
     @property
