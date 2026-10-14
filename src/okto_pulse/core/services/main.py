@@ -1680,8 +1680,8 @@ def _evaluate_cognitive_closeout_or_raise(
     """
 
     skip_enabled = _board_skip_cognitive_consolidation(board)
-    gate = gate_factory()
     try:
+        gate = gate_factory()
         result = gate.evaluate(
             board_id=board_id,
             entity_type=entity_type,

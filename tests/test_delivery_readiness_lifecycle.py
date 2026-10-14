@@ -18,6 +18,19 @@ from test_delivery_readiness_shared_evaluation import prepared
 from test_delivery_readiness_paging import Cursor
 
 
+def test_native_cognitive_factory_failure_is_typed_unavailability():
+    from okto_pulse.core.services.main import _evaluate_cognitive_closeout_or_raise
+
+    def unavailable():
+        raise RuntimeError('Private infrastructure configuration')
+
+    with pytest.raises(CompletionInfrastructureUnavailable) as caught:
+        _evaluate_cognitive_closeout_or_raise(gate_factory=unavailable, board=None,
+            board_id='board', entity_type='spec', entity_id='spec', entity=object(), target_label='Spec')
+    assert 'Private infrastructure configuration' not in str(caught.value)
+    assert isinstance(caught.value.__cause__, RuntimeError)
+
+
 def environment(error=None):
     batch = prepared(snapshot())
     batch = replace(batch, access=replace(batch.access, completion_states=frozenset({('spec', 'in_progress')})))
