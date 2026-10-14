@@ -55,6 +55,18 @@ class GetDeliveryEvidenceUseCase:
         )
 
 
+class GetDeliveryReadinessBoardSummaryUseCase:
+    """Compact board projection; one authorized evaluation per Spec."""
+    async def execute(self, command: DeliveryEvidenceQuery, *, actor, uow: PulseUnitOfWork):
+        from okto_pulse.core.ports.delivery_readiness import ReadinessActor
+        await require_authorization(actor, PermissionRequirement('code_traceability.evidence.read'),
+            uow=uow, board_id=command.board_id)
+        result = await uow.services.delivery_readiness.board_summary(board_id=command.board_id,
+            spec_id=command.spec_id, actor=ReadinessActor(
+                actor.actor_id, actor.actor_kind, actor.realm_id, actor.board_id))
+        return result.model_dump(mode='json', exclude_none=False)
+
+
 class RecordDeliveryEvidenceUseCase:
     """Spec-scoped exceptions only; historical proof remains readable."""
 

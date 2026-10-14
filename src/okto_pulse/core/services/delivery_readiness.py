@@ -17,11 +17,12 @@ from okto_pulse.core.domain.delivery_assessment import (
 from okto_pulse.core.domain.effective_delivery_coverage import EvaluatedDeliverySnapshot
 from okto_pulse.core.domain.enums import CardType
 from okto_pulse.core.models.delivery_readiness import (
-    DeliveryReadiness, DeliveryReadinessContext, DeliveryReadinessDetail, ReadinessCursorBinding,
+    DeliveryReadiness, DeliveryReadinessContext, DeliveryReadinessBoardSummary, DeliveryReadinessDetail, ReadinessCursorBinding,
     ReadinessDetailCounts, ReadinessDetailEntry, ReadinessPage, ReadinessReadQuery, ReadinessRelation,
 )
 from okto_pulse.core.ports.delivery_readiness import (
     DeliveryReadinessCursorPort, DeliveryReadinessReadPort, ReadinessActor, ReadinessAccessDenied, ReadinessReadError,
+    ReadinessNativeLifecycle,
 )
 from okto_pulse.core.services.delivery_readiness_diagnostics import (
     DiagnosticOwner, NativeDeliveryDiagnostics, compose_delivery_diagnostics,
@@ -43,6 +44,14 @@ class DeliveryReadinessService:
         evaluated = EvaluatedDeliveryReadiness(batch, actor_id=actor.actor_id)
         return PreparedDeliveryReadiness(evaluated.context(query.card_id), evaluated.diagnostics(query.card_id),
             cursor=self.cursor).page(query, actor_id=actor.actor_id)
+
+    async def board_summary(self, *, board_id: str, spec_id: str, actor: ReadinessActor):
+        batch = await self.reader.load(board_id=board_id, spec_id=spec_id, actor=actor)
+        evaluated = EvaluatedDeliveryReadiness(batch, actor_id=actor.actor_id)
+        batch.access.require('card.entity.read')
+        return DeliveryReadinessBoardSummary(delivery_readiness=evaluated.context(), cards=tuple(
+            dict(card_id=card.id, delivery_readiness=evaluated.context(card.id)) for card in sorted(batch.cards, key=lambda card: card.id)
+            if card.card_type in {CardType.NORMAL, CardType.BUG, CardType.TEST}))
 
 
 class EvaluatedDeliveryReadiness:
@@ -97,6 +106,13 @@ class EvaluatedDeliveryReadiness:
     def _native_lifecycle(self, card_id):
         native = self._batch.native_lifecycle
         if native is None or native.card_id != card_id:
+            # The batch port already bound these persisted Card facts to this
+            # authorized Spec snapshot. Observing Done needs no per-Card gate
+            # query; proof qualification remains independent of native status.
+            if (card_id is not None and self._cards[card_id].status == 'done'
+                    and not self._batch.unavailable_reason_codes):
+                return ReadinessNativeLifecycle(card_id, 'done', 'not_evaluated',
+                    ('native_completion_recorded',), completion_recorded=True)
             return None
         status = self._cards[card_id].status if card_id else self._batch.spec_status
         if native.stored_status != status:

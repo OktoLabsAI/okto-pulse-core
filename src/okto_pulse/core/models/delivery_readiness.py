@@ -383,6 +383,35 @@ class DeliveryReadinessContext(ReadinessDTO):
         return self
 
 
+class DeliveryReadinessCardProjection(ReadinessDTO):
+    card_id: Identity
+    delivery_readiness: DeliveryReadinessContext
+
+
+class DeliveryReadinessBoardSummary(ReadinessDTO):
+    """One authorized Spec snapshot shared by its compact Card projections."""
+    contract_version: Literal['delivery-readiness/v1'] = 'delivery-readiness/v1'
+    metrics_version: Literal[2] = 2
+    delivery_readiness: DeliveryReadinessContext
+    cards: tuple[DeliveryReadinessCardProjection, ...]
+
+    @model_validator(mode='after')
+    def one_snapshot(self):
+        scope = self.delivery_readiness.scope
+        if scope.card_id is not None:
+            raise ValueError('readiness_summary_spec_scope_required')
+        ids = set()
+        for row in self.cards:
+            card = row.delivery_readiness
+            if (card.scope.board_id, card.scope.spec_id, card.scope.spec_edition,
+                card.scope.spec_version, card.snapshot_id) != (
+                scope.board_id, scope.spec_id, scope.spec_edition, scope.spec_version, self.delivery_readiness.snapshot_id
+            ) or not card.scope.card_id or card.scope.card_id in ids or row.card_id != card.scope.card_id:
+                raise ValueError('readiness_summary_scope_mismatch')
+            ids.add(card.scope.card_id)
+        return self
+
+
 class DeliveryReadiness(DeliveryReadinessContext):
     issues: Annotated[tuple[ReadinessIssue, ...], Field(max_length=20)]
     next_actions: Annotated[tuple[ReadinessAction, ...], Field(max_length=3)]
