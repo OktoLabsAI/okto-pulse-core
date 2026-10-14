@@ -1,6 +1,8 @@
 # Validação unificada do planejamento da Spec
 
-Plano de 14 de outubro de 2026. **Planejado; implementação não iniciada.**
+Plano de 14 de outubro de 2026. **Planejamento detalhado consolidado; nenhum
+milestone de implementação concluído.** Há alterações locais parciais do U1,
+ainda não qualificadas nem publicadas; consultar o checkpoint atual no ledger.
 
 Base: Core `57599196174a247510cef6b299ee51c0f50ce10f` e Community
 `34fcf7ec8a617151df32ca403478cd39594cee56`, branch `feature/v0.4.0`.
@@ -259,11 +261,44 @@ estados intermediários incompatíveis no runtime do usuário.
 | U3 — workspace e sincronização | Compor Validation, histórico e ação única; atualizar UI aberta após MCP com proteção de formulários; ampliar metadados delimitados quando necessário. | Community `SpecModal.tsx`, `SpecValidationPanel.tsx`, `SubmitSpecValidationModal.tsx`, `SpecValidationHistoryPanel.tsx`, `SpecsPanel.tsx`, hooks/client API e painéis consumidores. | Browser aberto acompanha mutações MCP sem Refresh manual; preserva edição não salva; avaliações continuam individualmente inspecionáveis e permissões não são ampliadas. |
 | U4 — qualificação integrada | Documentação e catálogo gerado; auditoria arquitetural, build/paridade, E2E novo UI+MCP até Done e inspeção visual. | Ambos os pacotes, frontend_dist, resources/workflows MCP, testes e ledger/evidência. | Ensaio sem reabertura causada só pela criação/alocação de Cards, sem Decision artificial, sem repetição de avaliação válida no início e sem redução dos controles de entrega. |
 
-U1 inicia com leitura integral pendente do pacote, inventário finito dos callers
+U1 exige leitura integral do pacote, inventário finito dos callers
 e testes de caracterização; não é uma nova auditoria geral do projeto. Se surgir
 divergência que exija alterar autoridade ou efeito histórico além deste plano,
 registrar reprodução e a decisão exata necessária segundo §10.2/10.4. Não criar
 metas novas para melhorias opcionais descobertas no caminho.
+
+### 6.1 Ordem operacional e entregas verificáveis
+
+O detalhamento abaixo desdobra U1–U4; não adiciona features ou critérios ao escopo.
+Antes de continuar código, conferir o diff local do U1 contra o plano. Não
+tratar alterações existentes ou testes escritos como milestone entregue.
+
+| Ordem | Trabalho delimitado | Evidência para encerrar |
+| --- | --- | --- |
+| U1.1 | Completar a caracterização da criação de Cards, transições e Decision vazia versus Decision sem plano. Conferir isolamento dos fixtures que alteram status. | Testes demonstram a restrição anterior e os controles que permanecem; UV01–UV03 mapeados. |
+| U1.2 | Concluir criação em Draft no serviço, use cases e formulário. Auditar associação/reassociação a Spec para impedir entrada de Card já em execução em Draft, sem ampliar estados por conveniência. | UI e backend admitem somente autoria planejada; cenários são vinculados atomicamente; execução precoce e payload inválido não deixam efeitos. |
+| U1.3 | Remover somente a obrigatoriedade de existir Decision em todos os consumidores; atualizar instruções MCP e testes frontend de seleção/tipo/status. | Decision ausente não bloqueia; Decision ativa incompleta bloqueia; instrução não manda criar ou vincular duas vezes o mesmo artefato. |
+| U2.1 | Extrair cálculo puro da decomposição e preparação dos pareceres, preservando dimensões, recomendações e semântica Current/Previous. | UV04–UV06 e UV13; mesma regra usada por resumo e writers. |
+| U2.2 | Definir DTOs fechados da conclusão e do manifesto, estender portas existentes e implementar persistência/recibo no Community. | Contrato de autorização, identidade, concorrência e replay testado com persistência real; nenhum mecanismo concreto no Core. |
+| U2.3 | Integrar pareceres e promoção em uma UoW; encaminhar transição direta e allowed transitions ao mesmo predicado de avanço. | UV07–UV17 e UV22; sem promoção intermediária, bypass ou resultado parcial em falha técnica. |
+| U2.4 | Expor leitura integrada e metadados delimitados em lote, com permissões por componente e identificadores de revisão. | Resumo distingue ready/blocked/unavailable; atualização detecta mudanças sem bump da Spec; custo por lote demonstrado. |
+| U3.1 | Consumir o contrato integrado na Validation, mantendo formulários, resultados e históricos nativos e uma ação principal de conclusão. | UV21; componentes legíveis, permissões próprias, pinpoints/score/loading consistentes e nenhuma avaliação removida. |
+| U3.2 | Implementar hook compartilhado de atualização externa e integrar os consumidores visíveis. | UV18–UV20; sem sobrescrever formulário sujo, sem resposta fora de ordem e sem consulta pesada periódica de Coverage/KG. |
+| U4.1 | Rodar regressões pertinentes, frontend, catálogo e closure; construir o par de wheels e frontend. | Resultados registrados e oito budgets ZERO; paridade de instalação e origem de imports comprovadas. |
+| U4.2 | Executar iniciativa mock nova com dados isolados, UI e MCP, até Done e consolidação. | UV23–UV24 e negativos pertinentes dos demais UV; IDs, recibos, screenshots e limitações no ledger. |
+
+Na operação composta, distinguir explicitamente três situações: entrada inválida,
+autoridade insuficiente ou conflito impedem a escrita; parecer válido negativo
+é registrado e mantém Approved; pareceres positivos só promovem quando os demais
+gates também permitem. Um bloqueio de pré-requisito não deve fabricar um parecer
+negativo. O retorno diferencia pareceres efetivamente registrados de componentes
+apenas consultados. Os testes precisam verificar persistência e estado, além do
+status HTTP ou da mensagem MCP.
+
+O checkpoint de cada milestone identifica o par exato Core/Community, os UV
+demonstrados e os ainda pendentes. Nenhum UV é concluído somente porque uma suíte
+genérica passou. U4 usa uma home descartável nova; não apagar, converter ou
+reabrir as iniciativas existentes do usuário para acomodar alterações de schema.
 
 ## 7. Matriz mínima de aceite
 
@@ -331,7 +366,8 @@ e próximo passo exato. No E2E, registrar IDs/edições e evidências UI/MCP; n�
 alterar policies, scopes, skips ou percentuais para obter verde. Testes externos
 mockados precisam de execução observada para gerar prova autenticada.
 
-**Primeira ação de execução:** U1, leitura integral pendente e caracterização
-dos três atritos. **Critério de conclusão:** U1–U4 e UV01–UV24 demonstrados, ledger
-atualizado e par de repositórios publicado. Nenhuma implementação, instalação
-ou mudança no Board foi feita para produzir este plano.
+**Próxima ação de execução:** conferir a leitura obrigatória registrada e completar
+U1 a partir dos diffs locais, conforme §6.1. **Critério de conclusão:** U1–U4 e
+UV01–UV24 demonstrados, ledger atualizado e par de repositórios publicado. Esta
+revisão do planejamento não alterou código, instalação ou Board; o trabalho
+parcial encontrado na working tree permanece identificado no ledger.

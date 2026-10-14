@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — detalhamento operacional e reconciliação do estado local
+
+Pedido desta rodada: iniciar o planejamento detalhado da unificação. Plano
+consolidado em [SPEC_UNIFIED_VALIDATION_PLAN.md](SPEC_UNIFIED_VALIDATION_PLAN.md),
+agora com sequência operacional U1.1–U4.2 e evidência de saída por etapa. Mantidos
+os quatro milestones, UV01–UV24 e todas as avaliações, critérios, severidades,
+thresholds, permissões e histórias. Nenhum novo escopo funcional acrescentado.
+
+Conferência remota: Core feature/v0.4.0 em
+357c3f31816c53a37e82004208264e10e7470943 (plano já publicado); Community em
+34fcf7ec8a617151df32ca403478cd39594cee56. O checkpoint anterior ao planejamento
+está publicado. A working tree atual, porém, contém implementação parcial do
+U1: Core services/main.py, allowed_transitions.py e quatro arquivos de testes;
+Community CreateCardModal.tsx. Esses diffs permitem planejar Cards em Draft e
+retiram o predicado de existência obrigatória de Decision. Foram inspecionados
+e preservados; não são evidência de conclusão, nem serão incluídos no commit
+documental desta rodada. Nenhum milestone de implementação está qualificado.
+
+Próxima execução: revisar e completar esses diffs, testes frontend, isolamento
+dos fixtures, caminhos de associação/transição e documentação MCP conforme U1.
+Não reinstalar esse estado parcial. Depois seguir U2 → U3 → U4 com testes e
+commits pareados conforme necessário. O E2E final deverá usar nova home isolada
+e preservar a home e as iniciativas existentes. Nesta rodada não foram
+executados testes de comportamento, instalação, alterações no Board ou runtime.
+
+Validação desta revisão: conferência do diff local, heads remotos e consistência
+da sequência com a matriz UV. O registro antigo abaixo descreve o estado no
+momento de sua escrita; não usar sua frase “execução não iniciada” para ocultar
+os diffs parciais agora presentes.
+
 ### 2026-10-14 — planejamento da validação unificada; execução não iniciada
 
 Pedido atual: iniciar planejamento detalhado após commit/push de todo o trabalho
