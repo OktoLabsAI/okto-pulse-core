@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — plano detalhado reconciliado, com bloqueio arquitetural explícito
+
+Pedido: iniciar planejamento detalhado da unificação. Antes desta revisão,
+todo o diff local foi registrado e publicado em Core 376f0237 / Community
+31c82a4c como WIP, com a reprovação de closure documentada no checkpoint abaixo.
+Nenhum budget foi elevado e nenhuma alteração foi instalada no runtime ativo.
+
+SPEC_UNIFIED_VALIDATION_PLAN.md continua sendo o plano único. A seção 6.2 foi
+reescrita sobre esse par: U1 não será refeito; U2 começa pela composição pública
+da leitura, segue com paridade dos julgamentos e metadados leves; U3 compõe a
+Validation e a sincronização MCP; U4 comprova UI/MCP, instalação e fluxo até
+Done/KG. As saídas, dependências e pontos de integração são explícitos. A matriz
+UV01–UV24 permanece intacta e não foram adicionados milestones de produto.
+
+Todas as avaliações, dimensões, rubricas, severidades, thresholds, permissões
+e históricos continuam. Não há score combinado nem exigência de que um único
+ator produza todos os pareceres. Os 17 componentes da projeção não se tornam
+17 abas. A ação principal conclui com os resultados nativos disponíveis e não
+transforma falha técnica, falta de leitura ou parecer ausente em aprovação.
+
+Esta revisão é documental: nenhuma nova implementação de produto, alteração
+de dados ou execução de E2E. As evidências funcionais do checkpoint não anulam
+o gate arquitetural reprovado, que segue como primeira pendência de execução.
+Verificação documental: diff --check e checker de links na raiz do repositório
+aprovados. A primeira execução do checker sobre apenas a subpasta recusou um
+link válido para docs/DELIVERY_READINESS_ACCEPTANCE_MATRIX.md como externo à
+raiz reduzida; a execução com a raiz correta passou, sem editar esse link.
+
 ### 2026-10-14 — checkpoint da leitura integrada antes da revisão do plano
 
 Base: Core 405487c3 / Community f3761e0b, feature/v0.4.0. O pedido atual é
