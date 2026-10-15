@@ -2,6 +2,55 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/3c: writer de coleções e seis editores protegidos
+
+Incremento sobre Core `607f2f97` / Community `b0a497f4`; Community `58eb6399`
+publicado em `feature/v0.4.0`. BR/TR/IR/OR/Contracts/
+Decisions capturam a base de autoria, aguardam confirmação assíncrona, preservam
+rascunho em recusa e distinguem conflito nativo de outras falhas 409. Revisão
+explícita requer leitura válida; item removido não é recriado silenciosamente.
+Referências indisponíveis exigem correção explícita. Troca de identidade ou
+autoridade de autoria encerra o editor; perda apenas de permissão de remoção
+não apaga um rascunho autorizado. Mantidos os comandos e previews de impacto.
+
+`syncStructuredCollection` recebe expectedVersion do editor e propaga falhas.
+Create confirmado seguido de refresh falho não oferece novo create. Quando
+uma sequência nativa confirma apenas parte dos comandos, a UI informa o que
+foi confirmado, conserva o texto e exige releitura/reabertura; não a apresenta
+como operação atômica nem repete a sequência automaticamente. Nenhum gate,
+policy, schema de backend ou autoridade foi alterado.
+
+Reprodução inicial: 12 falhas em 12 casos executados (9 skips), nas seis famílias.
+Regressão integrada: 220 passes em nove suítes, incluindo o writer real montado
+em SpecModal; tipos exit 0 (sessões 5448/67194), lint dirigido exit 0, zero erros
+e 28 warnings. As primeiras seis falhas da suíte Contracts foram fixtures sem
+versão; fixtures corrigidos para contrato real, sem fallback no produto.
+Evidências finais e reruns substitutivos em `evidence-u3-collection-editors-20261015.json`;
+não somar reruns como casos adicionais.
+Fechamento: 61 casos de identidade passaram após conferir a perda isolada de
+permissão de remoção. SpecModal teve dois timeouts de 5 s em uma execução;
+processo acompanhado até exit 1, sem reinício por timeout de observação.
+Repetidas as mesmas asserções com limite explícito de 15 s por teste: 74 passes,
+exit 0 (sessão 40842). Substituindo os reruns, são 222 casos finais distintos,
+zero falhas/skips. Diff check passou. Não houve novo build/wheel ou closure.
+
+Prova UI/MCP nativa, mesmo ambiente isolado: BR `br_1792034724479` criada pela UI
+na Spec `2baa5f88-eb1a-4aac-9aeb-453707cef290` versão 18, vinculada ao FR existente.
+MCP alterou a regra para 19 enquanto havia texto local não salvo; sem Refresh
+manual, a UI conservou campos, exibiu conteúdo atual em expansível e bloqueou
+Save. Após Review current base, gravação UI confirmada por `okto_pulse_get_spec`
+na versão 20. Capturas de conflito e item salvo inspecionadas. Sem aprovação ou
+crédito de entrega. Vite 5274/PID 20128 e API/MCP 8200/8201/PID 27316; backend
+isolado anterior, não qualificação do par instalado U4. Runtime do usuário intacto.
+
+Watcher expandido somente a Business/Contracts/Technical/Observability além das
+abas já protegidas. IR e Decisions mantêm refresh adiado: seus irmãos montados
+`ArchitectureClassificationsPanel` e `DecisionReviewSection` ainda podem perder
+ou trocar a base de autoria. Cenários também têm chave por versão e writer sem
+confirmação aguardada. Próxima ação: proteger esses caminhos e conferir a revisão
+própria de Project Structure, depois 3d/UV18–UV21 e U4. Manter o escopo original;
+não reimplementar U1/U2 nem as provas já concluídas.
+
 ### 2026-10-15 — planejamento detalhado reconciliado, sem implementação nova
 
 Pedido: iniciar o planejamento detalhado da unificação. Conferidos os HEADs

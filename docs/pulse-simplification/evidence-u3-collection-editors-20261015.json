@@ -1,0 +1,357 @@
+{
+  "checkpoint": "U3/3c — structured collection drafts and native write confirmation",
+  "date_local": "2026-10-15",
+  "baseline_core": "607f2f97",
+  "baseline_community": "b0a497f4",
+  "community_commit": "58eb6399",
+  "branch": "feature/v0.4.0",
+  "changes": [
+    "Six native collection editors capture authoring version and await the write before discarding fields",
+    "Native version conflicts, unavailable reads, missing entities/references and context changes are handled explicitly",
+    "Confirmed create with failed refresh does not offer another create; partially confirmed sequences do not auto-retry",
+    "Business, Contracts, Technical and Observability subscribe to existing workspace revisions",
+    "Integration and Decisions remain deferred until classification/inspection writers mounted in those tabs are protected"
+  ],
+  "tests": [
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collection-before.xml",
+      "sha256": "9bce77ec00cd1908937d0d2c837140262f27415152b1decf9c19f74e4538e1bf",
+      "total": 21,
+      "passed": 0,
+      "failed": 12,
+      "skipped": 9,
+      "suites": [
+        {
+          "name": "src/components/specs/__tests__/RequirementTabIdentity.test.tsx",
+          "timestamp": "2026-10-15T03:09:40.650Z",
+          "hostname": "Alienware_m15",
+          "tests": "21",
+          "failures": "12",
+          "errors": "0",
+          "skipped": "9",
+          "time": "1.6300104"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collection-integration-first.xml",
+      "sha256": "d4cf1ed22c8db8962d3708d05864c50c01507c7f72097c622b6cdb4fa3fa1078",
+      "total": 88,
+      "passed": 82,
+      "failed": 6,
+      "skipped": 0,
+      "suites": [
+        {
+          "name": "src/components/specs/__tests__/ContractsTab.test.tsx",
+          "timestamp": "2026-10-15T03:16:33.473Z",
+          "hostname": "Alienware_m15",
+          "tests": "9",
+          "failures": "6",
+          "errors": "0",
+          "skipped": "0",
+          "time": "1.8554032"
+        },
+        {
+          "name": "src/components/specs/__tests__/DecisionsTab.badge.test.tsx",
+          "timestamp": "2026-10-15T03:16:33.504Z",
+          "hostname": "Alienware_m15",
+          "tests": "3",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.4419544"
+        },
+        {
+          "name": "src/components/specs/__tests__/DecisionVerificationEditor.test.tsx",
+          "timestamp": "2026-10-15T03:16:33.507Z",
+          "hostname": "Alienware_m15",
+          "tests": "3",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.2153291"
+        },
+        {
+          "name": "src/components/specs/__tests__/SpecModal.structuredEditing.test.ts",
+          "timestamp": "2026-10-15T03:16:33.510Z",
+          "hostname": "Alienware_m15",
+          "tests": "4",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.0293712"
+        },
+        {
+          "name": "src/components/specs/__tests__/SpecModal.validationTabs.test.tsx",
+          "timestamp": "2026-10-15T03:16:33.513Z",
+          "hostname": "Alienware_m15",
+          "tests": "69",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "95.5679931"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collection-final.xml",
+      "sha256": "5426258eb61c806f1d515c19281ee9357e1262d7a4997944932ddeafcebf85b3",
+      "total": 220,
+      "passed": 220,
+      "failed": 0,
+      "skipped": 0,
+      "suites": [
+        {
+          "name": "src/components/specs/__tests__/ContractsTab.test.tsx",
+          "timestamp": "2026-10-15T03:23:31.305Z",
+          "hostname": "Alienware_m15",
+          "tests": "9",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "4.3435707"
+        },
+        {
+          "name": "src/components/specs/__tests__/CriterionVerificationPanel.test.tsx",
+          "timestamp": "2026-10-15T03:23:31.318Z",
+          "hostname": "Alienware_m15",
+          "tests": "21",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "9.3115791"
+        },
+        {
+          "name": "src/components/specs/__tests__/DecisionsTab.badge.test.tsx",
+          "timestamp": "2026-10-15T03:23:31.328Z",
+          "hostname": "Alienware_m15",
+          "tests": "3",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.4260619"
+        },
+        {
+          "name": "src/components/specs/__tests__/DecisionVerificationEditor.test.tsx",
+          "timestamp": "2026-10-15T03:23:31.330Z",
+          "hostname": "Alienware_m15",
+          "tests": "3",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.3400405"
+        },
+        {
+          "name": "src/components/specs/__tests__/RequirementTabIdentity.test.tsx",
+          "timestamp": "2026-10-15T03:23:31.332Z",
+          "hostname": "Alienware_m15",
+          "tests": "61",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "26.4175785"
+        },
+        {
+          "name": "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx",
+          "timestamp": "2026-10-15T03:23:31.364Z",
+          "hostname": "Alienware_m15",
+          "tests": "35",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "18.1849395"
+        },
+        {
+          "name": "src/components/specs/__tests__/SpecModal.structuredEditing.test.ts",
+          "timestamp": "2026-10-15T03:23:31.377Z",
+          "hostname": "Alienware_m15",
+          "tests": "4",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.0188502"
+        },
+        {
+          "name": "src/components/specs/__tests__/SpecModal.validationTabs.test.tsx",
+          "timestamp": "2026-10-15T03:23:31.379Z",
+          "hostname": "Alienware_m15",
+          "tests": "72",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "111.7625658"
+        },
+        {
+          "name": "src/components/specs/__tests__/TextRequirementsTab.test.tsx",
+          "timestamp": "2026-10-15T03:23:31.412Z",
+          "hostname": "Alienware_m15",
+          "tests": "12",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "11.539226"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collection-final-identity.xml",
+      "sha256": "ff0e8cd6633511f48342622dc5886998eadd1614b293a3304c6d4fe1f5a59095",
+      "total": 61,
+      "passed": 61,
+      "failed": 0,
+      "skipped": 0,
+      "suites": [
+        {
+          "name": "src/components/specs/__tests__/RequirementTabIdentity.test.tsx",
+          "timestamp": "2026-10-15T03:34:47.476Z",
+          "hostname": "Alienware_m15",
+          "tests": "61",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "37.6219161"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collection-final-spec-modal.xml",
+      "sha256": "68dce08240722c28da461fd3dc2373cfd69b1c11a8a27b046c26b3a9e63fb707",
+      "total": 74,
+      "passed": 72,
+      "failed": 2,
+      "skipped": 0,
+      "suites": [
+        {
+          "name": "src/components/specs/__tests__/SpecModal.validationTabs.test.tsx",
+          "timestamp": "2026-10-15T03:36:36.380Z",
+          "hostname": "Alienware_m15",
+          "tests": "74",
+          "failures": "2",
+          "errors": "0",
+          "skipped": "0",
+          "time": "198.3154305"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collection-final-spec-modal-retry.xml",
+      "sha256": "4695d07955f6e4a10d7b4e704f1a6433498d590dcfe50e0d24886846f84b5baf",
+      "total": 74,
+      "passed": 74,
+      "failed": 0,
+      "skipped": 0,
+      "suites": [
+        {
+          "name": "src/components/specs/__tests__/SpecModal.validationTabs.test.tsx",
+          "timestamp": "2026-10-15T03:39:24.900Z",
+          "hostname": "Alienware_m15",
+          "tests": "74",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "109.6716258"
+        }
+      ]
+    }
+  ],
+  "unique_final_passes": 222,
+  "counting": "220-case regression, replacing 72 SpecModal cases with final 74 and replacing the 61 identity cases with their final rerun; do not sum reruns.",
+  "intermediate_failures": [
+    "Initial 12 executed cases reproduced immediate draft reset and missing version review; 9 other cases skipped.",
+    "Six Contract fixture failures: version was absent from fake Spec. Fixture now includes native board/version/edition; no product fallback.",
+    "Final SpecModal first attempt had two 5000ms test timeouts (Integration deferred subscription and Business writer). Repeated unchanged assertions with explicit per-test timeout 15000ms; no process restarted while live."
+  ],
+  "checks": {
+    "types": [
+      {
+        "session": 5448,
+        "exit_code": 0
+      },
+      {
+        "session": 67194,
+        "exit_code": 0
+      }
+    ],
+    "lint": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collection-lint.json",
+      "sha256": "94e61509114f39e133eb0038313ab51b9ca3563b252ff2fe21629f1db32a8f2d",
+      "session": 1567,
+      "exit_code": 0,
+      "errors": 0,
+      "warnings": 28
+    },
+    "diff_check": "passed",
+    "new_backend_changes": false,
+    "new_closure_or_wheels": false
+  },
+  "runtime": {
+    "ui": "http://127.0.0.1:5274",
+    "api": "http://127.0.0.1:8200",
+    "mcp": "http://127.0.0.1:8201/mcp",
+    "frontend_pid": 20128,
+    "backend_pid": 27316,
+    "limit": "Current Vite checkout against previously running isolated backend. This is not current installed pair or U4 qualification. User runtime untouched."
+  },
+  "native_proof": {
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "2baa5f88-eb1a-4aac-9aeb-453707cef290",
+    "edition": 1,
+    "status": "draft",
+    "business_rule_id": "br_1792034724479",
+    "versions": [
+      17,
+      18,
+      19,
+      20
+    ],
+    "observed": "UI created rule linked to the existing FR (18). Authenticated MCP changed the saved rule while UI draft was dirty (19). UI automatically displayed current saved content, kept local fields and disabled Save. Explicit Review current base enabled a UI write; native get_spec confirmed local content (20).",
+    "confirmation": {
+      "id": "br_1792034724479",
+      "title": "U3 collection rule",
+      "rule": "Local reviewed rule: keep the author draft through a concurrent MCP change and save only after deliberate review.",
+      "when": "An author saves an edited rule",
+      "then": "Confirm the native write before clearing the draft",
+      "linked_requirements": [
+        "fr_fe396a22"
+      ],
+      "linked_task_ids": null,
+      "status": "active",
+      "notes": null
+    },
+    "artifacts": [
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collection-before.json",
+        "sha256": "0d99d56637a0524bb8c9eda8a6f7edd6cf1b721753c12669ec3e3c028b574424"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collection-created.json",
+        "sha256": "c9e9ca6571bbdb8125327e98d93dbdbc316cfdf79d45c30634433cfbcc813dda"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collection-remote-rule.json",
+        "sha256": "33eea764117a61c720abf5bfb846db97e8d9292efc0b84fe470aa49cf173be43"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collection-saved.json",
+        "sha256": "4cb2665ef9d11d15f4b9d9249b4db79313533d7a25e163dc2acbeee87f312a06"
+      }
+    ],
+    "delivery_credit_claimed": false
+  },
+  "screenshots_inspected": [
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-collection-rule-conflict.png",
+      "sha256": "045e04be646e2a2ed82d6eb50a86c2c1fac6e0778ff32d6e267fbe102cb84605"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-collection-rule-saved.png",
+      "sha256": "65c80fafda1bf3a9458d2e7c0fa969b7c149ec5f94e669da9e3bc08dd198491d"
+    }
+  ],
+  "screenshot_limit": "Conflict viewport shows current saved item and preserved draft; disabled Save was verified in the accessible snapshot below the viewport. Final screenshot shows saved expanded rule.",
+  "next": [
+    "U3/3c: ArchitectureClassificationsPanel/ArchitectureClassificationAuthoring and DecisionReviewSection before enabling their tabs",
+    "U3/3c: TestScenariosTab/ScenarioVerificationMethodEditor and native ProjectStructure revision/draft behavior",
+    "U3/3d then UV18–UV21 integrated qualification; U4 installed pair plus full mock SDLC and KG remains pending"
+  ]
+}
