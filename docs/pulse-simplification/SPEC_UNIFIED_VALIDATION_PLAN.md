@@ -6,8 +6,8 @@ Esta seção é a única fila operacional. Os roteiros de checkpoints anteriores
 abaixo documentam a evolução; não reabrem trabalho concluído. Permanecem
 normativos os contratos de §3–§5 e os aceites UV01–UV24 de §7.
 
-**Base conferida e publicada:** Core `ee80cf2b` (produto `537eea6`) /
-Community `ccc76dfc`, ambos em `feature/v0.4.0`. Nenhum diff de produto
+**Base conferida e publicada:** Core `ec775fe1` /
+Community `135454ca`, ambos em `feature/v0.4.0`. Nenhum diff de produto
 rastreado encontrado. Capturas locais não rastreadas não integram o produto.
 U1 implementado; U2 qualificado no backend; consumidores previstos de U3
 integrados, incluindo Resources; qualificação integrada de U3 ainda parcial;
@@ -24,7 +24,11 @@ cenários autenticados elevaram verificação Spec/Task 0 → 25 → 100 e Test
 0 → 50 → 100, sem bump de Spec.version. Coverage e capas Kanban visíveis
 acompanharam as mutações sem Refresh. Ver
 [Coverage e progresso nativo](evidence-u3-coverage-native-progress-20261015.json).
-Restam autoridade/identidade e reconciliação UV19–UV21; depois U4. Não repetir os submits
+Revogação MCP também foi comprovada na mesma sessão: leitura e escrita negadas,
+estado preservado e agentes descartáveis desativados. Os 11 hashes dos artefatos
+foram conferidos nesta revisão; trata-se de evidência anterior, não de novo ensaio.
+Ver [autoridade MCP](evidence-u3-native-authority-20261015.json).
+Restam autoridade/identidade **na UI** e reconciliação UV19–UV21; depois U4. Não repetir os submits
 ou as mutações desse fixture para reconstruir evidência já registrada.
 
 **Decisão de produto preservada:** Spec e Cards são preparados juntos; existe
@@ -38,9 +42,9 @@ continua sujeita aos seus controles. Execução e entrega mantêm os próprios g
 | Ordem dentro dos milestones existentes | Procedimento delimitado | Evidência exigida para encerrar |
 | --- | --- | --- |
 | U3 — reconciliar UV18–UV21 | Relacionar cada aceite às provas já publicadas e aos artefatos locais. Separar componente, persistência, UI/MCP e instalação. Reutilizar somente provas que observem o comportamento exigido. | Matriz com caso, evidência, resultado e limite; nenhum passe inferido de mera existência de código ou de contagem global de testes. |
-| U3 — atualização de progresso / UV18 | No fixture isolado, registrar implementação e execução de teste observadas. Manter Board/modal abertos e provocar mudança apenas de Card/Delivery; comparar versão da Spec antes/depois, respostas MCP e barras/ações/Coverage na UI. | Mudança real de percentual refletida automaticamente, inclusive com Spec.version constante. Renomear Card ou atualizar mockup não substitui este caso. |
-| U3 — recuperação e autoridade / UV19–UV20 | Reutilizar provas de rascunho/conflito/reconexão; completar troca de identidade e revogação com ator descartável no Board isolado. Conferir leitura negada, limpeza de conteúdo protegido e ausência de escrita indevida. | Respostas antigas não contaminam outro contexto; edição autorizada é preservada; revogação remove o que não pode ser lido. Sem alterar permissões reais do usuário. |
-| U3 — conclusão e apresentação / UV21 | Completar autoria mínima do fixture e os pré-requisitos reais; exercitar contribuição independente e conclusão composta, usando permissões próprias. Inspecionar resultados individuais, Previous versions, pinpoints, loading, erro/retry, teclado e foco. | Resultado registrado distinto de promoção; bloqueios visíveis; nenhuma avaliação desaparece ou é copiada artificialmente. Testes frontend afetados, tipos/build e inspeção visual aprovados. Ledger e commit/push de U3. |
+| U3 — atualização de progresso / UV18, comprovada | Reutilizar a evidência Coverage/progresso nativo já publicada; preservar a regressão factual sem relaxar lifecycle. | Implementação/verificação observadas na UI com Spec.version constante. Não repetir bindings, runners ou mutações para obter nova captura do mesmo caso. |
+| U3 — recuperação e autoridade / UV19–UV20 | Reutilizar negativa MCP nativa e provas de rascunho/conflito/reconexão. Completar troca de identidade e revogação UI/HTTP no fixture isolado da porta de autenticação; correlacionar requisição, resposta e tela. | Respostas antigas não contaminam outro contexto; edição autorizada é preservada; revogação retira conteúdo protegido e impede escrita. Não atribuir ao LocalAuthProvider capacidade multiusuário que ele não possui. |
+| U3 — conclusão e apresentação / UV21 | Reutilizar conclusão composta, contribuição independente, Previous versions e expansão por teclado já observadas. Mapear loading, erro/retry e foco às provas existentes e executar apenas os casos sem evidência suficiente. | Resultado registrado distinto de promoção; bloqueios visíveis; nenhuma avaliação desaparece ou é copiada artificialmente. Testes frontend afetados, tipos/build e inspeção visual aprovados. Ledger e commit/push de U3. |
 | U4 — artefato e regressão | Executar regressões pertinentes, catálogo gerado e closure; construir frontend e wheels pareados. Instalar em ambiente/home novos, comparar arquivos Python/frontend byte a byte e iniciar processo posterior à instalação. | Commits, hashes, origem dos imports e identidade do processo registrados; oito budgets ZERO. Runtime de checkout não qualifica distribuição instalada. |
 | U4 — percurso completo / UV01–UV24 | Criar nova iniciativa mock via UI/MCP: Ideação → Refinamento → Spec com Cards Not Started em Draft → conclusão unificada → execução → Tasks/Test/Spec Done → consulta/consolidação KG. | Sem reabrir só para criar Cards, Decision artificial ou repetição de avaliação ainda válida. Provas realmente executadas, percentuais aplicáveis em 100%, canonical/proveniência conferidos. Matriz final, ledger e commit/push. |
 
@@ -86,8 +90,8 @@ Os passos seguintes detalham exclusivamente U3/U4 e UV18–UV24 já previstos.
 3. **Fechar UV19–UV21 sem repetir os ensaios qualificados.** Mapear evidência
    existente por caso e completar somente lacunas. Para autoridade, o
    `LocalAuthProvider` resolve sempre `local-user` com controle total: trocar
-   Bearer não reproduz revogação humana. Usar ator MCP descartável para a negativa
-   nativa e fixture isolado da porta pública de autenticação para exercitar UI/HTTP
+   Bearer não reproduz revogação humana. Reutilizar a negativa MCP já comprovada
+   e completar o fixture isolado da porta pública de autenticação para exercitar UI/HTTP
    com troca/revogação controlada. Demonstrar resposta tardia descartada, limpeza
    de conteúdo sem acesso, escrita negada e rascunho autorizado preservado.
    Identificar explicitamente prova de fixture versus comportamento da edição local;
@@ -124,13 +128,48 @@ de conexão. Foram relidas nesta conferência; não são nova execução, nem
 encerram todos os casos de UV19. As provas acima demonstram conclusão,
 implementação e verificação autenticada; ainda não demonstram Done ou KG canonical.
 
+### Procedimento restante de U3 — saída verificável por caso
+
+Esta tabela detalha somente UV19–UV21. A revisão é documental: não presume
+que processos anteriores continuam vivos nem que fixtures locais já estão prontos.
+Antes de executar, conferir identidade, configuração, dados e origem dos imports.
+Os arquivos locais `u3_auth_runtime.py`, `u3_authority_vite.mjs` e
+`u3-authority-state.json`, sob `.validation-v040/spec-unified-20261014/`,
+documentam a preparação do fixture; sua existência não constitui prova positiva.
+
+| Caso existente | Procedimento mínimo | Prova de saída |
+| --- | --- | --- |
+| UV19 — resposta antiga e identidade | Abrir uma Spec autorizada no fixture, manter uma leitura pendente e trocar o contexto/identidade. Liberar a resposta anterior. Reutilizar testes de componente para variações já demonstradas. | Conteúdo anterior não aparece no contexto novo; resposta obsoleta é descartada. Registrar ação, resposta e estado visual, sem alegar autenticação humana multiusuário na edição local. |
+| UV20 — revogação UI/HTTP | Abrir conteúdo e formulário autorizado; revogar no fixture de autenticação e provocar a rechecagem existente. Tentar escrita pela entrada pública. | HTTP nega, UI retira conteúdo protegido e escrita não altera persistência. A prova MCP anterior complementa este caso, mas não substitui a inspeção visual. |
+| UV19/20 — recuperação autorizada | Reconciliar as provas de rede e conflito já existentes. Se faltar prova para um consumidor afetado, interromper/restaurar apenas o transporte do fixture com rascunho aberto; revalidar antes de liberar escrita. | Campos autorizados preservados, base antiga sinalizada, retry sem duplicar entidade/parecer. Não apresentar simples Reload como recuperação automática. |
+| UV21 — fechamento da conferência visual | Relacionar conclusão, resultados individuais, histórico integral, pinpoints, teclado/foco, pulso de loading e erro/retry às evidências existentes. Executar somente lacunas. | Cada aspecto tem artefato e limite declarado. Nenhum resultado ou permissão foi removido para simplificar a tela. |
+
+**Registro para encerrar U3:** uma linha por aceite UV18–UV21 com superfície,
+caso, commit, artefato, resultado e limite; distinguir teste de componente,
+persistência, runtime de checkout e runtime instalado. Corrigir apenas falha
+reproduzida nesses aceites, testar os caminhos afetados e registrar ledger,
+commit/push. Evidência parcial conserva o aceite aberto.
+
+**Dependência para U4:** fechar esse registro antes de construir o par final.
+No E2E novo, incluir BR/FR/AC, cenários, critérios e Cards responsáveis já na
+autoria; exercer a conclusão composta e o reaproveitamento dos pareceres,
+depois execução e fechamento pelos controles próprios. O ponto unificado
+decide sobre o planejamento; não aprova automaticamente Tasks, testes ou entrega.
+O teste termina somente com os estados Done e a proveniência canonical do KG
+observados. Ausência de uma evidência externa necessária é pendência explícita,
+nunca um resultado mockado declarado como observado.
+
 Corrigir somente defeito reproduzido que impeça estes aceites, no item
 correspondente. Não adicionar milestones, migração, nova avaliação, redesign
 opcional ou infraestrutura geral. Divergência material de gate/autoridade/
 histórico não autorizada segue a investigação do pacote. O próximo trabalho
 é executar esta fila; não realizar outra rodada de planejamento sem fato novo.
 
-## Estado vigente — revisão de planejamento de 15/10/2026
+## Histórico dos checkpoints — revisão anterior de 15/10/2026
+
+Os relatos desta seção conservam o estado e as limitações de cada checkpoint.
+A fila vigente e o par atual estão no início do documento; pendências aqui
+registradas podem ter sido resolvidas pelas evidências posteriores ali indicadas.
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
 Checkpoint de produto: Core `537eea6` / Community `ccc76df`, na branch
@@ -301,7 +340,7 @@ gates de execução/entrega. Não redesenhar Ideação/Refinamento, percentuais 
 | --- | --- | --- |
 | U1 — preservar | Reutilizar autoria de Cards Not Started em Draft e Decision opcional já implementadas. | Não reimplementar; confirmar ambos no percurso U4, incluindo recusa de execução prematura. |
 | U2 — preservar qualificação | Paridade de backend reconciliada no mapa finito, incluindo recursos/Code Evidence e os dois guards de contexto crítico. | Preservar provas e regressões afetadas; autenticação wire e percurso instalado permanecem U4. Não repetir famílias sem impacto novo. |
-| U3 — completar integração | Reutilizar o watcher e as coleções já integradas ao SpecsPanel/Kanban; conectar CardModal/Delivery, Coverage e demais leitores previstos, protegendo editores e revalidando acesso. Qualificar resumo, formulário e histórico existentes. | Mutação MCP observada na UI aberta, inclusive mudança só de Card; formulário preservado, perda de acesso tratada e recuperação de rede comprovada. UV18–UV21. |
+| U3 — completar qualificação | Preservar consumidores já integrados, progresso nativo, conclusão/histórico e negativa MCP. Completar autoridade/identidade na UI e reconciliar recuperação/apresentação nos aceites existentes. | Provas de UV18–UV21 identificadas por caso, incluindo limites de fixture, persistência e UI/MCP; nenhum consumidor precisa ser reimplementado por causa desta revisão. |
 | U4 — qualificar entrega | Executar regressões e auditoria, construir/instalar o par exato isoladamente e tramitar uma iniciativa mock nova até Done e KG canonical. | Matriz UV01–UV24 com evidências, oito budgets ZERO, paridade do pacote instalado, ledger e commits/pushes completos. |
 
 Cada linha usa as tarefas já discriminadas em §6.1/§6.2; não cria milestones
@@ -614,8 +653,9 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint de produto vigente:** Core `537eea6` / Community `ccc76df`.
-O WIP Resources descrito historicamente abaixo foi concluído neste par.
+**Checkpoint de produto vigente:** Core `ec775fe1` / Community `135454ca`.
+O WIP Resources descrito historicamente abaixo foi concluído no par anterior
+`537eea6` / `ccc76df`; o checkpoint atual inclui Coverage factual qualificada.
 5c foi integrado e qualificado após os checkpoints históricos abaixo: Tests
 assina atualizações externas, preserva cenários/métodos/relatórios e possui
 recuperação protegida de escrita/leitura. Evidência `evidence-u3-tests-watch-20261015.json`.
@@ -664,7 +704,7 @@ Essas evidências não encerram o milestone nem substituem o E2E.
 | U1 | Cards Not Started em Draft e remoção da exigência de existir Decision. | Percurso real UI/MCP no U4; não refazer a implementação. |
 | U2 — conclusão | Payload composto, permissões independentes, pareceres/históricos nativos, promoção condicionada, recibo/replay e manifesto obrigatório. | Preservar a matriz U2 já qualificada; comprovar autenticação wire e percurso instalado em U4. |
 | U2 — leitura | `include_planning`, 17 componentes, composição pública sem escrita, revisões leves em lote, permissões por componente, paginação REST/MCP e cliente tipado. Revisões de coleções Spec/Card por Board; 11 passes do contrato, 79 de manifesto/leitura/transporte. Admissão sem Checklist comprovada por REST/browser e rollback nativo. | Consumir os contratos existentes em U3 e comprovar o percurso UI/MCP instalado em U4; não recriar metadados de coleção. |
-| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão, SpecsPanel e Kanban; refresh de permissões com proteção de respostas antigas. Knowledge/Targets, leitores, FR/AC/critério/qualificação e coleções têm provas registradas. Integration, Decisions, Tests/5c, Project Structure/5d, Coverage/References, Dependencies e Resources qualificados nos limites do ledger. | Encerrar UV18–UV21; comprovar progresso nativo de Card sem bump da Spec e os casos integrados ainda não cobertos. Autoria instalada de Project Structure permanece U4. |
+| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher e consumidores previstos integrados. Conclusão composta, progresso nativo sem bump da Spec e negativa MCP têm evidências publicadas/reconciliadas. | Completar autoridade/identidade UI e reconciliar UV19–UV21 conforme a fila vigente. Autoria instalada de Project Structure permanece U4. |
 | U4 | Regressões parciais registradas no ledger. | Wheels, runtime compatível, browser e iniciativa nova até Done/KG; matriz UV01–UV24. |
 
 #### Histórico de retomada de 3d — sucedido pela qualificação Resources

@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento detalhado reconciliado com o checkpoint publicado
+
+Pedido tratado como planejamento: nenhuma implementação, teste de comportamento,
+mutação no Pulse, instalação ou reinício nesta revisão. Fetch realizado nos dois
+repositórios; base Core `ec775fe1` / Community `135454ca`, em `feature/v0.4.0`.
+O plano existente foi atualizado no lugar, sem novo milestone ou nova avaliação.
+U1 implementado, U2 qualificado no backend, U3 parcial e U4 pendente.
+
+Conferida a evidência local ainda não versionada de revogação MCP: os 11 hashes
+correspondem aos artefatos. A mesma sessão leu com autorização e recebeu
+`permission_denied` na leitura e escrita após revogação; consulta posterior
+preservou estado da Spec/cenários. Agentes descartáveis removidos do Board e
+desativados conforme recibos. Isso é releitura de execução anterior, não novo
+ensaio. O teste inicial usou `spec.entity.read`, mas a entrada existente exige
+`board.read`; a correção foi do ensaio, sem alterar autoridade do produto.
+[Evidência e limites](evidence-u3-native-authority-20261015.json).
+
+O roteiro vigente preserva Coverage/progresso, conclusão composta, contribuição
+independente e histórico já qualificados. Restam: (1) completar UI/HTTP de
+identidade, resposta antiga e revogação em fixture da porta de autenticação;
+(2) reconciliar recuperação e apresentação em UV19–UV21, executando só lacunas;
+(3) encerrar U3 com matriz por caso; (4) executar U4, par instalado byte a byte,
+iniciativa nova UI/MCP até Done e KG canonical. O plano agora explicita ação,
+prova e limite de cada caso restante; não manda reconectar consumidores prontos.
+
+Todas as avaliações, critérios, severidades, thresholds, autores, permissões e
+históricos continuam próprios. Uma conclusão reúne os impedimentos aplicáveis;
+não cria média geral, dispensa de avaliação ou aprovação automática da entrega.
+Sem legado/migração e com oito budgets arquiteturais ZERO como condição final.
+Snapshots locais de browser foram preservados fora do commit; nenhum artefato
+de execução foi produzido de novo. Próximo passo de execução está no início de
+[SPEC_UNIFIED_VALIDATION_PLAN.md](SPEC_UNIFIED_VALIDATION_PLAN.md), seção
+“Procedimento restante de U3 — saída verificável por caso”.
+
 ### 2026-10-15 — U3/UV18: Coverage factual e progresso autenticado na interface
 
 Corrigida a divergência Coverage/readiness. A reprodução com SQLite nativo
