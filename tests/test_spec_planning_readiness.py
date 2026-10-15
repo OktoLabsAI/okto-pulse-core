@@ -150,6 +150,7 @@ def test_aggregate_refuses_an_incomplete_component_census():
     ("missing", "blocked", "blocking"),
     ("unavailable", "unavailable", None),
     ("off", "ready", "off"),
+    ("no_applicable_metrics", "ready", "off"),
 ])
 async def test_policy_projection_preserves_native_judgment(case, state, mode):
     from test_skb3_semantic_policy_transition_gate import _binding_snapshot, _transition_snapshot
@@ -164,7 +165,8 @@ async def test_policy_projection_preserves_native_judgment(case, state, mode):
         assessment_error_code="assessment_service_unavailable" if case == "unavailable" else None,
     )
     native = evaluate_policy_transition(
-        _transition_snapshot((binding,)), "review" if case == "off" else "validated",
+        _transition_snapshot(() if case == "no_applicable_metrics" else (binding,)),
+        "review" if case == "off" else "validated",
     )
     inputs = rig()
     inputs["policy"].return_value = native
@@ -173,7 +175,7 @@ async def test_policy_projection_preserves_native_judgment(case, state, mode):
     assert component.state == state, component
     assert component.mode == mode
     assert component.native_result == native.reason_code.value
-    if case != "off":
+    if case not in {"off", "no_applicable_metrics"}:
         assert component.result_ids == native.receipt_ids
         assert component.reason_codes == tuple(reason.value for reason in native.reason_codes)
 

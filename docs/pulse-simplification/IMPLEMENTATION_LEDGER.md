@@ -2,6 +2,63 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U2: lint/policy nativos e diagnóstico preservado
+
+Base Core `a9538590` / Community `3ed77890`. Community deste incremento:
+`769d74f9`. Evidências, hashes, tentativas e limites em
+`evidence-u2-policy-lint-parity-20261014.json`. O objetivo integral U1–U4 continua
+ativo; este checkpoint não declara U2/U3/U4 completos nem instalação final.
+
+Doze confrontos de lint usam preflight, autorização, admissão/CAS, recibo e commit
+nativos: ausência, aceito sem findings e aceito com finding HIGH; qualidade on/off;
+REST/MCP. Ausência bloqueia somente o caminho em que a avaliação de qualidade é
+exigida. Findings aceitos permanecem consultivos. Não há mock de aprovação de lint
+nesta matriz. Fixtures corrigidos para sessão CommunitySemanticSession, settings
+explícitos e realm REST; nenhum fallback ou relaxamento foi acrescentado ao produto.
+
+Vinte e oito confrontos de policy usam adoção de binding e parecer v2 selado reais:
+sem binding aplicável; advisory ausente/negativo; blocking ausente/negativo/positivo;
+avaliação indisponível; qualidade on/off; REST/MCP. Indisponibilidade é injeção de
+falha tipada na fronteira de persistência após resolução real da autoridade, não
+alegação de outage observado. Cada caso também confere leitura negada: sem IDs,
+veredicto ou ação protegidos. Leituras não escrevem; recusas preservam estado,
+versão, edição, pareceres, atividade, eventos, histórico e recibos. Promoção reutiliza
+decomposição e nunca reescreve a evidência de lint/policy. Identidade REST/MCP é
+injetada no fixture; autenticação wire permanece no U4.
+
+A investigação confirmou: Advisory requer parecer válido, mas não bloqueia pelo
+resultado negativo aceito. Essa semântica nativa foi preservada. Duas correções
+técnicas: conclusão composta agora propaga PolicyTransitionRejected ao projetor
+REST/MCP existente, conservando razões/recibos/decisão; policy sem métrica aplicável
+é apresentada como ready/off/não aplicável, sem enforcement Advisory inventado.
+Critérios, thresholds, autores, permissões e efeitos históricos não mudaram.
+
+Frontend reconhece o envelope nativo no formulário de conclusão e apresenta
+Policy Compliance, razão, transição e orientação para a seção existente. Não
+inventa modo de enforcement, comando de reparo ou autorização. Browser Vite 5274
+inspecionado com os três envelopes gerados pelo projetor nativo: ausente, negativo
+e indisponível. Captura `output/playwright/u2-policy-diagnostics.png` legível; nenhum
+erro de console no fixture, apenas informação React DevTools. É prova de render,
+não mutação autenticada. Arquivos temporários removidos; runtime do usuário intacto.
+
+Qualificação: lint 12 passes; matriz lint/policy intermediária 36; policy final e
+regressões Community 37 (28 novos confrontos + 9 regressões); Core 135 passes;
+frontend 71 passes e rerun final dos 23 casos do renderer. Não somar reruns como
+casos novos. `tsc -b` exit 0; ESLint exit 0, três warnings preexistentes. Primeiro
+ensaio policy: 16 falhas/8 passes; separadas as reproduções reais das expectativas
+incorretas do fixture (advisory sem recibo e avaliação positiva sem pinpoint).
+
+Closure oficial: 9.034 linhas, nenhum finding e oito budgets ZERO. As duas tabelas
+README derivaram por um import novo; regeneradas e verificadas pelo renderer/
+validador canônicos contra o relatório concluído. Artefato final ok=true, zero drift.
+Não houve auditoria de wheels, build de distribuição nem reinstalação neste incremento.
+
+Retomada exata: reconciliar casos existentes de qualidade/decomposição, cobertura,
+arquitetura/code evidence, permissões/fences/replay e dependências com os UV restantes
+da matriz finita U2. Não repetir lint/policy/Checklist já qualificados sem novo impacto.
+Depois U3/2e Knowledge/Targets/leitores, proteção dos editores da Spec e U4 instalado
+com iniciativa nova UI/MCP até Done e KG. Escopo e critérios de saída inalterados.
+
 ### 2026-10-14 — U2: paridade do Checklist e diagnósticos públicos corrigidos
 
 Retomada de implementação sobre Core `98b43ab4` / Community `77394617`.

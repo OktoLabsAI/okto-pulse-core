@@ -12540,6 +12540,8 @@ class SpecService:
         )
 
         if outcome == "success":
+            from okto_pulse.core.domain.guideline_semantic_transition import PolicyTransitionRejected
+
             try:
                 await GuidelineService(self.db).enforce_policy_transition(
                     board_id=spec.board_id,
@@ -12548,6 +12550,10 @@ class SpecService:
                     from_status=spec.status.value,
                     to_status=SpecStatus.VALIDATED.value,
                 )
+            except PolicyTransitionRejected:
+                # Preserve the same typed decision used by direct promotion.
+                # Transport adapters already project its native reasons/receipts.
+                raise
             except Exception as exc:
                 raise SpecValidationGateNotReady(
                     "Spec policy compliance is not ready.",

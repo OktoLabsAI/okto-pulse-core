@@ -1,0 +1,198 @@
+{
+  "date": "2026-10-14",
+  "scope": "U2 native Requirement Lint and Policy Compliance parity",
+  "base": {
+    "core": "a9538590",
+    "community": "3ed77890",
+    "branch": "feature/v0.4.0"
+  },
+  "artifacts": [
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-lint-parity-native-r3.xml",
+      "sha256": "1c4e7ec2d3bc85563d8ba946b9bc927924c2ca1aca7a83d18133654a821d842f",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "12",
+          "time": "36.887",
+          "timestamp": "2026-10-14T21:23:04.167290-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-policy-lint-parity-r2.xml",
+      "sha256": "89b1cbde5a3a8f44389aa3eb19e5a5e52c923737c18d73aafdd2514b3169ab19",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "36",
+          "time": "106.046",
+          "timestamp": "2026-10-14T21:27:32.851936-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-policy-parity-final.xml",
+      "sha256": "57e17a7d365e9b793c471049ec62b2bcb6b29893435a3fe1aecef29f0785e1bd",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "37",
+          "time": "95.615",
+          "timestamp": "2026-10-14T21:29:50.510101-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-policy-regression-core.xml",
+      "sha256": "fbecdf51d9c9be432fc6f857c86e9acf6482af7ceb8872d9bc61a638eec226e0",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "135",
+          "time": "52.318",
+          "timestamp": "2026-10-14T21:27:57.927105-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-policy-ui.xml",
+      "sha256": "617f2d129bc87e2f987d5e9c450f3235b3d5b430212adcb359878db3e6851484",
+      "suites": [
+        {
+          "name": "src/components/policy-compliance/__tests__/policyTransitionPreviewModel.test.ts",
+          "timestamp": "2026-10-15T00:32:03.899Z",
+          "hostname": "Alienware_m15",
+          "tests": "32",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.0351081"
+        },
+        {
+          "name": "src/components/specs/__tests__/SpecValidationPanel.test.tsx",
+          "timestamp": "2026-10-15T00:32:03.915Z",
+          "hostname": "Alienware_m15",
+          "tests": "16",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "2.0027875"
+        },
+        {
+          "name": "src/components/specs/__tests__/ValidationErrorDisplay.test.tsx",
+          "timestamp": "2026-10-15T00:32:03.921Z",
+          "hostname": "Alienware_m15",
+          "tests": "23",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.1802754"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-policy-ui-final.xml",
+      "sha256": "8c0bb830c5d63ea2129ab25f65644b49dedbd666eb23f2f77a915c22e47feed7",
+      "suites": [
+        {
+          "name": "src/components/specs/__tests__/ValidationErrorDisplay.test.tsx",
+          "timestamp": "2026-10-15T00:34:00.609Z",
+          "hostname": "Alienware_m15",
+          "tests": "23",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.1749911"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-policy-error-envelopes.json",
+      "sha256": "4c9e80381b57206aef14001b5383af820a4e2e7fde532772648454fbaf996f5b"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\closure-u2-policy.json",
+      "sha256": "3e99eababd7d1c9c2d8e7cea9cbc42b4e57a3a79606326abddb83f803b90ced7"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\closure-u2-policy-final.json",
+      "sha256": "a14736437bd0b3268b4a3d9c505c198a133d6ebd1b7cc15f9b36cb91bfab020c"
+    }
+  ],
+  "results": {
+    "lint": "12 native combinations: missing/accepted clean/accepted HIGH findings, quality on/off, REST/MCP",
+    "policy": "28 combinations: no applicable binding, advisory missing/failing, blocking missing/failing/passing, unavailable, quality on/off, REST/MCP; each also checks denied policy read",
+    "community_regression": "37 passes: 28 policy parity plus 8 shared REST envelopes and 1 native adoption-helper regression",
+    "core_regression": "135 passes: planning readiness, composition and native policy domain gates",
+    "frontend": "71 passes across 3 suites; 23 affected renderer cases reexecuted after the final own-property check",
+    "typecheck": "npx tsc -b exit 0",
+    "eslint": "exit 0; 3 existing warnings, 0 errors"
+  },
+  "behavior": [
+    "Quality-enabled validation requires a natively accepted lint receipt; findings remain advisory. Disabled quality does not inherit this prerequisite.",
+    "Applicable Advisory policy requires a valid assessment; accepted negative findings do not block. No authority, gate or threshold was relaxed.",
+    "Composed conclusion now preserves PolicyTransitionRejected and the existing REST/MCP projection, including reason codes, receipts and locked decision.",
+    "No applicable policy metrics project as ready/off/not applicable, not fabricated Advisory enforcement.",
+    "Reads do not mutate state; denied writes preserve version, edition, reviews, activity, events, history and receipts; promotion reuses decomposition and never rewrites policy/lint evidence."
+  ],
+  "initial_attempts": [
+    "u2-lint-parity.xml: wrong Core session fixture; moved test to native CommunitySemanticSession.",
+    "u2-lint-parity-native.xml: fixture omitted Board.settings; explicitly initialized in seed.",
+    "u2-lint-parity-native-r2.xml: fixture omitted REST realm dependency; injected local test realm, without changing authentication product code.",
+    "u2-policy-parity-native.xml: 16 failures/8 passes. Reproduced lost native rejection and no-applicability mode; corrected test assumptions for Advisory missing receipt and required evidence pinpoints.",
+    "u2-policy-lint-parity-r2.xml: 36 passes before adding 4 failure-injection cases and denied-read assertions; final policy artifact is authoritative for those additions."
+  ],
+  "criteria": {
+    "UV07": "Native lint portion proved; pair with prior Checklist evidence for mode coverage.",
+    "UV09_UV10_UV22": "Policy native modes and public writers compared; unavailable case injects a typed assessment failure after actual authority resolution.",
+    "UV11": "Denied policy read exposes no result IDs, native verdict or next action. This does not qualify every permission combination."
+  },
+  "browser": {
+    "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u2-policy-diagnostics.png",
+    "sha256": "b15a51144b448c19b1b226931f6d33f75510f5d269ab90adc02d07cb1b725796",
+    "url": "http://127.0.0.1:5274/output/playwright/u2-policy.html",
+    "observed": "Actual ValidationErrorDisplay rendered three native error-projector envelopes. Screenshot inspected; explicit policy label, reason, transition and existing-tab guidance.",
+    "console": "React DevTools informational message only on the disposable render page.",
+    "limit": "Render fixture, no lifecycle or authenticated wire E2E. Temporary source/render files removed; application tab preserved."
+  },
+  "closure": {
+    "ok": true,
+    "ownership_rows": 9034,
+    "findings": 0,
+    "documentation_findings": 0,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    },
+    "method": "Official source audit; README drift rendered and verified canonically from the completed report. No wheel audit."
+  },
+  "limits": [
+    "Tests use both explicit src paths; import locations reverified. No installed parity or production runtime restart claimed.",
+    "REST/MCP transport tests inject actor identity. Lint acceptance uses native public preflight/authority/CAS/commit; policy input uses native binding adoption and sealed assessment persistence.",
+    "Unavailable assessment is a typed persistence-boundary fault injection, not a real service outage. It cannot fabricate acceptance.",
+    "U2 remaining finite parity mapping/dependencies, U3 remaining consumers and U4 installed complete UI/MCP SDLC are still required."
+  ]
+}

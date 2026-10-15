@@ -174,7 +174,8 @@ async def read_spec_planning_readiness(
         if decision is None:
             return SpecPlanningComponent("policy_compliance", "ready", "off", False, native_result="not_applicable")
         unavailable = any(reason.value == "policy_assessment_unavailable" for reason in decision.reason_codes)
-        if not decision.policy_compliance_required:
+        if (not decision.policy_compliance_required
+                or decision.reason_code.value == "policy_compliance_not_applicable"):
             return SpecPlanningComponent(
                 "policy_compliance", "ready", "off", False,
                 native_result=decision.reason_code.value,
