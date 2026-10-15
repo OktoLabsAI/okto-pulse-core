@@ -2,6 +2,48 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento detalhado após Dependencies; WIP Architecture preservado
+
+Pedido atual atendido como revisão de planejamento, sem nova implementação.
+Confirmados por `git ls-remote`: Core `461a622d` / Community `5c1d8f73` na
+`feature/v0.4.0`. U1 implementado, U2 qualificado no backend, U3 parcial e U4
+pendente. Atualizada a fila única de §6.2 em `SPEC_UNIFIED_VALIDATION_PLAN.md`:
+concluir Resources → UV18–UV21 integrados → artefato instalado e percurso U4.
+Não repetir Dependencies, Tests, Project Structure ou Coverage/References já
+qualificados. Todas as avaliações, critérios, severidades, thresholds,
+permissões e históricos permanecem; a conclusão é unificada, não os scores.
+
+**WIP encontrado e preservado:** seis arquivos Core (`mcp/server.py`,
+`models/schemas.py`, `ports/architecture_persistence.py`,
+`services/architecture.py`, `tests/sqlalchemy_architecture_persistence.py`,
+`tests/test_architecture_rest.py`) e dois Community
+(`adapters/sqlalchemy_architecture_persistence.py`, `api/architecture.py`).
+O diff adiciona versão esperada/fence e conflito REST/MCP de Architecture.
+Ele não foi alterado, descartado ou incluído no commit documental desta revisão;
+snapshots operacionais não rastreados também permanecem locais.
+
+Conferidos os relatórios de execuções anteriores na pasta
+`PULSE_REFACTOR/.validation-v040/spec-unified-20261014/`:
+`u3-architecture-concurrency-before.xml`: **1 teste/1 falha**, sobrescrita
+da base v1 após outra gravação v2; `u3-architecture-version-core.xml`:
+**67 testes aprovados**, zero falhas/erros/skips. A sessão de teste retomada
+encerrou com exit 0. Não houve nova execução nesta revisão. O comprovante de
+ambiente registra os dois imports de checkout e diferenças de 25 arquivos Core
+e 12 Community contra a instalação. Esses passes não qualificam o adaptador
+Community real, o catálogo, a UI nem o pacote instalado.
+
+**Próxima ação exata:** revisar/concluir o fence local e sua prova no adaptador
+Community; cobrir ausência de efeitos em conflito e regenerar/testar catálogo.
+Depois proteger base/rascunhos e recuperação das operações de Architecture,
+antes de conectá-la ao watcher da Spec. Seguem Mockups, wrapper Knowledge e
+disclosure. O plano discrimina arquivos, dependências, recuperação e aceites
+para cada passo; nenhuma garantia de replay é presumida onde o contrato não
+a oferece. U3 fecha pela matriz integrada; U4 exige wheels/frontend, paridade
+byte a byte, processo novo e iniciativa mock até Done/KG canonical.
+
+Esta revisão não instala runtime, altera dados/policies ou promove o WIP a
+entrega concluída. Mudanças de produto pendentes continuam visíveis no Git.
+
 ### 2026-10-15 — U3/3d: Dependencies integrado e qualificado por UI/MCP
 
 Community `5c1d8f73` publicado em `feature/v0.4.0`; Core de produto permanece

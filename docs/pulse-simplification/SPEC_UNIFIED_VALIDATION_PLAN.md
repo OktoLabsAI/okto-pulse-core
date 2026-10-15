@@ -105,6 +105,11 @@ remoção sem repetir DELETE, versões 20 → 21 → 22 → 23. Ver
 [Dependencies](evidence-u3-dependencies-20261015.json). Resources permanece aberto.
 
 **Próxima ação de implementação:** Resources restantes (3d) → UV18–UV21 → U4.
+A conferência de planejamento após `461a622d` identificou WIP de concorrência
+em Architecture nos dois repos: 67 testes de checkout aprovados no relatório
+existente, sem qualificação do adaptador Community, catálogo ou interface.
+Esse WIP não integra o checkpoint publicado. Sua conclusão está delimitada
+abaixo em “Execução restante de Resources”, sem novo milestone.
 A fila vigente está em §6.2, “Retomada executável de 3d”. Não reimplementar
 U1/U2, Project Structure ou Coverage/References já qualificados.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
@@ -521,8 +526,9 @@ Essas evidências não encerram o milestone nem substituem o E2E.
 
 #### Retomada executável de 3d — conferência de 15/10/2026
 
-**Base documental:** Core `9ffeff86` (produto `8291a648`) / Community
-`be799c37`. As filas anteriores descrevem checkpoints históricos. A sequência
+**Base documental conferida:** Core `461a622d` (produto `8291a648`) / Community
+`5c1d8f73`, ambos confirmados no remoto `feature/v0.4.0`.
+As filas anteriores descrevem checkpoints históricos. A sequência
 abaixo é a única fila de trabalho vigente; detalha itens existentes, sem novo
 milestone ou mudança nos critérios de §7.
 
@@ -545,7 +551,7 @@ replay exato. Retomar pela linha 2 abaixo; a linha 1 registra o aceite concluíd
 `ArchitectureTab.tsx` mostra que `readScope` limpa seleção/design; `revision`
 recarrega listas, e a mudança de `selectedSummary` pode substituir `design`
 pelo detalhe recebido. Portanto, não é correto atribuir a limpeza diretamente
-ao efeito de `revision`. O risco a reproduzir é sobrescrever a edição local.
+ao efeito de `revision`. A sobrescrita do rascunho ainda precisa de prova frontend.
 No pai, Mockups usa `updateSpec({screen_mockups})` sem base explícita nessa
 chamada; Knowledge combina apenas sua geração local; Architecture não recebe
 `revision/active`. São constatações de fonte, não novos ensaios de browser nem
@@ -562,6 +568,59 @@ Dependencies registrado acima. As linhas 2–6 continuam pendentes.
 O fixture atual de Spec tem snapshot de Checklist ausente no contexto full;
 não usar essa limitação como motivo para afrouxar gate. U4 usa a iniciativa nova
 prevista, configurada e admitida pelos caminhos normais.
+
+#### Execução restante de Resources — detalhamento das linhas 2 e 3
+
+**Ponto de partida conferido, sem nova implementação nesta revisão:** existe
+um diff local de oito arquivos Python (seis Core, dois Community). Ele acrescenta
+`ArchitectureDesignUpdate.expected_version`, conflito de domínio, porta pública
+`fence_version`, implementações de persistência e transporte REST/MCP. O frontend
+ainda não envia a versão autorada. Não tratar esse diff como integração concluída.
+
+O teste `test_rest_update_rejects_the_authored_version_after_another_writer`
+reproduziu PATCH baseado em v1 aceito depois de outra gravação produzir v2;
+o título antigo sobrescreveu o novo em v3. O XML anterior registra uma falha;
+o XML posterior `u3-architecture-version-core.xml` registra 67 passes, zero
+falhas/erros/skips em REST, repository e MCP. São execuções anteriores lidas
+nesta conferência, não novos ensaios. O arquivo `.environment.json` comprova
+imports dos dois checkouts e divergência de 25 arquivos Core/12 Community em
+relação à instalação: não é qualificação do pacote instalado.
+
+| Passo dentro de 3d | Intervenção delimitada | Prova necessária antes de avançar |
+| --- | --- | --- |
+| 2a — concluir a precondição de Architecture | Revisar o diff existente em schema, serviço, porta, adaptadores e REST/MCP. Conservar a versão autorada quando fornecida; chamadas sem ela só protegem a versão lida pelo serviço. Verificar create, delete e import separadamente, sem atribuir a eles a garantia de update. Atualizar descrição da tool e regenerar o catálogo pelo gerador oficial. | Versão inválida recusada; conflito preserva conteúdo, versão, snapshots, findings e eventos; duas transações reais não sobrescrevem silenciosamente. Exercitar o adaptador Community, além do adapter de testes Core. Paridade REST/MCP, rollback e drift do catálogo aprovados. |
+| 2b — proteger o editor antes do watcher | Em `components/architecture/ArchitectureTab.tsx`, separar último estado lido, base autorada e rascunho; incluir edições de entidade/interface/diagrama. Atualização externa não substitui campos nem troca silenciosamente item removido. Revisão explícita permite nova tentativa; perda de acesso limpa o conteúdo protegido. Resposta atrasada não alcança outro Board/parent/design. | Testes de refresh com rascunho, item removido, conflito, troca de identidade e recusa de acesso. O request de update usa a base do rascunho, nunca a última versão recebida silenciosamente. Preservar leitura e restrições de snapshots herdados em Cards. |
+| 2c — separar escrita e recuperação | Para save/create/delete/import, distinguir recusa, resultado incerto e escrita confirmada seguida de leitura falha. Capturar a intenção original; impedir duplo envio. Após confirmação, repetir somente a leitura. Sem recibo/idempotência nativos, não oferecer replay como se fosse seguro: reconciliar pela leitura autoritativa e manter incerteza quando ela não resolver. Se faltar capacidade indispensável, acrescentá-la apenas ao contrato afetado e demonstrá-la. | Falha de resposta e falha do GET posterior não duplicam criação/importação nem repetem exclusão. IDs/versões confirmados por leitura; confirmação tardia de outro contexto ignorada. Não declarar identidade pelo título ou igualdade de conteúdo. |
+| 2d — integrar Architecture na Spec | Em `components/specs/SpecModal.tsx`, transmitir `active`, revisão e atualidade pelo watcher existente somente após 2b/2c. Substituir callbacks que remontam o workspace por releitura protegida, conservando seleção, rascunhos e a maior versão já observada. | Browser com formulário aberto + mutação MCP: dados atuais chegam, rascunho permanece, revisão é explícita e gravação UI é confirmada pelo MCP. Testes do componente e pai, tipos/lint pertinentes. Não basta screenshot estático. |
+| 3a — Mockups | Proteger substituição de `screen_mockups` no writer do pai com base autorada e precondições nativas. Conservar ID e payload da tentativa; revisar explicitamente coleção alterada, sem restaurar item removido por composição silenciosa. Aplicar confirmação/recuperação e proteção de identidade/acesso. | Concorrência em coleção, inclusão/exclusão, resposta incerta e leitura falha sem perda/duplicação. Mudança MCP com formulário aberto, escrita UI revisada e releitura MCP; testes do pai/editor afetados. |
+| 3b — wrapper Knowledge e disclosure | Reutilizar `KnowledgeWorkspace` já qualificado; proteger somente criação e callbacks restantes no wrapper da Spec. Conectar visibilidade/revisão sem remontar editor. Atualizar `ResourceGateDisclosure` pela fonte autoritativa e sinalizar indisponibilidade, sem calcular gates no cliente. | Criação única, resposta tardia descartada, rascunho preservado, reabertura de subaba atualizada e dados retirados em perda de acesso. Prova UI/MCP das escritas alteradas; regressões pertinentes dos leitores existentes. |
+
+**Dependências:** 2a → 2b/2c → 2d; 3a/3b reutilizam os contratos já presentes,
+sem exigir outro framework. Todas essas linhas encerram o mesmo item 3d.
+O backend não ganha autoridade para julgar avaliações; a correção de
+concorrência impede uma gravação sobre base ultrapassada. Não introduzir
+migração, compatibilidade antiga ou novo requisito de aprovação humana.
+
+**Fechamento de U3, após Resources:** mapear UV18–UV21 às evidências existentes
+e executar somente lacunas reais. Conferir conclusão composta com atores de
+permissões distintas, resultados individuais/Previous, progresso de Card sem
+bump da Spec, recuperação de rede, acesso, foco/teclado e animação de loading.
+Cada caso registra operação, identidade, versão anterior/posterior, resultado
+persistido e observação UI; testes de componente não equivalem à prova nativa.
+Preservar resultados negativos e indisponibilidade, sem compensação por média.
+
+**Fechamento de U4:** qualificar o par exato construído e instalado conforme
+§8, depois tramitar iniciativa mock nova até Tasks/Test/Spec Done e busca/KG
+canonical. Configuração necessária do Board é feita pelos caminhos autorizados;
+nenhuma prova externa, avaliação ou inspeção humana será declarada sem execução.
+Não reinstalar ou limpar a home do usuário como efeito deste planejamento.
+
+**Controle de escopo e checkpoint:** commits/pushes por incremento qualificado,
+ledger com evidências e próximo passo; não declarar milestone completo com
+writer/leitor previsto pendente. Só acrescentar correção que bloqueie um aceite
+já definido, com reprodução. Melhorias opcionais ficam fora. A matriz continua
+UV01–UV24, os milestones continuam U1–U4 e o resultado final continua uma única
+conclusão com todas as avaliações, critérios, severidades e autoridades atuais.
 
 #### U2 — encerrar backend e contratos antes da interface
 
