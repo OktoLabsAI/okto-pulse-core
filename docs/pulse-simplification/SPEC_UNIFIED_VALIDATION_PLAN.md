@@ -6,7 +6,7 @@ Esta seção é a única fila operacional. Os roteiros de checkpoints anteriores
 abaixo documentam a evolução; não reabrem trabalho concluído. Permanecem
 normativos os contratos de §3–§5 e os aceites UV01–UV24 de §7.
 
-**Base conferida e publicada:** Core `220c3466` (produto `537eea6`) /
+**Base conferida e publicada:** Core `ee80cf2b` (produto `537eea6`) /
 Community `ccc76dfc`, ambos em `feature/v0.4.0`. Nenhum diff de produto
 rastreado encontrado. Capturas locais não rastreadas não integram o produto.
 U1 implementado; U2 qualificado no backend; consumidores previstos de U3
@@ -40,14 +40,71 @@ continua sujeita aos seus controles. Execução e entrega mantêm os próprios g
 | U4 — artefato e regressão | Executar regressões pertinentes, catálogo gerado e closure; construir frontend e wheels pareados. Instalar em ambiente/home novos, comparar arquivos Python/frontend byte a byte e iniciar processo posterior à instalação. | Commits, hashes, origem dos imports e identidade do processo registrados; oito budgets ZERO. Runtime de checkout não qualifica distribuição instalada. |
 | U4 — percurso completo / UV01–UV24 | Criar nova iniciativa mock via UI/MCP: Ideação → Refinamento → Spec com Cards Not Started em Draft → conclusão unificada → execução → Tasks/Test/Spec Done → consulta/consolidação KG. | Sem reabrir só para criar Cards, Decision artificial ou repetição de avaliação ainda válida. Provas realmente executadas, percentuais aplicáveis em 100%, canonical/proveniência conferidos. Matriz final, ledger e commit/push. |
 
+### Detalhamento da retomada — conferência documental de 15/10/2026
+
+Esta revisão atende ao pedido de planejamento. Não executa novas mutações,
+testes, instalação ou correção de produto. Fetch confirmou os dois HEADs iguais
+aos remotos; os artefatos abaixo foram relidos, não produzidos novamente.
+[Registro delimitado da conferência](evidence-unified-planning-reconciliation-20261015.json).
+Os passos seguintes detalham exclusivamente U3/U4 e UV18–UV24 já previstos.
+
+1. **Resolver a divergência de progresso em Coverage, dentro de UV18.**
+   O registro REST `coverage-native-before.json` apresenta implementação 0/4;
+   `spec-readiness-before-tests.response.json` apresenta 4/4, na mesma Spec,
+   edição 2/versão 20, com verificação 0/4. Coverage rejeita inclusive o binding
+   atual `card_delivery_6b543882c22b45e6bf5347e4d25e9812`.
+   `services/spec_coverage_query.py` chama `evaluate_delivery_coverage`, cujo
+   caminho efetivo exige lifecycle concluído por padrão; `EvaluatedDeliverySnapshot`
+   separa prova factual de lifecycle. Isso identifica uma diferença concreta
+   de avaliação, ainda sem excluir divergência adicional nos snapshots dos adapters.
+   Comparar primeiro os fatos/escopos admitidos por ambas as leituras; reproduzir
+   no teste de persistência o mesmo Card In Progress com prova atual. Corrigir a
+   projeção de progresso usando a avaliação factual pública existente, sem mudar
+   a elegibilidade de fechamento nem duplicar fórmula no frontend. Ampliar as
+   suítes existentes de Spec Coverage/readiness e o painel afetado: prova válida
+   antes de Done conta; prova obsoleta/revogada/incompleta não ganha crédito;
+   Spec continua impedida de fechar enquanto houver pendências. Se os fatos
+   mostrarem outro defeito, corrigir a causa reproduzida, não presumir este diagnóstico.
+2. **Comprovar UV18 com evolução real e consumidores abertos.** Após a correção,
+   reiniciar somente o runtime isolado quando necessário e conferir origem/mtime.
+   Recuperar o estado dos recibos, sem recriá-los. Os runners locais dos dois
+   cenários estão registrados, mas os artefatos relidos não comprovam execução.
+   Executar cada teste pelo caminho autenticado, associar apenas as obrigações
+   que efetivamente verifica e observar progresso parcial/final na capa Kanban,
+   Delivery e Coverage. Conferir REST/MCP, denominadores e Spec.version antes/depois;
+   manter separadas atualização automática, prova de implementação e verificação.
+3. **Fechar UV19–UV21 sem repetir os ensaios qualificados.** Mapear evidência
+   existente por caso e completar somente lacunas. Para autoridade, o
+   `LocalAuthProvider` resolve sempre `local-user` com controle total: trocar
+   Bearer não reproduz revogação humana. Usar ator MCP descartável para a negativa
+   nativa e fixture isolado da porta pública de autenticação para exercitar UI/HTTP
+   com troca/revogação controlada. Demonstrar resposta tardia descartada, limpeza
+   de conteúdo sem acesso, escrita negada e rascunho autorizado preservado.
+   Identificar explicitamente prova de fixture versus comportamento da edição local;
+   não alterar a autenticação do produto nem as permissões reais para obter o teste.
+   Reaproveitar conclusão composta, autoria independente, histórico e teclado já
+   registrados; completar loading/erro/retry e os demais negativos ainda sem prova.
+4. **Encerrar U3 antes de U4.** Executar testes pertinentes aos diffs, frontend,
+   tipos/build e inspeção visual dos consumidores afetados. Publicar matriz
+   UV18–UV21 com resultado, arquivo/recibo e limite; ledger, commit e push nos
+   repositórios alterados. Não declarar U3 completo com a divergência 0/100 aberta.
+5. **Executar U4 conforme a tabela e §6.2.** Regressões, catálogo gerado, closure
+   com oito budgets ZERO, frontend/wheels pareados, instalação em home nova e
+   comparação byte a byte antecedem o novo percurso UI/MCP. A iniciativa nova
+   inclui a BR necessária já na autoria, Cards em Draft e todos os gates reais;
+   termina em Tasks/Test/Spec Done e KG canonical com proveniência conferida.
+   Publicar o mapa final UV01–UV24 e os commits. Não converter a home do usuário
+   nem apresentar o ensaio de checkout como validação do pacote instalado.
+
 **Retomada concreta:** conferir saúde/origem do runtime isolado e reler o
 contexto completo da Spec `38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2`, Board
 `7bbd65c3-8738-45a2-8fab-a5216ab7e98c`. Há Task
 `462da79f-33b8-57d5-94ad-351345d35eb8` e Test
 `ba5cf224-0da8-50fb-be37-4cc572d11e2c` no registro local de autoria.
 Não repetir criação nem presumir o estado atual a partir desses IDs.
-No último ensaio a Spec está In Progress, edição 2/versão 20, Task In Progress
-com implementação 100% e verificação 0%, Test Not Started. Project Structure,
+Nos últimos artefatos relidos a Spec está In Progress, edição 2/versão 20,
+Task e Test In Progress; readiness informa implementação 100% e verificação 0%,
+mas Coverage informa implementação 0%. Não é nova consulta ao runtime. Project Structure,
 aplicabilidade de recursos, lint, Checklist Blocking e conclusão foram
 qualificados. Os recibos e o workspace mock estão identificados no ledger.
 

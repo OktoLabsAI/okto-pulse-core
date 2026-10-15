@@ -2,6 +2,43 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento restante conferido; divergência Coverage/readiness
+
+Pedido atual tratado como planejamento, sem implementação, mutação no Pulse,
+nova execução de testes, build ou reinstalação. Fetch dos dois repositórios
+confirmou Core `ee80cf2b` / Community `ccc76dfc` iguais aos respectivos remotos
+em `feature/v0.4.0`, sem diff rastreado. Capturas locais não rastreadas foram
+preservadas fora do commit; não são alterações pendentes de produto.
+
+Mantidos U1 implementado, U2 qualificado no backend, U3 parcial e U4 pendente.
+Todas as avaliações, critérios, severidades, thresholds, permissões e históricos
+continuam no contrato da unificação. O plano detalha a fila restante, sem novos
+milestones: resolver a divergência de Coverage em UV18 → comprovar evolução nas
+superfícies abertas → completar autoridade/recuperação UV19–UV21 → publicar U3 →
+qualificar o par instalado e uma iniciativa nova até Done/KG em U4.
+
+Fato novo incorporado ao planejamento a partir de artefatos locais existentes:
+REST Coverage registra implementação 0/4 e rejeita o binding atual; MCP readiness
+registra 4/4, verificação 0/4, Spec edição2/versão20. Conferência de fonte mostra
+Coverage usando avaliação com lifecycle obrigatório e readiness separando fatos
+de lifecycle. A execução deve comparar também os snapshots dos adapters e
+reproduzir com persistência antes de corrigir. Não há correção ou novo teste
+alegado nesta revisão. Critério: prova atual conta como progresso antes de Done,
+sem dispensar nenhum controle de fechamento ou conceder crédito a prova inválida.
+
+O recibo de `move_card` confirma Test In Progress, sucedendo o checkpoint anterior
+Not Started. Runners registrados e arquivos de teste não comprovam execução
+autenticada. Não repetir os scripts de criação ou os bindings já registrados.
+Para UV20, usar autoridade controlada em fixture da porta pública e ator MCP
+descartável: o adapter local resolve sempre o usuário humano Full Control.
+Não alterar autenticação do produto nem permissões reais para simular revogação.
+
+[Evidência documental e hashes dos artefatos relidos](evidence-unified-planning-reconciliation-20261015.json).
+Próximo passo executável está no início de
+[SPEC_UNIFIED_VALIDATION_PLAN.md](SPEC_UNIFIED_VALIDATION_PLAN.md): investigação
+comparativa de Coverage/readiness dentro de UV18. O pedido de planejamento
+encerra nesta revisão; implementação permanece pendente nos limites registrados.
+
 ### 2026-10-15 — U3: conclusão composta, histórico e progresso nativos
 
 Execução sobre Core produto `537eea6` / Community `ccc76dfc`, base documental
