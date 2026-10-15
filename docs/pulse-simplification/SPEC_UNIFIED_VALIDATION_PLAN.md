@@ -3,7 +3,7 @@
 ## Estado vigente — revisão de planejamento de 14/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint de código: Core `f6d1878f` / Community `b30ad347`, publicados na
+Checkpoint de código: Core `4125bd0a` / Community `a8704e96`, publicados na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -12,12 +12,13 @@ frontend: 158 passes; últimos 41 testes de Targets e tipos aprovados. Evidênci
 capturas inspecionadas e limites em
 [Knowledge/Targets](evidence-u3-knowledge-targets-20261014.json).
 
-Leitores de recursos de Card (2e.3): incremento preservado em `b30ad347`, com
-107 testes aprovados e tipos exit 0. A cópia de Architecture pelo MCP foi
-aceita, mas a convergência visual ainda não foi comprovada: o servidor Vite
-isolado deixou de escutar em 5274 e a UI passou a mostrar Failed to fetch.
-Não classificar essa conferência como aprovada nem repetir a cópia já aceita.
-Evidência e retomada: [leitores de recursos](evidence-u3-resource-readers-checkpoint-20261014.json).
+Leitores de recursos de Card (2e.3): Architecture v1 → v2 e remoção de KB
+selecionada comprovadas por UI/MCP, sem Refresh nem escrita automática.
+Project Structure passou a carregar somente visível e descartar respostas
+antigas; dependências comprovadas sem bump do timestamp do Card. Último
+conjunto: 129 passes e tipos exit 0. Evidência e limites do runtime antigo em
+[leitores de recursos](evidence-u3-resource-readers-live-20261014.json).
+Autoria nativa de Project Structure e inspeção do par instalado permanecem U4.
 
 U2 está reconciliado no [mapa finito](evidence-u2-finite-case-map-20261014.json):
 208 casos selecionados em 15 grupos, incluindo provas anteriores verificadas.
@@ -26,8 +27,8 @@ Detalhes e limites em [evidência U2](evidence-u2-resources-code-20261014.json).
 A auditoria de fonte registrada tem 9.036 linhas, nenhum finding/drift e oito
 budgets ZERO. Esses resultados não qualificam o par instalado nem encerram U4.
 
-**Próxima ação:** concluir a prova UI/MCP e a conferência restante de U3/2e.3 →
-proteção dos editores da Spec → refresh global → qualificação instalada U4.
+**Próxima ação:** proteção dos editores da Spec → refresh global →
+qualificação integrada U3 → qualificação instalada U4.
 Sequência e condições de saída em §6.2; não reimplementar U1/U2.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
 
@@ -360,10 +361,11 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint vigente de planejamento:** Core `f6d1878f` / Community `b30ad347`,
-publicados antes desta revisão. Knowledge/Targets já têm prova integrada;
-leitores de recursos têm testes de componente aprovados, com prova visual
-pendente. Os pares anteriores são históricos, conservados no ledger.
+**Checkpoint vigente de planejamento:** Core `4125bd0a` / Community `a8704e96`.
+Knowledge/Targets têm prova integrada; leitores têm testes aprovados e provas
+UI/MCP dirigidas de Architecture e KB. Os limites da projeção Project Structure
+e do runtime anterior permanecem explícitos para U4. Pares anteriores são
+históricos, conservados no ledger.
 A qualificação U2 já está encerrada no backend. As reproduções e a sequência
 U2 abaixo são histórico de execução, não uma fila a reabrir.
 
@@ -646,7 +648,7 @@ Essa prova parcial não encerra U3 nem substitui o E2E instalado U4.
 | --- | --- | --- |
 | 2e.1 — Knowledge | Implementado em `e34aa415`; integração CardModal/Resources e prova UI/MCP concluídas no checkpoint `ae265bdc`. | Revisões 1 → 2 via MCP e 3 via UI; rascunho preservado, revisão explícita e leitura MCP confirmatória. Preservar testes e prova, sem reimplementar. |
 | 2e.2 — Targets | Implementado em `ae265bdc`: base da Spec/recibo congelada, revisão explícita, erro/visibilidade/escopo protegidos. | 41 testes finais aprovados; browser preservou rascunho após Spec 2 → 3 via MCP e gravou Target com source_spec_version=3 após revisão explícita. Recibo da fonte mock observado/aceito nativamente. Não é aceite instalado U4. |
-| 2e.3 — leitores restantes | KB herdada, snapshot de `ArchitectureTab` e Resource Gate atualizados em `b30ad347`. Concluir prova visual e conferir Project Structure, dependências e histórico somente nos pontos ainda não cobertos. | 107 testes passaram; tipos aprovados. Falta observar convergência UI/MCP de Architecture e retirada de KB selecionada com rascunho aberto. Restaurar somente o Vite isolado; não repetir a mutação já aceita nem atribuir aprovação à tela com Failed to fetch. Architecture do Card continua somente leitura. |
+| 2e.3 — leitores restantes | KB herdada, snapshot de `ArchitectureTab` e Resource Gate em `b30ad347`; Project Structure adiada/protegida e mensagem de seleção removida em `a8704e96`. Dependências/histórico conferidos. | 129 testes finais e tipos aprovados; Architecture v1 → v2 e remoção de KB selecionada observadas no browser após MCP. Não repetir as mutações. Project Structure tem prova frontend; autoria nativa/instalação ficam no U4 devido à recusa de contexto completo no runtime antigo. |
 
 Knowledge e Targets já foram reproduzidos, corrigidos e qualificados conforme
 a evidência acima. Para KB herdada/Architecture, seis falhas foram reproduzidas
@@ -672,20 +674,21 @@ vermelho. O trabalho de U4 permanece obrigatório após esse fechamento.
 
 #### Sequência finita de fechamento a partir deste checkpoint
 
-As linhas 1 e 2e.2 estão comprovadas no checkpoint Knowledge/Targets.
-Retomar pela parte 2e.3 da linha 2, usando os detalhes de U3 acima.
+As linhas 1 e 2 têm implementação e provas dirigidas nos checkpoints
+Knowledge/Targets e leitores. Retomar pela linha 3 (editores da Spec),
+preservando os limites registrados para a qualificação integrada e instalada.
 Não há nova etapa de produto, novo gate ou expansão dos UV01–UV24.
 
 | Ordem / item existente | Ação concreta | Saída registrada no ledger |
 | --- | --- | --- |
 | 1 — U3/2e.1 | Concluído: preservar a prova Knowledge em `evidence-u3-knowledge-targets-20261014.json`. | Revisões 1 → 2 → 3, rascunho preservado, revisão explícita e escrita UI lida pelo MCP. Nenhuma repetição necessária sem alteração. |
-| 2 — U3/2e.2–3 | Targets concluído. Em 2e.3, restaurar o Vite isolado, abrir o Card existente e conferir Architecture. Para provar invalidação, preparar uma alteração nativa nova e observá-la com a UI aberta; não atribuir ao carregamento inicial a detecção da cópia anterior. Depois conferir KB selecionada removida, Project Structure e dependências. | Convergência sem Refresh, aba fechada adiada, seleção removida explicitamente tratada e rascunho preservado. Registrar o que foi observado; não reimplementar Targets nem repetir mutações já aceitas. |
+| 2 — U3/2e.2–3 | Implementado e qualificado nos limites de `evidence-u3-resource-readers-live-20261014.json`. Preservar Targets e leitores. | Architecture/KB observadas após MCP e captura inspecionada; Project Structure/dependências em testes frontend. Autoria de árvore nativa recusada pelo contexto no runtime anterior não é prova positiva e permanece no ensaio U4. |
 | 3 — U3/SpecModal | Proteger os formulários que usam chave com spec.version; separar identidade do editor de revisão de leitura. Só depois ampliar a assinatura além de Validation e invalidar Coverage/recursos/referências/dependências. | Rascunho e base preservados; mudança só de Card atualiza Coverage; respostas de outra Spec descartadas. Testes dos editores e consumidores efetivamente alterados. |
 | 4 — U3/UV18–21 | Conferir o conjunto aberto: atualização MCP, acesso revogado, rede interrompida/recuperada, troca de contexto, histórico e ação de conclusão. Reusar provas parciais pertinentes. | UI legível e funcional, sem cache protegido após revogação, sem submissão duplicada, sem perda silenciosa de edição. U3 pode ser encerrado somente aqui. |
 | 5 — U4/UV01–24 | Qualificar o par exato de wheels/frontend e executar iniciativa mock nova até Cards/Test/Spec Done e KG canonical, conforme roteiro abaixo. | Matriz final com provas reais UI/MCP, paridade byte a byte, processo novo, oito budgets ZERO, commits/pushes pareados. |
 
 O planejamento já foi sucedido pela execução de Knowledge/Targets e pelo
-incremento dos leitores. A próxima ação é concluir a prova de 2e.3, sem nova
+incremento dos leitores. A próxima ação é proteger os editores da Spec, sem nova
 rodada genérica de assessment. Uma lacuna
 crítica reproduzida pode exigir correção no item afetado; melhorias opcionais
 ficam fora do escopo. Não declarar pronto com teste falho ou critério não exercitado.
@@ -800,9 +803,9 @@ mockados precisam de execução observada para gerar prova autenticada.
 1. Preservar a matriz finita U2 qualificada em §6.2 e as correções de diagnóstico.
    Os 208 casos mapeados não são 208 novos testes; distinguir evidência anterior
    de nova execução e repetir somente regressões pertinentes a alterações futuras.
-2. Concluir U3/2e.3. Knowledge/Targets e 2a–2d já têm qualificação registrada;
-   preservar essas provas. Leitores têm incremento publicado e testes aprovados,
-   mas ainda exigem conferência visual e dos consumidores restantes.
+2. Preservar U3/2e.3, Knowledge/Targets e 2a–2d já qualificados nos limites
+   registrados. Não repetir as mutações mock. O percurso instalado de Project
+   Structure continua parte do U4; o runtime antigo não o qualificou.
 3. Proteger os editores de `SpecModal` antes da atualização global: retirar
    revisão técnica das chaves que remontam `TextRequirementsTab` e
    `RequirementVerificationPanel`, conservando identidade, base e permissões.

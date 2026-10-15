@@ -2,6 +2,48 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U3/2e.3: leitores qualificados e prova UI/MCP retomada
+
+Progresso sobre Core `4125bd0a` / Community `b30ad347`; Community `a8704e96`
+publicado. Evidência: `evidence-u3-resource-readers-live-20261014.json`, com
+IDs, hashes, capturas e limites. Próximo trabalho: proteção dos editores da
+Spec antes da expansão global do watcher. U3 integral e U4 continuam pendentes.
+
+Restaurado apenas o Vite isolado (PID 26272), com cwd frontend e proxy explícito
+5274 → 8200. A primeira tentativa do helper tinha cwd incorreto e falhou na
+resolução do Tailwind; corrigido o lançamento, sem mudar CSS do produto.
+Architecture aberta passou de v1 para v2 após atualização/cópia MCP, sem Refresh
+manual. Título e versão novos conferidos na árvore acessível e na captura visual.
+
+Knowledge: raiz descartável selecionada por seu label visível, com seleção
+confirmada antes da exclusão MCP. UI retirou candidato, conservou Reference e
+justificativa, mostrou alerta de recurso removido e bloqueou Save. MCP confirmou
+revision 3/explicit_empty/assignments=[] sem escrita automática. A tentativa
+anterior clicou num input sr-only e não selecionou a raiz; não foi contabilizada
+como prova de seleção removida. O caso foi executado corretamente com outra raiz.
+Encontrada e corrigida mensagem contraditória “ready to save” no seletor quando
+o recurso desaparece; teste existente ampliado. Captura precede essa correção.
+
+Project Structure ainda fazia leitura oculta e não recarregava quando a revisão
+mudava mantendo o mesmo objeto Card. Agora usa inventário atual da Spec para
+expor a aba, adia a projeção até ficar visível, consome revisão e descarta respostas
+antigas/inativas após revogação. Dependências já eram atualizadas com geração;
+novo teste confirma adição/remoção sem mudança de timestamp. Activity preservada.
+
+Ensaio filtrado inicial: cinco executados, quatro falhas, 110 skips. Três falhas
+reproduziam comportamento ausente; a quarta era matcher exato do texto da
+dependência, que inclui um glifo de status, corrigido no teste. Qualificação
+final: 129 passes (CardModal 91, Knowledge 24, selector 6, ProjectStructure 8),
+99,268 s, sem skips/falhas. Tipos sessão 21841 exit 0; lint sessão 91666 exit 0,
+16 warnings existentes; diff check passou. Nenhuma mudança Python/gate/autoridade.
+
+Limite: tentativa de ler contexto completo da Spec pelo MCP antigo retornou
+`checklist_validation_binding_snapshot_missing`; não foi criada estrutura nem
+alterada policy para contornar a recusa. A projeção de Project Structure está
+qualificada por testes frontend; autoria nativa e inspeção instalada pertencem
+ao U4 com par novo. Isso não invalida as provas dirigidas de Architecture/KB,
+mas impede alegar ensaio instalado ou U3 completo. Runtime do usuário intacto.
+
 ### 2026-10-14 — planejamento detalhado reconciliado; leitores preservados
 
 Pedido: iniciar o planejamento detalhado. Mantido o documento único
