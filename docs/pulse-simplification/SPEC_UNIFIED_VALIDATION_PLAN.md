@@ -19,8 +19,12 @@ histórico completo e pinpoint inspecionados, incluindo expansão por teclado.
 Spec iniciou sem novo parecer. No Card aberto, prova de implementação elevou
 0% → 100% automaticamente, com Spec.version 20 → 20 e verificação ainda 0%.
 Ver [conclusão e entrega integradas](evidence-u3-integrated-conclusion-delivery-20261015.json).
-Restam autoridade/identidade e reconciliação dos consumidores/UV18–UV21,
-incluindo capa Kanban e Coverage visíveis; depois U4. Não repetir os submits
+UV18 teve avanço posterior: corrigida a divergência factual de Coverage;
+cenários autenticados elevaram verificação Spec/Task 0 → 25 → 100 e Test
+0 → 50 → 100, sem bump de Spec.version. Coverage e capas Kanban visíveis
+acompanharam as mutações sem Refresh. Ver
+[Coverage e progresso nativo](evidence-u3-coverage-native-progress-20261015.json).
+Restam autoridade/identidade e reconciliação UV19–UV21; depois U4. Não repetir os submits
 ou as mutações desse fixture para reconstruir evidência já registrada.
 
 **Decisão de produto preservada:** Spec e Cards são preparados juntos; existe
@@ -48,7 +52,10 @@ aos remotos; os artefatos abaixo foram relidos, não produzidos novamente.
 [Registro delimitado da conferência](evidence-unified-planning-reconciliation-20261015.json).
 Os passos seguintes detalham exclusivamente U3/U4 e UV18–UV24 já previstos.
 
-1. **Resolver a divergência de progresso em Coverage, dentro de UV18.**
+1. **Concluído: divergência de progresso em Coverage, dentro de UV18.**
+   A execução posterior comprovou igualdade dos snapshots, corrigiu a projeção
+   e qualificou UI/MCP/persistência. Os detalhes abaixo preservam a investigação;
+   não representam trabalho ainda pendente.
    O registro REST `coverage-native-before.json` apresenta implementação 0/4;
    `spec-readiness-before-tests.response.json` apresenta 4/4, na mesma Spec,
    edição 2/versão 20, com verificação 0/4. Coverage rejeita inclusive o binding
@@ -65,7 +72,10 @@ Os passos seguintes detalham exclusivamente U3/U4 e UV18–UV24 já previstos.
    antes de Done conta; prova obsoleta/revogada/incompleta não ganha crédito;
    Spec continua impedida de fechar enquanto houver pendências. Se os fatos
    mostrarem outro defeito, corrigir a causa reproduzida, não presumir este diagnóstico.
-2. **Comprovar UV18 com evolução real e consumidores abertos.** Após a correção,
+2. **Concluído: evolução real de UV18 e consumidores abertos.** Os dois runners
+   foram executados e os resultados associados; Coverage e capas acompanharam
+   progresso real com versão20 constante. A descrição seguinte registra o
+   procedimento realizado, sem autorizar repetição das mutações. Após a correção,
    reiniciar somente o runtime isolado quando necessário e conferir origem/mtime.
    Recuperar o estado dos recibos, sem recriá-los. Os runners locais dos dois
    cenários estão registrados, mas os artefatos relidos não comprovam execução.
@@ -102,17 +112,17 @@ contexto completo da Spec `38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2`, Board
 `462da79f-33b8-57d5-94ad-351345d35eb8` e Test
 `ba5cf224-0da8-50fb-be37-4cc572d11e2c` no registro local de autoria.
 Não repetir criação nem presumir o estado atual a partir desses IDs.
-Nos últimos artefatos relidos a Spec está In Progress, edição 2/versão 20,
-Task e Test In Progress; readiness informa implementação 100% e verificação 0%,
-mas Coverage informa implementação 0%. Não é nova consulta ao runtime. Project Structure,
+Nas últimas consultas nativas a Spec está In Progress, edição 2/versão 20,
+Task e Test In Progress; Coverage/readiness concordam em implementação 100% e
+verificação 100%. O Test tem somente verificação aplicável, 100%. Project Structure,
 aplicabilidade de recursos, lint, Checklist Blocking e conclusão foram
 qualificados. Os recibos e o workspace mock estão identificados no ledger.
 
 As capturas locais `u3-integration-offline.yml` e `u3-integration-online.yml`
 registram rascunho preservado e Add desabilitado/habilitado na perda/retomada
 de conexão. Foram relidas nesta conferência; não são nova execução, nem
-encerram todos os casos de UV19. A nova prova acima demonstra conclusão e
-implementação; ainda não demonstra verificação autenticada, Done ou KG canonical.
+encerram todos os casos de UV19. As provas acima demonstram conclusão,
+implementação e verificação autenticada; ainda não demonstram Done ou KG canonical.
 
 Corrigir somente defeito reproduzido que impeça estes aceites, no item
 correspondente. Não adicionar milestones, migração, nova avaliação, redesign

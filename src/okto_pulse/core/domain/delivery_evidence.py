@@ -399,10 +399,15 @@ def _text(*values: str) -> bool:
 
 
 def evaluate_delivery_coverage(
-    snapshot: DeliveryEvidenceSnapshot,
+    snapshot: DeliveryEvidenceSnapshot, *, require_lifecycle: bool = True,
 ) -> DeliveryCoverageEvaluation:
+    """Project admitted proof; completion callers retain the lifecycle check.
+
+    Informational progress may observe current proof before Cards reach Done.
+    This never authorizes a transition or relaxes receipt/scope/currentness checks.
+    """
     from okto_pulse.core.domain.effective_delivery_coverage import evaluate_effective_snapshot
-    return evaluate_effective_snapshot(snapshot)
+    return evaluate_effective_snapshot(snapshot, require_lifecycle=require_lifecycle)
 
 
 def delivery_proof_lifecycle_eligible(status: CardStatus, *, require_done: bool) -> bool:

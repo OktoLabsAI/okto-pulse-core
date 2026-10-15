@@ -82,7 +82,9 @@ def project_spec_coverage(query: SpecCoverageQuery, snapshot: SpecCoverageSnapsh
         if (len(delivery.obligations) > MAX_SPEC_COVERAGE_ITEMS
                 or sum(len(items) for items in (delivery.implementations, delivery.tests, delivery.waivers)) > MAX_SPEC_COVERAGE_FACTS):
             raise ValueError('spec_coverage_delivery_bound')
-        evaluation = evaluate_delivery_coverage(delivery)
+        # Coverage displays factual progress, including admitted work still In
+        # Progress. Final delivery callers keep the evaluator's lifecycle default.
+        evaluation = evaluate_delivery_coverage(delivery, require_lifecycle=False)
         blockers = list(evaluation.blockers)
         rejected = list(evaluation.rejected_record_ids)
         proof_complete = snapshot.source_complete and delivery.complete and not set(blockers).intersection({

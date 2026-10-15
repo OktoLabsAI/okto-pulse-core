@@ -2,6 +2,54 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/UV18: Coverage factual e progresso autenticado na interface
+
+Corrigida a divergência Coverage/readiness. A reprodução com SQLite nativo
+confirmou snapshots exatamente iguais nos dois adapters: Coverage contava 0/2
+onde readiness contava 2/2 porque exigia Cards Done. A projeção informacional
+agora solicita a avaliação factual existente. O avaliador público mantém
+lifecycle obrigatório por padrão para consumidores de fechamento; nenhum gate,
+fórmula de readiness, permissão ou schema persistido foi alterado. Provas
+revogadas e Targets revisados continuam sem crédito.
+
+Community `135454ca` acrescenta regressão nativa e teste frontend de atualização
+por revisão de entrega. O fixture de transporte passou a declarar população
+vazia conhecida, coerente com sua coleção de cenários; desconhecida continua
+sem crédito. A tentativa inicial de editar revisão de Target por SQL foi
+recusada pelo CAS; o teste passou a usar o adapter nativo sem relaxar o controle.
+Resultado final: **191 backend distintos e 18 frontend**, tipos/lint aprovados.
+Inclui fechamento, Decisions, REST/MCP, autorização e drift do catálogo.
+Closure sem findings/drift: 7862 imports Core, 1154 Community, 25 dependências,
+oito budgets ZERO. Origem fixada nos dois checkouts antes dos testes; instalação
+do usuário diverge em 29 arquivos Core/12 Community e não qualifica este diff.
+
+Runtime isolado PID30788, API8200/MCP8201/Vite5274, saudável e posterior aos
+arquivos modificados. Primeiro stop PowerShell falhou por quoting; tentativa
+prematura PID23840 encerrou. Confirmada a identidade do PID13996 ainda vivo,
+ele foi encerrado antes do início correto. Startup causou falha de leitura na
+UI; Reload recuperou Coverage. Console subiu de 31 para 42 erros no restart e
+permaneceu em 42/2 warnings nos ensaios seguintes. Não declarar console limpo
+nem recuperação automática desse Reload. Home/runtime padrão preservados.
+
+Contexto full/all do Test completo; runners executaram `label-mock` no commit
+`968eda6a62bc6551fa479c27d79d29abe655a1bf`. Resultados passing autenticados
+foram gravados nos cenários e vinculados apenas às obrigações observadas.
+Spec/Task: implementação 100%, verificação 0 → 25 → 100. Test: implementação
+não aplicável, verificação 0 → 50 → 100. Spec edição2/versão20 permaneceu igual.
+Coverage aberto acompanhou 0 → 25 sem Refresh; capas Kanban visíveis acompanharam
+25 → 100 (Task) e 50 → 100 (Test), também sem Refresh. Delivery do Test mostrou
+barra única em 100% e fechamento pendente. Quatro capturas inspecionadas.
+Spec/Task/Test continuam In Progress: Spec bloqueada por Cards incompletos,
+Task exige validação e Test exige relatório nativo. Não houve Done automático.
+
+[Evidência, resultados e 52 hashes](evidence-u3-coverage-native-progress-20261015.json).
+Helper local `u3_verify_native.py` modos inspect/baseline/normalization/empty já
+executados; não repetir. Recibos em `verify-*` sob
+`.validation-v040/spec-unified-20261014/u3-integrated-validation/`.
+**Próximo passo:** completar/reconciliar autoridade, identidade e recuperação
+UV19–UV21, encerrar U3 e executar U4 com par instalado e iniciativa nova até
+Done/KG. Divergência Coverage 0/100 resolvida; não reabrir esse trabalho.
+
 ### 2026-10-15 — planejamento restante conferido; divergência Coverage/readiness
 
 Pedido atual tratado como planejamento, sem implementação, mutação no Pulse,

@@ -89,9 +89,9 @@ def test_current_admitted_implementation_and_test_remain_distinct():
 
 
 @pytest.mark.parametrize('changes', [dict(current_verified_run=False), dict(result=ScenarioStatus.FAILED),
-    dict(card_status=CardStatus.IN_PROGRESS), dict(verified_implementation_ids=()),
+    dict(card_status=CardStatus.REJECTED), dict(verified_implementation_ids=()),
     dict(bindings=(DeliveryBinding(BINDING.obligation_ref, 'f' * 64),))])
-def test_wrong_revision_reopened_failed_or_unauthenticated_tests_do_not_gain_credit(changes):
+def test_wrong_revision_rejected_failed_or_unauthenticated_tests_do_not_gain_credit(changes):
     result = project_spec_coverage(QUERY, source(native_delivery_snapshot(tests=(replace(VERIFIED_TEST, **changes),))))
     assert result['items'][0]['verification'] == 'missing'
     assert result['items'][0]['verification_record_refs'] == []

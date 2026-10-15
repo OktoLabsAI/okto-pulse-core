@@ -1,0 +1,1116 @@
+{
+  "date": "2026-10-15",
+  "scope": "U3 UV18 factual coverage and native authenticated progress",
+  "base_core": "27db2c4c",
+  "community": "135454ca",
+  "product_files": [
+    "okto_labs_pulse_core\\src\\okto_pulse\\core\\domain\\delivery_evidence.py",
+    "okto_labs_pulse_core\\src\\okto_pulse\\core\\services\\spec_coverage_query.py"
+  ],
+  "regression": {
+    "distinct_cases_final_pass": 209,
+    "reports": [
+      {
+        "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\coverage-progress-core.xml",
+        "cases": 119,
+        "failures": 0
+      },
+      {
+        "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\coverage-progress-native.xml",
+        "cases": 12,
+        "failures": 0
+      },
+      {
+        "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\coverage-progress-contracts.xml",
+        "cases": 28,
+        "failures": 0
+      },
+      {
+        "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\coverage-progress-transport-closeout.xml",
+        "cases": 32,
+        "failures": 1
+      },
+      {
+        "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\coverage-progress-transport-final.xml",
+        "cases": 16,
+        "failures": 0
+      },
+      {
+        "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\coverage-progress-frontend.xml",
+        "cases": 18,
+        "failures": 0
+      }
+    ],
+    "typescript_exit": 0,
+    "targeted_eslint_exit": 0,
+    "closure_ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ]
+  },
+  "runtime": {
+    "pid": 30788,
+    "alive_at_recording": true,
+    "started_epoch": 1792099836.2849576,
+    "api_port": 8200,
+    "mcp_port": 8201,
+    "frontend_port": 5274,
+    "mode": "both_checkouts_plus_vite",
+    "installed_pair_qualified": false
+  },
+  "observed_progress": [
+    {
+      "stage": "baseline",
+      "readiness": {
+        "spec": {
+          "scope": {
+            "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+            "spec_id": "38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2",
+            "card_id": null,
+            "card_type": null,
+            "spec_edition": 2,
+            "spec_version": 20,
+            "card_version": null
+          },
+          "implementation": {
+            "unit": "obligation",
+            "status": "known",
+            "percent": 100,
+            "total": 4,
+            "applicable": 4,
+            "satisfied": 4,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 0,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 4,
+              "missing": 0,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [],
+            "known_counts": null
+          },
+          "verification": {
+            "unit": "obligation",
+            "status": "known",
+            "percent": 0,
+            "total": 4,
+            "applicable": 4,
+            "satisfied": 0,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 4,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 0,
+              "missing": 4,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [
+              "verification_not_run"
+            ],
+            "known_counts": null
+          },
+          "lifecycle": {
+            "stored_status": "in_progress",
+            "target": "done",
+            "check_status": "blocked",
+            "other_blocker_count": null,
+            "qualification_is_current": false,
+            "reason_codes": [
+              "cards_incomplete"
+            ],
+            "context_refs": [
+              "spec:38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2"
+            ]
+          }
+        },
+        "task": {
+          "scope": {
+            "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+            "spec_id": "38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2",
+            "card_id": "462da79f-33b8-57d5-94ad-351345d35eb8",
+            "card_type": "normal",
+            "spec_edition": 2,
+            "spec_version": 20,
+            "card_version": 1
+          },
+          "implementation": {
+            "unit": "obligation",
+            "status": "known",
+            "percent": 100,
+            "total": 4,
+            "applicable": 4,
+            "satisfied": 4,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 0,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 4,
+              "missing": 0,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [],
+            "known_counts": null
+          },
+          "verification": {
+            "unit": "obligation",
+            "status": "known",
+            "percent": 0,
+            "total": 4,
+            "applicable": 4,
+            "satisfied": 0,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 4,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 0,
+              "missing": 4,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [
+              "verification_not_run"
+            ],
+            "known_counts": null
+          },
+          "lifecycle": {
+            "stored_status": "in_progress",
+            "target": "done",
+            "check_status": "blocked",
+            "other_blocker_count": null,
+            "qualification_is_current": false,
+            "reason_codes": [
+              "task_validation_required"
+            ],
+            "context_refs": [
+              "card:462da79f-33b8-57d5-94ad-351345d35eb8"
+            ]
+          }
+        },
+        "test": {
+          "scope": {
+            "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+            "spec_id": "38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2",
+            "card_id": "ba5cf224-0da8-50fb-be37-4cc572d11e2c",
+            "card_type": "test",
+            "spec_edition": 2,
+            "spec_version": 20,
+            "card_version": 1
+          },
+          "implementation": {
+            "unit": "obligation",
+            "status": "not_applicable",
+            "percent": null,
+            "total": 0,
+            "applicable": 0,
+            "satisfied": 0,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 0,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 0,
+              "missing": 0,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [],
+            "known_counts": null
+          },
+          "verification": {
+            "unit": "scenario",
+            "status": "known",
+            "percent": 0,
+            "total": 2,
+            "applicable": 2,
+            "satisfied": 0,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 2,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 0,
+              "missing": 2,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [
+              "verification_not_run"
+            ],
+            "known_counts": null
+          },
+          "lifecycle": {
+            "stored_status": "in_progress",
+            "target": "done",
+            "check_status": "blocked",
+            "other_blocker_count": null,
+            "qualification_is_current": false,
+            "reason_codes": [
+              "test_card_completion_blocked"
+            ],
+            "context_refs": [
+              "card:ba5cf224-0da8-50fb-be37-4cc572d11e2c"
+            ]
+          }
+        }
+      },
+      "coverage": {
+        "state": "available",
+        "authority": "evaluate_delivery_coverage",
+        "complete_for_scope": true,
+        "counts": {
+          "obligations": 4,
+          "implementation_proven": 4,
+          "verification_proven": 0,
+          "observed_obligations": 4,
+          "decisions": 0,
+          "decisions_verified": 0
+        },
+        "blockers": [
+          "delivery_test_result_missing"
+        ],
+        "rejected_record_refs": [
+          "card_delivery_dae5ce8149da444bb0a1e97c4b2aca38"
+        ],
+        "interpretation": "admitted_proof_and_authorized_waivers_do_not_approve_other_gates"
+      }
+    },
+    {
+      "stage": "normalization",
+      "readiness": {
+        "spec": {
+          "scope": {
+            "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+            "spec_id": "38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2",
+            "card_id": null,
+            "card_type": null,
+            "spec_edition": 2,
+            "spec_version": 20,
+            "card_version": null
+          },
+          "implementation": {
+            "unit": "obligation",
+            "status": "known",
+            "percent": 100,
+            "total": 4,
+            "applicable": 4,
+            "satisfied": 4,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 0,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 4,
+              "missing": 0,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [],
+            "known_counts": null
+          },
+          "verification": {
+            "unit": "obligation",
+            "status": "known",
+            "percent": 25,
+            "total": 4,
+            "applicable": 4,
+            "satisfied": 1,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 3,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 1,
+              "missing": 3,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [
+              "verification_not_run"
+            ],
+            "known_counts": null
+          },
+          "lifecycle": {
+            "stored_status": "in_progress",
+            "target": "done",
+            "check_status": "blocked",
+            "other_blocker_count": null,
+            "qualification_is_current": false,
+            "reason_codes": [
+              "cards_incomplete"
+            ],
+            "context_refs": [
+              "spec:38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2"
+            ]
+          }
+        },
+        "task": {
+          "scope": {
+            "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+            "spec_id": "38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2",
+            "card_id": "462da79f-33b8-57d5-94ad-351345d35eb8",
+            "card_type": "normal",
+            "spec_edition": 2,
+            "spec_version": 20,
+            "card_version": 1
+          },
+          "implementation": {
+            "unit": "obligation",
+            "status": "known",
+            "percent": 100,
+            "total": 4,
+            "applicable": 4,
+            "satisfied": 4,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 0,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 4,
+              "missing": 0,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [],
+            "known_counts": null
+          },
+          "verification": {
+            "unit": "obligation",
+            "status": "known",
+            "percent": 25,
+            "total": 4,
+            "applicable": 4,
+            "satisfied": 1,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 3,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 1,
+              "missing": 3,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [
+              "verification_not_run"
+            ],
+            "known_counts": null
+          },
+          "lifecycle": {
+            "stored_status": "in_progress",
+            "target": "done",
+            "check_status": "blocked",
+            "other_blocker_count": null,
+            "qualification_is_current": false,
+            "reason_codes": [
+              "task_validation_required"
+            ],
+            "context_refs": [
+              "card:462da79f-33b8-57d5-94ad-351345d35eb8"
+            ]
+          }
+        },
+        "test": {
+          "scope": {
+            "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+            "spec_id": "38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2",
+            "card_id": "ba5cf224-0da8-50fb-be37-4cc572d11e2c",
+            "card_type": "test",
+            "spec_edition": 2,
+            "spec_version": 20,
+            "card_version": 1
+          },
+          "implementation": {
+            "unit": "obligation",
+            "status": "not_applicable",
+            "percent": null,
+            "total": 0,
+            "applicable": 0,
+            "satisfied": 0,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 0,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 0,
+              "missing": 0,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [],
+            "known_counts": null
+          },
+          "verification": {
+            "unit": "scenario",
+            "status": "known",
+            "percent": 50,
+            "total": 2,
+            "applicable": 2,
+            "satisfied": 1,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 1,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 1,
+              "missing": 1,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [
+              "verification_not_run"
+            ],
+            "known_counts": null
+          },
+          "lifecycle": {
+            "stored_status": "in_progress",
+            "target": "done",
+            "check_status": "blocked",
+            "other_blocker_count": null,
+            "qualification_is_current": false,
+            "reason_codes": [
+              "test_card_completion_blocked"
+            ],
+            "context_refs": [
+              "card:ba5cf224-0da8-50fb-be37-4cc572d11e2c"
+            ]
+          }
+        }
+      },
+      "coverage": {
+        "state": "available",
+        "authority": "evaluate_delivery_coverage",
+        "complete_for_scope": true,
+        "counts": {
+          "obligations": 4,
+          "implementation_proven": 4,
+          "verification_proven": 1,
+          "observed_obligations": 4,
+          "decisions": 0,
+          "decisions_verified": 0
+        },
+        "blockers": [
+          "delivery_test_result_missing"
+        ],
+        "rejected_record_refs": [
+          "card_delivery_dae5ce8149da444bb0a1e97c4b2aca38"
+        ],
+        "interpretation": "admitted_proof_and_authorized_waivers_do_not_approve_other_gates"
+      }
+    },
+    {
+      "stage": "empty",
+      "readiness": {
+        "spec": {
+          "scope": {
+            "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+            "spec_id": "38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2",
+            "card_id": null,
+            "card_type": null,
+            "spec_edition": 2,
+            "spec_version": 20,
+            "card_version": null
+          },
+          "implementation": {
+            "unit": "obligation",
+            "status": "known",
+            "percent": 100,
+            "total": 4,
+            "applicable": 4,
+            "satisfied": 4,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 0,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 4,
+              "missing": 0,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [],
+            "known_counts": null
+          },
+          "verification": {
+            "unit": "obligation",
+            "status": "known",
+            "percent": 100,
+            "total": 4,
+            "applicable": 4,
+            "satisfied": 4,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 0,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 4,
+              "missing": 0,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [],
+            "known_counts": null
+          },
+          "lifecycle": {
+            "stored_status": "in_progress",
+            "target": "done",
+            "check_status": "blocked",
+            "other_blocker_count": null,
+            "qualification_is_current": false,
+            "reason_codes": [
+              "cards_incomplete"
+            ],
+            "context_refs": [
+              "spec:38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2"
+            ]
+          }
+        },
+        "task": {
+          "scope": {
+            "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+            "spec_id": "38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2",
+            "card_id": "462da79f-33b8-57d5-94ad-351345d35eb8",
+            "card_type": "normal",
+            "spec_edition": 2,
+            "spec_version": 20,
+            "card_version": 1
+          },
+          "implementation": {
+            "unit": "obligation",
+            "status": "known",
+            "percent": 100,
+            "total": 4,
+            "applicable": 4,
+            "satisfied": 4,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 0,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 4,
+              "missing": 0,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [],
+            "known_counts": null
+          },
+          "verification": {
+            "unit": "obligation",
+            "status": "known",
+            "percent": 100,
+            "total": 4,
+            "applicable": 4,
+            "satisfied": 4,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 0,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 4,
+              "missing": 0,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [],
+            "known_counts": null
+          },
+          "lifecycle": {
+            "stored_status": "in_progress",
+            "target": "done",
+            "check_status": "blocked",
+            "other_blocker_count": null,
+            "qualification_is_current": false,
+            "reason_codes": [
+              "task_validation_required"
+            ],
+            "context_refs": [
+              "card:462da79f-33b8-57d5-94ad-351345d35eb8"
+            ]
+          }
+        },
+        "test": {
+          "scope": {
+            "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+            "spec_id": "38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2",
+            "card_id": "ba5cf224-0da8-50fb-be37-4cc572d11e2c",
+            "card_type": "test",
+            "spec_edition": 2,
+            "spec_version": 20,
+            "card_version": 1
+          },
+          "implementation": {
+            "unit": "obligation",
+            "status": "not_applicable",
+            "percent": null,
+            "total": 0,
+            "applicable": 0,
+            "satisfied": 0,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 0,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 0,
+              "missing": 0,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [],
+            "known_counts": null
+          },
+          "verification": {
+            "unit": "scenario",
+            "status": "known",
+            "percent": 100,
+            "total": 2,
+            "applicable": 2,
+            "satisfied": 2,
+            "not_applicable": 0,
+            "waived": 0,
+            "unresolved": 0,
+            "unknown": 0,
+            "counts_by_state": {
+              "satisfied": 2,
+              "missing": 0,
+              "partial": 0,
+              "failed": 0,
+              "stale": 0,
+              "conflict": 0,
+              "waived": 0,
+              "not_applicable": 0,
+              "unknown": 0
+            },
+            "reason_codes": [],
+            "known_counts": null
+          },
+          "lifecycle": {
+            "stored_status": "in_progress",
+            "target": "done",
+            "check_status": "not_evaluated",
+            "other_blocker_count": null,
+            "qualification_is_current": null,
+            "reason_codes": [
+              "native_completion_report_required"
+            ],
+            "context_refs": [
+              "card:ba5cf224-0da8-50fb-be37-4cc572d11e2c"
+            ]
+          }
+        }
+      },
+      "coverage": {
+        "state": "available",
+        "authority": "evaluate_delivery_coverage",
+        "complete_for_scope": true,
+        "counts": {
+          "obligations": 4,
+          "implementation_proven": 4,
+          "verification_proven": 4,
+          "observed_obligations": 4,
+          "decisions": 0,
+          "decisions_verified": 0
+        },
+        "blockers": [],
+        "rejected_record_refs": [
+          "card_delivery_dae5ce8149da444bb0a1e97c4b2aca38"
+        ],
+        "interpretation": "admitted_proof_and_authorized_waivers_do_not_approve_other_gates"
+      }
+    }
+  ],
+  "visually_inspected_screenshots": [
+    "u3-coverage-progress-partial.png",
+    "u3-kanban-progress-partial-visible.png",
+    "u3-kanban-progress-complete.png",
+    "u3-test-delivery-complete.png"
+  ],
+  "ui_observations": [
+    "Coverage automatically changed verification 0 to 25 while open after the first authenticated scenario.",
+    "Kanban visible covers automatically changed Task verification 25 to 100 and Test verification 50 to 100 after the second scenario.",
+    "Spec version remained 20 throughout; no Refresh used for those mutations.",
+    "Test Delivery shows one full-width Verification bar at 100 and closure pending."
+  ],
+  "attempts_and_limits": [
+    "Initial native reproduction failed at 0 versus 2 admitted obligations with exactly equal adapter snapshots.",
+    "Initial target mutation in the test fixture was refused by native CAS; replaced with the existing target adapter update.",
+    "Transport fixture lacked the known empty scenario population; final explicit empty population retains unknown-population failure behavior.",
+    "First PowerShell stop failed quoting; premature replacement PID23840 exited. Confirmed original PID13996 alive, stopped it after command identity check, then started PID30788.",
+    "Runtime startup caused unavailable coverage; explicit Reload after health recovered. Console increased from 31 to 42 errors during restart, remained at 42 with 2 warnings during successful scenario updates.",
+    "No default-home changes, production reinstall or new installed-wheel qualification.",
+    "U3 authority/identity recovery reconciliation and U4 full new initiative through Done/KG remain open."
+  ],
+  "artifacts": [
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-coverage-progress-baseline.png",
+      "sha256": "7cb1a60e35e4afc98ebd6f80dddf2a23f7bbb1b17ccd3e2d41273f23cc8220c9"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-coverage-progress-baseline.yml",
+      "sha256": "626df8b943e0acf0d1df35ae1c0784c1921ee413af679e593f0fcf0c4a5276f1"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-coverage-progress-before-fix.yml",
+      "sha256": "94cfceaee0716b02fba0d67d33a6f4247c97666dab3964293258c47a780c37d4"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-coverage-progress-partial.png",
+      "sha256": "e24c84d3d23bc3fc251060899575fcba13e3f08e2b78a4569e92530e5db53532"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-coverage-progress-partial.yml",
+      "sha256": "656c2756f93af6d5f7e961824b9d055a7fd23b2dce6d9431bdd1c7d8e56494a4"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-coverage-progress-recovered.yml",
+      "sha256": "a8b7a1ce001331913d530126ffa92be15a0643c2fbd8c94fc0ccb647856a2914"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-kanban-progress-complete.png",
+      "sha256": "2bb681299cb64bee79e375fb2daddff2963b2697c191f220cbc619da28b78b46"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-kanban-progress-complete.yml",
+      "sha256": "f9db1e1d508a1772a10311fc1505d5167f0a1f4f4d3dcca484a9c16207605c70"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-kanban-progress-partial-visible.png",
+      "sha256": "81a2da4bc621817b3e90b66e6dd497426c7a9710bbdff89a5ddac31ebaf2518f"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-kanban-progress-partial.png",
+      "sha256": "62464e2f7880ce526cd04230a52d5506bb026b5e9d7a148b3041c1302e026a31"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-kanban-progress-partial.yml",
+      "sha256": "ce0fccb52331a55ecd3c48b81a73a79845c2e0b70b9f59705089bd4ba4f3887c"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-test-delivery-complete.png",
+      "sha256": "eaa297c53317575aa94707a28494d2e80a20f05025d35f4bd478cd0731bb5df7"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-test-delivery-complete.yml",
+      "sha256": "7997978adf35c7ad924ade5ab5302ea8dc1d87e898b65b0600a4742e895b138b"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/coverage-progress-before.xml",
+      "sha256": "369deb078b3aa22e3b08578f1472b81926a90dd1558f399dfd449cc70fc7c46d"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/coverage-progress-before.xml.environment.json",
+      "sha256": "7544f1e64588cc35a89d9fc08d727a4e1d88376eea4475b65bfa026ceef452c2"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/coverage-progress-closure.json",
+      "sha256": "bb990bc137610897fc427035daea66230a810202a417d0aac65127c230fb0387"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/coverage-progress-contracts.xml",
+      "sha256": "cc196ee3db9947c99d236253e398111641af329f1c92c8c5b66c48d8cdf2b813"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/coverage-progress-contracts.xml.environment.json",
+      "sha256": "150fc8d05c2f735ebe65567518f897fe4f1e44223a2744a03f376b53c60fd260"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/coverage-progress-core.xml",
+      "sha256": "186ac5320265401494a1a667fbaf6d1dade08781b6c3c04f96781d503747a9fa"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/coverage-progress-core.xml.environment.json",
+      "sha256": "150fc8d05c2f735ebe65567518f897fe4f1e44223a2744a03f376b53c60fd260"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/coverage-progress-frontend.xml",
+      "sha256": "32cf0ee0b6deccc9cf0dcc947eb5ce4ac46867fb5e439c11b0ddb69d008b7f1e"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/coverage-progress-native.xml",
+      "sha256": "346f720b53217262ac4864652569e700e3ab5875fc52bd4a6c02feeb9bac53b8"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/coverage-progress-native.xml.environment.json",
+      "sha256": "150fc8d05c2f735ebe65567518f897fe4f1e44223a2744a03f376b53c60fd260"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/coverage-progress-transport-closeout.xml",
+      "sha256": "dd4cb7e20a3042ee79c79af4a8027939c9c8c689f31e83b7592d2397abe5499b"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/coverage-progress-transport-closeout.xml.environment.json",
+      "sha256": "150fc8d05c2f735ebe65567518f897fe4f1e44223a2744a03f376b53c60fd260"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/coverage-progress-transport-final.xml",
+      "sha256": "76cabea36a5631ada02ab3f5584355247e66542d24507ce3dc4583a4c35c9629"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/coverage-progress-transport-final.xml.environment.json",
+      "sha256": "150fc8d05c2f735ebe65567518f897fe4f1e44223a2744a03f376b53c60fd260"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/label-mock/label.py",
+      "sha256": "58929b915e74eff017437ad8633548bc4386fe36594a4f80387eedc9c3fc6ae7"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/label-mock/test_label.py",
+      "sha256": "d24cd550a52fa3ca812867208dd67629b98e39b6672c359dcb308b82470f0fd2"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/record_coverage_progress_evidence.py",
+      "sha256": "7824985bc63c2259f800d7f610bcc80a3d33a46f7a3beeb880d081ae5715f8d2"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-baseline-coverage.json",
+      "sha256": "f9ccfc4a65742f2513b3ac0adc2a42011d942d3c8050437c320d3d2ad71be86b"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-baseline-spec.json",
+      "sha256": "bfa25f586e342e49cde5b26d6934b21e8f43833e5a32c72bf06b69ce866483e3"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-baseline-task.json",
+      "sha256": "afc86523381f37a6064d0ea0485079a9774028828df623a314b554f6e8d489c5"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-baseline-test.json",
+      "sha256": "3ed39b8a9feb148933f590f1c51bedb5664323f5f77b75e9ac52ae474a17bd74"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-empty-before.json",
+      "sha256": "8f1d770fc61292ddda7a2087da7932f53af90fad457c29cd6a42321d075c2b8f"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-empty-binding.json",
+      "sha256": "8ef1d39441052a8efe5eb618246799ab0a39b9f76c30908c33fca1e6af2af8b2"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-empty-coverage.json",
+      "sha256": "7220ed2bc7213fe51cf52ca7f510b38905a55a994326a4d37b87af04a5b1b202"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-empty-execution.json",
+      "sha256": "088387d8f342eabb544cc501fc4246d2d8fa64719008f543c8a01da5f4837d6b"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-empty-scenario.json",
+      "sha256": "bdf51dcc35ba35a76a443b7405a3be60a839b1147076b9cada95dbc5699e51d2"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-empty-spec.json",
+      "sha256": "cfc46ec5634042147afe946dda2169fde03da6a3e24f3008a50ee863eb4c52dc"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-empty-task.json",
+      "sha256": "f5f7d9f1380796801c52739066f93707e16ac4c5c7030a3077d213dd8026a441"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-empty-test.json",
+      "sha256": "3d2e913d4ec70dd6bcbc93b4813babadd46d79cdc8e04828c45784514b0ad2b2"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-inspect-context.json",
+      "sha256": "fe80e98cb255946f54ad4337869556f2b2db6e2ccb681d4ea77f3994272f423f"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-normalization-before.json",
+      "sha256": "d088995fe21dfd6a9d2985dba341a88162250657e0e2eec9876e0dd5139a5e3a"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-normalization-binding.json",
+      "sha256": "c1501471bbe9bec91a7287bf9eabdc4fcd7df5dc77b2939bac2a07aad46d4458"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-normalization-coverage.json",
+      "sha256": "a01e896c622637e21dc03e1f41fa3b281999380e9db2f93ff7459db8a238e343"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-normalization-execution.json",
+      "sha256": "6e63f61b561891a4798895dff03aa4184726dea8b69cda3297e41e3182b81796"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-normalization-scenario.json",
+      "sha256": "a9d0a8011803ee21bc5d86285a1c5ac7ac0e8d64ffc4c5f6929bb8de1764f3b3"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-normalization-spec.json",
+      "sha256": "692cb481c74865fdcefab934e1ae3f90f4e83015b15c15df0501de3fbbc176eb"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-normalization-task.json",
+      "sha256": "9d62aa31cf4d2f682277fdce7283999597b86f181b9c94c121e5ba4738e20402"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/verify-normalization-test.json",
+      "sha256": "51fd58d3c04166a11623bcfa89e053eeca7e7de1ad192363ea0e989e2cfb066f"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3_verify_native.py",
+      "sha256": "a3a37d29c5a69ecbac856556d68dc4c5ceca0a4b116439e707ded9fff01923ed"
+    }
+  ]
+}
