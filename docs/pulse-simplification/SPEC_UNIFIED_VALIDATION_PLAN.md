@@ -1,16 +1,16 @@
 # Validação unificada do planejamento da Spec
 
-## Planejamento vigente — fechamento de U4 a partir de Done, 15/10/2026
+## Planejamento vigente — fechamento de U4 após consolidação, 15/10/2026
 
 Esta seção é a única fila operacional vigente. Os roteiros seguintes são
 históricos; os contratos de §§3–5, milestones U1–U4 e aceites UV01–UV24
 continuam normativos e inalterados. Revisão de planejamento: não executa
 novos testes, mutações no Pulse, instalação ou reinício.
 
-**Checkpoint publicado antes deste detalhamento:** Core `1eca6df9` /
-Community `5e7fb9b3`, em `feature/v0.4.0`. Inclui os diffs anteriores de
-qualificação do MCP, manifest gerado e evidências relidas. U1–U3 permanecem
-concluídos nos limites registrados; U4 permanece parcial.
+**Checkpoint publicado antes deste detalhamento:** Core `ff471088` /
+Community `54b5b30d`, em `feature/v0.4.0`. Preserva os ajustes de readiness,
+seu teste com sessão autenticada e a correção documental do overlay Community.
+U1–U3 permanecem concluídos nos limites registrados; U4 permanece parcial.
 
 ### Resultado preservado
 
@@ -23,7 +23,8 @@ Não exigir Decision artificial. Execução e entrega mantêm os gates próprios
 
 ### Estado comprovado pelos recibos existentes
 
-[Registro da conferência e hashes](evidence-u4-done-planning-20261015.json).
+[Conferência anterior](evidence-u4-done-planning-20261015.json) e
+[recibos posteriores relidos com hashes](evidence-u4-closeout-planning-20261015.json).
 Os dados abaixo são observações anteriores, não uma nova execução instalada.
 
 | Objeto | Estado e limite da evidência |
@@ -34,8 +35,11 @@ Os dados abaixo são observações anteriores, não uma nova execução instalad
 | Test | `ee0caea9-97dd-5b9a-93a1-cf87bf0961ee`, Done, implementação não aplicável e verificação 100%. |
 | Planejamento e execução | FR 1, BR 1, AC 2; quatro obrigações, dois cenários. Lint, Checklist e conclusão composta registrados; provas e testes externos autenticados precederam o fechamento. Board sem Guidelines: não aplicável, não avaliação aprovada. |
 | Qualificação MCP | XMLs sem falhas: 158 testes resources/catálogo, 31 host Community, 23 manifest/inventário. Payload público: 50.066 tokens tools + 2.467 instructions = 52.533; tetos 50.800/53.500 intactos. Medição agora no transporte Community; Core mantém contratos e inventário. |
-| Instalação anterior | Paridade registrada de 867 Python Core, 326 Community e 79 frontend. Isso não cobre os resources posteriormente alterados. |
-| KG | Consulta canonical devolveu nós com origem e contexto relacionado devolveu vínculos. Saúde geral `at_risk`, probes `digest_layer_parity`/`stale_canonical_parity` indisponíveis. Consolidação cognitiva e aceite visual final ainda não encerrados. |
+| Inspeção visual | Ledger registra capturas inspecionadas de Task/Test Done, Coverage/Validation da Spec e KG. Reaproveitar essa prova; a próxima inspeção confirma apenas a instalação final e a pendência cognitiva resolvida. |
+| Instalação R2 | Paridade de 867 Python Core, 326 Community, 79 frontend e 58 resources Core. Não inclui o overlay Community alterado posteriormente. |
+| Closure R2 | Oito budgets ZERO e distribuição conforme; `ok=false` por matriz README desatualizada nos dois repos. READMEs ajustados; novo closure ainda obrigatório. |
+| KG | Sessão `kgses_071cefe2a81c4506` committed: uma Alternative e dois vínculos. Consultas exatas confirmam canonical/proveniência; não repetir consolidação. Item cognitivo ainda pending. |
+| Readiness | Correção de `semantic_subject_bridge_actor_conflict` comprovada por recibo MCP e XMLs anteriores: 78 testes Core e 4 Community sem falhas. Saúde continua `at_risk` por probes indisponíveis; a correção não prova saúde integral. |
 
 Ambiente de retomada: `PULSE_REFACTOR/.validation-v040/spec-unified-20261014/`,
 `u4-venv`, `u4-home`, API8240/MCP8241, Board
@@ -49,11 +53,10 @@ na retomada; não assumir que o processo anteriormente observado continua vivo.
 
 | Ordem / dependência | Trabalho delimitado | Evidência para encerrar |
 | --- | --- | --- |
-| 1 — recuperar ambiente e estado | Conferir imports isolados, arquivos instalados, identidade da home e processo. Reler estado atual pelos IDs existentes. Separar divergência de Python/frontend de divergência conhecida de resources. | Runtime correto identificado; nenhuma base/home padrão alterada. Recibos Done confirmados sem replay de criação, validação ou fechamento. |
-| 2 — completar inspeção visual de UV23 | No browser do runtime isolado, abrir Delivery da Task Done, Delivery do Test Done e Coverage/Validation da Spec Done. Correlacionar IDs e resultados com MCP. Usar snapshots novos antes de ações. | Task/Spec mostram implementação/verificação 100%; Test apresenta somente verificação 100%. Resultados individuais/histórico continuam acessíveis. Capturas inspecionadas, não apenas produzidas. Não repetir testes autenticados só para obter tela. |
-| 3 — concluir UV24 e diagnóstico KG | Reler saúde e consultas canonical. Distinguir cache expirado/transitório de falha reproduzível; examinar logs/correlation IDs apenas das probes afetadas. Conferir origem e vínculos da Spec fechada. Ler workflow KG e usar begin/candidate/similarity/reconciliation/commit para conhecimento cognitivo realmente sustentado pelo conteúdo. | Consulta posterior confirma camada canonical e proveniência; recibo da consolidação e inspeção visual do KG. Não fabricar Decision, aprendizado, relação ou duplicar projeção determinística. Ausência de candidato deve ter justificativa rastreável, nunca consolidação fictícia. |
-| 4 — qualificar pacote final, após eventual correção necessária no passo 3 | Empacotar os resources modificados e manifest oficial, mantendo o par final Core/Community identificado. Instalar somente no ambiente U4 e iniciar processo posterior à instalação. Conferir conjuntos e bytes de Python/resources/frontend, imports e resources servidos. | Hashes dos wheels e relatórios finais separados dos anteriores; paridade completa, catálogo/manifests sem drift e oito budgets ZERO no closure. Home padrão preservada; nenhum processo antigo apresentado como novo build. |
-| 5 — fechar matriz e publicar | Relacionar cada UV01–UV24 à prova pertinente; distinguir testes de componente, persistência, fixture, UI/MCP e instalado. Atualizar ledger, identificar limitações e publicar commits dos repositórios alterados. | Nenhum aceite aberto ou inferido só de contagem de testes. Matriz final, hashes, commits/push e estado de retomada coerentes. Somente aqui U4 e a entrega podem ser declarados concluídos. |
+| 1 — reconciliar o registro cognitivo existente | Conferir runtime/home/ator e reler o item `cogn_8b95ff6fdf9191abd72855a7865c9ea4`, geração `cognitive_closeout`. Ler o contrato público de atualização e associar o desfecho à sessão committed existente. Após timeout, consultar estado antes de repetir. | Recibo de atualização e listagem sem essa pendência; consulta mantém Alternative `alternative_1e81aa35fc1658d6dbb1bc56`, origem e vínculos. Não executar novo begin/commit nem fabricar conteúdo. |
+| 2 — qualificar documentação efetiva e pacote | Conferir a seção health/readiness Core e overlay Community contra o schema/retorno real: escopo Board, nenhum argumento `artifact_ref`, `would_block_done=null` como observação que não decide fechamento. Corrigir somente divergências demonstradas; testes de catálogo/overlay e geradores oficiais quando afetados. Construir o par final em diretório R3 separado, instalar somente em U4. | Hashes dos wheels; igualdade de conjuntos/bytes Python, frontend, resources Core **e Community**; catálogo/manifest sem drift; closure `ok=true`, sem findings documentais e oito budgets ZERO. Não basta repetir a paridade incompleta R2. |
+| 3 — conferir instalação final, após 1 e 2 | Iniciar processo comprovadamente posterior ao mtime instalado. Comparar resources MCP servidos com a fonte efetiva da edição, incluindo override Community, não sempre com Core. Reler readiness, Done e canonical; abrir a UI final com snapshots novos. | Imports/identidade/processo corretos; resources servidos corretos; MCP sem conflito de ator; Task/Spec 100%/100%, Test apenas verificação 100%; KG/proveniência e fim da pendência conferidos. Registrar estado das probes e limites sem chamar indisponibilidade de sucesso. |
+| 4 — matriz final e publicação, após 3 | Mapear UV01–UV24 às provas pertinentes, distinguindo componente, persistência, fixture, UI/MCP e instalado. Reaproveitar os negativos já qualificados. Atualizar ledger e estado operacional deste plano; commit/push nos repos alterados. | Cada aceite tem resultado, referência/hash e limite. Nenhuma falha obrigatória aberta; commits remotos identificados; somente aqui declarar U4 e entrega concluídos. |
 
 **Tratamento do diagnóstico KG:** não abrir redesign, otimização geral nem
 milestone adicional. Se nova observação resolver a indisponibilidade, registrar
@@ -71,9 +74,9 @@ de investigação e ambiguidade do pacote.
 | UV01–UV03 / autoria e Decisions | U1 e recibos U4 de criação em Draft, sem Decision artificial. Preservar negativos de início prematuro e plano de Decision existente; não refazer autoria. |
 | UV04–UV17 e UV22 / gates e transação | Matriz U2 e testes de composição, paridade nativa, permissões, concorrência, replay e persistência referenciados em §6. Reutilizar com seus limites; conclusão instalada U4 complementa, não substitui, os negativos. |
 | UV18–UV21 / interface | `evidence-u3-authority-ui-closeout-20261015.json`, conclusão integrada, progresso e autoridade já registrados. Não repetir os 122 testes frontend distintos sem mudança ou lacuna concreta. |
-| UV23 / percurso instalado | Recibos U4 de conclusão/execução/Done e inspeção visual restante do passo 2; percentuais vêm de provas autenticadas, nunca autodeclaração. |
-| UV24 / grafo | Buscas já existentes são parciais; completar o passo 3 com diagnóstico, consolidação e leitura posterior. |
-| Distribuição / fronteiras | Qualificação final do passo 4; fechamento não pode usar só a paridade Python anterior para afirmar que resources novos foram instalados. |
+| UV23 / percurso instalado | Recibos U4 e capturas já inspecionadas; passo 3 confirma o pacote final. Percentuais vêm de provas autenticadas; não repetir autoria/avaliação/execução sem regressão concreta. |
+| UV24 / grafo | Recibo committed e consultas canonical existentes; completar vínculo da pendência no passo 1 e leitura instalada no passo 3. |
+| Distribuição / fronteiras | Passo 2 inclui resources Community; passo 3 confere conteúdo realmente servido. O closure R2 reprovado permanece registrado, sem substituição de seu arquivo. |
 
 Para diffs apenas de testes/documentação/resources, executar drift e validação
 do resource servido, sem repetir todo o SDLC. Se houver correção backend,
@@ -86,8 +89,8 @@ evidências selecionadas, sem incorporar indiscriminadamente dumps do browser.
 Erros de harness ou transporte permanecem distintos de falhas do produto.
 Após timeout, consultar recibo/estado antes de retry; não repetir mutação às cegas.
 
-**Próxima ação de execução:** recuperar o runtime U4 e completar a conferência
-visual dos objetos Done existentes; em seguida fechar KG e distribuição.
+**Próxima ação de execução:** recuperar o runtime U4, reler a pendência cognitiva
+e vinculá-la à sessão já committed pelo contrato público; seguir passos 2–4.
 Esta revisão conclui o planejamento restante, não a implementação integral.
 
 ## Histórico — roteiro de execução anterior, conferência de 15/10/2026

@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento final reconciliado após consolidação
+
+Checkpoint salvo e publicado antes da revisão do plano: Core `ff471088` /
+Community `54b5b30d`, branch `feature/v0.4.0`. Inclui os ajustes anteriores
+de readiness, teste nativo, matrizes README e overlay documental. Capturas
+locais preservadas; não foram adicionadas indiscriminadamente ao Git.
+
+Atualizada a fila operacional de
+[SPEC_UNIFIED_VALIDATION_PLAN.md](SPEC_UNIFIED_VALIDATION_PLAN.md), sem novo
+milestone: reconciliar item cognitivo com sessão committed → qualificar
+resources efetivos e pacote final → conferir runtime/UI/MCP → matriz UV01–24
+e publicação. Removida da fila a repetição da consolidação e da inspeção já
+registradas. U1–U3 permanecem qualificados; U4 permanece parcial.
+
+[Conferência com hashes](evidence-u4-closeout-planning-20261015.json): dez
+arquivos anteriores relidos, XMLs de 78/4 passes e recibo MCP de readiness
+confirmados. Closure R2 continua reprovado por documentação; nenhuma nova
+execução foi alegada. A qualificação seguinte deve incluir os resources
+Community e a precedência real do overlay na resposta MCP. Persistência,
+autoridade, avaliações, rubricas, severidades e aceites normativos intactos.
+
+Nesta revisão: planejamento, leitura de evidências e verificação documental.
+Sem novos testes de comportamento, mutações MCP, instalação ou reinício.
+Próxima execução começa no item cognitivo indicado no plano, não na criação
+de outra iniciativa ou na repetição dos pareceres válidos.
+
 ### 2026-10-15 — U4: conferência visual, consolidação e correção de readiness
 
 Inspecionadas capturas reais no runtime instalado API8240/MCP8241: Task Done
