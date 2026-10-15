@@ -2,6 +2,42 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento detalhado de U4 reconciliado com a instalação isolada
+
+Pedido atual atendido como planejamento. Fetch confirmou Core `0cececcc` /
+Community `1c18806d` iguais aos remotos `feature/v0.4.0`, sem diff rastreado.
+Capturas locais não rastreadas foram preservadas; não constituem produto a
+incluir indiscriminadamente no commit. Nenhuma implementação, teste de
+comportamento, mutação de dados, instalação ou reinício nesta revisão.
+
+Relidos os relatórios locais ainda não incorporados ao checkpoint anterior:
+221 testes Core e 25 Community, todos aprovados, com imports dos checkouts
+explicitamente registrados. Instalação isolada em `u4-venv`: relatório de
+paridade com 867 Core Python/326 Community Python/79 frontend, sem diferenças.
+Closure do par instalado aprovado, sem findings/documentation drift e com
+oito budgets ZERO. Hashes dos dois wheels reconferidos. São resultados de
+execução anterior; esta revisão não repete nem atribui os testes ao instalado.
+
+Runtime registrado API8240/MCP8241, home `u4-home`, processo iniciado após a
+instalação. Board `9f3f3f78-140d-4344-9951-7b929648eccd`; identidade local
+registra somente esse Board, sem recibos de nova Ideação/Refinamento/Spec ou
+fechamento. Saúde anterior não foi tratada como observação atual. Evidência
+documental e hashes em
+[checkpoint U4](evidence-u4-planning-checkpoint-20261015.json).
+
+Plano atualizado no lugar, no início de
+[SPEC_UNIFIED_VALIDATION_PLAN.md](SPEC_UNIFIED_VALIDATION_PLAN.md): conferir
+ambiente/recibos → configurar ausências obrigatórias no Board novo pela UI →
+Ideação/Refinamento → autoria conjunta Spec/Cards em Draft → conclusão única
+com todas as avaliações preservadas → execução observada/Done → KG canonical
+e matriz UV01–UV24. Cada passo tem dependência e prova de saída. U1–U3 não
+retornam à fila; U4 continua parcial. Sem novo milestone, framework, migração,
+relaxamento de gate ou ampliação das funcionalidades acordadas.
+
+Próxima execução começa pela conferência do runtime isolado e do estado atual
+antes de qualquer create. Preservar a home padrão. Retomar recibos; não repetir
+ensaios qualificados nem declarar conclusão só pela instalação ou pelos testes.
+
 ### 2026-10-15 — U3 encerrado: revogação UI/HTTP, identidade e recuperação
 
 Community `1c18806d`, Core produto `ec775fe1` (documentação base `b61a7cab`).

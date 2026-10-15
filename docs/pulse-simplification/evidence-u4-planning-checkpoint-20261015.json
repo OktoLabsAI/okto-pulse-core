@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-15",
+  "kind": "planning_reconciliation",
+  "scope": "U4 existing milestone; no product implementation or live scenario execution in this revision",
+  "baseline": {
+    "core": "0cececcc",
+    "community": "1c18806d",
+    "branch": "feature/v0.4.0",
+    "fetch_confirmed_equal_to_origin": true
+  },
+  "status": {
+    "U1": "completed_per_existing_evidence",
+    "U2": "qualified_backend_per_existing_evidence",
+    "U3": "closed_per_existing_evidence",
+    "U4": "partial; installed full initiative E2E pending"
+  },
+  "previous_results_reviewed": {
+    "source_tests": {
+      "core": 221,
+      "community": 25,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "mode": "checkout; both source origins explicitly recorded"
+    },
+    "isolated_install": {
+      "core_python_files": 867,
+      "community_python_files": 326,
+      "frontend_files": 79,
+      "differences": 0,
+      "report_review_only": true
+    },
+    "closure": {
+      "ok": true,
+      "findings": 0,
+      "documentation_findings": 0,
+      "zero_budgets": 8
+    },
+    "runtime": {
+      "api_port": 8240,
+      "mcp_port": 8241,
+      "board_id": "9f3f3f78-140d-4344-9951-7b929648eccd",
+      "server_pid_previously_observed": 16232,
+      "start_after_installed_mtime": true,
+      "live_health_rechecked": false
+    },
+    "e2e": {
+      "identity_file_fields": [
+        "board_id"
+      ],
+      "completion_receipts_found_in_reviewed_directory": false
+    }
+  },
+  "checks_performed_now": {
+    "fetch_both_repositories": true,
+    "read_reports": true,
+    "hash_wheels": true,
+    "artifacts": [
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-installed-parity.json",
+        "sha256": "710f9b377d13d1f2066cb5a72f89f725a431701bdc55ecd48e87033257480135"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-installed-closure.json",
+        "sha256": "bb990bc137610897fc427035daea66230a810202a417d0aac65127c230fb0387"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-runtime-process.json",
+        "sha256": "2df088f646513668db40e2ff882d0682f00d9a4c60534772884e7072fedf88c4"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-core-regression.xml",
+        "sha256": "f098a7840603872516a158f32938d863f144e81a5573469e0a48741755f32c70"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-community-regression.xml",
+        "sha256": "b28e81d82973e79cc5caceeace85a8860f71a9a5d7a18fbf02c08e1766db7d5c"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-core-regression.xml.environment.json",
+        "sha256": "150fc8d05c2f735ebe65567518f897fe4f1e44223a2744a03f376b53c60fd260"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-community-regression.xml.environment.json",
+        "sha256": "150fc8d05c2f735ebe65567518f897fe4f1e44223a2744a03f376b53c60fd260"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\identity.json",
+        "sha256": "a2763e0e01302aa845c49af2fe9dd707229303112a34bf3719fd48c178a823d7"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\health.json",
+        "sha256": "15b95c8ae5d6837f66c19ac9891934d41772c69631eb7254f3a7491ce59a44c4"
+      }
+    ],
+    "wheel_hashes_match": {
+      "okto_pulse-0.4.0-py3-none-any.whl": true,
+      "okto_pulse_core-0.4.0-py3-none-any.whl": true
+    }
+  },
+  "limits": [
+    "Artifact hashes identify files as reviewed, not proof of new test execution.",
+    "identity.json and health.json are mutable operational snapshots; subsequent changes require new observation and must not be treated as immutable receipts.",
+    "Source unit-test passes do not establish installed E2E behavior.",
+    "Previous runtime PID and health do not establish current liveness.",
+    "No new U4 initiative closure or canonical KG result is claimed.",
+    "User default installation and data were not changed."
+  ],
+  "next": "Verify isolated runtime and current records, then execute the six bounded U4 steps in SPEC_UNIFIED_VALIDATION_PLAN.md."
+}
