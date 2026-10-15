@@ -64,8 +64,10 @@ tipos/lint aprovados. O pai agora aguarda confirmação de escrita, preserva o
 formulário em recusa e descarta resposta de outra Spec (`3057e84e`): 43 passes
 integrados e criação UI confirmada por MCP. Ver
 [confirmação de cenários](evidence-u3-scenario-confirmation-20261015.json).
-Base autorada, resultados incertos, leitura atual/recarga e retenção do método
-em cenário removido continuam pendentes; Tests permanece fora do watcher.
+A base autorada de versão e a recuperação explícita de conflito foram
+qualificadas em `4755e369` / `3c4df986`. Permanecem pendentes a atualidade
+operacional sem bump de versão, resultados incertos e retenção do método em
+cenário removido; Tests permanece fora do watcher.
 Preservar também [método de cenário](evidence-u3-scenario-method-20261015.json).
 
 **Próxima ação de implementação:** cenários (3c/5c) e Project Structure → refresh global →
@@ -858,6 +860,33 @@ Ver [base autorada de cenários](evidence-u3-scenario-authored-base-20261015.jso
 Tests ainda não está no watcher. Restam a atualidade de mudanças sem bump de
 versão, resultado incerto/reconciliação, método removido e os demais writers da
 aba. Não repetir a prova de versão nem reduzir esses aceites à precondição nova.
+
+**Conferência de planejamento de 15/10, sobre Core `868818e9` e Community
+`3c4df986`, ambos publicados:** o relatório local
+`PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-scenario-operational-before.xml`
+já contém a reprodução de 5c.1: dois casos, um aprovado (status) e um falho
+(task_link), sem erros. Após remover o vínculo pelo serviço nativo, a substituição
+da coleção antiga restaura `linked_task_ids`, mesmo com a mesma versão esperada.
+É uma falha observada na fronteira de serviço; não uma nova prova REST/MCP ou
+uma falha de todas as operações de cenário. O teste está no diff local de
+`tests/test_scenario_verification_method.py`, ainda não publicado.
+
+Para fechar 5c.1, preservar a versão autorada já implementada e acrescentar
+proteção delimitada da base operacional da coleção: identidade e revisão usadas
+na leitura devem ser verificadas no writer, dentro da unidade de trabalho,
+inclusive quando `Spec.version` não mudou. Primeiro conferir se a revisão pública
+existente identifica esse estado e é obtida junto da leitura; não reutilizar um
+token lido depois do rascunho. Se ela não oferecer essa garantia, definir a
+precondição específica da coleção na porta pública, sem criar CAS global.
+Não incrementar a versão semântica para disfarçar mudança operacional nem trocar
+a exclusão por uma cascata diferente. Aceite: o vínculo removido continua removido,
+o status continua preservado, a escrita conflitante não deixa efeito parcial e
+uma tentativa explicitamente revista consegue salvar. Estender a prova aos
+transportes afetados e à UI antes de habilitar Tests no watcher.
+
+Esta revisão é documental: não executa a correção, não transforma o teste vermelho
+em aprovação e não reabre U1/U2. A ordem restante é exclusivamente a tabela abaixo;
+seus aceites e a matriz UV01–UV24 delimitam o término do trabalho.
 
 | Ordem / dependência | Trabalho e fronteira exatos | Aceite para encerrar |
 | --- | --- | --- |

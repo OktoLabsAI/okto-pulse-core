@@ -2,6 +2,42 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento reconciliado; falha operacional de cenários delimitada
+
+Atendido o pedido de iniciar o planejamento detalhado, sem continuar a
+implementação neste turno. Conferidos os HEADs e os remotos de
+`feature/v0.4.0`: Core `868818e9` e Community `3c4df986`. O plano único continua
+`SPEC_UNIFIED_VALIDATION_PLAN.md`; não foi criado plano concorrente nem milestone.
+
+Corrigida a síntese que ainda listava a base autorada de versão como pendente:
+essa parte já foi qualificada. Mantidos U1 implementado, U2 qualificado no
+backend, U3 parcial e U4 pendente. A sequência executável é 5c (atualidade
+operacional, resultado incerto, método removido e demais writers) → 5d
+(Project Structure/controles restantes) → 3d (consumidores) → UV18–UV21 → U4
+(par instalado, nova iniciativa UI/MCP até Done/KG canonical).
+
+Lido o relatório de reprodução já existente
+`PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-scenario-operational-before.xml`:
+dois casos, um aprovado para status e um falho para task_link, zero erros.
+A substituição da coleção antiga restaura o vínculo removido sem bump de
+`Spec.version`. O plano agora distingue essa falha observada das suspeitas
+ainda não reproduzidas e define o aceite da correção na fronteira pública,
+sem CAS global, mudança de cascata, autoridade ou efeito histórico.
+O resultado é de serviço; não foi apresentado como prova REST/MCP/browser.
+
+A modificação local preexistente em
+`tests/test_scenario_verification_method.py` permanece intacta e fora do commit
+documental, como regressão vermelha para a implementação seguinte. Snapshots
+Playwright não versionados também foram preservados. Não houve novo teste de
+comportamento, alteração de produto, instalação ou mutação de dados do Pulse.
+
+Todas as avaliações, dimensões, critérios, severidades, thresholds, permissões
+e históricos permanecem. A unificação concentra a conclusão, sem média entre
+avaliações. Retomada: resolver a reprodução de 5c.1 e seguir a tabela executável
+de §6.2, repetindo somente provas afetadas; não iniciar novo assessment geral.
+Verificação documental: `git diff --check` aprovado, 22 links locais resolvidos
+e os 24 IDs UV01–UV24 preservados. Publicação limitada ao plano e ao ledger.
+
 ### 2026-10-15 — U3/3c/5c: base de versão e recuperação de conflito qualificadas; integração ainda aberta
 
 Core `4755e369` / Community `3c4df986`, publicados em `feature/v0.4.0`.
