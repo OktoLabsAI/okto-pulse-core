@@ -2,6 +2,69 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3: conclusão composta, histórico e progresso nativos
+
+Execução sobre Core produto `537eea6` / Community `ccc76dfc`, base documental
+`3f69cd4e`. Runtime isolado PID13996 saudável, API8200/MCP8201 e Vite5274;
+processo confirmado vivo, sem reinicialização ou alteração da home do usuário.
+Skill Playwright usada para interações e inspeção visual. Não houve diff de
+produto nem nova execução de suíte/build/closure neste checkpoint.
+
+Fixture Spec `38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2`, Board
+`7bbd65c3-8738-45a2-8fab-a5216ab7e98c`. Task/Test já tinham sido criados
+Not Started em Draft. Completados árvore TO-BE, vínculos e aplicabilidade de
+recursos para função pura sem UI/integração. A admissão UI revelou a BR ausente
+exigida pelo gate vigente. Reabertura autorizada para edição 2 explicitou o
+invariante já presente: rótulo normalizado não pode ser vazio, ligado ao FR e
+ao AC negativo. Não houve skip, mudança de policy ou requisito funcional novo.
+Inventário final: quatro obrigações, nenhum item pendente ou sem responsável.
+A reabertura corrigiu conteúdo, não criação/alocação de Cards; no U4 incluir
+essa BR antes da primeira admissão para comprovar o fluxo sem esse desvio.
+
+Lint `qar_de5d6a650dc248cf809e80155f051b70` e Checklist Blocking
+`clr_fdae6ac3343b48e1b81642393b38f6bd` registrados pelo MCP após inspeção real
+do planejamento. A UI recebeu automaticamente 5 → 3 → 2 pendências. O formulário
+único foi preenchido pela UI, inclusive sliders pelo teclado e justificativas
+independentes. Um submit registrou Spec Validation `val_3f879f04` e decomposição
+`eval_4c6503ab`, promovendo Approved → Validated; leitura MCP confirmou ambos.
+
+Retorno autorizado Validated → Approved conservou a edição. Nova revisão real
+via MCP registrou `val_690922ca` sem reenviar decomposição: mesmo
+`eval_4c6503ab`, autor original `local-user/Owner`, nenhum parecer duplicado.
+Um pinpoint Opportunity/Low/Assertiveness identifica os exemplos apenas ASCII
+frente ao domínio str; exemplo Unicode é sugestão opcional, não nova obrigação.
+UI mostrou trecho verbatim, justificativa e ação, sem JSON cru. Histórico passou
+a uma tentativa anterior, com cinco círculos de score, autor e justificativas
+integrais; foco e Enter expandiram os detalhes. Seis capturas foram inspecionadas.
+Início UI para In Progress não exigiu novo parecer; leitura final conserva a
+validação `val_690922ca`, a decomposição e a tentativa anterior.
+
+Progresso observado: workspace local `spec-unified-20261014/label-mock`, baseline
+Git `32600a9`, implementação `627bf29`. `label.py` contém strip/upper, rejeição
+vazia com erro exato e retorno sem mutação. Inspeção delimitada conferiu blobs
+Git byte a byte, AST/símbolo, paths, segredos, histórico e fingerprint. Preflight,
+Target, resolução de ausência, início, nova observação, resolução, recibo de
+execução e associação às quatro obrigações foram aceitos pelas APIs nativas.
+Com Delivery aberto, implementação mudou 0% → 100% automaticamente, sem Refresh,
+com Spec.version 20 → 20. Verificação permaneceu corretamente 0% e o Card
+In Progress; nenhuma prova de teste ou fechamento foi inventada.
+
+[Evidência, asserções e 92 hashes](evidence-u3-integrated-conclusion-delivery-20261015.json).
+Os erros de refs Playwright obsoletos ocorreram antes de cliques e foram
+resolvidos por novos snapshots; nenhuma escrita foi repetida. Console permaneceu
+nos 31 erros/2 warnings anteriores, sem incremento observado; não declarar zero.
+
+**Retomada:** U3 ainda parcial. Completar autoridade/revogação/identidade nativas
+e reconciliar UV18–UV21, incluindo mudança de entrega observada também na capa
+Kanban e Coverage visíveis. Test Card `ba5cf224-0da8-50fb-be37-4cc572d11e2c`
+continua Not Started; ainda não há execução autenticada. Task
+`462da79f-33b8-57d5-94ad-351345d35eb8` In Progress; Spec edição2/versão20.
+Helpers e respostas estão em `.validation-v040/spec-unified-20261014/`,
+estado de prova em `u3-integrated-validation/delivery-state.json`. Não repetir
+modos prepare/implement nem scripts de submissão já concluídos. Continuar do
+estado vivo, preservar recibos; U4 instalado e iniciativa nova até Done/KG
+permanecem obrigatórios. Runtime checkout/Vite não qualifica o artefato instalado.
+
 ### 2026-10-15 — planejamento detalhado consolidado após Resources
 
 Pedido atendido como planejamento, sem novas alterações de produto ou mutações

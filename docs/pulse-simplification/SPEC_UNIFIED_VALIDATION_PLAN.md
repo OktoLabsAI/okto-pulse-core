@@ -13,6 +13,16 @@ U1 implementado; U2 qualificado no backend; consumidores previstos de U3
 integrados, incluindo Resources; qualificação integrada de U3 ainda parcial;
 U4 pendente. Não recriar contratos, watcher, editores ou fluxos já entregues.
 
+**Avanço nativo posterior à conferência:** conclusão composta UI confirmada pelo
+MCP; parecer MCP sucessor reutilizou a decomposição do Owner sem duplicá-la;
+histórico completo e pinpoint inspecionados, incluindo expansão por teclado.
+Spec iniciou sem novo parecer. No Card aberto, prova de implementação elevou
+0% → 100% automaticamente, com Spec.version 20 → 20 e verificação ainda 0%.
+Ver [conclusão e entrega integradas](evidence-u3-integrated-conclusion-delivery-20261015.json).
+Restam autoridade/identidade e reconciliação dos consumidores/UV18–UV21,
+incluindo capa Kanban e Coverage visíveis; depois U4. Não repetir os submits
+ou as mutações desse fixture para reconstruir evidência já registrada.
+
 **Decisão de produto preservada:** Spec e Cards são preparados juntos; existe
 um ponto de conclusão da validação do planejamento. Spec Validation,
 decomposição, lint, Checklist, Policy Compliance e coberturas continuam
@@ -36,15 +46,16 @@ contexto completo da Spec `38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2`, Board
 `462da79f-33b8-57d5-94ad-351345d35eb8` e Test
 `ba5cf224-0da8-50fb-be37-4cc572d11e2c` no registro local de autoria.
 Não repetir criação nem presumir o estado atual a partir desses IDs.
-Completar Project Structure, aplicabilidade justificada dos recursos e
-pré-requisitos antes de pedir avaliação. Checklist Blocking foi configurado
-nesse Board isolado; verificar binding/snapshot na admissão normal.
+No último ensaio a Spec está In Progress, edição 2/versão 20, Task In Progress
+com implementação 100% e verificação 0%, Test Not Started. Project Structure,
+aplicabilidade de recursos, lint, Checklist Blocking e conclusão foram
+qualificados. Os recibos e o workspace mock estão identificados no ledger.
 
 As capturas locais `u3-integration-offline.yml` e `u3-integration-online.yml`
 registram rascunho preservado e Add desabilitado/habilitado na perda/retomada
 de conexão. Foram relidas nesta conferência; não são nova execução, nem
-encerram todos os casos de UV19. O fixture de autoria também não demonstra
-conclusão, execução, porcentagem ou KG canonical.
+encerram todos os casos de UV19. A nova prova acima demonstra conclusão e
+implementação; ainda não demonstra verificação autenticada, Done ou KG canonical.
 
 Corrigir somente defeito reproduzido que impeça estes aceites, no item
 correspondente. Não adicionar milestones, migração, nova avaliação, redesign
