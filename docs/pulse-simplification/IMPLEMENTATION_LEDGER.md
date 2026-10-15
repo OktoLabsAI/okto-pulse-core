@@ -2,6 +2,64 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento detalhado reconciliado e checkpoint local publicado
+
+Pedido vigente: iniciar o planejamento detalhado da unificação. Preservadas e
+publicadas as cinco alterações de frontend já presentes na working tree,
+antes da revisão documental: Community `7566db17`, sobre `1b3f5eaf`.
+Push confirmado para `origin/feature/v0.4.0`; Core de partida `0bb61cce`,
+confirmado por `git ls-remote`. Não foram iniciadas novas frentes de implementação.
+Snapshots operacionais Playwright não versionados foram preservados localmente;
+não são parte do código nem foram incluídos indiscriminadamente no commit.
+
+O checkpoint integra o pai da inspeção de Decisions: conserva a observação
+durante recarga, falha recuperável e remoção da Decision; não apresenta cache
+como cobertura atual; exige identidade/edição/versão compatíveis na leitura;
+retira conteúdo em recusa de acesso. Propaga leitura atual ao componente,
+permite descartar rascunho e inclui Decisions no watcher. A prova browser/MCP
+desse pai **continua pendente**; 5b e U3 não estão encerrados.
+
+Conferido o artefato existente
+`PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-decision-parent-integrated.xml`:
+154 casos, zero falhas/erros, 139,9588868 s; SHA-256
+`7e2ca04284b159a6ed330452026a7eac7ad314eab68cbf342e429b7f683bae96`.
+Distribuição: DecisionReviewSection 10, DecisionsTab 9, RequirementTabIdentity
+61 e SpecModal.validationTabs 74. É leitura da execução já registrada, não
+uma nova execução nem prova visual. O baseline registrado tinha três falhas
+em sete casos; o primeiro artefato anterior continha também falha de fixture.
+Nesta revisão: `rtk proxy npx tsc --noEmit` exit 0; ESLint dirigido aos dois
+componentes e ao teste de DecisionsTab exit 0, zero erros e cinco warnings;
+`git diff --check` aprovado. Sem build, reinstalação, novo E2E ou alteração
+do runtime do usuário.
+
+Atualizado o plano único `SPEC_UNIFIED_VALIDATION_PLAN.md`, inclusive os
+checkpoints desatualizados de §6.2 e a distinção entre integração e qualificação.
+Ordem fechada para a próxima execução:
+
+1. **3c/5b:** prova nativa UI/MCP da observação de Decision durante alteração
+   concorrente; revisão explícita e escrita UI confirmada por leitura MCP.
+   Reutilizar a integração e os testes publicados; não inventar uma inspeção
+   aprovada nem tornar Decision obrigatória para planejamento.
+2. **3c/5c:** integrar `TestScenariosTab` (declarado dentro de `SpecModal.tsx`),
+   `scenarioWriteGuard.ts` e `ScenarioVerificationMethodEditor`; conferir
+   base/contrato real, confirmação, falha de recarga, remoção e permissões;
+   testes e browser/MCP antes de qualificar Tests.
+3. **3c/5d:** conferir revisão própria e rascunhos de `ProjectStructureTab` e
+   os controles restantes de Details; sem converter a árvore em uma coleção
+   genérica nem reintroduzir requisitos em Details.
+4. **3d/UV18–UV21:** conectar os consumidores restantes ao watcher existente;
+   comprovar alteração só de Card refletida em Coverage/capas, rede/retomada,
+   revogação, troca de identidade, histórico e conclusão composta.
+5. **U4:** regressões pertinentes, frontend/build, catálogo e closure com oito
+   budgets ZERO; instalar par exato em home isolada, conferir paridade e processo
+   novo; iniciativa mock por UI/MCP até Cards/Test/Spec Done e KG canonical,
+   com matriz UV01–UV24, ledger e commits/pushes.
+
+Todas as avaliações, critérios, severidades, thresholds, permissões e históricos
+permanecem. Uma conclusão reúne resultados aplicáveis, sem média entre avaliações.
+U1 implementado, U2 qualificado no backend, U3 parcial, U4 pendente. A revisão
+documental termina aqui; não declara a implementação completa nem amplia o escopo.
+
 ### 2026-10-15 — U3/3c/5b: componente de inspeção corrigido; pai ainda pendente
 
 Community `1b3f5eaf` publicado após `81af8c41`; Core de partida `c2e05d69`.
