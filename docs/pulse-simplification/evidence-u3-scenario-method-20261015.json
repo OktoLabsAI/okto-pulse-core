@@ -1,0 +1,44 @@
+{
+  "checkpoint": "U3/3c — scenario method component, parent integration pending",
+  "date_local": "2026-10-15",
+  "community_commit": "6fe9129f",
+  "community_push_confirmed": true,
+  "branch": "feature/v0.4.0",
+  "tests": [
+    {
+      "artifact": "D:/Projetos/Techridy/PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-method-before.xml",
+      "sha256": "0707c1730fcb4f7a35c7357848213fdbcb8373344ee67ccd055aeb72ede6a447",
+      "executed": 14,
+      "passed": 11,
+      "failed": 3,
+      "meaning": "Version-key remount discarded method selection; native conflict offered no base review; confirmed write was ignored when the same Spec received another revision."
+    },
+    {
+      "artifact": "D:/Projetos/Techridy/PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-method-final.xml",
+      "sha256": "fd8f8bc1314b532921bc634a12639e112caa37cfc687b11cebf9e37c72542eba",
+      "executed": 15,
+      "passed": 15,
+      "failed": 0,
+      "session": 31947,
+      "exit_code": 0
+    }
+  ],
+  "checks": {
+    "types": { "session": 39923, "exit_code": 0 },
+    "lint": { "session": 9024, "exit_code": 0, "errors": 0, "warnings": 0 },
+    "diff_check": "passed"
+  },
+  "behavior": [
+    "Identity key includes Board/Spec/scenario/edit authority, not version or saved method.",
+    "Local choice captures original Spec version; current method and expected observation remain available for explicit review.",
+    "Only the endpoint's native HTTP 409 detail spec_version_conflict requires a newer read; unrelated 409 refusals are not treated as version changes.",
+    "Confirmed writes are retained across same-Spec revisions; obsolete identity completions are ignored.",
+    "Reload failure does not repeat a confirmed write; another edit requires an explicitly selected newly read base."
+  ],
+  "limits": [
+    "Component tests only in this follow-up; no new browser/MCP proof for scenario method.",
+    "Tests tab remains outside workspace polling. Parent TestScenariosTab still needs draft-safe collection writing, identity/permission guards and readCurrent propagation.",
+    "Integrate current-base reload and scenario-removal behavior with the parent before claiming scenario authoring qualification.",
+    "No backend, policy, gate, installation, build or closure changes. U3 global and U4 remain pending."
+  ]
+}

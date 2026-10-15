@@ -3,7 +3,7 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint publicado: Core `607f2f97` / Community `58eb6399`, publicados na
+Checkpoint publicado: Core `b60cab47` / Community `6fe9129f`, publicados na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -45,6 +45,10 @@ Detalhes em [coleções da Spec](evidence-u3-collection-editors-20261015.json).
 Refresh habilitado em Business/Contracts/Technical/Observability, além de
 Validation/FR/AC. Integration e Decisions ainda montam writers próprios de
 classificação/inspeção; proteger esses formulários antes de assinar suas abas.
+O componente de método de cenário também conserva a base: 15 testes aprovados,
+tipos/lint aprovados. Integração com `TestScenariosTab`, recarga e prova visual
+ainda pendentes; Tests permanece fora do watcher. Ver
+[método de cenário](evidence-u3-scenario-method-20261015.json).
 
 **Próxima ação:** proteger writers aninhados e cenários/Project Structure (3c) → refresh global →
 qualificação integrada U3 → qualificação instalada U4.
@@ -764,7 +768,9 @@ dos consumidores aninhados confirmou a próxima intervenção, ainda no item 5:
 `ArchitectureClassificationsPanel` usa `specVersion` nas chaves do formulário;
 `DecisionReviewSection` monta a inspeção com `data.version` corrente, e o pai
 zera `reviewData` durante recarga; `ScenarioVerificationMethodEditor` inclui
-versão/método na chave. `TestScenariosTab` ainda limpa o formulário sem aguardar
+versão/método na chave no baseline. **Este último foi corrigido em `6fe9129f` e
+qualificado em 15 testes do componente; falta integração/prova visual.**
+`TestScenariosTab` ainda limpa o formulário sem aguardar
 seu writer. Não ativar refresh nessas abas antes de preservar as bases próprias.
 `ProjectStructureTab` já possui revisão/estado de conflito próprios, mas precisa
 ser conferido contra atualização externa e perda de acesso; não substituí-los

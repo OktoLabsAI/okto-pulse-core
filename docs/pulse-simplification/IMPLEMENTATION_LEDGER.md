@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/3c: componente de método de cenário protegido; integração pendente
+
+Community `6fe9129f` publicado após `58eb6399`; Core de partida `b60cab47`.
+Continuação no mesmo 3c. `ScenarioVerificationMethodEditor` não usa mais versão
+ou método salvo como chave React. A seleção captura versão original, sobrevive
+a revisão e exige revisão explícita da base. O contrato REST existente retorna
+`spec_version_conflict` como detail textual; só esse 409 é tratado como conflito
+de versão. Locks e recusas de negócio não exigem bump fictício.
+
+Uma escrita confirmada na mesma Spec permanece confirmada mesmo se chegar nova
+revisão; troca de identidade continua descartando conclusão antiga. Mantida a
+proteção contra repetir escrita quando apenas a recarga falha. Nova edição do
+método depende de base relida, por ação explícita. Nenhuma mudança de método é
+inferida, nenhum admission path ou crédito de prova é inventado.
+
+Reproduzidas 3 falhas em 14 casos; 15 casos finais aprovados (sessão 31947), tipos
+exit 0 (39923), lint dirigido exit 0 sem warnings (9024), diff check aprovado.
+Hashes e limites em `evidence-u3-scenario-method-20261015.json`. Não houve nova
+prova browser/MCP deste componente; a prova das coleções abaixo continua válida.
+
+Retomada concreta: U3/3c ainda não encerrado. Integrar `TestScenariosTab` com
+confirmação de escrita, base, leitura atual/recarga e cenário removido antes de
+ativar Tests no watcher. Conferir o contrato real de `persistTestScenariosWithWriteGuard`
+(atualmente `updateSpec` de coleção, sem versão explícita) sem alegar CAS genérico.
+Em paralelo lógico dentro do mesmo inventário, proteger classificação arquitetural
+e inspeção de Decision, e conferir o estado de conflito próprio de Project Structure.
+Depois 3d/UV18–UV21 e U4 instalado. Não repetir os 222 casos das coleções sem impacto.
+
 ### 2026-10-15 — U3/3c: writer de coleções e seis editores protegidos
 
 Incremento sobre Core `607f2f97` / Community `b0a497f4`; Community `58eb6399`
