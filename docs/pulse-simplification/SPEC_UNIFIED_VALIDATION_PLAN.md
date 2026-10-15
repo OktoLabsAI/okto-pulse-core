@@ -3,7 +3,7 @@
 ## Estado vigente — revisão de planejamento de 14/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint de código: Core `e7641eb6` / Community `e2880609`, publicados na
+Checkpoint de código: Core `fb5c5e6e` / Community `b0a497f4`, publicados na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -27,15 +27,15 @@ Detalhes e limites em [evidência U2](evidence-u2-resources-code-20261014.json).
 A auditoria de fonte registrada tem 9.036 linhas, nenhum finding/drift e oito
 budgets ZERO. Esses resultados não qualificam o par instalado nem encerram U4.
 
-Editores FR/AC, critério e qualificação têm incremento parcial preservado em
-`e2880609`. Há 164 passes de componentes e uma execução posterior de 68 casos
-de integração; não somar reruns. Tipos foram conferidos nesta revisão. Ainda
-faltam corrigir o tratamento amplo de 409 e o warning novo de hook, qualificar
-o rascunho no browser/MCP e proteger os demais editores antes do refresh global.
-Detalhamento e limites em §6.2 e no
-[checkpoint dos editores](evidence-u3-spec-editors-planning-checkpoint-20261014.json).
+Editores FR/AC, critério e qualificação têm prova nativa UI/MCP em `b0a497f4`:
+rascunhos preservados, revisão explícita e escrita UI confirmada pelo MCP.
+Conflito de versão agora é identificado pelo código nativo, distinto de outras
+recusas 409. Corrigido o fechamento involuntário da Spec aninhada no Card.
+137 testes dos editores e 92 de CardModal passaram, com tipos aprovados.
+Detalhamento, screenshots e limites do runtime em
+[editores UI/MCP](evidence-u3-spec-editors-live-20261014.json).
 
-**Próxima ação:** concluir a proteção dos editores da Spec → refresh global →
+**Próxima ação:** proteger os demais editores da Spec (3c) → refresh global →
 qualificação integrada U3 → qualificação instalada U4.
 Sequência e condições de saída em §6.2; não reimplementar U1/U2.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
@@ -369,7 +369,7 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint vigente de planejamento:** Core `e7641eb6` / Community `e2880609`.
+**Checkpoint vigente de planejamento:** Core `fb5c5e6e` / Community `b0a497f4`.
 Knowledge/Targets têm prova integrada; leitores têm testes aprovados e provas
 UI/MCP dirigidas de Architecture e KB. Os limites da projeção Project Structure
 e do runtime anterior permanecem explícitos para U4. Pares anteriores são
@@ -404,7 +404,7 @@ Essas evidências não encerram o milestone nem substituem o E2E.
 | U1 | Cards Not Started em Draft e remoção da exigência de existir Decision. | Percurso real UI/MCP no U4; não refazer a implementação. |
 | U2 — conclusão | Payload composto, permissões independentes, pareceres/históricos nativos, promoção condicionada, recibo/replay e manifesto obrigatório. | Preservar a matriz U2 já qualificada; comprovar autenticação wire e percurso instalado em U4. |
 | U2 — leitura | `include_planning`, 17 componentes, composição pública sem escrita, revisões leves em lote, permissões por componente, paginação REST/MCP e cliente tipado. Revisões de coleções Spec/Card por Board; 11 passes do contrato, 79 de manifesto/leitura/transporte. Admissão sem Checklist comprovada por REST/browser e rollback nativo. | Consumir os contratos existentes em U3 e comprovar o percurso UI/MCP instalado em U4; não recriar metadados de coleção. |
-| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão, SpecsPanel e Kanban; refresh de permissões com proteção de respostas antigas. Knowledge/Targets e leitores têm provas dirigidas registradas. FR/AC/critério/qualificação têm incremento parcial em `e2880609`, com watcher restrito a Validation/FR/AC. | Concluir os editores conforme o detalhamento abaixo antes de expandir suas leituras; comprovar progresso de Card sem bump da Spec, revogação/offline/reconexão no fluxo completo. Autoria nativa de Project Structure permanece U4. |
+| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão, SpecsPanel e Kanban; refresh de permissões com proteção de respostas antigas. Knowledge/Targets, leitores e FR/AC/critério/qualificação têm provas dirigidas registradas. Watcher da Spec continua restrito a Validation/FR/AC. | Proteger os demais editores (3c) antes de expandir suas leituras; comprovar progresso de Card sem bump da Spec, revogação/offline/reconexão no fluxo completo. Autoria nativa de Project Structure permanece U4. |
 | U4 | Regressões parciais registradas no ledger. | Wheels, runtime compatível, browser e iniciativa nova até Done/KG; matriz UV01–UV24. |
 
 #### U2 — encerrar backend e contratos antes da interface
@@ -682,8 +682,9 @@ vermelho. O trabalho de U4 permanece obrigatório após esse fechamento.
 
 #### Detalhamento executável dos editores da Spec — item 3 de U3
 
-Este é o próximo trabalho de execução, não um novo milestone. A revisão de
-planejamento preservou as alterações locais, sem acrescentar código de produto.
+São tarefas do mesmo milestone. 3a e a prova principal de 3b foram executadas
+em `b0a497f4`, conforme evidência abaixo. Retomar em 3c, preservando os testes
+de erro/remoção/autoridade e acrescentando somente lacunas reproduzidas.
 
 | Ordem | Trabalho delimitado | Aceite e evidência |
 | --- | --- | --- |
@@ -692,17 +693,19 @@ planejamento preservou as alterações locais, sem acrescentar código de produt
 | 3c — fechar o inventário de consumidores | Conferir os editores já montados de Details, BR/TR/IR/OR, Contracts/Decisions, arquitetura, cenários e Project Structure antes de ativar refresh global. Registrar por consumidor: identidade, base do writer, revisão recebida, comportamento de rascunho e autorização. Alterar somente onde o refresh produzir perda ou escrita sobre base trocada. | Nenhum formulário sujo é remontado ou atualizado silenciosamente; nenhuma resposta de outra Spec repovoa a atual. Leitor sem editor apenas invalida sua projeção; não criar framework genérico de formulários. |
 | 3d — ampliar a assinatura e fechar integração | Integrar os consumidores previstos ao watcher existente; Coverage recebe mudança de Card mesmo sem alteração de `Spec.version`. Manter recarga sob demanda e cancelar gerações antigas. | UV18–UV20 demonstrados com modal e Board abertos; histórico/ação composta qualificados em UV21. Só então encerrar U3 e passar a U4. |
 
-Os artefatos existentes registram 164 passes antes dos últimos ajustes de
-integração e 68 passes posteriores de `SpecModal.validationTabs`. Esta revisão
-conferiu os XMLs, executou tipos (exit 0), lint (zero erros, 13 warnings: um novo
-em qualificação) e diff check. Esses números não representam novo E2E nem o
-aceite completo do incremento.
+O checkpoint anterior dos XMLs (164/68 passes) está no ledger. O incremento
+seguinte reproduziu cinco falhas em oito casos e corrigiu o tratamento de 409;
+137 testes passaram. Tipos exit 0 e lint sem o warning novo de qualificação.
+Prova UI/MCP: FR versões 9 → 10 → 11, AC 13 → 14 → 15 e qualificação
+15 → 16 → 17, com rascunhos preservados, revisão explícita e leitura MCP final.
+Uma queda do Vite interrompeu o primeiro ensaio do AC; a repetição foi separada
+e a recuperação após recarga inteira da página não foi contabilizada.
 
-A tentativa anterior de inspeção pelo Card encerrou os modais ao abrir
-Requirements; a causa não foi estabelecida. Na execução, abrir primeiro a Spec
-diretamente e reproduzir o acesso aninhado. Se houver falha, corrigir o caso
-reproduzido no item 3b; não contabilizar essa tentativa como prova visual nem
-pressupor perda de acesso. Não alterar policies para contornar o runtime antigo.
+O fechamento da Spec aninhada foi reproduzido: cliques propagavam ao overlay
+do Card. Corrigido o handler para reconhecer somente o próprio fundo; 92
+testes de CardModal e prova visual de navegação/fechamento aprovados. Não reabrir
+essa investigação sem nova evidência. Limites e hashes em
+[evidência dos editores](evidence-u3-spec-editors-live-20261014.json).
 
 #### Sequência finita de fechamento a partir deste checkpoint
 
@@ -715,13 +718,13 @@ Não há nova etapa de produto, novo gate ou expansão dos UV01–UV24.
 | --- | --- | --- |
 | 1 — U3/2e.1 | Concluído: preservar a prova Knowledge em `evidence-u3-knowledge-targets-20261014.json`. | Revisões 1 → 2 → 3, rascunho preservado, revisão explícita e escrita UI lida pelo MCP. Nenhuma repetição necessária sem alteração. |
 | 2 — U3/2e.2–3 | Implementado e qualificado nos limites de `evidence-u3-resource-readers-live-20261014.json`. Preservar Targets e leitores. | Architecture/KB observadas após MCP e captura inspecionada; Project Structure/dependências em testes frontend. Autoria de árvore nativa recusada pelo contexto no runtime anterior não é prova positiva e permanece no ensaio U4. |
-| 3 — U3/SpecModal | Concluir 3a–3d acima sobre `e2880609`; não refazer a separação de identidade/base já escrita. Só depois ampliar a assinatura restrita a Validation/FR/AC e invalidar Coverage/recursos/referências/dependências. | Rascunho e base preservados; mudança só de Card atualiza Coverage; respostas de outra Spec descartadas. Testes dos editores e consumidores efetivamente alterados e prova browser/MCP. |
+| 3 — U3/SpecModal | Retomar 3c–3d sobre `b0a497f4`; preservar 3a e a prova de 3b. Só depois ampliar a assinatura restrita a Validation/FR/AC e invalidar Coverage/recursos/referências/dependências. | Rascunho e base preservados; mudança só de Card atualiza Coverage; respostas de outra Spec descartadas. Testes dos editores e consumidores efetivamente alterados e prova browser/MCP. |
 | 4 — U3/UV18–21 | Conferir o conjunto aberto: atualização MCP, acesso revogado, rede interrompida/recuperada, troca de contexto, histórico e ação de conclusão. Reusar provas parciais pertinentes. | UI legível e funcional, sem cache protegido após revogação, sem submissão duplicada, sem perda silenciosa de edição. U3 pode ser encerrado somente aqui. |
 | 5 — U4/UV01–24 | Qualificar o par exato de wheels/frontend e executar iniciativa mock nova até Cards/Test/Spec Done e KG canonical, conforme roteiro abaixo. | Matriz final com provas reais UI/MCP, paridade byte a byte, processo novo, oito budgets ZERO, commits/pushes pareados. |
 
 O planejamento já foi sucedido pela execução de Knowledge/Targets e pelo
 incremento dos leitores e pela proteção parcial dos editores. A próxima ação é
-concluir 3a–3d, sem nova
+concluir 3c–3d, sem nova
 rodada genérica de assessment. Uma lacuna
 crítica reproduzida pode exigir correção no item afetado; melhorias opcionais
 ficam fora do escopo. Não declarar pronto com teste falho ou critério não exercitado.
@@ -840,8 +843,8 @@ mockados precisam de execução observada para gerar prova autenticada.
    registrados. Não repetir as mutações mock. O percurso instalado de Project
    Structure continua parte do U4; o runtime antigo não o qualificou.
 3. Concluir os editores de `SpecModal` antes da atualização global conforme
-   §6.2, itens 3a–3d. Preservar o incremento `e2880609`, corrigir as pendências
-   de conflito/hook e comprovar identidade, base e permissões no browser/MCP.
+   §6.2, itens 3c–3d. Preservar `b0a497f4` e as provas dos editores; proteger
+   as bases dos writers de coleções e dos demais formulários previstos.
    Em seguida conectar Coverage/recursos/referências/dependências ao token
    autoritativo, inclusive quando somente um Card mudou.
 4. Qualificar ação composta, resultados/histórico e sincronização U3 por

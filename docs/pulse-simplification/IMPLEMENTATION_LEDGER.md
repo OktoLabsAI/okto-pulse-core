@@ -2,6 +2,57 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U3/3a–3b: conflitos corrigidos e editores comprovados por UI/MCP
+
+Progresso sobre Core `fb5c5e6e` / Community `e2880609`; Community `b0a497f4`
+publicado. Evidência: `evidence-u3-spec-editors-live-20261014.json`. O objetivo
+integral continua ativo: U3 global e U4 instalado não estão encerrados.
+
+Cinco falhas reproduzidas em oito casos dirigidos: todo HTTP 409 virava conflito
+de versão, enquanto `success=false/error_code=version_conflict` perdia seu código.
+O helper local de entidades agora distingue o código nativo em resultado/erro
+HTTP. Recusa de negócio não exige bump inexistente; conflito real conserva campos
+e exige leitura/revisão explícita. Corrigido o warning novo de `scope` em
+qualificação sem introduzir dependência de objeto instável.
+
+137 passes finais: TextRequirements 12, CriterionVerification 21,
+RequirementVerification 35, SpecModal.validationTabs 69. Tipos sessão 51637
+exit 0; lint de Spec exit 0, 12 warnings existentes, nenhum novo. Não há mudança
+Python, semântica de gate, policy ou autoridade.
+
+UI/MCP nativos: FR `fr_fe396a22` criado na UI na versão 9, alterado pelo MCP na
+10 com texto local preservado, revisão explícita e gravação UI confirmada pelo
+MCP na 11. AC `ac_2e2c3690`: aspecto/vínculo preservados após mudança MCP para
+14; gravação UI confirmada na 15. Qualificação do FR: seleção funcional explícita
+preservada após alteração do requisito para 16; revisão e gravação confirmadas
+na 17 como explicit/functional, sem herança. Screenshots inspecionadas; captura
+do conflito de qualificação é parcial, complementada pela árvore acessível e
+captura final. Não são provas de entrega nem aprovação do mock.
+
+Limite operacional: Vite PID 26272/5274 terminou durante o primeiro ensaio de AC.
+Confirmados processo/listener ausentes; API/MCP PID 27316 continuavam ativos.
+Restaurado somente Vite isolado, oculto, cwd frontend, PID 20128. Antes da queda,
+UI conservou aspecto e bloqueou envio com leitura indisponível. O Vite recarregou
+a página inteira ao retornar; não contar como recuperação de rascunho. Refeito
+o ensaio do AC com nova mutação identificada, sem repetir escrita já confirmada.
+`get_spec_context` ainda recusa snapshot de Checklist no runtime anterior;
+`okto_pulse_get_spec` confirmou as escritas normalmente. Nenhuma policy contornada.
+
+Fechamento de modais investigado: clique em aba da Spec aninhada propagava ao
+overlay do Card e fechava ambos. Browser e teste reproduziram. Handler agora
+fecha somente por clique no próprio fundo. 92 testes CardModal passaram após
+a correção; tipos sessão 63934 exit 0; lint exit 0/11 warnings existentes;
+diff check passou. Browser confirmou navegação Functional acima do Card e
+Close spec conservando o Card. Isso encerra a investigação anteriormente pendente.
+
+Retomada: U3/3c antes de refresh global. A leitura dirigida confirmou que
+Rules/Contracts/TR/IR/OR/Decisions enviam coleções via `onUpdate`, e o pai
+`syncStructuredCollection` usa `spec.version` atual; proteger a base de edição
+e o resultado assíncrono antes de assinar essas abas. Conferir também cenários,
+arquitetura e Project Structure conforme o inventário já previsto. Preservar
+FR/AC/critério/qualificação e provas concluídas; acrescentar somente lacunas
+reproduzidas. Depois UV18–UV21 e U4 completo. Runtime do usuário intacto.
+
 ### 2026-10-14 — planejamento detalhado reconciliado; checkpoint dos editores
 
 Pedido desta rodada: iniciar o planejamento detalhado da unificação. Mantido

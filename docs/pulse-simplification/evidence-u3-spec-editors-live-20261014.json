@@ -1,0 +1,98 @@
+{
+  "checkpoint": "U3/3a–3b: native conflict handling and Spec editor UI/MCP proofs",
+  "date_local": "2026-10-14",
+  "baseline_core": "fb5c5e6e",
+  "community_commit": "b0a497f4",
+  "branch": "feature/v0.4.0",
+  "community_push_confirmed": true,
+  "changes": [
+    "Use native version_conflict code from typed structured failures or HTTP error details; other 409 refusals do not impose a nonexistent version change",
+    "Preserve failure codes through the Functional writer; preserve draft fields and require explicit review of an observed new base",
+    "Remove new qualification scope-dependency warning without unstable object dependency",
+    "Dismiss Card only when its own backdrop is clicked; nested Spec interaction and closing do not dismiss Card"
+  ],
+  "tests": [
+    {
+      "artifact": "u3-spec-conflicts-before.xml",
+      "sha256": "86ebb2420bdb9122cd067459b77baaaa471b3d376c874221bba48cac17ef953a",
+      "executed": 8, "passed": 3, "failed": 5, "skipped": 60,
+      "meaning": "Native conflict versus business refusal reproduction before correction"
+    },
+    {
+      "artifact": "u3-spec-conflicts-final.xml",
+      "sha256": "bcef9b74f7ff2cabc9fea076043dd40aabd45f513ffc1d99826b38f8a7d92846",
+      "passed": 137, "failed": 0, "skipped": 0,
+      "suites": {"TextRequirementsTab": 12, "CriterionVerificationPanel": 21, "RequirementVerificationPanel": 35, "SpecModal.validationTabs": 69},
+      "session_exit": {"session": 33461, "exit_code": 0}
+    },
+    {
+      "artifact": "u3-nested-spec-before.xml",
+      "sha256": "1954592533f6d815004afc9eabc2f10d09618704e7c6886b0a41ad691ece187f",
+      "executed": 1, "failed": 1, "skipped": 91,
+      "meaning": "A nested Spec click invoked closeCardModal"
+    },
+    {
+      "artifact": "u3-nested-spec-final.xml",
+      "sha256": "05e8603016288f5ec96e6156af3aa988e45246815436716c5b47f7ef42564435",
+      "passed": 92, "failed": 0, "skipped": 0,
+      "session_exit": {"session": 12483, "exit_code": 0}
+    }
+  ],
+  "checks": {
+    "types": [{"session": 51637, "exit_code": 0}, {"session": 63934, "exit_code": 0}],
+    "lint_spec": {"session": 54481, "exit_code": 0, "errors": 0, "existing_warnings": 12, "new_qualification_warning_removed": true},
+    "lint_card": {"session": 22693, "exit_code": 0, "errors": 0, "existing_warnings": 11},
+    "diff_check": "passed",
+    "backend_changes": false,
+    "new_closure_or_wheel_validation": false
+  },
+  "runtime": {
+    "frontend": "http://127.0.0.1:5274",
+    "api": "http://127.0.0.1:8200",
+    "mcp": "http://127.0.0.1:8201/mcp",
+    "backend_pid": 27316,
+    "frontend_pid_before_failure": 26272,
+    "frontend_pid_after_recovery": 20128,
+    "recovery": "Confirmed absent 5274 listener and missing prior process before hidden Start-Process with frontend cwd. API/MCP remained live. Vite reconnect reloaded the whole page; interrupted AC attempt does not prove draft recovery across a page reload.",
+    "limit": "Frontend checkout with existing older isolated backend, not installed U2/current wheel qualification. User runtime untouched."
+  },
+  "native_proofs": {
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "2baa5f88-eb1a-4aac-9aeb-453707cef290",
+    "spec_edition": 1,
+    "spec_final_version": 17,
+    "spec_status": "draft",
+    "FR": {
+      "id": "fr_fe396a22", "versions": [9, 10, 11],
+      "observed": "Created by UI. Open local text survived native MCP text update; Save disabled until Review requirement base. UI save then confirmed by okto_pulse_get_spec at version 11.",
+      "confirmation": {"artifact": "u3-spec-editors-get-spec.json", "sha256": "e0d9d07d39f02d6befd95962a7d55fa3b84568b91b7132da7b2fff460fc60e10"}
+    },
+    "AC": {
+      "id": "ac_2e2c3690", "versions": [12, 13, 14, 15],
+      "observed": "MCP created AC. First concurrent update reached version 13, but frontend process loss interrupted proof. After recovery, new local covered-aspect draft survived another MCP update to version 14. Review verification base and UI save preserved link/aspect, confirmed by MCP at version 15.",
+      "confirmation": {"artifact": "u3-spec-editors-get-ac.json", "sha256": "cdeaf189ad4e4897f0d4b0c2ef57077f5fac922a6dcdcb8f816bf6963ba3b159"}
+    },
+    "qualification": {
+      "requirement_id": "fr_fe396a22", "versions": [15, 16, 17],
+      "observed": "UI selected proposed functional profile explicitly. Native MCP change to requirement text preserved that selection, showed current text and blocked Save. Review qualification base followed by UI save confirmed through MCP as explicit/functional with no inheritance.",
+      "confirmation": {"artifact": "u3-spec-editors-get-qualification.json", "sha256": "0d99d56637a0524bb8c9eda8a6f7edd6cf1b721753c12669ec3e3c028b574424"}
+    },
+    "nested_spec": {
+      "card_id": "c8a1a9b4-691c-5175-84be-1d512b6bdda4",
+      "before": "Requirements & Decisions click bubbled into Card backdrop and closed both modals; reproduced in browser and regression test.",
+      "after": "Requirements/Functional remained open above Card. Close spec removed only the Spec; Close card dialog and parent Spec link remained visible. Screenshot inspected."
+    },
+    "context_limit": "get_spec_context summary still returned checklist_validation_binding_snapshot_missing on old isolated runtime. No policy change or binding fabrication. Public okto_pulse_get_spec successfully confirmed authoring state; full context prerequisite was not used for any status change.",
+    "delivery_credit_claimed": false
+  },
+  "screenshots_inspected": [
+    {"file": "output/playwright/u3-spec-fr-draft-conflict.png", "sha256": "a271ac0b5242e7a618c4aede6004d39f79d170780785217416e92fb66608ae27"},
+    {"file": "output/playwright/u3-spec-ac-draft-conflict.png", "sha256": "3d44f3e36cca7a153be8195cf74a51a1372e3ec4e85c218cb71f79e1d73cbdb6"},
+    {"file": "output/playwright/u3-spec-qualification-draft-conflict.png", "sha256": "4d24d7aa245de7b1762cf9de4f41a26416b82336f5fad24f418cccd8f32cd44a", "limit": "Viewport cuts off lower form; checked profile and disabled save observed in accessibility snapshot"},
+    {"file": "output/playwright/u3-spec-qualification-saved.png", "sha256": "e476a484d72f72f443327736860e76b9bfca83f5dac9958640de512585b5bd2c"},
+    {"file": "output/playwright/u3-nested-spec-functional.png", "sha256": "72db8967796bb1e606cf4570c94b7ed32be3962bb6d06076dcfe5bea707be21c"}
+  ],
+  "next": "Finish remaining editor/consumer inventory and protections in U3/3c, then global refresh and UV18–UV21. U4 exact installation and complete SDLC remain mandatory.",
+  "U3_complete": false,
+  "U4_complete": false
+}
