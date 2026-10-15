@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento detalhado atualizado sobre o último par publicado
+
+Pedido atual: iniciar o planejamento detalhado da unificação. Conferidos HEADs
+e `git ls-remote origin refs/heads/feature/v0.4.0`: Core `92eb4e8a` e Community
+`3057e84e`, ambos publicados. Não havia alteração rastreada pendente de commit.
+Snapshots operacionais Playwright não versionados foram preservados localmente;
+não foram incluídos indiscriminadamente nem apagados.
+
+Atualizado o plano único `SPEC_UNIFIED_VALIDATION_PLAN.md`: corrigido o
+checkpoint, distinguido o diagnóstico histórico da confirmação de cenários já
+corrigida e marcado 5b como qualificado nos limites de sua evidência. Acrescentado
+roteiro executável restante em §6.2, com arquivos/fronteiras, dependências e
+critérios de saída. Nenhuma implementação, teste de comportamento, instalação
+ou mutação de dados do Pulse foi executada nesta revisão documental.
+
+Conferência dirigida da fonte: o writer de coleção de cenários não envia base
+de versão; `SpecUpdate` não a recebe; edição nativa de corpo/método já possui
+`expected_spec_version` e fence. Exclusão MCP possui cascata em Cards, portanto
+não é substituto semanticamente neutro da escrita atual da UI. O pai do método
+ainda relê via `onSpecRefreshed` sem a proteção de identidade/geração prevista;
+Tests continua fora do watcher. `ProjectStructureTab` já tem revisão própria,
+`snapshotGeneration` e conflito. Estes são achados de leitura, não novas
+reproduções de concorrência ou provas visuais.
+
+**Fila fechada de retomada:** 5c.1 proteção delimitada do writer → 5c.2 base,
+leitura atual e método → 5c.3 resultado incerto/reconciliação → 5c.4 testes e
+UI/MCP, habilitando Tests somente após a proteção → 5d Project Structure e
+controles restantes → 3d consumidores → UV18–UV21 para encerrar U3 → U4 instalado
+até Done/KG canonical. Não reimplementar U1/U2 ou 5a/5b; não repetir provas
+qualificadas sem impacto novo. Os 43 passes de confirmação de cenários não
+encerram 5c. A investigação do writer fica limitada às operações listadas
+no plano, sem CAS global ou alteração lateral de gates/histórico.
+
+Preservadas todas as avaliações, dimensões, critérios, severidades, thresholds,
+permissões e históricos. Um ponto de conclusão, sem média entre avaliações.
+U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente. O pedido de
+planejamento termina com a publicação documental, sem declarar entrega concluída.
+Conferência documental: `git diff --check` aprovado; 21 links locais do plano
+resolvidos e matriz com os 24 IDs UV01–UV24 preservada. Sem novo teste de produto.
+
 ### 2026-10-15 — U3/3c/5c: confirmação de cenários corrigida; integração permanece aberta
 
 Community `3057e84e` publicado sobre `7566db17`; Core de partida `db34c785`.

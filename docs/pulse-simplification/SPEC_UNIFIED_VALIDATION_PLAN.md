@@ -3,7 +3,7 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint publicado: Core `db34c785` / Community `3057e84e`, publicados na
+Checkpoint publicado: Core `92eb4e8a` / Community `3057e84e`, publicados na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -402,12 +402,13 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint vigente de planejamento:** Core `db34c785` / Community `3057e84e`.
+**Checkpoint vigente de planejamento:** Core `92eb4e8a` / Community `3057e84e`.
 Ambos conferidos em `origin/feature/v0.4.0` em 15/10/2026. A revisão documental
-a partir deste par não representa nova implementação. As alterações locais
-preexistentes de 5b foram preservadas e publicadas antes desta revisão; os 154
-resultados Vitest foram lidos do artefato existente, não reexecutados. Tipos,
-lint dirigido e diff check foram executados para conferir o checkpoint.
+a partir deste par não representa nova implementação. O checkpoint já inclui
+a prova UI/MCP de 5b e a confirmação de cenários de 5c, com os resultados
+registrados nas respectivas evidências. A presente revisão conferiu fonte,
+ledger e heads remotos; não reexecutou Vitest, tipos, lint ou o ensaio visual.
+As execuções anteriores permanecem identificadas no ledger, sem contagem dupla.
 Knowledge/Targets têm prova integrada; leitores têm testes aprovados e provas
 UI/MCP dirigidas de Architecture e KB. Os limites da projeção Project Structure
 e do runtime anterior permanecem explícitos para U4. Pares anteriores são
@@ -785,7 +786,7 @@ alterar Card/Delivery pelo MCP sem mudar `Spec.version` e observar Coverage,
 capas e leitores abertos atualizarem, sem apagar um formulário em edição.
 UV18–UV21 encerram U3; U4 continua obrigatório e distinto dessa prova de frontend.
 
-**Execução deste detalhamento em 15/10:** concluída a proteção do writer de
+**Diagnóstico histórico deste detalhamento em 15/10:** concluída a proteção do writer de
 coleções e dos seis editores, com regressões e prova visual de BR. A leitura
 dos consumidores aninhados confirmou a próxima intervenção, ainda no item 5:
 `ArchitectureClassificationsPanel` usa `specVersion` nas chaves do formulário;
@@ -793,8 +794,10 @@ dos consumidores aninhados confirmou a próxima intervenção, ainda no item 5:
 zera `reviewData` durante recarga; `ScenarioVerificationMethodEditor` inclui
 versão/método na chave no baseline. **Este último foi corrigido em `6fe9129f` e
 qualificado em 15 testes do componente; falta integração/prova visual.**
-`TestScenariosTab` ainda limpa o formulário sem aguardar
-seu writer. Não ativar refresh nessas abas antes de preservar as bases próprias.
+Naquele diagnóstico, `TestScenariosTab` ainda limpava o formulário sem aguardar
+seu writer; isso foi corrigido em `3057e84e`. Classificação e Decisions também
+foram integradas e qualificadas posteriormente (5a/5b). Tests continua sem
+refresh automático até concluir base, método e resultados incertos de 5c.
 `ProjectStructureTab` já possui revisão/estado de conflito próprios, mas precisa
 ser conferido contra atualização externa e perda de acesso; não substituí-los
 pelo helper das coleções. Details exibe descrição/contexto por `MarkdownContent`.
@@ -819,9 +822,9 @@ componente de método, repetindo apenas os afetados pela integração.
 
 | Ordem / superfície | Intervenção delimitada | Prova de saída |
 | --- | --- | --- |
-| 5a — classificação arquitetural em Integration | Em `ArchitectureClassificationsPanel`, separar a identidade do formulário da revisão da leitura: trocar somente a chave do filho não basta, pois `current=null` também desmonta a árvore. Em `ArchitectureClassificationAuthoring`, conservar candidato, seleção, fila e base de versão/edição/digest durante refresh; exigir revisão explícita antes de novo envio. Preservar recibo, retry idêntico de resultado desconhecido e permissões de promover/associar. | Regressão reproduz atualização durante classificação inline e em lote; mudança/remoção da fonte impede submissão sobre base inválida; retorno antigo não restaura sugestão. Browser + MCP preservam o rascunho e confirmam a gravação revisada. Só então assinar Integration. |
-| 5b — inspeção de Decision | Preservar a integração publicada de `DecisionsTab`/`DecisionReviewSection`. Na UI isolada, abrir uma observação, alterar condição/escopo pelo MCP, conferir preservação do texto e bloqueio de envio, revisar explicitamente e gravar observação realmente conferida. Ler pelo MCP o registro e sua base. Corrigir somente divergência encontrada nessa prova. | Capturas inspecionadas e leitura MCP confirmam observação ligada à base revista; nenhuma aprovação ou inspeção é fabricada. Os 154 testes integrados são evidência existente; regressão adicional somente se houver alteração. Encerrar 5b após esta prova, sem confundir assinatura implementada com qualificação. |
-| 5c — cenários e método em Tests | Integrar a proteção existente de `ScenarioVerificationMethodEditor` com leitura atual e recarga do pai. Corrigir confirmação/propagação de falha em `TestScenariosTab`; preservar seleção e texto diante de cenário removido. Conferir o contrato público real usado por `persistTestScenariosWithWriteGuard`: hoje ele envia a coleção via `updateSpec` sem versão explícita. Usar as garantias nativas encontradas; não afirmar CAS inexistente nem ampliar para CAS global. Inventariar também os writers de vínculo e policy já montados nessa aba. | Casos de erro de gravação, sucesso com refresh falho, conflito nativo, cenário removido e perda de acesso. Teste integrado do método com o pai, além dos 15 testes já existentes. Browser + MCP com seleção preservada e resultado relido. Só então assinar Tests. |
+| 5a — classificação arquitetural em Integration | Concluído nos limites registrados: preservar `81af8c41`, a integração de `ArchitectureClassificationsPanel`/`ArchitectureClassificationAuthoring`, a base original e o replay exato. | `evidence-u3-classification-editors-20261015.json`: 141 casos finais e prova UI/MCP com arquitetura v2 → v3, revisão explícita e promoção de IR confirmada. Não repetir sem impacto novo. |
+| 5b — inspeção de Decision | Concluído nos limites registrados: preservar a integração publicada de `DecisionsTab`/`DecisionReviewSection` e a prova UI/MCP da versão 8 → 9, revisão explícita, gravação e leitura do histórico. | `evidence-u3-decision-inspection-parent-20261015.json`, capturas inspecionadas e 154 testes integrados. Não repetir a prova sem impacto novo; ela não substitui o par instalado de U4. |
+| 5c — cenários e método em Tests | Preservar confirmação/propagação de falha em `TestScenariosTab`, corrigidas em `3057e84e`. Integrar `ScenarioVerificationMethodEditor` com leitura atual e recarga do pai; preservar seleção e texto diante de cenário removido. Proteger a base do writer de coleção `persistTestScenariosWithWriteGuard`, que envia `updateSpec` sem versão explícita. Usar garantias nativas, sem CAS global. Conferir também os writers de vínculo e policy montados nessa aba. | Casos de erro de gravação, sucesso com refresh falho, resultado incerto, conflito nativo, cenário removido e perda de acesso. Teste integrado do método com o pai e browser + MCP com seleção preservada e resultado relido. Os 43 passes de confirmação são prova parcial; só assinar Tests após completar 5c. |
 | 5d — Project Structure e controles restantes | Conferir a revisão própria, `snapshotGeneration`, conflito e revisão explícita de `ProjectStructureTab` contra refresh externo e permissões. Reutilizar esse contrato; não adaptar a árvore ao helper das coleções. Conferir controles editáveis de Details sem reintroduzir edição de requisitos pela descrição. | Testes de leitura fora de ordem, versão/structure revision, rascunho e perda de acesso; registrar quais controles são somente leitura. A prova nativa de autoria da árvore continua no runtime compatível de U4, sem tratar a recusa do runtime antigo como sucesso. |
 
 Depois de 5a–5d, executar 3d usando os metadados e o watcher existentes. Para
@@ -836,6 +839,41 @@ completos e conclusão composta com permissões próprias. As provas de UI devem
 identificar ações realmente observadas, separadas dos mocks de componentes.
 U4 permanece a qualificação do par exato instalado e da iniciativa nova até
 Done/KG canonical; não converter uma prova isolada de editor em aceite final.
+
+#### Roteiro executável restante — base `92eb4e8a` / `3057e84e`
+
+Esta é a fila vigente, subordinada aos itens anteriores. Não acrescenta
+milestone, gate, avaliação ou critério à matriz UV01–UV24. O pedido atual é de
+planejamento: este checkpoint altera somente documentação. A implementação
+seguinte começa em 5c; U1/U2, 5a/5b e a confirmação de cenários são preservados.
+
+| Ordem / dependência | Trabalho e fronteira exatos | Aceite para encerrar |
+| --- | --- | --- |
+| 5c.1 — antes de ligar Tests ao watcher | Reproduzir concorrência na substituição de cenários usada por `scenarioWriteGuard.ts` → `api.updateSpec` → `SpecUpdate` → `SpecService.update_spec`. Fechar a proteção da base nessa fronteira, usando o fence público existente; delimitar a alteração aos cenários. Conferir seus callers de autoria e status antes de mudar o contrato. Não substituir a exclusão atual pela exclusão MCP em cascata: os efeitos são distintos. | Duas escritas sobre a mesma base não apagam silenciosamente a primeira; conflito não deixa efeito parcial. REST/MCP afetados preservam permissões, Draft/content lock, vínculos e regras de evidência. Controle somente no cliente não conta como prova de concorrência no servidor. |
+| 5c.2 — após definir a fronteira de 5c.1 | Em `TestScenariosTab`/`SpecModal`, capturar identidade e base do rascunho; propagar leitura atual ao `ScenarioVerificationMethodEditor`; preservar seleção quando cenário for removido, impedindo escrita até resolução. Guardar geração/identidade nas releituras de `onSaved` e `onSpecRefreshed`. Conferir link/unlink, controle de cobertura e Policy Compliance montados nessa aba, sem mudar suas permissões. | Refresh conserva texto e seleção; revisão da base é explícita; respostas antigas não restauram outra Spec nem versão anterior. Revogação retira conteúdo protegido; indisponibilidade não habilita escrita sobre cache apresentado como atual. |
+| 5c.3 — com 5c.1/2 | Distinguir recusa definitiva, gravação confirmada com falha de releitura e resultado desconhecido por transporte. Conservar identidade/payload da tentativa. Reusar replay somente onde o contrato nativo o suporta; caso contrário, reconciliar por leitura autoritativa antes de permitir nova operação. Não criar outra entidade ou histórico de aprovação. | Timeout não gera segundo cenário; sucesso seguido de falha de leitura não oferece novo create. Se a leitura não permite determinar o resultado, a UI informa a incerteza e não repete a escrita automaticamente. |
+| 5c.4 — saída de 5c | Ampliar `SpecModal.activity.test.tsx`, `SpecModal.validationTabs.test.tsx` e `ScenarioVerificationMethodEditor.test.tsx` nos casos afetados; acrescentar regressão nativa da fronteira alterada. Só então habilitar Tests no watcher. Browser aberto + mutação MCP: rascunho, conflito, revisão explícita, gravação UI e confirmação MCP. | Tipos e testes afetados aprovados; captura realmente inspecionada; ledger identifica operação, versões, resultado e limites. Os 43 passes já registrados não encerram esta integração. |
+| 5d — após 5c | Conferir `ProjectStructureTab.tsx`: `snapshotGeneration`, versão da Spec, `structure_revision`, replay e revisão explícita. Integrar invalidação externa sem remontar autoria nem substituir o contrato da árvore pelo writer de coleções. Classificar os controles restantes de Details em leitura/escrita. | `ProjectStructureTab.test.tsx` e testes dos controles afetados cobrem recarga, resposta atrasada, rascunho e acesso. Não reintroduzir edição de requisitos em Details. Prova nativa de autoria da árvore no par compatível fica explicitamente em U4. |
+| 3d — após proteger os editores | Ligar Coverage, recursos, referências e dependências restantes ao watcher existente. Para cada leitor, registrar token autoritativo, condição de visibilidade e descarte de resposta antiga. Reusar CardModal/Delivery, SpecsPanel e Kanban já implementados. | Alteração MCP somente em Card/Delivery, sem bump de `Spec.version`, atualiza Coverage e capas abertas; painel fechado consulta ao abrir. Sem polling periódico de Coverage completo e sem novo cálculo de gate no frontend. |
+| UV18–UV21 — fechamento de U3 | Exercitar atualização externa, formulário sujo, troca de identidade, rede/retomada e revogação; inspecionar resultados individuais, histórico completo e conclusão composta com permissões distintas. Reusar provas existentes que cubram exatamente o caso. | UI e MCP sobre o mesmo runtime, ações observadas e limites registrados. Nenhum consumidor previsto pendente; testes/tipos/build pertinentes aprovados. Commit/push de U3 com ledger. |
+| U4 — após U3 | Executar o roteiro instalado abaixo: regressões, catálogo, closure, wheels/frontend pareados, home isolada nova, paridade byte a byte e processo posterior à instalação. Tramitar iniciativa mock nova até Cards/Test/Spec Done e consultar/consolidar KG. | Matriz UV01–UV24 preenchida com evidências reais e limites; oito budgets ZERO; percentuais aplicáveis comprovados, KG canonical, ledger e commits/pushes finais. |
+
+**Regra de execução para 5c.1:** a investigação tem inventário finito: substituição
+da coleção, criação, edição de corpo/método, exclusão, vínculo/desvínculo e status
+de cenário. Registrar entrada pública, autorização, versão/fence, efeitos e
+commit de cada caminho tocado. `update_test_scenario` já aceita
+`expected_spec_version`; `SpecUpdate` não o aceita neste checkpoint. Reutilizar
+garantias comprovadas, sem apresentar add/delete como protegidos por versão só
+porque edit está protegido. Não ampliar essa correção para CAS global. Se a
+correção exigir mudar cascata, autoridade ou efeito de evidência/histórico,
+aplicar a investigação e decisão do pacote; não fazer essa mudança como efeito
+colateral da sincronização da UI.
+
+Cada incremento termina com resultado reproduzível, ledger e commit/push nos
+repositórios alterados. Um teste falho ou aceitação não exercitada mantém o item
+aberto. Novas melhorias de produto não entram nesta fila; somente correções de
+falhas que impeçam os aceites existentes. Nenhuma etapa remove avaliações ou
+reduz seus critérios, severidades, thresholds ou permissões.
 
 #### Sequência finita de fechamento a partir deste checkpoint
 
