@@ -2,6 +2,58 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/5d: Project Structure integrado e qualificado por UI/MCP
+
+Community `5ac5ce06` publicado; Core de produto permanece `8291a648`.
+O editor conserva a base autorada durante refresh, exige revisão explícita e
+guarda exatamente payload, tokens e idempotency key em resposta incerta.
+Permissões por operação continuam próprias. Troca de identidade descarta
+conclusões antigas; recusa de leitura retira árvore/rascunho; replay antigo
+não substitui snapshot mais novo. Nó removido conserva um editor desabilitado
+e descartável, inclusive com Show removed ativo, sem duplicação do formulário.
+
+`SpecModal` agora assina Project Structure no watcher existente, transmite
+atualidade/refresh/perda de acesso e protege a publicação por identidade e
+revisões. Snapshot parcial da árvore não certifica campos antigos da Spec:
+uma nova versão ou mutação confirmada exige releitura completa, com piso de
+versão. Falha posterior à escrita bloqueia novas ações; Refresh recupera a
+Spec e depois a árvore, sem repetir a mutação. Details foi conferida: contém
+somente leitura de descrição/contexto/labels/cancelamento e resumo do Task
+Validation Gate; não há edição de requisitos a reintroduzir ou migrar ali.
+
+Qualificação: **138 testes frontend aprovados**, zero falhas/erros/skips,
+`--maxWorkers=1`; TypeScript exit 0, ESLint zero erros/11 warnings preexistentes,
+diff check aprovado. Inclui ProjectStructureTab, SpecModal.validationTabs e
+SpecModal.activity. A primeira execução integrada falhou em dois seletores
+novos que ignoravam o contador no nome acessível da aba; corrigidos os testes,
+sem relaxar a regra de visibilidade. Os 14 passes anteriores são sobrepostos.
+
+Prova nativa no runtime isolado 8200/8201 + Vite5274, Spec
+`dec9410f-d455-4506-a8fd-f791ee31dc77`:
+- UI criou `psn_6a7cb3581649`, arquivo TO-BE `mock-scope.md`; MCP confirmou
+  versão 18/revisão 1. MCP renomeou para `mock-scope-reviewed.md`, versão
+  19/revisão 2; UI atualizou sozinha, reteve a nota local e bloqueou Save.
+- Houve suspensão de rede do ambiente e reload antes do salvamento. O rascunho
+  desse primeiro ensaio não foi gravado nem declarado persistente após reload.
+  API/MCP PID39712 e Vite PID17304 continuavam ouvindo nas mesmas portas.
+- Retomado um novo rascunho no mesmo nó. MCP vinculou a Task mock legítima,
+  mantendo versão 19 e avançando só a revisão para 3. UI reteve texto e exigiu
+  revisão. Review current structure → Save produziu versão 20/revisão 4.
+  MCP confirmou um único nó, nome revisto, nota e vínculo conservados.
+
+Capturas de conflito e resultado foram inspecionadas. Cards continuam Not
+Started e o nó não contém Code Evidence; nenhuma entrega/execução foi inventada.
+`get_spec_context(profile=full)` continua recusando snapshot de Checklist
+ausente nesse fixture; `get_spec` e os writers públicos da árvore funcionaram.
+Nenhum gate/policy foi alterado para o ensaio. Essa limitação não qualifica o
+contexto completo nem o percurso U4. Evidência, hashes e resultados em
+`evidence-u3-project-structure-parent-20261015.json`.
+
+**Retomada:** 5d concluído nos limites acima; seguir 3d (Coverage, recursos,
+referências e dependências restantes), UV18–UV21 integrados e U4 instalado.
+Não reconstruir o watcher nem repetir U1/U2/5c/5d sem impacto novo. Não houve
+alteração Python, build ou reinstalação neste incremento.
+
 ### 2026-10-15 — planejamento detalhado reconciliado com o trabalho local
 
 Atendimento ao pedido de planejamento, sem nova implementação. Base conferida:

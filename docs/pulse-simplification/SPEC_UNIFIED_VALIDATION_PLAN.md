@@ -3,7 +3,7 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint de código: Core `8291a648` / Community `28ec1871`, na
+Checkpoint de código: Core `8291a648` / Community `5ac5ce06`, na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -80,12 +80,21 @@ rascunhos preservados, revisão explícita e criação única na versão 17. Ver
 de relatório tem teste de componente; prova nativa assinada permanece no U4.
 Preservar também [método de cenário](evidence-u3-scenario-method-20261015.json).
 
-**Próxima ação de implementação:** Project Structure (5d) → leitores restantes (3d) →
+Project Structure/5d foi integrado em `5ac5ce06`: base autorada, replay exato,
+identidade/acesso e recuperação da leitura completa protegidos. Watcher comprovado
+por UI/MCP inclusive em vínculo de Task sem bump de Spec.version; revisão explícita
+e gravação UI confirmadas na versão 20/revisão 4. 138 testes frontend passaram,
+tipos/lint aprovados. Details permanece leitura, sem editores de requisitos.
+Ver [Project Structure integrado](evidence-u3-project-structure-parent-20261015.json).
+Contexto completo do fixture ainda recusa snapshot de Checklist ausente; autoria
+instalada e percurso integral permanecem U4. A conferência local abaixo é histórica.
+
+**Próxima ação de implementação:** leitores restantes (3d) →
 qualificação integrada U3 → qualificação instalada U4.
 Sequência e condições de saída em §6.2; não reimplementar U1/U2.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
 
-### Retomada detalhada — conferência do trabalho local em 15/10/2026
+### Retomada detalhada — conferência local, sucedida por `5ac5ce06`
 
 **Base conferida:** Core `9cb255a3` (produto `8291a648`) / Community
 `28ec1871`, ambos publicados em `feature/v0.4.0`. Tests/5c já foi integrado;
@@ -106,7 +115,8 @@ tipos, integração do pai, browser ou instalação.
 | U4.1 — qualificar o artefato | Executar regressões afetadas, catálogo gerado e closure; construir wheels dos dois repos e frontend, instalar em ambiente/home isolados, comparar arquivos byte a byte e iniciar processo posterior à instalação. | Par exato e origem dos imports registrados; frontend empacotado conferido; oito budgets ZERO. Não confundir runtime de checkout com artefato instalado. |
 | U4.2 — concluir o percurso | Nova iniciativa mock via UI/MCP: Ideação → Refinamento → Spec com Cards Not Started em Draft → conclusão unificada → execução → Cards/Test/Spec Done → consulta e consolidação KG. | UV01–UV24 ligados a evidências observadas; nenhum teste/prova/aprovação inventado; percentuais aplicáveis em 100%, KG canonical/proveniência, ledger e commits/pushes finais. |
 
-Esta tabela é o índice vigente de §6.2 e substitui as filas de checkpoints
+Esta tabela conserva a decomposição de §6.2; 5d.1/5d.2 foram concluídos no
+checkpoint acima. Retomar por 3d. Ela substitui as filas de checkpoints
 anteriores, preservadas abaixo como histórico. Não acrescenta milestones nem
 novos contratos. As avaliações e regras da tabela de §3 permanecem integrais.
 A conferência é documental: não alterou produto nem executou novos testes,
@@ -442,11 +452,12 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint vigente de código:** Core `8291a648` / Community `28ec1871`.
+**Checkpoint vigente de código:** Core `8291a648` / Community `5ac5ce06`.
 5c foi integrado e qualificado após os checkpoints históricos abaixo: Tests
 assina atualizações externas, preserva cenários/métodos/relatórios e possui
 recuperação protegida de escrita/leitura. Evidência `evidence-u3-tests-watch-20261015.json`.
-Retomar por 5d → 3d → UV18–UV21 → U4; as referências a Tests fora do watcher
+5d integrado e qualificado conforme evidência Project Structure acima.
+Retomar por 3d → UV18–UV21 → U4; as referências a Tests fora do watcher
 nos relatos anteriores descrevem os respectivos checkpoints, não o estado vigente.
 Branch `feature/v0.4.0`, incremento de 15/10/2026. A revisão documental
 a partir deste par acompanha a execução parcial de 5c. O checkpoint inclui
