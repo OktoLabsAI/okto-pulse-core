@@ -255,6 +255,42 @@ def test_scenario_version_guard_cannot_be_presented_as_generic_spec_cas(rest_spe
     assert client.get(f"/api/v1/specs/{spec_id}").json()["title"] == before["title"]
 
 
+def test_mockup_collection_rejects_old_base_without_erasing_new_screen(rest_spec):
+    client, _board, spec_id = rest_spec
+    path = f"/api/v1/specs/{spec_id}"
+    before = client.get(path).json()
+    first = client.patch(path, json={"screen_mockups": [{
+        "id": "new-screen", "title": "Current mockup", "screen_type": "page",
+        "html_content": "<main>Current content</main>", "order": 0,
+    }]})
+    assert first.status_code == 200, first.text
+    assert first.json()["version"] == before["version"], 'Mockup edits preserve the established version semantics'
+    assert first.json()["mockup_snapshot"] != before["mockup_snapshot"]
+    persisted = client.get(path).json()
+    stale = client.patch(path, json={"screen_mockups": [], "expected_spec_version": before["version"],
+                                     "expected_mockup_snapshot": before["mockup_snapshot"]})
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["detail"] == "mockup_snapshot_conflict"
+    current = client.get(path).json()
+    assert current == persisted
+    reviewed = client.patch(path, json={"screen_mockups": [], "expected_spec_version": current["version"],
+                                        "expected_mockup_snapshot": current["mockup_snapshot"]})
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["screen_mockups"] == []
+    assert reviewed.json()["version"] == current["version"]
+    assert reviewed.json()["mockup_snapshot"] == before["mockup_snapshot"]
+    assert "expected_spec_version" not in reviewed.json()
+
+
+@pytest.mark.parametrize("snapshot", [None, "", "bad", True, "A" * 64])
+def test_authored_mockup_collection_requires_a_valid_snapshot(rest_spec, snapshot):
+    client, _board, spec_id = rest_spec
+    response = client.patch(f"/api/v1/specs/{spec_id}", json={
+        "screen_mockups": [], "expected_spec_version": 1, "expected_mockup_snapshot": snapshot,
+    })
+    assert response.status_code == 422, response.text
+
+
 def test_rest_patch_rejects_type_alias_without_mutation(rest_spec):
     client, _board, spec_id = rest_spec
     scenario = _scenario(None)

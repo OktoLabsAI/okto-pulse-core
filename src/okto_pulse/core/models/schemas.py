@@ -553,6 +553,17 @@ class ScreenMockup(BaseModel):
 
 
 # ============================================================================
+def mockup_collection_snapshot(*, board_id: str, spec_id: str, edition: int,
+                               mockups: list[ScreenMockup | dict] | None) -> str:
+    """Concurrency token for mockup content, whose edits need not bump Spec.version."""
+    items = [(item if isinstance(item, ScreenMockup) else ScreenMockup.model_validate(item)).model_dump(mode="json")
+             for item in mockups or []]
+    payload = {"contract": "mockup-authoring/v1", "board_id": board_id,
+               "spec_id": spec_id, "edition": edition, "mockups": items}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
 # Stories Schemas
 # ============================================================================
 
@@ -2268,11 +2279,15 @@ class SpecUpdate(BaseModel):
 
     expected_spec_version: int | None = Field(
         None, strict=True, ge=1,
-        description="Authored Spec version for a test_scenarios replacement; not a general Spec update precondition.",
+        description="Authored Spec version for a test_scenarios or screen_mockups replacement; not a general Spec update precondition.",
     )
     expected_scenario_snapshot: str | None = Field(
         None, strict=True, pattern=r"^[0-9a-f]{64}$",
         description="scenario_snapshot from the same Spec read as the authored scenario collection; includes operational state.",
+    )
+    expected_mockup_snapshot: str | None = Field(
+        None, strict=True, pattern=r"^[0-9a-f]{64}$",
+        description="mockup_snapshot from the same Spec read as the authored screen_mockups collection.",
     )
 
     title: str | None = Field(
@@ -2425,12 +2440,16 @@ class SpecUpdate(BaseModel):
 
     @model_validator(mode="after")
     def _scenario_version_scope(self) -> "SpecUpdate":
-        if self.expected_spec_version is not None and self.test_scenarios is None:
-            raise ValueError("expected_spec_version_requires_test_scenarios")
+        if self.expected_spec_version is not None and self.test_scenarios is None and self.screen_mockups is None:
+            raise ValueError("expected_spec_version_requires_test_scenarios_or_screen_mockups")
         if self.expected_scenario_snapshot is not None and self.test_scenarios is None:
             raise ValueError("expected_scenario_snapshot_requires_test_scenarios")
-        if self.expected_spec_version is not None and self.expected_scenario_snapshot is None:
+        if self.expected_spec_version is not None and self.test_scenarios is not None and self.expected_scenario_snapshot is None:
             raise ValueError("expected_scenario_snapshot_required")
+        if self.expected_mockup_snapshot is not None and self.screen_mockups is None:
+            raise ValueError("expected_mockup_snapshot_requires_screen_mockups")
+        if self.expected_spec_version is not None and self.screen_mockups is not None and self.expected_mockup_snapshot is None:
+            raise ValueError("expected_mockup_snapshot_required")
         return self
 
 
@@ -2826,6 +2845,12 @@ class CardSummaryForSpec(BaseSchema):
 
 class SpecResponse(BaseSchema):
     """Schema for full spec response."""
+
+    @computed_field
+    @property
+    def mockup_snapshot(self) -> str:
+        return mockup_collection_snapshot(board_id=self.board_id, spec_id=self.id,
+                                          edition=self.edition, mockups=self.screen_mockups)
 
     @computed_field
     @property

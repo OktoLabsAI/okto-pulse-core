@@ -20,6 +20,7 @@ from okto_pulse.core.models.schemas import (
     SpecUpdate,
     TestScenarioWrite,
     scenario_collection_snapshot,
+    mockup_collection_snapshot,
 )
 
 
@@ -45,4 +46,5 @@ __all__ = [
     "SpecUpdate",
     "ScenarioContentUpdate",
     "scenario_collection_snapshot",
+    "mockup_collection_snapshot",
 ]

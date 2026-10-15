@@ -179,7 +179,7 @@ from okto_pulse.core.models.schemas import (
     TopicUpdate,
     project_task_validation_public,
 )
-from okto_pulse.core.services.application_schemas import ScenarioContentUpdate, scenario_collection_snapshot
+from okto_pulse.core.services.application_schemas import ScenarioContentUpdate, scenario_collection_snapshot, mockup_collection_snapshot
 from okto_pulse.core.services.ambiguity_assessment import (
     AmbiguityGateError as AmbiguityGateError,
     AmbiguityGateService,
@@ -10388,20 +10388,26 @@ class SpecService:
         await _require_spec_unlocked(self.db, spec_id)
 
         update_data = data.model_dump(exclude_unset=True)
-        # This precondition belongs to scenario collection authoring only.
+        # This precondition belongs to scenario/mockup collection authoring.
         # It is command metadata, never content, history or a general Spec CAS.
-        expected_scenario_version = update_data.pop("expected_spec_version", None)
+        expected_collection_version = update_data.pop("expected_spec_version", None)
         expected_scenario_snapshot = update_data.pop("expected_scenario_snapshot", None)
-        if update_data.get("test_scenarios") is not None:
-            scenario_base = spec.version if expected_scenario_version is None else expected_scenario_version
-            scenario_snapshot = expected_scenario_snapshot or scenario_collection_snapshot(
+        expected_mockup_snapshot = update_data.pop("expected_mockup_snapshot", None)
+        replacing_scenarios = update_data.get("test_scenarios") is not None
+        if replacing_scenarios or update_data.get("screen_mockups") is not None:
+            collection_base = spec.version if expected_collection_version is None else expected_collection_version
+            scenario_snapshot = expected_scenario_snapshot or (scenario_collection_snapshot(
                 board_id=spec.board_id, spec_id=spec.id, edition=spec.edition,
                 version=spec.version, scenarios=spec.test_scenarios,
-            )
-            if spec.version != scenario_base or not await _application_fence(
+            ) if replacing_scenarios else None)
+            mockup_snapshot = expected_mockup_snapshot or (mockup_collection_snapshot(
+                board_id=spec.board_id, spec_id=spec.id, edition=spec.edition,
+                mockups=spec.screen_mockups,
+            ) if update_data.get("screen_mockups") is not None else None)
+            if spec.version != collection_base or not await _application_fence(
                 self.db, "spec", spec.id,
                 expected_values={
-                    "version": scenario_base,
+                    "version": collection_base,
                     "status": spec.status,
                     "edition": spec.edition,
                     "archived": spec.archived,
@@ -10413,11 +10419,16 @@ class SpecService:
             # that fence: the identity map may predate a same-version unlink or
             # status change. Comparing before acquiring it would leave a race.
             await _application_refresh(self.db, spec)
-            if scenario_collection_snapshot(
+            if replacing_scenarios and scenario_collection_snapshot(
                 board_id=spec.board_id, spec_id=spec.id, edition=spec.edition,
                 version=spec.version, scenarios=spec.test_scenarios,
             ) != scenario_snapshot:
                 raise ValueError("scenario_snapshot_conflict")
+            if mockup_snapshot is not None and mockup_collection_snapshot(
+                board_id=spec.board_id, spec_id=spec.id, edition=spec.edition,
+                mockups=spec.screen_mockups,
+            ) != mockup_snapshot:
+                raise ValueError("mockup_snapshot_conflict")
         next_ideation_id = (
             update_data["ideation_id"]
             if "ideation_id" in update_data

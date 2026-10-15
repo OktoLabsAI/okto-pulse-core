@@ -391,6 +391,33 @@ async def test_collection_snapshot_is_rechecked_under_fence_with_stale_identity_
         assert before.test_scenarios == [changed]
 
 
+@pytest.mark.asyncio
+async def test_mockup_snapshot_is_checked_after_fence_without_bumping_spec_version(db_factory, monkeypatch):
+    from okto_pulse.core.models.schemas import mockup_collection_snapshot
+
+    _, spec_id, _ = await _seed_spec(db_factory, scenarios=[])
+    original_fence = service_module._application_fence
+    changed = {"id": "concurrent", "title": "Concurrent mockup", "html_content": "<main>Current</main>"}
+
+    async def intervening_write(context, entity, record_id, *, expected_values):
+        await context.execute(update(Spec).where(Spec.id == record_id)
+            .values(screen_mockups=[changed]).execution_options(synchronize_session=False))
+        return await original_fence(context, entity, record_id, expected_values=expected_values)
+
+    monkeypatch.setattr(service_module, "_application_fence", intervening_write)
+    async with db_factory() as db:
+        before = await db.get(Spec, spec_id)
+        version = before.version
+        snapshot = mockup_collection_snapshot(board_id=before.board_id, spec_id=before.id,
+            edition=before.edition, mockups=before.screen_mockups)
+        with pytest.raises(ValueError, match="^mockup_snapshot_conflict$"):
+            await SpecService(db).update_spec(spec_id, USER, SpecUpdate(
+                screen_mockups=[], expected_spec_version=version, expected_mockup_snapshot=snapshot))
+        await db.refresh(before)
+        assert before.version == version
+        assert before.screen_mockups == [changed]
+
+
 def test_scenario_snapshot_binds_operational_facts_and_scope_not_json_key_order():
     def digest(items, **scope):
         return scenario_collection_snapshot(**({"board_id": "b", "spec_id": "s", "edition": 1,
