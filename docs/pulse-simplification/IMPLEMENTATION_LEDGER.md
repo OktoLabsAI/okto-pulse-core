@@ -66,6 +66,18 @@ snapshotGeneration, revisão própria e replay existentes; não houve alteraçã
 na árvore neste incremento. U3 integral e U4 permanecem abertos. Preservar as
 provas já aceitas; não reconstruir watcher nem reabrir U1/U2.
 
+Conferência dirigida inicial de 5d (fonte, ainda sem reprodução):
+`ProjectStructureTab` já ordena GET/aplicação por `snapshotGeneration` e oferece
+Refresh & review após 409. Contudo, `NodeEditor` não conserva os tokens da base
+autorada; `performOperation` usa `specVersion/structureRevision` correntes e
+gera novo UUID a cada chamada. Portanto, a existência de idempotency_key no
+contrato não comprova replay da tentativa no cliente. A integração seguinte
+deve preservar o request original em resposta incerta, manter a base do editor
+durante refresh externo e descartar conclusões de outra identidade. Não ligar
+Project Structure ao watcher antes de demonstrar esses casos e a perda de
+acesso. Reutilizar a API transacional da árvore; não convertê-la no writer de
+coleções. Esta constatação pertence ao 5d já previsto, sem novo gate ou milestone.
+
 ### 2026-10-15 — U3/5c: resposta incerta e método removido qualificados
 
 Community `aeebd6df` publicado; Core de produto permanece `8291a648`.
