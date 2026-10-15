@@ -1,5 +1,57 @@
 # Validação unificada do planejamento da Spec
 
+## Roteiro vigente para execução — conferência de 15/10/2026
+
+Esta seção é a única fila operacional. Os roteiros de checkpoints anteriores
+abaixo documentam a evolução; não reabrem trabalho concluído. Permanecem
+normativos os contratos de §3–§5 e os aceites UV01–UV24 de §7.
+
+**Base conferida e publicada:** Core `220c3466` (produto `537eea6`) /
+Community `ccc76dfc`, ambos em `feature/v0.4.0`. Nenhum diff de produto
+rastreado encontrado. Capturas locais não rastreadas não integram o produto.
+U1 implementado; U2 qualificado no backend; consumidores previstos de U3
+integrados, incluindo Resources; qualificação integrada de U3 ainda parcial;
+U4 pendente. Não recriar contratos, watcher, editores ou fluxos já entregues.
+
+**Decisão de produto preservada:** Spec e Cards são preparados juntos; existe
+um ponto de conclusão da validação do planejamento. Spec Validation,
+decomposição, lint, Checklist, Policy Compliance e coberturas continuam
+individualmente identificáveis, com os mesmos critérios, severidades,
+thresholds, permissões, autores e históricos. A conclusão agrega impedimentos,
+não scores. A ausência de Decision não bloqueia; uma Decision existente
+continua sujeita aos seus controles. Execução e entrega mantêm os próprios gates.
+
+| Ordem dentro dos milestones existentes | Procedimento delimitado | Evidência exigida para encerrar |
+| --- | --- | --- |
+| U3 — reconciliar UV18–UV21 | Relacionar cada aceite às provas já publicadas e aos artefatos locais. Separar componente, persistência, UI/MCP e instalação. Reutilizar somente provas que observem o comportamento exigido. | Matriz com caso, evidência, resultado e limite; nenhum passe inferido de mera existência de código ou de contagem global de testes. |
+| U3 — atualização de progresso / UV18 | No fixture isolado, registrar implementação e execução de teste observadas. Manter Board/modal abertos e provocar mudança apenas de Card/Delivery; comparar versão da Spec antes/depois, respostas MCP e barras/ações/Coverage na UI. | Mudança real de percentual refletida automaticamente, inclusive com Spec.version constante. Renomear Card ou atualizar mockup não substitui este caso. |
+| U3 — recuperação e autoridade / UV19–UV20 | Reutilizar provas de rascunho/conflito/reconexão; completar troca de identidade e revogação com ator descartável no Board isolado. Conferir leitura negada, limpeza de conteúdo protegido e ausência de escrita indevida. | Respostas antigas não contaminam outro contexto; edição autorizada é preservada; revogação remove o que não pode ser lido. Sem alterar permissões reais do usuário. |
+| U3 — conclusão e apresentação / UV21 | Completar autoria mínima do fixture e os pré-requisitos reais; exercitar contribuição independente e conclusão composta, usando permissões próprias. Inspecionar resultados individuais, Previous versions, pinpoints, loading, erro/retry, teclado e foco. | Resultado registrado distinto de promoção; bloqueios visíveis; nenhuma avaliação desaparece ou é copiada artificialmente. Testes frontend afetados, tipos/build e inspeção visual aprovados. Ledger e commit/push de U3. |
+| U4 — artefato e regressão | Executar regressões pertinentes, catálogo gerado e closure; construir frontend e wheels pareados. Instalar em ambiente/home novos, comparar arquivos Python/frontend byte a byte e iniciar processo posterior à instalação. | Commits, hashes, origem dos imports e identidade do processo registrados; oito budgets ZERO. Runtime de checkout não qualifica distribuição instalada. |
+| U4 — percurso completo / UV01–UV24 | Criar nova iniciativa mock via UI/MCP: Ideação → Refinamento → Spec com Cards Not Started em Draft → conclusão unificada → execução → Tasks/Test/Spec Done → consulta/consolidação KG. | Sem reabrir só para criar Cards, Decision artificial ou repetição de avaliação ainda válida. Provas realmente executadas, percentuais aplicáveis em 100%, canonical/proveniência conferidos. Matriz final, ledger e commit/push. |
+
+**Retomada concreta:** conferir saúde/origem do runtime isolado e reler o
+contexto completo da Spec `38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2`, Board
+`7bbd65c3-8738-45a2-8fab-a5216ab7e98c`. Há Task
+`462da79f-33b8-57d5-94ad-351345d35eb8` e Test
+`ba5cf224-0da8-50fb-be37-4cc572d11e2c` no registro local de autoria.
+Não repetir criação nem presumir o estado atual a partir desses IDs.
+Completar Project Structure, aplicabilidade justificada dos recursos e
+pré-requisitos antes de pedir avaliação. Checklist Blocking foi configurado
+nesse Board isolado; verificar binding/snapshot na admissão normal.
+
+As capturas locais `u3-integration-offline.yml` e `u3-integration-online.yml`
+registram rascunho preservado e Add desabilitado/habilitado na perda/retomada
+de conexão. Foram relidas nesta conferência; não são nova execução, nem
+encerram todos os casos de UV19. O fixture de autoria também não demonstra
+conclusão, execução, porcentagem ou KG canonical.
+
+Corrigir somente defeito reproduzido que impeça estes aceites, no item
+correspondente. Não adicionar milestones, migração, nova avaliação, redesign
+opcional ou infraestrutura geral. Divergência material de gate/autoridade/
+histórico não autorizada segue a investigação do pacote. O próximo trabalho
+é executar esta fila; não realizar outra rodada de planejamento sem fato novo.
+
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
@@ -122,7 +174,7 @@ criação, conflito/revisão de importação e recuperação após import/delete
 repetir escrita. Ver [operações Architecture](evidence-u3-architecture-operations-20261015.json).
 Mockups/wrapper Knowledge e integração automática de Resources foram qualificados
 no par vigente, conforme a evidência acima. Não reimplementar esse incremento.
-A fila vigente está em §6.2, “Retomada executável de 3d”. Não reimplementar
+A fila vigente está em “Roteiro vigente para execução”, no início. Não reimplementar
 U1/U2, Project Structure ou Coverage/References já qualificados.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
 
@@ -534,15 +586,15 @@ Essas evidências não encerram o milestone nem substituem o E2E.
 | U1 | Cards Not Started em Draft e remoção da exigência de existir Decision. | Percurso real UI/MCP no U4; não refazer a implementação. |
 | U2 — conclusão | Payload composto, permissões independentes, pareceres/históricos nativos, promoção condicionada, recibo/replay e manifesto obrigatório. | Preservar a matriz U2 já qualificada; comprovar autenticação wire e percurso instalado em U4. |
 | U2 — leitura | `include_planning`, 17 componentes, composição pública sem escrita, revisões leves em lote, permissões por componente, paginação REST/MCP e cliente tipado. Revisões de coleções Spec/Card por Board; 11 passes do contrato, 79 de manifesto/leitura/transporte. Admissão sem Checklist comprovada por REST/browser e rollback nativo. | Consumir os contratos existentes em U3 e comprovar o percurso UI/MCP instalado em U4; não recriar metadados de coleção. |
-| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão, SpecsPanel e Kanban; refresh de permissões com proteção de respostas antigas. Knowledge/Targets, leitores, FR/AC/critério/qualificação e coleções têm provas registradas. Integration, Decisions, Tests/5c, Project Structure/5d, Coverage/References e Dependencies qualificados nos limites do ledger. | Concluir Resources (3d), depois UV18–UV21; comprovar progresso nativo de Card sem bump da Spec e os casos integrados ainda não cobertos. Autoria instalada de Project Structure permanece U4. |
+| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão, SpecsPanel e Kanban; refresh de permissões com proteção de respostas antigas. Knowledge/Targets, leitores, FR/AC/critério/qualificação e coleções têm provas registradas. Integration, Decisions, Tests/5c, Project Structure/5d, Coverage/References, Dependencies e Resources qualificados nos limites do ledger. | Encerrar UV18–UV21; comprovar progresso nativo de Card sem bump da Spec e os casos integrados ainda não cobertos. Autoria instalada de Project Structure permanece U4. |
 | U4 | Regressões parciais registradas no ledger. | Wheels, runtime compatível, browser e iniciativa nova até Done/KG; matriz UV01–UV24. |
 
-#### Retomada executável de 3d — conferência de 15/10/2026
+#### Histórico de retomada de 3d — sucedido pela qualificação Resources
 
 **Base documental atual:** Core `c0167eb6` (produto `826d5dfa`) / Community
 `d58ee70d`, ambos confirmados no remoto `feature/v0.4.0` nesta conferência.
-As filas anteriores descrevem checkpoints históricos. A sequência
-abaixo é a única fila de trabalho vigente; detalha itens existentes, sem novo
+A sequência abaixo conserva o planejamento daquele checkpoint; suas linhas
+1–3 foram concluídas. A fila atual está no início deste documento, sem novo
 milestone ou mudança nos critérios de §7.
 
 O WIP de Dependencies identificado na conferência foi concluído e publicado em

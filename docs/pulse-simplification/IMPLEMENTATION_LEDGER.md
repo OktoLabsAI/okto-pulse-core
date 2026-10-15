@@ -2,6 +2,41 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento detalhado consolidado após Resources
+
+Pedido atendido como planejamento, sem novas alterações de produto ou mutações
+no Pulse. Conferidos HEAD e remoto: Core `220c3466` (produto `537eea6`) /
+Community `ccc76dfc`, `feature/v0.4.0`. Ambos publicados, sem diff de produto
+rastreado. Capturas locais não rastreadas preservadas fora do commit.
+
+O início de [SPEC_UNIFIED_VALIDATION_PLAN.md](SPEC_UNIFIED_VALIDATION_PLAN.md)
+agora contém a única fila operacional: reconciliar UV18–UV21 → progresso real
+Card/Delivery → recuperação/autoridade → conclusão/histórico/inspeção visual →
+U4 artefato instalado → percurso completo até Done/KG. São desdobramentos dos
+mesmos U3/U4, sem novos aceites ou milestones. Removida a indicação obsoleta
+de que Resources ainda precisava ser implementado; roteiro antigo marcado
+como histórico. Todas as avaliações e seus controles permanecem integrais.
+
+Conferência de fonte confirmou payload opcional de decomposição, manifesto e
+idempotência no use case, além do watcher/wrapper Knowledge e snapshot Mockups
+no SpecModal. Não são novos testes. Relidos os artefatos locais de offline/
+online: mesmo rascunho, Add indisponível offline e habilitado após recuperação.
+Esse registro não encerra UV19 inteiro. Nenhum teste de comportamento, build,
+reinstalação ou inspeção de browser novo foi executado nesta revisão documental.
+
+Handoff do ensaio já iniciado: diretório local
+`PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/`;
+Board `7bbd65c3-8738-45a2-8fab-a5216ab7e98c`, Spec
+`38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2`, Task
+`462da79f-33b8-57d5-94ad-351345d35eb8`, Test
+`ba5cf224-0da8-50fb-be37-4cc572d11e2c`. Reconsultar contexto/estado atual e
+saúde/origem do runtime antes de continuar. Não repetir os creates do helper;
+preservar identity.json ao acrescentar modos de execução. Completar planejamento
+e pré-requisitos pelos caminhos normais, com Checklist Blocking do Board isolado.
+Fixture não comprova conclusão, provas de execução ou canonical. U4 continua
+exigindo iniciativa nova no par instalado. Próximo passo é execução da fila,
+sem novo replanejamento salvo evidência material nova.
+
 ### 2026-10-15 — U3/3d: Resources integrado e qualificado por UI/MCP
 
 Par de produto Core `537eea6` / Community `ccc76df`, `feature/v0.4.0`.
