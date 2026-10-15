@@ -22,6 +22,34 @@ from sqlalchemy_test_models import ArchitectureFindingRun, Board, Card, CardStat
 USER_ID = "architecture-rest-user"
 
 
+@pytest.mark.parametrize("version", [0, -1, True, "1", 1.5])
+def test_rest_rejects_invalid_authored_version_without_write(_client_and_entities, version):
+    client, ids = _client_and_entities
+    created = client.post(f"/api/v1/ideations/{ids['ideation_id']}/architecture", json=_architecture_body())
+    assert created.status_code == 201, created.text
+    original = created.json()
+    url = f"/api/v1/architecture/{original['id']}"
+    rejected = client.patch(url, json={"title": "Invalid", "expected_version": version})
+    assert rejected.status_code == 422, rejected.text
+    assert client.get(url).json() == original
+
+
+def test_rest_update_rejects_the_authored_version_after_another_writer(_client_and_entities):
+    client, ids = _client_and_entities
+    created = client.post(f"/api/v1/ideations/{ids['ideation_id']}/architecture", json=_architecture_body())
+    assert created.status_code == 201, created.text
+    original = created.json()
+    url = f"/api/v1/architecture/{original['id']}"
+    other = client.patch(url, json={"title": "Other writer", "expected_version": original['version']})
+    assert other.status_code == 200, other.text
+    stale = client.patch(url, json={"title": "Stale authored title", "expected_version": original['version']})
+    assert stale.status_code == 409, stale.text
+    assert stale.json()['detail']['code'] == 'architecture_version_conflict'
+    current = client.get(url).json()
+    assert current['title'] == 'Other writer'
+    assert current['version'] == other.json()['version']
+
+
 @pytest.mark.parametrize("boundaries", [[], ["Tenant data, isolated", "Backend runtime"]])
 def test_rest_boundaries_validate_create_read_and_update(_client_and_entities, boundaries):
     client, ids = _client_and_entities

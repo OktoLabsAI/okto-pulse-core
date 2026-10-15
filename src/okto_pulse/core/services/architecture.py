@@ -1008,6 +1008,23 @@ def architecture_design_payload_schema() -> dict[str, Any]:
     )
 
 
+class ArchitectureVersionConflict(ValueError):
+    """The authored design base no longer matches the authoritative record."""
+
+    def __init__(self, design_id: str, expected_version: int) -> None:
+        self.design_id = design_id
+        self.expected_version = expected_version
+        super().__init__("Architecture changed. Reload and review the current design before submitting.")
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "code": "architecture_version_conflict",
+            "message": str(self),
+            "design_id": self.design_id,
+            "expected_version": self.expected_version,
+        }
+
+
 class ArchitecturePayloadValidationError(ValueError):
     """Semantic validation failure for an Architecture Design payload."""
 
@@ -2568,6 +2585,16 @@ class ArchitectureDesignRepository:
             allow=allow_card_parent_write,
         )
         payload = _dump_model_or_dict(patch, exclude_unset=True)
+        expected_version = payload.pop("expected_version", None)
+        # Internal updates protect the state read by this operation. An editor
+        # additionally supplies the version on which its unsaved content rests.
+        expected_version = design.version if expected_version is None else expected_version
+        if type(expected_version) is not int or expected_version < 1:
+            raise ValueError("expected_version must be a positive integer")
+        if design.version != expected_version or not await get_architecture_persistence_port().fence_version(
+            self.db, design_id=design_id, expected_version=expected_version,
+        ):
+            raise ArchitectureVersionConflict(design_id, expected_version)
         change_summary = payload.pop("change_summary", None)
         acknowledgement = payload.pop("architecture_warning_acknowledgement", None)
         semantic_change = bool(SEMANTIC_PATCH_FIELDS & payload.keys())

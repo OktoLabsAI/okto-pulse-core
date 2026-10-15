@@ -31,6 +31,7 @@ from okto_pulse.core.services.architecture import (
     ArchitecturePropagationBlocked,
     ArchitecturePropagationService,
     ArchitectureWarningAcknowledgementRequired,
+    ArchitectureVersionConflict,
 )
 from okto_pulse.core.services.architecture_observability import (
     METRIC_FINDING_RUN_PERSIST_TOTAL,
@@ -42,6 +43,41 @@ from okto_pulse.core.services.architecture_observability import (
 
 
 USER_ID = "architecture-repository-user"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("conflict", ["authored_version", "persistence_fence"])
+async def test_conflicting_update_has_no_content_history_or_event_effects(db_factory, monkeypatch, conflict):
+    from okto_pulse.core.ports.architecture_persistence import get_architecture_persistence_port
+
+    _, ideation_id = await _seed_ideation(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        design = await repo.create("ideation", ideation_id, _architecture_payload(), USER_ID)
+        await repo.update(design.id, ArchitectureDesignUpdate(title="Winner", expected_version=1), USER_ID)
+        await db.commit()
+
+        async def snapshot():
+            tables = [ArchitectureDesign, ArchitectureDesignVersion, ArchitectureDiagramPayload,
+                      ArchitectureFinding, ArchitectureFindingRun, ArchitectureWarningAcknowledgement,
+                      DomainEventRow, Ideation]
+            result = {}
+            for model in tables:
+                rows = (await db.execute(select(model.__table__))).mappings().all()
+                result[model.__tablename__] = copy.deepcopy([dict(row) for row in rows])
+            return result
+
+        before = await snapshot()
+        if conflict == "persistence_fence":
+            async def reject_fence(*args, **kwargs):
+                return False
+            monkeypatch.setattr(get_architecture_persistence_port(), "fence_version", reject_fence)
+        with pytest.raises(ArchitectureVersionConflict):
+            await repo.update(design.id, ArchitectureDesignUpdate(
+                title="Stale", expected_version=1 if conflict == "authored_version" else 2,
+            ), USER_ID)
+        await db.flush()
+        assert await snapshot() == before
 
 
 def _id(prefix: str) -> str:

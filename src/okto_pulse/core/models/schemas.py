@@ -1257,6 +1257,7 @@ class ArchitectureDesignCreate(ArchitectureDesignBase):
 class ArchitectureDesignUpdate(BaseModel):
     """Patch body for Architecture Design updates."""
 
+    expected_version: int | None = Field(None, ge=1, strict=True)
     title: str | None = Field(None, min_length=1, max_length=500)
     global_description: str | None = Field(None, min_length=1)
     entities: list[ArchitectureEntity] | None = None

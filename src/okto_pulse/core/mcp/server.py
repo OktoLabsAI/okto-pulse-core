@@ -1954,6 +1954,10 @@ def _validate_knowledge_governance_arg(
 
 
 def _mcp_architecture_error(exc: Exception) -> str:
+    from okto_pulse.core.services.architecture import ArchitectureVersionConflict
+
+    if isinstance(exc, ArchitectureVersionConflict):
+        return json.dumps({"success": False, **exc.to_payload()})
     if isinstance(exc, ArchitectureWarningAcknowledgementRequired):
         return json.dumps({"success": False, **exc.to_payload()}, default=str)
     return json.dumps({"error": str(exc)})
@@ -13008,8 +13012,14 @@ async def okto_pulse_update_architecture_design(
     diagrams: list[dict] | None = None,
     change_summary: str = "",
     architecture_warning_acknowledgement: dict | None = None,
+    expected_version: Annotated[int, Field(strict=True, ge=1)] | None = None,
 ) -> str:
-    """Update an Architecture Design; omitted fields are left unchanged. For large or
+    """Update an Architecture Design; omitted fields are left unchanged.
+    Supply expected_version from the design used to author the update; a mismatch
+    returns architecture_version_conflict without writing. Reload and explicitly
+    review the current design before submitting revised content. Without this field,
+    only concurrent changes after this operation reads the design are fenced.
+    For large or
     generated updates, call okto_pulse_get_architecture_design_schema once per session
     then okto_pulse_validate_architecture_design_payload first. The update is critiqued
     against the full resulting design before saving — prefer replacing
@@ -13046,6 +13056,9 @@ async def okto_pulse_update_architecture_design(
         patch["architecture_warning_acknowledgement"] = acknowledgement
     if not patch:
         return json.dumps({"error": "No fields provided for update"})
+
+    if expected_version is not None:
+        patch["expected_version"] = expected_version
 
     from okto_pulse.core.application.use_cases.architecture_crud import (
         GetArchitectureDesignCommand,

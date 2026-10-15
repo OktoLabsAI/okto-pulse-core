@@ -231,6 +231,35 @@ async def _stub_auth(_seed_spec_card):
 
 
 @pytest.mark.asyncio
+async def test_mcp_authored_version_conflict_preserves_current_architecture(_seed_spec_card):
+    board_id, spec_id, _ = _seed_spec_card
+    created = await _call(
+        "okto_pulse_add_architecture_design", board_id=board_id,
+        parent_type="spec", parent_id=spec_id, title="Original",
+        global_description="Version conflict fixture.", diagrams=_architecture_diagrams(),
+    )
+    assert created.get("success") is True, created
+    original = created["architecture_design"]
+    updated = await _call(
+        "okto_pulse_update_architecture_design", board_id=board_id,
+        design_id=original["id"], title="Winner", expected_version=original["version"],
+    )
+    assert updated.get("success") is True, updated
+    rejected = await _call(
+        "okto_pulse_update_architecture_design", board_id=board_id,
+        design_id=original["id"], title="Stale", expected_version=original["version"],
+    )
+    assert rejected["success"] is False
+    assert rejected["code"] == "architecture_version_conflict"
+    assert rejected["expected_version"] == original["version"]
+    loaded = await _call(
+        "okto_pulse_get_architecture_design", board_id=board_id, design_id=original["id"],
+    )
+    assert loaded["architecture_design"]["title"] == "Winner"
+    assert loaded["architecture_design"]["version"] == original["version"] + 1
+
+
+@pytest.mark.asyncio
 async def test_mcp_add_list_get_import_and_dump_architecture(_seed_spec_card):
     board_id, spec_id, _ = _seed_spec_card
 
