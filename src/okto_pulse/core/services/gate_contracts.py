@@ -204,6 +204,30 @@ def spec_checklist_gate_error(
     )
 
 
+def spec_checklist_snapshot_missing_error(
+    *, board_id: str, spec_id: str, current_status: str,
+) -> GateContractError:
+    """Missing edition authority is unavailable, never an implicit OFF binding."""
+    return GateContractError(
+        code="checklist_validation_binding_snapshot_missing",
+        message=(
+            "The current Spec edition has no frozen Checklist configuration. "
+            "Inspect the validation cycle and Board Checklist settings; an authorized "
+            "reopening and admission is required before validation can continue."
+        ),
+        gate_type=GATE_SPEC_CHECKLIST,
+        entity_type="spec", entity_id=spec_id, current_status=current_status,
+        blocked_transition=f"{current_status}->validated",
+        required_status="validated",
+        next_action={
+            "tool": "okto_pulse_get_spec_validation_cycle",
+            "params": {"board_id": board_id, "spec_id": spec_id, "include_planning": True},
+            "hint": "Inspect this edition; reading does not create or repair its Checklist snapshot.",
+        },
+        extra_details={"checklist_reason": "checklist_validation_binding_snapshot_missing"},
+    )
+
+
 def _update_test_scenario_next_action(
     *, board_id: str | None, spec_id: str | None, card_id: str,
     pending_scenario_ids: list[str],
@@ -951,6 +975,7 @@ __all__ = [
     "operational_flow_for_test_card",
     "spec_evaluation_success_envelope",
     "spec_checklist_gate_error",
+    "spec_checklist_snapshot_missing_error",
     "spec_gate_readiness",
     "spec_validation_gate_error",
     "task_gate_readiness",

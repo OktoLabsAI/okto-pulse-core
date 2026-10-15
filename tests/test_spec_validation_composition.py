@@ -295,6 +295,164 @@ async def test_native_coverage_readiness_matches_promotion_and_rollback(
             assert spec.status == SpecStatus.VALIDATED
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("surface", ["rest", "mcp"])
+@pytest.mark.parametrize("quality_enabled", [True, False])
+@pytest.mark.parametrize("initial,live,expected_state,reason", [
+    ("blocking", "off", "blocked", "checklist_receipt_required"),
+    ("off", "blocking", "ready", "checklist_off"),
+    ("advisory", "blocking", "ready", "checklist_advisory"),
+    (None, "off", "unavailable", "snapshot_missing"),
+])
+async def test_frozen_checklist_readiness_matches_public_promotions(
+    composition_client, db_factory, monkeypatch, surface, quality_enabled,
+    initial, live, expected_state, reason,
+):
+    """UV07/08/22: native snapshot, reader, preview and both public writers.
+
+    No checklist outcome is fabricated. Only the independent external lint
+    prerequisite is isolated by composition_client; MCP identity is explicit.
+    Missing snapshot deliberately corrupts disposable fixture storage.
+    """
+    import json
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from sqlalchemy import delete, func, select
+    from sqlalchemy_test_models import Board
+    from native_subject_testing import record_native_subject_authority
+    from okto_pulse.community.adapters.sqlalchemy_checklist import CommunitySqlAlchemyChecklist
+    from okto_pulse.community.adapters.sqlalchemy_models import (
+        ActivityLog, ChecklistValidationBindingSnapshotRow, DomainEventRow,
+        SpecHistory, SpecValidationOperationReceiptRow,
+    )
+    from okto_pulse.core.domain.checklist import ChecklistMode, ChecklistPhase, ChecklistTargetType
+    from okto_pulse.core.services.checklist import ChecklistService
+    from okto_pulse.core.domain.spec_planning import SpecPlanningManifest
+    from okto_pulse.core.mcp import server
+
+    client, _, _ = composition_client
+    async with db_factory() as db:
+        board_id, spec_id = await _seed_board_and_spec(
+            db, board_settings={"require_spec_validation": quality_enabled},
+            checklist_mode=ChecklistMode(initial or "off"),
+        )
+        spec = await db.get(Spec, spec_id)
+        for name, value in _direct_spec_context_fields(spec_id).items():
+            setattr(spec, name, value)
+        await record_native_subject_authority(db, rows=[spec], revision="checklist-parity")
+        adapter = CommunitySqlAlchemyChecklist(db)
+        current = await adapter.get_binding(
+            board_id=board_id, target_type=ChecklistTargetType.SPEC,
+            phase=ChecklistPhase.SPEC_VALIDATION,
+        )
+        service = ChecklistService()
+        if current.mode.value != live:
+            updated = service.prepare_binding(
+                board_id=board_id, mode=ChecklistMode(live), current_binding=current,
+            )
+            await service.apply_binding(updated, previous_binding=current, persistence=adapter)
+        if initial is None:
+            await db.execute(delete(ChecklistValidationBindingSnapshotRow).where(
+                ChecklistValidationBindingSnapshotRow.spec_id == spec_id,
+            ))
+        await SpecService(db).submit_spec_evaluation(
+            spec_id, USER_ID, "Independent planning reviewer", decomposition_payload(),
+        )
+        await db.commit()
+
+    async def stored_state():
+        async with db_factory() as db:
+            row = await db.get(Spec, spec_id)
+            return (
+                row.status, row.version, row.edition, row.evaluations, row.validations,
+                [(await db.execute(select(func.count()).select_from(model))).scalar_one()
+                 for model in (ActivityLog, DomainEventRow, SpecHistory, SpecValidationOperationReceiptRow)],
+            )
+
+    before = await stored_state()
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        board = await db.get(Board, board_id)
+        summary = await SpecService(db).get_planning_readiness(
+            spec, board, can_read=lambda _: True, can_act=lambda _: True,
+        )
+        component = next(item for item in summary.components if item.key == "curated_checklist")
+        assert component.state == expected_state, component
+        if initial:
+            assert component.mode == initial
+            assert component.native_result == reason
+        else:
+            assert component.mode is None
+        payload = {
+            **_validation_payload(), "expected_spec_version": spec.version,
+            "expected_planning_manifest": await current_manifest(db, spec_id),
+            "idempotency_key": "checklist-parity",
+        }
+
+    preview = client.get(f"/api/v1/boards/{board_id}/allowed-transitions", params={
+        "entity_type": "spec", "entity_id": spec_id,
+    })
+    assert preview.status_code == 200, preview.text
+    transition = next(item for item in preview.json()["allowed_transitions"] if item["to_status"] == "validated")
+    if quality_enabled:
+        # This preview describes the direct move, which must route callers to
+        # the composed quality command even when another prerequisite blocks.
+        assert "spec_validation_required" in transition["blocked_reason"]
+    elif expected_state != "ready":
+        assert reason in transition["blocked_reason"], transition
+    else:
+        assert transition["blocked_reason"] is None
+    assert await stored_state() == before  # readers cannot repair/admit the snapshot
+
+    if surface == "rest":
+        response = client.post(
+            f"/api/v1/specs/{spec_id}/validation" if quality_enabled else f"/api/v1/specs/{spec_id}/move",
+            json=payload if quality_enabled else {"status": "validated"},
+        )
+        if expected_state == "ready":
+            assert response.status_code == (201 if quality_enabled else 200), response.text
+        else:
+            assert response.status_code in {400, 409}, response.text
+            assert reason in response.text
+    else:
+        monkeypatch.setattr(server, "_get_agent_ctx", AsyncMock(return_value=SimpleNamespace(
+            agent_id=USER_ID, agent_name="Checklist parity reviewer", realm_id="local",
+            permissions=["spec.read", "spec.update", "spec.entity.read", "spec.entity.edit_fields",
+                         "spec.interact_in.approved", "spec.validation.submit", "spec.move.approved_to_validated"],
+        )))
+        if quality_enabled:
+            tool = await server.mcp.get_tool("okto_pulse_submit_spec_validation")
+            result = json.loads(await tool.fn(board_id=board_id, spec_id=spec_id, **{
+                **payload, "expected_planning_manifest": SpecPlanningManifest.model_validate(
+                    payload["expected_planning_manifest"],
+                ),
+            }))
+        else:
+            tool = await server.mcp.get_tool("okto_pulse_move_spec")
+            result = json.loads(await tool.fn(board_id=board_id, spec_id=spec_id, status="validated"))
+        if expected_state == "ready":
+            if quality_enabled:
+                assert result["outcome"] == "success" and result["planning_result"] == "ready", result
+                assert result["spec_status"] == "validated", result
+            else:
+                assert result.get("success") is True and result["to_status"] == "validated", result
+        else:
+            assert reason in json.dumps(result), result
+
+    if expected_state != "ready":
+        assert await stored_state() == before
+    else:
+        after = await stored_state()
+        assert after[0] == SpecStatus.VALIDATED
+        assert after[3] == before[3]  # consume the independent opinion, do not copy it
+        assert len(after[4] or []) == int(quality_enabled)
+    async with db_factory() as db:
+        snapshot = (await db.execute(select(ChecklistValidationBindingSnapshotRow).where(
+            ChecklistValidationBindingSnapshotRow.spec_id == spec_id,
+        ))).scalar_one_or_none()
+        assert (snapshot.mode if snapshot else None) == initial
+
+
 @pytest_asyncio.fixture
 async def composition_client(db_factory, monkeypatch):
     from fastapi import FastAPI

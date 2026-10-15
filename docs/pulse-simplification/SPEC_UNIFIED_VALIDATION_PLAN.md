@@ -27,6 +27,13 @@ Demais consumidores de CardModal, leitores/editores da Spec e U4 continuam
 pendentes. A sequência de fechamento está em §6.2; não reimplementar o watcher
 nem apresentar esse checkpoint como entrega instalada.
 
+Avanço posterior U2: 16 confrontos nativos de Checklist entre resumo, preview e
+REST/MCP qualificam os modos congelados e a recusa de snapshot ausente. Corrigida
+perda do diagnóstico na conclusão composta e exceção sem tratamento na transição
+direta. Ver [evidência de paridade Checklist](evidence-u2-checklist-parity-20261014.json).
+Lint/policy e demais lacunas da matriz U2 continuam pendentes; não repetir esta
+família sem alteração ou falha nova. Nenhuma instalação final foi executada.
+
 ### Leitura executiva do plano
 
 **Resultado:** preparar Spec e Cards juntos e concluir a validação do planejamento
@@ -490,7 +497,7 @@ permitidas. Comparar razão, estado e efeitos persistidos; não somente HTTP 2xx
 | Família / UV | Ponto de partida existente | Conferência restante delimitada |
 | --- | --- | --- |
 | Qualidade/decomposição; UV04–06/10/12/13 | Core `test_spec_validation_composition.py`, `test_spec_evaluation_currentness.py`; Community `test_spec_validation_native_gate.py` | Relacionar os casos de aprovação, rejeição ativa, média nativa, autoria distinta e qualidade off aos caminhos públicos. Não duplicar os casos já provados. |
-| Lint/Checklist; UV07/08 | Community `test_spec_admission_missing_checklist.py` (REST/MCP, dois passes), `test_checklist_frozen_gate_characterization.py`, `test_sqlalchemy_checklist.py` | Provar que leitura e ambas as formas de promoção preservam os modos e snapshot. Admissão sem binding já recusa sem escrita parcial em REST/MCP; não repetir a implementação. |
+| Lint/Checklist; UV07/08 | Community `test_spec_admission_missing_checklist.py` (REST/MCP, dois passes), `test_checklist_frozen_gate_characterization.py`, `test_sqlalchemy_checklist.py`; Core `test_frozen_checklist_readiness_matches_public_promotions` (16 passes, evidência Checklist) | Modos congelados, mudança posterior do Board e snapshot ausente agora confrontados com resumo/preview/writers REST/MCP, sem escrita parcial. Completar somente lint ausente/aceito com findings e eventuais combinações de resultado ainda não demonstradas pelas suítes nativas. |
 | Policy; UV09/10/11 | Community `test_skb_b10_policy_transition_rest.py`; Core `test_spec_planning_readiness.py` | Relacionar julgamento nativo e conclusão composta/direta, inclusive autoridade indisponível, leitura negada e advisory. O teste isolado do resumo não comprova todos os writers. |
 | Arquitetura/Code Evidence/alocação; UV09/22 | Core `test_spec_validation_composition.py`, `test_spec_planning_readiness.py`; Community `test_spec_validation_lifecycle_gate.py` | Reaproveitar os 32 casos de cobertura; fechar somente diferenças não demonstradas com os mesmos dados. Skip de cobertura não oculta projeção inválida; não exigir código implementado antes da execução. |
 | Concorrência/replay/permissões; UV11/14–16 | Core `test_spec_validation_composition.py`; Community `test_spec_planning_manifest.py`, `test_validation_cycle_routes_authorization.py` | Mapear fence, rollback, chave/recibo, escopo e reautorização. Falha técnica não deixa parecer parcial; replay não promove novamente nem ignora acesso atual. |

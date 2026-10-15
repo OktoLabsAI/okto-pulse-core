@@ -1,0 +1,134 @@
+{
+  "date": "2026-10-14",
+  "scope": "U2 Checklist parity and native error projection",
+  "base": {
+    "core": "98b43ab4",
+    "community": "77394617",
+    "branch": "feature/v0.4.0"
+  },
+  "source_imports_verified": [
+    "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src\\okto_pulse\\core\\services\\main.py",
+    "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src\\okto_pulse\\community\\adapters\\sqlalchemy_checklist.py"
+  ],
+  "artifacts": [
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-checklist-parity-final.xml",
+      "sha256": "d85cdf57830289e1e457bc7690369cc896dcd25d0175505bda5373cbbf781b7c",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "3",
+          "skipped": "0",
+          "tests": "126",
+          "time": "40.241",
+          "timestamp": "2026-10-14T21:06:00.348338-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-checklist-regression.xml",
+      "sha256": "41823437136b6544195558fdff57532234cfddbe97461fbb925bfea445d4f919",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "64",
+          "time": "11.519",
+          "timestamp": "2026-10-14T21:07:56.192031-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-checklist-community.xml",
+      "sha256": "bb8e3b606c05373aa647320af8fd398317f4b780a0df9985301a9903e66db1a0",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "5",
+          "time": "16.242",
+          "timestamp": "2026-10-14T21:08:03.815648-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-checklist-ui.xml",
+      "sha256": "d82c1a8cf26a595cdbeafb96a815767ba79def4c2368c92ac4fe8ba0f0044837",
+      "suites": [
+        {
+          "name": "src/components/specs/__tests__/ValidationErrorDisplay.test.tsx",
+          "timestamp": "2026-10-15T00:07:00.845Z",
+          "hostname": "Alienware_m15",
+          "tests": "20",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.1319838"
+        }
+      ]
+    }
+  ],
+  "results": {
+    "composition": "78 passed, including 16 new Checklist combinations",
+    "readiness": "38 passed",
+    "shared_seed_regressions": "4 passed",
+    "gate_checklist_catalog_regression": "64 passed after repairing 3 outdated R4 test fixtures",
+    "community": "5 passed",
+    "frontend": "20 passed",
+    "typecheck": "npx tsc -b: exit 0",
+    "lint": "targeted ESLint: exit 0, 3 existing warnings, 0 errors"
+  },
+  "initial_attempts": [
+    "u2-checklist-parity.xml: fixture omitted required binding scope arguments; 16 failures",
+    "u2-checklist-parity-r2.xml: 6 passes; 10 fixture/transport expectation failures",
+    "u2-checklist-parity-r3.xml: 12 passes; 4 failures reproduced lost gate reason and uncaught missing snapshot",
+    "u2-checklist-parity-r4.xml: 12 passes; 4 failures due missing local GateContractError import, then corrected",
+    "u2-checklist-parity-final.xml: 123 passes/3 R4 fixture failures; affected suite reexecuted successfully in regression artifact"
+  ],
+  "criteria": {
+    "UV07": "Checklist mode portion proved across native reader, preview and REST/MCP writers; lint portion remains separate",
+    "UV08": "Frozen off/advisory/blocking survives opposite Board change; absent snapshot refuses without writes",
+    "UV22": "Checklist error parity proved; other gate families remain under the existing finite U2 matrix"
+  },
+  "browser": {
+    "url": "http://127.0.0.1:5274/output/playwright/u2-checklist.html",
+    "screenshot": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u2-checklist-diagnostics.png",
+    "sha256": "c0ca531ad78d0c1da312b4f75fde4c818b22a08733eac7d4a1477b02bdaaf02f",
+    "observed": "Actual ValidationErrorDisplay rendered native error-builder envelopes; screenshot visually inspected",
+    "limit": "Render-only fixture, no lifecycle mutation or authenticated wire E2E. Temporary fixture files removed.",
+    "console": "Only favicon.ico 404; no component exception"
+  },
+  "limits": [
+    "External lint prerequisite isolated by existing composition fixture; Checklist snapshot/persistence/gates native",
+    "MCP identity injected explicitly; tests exercise registered tools and UoW, not authenticated wire",
+    "No installation, user runtime restart or default-home mutation",
+    "U2 not complete; U3 remaining consumers/editors and full installed U4 still pending"
+  ],
+  "closure": {
+    "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\closure-u2-checklist-final.json",
+    "sha256": "64480d78ea380be0d4252fc1560fe301504e8375e22dd4988a093cae905c8b81",
+    "ok": true,
+    "ownership_rows": 9033,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    },
+    "findings": [],
+    "documentation_findings": [],
+    "method": "Official CLI audited unchanged product tree; generated README fragments then verified with canonical validator against that completed report. No wheel audit in this checkpoint."
+  }
+}

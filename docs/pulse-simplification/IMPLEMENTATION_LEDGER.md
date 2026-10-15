@@ -2,6 +2,57 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U2: paridade do Checklist e diagnósticos públicos corrigidos
+
+Retomada de implementação sobre Core `98b43ab4` / Community `77394617`.
+O turno anterior publicou planejamento; este altera produto/testes. Community
+publicado neste incremento: `3ed77890`. Evidência detalhada, hashes e limites:
+`evidence-u2-checklist-parity-20261014.json`.
+
+Acrescentados 16 confrontos com persistência real: snapshot blocking seguido de
+Board off; off/advisory seguido de Board blocking; snapshot ausente; qualidade
+habilitada/desabilitada; REST/MCP. Resumo, preview de transição e writer observam
+a mesma edição. Leitura não cria snapshot; bloqueio não altera estado, versão,
+edição, pareceres, atividade, eventos, histórico ou recibos de conclusão. Com
+qualidade habilitada, o preview direto continua orientando à conclusão composta.
+
+A reprodução encontrou duas falhas técnicas: submit_spec_validation convertia
+GateContractError em diagnóstico genérico, perdendo checklist_reason/ação; preview
+e promoção direta deixavam escapar ChecklistPortContractError quando faltava o
+snapshot. Agora preservamos o envelope nativo e projetamos a ausência específica
+como recusa acionável, sem criar configuração ou liberar validação. Outros erros
+de contrato não são convertidos em sucesso. Modos, snapshot e gates inalterados.
+Frontend identifica esse gate como Spec Checklist, usando o componente existente.
+
+Qualificação final: composição 78 passes (16 novos), readiness 38, regressão do
+seed 4; gate contracts/Checklist/catálogo 64; Community 5; frontend 20. O artefato
+`u2-checklist-parity-final.xml` registra 123 passes e três falhas em fixtures R4
+antigas (Decision artificial/coleções ausentes e justificativas abaixo do mínimo).
+Corrigidos somente esses fixtures e reexecutada a suíte afetada junto às demais
+regressões em `u2-checklist-regression.xml`: 64 passes. Não contar reruns como
+casos novos. Tentativas iniciais e correção do import GateContractError constam
+na evidência. `tsc -b` exit 0; ESLint exit 0, três warnings preexistentes.
+
+Browser real em Vite isolado 5274: componente ValidationErrorDisplay renderizou
+os dois envelopes gerados pelos builders nativos. Captura inspecionada, com
+identificação do gate, transição bloqueada e orientação legíveis. Ensaio é de
+renderização, não mutação autenticada de lifecycle; única falha de console foi
+favicon 404 do fixture. Arquivos temporários de renderização removidos. API/MCP
+isolados 8200/8201 e runtime do usuário não foram reiniciados nem alterados.
+
+Closure oficial: 9.033 linhas, oito budgets ZERO, nenhum finding de arquitetura.
+Detectado drift das duas tabelas README; regeneradas pelo renderer e comparadas
+pelo validador canônico com o mesmo relatório completo, sem alteração de produto
+após a auditoria. `closure-u2-checklist-final.json`: ok=true, zero drift. Nenhuma
+qualificação de wheel/instalação neste incremento.
+
+Retomada: UV08 tem prova nativa de snapshot/ausência nos caminhos públicos;
+UV07 tem a parcela de modos do Checklist, não a de lint; UV22 tem esta família.
+U2 ainda exige completar/mapear policy, lint, demais paridades e dependências
+conforme matriz finita do plano. U3/2e Knowledge/Targets/leitores, editores da
+Spec e U4 instalado até Done/KG permanecem obrigatórios. Não declarar entrega
+final nem repetir os casos agora comprovados sem novo impacto.
+
 ### 2026-10-14 — planejamento detalhado reconciliado com o checkpoint publicado
 
 Pedido vigente: iniciar o planejamento detalhado da unificação. Conferidos

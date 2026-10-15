@@ -92,6 +92,7 @@ async def _seed_board_and_spec(
     board_settings: dict | None = None,
     spec_status: SpecStatus = SpecStatus.APPROVED,
     scenarios: list[dict] | None = None,
+    checklist_mode: ChecklistMode = ChecklistMode.OFF,
 ) -> tuple[str, str]:
     board_id = _id("board")
     spec_id = _id("spec")
@@ -132,7 +133,7 @@ async def _seed_board_and_spec(
     )
     await record_native_subject_authority(db)
     checklist = CommunitySqlAlchemyChecklist(db)
-    binding = ChecklistBinding(board_id=board_id, mode=ChecklistMode.OFF, version=1)
+    binding = ChecklistBinding(board_id=board_id, mode=checklist_mode, version=1)
     await checklist.apply_binding_cas(binding, expected_version=0, expected_digest=None)
     await checklist.freeze_validation_binding(
         board_id=board_id, spec_id=spec_id, spec_edition=1,

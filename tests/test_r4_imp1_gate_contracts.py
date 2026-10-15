@@ -153,18 +153,13 @@ async def _seed_board_spec(db_factory, *, spec_status, require_validation=True):
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r4", owner_id=USER_ID,
                      settings={"require_spec_validation": require_validation}))
-        # An active Decision satisfies the decision-required gate (spec
-        # 4028ebd4) so the moves below reach the spec_validation gate contract
-        # actually under test; Decision->Task coverage is skipped because that
-        # gate has its own suite and would fire first otherwise.
+        # This fixture has no planned obligations. Decisions are optional;
+        # every collection is explicitly present, as in a newly authored Spec.
         db.add(Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"), id=spec_id, board_id=board_id, title="spec", status=spec_status,
                     created_by=USER_ID, functional_requirements=[], acceptance_criteria=[],
                     test_scenarios=[], business_rules=[], api_contracts=[],
-                    technical_requirements=[],
-                    decisions=[{"id": "dec_seed", "title": "Seed decision",
-                                "rationale": "Fixture decision for the gate contract tests.",
-                                "status": "active"}],
-                    skip_decisions_coverage=True,
+                    technical_requirements=[], integration_requirements=[],
+                    observability_requirements=[], decisions=[],
                     **_direct_spec_context_fields(spec_id)))
         await db.commit()
     return board_id, spec_id
@@ -291,11 +286,11 @@ async def test_submit_spec_evaluation_success_envelope_is_append_only(db_factory
 
     result = await _call(
         "okto_pulse_submit_spec_evaluation", board_id=board_id, spec_id=spec_id,
-        breakdown_completeness=80, breakdown_justification="j",
-        granularity=80, granularity_justification="j",
-        dependency_coherence=80, dependency_justification="j",
-        test_coverage_quality=80, test_coverage_justification="j",
-        overall_score=80, overall_justification="ok", recommendation="approve",
+        breakdown_completeness=80, breakdown_justification="All planned obligations have owners.",
+        granularity=80, granularity_justification="Tasks have bounded deliverables.",
+        dependency_coherence=80, dependency_justification="Execution order is coherent.",
+        test_coverage_quality=80, test_coverage_justification="Tests address the observable outcomes.",
+        overall_score=80, overall_justification="The planning review is complete.", recommendation="approve",
     )
 
     assert result.get("success") is True, result

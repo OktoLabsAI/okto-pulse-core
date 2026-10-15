@@ -11349,14 +11349,23 @@ class SpecService:
         from okto_pulse.core.ports.relational_application import (
             require_relational_application_adapter,
         )
-        from okto_pulse.core.services.checklist import ChecklistService
+        from okto_pulse.core.services.checklist import ChecklistPortContractError, ChecklistService
 
         persistence = require_relational_application_adapter().checklists(self.db)
-        decision = await ChecklistService().evaluate_spec_gate(
-            board_id=spec.board_id,
-            spec_id=spec.id,
-            persistence=persistence,
-        )
+        try:
+            decision = await ChecklistService().evaluate_spec_gate(
+                board_id=spec.board_id,
+                spec_id=spec.id,
+                persistence=persistence,
+            )
+        except ChecklistPortContractError as exc:
+            if exc.code != "checklist_validation_binding_snapshot_missing":
+                raise
+            from okto_pulse.core.services.gate_contracts import spec_checklist_snapshot_missing_error
+
+            raise spec_checklist_snapshot_missing_error(
+                board_id=spec.board_id, spec_id=spec.id, current_status=spec.status.value,
+            ) from exc
         stale_reasons = (
             tuple(reason.value for reason in decision.currentness.stale_reasons)
             if decision.currentness is not None
@@ -12368,6 +12377,8 @@ class SpecService:
         # ACâ†’Scenario coverage must run FIRST so uncovered ACs are caught before
         # the spec gets locked by a successful validation (the moveâ†’done gate
         # checks the same thing, but by then the spec is already locked).
+        from okto_pulse.core.services.gate_contracts import GateContractError
+
         try:
             card_service = CardService(self.db)
             await require_planning_coverage(card_service, spec, board, quality_enabled=True)
@@ -12388,7 +12399,7 @@ class SpecService:
                 spec,
                 surface="submit_spec_validation",
             )
-        except SpecValidationGateNotReady:
+        except (SpecValidationGateNotReady, GateContractError):
             raise
         except CodeTraceabilityContractError as exc:
             traceability_details = dict(exc.details)

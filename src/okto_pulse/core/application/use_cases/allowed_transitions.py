@@ -821,13 +821,22 @@ class ListAllowedTransitionsUseCase:
                     "spec_validation_required: submit the Spec Validation Gate; "
                     "direct approved→validated moves are not admitted."
                 )
-            from okto_pulse.core.services.checklist import ChecklistService
+            from okto_pulse.core.services.checklist import ChecklistPortContractError, ChecklistService
 
-            checklist_gate = await ChecklistService().evaluate_spec_gate(
-                board_id=spec.board_id,
-                spec_id=spec.id,
-                persistence=services.checklists,
-            )
+            try:
+                checklist_gate = await ChecklistService().evaluate_spec_gate(
+                    board_id=spec.board_id,
+                    spec_id=spec.id,
+                    persistence=services.checklists,
+                )
+            except ChecklistPortContractError as exc:
+                if exc.code != "checklist_validation_binding_snapshot_missing":
+                    raise
+                from okto_pulse.core.services.gate_contracts import spec_checklist_snapshot_missing_error
+
+                return self._exception_reason(spec_checklist_snapshot_missing_error(
+                    board_id=spec.board_id, spec_id=spec.id, current_status=spec.status.value,
+                ))
             if not checklist_gate.allowed:
                 return f"spec_checklist_gate_required: {checklist_gate.reason}"
             try:
