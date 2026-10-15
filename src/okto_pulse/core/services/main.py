@@ -270,7 +270,7 @@ from okto_pulse.core.domain.knowledge_fingerprint import (
 from okto_pulse.core.services.reference_resolution import (
     compile_ideation_parent_context,
 )
-from okto_pulse.core.services.resource_gate import ResourceGateService
+from okto_pulse.core.services.resource_gate import ResourceGateError, ResourceGateService
 from okto_pulse.core.services.reviewer_separation import (
     evaluate_task_reviewer_separation,
 )
@@ -12399,7 +12399,9 @@ class SpecService:
                 spec,
                 surface="submit_spec_validation",
             )
-        except (SpecValidationGateNotReady, GateContractError):
+        except (SpecValidationGateNotReady, GateContractError, ResourceGateError):
+            # Preserve native resource reasons and remediation at both public
+            # promotion paths; a transport wrapper must not replace the gate.
             raise
         except CodeTraceabilityContractError as exc:
             traceability_details = dict(exc.details)

@@ -1,7 +1,24 @@
 # Validação unificada do planejamento da Spec
 
-Plano de 14 de outubro de 2026. **U1 implementado; U2 parcial; U3 parcial; U4 pendente.**
-**Base desta revisão:** Core `99e76654` / Community `f7e910d4`, publicados em
+Plano de 14 de outubro de 2026. **U1 implementado; U2 qualificado no backend;
+U3 parcial; U4 pendente.**
+
+**Execução mais recente:** sobre Core `5ac3772c` / Community `f7e910d4`,
+as comparações públicas de recursos e Code Evidence foram concluídas, com
+preservação dos diagnósticos nativos. Community publicado: `1d6f8c47`; Core
+pareado e resultados no ledger. Recursos: 16 passes; Code Evidence: 36;
+contexto crítico dos dois pareceres: 4; regressões Core: 126 e 52; frontend: 23.
+Closure de fonte: 9.036 linhas, nenhum finding/drift e oito budgets ZERO.
+O [mapa finito](evidence-u2-finite-case-map-20261014.json) agora relaciona 208
+casos selecionados em 15 grupos, incluindo evidências anteriores verificadas.
+Detalhes, tentativas e limites em
+[evidência de recursos/Code Evidence](evidence-u2-resources-code-20261014.json).
+U2 não é aceite instalado: browser integrado U3 e percurso final U4 continuam
+obrigatórios. **Retomar em U3/2e.1 Knowledge**, seguido por Targets/leitores,
+proteção dos editores da Spec e integração/qualificação do refresh global.
+Os checkpoints parciais abaixo são históricos; não reabrir as falhas já resolvidas.
+
+**Base da revisão documental anterior:** Core `99e76654` / Community `f7e910d4`, publicados em
 `feature/v0.4.0`. O commit Community preserva a reprodução de recursos já existente:
 11 passes e 5 falhas; não é qualificação de release. Esta rodada é planejamento,
 sem correção de produto, novo teste de comportamento ou reinstalação.
@@ -70,7 +87,7 @@ gates de execução/entrega. Não redesenhar Ideação/Refinamento, percentuais 
 | Sequência de retomada | Trabalho restante concreto | Condição para avançar |
 | --- | --- | --- |
 | U1 — preservar | Reutilizar autoria de Cards Not Started em Draft e Decision opcional já implementadas. | Não reimplementar; confirmar ambos no percurso U4, incluindo recusa de execução prematura. |
-| U2 — fechar paridade | Preservar a correção da suíte nativa e confrontar leitura, conclusão composta, transição direta e ações permitidas para os mesmos dados/policies. Completar somente casos não demonstrados de gates, permissões, concorrência e replay. | Suítes pertinentes verdes; resultados nativos e estado persistido equivalentes nas entradas REST/MCP; nenhum bypass ou efeito parcial. Detalhamento em §6.2 e UV04–UV17/UV22. |
+| U2 — preservar qualificação | Paridade de backend reconciliada no mapa finito, incluindo recursos/Code Evidence e os dois guards de contexto crítico. | Preservar provas e regressões afetadas; autenticação wire e percurso instalado permanecem U4. Não repetir famílias sem impacto novo. |
 | U3 — completar integração | Reutilizar o watcher e as coleções já integradas ao SpecsPanel/Kanban; conectar CardModal/Delivery, Coverage e demais leitores previstos, protegendo editores e revalidando acesso. Qualificar resumo, formulário e histórico existentes. | Mutação MCP observada na UI aberta, inclusive mudança só de Card; formulário preservado, perda de acesso tratada e recuperação de rede comprovada. UV18–UV21. |
 | U4 — qualificar entrega | Executar regressões e auditoria, construir/instalar o par exato isoladamente e tramitar uma iniciativa mock nova até Done e KG canonical. | Matriz UV01–UV24 com evidências, oito budgets ZERO, paridade do pacote instalado, ledger e commits/pushes completos. |
 
@@ -400,7 +417,7 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint atual:** Core `99e76654` / Community `f7e910d4`, branch
+**Checkpoint de planejamento:** Core `99e76654` / Community `f7e910d4`, branch
 `feature/v0.4.0`, publicados antes desta revisão documental. A reprodução de
 recursos foi preservada sem correção; o próximo trabalho é explicitado abaixo.
 O checkpoint anterior Core `5f5f054d` / Community `77394617` inclui a prova
@@ -512,7 +529,13 @@ sem criar outra implementação de gates.
 
 #### Matriz finita para encerrar a paridade U2
 
-**Primeiro trabalho, já reproduzido:**
+**Encerramento backend desta matriz:** as tarefas abaixo foram executadas.
+Os 16 casos de recursos, 36 de Code Evidence e quatro de contexto crítico
+passaram; o mapa reúne 208 casos selecionados e registra as fronteiras dos
+fixtures. Os testes de domínio não substituem a prova integrada U3/U4. Preservar
+o histórico abaixo para explicar a reprodução e sua correção, não como fila aberta.
+
+**Primeiro trabalho reproduzido e agora corrigido:**
 `Community/tests/test_spec_planning_resource_parity.py`, preservado no commit
 `f7e910d4`. O JUnit existente `u2-resource-parity.xml` terminou com 16 casos:
 11 passes, 5 falhas, nenhum erro/skip (77,404 s). A revisão deste plano leu o
@@ -809,9 +832,9 @@ mockados precisam de execução observada para gerar prova autenticada.
 
 **Sequência fechada de execução a partir deste checkpoint:**
 
-1. Fechar a matriz finita U2 de §6.2, relacionando casos existentes aos UV e
-   acrescentando somente lacunas demonstradas. Preservar os 90 passes nativos
-   e os 32 casos de cobertura; distinguir evidência existente de nova execução.
+1. Preservar a matriz finita U2 qualificada em §6.2 e as correções de diagnóstico.
+   Os 208 casos mapeados não são 208 novos testes; distinguir evidência anterior
+   de nova execução e repetir somente regressões pertinentes a alterações futuras.
 2. Concluir U3/2e na ordem Knowledge → Targets → leitores restantes. Os passos
    2a–2d já têm qualificação registrada; não voltar à triagem das quatro falhas.
 3. Proteger os editores de `SpecModal` antes da atualização global: retirar

@@ -11145,6 +11145,7 @@ async def okto_pulse_move_spec(
         return _auth_error()
 
     from okto_pulse.core.domain.enums import SpecStatus
+    from okto_pulse.core.domain.code_traceability import CodeTraceabilityContractError
     from okto_pulse.core.models.schemas import SpecMove
 
     try:
@@ -11209,9 +11210,13 @@ async def okto_pulse_move_spec(
         return MCPAdapterContract.error(e)
     except LifecycleTransitionConflictError as e:
         return MCPAdapterContract.error(e)
+    except ResourceGateError as e:
+        return _resource_gate_error_response(e)
     except ValueError as e:
         from okto_pulse.core.application.delivery_errors import DeliveryGateBlocked
         from okto_pulse.core.domain.spec_dependency import SpecDependencyOperationError
+        if isinstance(e, CodeTraceabilityContractError):
+            return json.dumps(e.as_dict())
         if isinstance(e, SpecDependencyOperationError):
             return _spec_dependency_error_payload(e)
         if isinstance(e, DeliveryGateBlocked):
@@ -18721,6 +18726,8 @@ async def okto_pulse_submit_spec_validation(
             correlation_id=correlation_id,
         )
         return json.dumps(exc.to_error_dict())
+    except ResourceGateError as e:
+        return _resource_gate_error_response(e)
     except PolicyTransitionRejected as e:
         return MCPAdapterContract.error(e)
     except ValueError as e:

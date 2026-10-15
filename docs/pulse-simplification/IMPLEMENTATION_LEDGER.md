@@ -2,6 +2,66 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U2 backend qualificado: recursos, Code Evidence e contexto crítico
+
+Base Core `5ac3772c` / Community `f7e910d4`. Community deste incremento
+`1d6f8c47`, publicado. Evidência detalhada, hashes, suites e limites:
+`evidence-u2-resources-code-20261014.json`. O mapa finito U2 reúne agora
+208 casos selecionados em 15 grupos; inclui resultados anteriores verificados
+caso a caso e não representa 208 testes novos.
+
+Correções técnicas, sem alterar predicados ou permissões:
+- `SpecService.submit_spec_validation` preserva ResourceGateError em vez de
+  substituir código/fatos por wrapper genérico. MCP move/submit usam o projetor
+  de recursos já existente. REST mantém seu envelope nativo.
+- Transição direta da Spec preserva CodeTraceabilityContractError no REST/MCP.
+  REST usa 409 como o contrato estruturado existente de Code Traceability; MCP
+  retorna `as_dict()`. Antes havia somente texto/HTTP 400. Conclusão composta
+  conserva seu wrapper que já carrega a razão nativa e os detalhes técnicos.
+- Atualizada a regressão antiga que esperava perder o diagnóstico de arquitetura.
+
+Resultados terminais:
+- Recursos, `u2-resource-parity-r3.xml`: 16 passes, 56,61 s. Arquitetura ausente,
+  N/A explícito, policy off e mockup sem alocação; qualidade on/off e REST/MCP.
+  Resumo/preview/efeitos persistidos confrontados. Os cinco casos anteriormente
+  falhos agora alcançam e passam a asserção de rollback. Rerun r2 teve três falhas
+  de expectativa sobre `message` versus o campo nativo MCP `error`; corrigida
+  somente a projeção da asserção, mantendo código, fatos e persistência obrigatórios.
+- Code Evidence, `u2-code-evidence-public-parity-r2.xml`: 36 passes, 173,36 s.
+  Projeção completa real; incompleta/indisponível injetadas na porta depois da
+  leitura nativa. Skip none/Spec/Board, qualidade on/off e REST/MCP. Nenhum mock
+  de aprovação do gate. Primeira execução: 24 passes/12 falhas reproduzindo a
+  perda do envelope nas transições diretas; mantida como evidência negativa.
+- Contexto crítico, `u2-critical-context-parity.xml`: quatro passes, 36,66 s.
+  Falha da primeira ou segunda resolução nativa impede os dois pareceres e
+  promoção. Guard real, REST/MCP, estado/versão/edição/histórico/eventos/recibo
+  preservados. Esse confronto fecha a lacuna de UV11 para a operação composta.
+- Core: `u2-resource-regression.xml` 126 passes; `u2-code-evidence-public-regression.xml`
+  52 passes. Incluem composição/replay/fences, gates, preview, autoridade MCP e
+  catálogo gerado. Nenhuma tool ou metadata foi alterada; catálogo não editado.
+- Frontend: ValidationErrorDisplay, 23 passes. Nenhuma implementação visual
+  mudou; não se reivindica nova inspeção de browser neste incremento.
+
+Imports resolvidos nas duas árvores src, com PYTHONPATH explícito antes dos
+resultados. Ruff dos demais arquivos alterados passou; MCP mantém três E402
+preexistentes e API specs mantém dois, imports conferidos contra HEAD. Não
+silenciados nem tratados como falhas novas. Closure oficial de fonte: 9.036
+linhas, zero findings, oito budgets ZERO. README de ambos regenerado e validado
+com funções oficiais sobre o relatório concluído, eliminando dois drifts.
+Nenhum wheel, reinstalação, restart ou dado do usuário alterado.
+
+Preservação de evidência: o JUnit anterior de domínio `u2-code-evidence-parity.xml`
+foi copiado byte a byte para `u2-code-evidence-domain-parity-original.xml` antes
+de o novo ensaio público concluir usando aquele nome. SHA-256 antigo conferido;
+mapa atualizado para a cópia intacta. Não se perdeu a evidência anterior.
+
+**Retomada:** U1 implementado; U2 backend qualificado; U3 parcial; U4 pendente.
+Seguir U3/2e.1 Knowledge → Targets → leitores restantes de CardModal. Em seguida
+proteger editores de SpecModal antes de conectar refresh global; qualificar
+mutação MCP, draft/conflito, visibilidade, revogação e reconexão no browser.
+U4 continua par instalado exato e iniciativa nova até Cards/Test/Spec Done e
+KG canonical. O mapa de backend não encerra UV01–UV24 nem a entrega total.
+
 ### 2026-10-14 — planejamento detalhado reconciliado; reprodução pendente preservada
 
 Pedido vigente: iniciar o planejamento detalhado. Mantido

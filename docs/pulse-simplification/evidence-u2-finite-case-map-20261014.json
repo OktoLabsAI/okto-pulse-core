@@ -1,9 +1,9 @@
 {
   "date": "2026-10-14",
-  "scope": "U2 evidence reconciliation, not new test execution",
+  "scope": "U2 backend finite parity reconciled; U3/U4 and installed-wire acceptance remain open",
   "base": {
-    "core": "182b6d1d",
-    "community": "769d74f9"
+    "core": "5ac3772c",
+    "community": "f7e910d4"
   },
   "families": [
     {
@@ -96,7 +96,7 @@
     },
     {
       "criteria": "UV09/UV22: Code Evidence",
-      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-code-evidence-parity.xml",
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-code-evidence-domain-parity-original.xml",
       "sha256": "084164510999c32fa18093ff085f8e9bd5695573e683fd9849cc4ae42a2be247",
       "passed_cases": [
         "tests.test_spec_planning_readiness::test_code_evidence_summary_preserves_native_integrity_even_with_skip[complete-none]",
@@ -113,16 +113,6 @@
         "tests.test_allowed_transitions_mutation_parity_regressions::test_spec_code_evidence_skip_does_not_mask_technical_failure_parity"
       ],
       "limit": "Native gate/preview and summary under explicit projection fixtures; no installed lifecycle claimed."
-    },
-    {
-      "criteria": "UV09: architecture",
-      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-checklist-parity-final.xml",
-      "sha256": "d85cdf57830289e1e457bc7690369cc896dcd25d0175505bda5373cbbf781b7c",
-      "passed_cases": [
-        "tests.test_e2e_regression_hardening::test_spec_validation_blocks_missing_architecture_when_policy_requires_it",
-        "tests.test_e2e_regression_hardening::test_spec_validation_accepts_architecture_na_and_policy_off"
-      ],
-      "limit": "Existing native service checks prove required/missing/N/A/off. Explicit same-data summary and public promotion parity remain to be reconciled; not marked complete."
     },
     {
       "criteria": "UV07",
@@ -213,11 +203,143 @@
         "tests.test_spec_planning_dependency_parity::test_planning_accepts_pending_predecessor_but_start_waits_for_done[mcp]"
       ],
       "limit": "Two native REST/MCP cases: real lint/decomposition/validation, complete FR/BR/AC/scenario/Card plan, dependency preview and execution write. Predecessor completion is a separately committed fixture input, not predecessor closeout E2E; no test execution/proof is manufactured."
+    },
+    {
+      "criteria": "UV09/UV10/UV22: resources",
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-resource-parity-r3.xml",
+      "sha256": "1789ca653d30d0fa39964a815f48dc3d5eeda76ee331a96bfcd972a54697f72b",
+      "passed_cases": [
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[architecture_missing-True-rest]",
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[architecture_missing-True-mcp]",
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[architecture_missing-False-rest]",
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[architecture_missing-False-mcp]",
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[architecture_na-True-rest]",
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[architecture_na-True-mcp]",
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[architecture_na-False-rest]",
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[architecture_na-False-mcp]",
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[architecture_off-True-rest]",
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[architecture_off-True-mcp]",
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[architecture_off-False-rest]",
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[architecture_off-False-mcp]",
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[uncovered_mockup-True-rest]",
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[uncovered_mockup-True-mcp]",
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[uncovered_mockup-False-rest]",
+        "tests.test_spec_planning_resource_parity::test_native_resource_readiness_matches_public_promotions[uncovered_mockup-False-mcp]"
+      ],
+      "limit": "16 native same-data summary/preview/REST/MCP cases, with persisted rollback. Actor is fixture-injected; installed wire lifecycle remains U4."
+    },
+    {
+      "criteria": "UV09/UV10/UV22: public Code Evidence",
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-code-evidence-public-parity-r2.xml",
+      "sha256": "348e78a06767a71e56d80d61dcacce39856d98f354fdf3e2b95aded4f05f6ee6",
+      "passed_cases": [
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[complete-none-True-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[complete-none-True-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[complete-none-False-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[complete-none-False-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[complete-spec-True-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[complete-spec-True-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[complete-spec-False-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[complete-spec-False-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[complete-board-True-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[complete-board-True-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[complete-board-False-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[complete-board-False-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[incomplete-none-True-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[incomplete-none-True-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[incomplete-none-False-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[incomplete-none-False-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[incomplete-spec-True-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[incomplete-spec-True-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[incomplete-spec-False-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[incomplete-spec-False-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[incomplete-board-True-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[incomplete-board-True-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[incomplete-board-False-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[incomplete-board-False-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[unavailable-none-True-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[unavailable-none-True-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[unavailable-none-False-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[unavailable-none-False-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[unavailable-spec-True-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[unavailable-spec-True-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[unavailable-spec-False-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[unavailable-spec-False-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[unavailable-board-True-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[unavailable-board-True-mcp]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[unavailable-board-False-rest]",
+        "tests.test_spec_planning_code_evidence_parity::test_native_code_evidence_integrity_matches_public_promotions[unavailable-board-False-mcp]"
+      ],
+      "limit": "36 public comparisons; complete projection is native, incomplete/unavailable faults are injected after native relational resolution. No gate approval mock; not evidence of a production outage or inherited-evidence admission."
+    },
+    {
+      "criteria": "UV11: both composed critical-context guards",
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-critical-context-parity.xml",
+      "sha256": "7789d1fea1e988f51d901004a4afd23d649d9d75b2f0711840a25db11f4d2b6b",
+      "passed_cases": [
+        "tests.test_spec_planning_critical_context_parity::test_composed_conclusion_rejects_each_unavailable_critical_context[quality-rest]",
+        "tests.test_spec_planning_critical_context_parity::test_composed_conclusion_rejects_each_unavailable_critical_context[quality-mcp]",
+        "tests.test_spec_planning_critical_context_parity::test_composed_conclusion_rejects_each_unavailable_critical_context[decomposition-rest]",
+        "tests.test_spec_planning_critical_context_parity::test_composed_conclusion_rejects_each_unavailable_critical_context[decomposition-mcp]"
+      ],
+      "limit": "Four native REST/MCP refusals; first or second full-context resolution is faulted after reading the native subject. Guard is real and no state/history/receipt persists."
+    },
+    {
+      "criteria": "UV09/UV22: coverage parity",
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-resource-regression.xml",
+      "sha256": "1fb51425c2395679598f1f1bb93f81bf88578d2a7b4b86f081a795f2a47d6372",
+      "passed_cases": [
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[acceptance_criteria-acceptance_coverage-entry0-True-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[acceptance_criteria-acceptance_coverage-entry0-True-mcp]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[acceptance_criteria-acceptance_coverage-entry0-False-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[acceptance_criteria-acceptance_coverage-entry0-False-mcp]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[test_scenarios-test_card_coverage-entry1-True-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[test_scenarios-test_card_coverage-entry1-True-mcp]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[test_scenarios-test_card_coverage-entry1-False-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[test_scenarios-test_card_coverage-entry1-False-mcp]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[functional_requirements-business_coverage-entry2-True-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[functional_requirements-business_coverage-entry2-True-mcp]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[functional_requirements-business_coverage-entry2-False-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[functional_requirements-business_coverage-entry2-False-mcp]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[technical_requirements-technical_coverage-entry3-True-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[technical_requirements-technical_coverage-entry3-True-mcp]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[technical_requirements-technical_coverage-entry3-False-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[technical_requirements-technical_coverage-entry3-False-mcp]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[api_contracts-contract_coverage-entry4-True-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[api_contracts-contract_coverage-entry4-True-mcp]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[api_contracts-contract_coverage-entry4-False-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[api_contracts-contract_coverage-entry4-False-mcp]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[integration_requirements-integration_coverage-entry5-True-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[integration_requirements-integration_coverage-entry5-True-mcp]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[integration_requirements-integration_coverage-entry5-False-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[integration_requirements-integration_coverage-entry5-False-mcp]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[observability_requirements-observability_coverage-entry6-True-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[observability_requirements-observability_coverage-entry6-True-mcp]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[observability_requirements-observability_coverage-entry6-False-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[observability_requirements-observability_coverage-entry6-False-mcp]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[decisions-decision_verification-entry7-True-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[decisions-decision_verification-entry7-True-mcp]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[decisions-decision_verification-entry7-False-rest]",
+        "tests.test_spec_validation_composition::test_native_coverage_readiness_matches_promotion_and_rollback[decisions-decision_verification-entry7-False-mcp]"
+      ],
+      "limit": "Existing 32 structural coverage comparisons rerun in the affected Core suite. Reuses the recorded fixture boundaries; not 32 new tests."
+    },
+    {
+      "criteria": "UV12/UV16/UV22: REST composition",
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-resource-regression.xml",
+      "sha256": "1fb51425c2395679598f1f1bb93f81bf88578d2a7b4b86f081a795f2a47d6372",
+      "passed_cases": [
+        "tests.test_spec_validation_composition::test_rest_composition_persists_both_native_histories[approve-validated]",
+        "tests.test_spec_validation_composition::test_rest_composition_persists_both_native_histories[reject-approved]"
+      ],
+      "limit": "Two existing REST native-history cases for positive/negative composition; final installed UI/MCP workflow remains U4."
     }
   ],
   "remaining": [
-    "Finish only uncovered same-data architecture/resource and Code Evidence public path comparisons in the existing finite U2 matrix.",
-    "Do not infer full permission/replay parity solely from generic passes; reuse the listed shared command/REST/MCP cases and add only a demonstrated gap.",
-    "U3 consumers/editor protection and U4 installed complete UI/MCP initiative remain mandatory."
-  ]
+    "U3 Knowledge/Targets/readers, Spec dirty editors and complete live-refresh browser proof.",
+    "U4 exact paired installed build and new complete authenticated UI/MCP initiative to Done/canonical KG.",
+    "Final UV01-UV24 audit must combine native/backend evidence with actual U3/U4 observations; this map alone is not full delivery acceptance."
+  ],
+  "selected_case_count": 208,
+  "metadata_evidence": "evidence-u2-u3-checkpoint-20261014.json: 11 contract, 8 collection-native and 79 read/manifest/transport regression cases; previously executed, not rerun here."
 }

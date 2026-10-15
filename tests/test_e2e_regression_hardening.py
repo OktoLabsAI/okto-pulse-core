@@ -21,7 +21,6 @@ from sqlalchemy_test_models import (
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import CardCreate, CardMove, CardUpdate
-from okto_pulse.core.domain.spec_validation import SpecValidationGateNotReady
 from okto_pulse.core.services.main import CardOperationError, CardService, SpecService
 from okto_pulse.core.services.resource_gate import (
     ResourceGateService,
@@ -251,20 +250,16 @@ async def test_spec_validation_blocks_missing_architecture_when_policy_requires_
             },
         )
 
-        with pytest.raises(SpecValidationGateNotReady) as exc:
+        with pytest.raises(ResourceGateViolation) as exc:
             await SpecService(db).submit_spec_validation(
                 spec_id,
                 USER_ID,
                 "Validator",
                 _validation_payload(),
             )
-        assert exc.value.code == "spec_validation_gate_not_ready"
-        assert exc.value.details == {"reason": "ResourceGateViolation"}
-        assert isinstance(exc.value.__cause__, ResourceGateViolation)
-        assert (
-            exc.value.__cause__.code
-            == "resource_gate_spec_missing_architecture"
-        )
+        assert exc.value.code == "resource_gate_spec_missing_architecture"
+        assert exc.value.details["spec_id"] == spec_id
+        assert exc.value.details["blocking_resources"]
 
 
 @pytest.mark.asyncio
