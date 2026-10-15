@@ -3,7 +3,7 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint de código: Core `8291a648` / Community `aeebd6df`, na
+Checkpoint de código: Core `8291a648` / Community `28ec1871`, na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -72,11 +72,15 @@ prova UI/MCP de mudança sem bump da versão. Ver
 Criação/exclusão com resposta incerta e retenção do método em cenário removido
 foram qualificadas em `aeebd6df`: 54 testes, tipos/lint e prova UI/MCP 13 → 14 → 15.
 Ver [reconciliação de cenários](evidence-u3-scenario-reconciliation-20261015.json).
-Permanecem pendentes recuperação do writer de método e integração dos demais
-writers; Tests permanece fora do watcher.
+Método, vínculo/desvínculo, skip, transições e relatórios foram integrados em
+`28ec1871`; Tests agora assina o watcher existente. O conjunto final tem 166
+passes, tipos/lint aprovados e prova UI/MCP de atualização automática com dois
+rascunhos preservados, revisão explícita e criação única na versão 17. Ver
+[Tests e writers](evidence-u3-tests-watch-20261015.json). Reconciliação de recibo
+de relatório tem teste de componente; prova nativa assinada permanece no U4.
 Preservar também [método de cenário](evidence-u3-scenario-method-20261015.json).
 
-**Próxima ação de implementação:** cenários (3c/5c) e Project Structure → refresh global →
+**Próxima ação de implementação:** Project Structure (5d) → leitores restantes (3d) →
 qualificação integrada U3 → qualificação instalada U4.
 Sequência e condições de saída em §6.2; não reimplementar U1/U2.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
@@ -436,7 +440,12 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint vigente de código:** Core `8291a648` / Community `47434062`.
+**Checkpoint vigente de código:** Core `8291a648` / Community `28ec1871`.
+5c foi integrado e qualificado após os checkpoints históricos abaixo: Tests
+assina atualizações externas, preserva cenários/métodos/relatórios e possui
+recuperação protegida de escrita/leitura. Evidência `evidence-u3-tests-watch-20261015.json`.
+Retomar por 5d → 3d → UV18–UV21 → U4; as referências a Tests fora do watcher
+nos relatos anteriores descrevem os respectivos checkpoints, não o estado vigente.
 Branch `feature/v0.4.0`, incremento de 15/10/2026. A revisão documental
 a partir deste par acompanha a execução parcial de 5c. O checkpoint inclui
 a prova UI/MCP de 5b, a confirmação de cenários e a proteção da versão autorada
@@ -839,6 +848,11 @@ pelo helper das coleções. Details exibe descrição/contexto por `MarkdownCont
 Esses achados são conferência de código, não novas reproduções de runtime.
 
 #### Próximas intervenções de 3c — sequência de execução
+
+**Atualização vigente:** 5c concluído nos limites dirigidos de `28ec1871` e da
+evidência de Tests referenciada no início. A tabela abaixo conserva as etapas
+e seus aceites; continuar em 5d. U3 ainda depende da integração dos leitores e
+de UV18–UV21; U4 não foi executado por este incremento.
 
 **5a executado em `81af8c41`**, com 141 casos distintos e prova UI/MCP registrada
 acima. A linha 5a abaixo conserva o escopo e aceite atendidos. Em 5b, componente,

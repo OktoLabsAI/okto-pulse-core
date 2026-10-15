@@ -2,6 +2,70 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/5c: Tests integrado ao watcher; writers e relatórios protegidos
+
+Community `28ec1871` publicado em `feature/v0.4.0`; Core de produto permanece
+`8291a648`. Incremento anterior de recuperação de coleção: `aeebd6df`.
+
+Tests agora assina o watcher existente. Mudança externa atualiza cenário,
+transições e policy sem remontar os formulários; base de cenário e relatório
+exige revisão explícita. Relatório em cenário removido é retido, desabilitado e
+descartável, inclusive ao recolher a linha. Falha de leitura bloqueia novas ações
+e oferece recarga protegida; perda de acesso remove o conteúdo. O pai confere
+Board/Spec antes de aplicar uma resposta e ordena leitura/escrita por geração.
+
+Método com resposta incerta consulta o estado antes de outro envio; estado
+desejado observado não reivindica autoria. Vínculo/desvínculo e skip usam a
+recarga protegida do pai, não uma leitura direta sem geração. Gravação confirmada
+seguida de falha de leitura é distinguida de recusa; recarregar não repete o
+writer. Transições operacionais também distinguem esses casos e desabilitam
+ações de cache enquanto a leitura é inválida. A inspeção visual reproduziu a
+ação de status ainda habilitada durante falha de leitura do vínculo; corrigido
+o bloqueio e acrescentada regressão antes da publicação.
+
+Relatórios externos conservam texto/base em refresh e mudança das ações
+disponíveis. Alteração do cenário durante admissão impede anexar a prova à
+nova condição. Resposta incerta bloqueia admissão/gravação repetida; consulta
+pode reconhecer o recibo já gravado ou permitir descarte explícito da tentativa
+não confirmada, sem remover histórico no servidor. Nenhum gate, permissão,
+critério, prova ou comportamento de cascata do backend foi alterado.
+
+Qualificação final: **166 testes frontend aprovados**, mesmas asserções e
+timeout de 5 segundos, `--maxWorkers=1`; tipos exit 0, lint zero erros/11 warnings
+preexistentes, diff check aprovado. Preservado XML anterior com três timeouts
+na execução concorrente (nenhuma falha de asserção). Um teste novo de retenção
+de relatório falhou inicialmente porque o fixture não fornecia o envelope de
+autoridade exigido; corrigido o fixture e mantido o parser estrito. Evidências
+anteriores de 54/68/74 casos são sobrepostas, não somadas aos 166 finais.
+
+Browser/MCP isolados, Spec `dec9410f-d455-4506-a8fd-f791ee31dc77`:
+- PATCH real do método seguido de resposta abortada; Check method write
+  recuperou inspection e MCP confirmou versão 16, sem reenvio.
+- Rascunhos de cenário e relatório abertos; MCP mudou
+  `ts_1792065269269` de draft para ready, sem evidência. UI atualizou sozinha,
+  conservou ambos os textos e exigiu revisão. Revisão explícita e criação UI
+  produziram exatamente `ts_1792068986509`; MCP confirmou versão 17, cinco
+  cenários, novo item draft e estado ready anterior preservado.
+- Link e unlink reais do Test mock, com falha deliberada do GET posterior.
+  No ensaio final de unlink, botões de vínculo/status ficaram desabilitados;
+  Reload scenario state recuperou sem repetir a escrita. MCP confirmou vínculo
+  ausente. O vínculo original do primeiro cenário não foi alterado.
+
+Capturas de método incerto/recuperado, relatório preservado, novo cenário e
+desvínculo com falha de leitura foram inspecionadas. O texto de relatório do
+browser era rascunho explícito e nunca foi submetido; reconciliação de recibo e
+admissão concorrente têm testes de componente, não uma alegação de prova nativa
+assinada. Evidência e hashes: `evidence-u3-tests-watch-20261015.json`.
+Runtime continua checkout 8200/8201 + Vite5274; sem build/install na home do
+usuário. O ensaio instalado integral continua U4.
+
+**Retomada:** 5c implementado e qualificado nos limites acima; seguir 5d
+(`ProjectStructureTab`/Details), depois 3d (Coverage/recursos/referências/
+dependências), UV18–UV21 integrados e U4. Conferência inicial de 5d localizou
+snapshotGeneration, revisão própria e replay existentes; não houve alteração
+na árvore neste incremento. U3 integral e U4 permanecem abertos. Preservar as
+provas já aceitas; não reconstruir watcher nem reabrir U1/U2.
+
 ### 2026-10-15 — U3/5c: resposta incerta e método removido qualificados
 
 Community `aeebd6df` publicado; Core de produto permanece `8291a648`.
