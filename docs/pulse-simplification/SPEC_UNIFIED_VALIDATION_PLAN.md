@@ -3,14 +3,14 @@
 ## Estado vigente — revisão de planejamento de 14/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Base publicada: Core `f7c06a63` / Community `e34aa415`,
-branch `feature/v0.4.0`. Esta revisão reconcilia o plano com o código e as
-evidências existentes; não inicia novas alterações de produto.
+Execução sobre Core `13531685` / Community `e34aa415`;
+Community atualizado e publicado: `ae265bdc`, branch `feature/v0.4.0`.
 
-Antes da revisão, o trabalho local de Knowledge foi preservado no commit
-Community acima: 33 testes frontend passaram e `tsc -b` terminou com exit 0.
-A integração no navegador ainda não foi comprovada e permanece a primeira
-tarefa de U3. Capturas operacionais continuam locais; não são prova de conclusão.
+Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
+revisão explícita da base e escrita UI confirmada por leitura MCP. Conjunto
+frontend: 158 passes; últimos 41 testes de Targets e tipos aprovados. Evidências,
+capturas inspecionadas e limites em
+[Knowledge/Targets](evidence-u3-knowledge-targets-20261014.json).
 
 U2 está reconciliado no [mapa finito](evidence-u2-finite-case-map-20261014.json):
 208 casos selecionados em 15 grupos, incluindo provas anteriores verificadas.
@@ -19,8 +19,7 @@ Detalhes e limites em [evidência U2](evidence-u2-resources-code-20261014.json).
 A auditoria de fonte registrada tem 9.036 linhas, nenhum finding/drift e oito
 budgets ZERO. Esses resultados não qualificam o par instalado nem encerram U4.
 
-**Próxima ação:** comprovar Knowledge por UI aberta e mutação MCP no mesmo
-runtime isolado. Depois executar Targets → leitores restantes de CardModal →
+**Próxima ação:** completar os leitores restantes de CardModal (U3/2e.3) →
 proteção dos editores da Spec → refresh global → qualificação instalada U4.
 Sequência e condições de saída em §6.2; não reimplementar U1/U2.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
@@ -637,13 +636,12 @@ Essa prova parcial não encerra U3 nem substitui o E2E instalado U4.
 
 | Ordem | Alteração delimitada | Aceite específico |
 | --- | --- | --- |
-| 2e.1 — Knowledge | Implementado em `e34aa415`: base congelada, preservação de escolha/justificativa, revisão explícita, bloqueio por falha de leitura e revisão/visibilidade propagadas por `CardResourcesPanel` e `KnowledgeWorkspace`. 33 testes de componente aprovados; tipos aprovados. | Falta comprovar no navegador: mutação MCP atualiza recurso visível, preserva rascunho e exige revisão explícita; conferir ida e volta UI/MCP. Qualificar a integração CardModal/Resources. Não reimplementar a proteção nem considerar testes de componente como prova visual. |
-| 2e.2 — Targets | Em `ImplementationTargetsPanel`/`AddTargetForm`, preservar `specVersion` e referências da base do formulário. Hoje `expected_spec_version` vem da prop corrente; a leitura aplica `setProjection` sem conferir cancelamento após a resposta. Adicionar revisão/visibilidade sem remonta. | Nova base não é aceita silenciosamente; texto permanece e referência desaparecida bloqueia envio. Resposta atrasada não substitui projeção atual. Usar o fence nativo da Spec; não inventar CAS de Card. |
+| 2e.1 — Knowledge | Implementado em `e34aa415`; integração CardModal/Resources e prova UI/MCP concluídas no checkpoint `ae265bdc`. | Revisões 1 → 2 via MCP e 3 via UI; rascunho preservado, revisão explícita e leitura MCP confirmatória. Preservar testes e prova, sem reimplementar. |
+| 2e.2 — Targets | Implementado em `ae265bdc`: base da Spec/recibo congelada, revisão explícita, erro/visibilidade/escopo protegidos. | 41 testes finais aprovados; browser preservou rascunho após Spec 2 → 3 via MCP e gravou Target com source_spec_version=3 após revisão explícita. Recibo da fonte mock observado/aceito nativamente. Não é aceite instalado U4. |
 | 2e.3 — leitores restantes | Atualizar KB herdada em `CardModal` e propagar invalidação ao snapshot de `ArchitectureTab`; conferir Project Structure, dependências e histórico somente nos pontos ainda não cobertos. | Leitor visível converge e fechado lê ao abrir; geração/escopo impedem resposta antiga. Architecture do Card é somente leitura; não alterar o editor de Architecture da Spec neste passo. |
 
-Targets e leitores restantes são achados de inspeção estática, reconferidos
-nesta revisão; não são novas reproduções de runtime. Knowledge já teve seis
-falhas reproduzidas e correção testada. Para as lacunas restantes, caracterizar
+Knowledge e Targets já foram reproduzidos, corrigidos e qualificados conforme
+a evidência acima. Leitores restantes são achados estáticos; caracterizar
 antes de corrigir e ampliar
 `CardKnowledgeTab.test.tsx`, `CodeTraceabilityPanels.test.tsx`,
 `ArchitectureTab.test.tsx` e os testes pertinentes de CardModal/recursos;
@@ -666,7 +664,8 @@ vermelho. O trabalho de U4 permanece obrigatório após esse fechamento.
 
 #### Sequência finita de fechamento a partir deste checkpoint
 
-Executar somente esta fila remanescente, usando os detalhes de U3 acima.
+As linhas 1 e 2e.2 estão comprovadas no checkpoint Knowledge/Targets.
+Retomar pela parte 2e.3 da linha 2, usando os detalhes de U3 acima.
 Não há nova etapa de produto, novo gate ou expansão dos UV01–UV24.
 
 | Ordem / item existente | Ação concreta | Saída registrada no ledger |
@@ -677,8 +676,8 @@ Não há nova etapa de produto, novo gate ou expansão dos UV01–UV24.
 | 4 — U3/UV18–21 | Conferir o conjunto aberto: atualização MCP, acesso revogado, rede interrompida/recuperada, troca de contexto, histórico e ação de conclusão. Reusar provas parciais pertinentes. | UI legível e funcional, sem cache protegido após revogação, sem submissão duplicada, sem perda silenciosa de edição. U3 pode ser encerrado somente aqui. |
 | 5 — U4/UV01–24 | Qualificar o par exato de wheels/frontend e executar iniciativa mock nova até Cards/Test/Spec Done e KG canonical, conforme roteiro abaixo. | Matriz final com provas reais UI/MCP, paridade byte a byte, processo novo, oito budgets ZERO, commits/pushes pareados. |
 
-Esta rodada termina com o planejamento e o checkpoint publicados. A execução
-seguinte começa na linha 1, sem nova rodada genérica de assessment. Uma lacuna
+O planejamento já foi sucedido pela execução de Knowledge/Targets. A próxima
+ação é 2e.3, sem nova rodada genérica de assessment. Uma lacuna
 crítica reproduzida pode exigir correção no item afetado; melhorias opcionais
 ficam fora do escopo. Não declarar pronto com teste falho ou critério não exercitado.
 

@@ -2,6 +2,52 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U3: Knowledge e Targets comprovados por UI/MCP
+
+Progresso sobre Core `13531685` / Community `e34aa415`. Community `ae265bdc`
+publicado. Evidência: `evidence-u3-knowledge-targets-20261014.json`, com hashes
+dos resultados e capturas. O objetivo integral permanece ativo: U3/2e.3,
+editores/refresh da Spec e U4 ainda faltam.
+
+Knowledge: UI aberta no runtime isolado 5274 → API 8200/MCP 8201. Referência
+criada e atribuída por MCP apareceu sem Refresh; revisão 1 → 2, mantendo
+justificativa e Drop em edição. Save ficou bloqueado. Review current base e
+Save pela UI produziram revisão 3/explicit_empty, confirmada pelo MCP. Captura
+inspecionada visualmente. Integração CardModal/Resources agora tem teste de
+propagação de revisão e visibilidade, incluindo retorno à subaba selecionada.
+
+Targets: seis falhas reproduzidas em 37 testes antes da correção. Agora o
+formulário conserva expected_spec_version e identidade do recibo selecionado;
+mudança/conflito exige revisão explícita, leitura falha bloqueia escrita,
+fonte removida exige nova seleção. Respostas atrasadas não repovoam outro Card,
+leitura negada limpa projeção/rascunho e abas ocultas adiam consultas, inclusive
+quando uma escrita pendente termina. CardModal transmite revisão/visibilidade.
+Não foi criado CAS genérico nem alterado gate, policy, permissão ou backend.
+
+Prova nativa de Targets: fixture Git descartável de dois arquivos, lida e
+inspecionada com manifesto SHA256, AST, identidade Git, renames, contenção,
+binários e varredura de segredos. Recibo aceito
+`code_receipt_f28c37fc90e145819aada76a4cd375f5`; não é prova de implementação
+do produto. Com o formulário aberto, alteração MCP da Spec 2 → 3 preservou
+intenção, papel e fonte, bloqueando envio até Review target base. UI criou
+`implementation_target_ebed3c5336c5494294ae15a77388aa83`; listagem MCP confirmou
+o texto original e source_spec_version=3. Captura inspecionada; nenhuma
+interceptação/falso recibo ou relaxamento de gate usado.
+
+Qualificação: ensaio inicial 31 passes/6 falhas; após correção, 121 passes.
+Conjunto integrado seguinte: 158 passes (CardModal, Targets, Knowledge e
+KnowledgeWorkspace). Última execução de Targets: 41 passes, incluindo conclusão
+de escrita com painel oculto. Não somar reruns. Tipos exit 0; ESLint dirigido
+exit 0, 13 warnings preexistentes (12 CardModal e um teste), nenhum de Targets.
+Diff check passou. Sem alterações Python; nenhuma nova closure/wheel alegada.
+
+Limite: frontend de fonte e backend isolado já existente (PID 27316); não
+comprova o par instalado nem o backend U2 recém-publicado. Após as provas,
+PID Vite 38836/porta 5274 foram confirmados ausentes; reiniciado somente o
+Vite isolado como PID 10876. Pulse do usuário PID 40020/8100–8101 intacto.
+Retomar diretamente em U3/2e.3, sem refazer Knowledge/Targets; preservar
+regressões afetadas. Depois editores da Spec, refresh global e U4 completo.
+
 ### 2026-10-14 — planejamento reconciliado e checkpoint Knowledge publicado
 
 Pedido desta rodada: iniciar o planejamento detalhado. Mantido um único plano,
