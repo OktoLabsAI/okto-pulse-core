@@ -3,10 +3,9 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint publicado: Core `a1330157` (produto `867ef70e`) / Community
-`b1b83138`, na branch `feature/v0.4.0`, confirmado no remoto nesta conferência.
-Há WIP posterior de Architecture nos dois repositórios, descrito em §6.2;
-ele não equivale a incremento qualificado ou a U3 concluído.
+Checkpoint de produto: Core `826d5dfa` / Community `d58ee70d`, na branch
+`feature/v0.4.0`. Operações Architecture foram qualificadas no componente e
+por UI/MCP; integração Resources no pai ainda pendente. Não equivale a U3 concluído.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
 revisão explícita da base e escrita UI confirmada por leitura MCP. Conjunto
@@ -111,9 +110,13 @@ O WIP de update autorado de Architecture foi concluído neste par: 80 casos Core
 distintos, 3 de adaptador real, 26 frontend, tipos, catálogo e closure com oito
 budgets ZERO. Browser/MCP comprovou rascunho preservado, revisão explícita e
 recuperação de leitura após Save sem repetir PATCH, v1 → v2 → v3 → v3.
-Foi usado Refresh manual do componente; create/delete/import e integração
-automática no pai ainda faltam. Ver
+Foi usado Refresh manual do componente nesse checkpoint de update. Ver
 [Architecture: update e recuperação](evidence-u3-architecture-authored-update-20261015.json).
+Create/delete/import foram posteriormente qualificados em `826d5dfa` / `d58ee70d`:
+120 testes backend, 34 frontend, tipos/lint e closure ZERO. UI/MCP comprovou
+criação, conflito/revisão de importação e recuperação após import/delete sem
+repetir escrita. Ver [operações Architecture](evidence-u3-architecture-operations-20261015.json).
+Faltam proteger Mockups/wrapper Knowledge e integrar Resources automaticamente.
 A fila vigente está em §6.2, “Retomada executável de 3d”. Não reimplementar
 U1/U2, Project Structure ou Coverage/References já qualificados.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
@@ -595,7 +598,14 @@ registra **34 passes** (31 ArchitectureTab e três ExcalidrawImportDialog).
 Nenhuma nova execução foi feita neste planejamento. Esses resultados não
 comprovam browser, integração do pai, closure final ou artefato instalado.
 
-**Próxima ação exata:** revisar o diff e a suficiência das asserções de 2c,
+**Checkpoint que sucede o WIP acima:** operações publicáveis em `826d5dfa` /
+`d58ee70d`, com 120 testes backend, 34 frontend, tipos/lint e closure aprovados.
+Create v1 foi testado com seleção anterior v3. Prova UI/MCP de import v1 recusado
+após v2, revisão explícita, v3, falha de GET e recuperação sem escrita; delete
+v3 confirmado, listagem interrompida e recuperação sem segundo DELETE.
+Evidência e limitações no início do plano. Retomar em 3a/3b → 2d.
+
+**Ação de conferência anterior, agora concluída nos limites da evidência:** revisar o diff e a suficiência das asserções de 2c,
 especialmente criação v1 quando o design antes selecionado tinha versão maior,
 falha do callback de leitura do pai e respostas após troca de identidade.
 Corrigir somente lacunas demonstradas; executar os testes afetados e provar

@@ -2,6 +2,52 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/3d: operações de Architecture qualificadas; integração Resources pendente
+
+Produto Core `826d5dfa` / Community `d58ee70d`. Delete/import/payload conservam
+a versão autorada e usam a porta de fence existente. Composição de diagramas
+retém a versão da primeira leitura. Recusa preserva conteúdo e efeitos;
+REST/MCP expõem o conflito nativo. Sem versão explícita, a proteção continua
+limitada à concorrência após leitura do serviço, não a uma base autoral antiga.
+
+ArchitectureTab preserva entrada de importação diante de mudança externa,
+exige revisão explícita e separa escrita confirmada de recuperação de leitura,
+inclusive callback do pai. Criação incerta exige inspeção antes de descartar a
+tentativa; não há reenvio automático nem identidade inferida pelo título.
+Resultados de outro contexto são descartados. Corrigido o teste de criação v1
+para realmente iniciar com design selecionado v3; o lint detectou o nome de
+handler `useLatestDesign` como hook, resolvido com `acceptCurrentDesign`.
+
+Qualificação: **120 testes backend**, incluindo drift do catálogo oficialmente
+regenerado, e **34 frontend** aprovados; tipos exit 0; lint zero erros e um
+warning preexistente. Closure: sem findings/drift, oito budgets ZERO, contagens
+7860 imports Core/1154 Community/25 dependências. Não somar a esses resultados
+os conjuntos sobrepostos anteriores. Paridade instalada continua divergente
+em 26 arquivos Core/12 Community: testes usam explicitamente os dois checkouts.
+
+Browser/MCP, runtime isolado reiniciado PID38064, portas 8200/8201, Vite5274:
+UI criou `8d3eaf02-16f9-448f-a47a-2b65706e8278` v1 na Spec
+`dec9410f-d455-4506-a8fd-f791ee31dc77`; MCP alterou para v2. Delete/import
+MCP com base v1 e import UI v1 foram recusados. UI conservou o título local,
+revisou explicitamente a base e importou uma vez em v3. GET interrompido reteve
+confirmação; recuperação deixou v3 idêntica por MCP. Delete UI enviou versão 3,
+retornou 204, reteve confirmação após falha na listagem e recuperou sem segundo
+DELETE. MCP confirmou ausência; a arquitetura anterior foi preservada.
+Três screenshots foram inspecionadas. Evidência e hashes:
+[operações Architecture](evidence-u3-architecture-operations-20261015.json).
+
+Limites: create nativo teve sucesso normal; recuperação de create e falha do
+callback pai têm prova de componente. A primeira injeção usou URL incorreta,
+sem interceptar create; dois probes MCP usaram argumentos errados de import,
+recusados pelo schema, antes do probe correto. Esses registros foram preservados;
+nenhuma mutação foi repetida para corrigir o helper. Não declarar esse ensaio
+como prova de watcher automático, pacote instalado ou U4.
+
+Próximo passo: proteger Mockups e criação/exclusão no wrapper Knowledge;
+integrar os três consumidores Resources no SpecModal sem remount, com
+revisão/visibilidade/atualidade e callback aguardado. Depois UV18–UV21 e U4.
+Nenhuma instalação, alteração de home padrão, aprovação ou entrega fabricada.
+
 ### 2026-10-15 — planejamento reconciliado com o WIP de operações Architecture
 
 Pedido atendido como planejamento, sem novas alterações de produto ou runtime.
