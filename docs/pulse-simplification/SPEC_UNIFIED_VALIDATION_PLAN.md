@@ -3,11 +3,13 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint de produto: Core `826d5dfa` / Community `d58ee70d`, na branch
-`feature/v0.4.0`. Operações Architecture foram qualificadas no componente e
-por UI/MCP. Resources tem integração local ainda não publicada nem qualificada
-por browser/MCP; a fila vigente de §6.2 distingue esse WIP do produto publicado.
-Não equivale a U3 concluído.
+Checkpoint de produto: Core `537eea6` / Community `ccc76df`, na branch
+`feature/v0.4.0`. Resources está integrado e qualificado: Architecture/Mockups
+recebem mudanças MCP sem perder rascunhos; Knowledge recupera leitura após
+create/delete sem repetir escrita. 83 testes backend e 101 frontend distintos,
+tipos/lint e closure aprovados. Provas e limites em
+[Resources integrado](evidence-u3-resources-parent-20261015.json).
+Retomar UV18–UV21 → U4; Resources não equivale a U3 concluído.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
 revisão explícita da base e escrita UI confirmada por leitura MCP. Conjunto
@@ -107,7 +109,7 @@ concorrente, revisão e gravação únicas, além de recuperação de leitura ap
 remoção sem repetir DELETE, versões 20 → 21 → 22 → 23. Ver
 [Dependencies](evidence-u3-dependencies-20261015.json). Resources permanece aberto.
 
-**Próxima ação de implementação:** Resources restantes (3d) → UV18–UV21 → U4.
+**Próxima ação de implementação:** reconciliar/fechar UV18–UV21 → U4.
 O WIP de update autorado de Architecture foi concluído neste par: 80 casos Core
 distintos, 3 de adaptador real, 26 frontend, tipos, catálogo e closure com oito
 budgets ZERO. Browser/MCP comprovou rascunho preservado, revisão explícita e
@@ -118,8 +120,8 @@ Create/delete/import foram posteriormente qualificados em `826d5dfa` / `d58ee70d
 120 testes backend, 34 frontend, tipos/lint e closure ZERO. UI/MCP comprovou
 criação, conflito/revisão de importação e recuperação após import/delete sem
 repetir escrita. Ver [operações Architecture](evidence-u3-architecture-operations-20261015.json).
-Mockups/wrapper Knowledge e integração automática de Resources têm WIP local;
-faltam revisão final, auditoria e prova nativa integrada antes de publicá-los.
+Mockups/wrapper Knowledge e integração automática de Resources foram qualificados
+no par vigente, conforme a evidência acima. Não reimplementar esse incremento.
 A fila vigente está em §6.2, “Retomada executável de 3d”. Não reimplementar
 U1/U2, Project Structure ou Coverage/References já qualificados.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
@@ -482,13 +484,13 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint publicado vigente:** Core `c0167eb6` (produto `826d5dfa`) /
-Community `d58ee70d`. O WIP descrito abaixo não integra esse par.
+**Checkpoint de produto vigente:** Core `537eea6` / Community `ccc76df`.
+O WIP Resources descrito historicamente abaixo foi concluído neste par.
 5c foi integrado e qualificado após os checkpoints históricos abaixo: Tests
 assina atualizações externas, preserva cenários/métodos/relatórios e possui
 recuperação protegida de escrita/leitura. Evidência `evidence-u3-tests-watch-20261015.json`.
 5d integrado e qualificado conforme evidência Project Structure acima.
-Coverage/References e Dependencies integrados; retomar Resources de 3d →
+Coverage/References, Dependencies e Resources integrados; retomar
 UV18–UV21 → U4; as referências a Tests fora do watcher
 nos relatos anteriores descrevem os respectivos checkpoints, não o estado vigente.
 Branch `feature/v0.4.0`, incremento de 15/10/2026. A revisão documental
@@ -584,14 +586,27 @@ prevista, configurada e admitida pelos caminhos normais.
 
 #### Execução restante de Resources — detalhamento das linhas 2 e 3
 
-**Retomada vigente após conferência do WIP de Mockups/Knowledge:** as operações
+**Checkpoint que sucede o WIP desta seção:** Core `537eea6` / Community
+`ccc76df`, com [29 artefatos de evidência](evidence-u3-resources-parent-20261015.json).
+Architecture v3 → MCP v4 → revisão/UI v5; Mockups mantém inclusão concorrente
+e rascunho oculto; Knowledge tem criação/exclusão confirmadas com GET posterior
+interrompido e recuperação sem segundo POST/DELETE. Disclosure atualizado.
+Todos os budgets ZERO, catálogo e tipos aprovados; lint sem erros. A prova
+nativa de Mockups avançou Spec 30 → 31, portanto não comprova mesma versão:
+essa garantia está nos testes REST/persistência/frontend. Não alterar a semântica
+de versão para adequar o probe. Resposta incerta/acesso/identidade têm provas de
+componentes; as lacunas integradas UV18–UV21 permanecem explícitas.
+Próxima ação é a linha UV18–UV21 da tabela, seguida de U4.
+
+**Histórico da conferência do WIP de Mockups/Knowledge:** as operações
 Architecture estão publicadas; não reaplicar 2a–2c. O diff local já conecta
 Resources ao watcher no `SpecModal`, transmite visibilidade/atualidade, aguarda
 callbacks de releitura e extrai `SpecKnowledgeResources`. Mockups conserva base,
 snapshot e identidade da tentativa. O backend compara o snapshot sob o fence
 transacional existente; os writers MCP capturam a coleção antes da mutação.
-Isso não modifica o significado de `Spec.version`, que permanece igual nas
-edições de Mockups, nem cria aprovação, coluna persistida ou migração.
+Isso não modifica o significado de `Spec.version`; o snapshot protege também
+os caminhos em que ela permanece igual. Não cria aprovação, coluna persistida
+ou migração.
 
 **Provas existentes conferidas, não reexecutadas neste planejamento:**
 `u3-mockups-snapshot-core-final.xml` (77 passes),
@@ -1328,9 +1343,9 @@ mockados precisam de execução observada para gerar prova autenticada.
 2. Preservar U3/2e.3, Knowledge/Targets e 2a–2d já qualificados nos limites
    registrados. Não repetir as mutações mock. O percurso instalado de Project
    Structure continua parte do U4; o runtime antigo não o qualificou.
-3. Concluir Resources conforme §6.2, “Retomada executável de 3d”.
-   Preservar os editores/coleções, Tests, Project Structure e
-   Coverage/References e Dependencies já qualificados. Não repetir o trabalho
+3. Preservar Resources qualificado conforme §6.2, além dos
+   editores/coleções, Tests, Project Structure,
+   Coverage/References e Dependencies. Não repetir o trabalho
    publicado nem as mutações dos fixtures sem impacto novo.
 4. Qualificar ação composta, resultados/histórico e sincronização U3 por
    testes frontend e browser/MCP: conflito, troca de entidade, rede e autoridade.

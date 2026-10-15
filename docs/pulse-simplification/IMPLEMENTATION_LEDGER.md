@@ -2,6 +2,60 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/3d: Resources integrado e qualificado por UI/MCP
+
+Par de produto Core `537eea6` / Community `ccc76df`, `feature/v0.4.0`.
+Mockups recebe snapshot autorado por coleção, conferido após releitura sob o
+fence público existente. Os quatro writers MCP capturam base antes da mutação;
+REST expõe conflito sem alterar conteúdo. Nenhuma mudança do significado de
+Spec.version, migração, coluna persistida, autoridade ou gate de Design System.
+
+Resources passou a consumir o watcher no pai. Mockups conserva coleção/ID da
+tentativa, exige revisão explícita e distingue resposta incerta de confirmação
+com leitura pendente. SpecKnowledgeResources protege criação/exclusão e aguarda
+releitura completa do pai; Architecture usa o mesmo callback aguardado. Rascunhos
+de subabas ocultas são preservados; resposta de outro contexto/acesso negado
+não libera escrita nem conserva conteúdo indevidamente. Disclosure lê a fonte
+autoritativa, sem cálculo de gate no cliente.
+
+Qualificação: 78 testes backend anteriores deste diff + 5 de catálogo nesta
+execução = **83 casos distintos**; **101 frontend distintos**, tipos exit 0;
+lint zero erros/12 warnings preexistentes. Os XMLs anteriores foram conferidos,
+não repetidos. Catálogo regenerado oficialmente no trabalho anterior e drift
+aprovado aqui. Closure final sem findings/documentation drift, oito budgets ZERO,
+7862 imports Core/1154 Community/25 dependências. Os READMEs foram atualizados
+pelo renderer oficial após a primeira auditoria apontar apenas drift de contagem.
+
+Browser/MCP no runtime isolado PID13996, API8200/MCP8201/Vite5274, ambos os
+checkouts; instalação do usuário continua divergente (27 arquivos Core/12
+Community). Spec `dec9410f-d455-4506-a8fd-f791ee31dc77`:
+- Architecture `dff796ef-47da-438f-a373-f87e0cece5d5`: MCP v3→v4 recebido sem
+  Refresh manual, rascunho preservado, revisão explícita/UI v5 confirmada por MCP.
+- Mockup MCP `sm_29cc74c0` recebido durante rascunho UI. Troca de subabas e
+  atualização de Architecture conservaram o formulário; revisão e gravação UI
+  criaram `mockup_334ef8d1-561e-4890-9a85-50258973f25b`, preservando ambos por MCP.
+- Knowledge `1343829d-acd6-47d4-bbf2-54143da1fef1`: título local preservado;
+  create201 seguido de GET da Spec abortado reteve confirmação. Recuperação
+  sem segundo POST; conteúdo confirmado por MCP. Delete204 teve o mesmo ensaio;
+  recuperação sem segundo DELETE e ausência confirmada por MCP. Requests finais:
+  exatamente um POST e um DELETE. Disclosure passou a Architecture1/Mockups2
+  Provided e Knowledge Missing advisory. Três screenshots inspecionadas.
+
+Limite importante: o probe MCP de Mockups esperava versão constante, mas observou
+Spec30→31. A asserção do helper falhou após a inclusão bem-sucedida; não repetimos
+a mutação. A garantia contra snapshot antigo com versão igual está demonstrada
+nos testes REST/persistência/frontend, não nesse ensaio nativo. O resumo MCP de
+Spec não expõe mockup_snapshot; a UI o recebe pelo REST e os writers MCP capturam
+internamente sua base. Outros erros de invocação do helper/CLI estão descritos
+na evidência; não foram convertidos em passes.
+
+[Evidência e 29 hashes](evidence-u3-resources-parent-20261015.json).
+Resources/3d encerrado neste alcance. Retomar UV18–UV21: reconciliar provas e
+exercitar somente casos integrados ausentes, incluindo Card/Delivery sem bump,
+conclusão/histórico, rede/autoridade e foco/teclado. Depois U4: build/wheels/paridade
+e iniciativa nova até Done/KG canonical. Nenhum build instalado, fechamento,
+percentual de entrega ou canonical foi declarado por este incremento.
+
 ### 2026-10-15 — planejamento reconciliado com Mockups/Knowledge e integração Resources
 
 Conferência solicitada atendida como planejamento. Remotos confirmados:
