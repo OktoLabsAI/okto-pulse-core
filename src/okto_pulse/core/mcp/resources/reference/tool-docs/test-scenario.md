@@ -38,6 +38,17 @@ the method as an explicit Draft edit; it cannot preserve the old proof as credit
 for a different contract. `expected_spec_version` on the update tool rejects a
 stale edit. A method edit changes the semantic digest and requires new evidence.
 
+For REST whole-collection authoring, the full Spec response also supplies
+`scenario_snapshot`. Send it unchanged as `expected_scenario_snapshot` alongside
+`expected_spec_version` when replacing `test_scenarios`. Capture both from the
+same read used to author the collection: status, evidence or task-link changes
+can leave the Spec version unchanged. A stale snapshot returns
+`scenario_snapshot_conflict` (HTTP 409), with no collection mutation. Reload,
+review the retained draft against the current collection, then explicitly submit
+the revised operation. The snapshot is concurrency metadata, never verification
+evidence. Scoped MCP add/update/delete retain their own native semantics and
+capture their collection base inside the use case; no new MCP argument is needed.
+
 Delivery closeout requires this scenario to belong to a completed **test card**,
 have a current authenticated `passed` receipt, and be explicitly associated with
 the implementation it tested via `okto_pulse_record_delivery_evidence` with

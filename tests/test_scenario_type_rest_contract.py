@@ -186,12 +186,14 @@ def test_scenario_collection_rejects_stale_authored_version_without_erasing_firs
     base = before["version"]
     first = client.patch(
         f"/api/v1/specs/{spec_id}",
-        json={"test_scenarios": [_scenario("manual")], "expected_spec_version": base},
+        json={"test_scenarios": [_scenario("manual")], "expected_spec_version": base,
+              "expected_scenario_snapshot": before["scenario_snapshot"]},
     )
     assert first.status_code == 200, first.text
     stale = client.patch(
         f"/api/v1/specs/{spec_id}",
-        json={"test_scenarios": [], "expected_spec_version": base},
+        json={"test_scenarios": [], "expected_spec_version": base,
+              "expected_scenario_snapshot": before["scenario_snapshot"]},
     )
     assert stale.status_code == 409, stale.text
     assert stale.json()["detail"] == "spec_version_conflict"
@@ -208,6 +210,36 @@ def test_scenario_collection_version_is_strict_positive_integer(rest_spec, expec
         f"/api/v1/specs/{spec_id}",
         json={"test_scenarios": [], "expected_spec_version": expected},
     )
+    assert response.status_code == 422, response.text
+
+
+def test_scenario_snapshot_conflict_is_actionable_and_reviewed_write_succeeds(rest_spec):
+    client, _board, spec_id = rest_spec
+    before = client.get(f"/api/v1/specs/{spec_id}").json()
+    response = client.patch(f"/api/v1/specs/{spec_id}", json={
+        "test_scenarios": [_scenario("manual")], "expected_spec_version": before["version"],
+        "expected_scenario_snapshot": "0" * 64,
+    })
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == "scenario_snapshot_conflict"
+    current = client.get(f"/api/v1/specs/{spec_id}").json()
+    assert current["scenario_snapshot"] == before["scenario_snapshot"]
+    assert current["test_scenarios"] == before["test_scenarios"]
+    saved = client.patch(f"/api/v1/specs/{spec_id}", json={
+        "test_scenarios": [_scenario("manual")], "expected_spec_version": current["version"],
+        "expected_scenario_snapshot": current["scenario_snapshot"],
+    })
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["scenario_snapshot"] != current["scenario_snapshot"]
+    assert "expected_scenario_snapshot" not in saved.json()
+
+
+@pytest.mark.parametrize("snapshot", [None, "", "wrong", True, "A" * 64])
+def test_authored_version_requires_a_well_formed_scenario_snapshot(rest_spec, snapshot):
+    client, _board, spec_id = rest_spec
+    response = client.patch(f"/api/v1/specs/{spec_id}", json={
+        "test_scenarios": [], "expected_spec_version": 1, "expected_scenario_snapshot": snapshot,
+    })
     assert response.status_code == 422, response.text
 
 

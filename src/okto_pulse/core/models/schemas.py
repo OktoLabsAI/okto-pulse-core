@@ -1,6 +1,8 @@
 """Pydantic schemas for API request/response models."""
 
 import re
+import hashlib
+import json
 from collections.abc import Mapping
 from datetime import datetime
 from enum import Enum as PyEnum
@@ -493,6 +495,28 @@ class TestScenarioWrite(TestScenario):
     whether it was omitted through ``model_fields_set``. Whole-list updates use
     that distinction to default new scenarios and preserve existing scenarios.
     """
+
+
+def scenario_collection_snapshot(
+    *, board_id: str, spec_id: str, edition: int, version: int,
+    scenarios: list[TestScenario | dict] | None,
+) -> str:
+    """Bind authoring to the complete public collection, including operational facts.
+
+    This is concurrency metadata, not semantic evidence or an approval. Defaults
+    use the same projection as SpecResponse, so stored and returned forms agree.
+    """
+    items = []
+    for item in scenarios or []:
+        parsed = item if isinstance(item, TestScenario) else TestScenario.model_validate(item)
+        projected = parsed.model_dump(mode="json")
+        projected.setdefault("verification_method", None)
+        items.append(projected)
+    payload = {"contract": "scenario-authoring/v1", "board_id": board_id,
+               "spec_id": spec_id, "edition": edition, "version": version,
+               "scenarios": items}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 
@@ -2245,6 +2269,10 @@ class SpecUpdate(BaseModel):
         None, strict=True, ge=1,
         description="Authored Spec version for a test_scenarios replacement; not a general Spec update precondition.",
     )
+    expected_scenario_snapshot: str | None = Field(
+        None, strict=True, pattern=r"^[0-9a-f]{64}$",
+        description="scenario_snapshot from the same Spec read as the authored scenario collection; includes operational state.",
+    )
 
     title: str | None = Field(
         None,
@@ -2398,6 +2426,10 @@ class SpecUpdate(BaseModel):
     def _scenario_version_scope(self) -> "SpecUpdate":
         if self.expected_spec_version is not None and self.test_scenarios is None:
             raise ValueError("expected_spec_version_requires_test_scenarios")
+        if self.expected_scenario_snapshot is not None and self.test_scenarios is None:
+            raise ValueError("expected_scenario_snapshot_requires_test_scenarios")
+        if self.expected_spec_version is not None and self.expected_scenario_snapshot is None:
+            raise ValueError("expected_scenario_snapshot_required")
         return self
 
 
@@ -2793,6 +2825,14 @@ class CardSummaryForSpec(BaseSchema):
 
 class SpecResponse(BaseSchema):
     """Schema for full spec response."""
+
+    @computed_field
+    @property
+    def scenario_snapshot(self) -> str:
+        return scenario_collection_snapshot(
+            board_id=self.board_id, spec_id=self.id, edition=self.edition,
+            version=self.version, scenarios=self.test_scenarios,
+        )
 
     missing_link_context: MissingLinkContext | None = Field(default=None, json_schema_extra={"readOnly": True})
 

@@ -179,7 +179,7 @@ from okto_pulse.core.models.schemas import (
     TopicUpdate,
     project_task_validation_public,
 )
-from okto_pulse.core.services.application_schemas import ScenarioContentUpdate
+from okto_pulse.core.services.application_schemas import ScenarioContentUpdate, scenario_collection_snapshot
 from okto_pulse.core.services.ambiguity_assessment import (
     AmbiguityGateError as AmbiguityGateError,
     AmbiguityGateService,
@@ -9826,7 +9826,10 @@ class SpecService:
         updated = await self.update_spec(
             spec_id,
             user_id,
-            ScenarioContentUpdate(test_scenarios=scenarios, expected_spec_version=spec.version),
+            ScenarioContentUpdate(test_scenarios=scenarios, expected_spec_version=spec.version,
+                expected_scenario_snapshot=scenario_collection_snapshot(
+                    board_id=spec.board_id, spec_id=spec.id, edition=spec.edition,
+                    version=spec.version, scenarios=spec.test_scenarios)),
         )
         new_target = next(
             (
@@ -9919,7 +9922,10 @@ class SpecService:
         updated_spec = await self.update_spec(
             spec_id,
             user_id,
-            ScenarioContentUpdate(test_scenarios=remaining, expected_spec_version=spec.version),
+            ScenarioContentUpdate(test_scenarios=remaining, expected_spec_version=spec.version,
+                expected_scenario_snapshot=scenario_collection_snapshot(
+                    board_id=spec.board_id, spec_id=spec.id, edition=spec.edition,
+                    version=spec.version, scenarios=spec.test_scenarios)),
         )
         if updated_spec is None:  # defensive: the Spec was resolved above
             raise ValueError("scenario_not_found: spec not found")
@@ -10385,8 +10391,13 @@ class SpecService:
         # This precondition belongs to scenario collection authoring only.
         # It is command metadata, never content, history or a general Spec CAS.
         expected_scenario_version = update_data.pop("expected_spec_version", None)
+        expected_scenario_snapshot = update_data.pop("expected_scenario_snapshot", None)
         if update_data.get("test_scenarios") is not None:
             scenario_base = spec.version if expected_scenario_version is None else expected_scenario_version
+            scenario_snapshot = expected_scenario_snapshot or scenario_collection_snapshot(
+                board_id=spec.board_id, spec_id=spec.id, edition=spec.edition,
+                version=spec.version, scenarios=spec.test_scenarios,
+            )
             if spec.version != scenario_base or not await _application_fence(
                 self.db, "spec", spec.id,
                 expected_values={
@@ -10398,6 +10409,15 @@ class SpecService:
                 },
             ):
                 raise ValueError("spec_version_conflict")
+            # The scalar fence holds the row until this UoW ends. Refresh under
+            # that fence: the identity map may predate a same-version unlink or
+            # status change. Comparing before acquiring it would leave a race.
+            await _application_refresh(self.db, spec)
+            if scenario_collection_snapshot(
+                board_id=spec.board_id, spec_id=spec.id, edition=spec.edition,
+                version=spec.version, scenarios=spec.test_scenarios,
+            ) != scenario_snapshot:
+                raise ValueError("scenario_snapshot_conflict")
         next_ideation_id = (
             update_data["ideation_id"]
             if "ideation_id" in update_data

@@ -19,6 +19,7 @@ from okto_pulse.core.models.schemas import (
     GuidelineCreate,
     SpecUpdate,
     TestScenarioWrite,
+    scenario_collection_snapshot,
 )
 
 
@@ -32,6 +33,7 @@ class ScenarioContentUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     test_scenarios: list[TestScenarioWrite]
     expected_spec_version: int | None = Field(None, strict=True, ge=1)
+    expected_scenario_snapshot: str | None = Field(None, strict=True, pattern=r"^[0-9a-f]{64}$")
 
 
 __all__ = [
@@ -42,4 +44,5 @@ __all__ = [
     "GuidelineCreate",
     "SpecUpdate",
     "ScenarioContentUpdate",
+    "scenario_collection_snapshot",
 ]

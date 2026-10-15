@@ -1,6 +1,7 @@
 """Method authoring is semantic; method labels and legacy evidence grant no credit."""
 
 from types import SimpleNamespace
+from copy import deepcopy
 
 import pytest
 from pydantic import ValidationError
@@ -15,6 +16,7 @@ from okto_pulse.core.models.schemas import (
     TestScenario as Scenario,
     TestScenarioWrite as ScenarioWrite,
     SpecUpdate,
+    scenario_collection_snapshot,
 )
 from okto_pulse.core.ports.test_evidence import (
     register_test_evidence_write_verifier,
@@ -300,8 +302,108 @@ async def test_collection_version_fence_rechecks_after_initial_read(db_factory, 
         with pytest.raises(ValueError, match="spec_version_conflict"):
             await SpecService(db).update_spec(
                 spec_id, USER,
-                SpecUpdate(test_scenarios=[], expected_spec_version=before.version),
+                SpecUpdate(test_scenarios=[], expected_spec_version=before.version,
+                    expected_scenario_snapshot=scenario_collection_snapshot(
+                        board_id=before.board_id, spec_id=before.id, edition=before.edition,
+                        version=before.version, scenarios=before.test_scenarios)),
             )
         assert calls == [spec_id]
         await db.refresh(before)
         assert before.test_scenarios == original_scenarios
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operational_change", ["status", "task_link"])
+async def test_collection_does_not_restore_stale_operational_state_without_version_bump(
+    db_factory, operational_change,
+):
+    _, spec_id, card_id = await _seed_spec(
+        db_factory, scenarios=[scenario(status="draft")], card_scenarios=["ts"],
+    )
+    async with db_factory() as db:
+        row = await db.get(Spec, spec_id)
+        row.test_scenarios = [{**row.test_scenarios[0], "linked_task_ids": [card_id]}]
+        await db.commit()
+        authored = deepcopy(row.test_scenarios)
+        version = row.version
+        snapshot = scenario_collection_snapshot(board_id=row.board_id, spec_id=row.id,
+            edition=row.edition, version=row.version, scenarios=authored)
+
+    async with db_factory() as db:
+        service = SpecService(db)
+        if operational_change == "status":
+            await service.set_test_scenario_status(spec_id, USER, "ts", "ready")
+        else:
+            await service.remove_scenario_traceability_task_link(
+                spec_id, USER, scenario_id="ts", card_id=card_id,
+            )
+            await db.commit()
+        current = await db.get(Spec, spec_id)
+        assert current.version == version
+        operational_state = deepcopy(current.test_scenarios[0])
+
+    async with db_factory() as db:
+        try:
+            await SpecService(db).update_spec(
+                spec_id, USER,
+                SpecUpdate(test_scenarios=authored + [scenario(id="new", status="draft")],
+                           expected_spec_version=version, expected_scenario_snapshot=snapshot),
+            )
+            await db.commit()
+        except ValueError as error:
+            # A scoped conflict or the existing status-only writer guard is
+            # acceptable; a whole-list author must never restore old metadata.
+            assert str(error).startswith(("spec_version_conflict", "scenario_snapshot_conflict",
+                                          "test_scenario_status_requires_scoped_update"))
+            await db.rollback()
+    async with db_factory() as db:
+        row = await db.get(Spec, spec_id)
+        current = next(item for item in row.test_scenarios if item["id"] == "ts")
+        assert current["linked_task_ids"] == operational_state["linked_task_ids"]
+        assert current["status"] == operational_state["status"]
+
+
+@pytest.mark.asyncio
+async def test_collection_snapshot_is_rechecked_under_fence_with_stale_identity_map(db_factory, monkeypatch):
+    _, spec_id, _ = await _seed_spec(db_factory, scenarios=[scenario(status="draft")])
+    original_fence = service_module._application_fence
+    changed = scenario(status="ready")
+
+    async def intervening_write(context, entity, record_id, *, expected_values):
+        # A real row mutation between read and fence, deliberately keeping the
+        # loaded ORM identity stale and the Spec version unchanged.
+        await context.execute(update(Spec).where(Spec.id == record_id)
+            .values(test_scenarios=[changed]).execution_options(synchronize_session=False))
+        return await original_fence(context, entity, record_id, expected_values=expected_values)
+
+    monkeypatch.setattr(service_module, "_application_fence", intervening_write)
+    async with db_factory() as db:
+        before = await db.get(Spec, spec_id)
+        version = before.version
+        snapshot = scenario_collection_snapshot(board_id=before.board_id, spec_id=before.id,
+            edition=before.edition, version=version, scenarios=before.test_scenarios)
+        with pytest.raises(ValueError, match="^scenario_snapshot_conflict$"):
+            await SpecService(db).update_spec(spec_id, USER, SpecUpdate(
+                test_scenarios=[scenario(status="draft"), scenario(id="new", status="draft")],
+                expected_spec_version=version, expected_scenario_snapshot=snapshot))
+        await db.refresh(before)
+        assert before.version == version
+        assert before.test_scenarios == [changed]
+
+
+def test_scenario_snapshot_binds_operational_facts_and_scope_not_json_key_order():
+    def digest(items, **scope):
+        return scenario_collection_snapshot(**({"board_id": "b", "spec_id": "s", "edition": 1,
+            "version": 1} | scope), scenarios=items)
+
+    original = scenario(linked_task_ids=["task"])
+    baseline = digest([original])
+    assert baseline == digest([dict(reversed(list(original.items())))])
+    assert baseline == digest([Scenario.model_validate(original)])
+    assert baseline == digest([{**original, "verification_method": None}])
+    for changes in ({"linked_task_ids": []}, {"status": "draft"}, {"notes": "changed"},
+                    {"evidence": {"test_run_id": "run"}}):
+        assert baseline != digest([{**original, **changes}])
+    for scope in ({"board_id": "other"}, {"spec_id": "other"}, {"edition": 2}, {"version": 2}):
+        assert baseline != digest([original], **scope)
+    assert digest(None) == digest([])
