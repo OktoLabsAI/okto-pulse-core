@@ -97,12 +97,13 @@ com rechecagem isolada de um timeout, em
 Prova de entrega indisponível não recebeu crédito; evolução nativa dos percentuais
 permanece na qualificação integrada. Recursos e dependências ainda estão abertos.
 
-**Próxima ação de implementação:** recursos/dependências restantes (3d) →
-qualificação integrada U3 → qualificação instalada U4.
-Sequência e condições de saída em §6.2; não reimplementar U1/U2.
+**Próxima ação de implementação:** concluir e qualificar o diff local de
+Dependencies → Resources restantes (ambos 3d) → UV18–UV21 → U4.
+A fila vigente está em §6.2, “Retomada executável de 3d”. Não reimplementar
+U1/U2, Project Structure ou Coverage/References já qualificados.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
 
-### Retomada detalhada — conferência local, sucedida por `5ac5ce06`
+### Histórico de planejamento — conferência sucedida por `5ac5ce06`
 
 **Base conferida:** Core `9cb255a3` (produto `8291a648`) / Community
 `28ec1871`, ambos publicados em `feature/v0.4.0`. Tests/5c já foi integrado;
@@ -124,8 +125,8 @@ tipos, integração do pai, browser ou instalação.
 | U4.2 — concluir o percurso | Nova iniciativa mock via UI/MCP: Ideação → Refinamento → Spec com Cards Not Started em Draft → conclusão unificada → execução → Cards/Test/Spec Done → consulta e consolidação KG. | UV01–UV24 ligados a evidências observadas; nenhum teste/prova/aprovação inventado; percentuais aplicáveis em 100%, KG canonical/proveniência, ledger e commits/pushes finais. |
 
 Esta tabela conserva a decomposição de §6.2; 5d.1/5d.2 foram concluídos no
-checkpoint acima. Retomar por 3d. Ela substitui as filas de checkpoints
-anteriores, preservadas abaixo como histórico. Não acrescenta milestones nem
+checkpoint acima. A fila vigente de 3d está em “Retomada executável de 3d”;
+esta conferência permanece como histórico. Não acrescenta milestones nem
 novos contratos. As avaliações e regras da tabela de §3 permanecem integrais.
 A conferência é documental: não alterou produto nem executou novos testes,
 instalou runtime ou qualificou o diff local. Melhorias opcionais não entram na
@@ -469,7 +470,7 @@ Coverage/References integrados; retomar recursos/dependências de 3d →
 UV18–UV21 → U4; as referências a Tests fora do watcher
 nos relatos anteriores descrevem os respectivos checkpoints, não o estado vigente.
 Branch `feature/v0.4.0`, incremento de 15/10/2026. A revisão documental
-a partir deste par acompanha a execução parcial de 5c. O checkpoint inclui
+a partir deste par acompanha a execução parcial de 3d. O checkpoint inclui
 a prova UI/MCP de 5b, a confirmação de cenários e a proteção da versão autorada
 com recuperação explícita de conflito e snapshot operacional da coleção.
 Testes, tipos, lint e prova nativa de
@@ -509,8 +510,57 @@ Essas evidências não encerram o milestone nem substituem o E2E.
 | U1 | Cards Not Started em Draft e remoção da exigência de existir Decision. | Percurso real UI/MCP no U4; não refazer a implementação. |
 | U2 — conclusão | Payload composto, permissões independentes, pareceres/históricos nativos, promoção condicionada, recibo/replay e manifesto obrigatório. | Preservar a matriz U2 já qualificada; comprovar autenticação wire e percurso instalado em U4. |
 | U2 — leitura | `include_planning`, 17 componentes, composição pública sem escrita, revisões leves em lote, permissões por componente, paginação REST/MCP e cliente tipado. Revisões de coleções Spec/Card por Board; 11 passes do contrato, 79 de manifesto/leitura/transporte. Admissão sem Checklist comprovada por REST/browser e rollback nativo. | Consumir os contratos existentes em U3 e comprovar o percurso UI/MCP instalado em U4; não recriar metadados de coleção. |
-| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão, SpecsPanel e Kanban; refresh de permissões com proteção de respostas antigas. Knowledge/Targets, leitores, FR/AC/critério/qualificação e coleções têm provas registradas. Integration, Decisions e Tests/5c qualificados nos limites do ledger. Project Structure possui diff local ainda não publicado. | Concluir Project Structure/Details (5d), depois leitores restantes (3d); comprovar progresso de Card sem bump da Spec, revogação/offline/reconexão no fluxo completo. Autoria instalada de Project Structure permanece U4. |
+| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão, SpecsPanel e Kanban; refresh de permissões com proteção de respostas antigas. Knowledge/Targets, leitores, FR/AC/critério/qualificação e coleções têm provas registradas. Integration, Decisions, Tests/5c, Project Structure/5d e Coverage/References qualificados nos limites do ledger. Dependencies possui diff local ainda não publicado. | Concluir Dependencies/Resources (3d), depois UV18–UV21; comprovar progresso nativo de Card sem bump da Spec e os casos integrados ainda não cobertos. Autoria instalada de Project Structure permanece U4. |
 | U4 | Regressões parciais registradas no ledger. | Wheels, runtime compatível, browser e iniciativa nova até Done/KG; matriz UV01–UV24. |
+
+#### Retomada executável de 3d — conferência de 15/10/2026
+
+**Base documental:** Core `9ffeff86` (produto `8291a648`) / Community
+`be799c37`. As filas anteriores descrevem checkpoints históricos. A sequência
+abaixo é a única fila de trabalho vigente; detalha itens existentes, sem novo
+milestone ou mudança nos critérios de §7.
+
+Há trabalho local em `SpecDependenciesTab.tsx` e `SpecModal.tsx`, ainda não
+publicado: base autorada dos diálogos, retenção da tentativa incerta, distinção
+entre escrita confirmada e falha de leitura, identidade e assinatura do watcher.
+Não reaplicar esse diff nem considerá-lo qualificado. A execução já iniciada
+terminou com TypeScript exit 0 e **12 testes: 11 passes, 1 falha**, sem skips,
+em `u3-dependencies-existing.xml`. A falha é a expectativa anterior de adotar
+automaticamente nova edição com a mesma chave de idempotência. O aceite de
+§5 exige revisão explícita; o teste deve demonstrar essa revisão e distinguir
+nova intenção de replay exato. Não remover a asserção de concorrência nem
+relaxar o contrato nativo para fazer o teste passar.
+
+| Ordem / item existente | Alteração ou conferência concreta | Saída verificável |
+| --- | --- | --- |
+| 1 — Dependencies / 3d | Concluir o diff local. Preservar seleção/motivo e versão/edição autoradas; só adotar base nova por revisão explícita. Retry incerto reutiliza exatamente payload, tokens e chave; escrita confirmada com falha posterior só repete leitura. Conferir descarte por identidade, revogação na listagem/lookup e recarga sem regressão frente à versão do recibo. Atualização externa invalida paginação, conserva filtros e não autoriza ação a partir de cache. | Suíte existente corrigida segundo o aceite, regressões de conflito/replay/leitura/acesso e teste do pai. Browser aberto + mutação MCP: lista/readiness atualizam, rascunho permanece, revisão explícita e escrita única são confirmadas por leitura pública. Tipos/lint pertinentes; ledger e commit/push. |
+| 2 — Architecture / Resources / 3d | Separar snapshot recebido de rascunho autorado antes de transmitir `revision/active` do pai. Manter seleção/edição autorizadas; mudança externa exige revisão da base; resposta antiga não altera outro contexto. Conferir contratos públicos de create/update e recuperação de escrita, sem presumir que oferecem recibo ou fence ausentes. Reutilizar o recurso nativo e os guards existentes. | Testes de refresh durante edição, remoção, leitura negada, falha após escrita e troca de identidade. UI/MCP mostra mudança externa e rascunho preservado; gravação revisada confirmada. Leitura de Architecture em Cards continua protegida. |
+| 3 — Mockups e Knowledge / Resources / 3d | Proteger create/delete e callbacks do pai; transmitir revisão/visibilidade sem remontar formulário. Mockups conserva coleção/base autorada e ID da tentativa; conferir precondições suportadas pelo writer público antes de conectá-lo à recarga externa. Knowledge reutiliza o editor já qualificado, protegendo o formulário de criação e o wrapper da Spec. Atualizar `ResourceGateDisclosure` a partir de leitura autoritativa. | Testes das operações afetadas, falha de leitura, tentativa incerta, subaba oculta/reaberta e revogação. Prova UI/MCP em cada família de escrita alterada; nenhuma criação duplicada ou perda silenciosa. Tipos/lint; ledger e commit/push. |
+| 4 — UV18–UV21 / fim de U3 | Reconciliar evidências existentes por aceite e executar somente os casos ainda não demonstrados: evolução real de Card/Delivery sem bump da Spec, recuperação e autoridade nos consumidores alterados; conclusão composta, resultados individuais e histórico completo. Inspecionar loading, pinpoints, teclado e foco. | Matriz UV → evidência → resultado → limite sem consumidores previstos pendentes. Testes frontend afetados e build aprovados, screenshots inspecionadas, ledger e commit/push de U3. |
+| 5 — U4 / artefato | Regressões pertinentes, catálogo gerado, closure e build dos dois wheels/frontend. Instalar par exato em ambiente/home novos, comparar `.py` e frontend byte a byte e iniciar processo posterior à instalação. | Origens dos imports, par de commits, hashes e processos registrados; oito budgets ZERO. Não usar runtime de checkout como prova do artefato. |
+| 6 — U4 / percurso | Nova iniciativa mock: Ideação → Refinamento → Spec e Cards Not Started em Draft → avaliações preservadas → conclusão única → execução → Tasks/Test/Spec Done → busca e consolidação KG. | UV01–UV24 com evidência observada, percentuais aplicáveis em 100%, canonical/proveniência, ledger e commits/pushes finais. Não inventar execução nem afrouxar policy para concluir. |
+
+**Precisão do diagnóstico de Resources:** a leitura atual de
+`ArchitectureTab.tsx` mostra que `readScope` limpa seleção/design; `revision`
+recarrega listas, e a mudança de `selectedSummary` pode substituir `design`
+pelo detalhe recebido. Portanto, não é correto atribuir a limpeza diretamente
+ao efeito de `revision`. O risco a reproduzir é sobrescrever a edição local.
+No pai, Mockups usa `updateSpec({screen_mockups})` sem base explícita nessa
+chamada; Knowledge combina apenas sua geração local; Architecture não recebe
+`revision/active`. São constatações de fonte, não novos ensaios de browser nem
+prova de falha do backend.
+
+**Limites da intervenção:** não criar infraestrutura genérica de edição ou
+sincronização. Se a reprodução demonstrar falta de precondição indispensável
+em um contrato nativo, corrigir somente esse contrato/caller/testes no mesmo
+item, mantendo portas públicas e a regra de investigação do pacote. Não
+inventar replay onde a API não o garante. Melhoria opcional fica fora da fila.
+
+Esta revisão é planejamento: preserva o WIP de Dependencies, registra os
+resultados pendentes coletados e não modifica produto, testes ou instalação.
+O fixture atual de Spec tem snapshot de Checklist ausente no contexto full;
+não usar essa limitação como motivo para afrouxar gate. U4 usa a iniciativa nova
+prevista, configurada e admitida pelos caminhos normais.
 
 #### U2 — encerrar backend e contratos antes da interface
 
@@ -996,12 +1046,11 @@ aberto. Novas melhorias de produto não entram nesta fila; somente correções d
 falhas que impeçam os aceites existentes. Nenhuma etapa remove avaliações ou
 reduz seus critérios, severidades, thresholds ou permissões.
 
-#### Sequência finita de fechamento a partir deste checkpoint
+#### Histórico da sequência de fechamento anterior
 
-As linhas 1 e 2 têm implementação e provas dirigidas nos checkpoints
-Knowledge/Targets e leitores. Retomar pela linha 3 (editores da Spec),
-preservando os limites registrados para a qualificação integrada e instalada.
-Não há nova etapa de produto, novo gate ou expansão dos UV01–UV24.
+Esta tabela conserva a fila anterior à conclusão de 5d e Coverage/References.
+Não usá-la como fila ativa. A retomada vigente está em “Retomada executável de
+3d”, nesta seção; as provas e limitações anteriores continuam preservadas.
 
 | Ordem / item existente | Ação concreta | Saída registrada no ledger |
 | --- | --- | --- |
@@ -1011,10 +1060,8 @@ Não há nova etapa de produto, novo gate ou expansão dos UV01–UV24.
 | 4 — U3/UV18–21 | Conferir o conjunto aberto: atualização MCP, acesso revogado, rede interrompida/recuperada, troca de contexto, histórico e ação de conclusão. Reusar provas parciais pertinentes. | UI legível e funcional, sem cache protegido após revogação, sem submissão duplicada, sem perda silenciosa de edição. U3 pode ser encerrado somente aqui. |
 | 5 — U4/UV01–24 | Qualificar o par exato de wheels/frontend e executar iniciativa mock nova até Cards/Test/Spec Done e KG canonical, conforme roteiro abaixo. | Matriz final com provas reais UI/MCP, paridade byte a byte, processo novo, oito budgets ZERO, commits/pushes pareados. |
 
-O planejamento já foi sucedido pela execução de Knowledge/Targets e pelo
-incremento dos leitores e pela proteção parcial dos editores. A próxima ação é
-concluir 3c–3d, sem nova
-rodada genérica de assessment. Uma lacuna
+O planejamento foi sucedido pelos checkpoints descritos no estado vigente.
+Não reiniciar etapas concluídas nem uma rodada genérica de assessment. Uma lacuna
 crítica reproduzida pode exigir correção no item afetado; melhorias opcionais
 ficam fora do escopo. Não declarar pronto com teste falho ou critério não exercitado.
 
@@ -1131,11 +1178,10 @@ mockados precisam de execução observada para gerar prova autenticada.
 2. Preservar U3/2e.3, Knowledge/Targets e 2a–2d já qualificados nos limites
    registrados. Não repetir as mutações mock. O percurso instalado de Project
    Structure continua parte do U4; o runtime antigo não o qualificou.
-3. Concluir os editores de `SpecModal` antes da atualização global conforme
-   §6.2, itens 3c–3d. Preservar `b0a497f4` e as provas dos editores; proteger
-   as bases dos writers de coleções e dos demais formulários previstos.
-   Em seguida conectar Coverage/recursos/referências/dependências ao token
-   autoritativo, inclusive quando somente um Card mudou.
+3. Concluir Dependencies/Resources conforme §6.2, “Retomada executável de 3d”.
+   Preservar os editores/coleções, Tests, Project Structure e
+   Coverage/References já qualificados. Não reaplicar o diff local de
+   Dependencies nem tratá-lo como aprovado enquanto houver teste falho.
 4. Qualificar ação composta, resultados/histórico e sincronização U3 por
    testes frontend e browser/MCP: conflito, troca de entidade, rede e autoridade.
    Não promover o milestone com consumidor previsto ainda sem atualização.

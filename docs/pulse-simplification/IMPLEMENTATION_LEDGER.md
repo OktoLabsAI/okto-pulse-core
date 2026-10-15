@@ -2,6 +2,58 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento detalhado: fila vigente após Coverage/References
+
+Atendimento ao pedido de planejamento, sem nova implementação. Base conferida:
+Core `9ffeff86` (produto `8291a648`) / Community `be799c37`, ambos em
+`feature/v0.4.0`, sem divergência das referências origin locais. U1 implementado,
+U2 qualificado no backend, U3 parcial e U4 pendente. O plano agora concentra a
+fila vigente em §6.2, **“Retomada executável de 3d”**:
+
+1. Concluir/qualificar o diff local de Dependencies.
+2. Proteger a autoria de Architecture antes de conectar a revisão externa.
+3. Proteger/integrar Mockups, wrapper Knowledge e disclosure de Resources.
+4. Reconciliar provas e concluir UV18–UV21, sem repetir casos já demonstrados.
+5. U4: regressões, catálogo, closure, wheels/frontend, instalação isolada e
+   comparação byte a byte; processo posterior à instalação.
+6. U4: iniciativa mock nova até Tasks/Test/Spec Done e KG canonical, com
+   evidências reais para UV01–UV24 e publicação dos checkpoints.
+
+Esses passos detalham 3d/U3/U4 existentes; não acrescentam milestones, avaliações
+ou gates. Todas as avaliações, critérios, severidades, thresholds, autoridades
+e históricos permanecem; a conclusão é unificada, sem média entre avaliações.
+Corrigidas as indicações desatualizadas de Project Structure ainda como diff
+local e da retomada de 5c; filas antigas foram identificadas como históricas.
+
+**WIP preservado no Community:** `SpecDependenciesTab.tsx` e `SpecModal.tsx`,
+152 linhas adicionadas/92 removidas no diff conferido. Contém base autorada,
+tentativa original, distinção de escrita confirmada/leitura falha e integração
+do watcher. Não foi alterado, descartado ou publicado nesta revisão documental.
+Foram coletados os resultados das execuções já em andamento: `tsc --noEmit`
+exit 0; `SpecModal.dependencies.test.tsx`, **12 testes, 11 passes, 1 falha,
+zero erros/skips**, em
+`PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-dependencies-existing.xml`.
+Não foi iniciada nova execução. O teste falho espera rebase automático após
+troca de edição usando a mesma chave; falta ajustar o teste à revisão explícita
+de §5 e demonstrar separadamente replay exato versus nova intenção. Não declarar
+o diff qualificado só por tipos aprovados. O plano discrimina as conferências
+ainda necessárias de leitura/acesso, versão do recibo, identidade e browser.
+
+**Precisão sobre Resources:** a indicação anterior de que o efeito de
+`revision` limpa seleção/design em Architecture era imprecisa. A fonte atual
+limpa no `readScope`; a revisão recarrega listas e `selectedSummary` pode
+substituir o design autorado pelo detalhe recebido. Proteger esse caminho antes
+de assinar mudanças na Spec. Mockups envia coleção por `updateSpec` sem base
+explícita nesse caller; o wrapper Knowledge recebe só geração local. São
+achados de fonte que orientam a reprodução delimitada, não falhas backend ou
+ensaios nativos já comprovados. Reutilizar APIs públicas e componentes existentes.
+
+Não houve alteração de produto/testes, browser, build, instalação, dados ou
+policy nesta revisão. Os resultados e screenshots anteriores mantêm seus
+limites. O commit documental publica o planejamento/ledger, não o WIP local;
+snapshots operacionais não rastreados ficam preservados. Próxima ação concreta:
+concluir Dependencies pela primeira linha da fila, mantendo o mesmo escopo.
+
 ### 2026-10-15 — U3/3d parcial: Coverage e References atualizam após mudança de Card
 
 Community `be799c37` publicado; Core de produto permanece `8291a648`.
