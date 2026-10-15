@@ -2,6 +2,59 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U4: conferência visual, consolidação e correção de readiness
+
+Inspecionadas capturas reais no runtime instalado API8240/MCP8241: Task Done
+com barras 100%/100%, Test Done com somente verificação 100%, Spec Done com
+Coverage 100%/100% e Validation preservando os cinco componentes. KG Graph
+carregou oito nós derivados, incluindo a Alternative consolidada. Capturas
+`output/playwright/u4-closeout-{task-done,test-done,spec-coverage,validation,kg}`
+no Community; não há mudança de frontend neste incremento.
+
+Consolidação `kgses_071cefe2a81c4506`: uma Alternative, dois vínculos (um
+`relates_to` proposto e o `belongs_to` automático), conectividade aprovada.
+Origem `spec:dcfb20fb-db6d-5628-b861-831d6a2d140d:alternative:u4_no_http`:
+justificativa já documentada para excluir HTTP/persistência do normalizador.
+Busca pelo título e Cypher confirmaram canonical/canonical_eligible e a Spec
+real como destino. Uma busca aproximada anterior retornou vazio; não foi
+tratada como ausência do nó nem levou à repetição do commit.
+
+Falha real identificada no MCP `kg_health_readiness`:
+`semantic_subject_bridge_actor_conflict`. A consulta de policy recriava UoW
+sem ator sobre sessão autenticada. Correção reutiliza
+`cognitive_enforcement_active`, que já lê pela porta pública na mesma sessão;
+não relaxa o guard nem muda as duas chaves da policy. Regressão Community
+reproduziu o conflito nas quatro combinações antes da correção; depois, quatro
+passes, preservando ator/realm e recusa de ator diferente. Core: 78 passes de
+health/readiness, policy e fronteira MCP. Falhas intermediárias de fixture
+(realm ausente, factory não registrada e assert excessivo sobre bookkeeping)
+ficam nos XMLs, separadas da reprodução efetiva.
+
+Reconferidos os 208 casos mapeados em U2 nos XMLs por nome e hash, 37 hashes
+do fechamento U3 e as suítes U1/U4 anteriores. A consulta instalada anterior
+usou resource KG antigo e recusou `artifact_ref`; o source atual já documenta
+corretamente escopo Board. O novo pacote inclui esse resource e o workflow
+Cards atualizado. Paridade R2: 867 Core Python, 326 Community Python, 79
+frontend e 58 resources, sem diferenças. Wheels R2 em
+`PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u4-final-r2-wheels`.
+
+Conferência documental posterior: o recibo
+`u4-e2e/corrected-installed-health-readiness.json` confirmou sucesso MCP após
+a correção, com `would_block_done=null`, sem erro de vínculo de ator. O closure
+R2 terminou com os oito budgets ZERO, mas `ok=false` por divergência das duas
+matrizes README (7862 versus 7861 imports Core). Os READMEs foram ajustados;
+isso ainda exige nova execução do closure, não constitui passe retroativo.
+A paridade R2 não cobriu os overlays de resources Community: o KG servido
+continua exigindo qualificação do overlay corrigido no próximo pacote.
+
+A sessão cognitiva foi committed, mas a listagem posterior ainda registra
+`cogn_8b95ff6fdf9191abd72855a7865c9ea4` pending na geração
+`cognitive_closeout`. Retomar pelo vínculo desse item à sessão real, sem
+duplicar consolidação. Restam pacote final com ambos os conjuntos de resources,
+closure, conferência instalada e matriz UV01–UV24. Probes indisponíveis mantêm
+saúde `at_risk`; não apresentar observação desconhecida como sucesso. Home
+padrão preservada. Este registro ainda não declara U4 concluído.
+
 ### 2026-10-15 — planejamento detalhado restante de U4, a partir de Done
 
 Checkpoint prévio publicado: Core `1eca6df9` / Community `5e7fb9b3`.

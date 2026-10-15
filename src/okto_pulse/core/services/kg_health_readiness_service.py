@@ -138,16 +138,12 @@ def _non_maskable_items(board_id: str, health: dict) -> list[dict[str, Any]]:
 
 
 async def _enforcement_active(db: object, board_id: str) -> bool:
-    from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
-    from okto_pulse.core.services.main import _cognitive_readiness_blocking_active
+    from okto_pulse.core.services.main import cognitive_enforcement_active
 
-    # R01C IMP3 drain: resolve the board via the edition-owned repository port
-    # (the R01B FR3 ``resolve_unit_of_work_factory().wrap`` seam) instead of the ORM
-    # import. Pure existence get-by-id (no owner/permission predicate); the
-    # ``board is not None`` guard is preserved — ``boards.get`` returns None for a
-    # missing board, identical to ``db.get(Board, board_id)``.
-    board = await resolve_unit_of_work_factory().wrap(db).boards.get(board_id)
-    return bool(_cognitive_readiness_blocking_active(board)) if board is not None else False
+    # Reuse the policy reader through the public persistence port in this
+    # transaction. Wrapping the session again without its authenticated actor
+    # conflicts with the edition's semantic actor binding, even for a read.
+    return await cognitive_enforcement_active(db, board_id)
 
 
 async def build_health_readiness(
