@@ -2,6 +2,63 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/3d: update autorado de Architecture, conflito e recuperação qualificados
+
+Par de produto: Core `867ef70e` / Community `b1b83138`, `feature/v0.4.0`.
+Concluído o WIP de fence de update e acrescentada proteção do editor. O campo
+opcional `expected_version` preserva a versão autorada; sem ele, a garantia é
+somente contra concorrência após a leitura do serviço. Porta pública no Core,
+fence SQL condicional no adapter Community; conflito de domínio mapeado para
+REST409 e erro MCP `architecture_version_conflict`. Nenhum ORM/router novo no
+Core, migração, alteração de avaliação, gate, permissão ou histórico semântico.
+
+O editor separa snapshot recebido de rascunho, mantém a seleção removida e os
+subformulários, exige revisão explícita de base e envia sua versão. Gravação
+confirmada seguida de falha de leitura bloqueia novo Save e oferece releitura;
+resposta incerta não é repetida nem inferida como sucesso por conteúdo igual.
+Mudança de parent e perda de acesso invalidam respostas tardias. Subformulários
+de entidade/interface precisam ser concluídos antes do Save para não perdê-los.
+
+Testes: **80 casos Core distintos**, provenientes dos XMLs fence-core (74) e
+fence-catalog (28, sobrepostos); **3 Community** com persistência real, incluindo
+dois writers, versão/timestamp preservados pelo fence e rollback; **26 frontend**
+no XML final. Zero falhas/erros/skips nesses relatórios finais. TypeScript exit 0,
+ESLint zero erros/um warning preexistente; diff check aprovado. O teste REST
+inicial reproduziu a sobrescrita; três testes frontend novos falharam antes da
+correção. Dois fluxos longos excederam o limite padrão de 5 s; passaram isolados
+com 15 s, depois na suíte integral com limite por caso, mantendo as asserções.
+
+Catálogo regenerado oficialmente e drift aprovado; não houve diferença no
+arquivo gerado. Closure inicialmente apontou somente drift das matrizes README;
+ambas foram regeneradas pelo renderer oficial. Relatório final: **oito budgets
+ZERO**, nenhum finding/documentation finding, 7.860 imports Core, 1.154 imports
+Community→Core, 25 dependências. Qualificação de fonte, não de wheels.
+
+Prova nativa no runtime isolado 8200/8201 reiniciado (PID20700), Vite5274:
+Spec `dec9410f-d455-4506-a8fd-f791ee31dc77`, Architecture
+`dff796ef-47da-438f-a373-f87e0cece5d5`. MCP criou o mock v1, alterou-o para v2
+enquanto a UI mantinha um título local e recusou outra escrita baseada em v1.
+**Refresh manual do componente**, sem integração automática ainda, preservou o
+rascunho e bloqueou Save. Revisão explícita e Save UI produziram v3. Um GET
+posterior foi abortado deliberadamente (`times=1`); a UI mostrou confirmação e
+Reload saved architecture. Releitura MCP antes/depois da recuperação confirmou
+exatamente v3/conteúdo iguais. Requests: **um PATCH200**, um GET abortado;
+recuperação sem novo PATCH. Três capturas foram inspecionadas. Os dez erros de
+conexão do reinício e o abort intencional não são exceções JavaScript da edição.
+
+O helper nativo precisou reconhecer o envelope público e o `isError` esperado
+do conflito; as asserções do helper falharam nesses dois pontos, mas os registros
+brutos preservam o resultado nativo correto. Nenhuma mutação foi repetida para
+ajustar o helper. Evidências, 18 hashes e limites em
+`evidence-u3-architecture-authored-update-20261015.json`.
+
+**Retomada exata:** concluir create/delete/import de Architecture e seus
+contratos de concorrência/recuperação, então ligar `active/revision` e callbacks
+protegidos no pai SpecModal. Não repetir o update nem este fixture. Depois
+Mockups, wrapper Knowledge/disclosure, UV18–UV21 integrados e U4 instalado/E2E.
+Resources/U3/U4 continuam abertos. Não houve instalação na home do usuário,
+execução de Cards, prova de entrega, aprovação ou fechamento fabricado.
+
 ### 2026-10-15 — planejamento detalhado após Dependencies; WIP Architecture preservado
 
 Pedido atual atendido como revisão de planejamento, sem nova implementação.

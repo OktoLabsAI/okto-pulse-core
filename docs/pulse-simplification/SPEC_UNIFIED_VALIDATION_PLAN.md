@@ -3,7 +3,7 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint de código: Core `8291a648` / Community `5c1d8f73`, na
+Checkpoint de código: Core `867ef70e` / Community `b1b83138`, na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -105,11 +105,13 @@ remoção sem repetir DELETE, versões 20 → 21 → 22 → 23. Ver
 [Dependencies](evidence-u3-dependencies-20261015.json). Resources permanece aberto.
 
 **Próxima ação de implementação:** Resources restantes (3d) → UV18–UV21 → U4.
-A conferência de planejamento após `461a622d` identificou WIP de concorrência
-em Architecture nos dois repos: 67 testes de checkout aprovados no relatório
-existente, sem qualificação do adaptador Community, catálogo ou interface.
-Esse WIP não integra o checkpoint publicado. Sua conclusão está delimitada
-abaixo em “Execução restante de Resources”, sem novo milestone.
+O WIP de update autorado de Architecture foi concluído neste par: 80 casos Core
+distintos, 3 de adaptador real, 26 frontend, tipos, catálogo e closure com oito
+budgets ZERO. Browser/MCP comprovou rascunho preservado, revisão explícita e
+recuperação de leitura após Save sem repetir PATCH, v1 → v2 → v3 → v3.
+Foi usado Refresh manual do componente; create/delete/import e integração
+automática no pai ainda faltam. Ver
+[Architecture: update e recuperação](evidence-u3-architecture-authored-update-20261015.json).
 A fila vigente está em §6.2, “Retomada executável de 3d”. Não reimplementar
 U1/U2, Project Structure ou Coverage/References já qualificados.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
@@ -472,7 +474,7 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint vigente de código:** Core `8291a648` / Community `5c1d8f73`.
+**Checkpoint vigente de código:** Core `867ef70e` / Community `b1b83138`.
 5c foi integrado e qualificado após os checkpoints históricos abaixo: Tests
 assina atualizações externas, preserva cenários/métodos/relatórios e possui
 recuperação protegida de escrita/leitura. Evidência `evidence-u3-tests-watch-20261015.json`.
@@ -551,7 +553,8 @@ replay exato. Retomar pela linha 2 abaixo; a linha 1 registra o aceite concluíd
 `ArchitectureTab.tsx` mostra que `readScope` limpa seleção/design; `revision`
 recarrega listas, e a mudança de `selectedSummary` pode substituir `design`
 pelo detalhe recebido. Portanto, não é correto atribuir a limpeza diretamente
-ao efeito de `revision`. A sobrescrita do rascunho ainda precisa de prova frontend.
+ao efeito de `revision`. A proteção contra sobrescrita do rascunho foi
+qualificada no componente em `b1b83138`, inclusive por browser/Refresh manual.
 No pai, Mockups usa `updateSpec({screen_mockups})` sem base explícita nessa
 chamada; Knowledge combina apenas sua geração local; Architecture não recebe
 `revision/active`. São constatações de fonte, não novos ensaios de browser nem
@@ -571,11 +574,18 @@ prevista, configurada e admitida pelos caminhos normais.
 
 #### Execução restante de Resources — detalhamento das linhas 2 e 3
 
-**Ponto de partida conferido, sem nova implementação nesta revisão:** existe
+**Estado após implementação:** update autorado, fence, retenção/revisão de
+rascunho e recuperação de Save estão qualificados em `867ef70e` / `b1b83138`;
+evidência e limites no início do plano. Preservar essas mudanças. Retomar as
+operações create/delete/import de 2c e as precondições que precisarem, depois
+2d e 3a/3b. A tabela continua decompondo o mesmo item 3d, sem novo milestone.
+
+**Ponto de partida histórico da conferência de planejamento:** existia
 um diff local de oito arquivos Python (seis Core, dois Community). Ele acrescenta
 `ArchitectureDesignUpdate.expected_version`, conflito de domínio, porta pública
 `fence_version`, implementações de persistência e transporte REST/MCP. O frontend
-ainda não envia a versão autorada. Não tratar esse diff como integração concluída.
+ainda não enviava a versão autorada. Esse diff não era integração concluída;
+os resultados de 67 casos abaixo foram sucedidos pela qualificação acima.
 
 O teste `test_rest_update_rejects_the_authored_version_after_another_writer`
 reproduziu PATCH baseado em v1 aceito depois de outra gravação produzir v2;
