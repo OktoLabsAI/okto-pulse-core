@@ -1,114 +1,96 @@
 # Validação unificada do planejamento da Spec
 
-## Planejamento vigente — U4 a partir da Spec Approved, 15/10/2026
+## Planejamento vigente — fechamento de U4 a partir de Done, 15/10/2026
 
-Esta seção prevalece sobre as filas operacionais históricas abaixo. Preserva
-integralmente os contratos de §§3–5 e os aceites UV01–UV24; não cria outro
-milestone. Conferência documental solicitada pelo usuário, sem novas alterações
-de produto, mutações no Pulse, testes de comportamento ou reinstalação.
+Esta seção é a única fila operacional vigente. Os roteiros seguintes são
+históricos; os contratos de §§3–5, milestones U1–U4 e aceites UV01–UV24
+continuam normativos e inalterados. Revisão de planejamento: não executa
+novos testes, mutações no Pulse, instalação ou reinício.
 
-**Base publicada:** Core `2c1241a9` / Community `1c18806d`,
-ambos em `feature/v0.4.0`. O checkpoint Core salva as duas alterações locais
-anteriores (workflow e expectativas do contrato MCP), com a falha de teste
-explicitada no ledger. Fetch precedeu o checkpoint; push Core confirmado.
-U1–U3 permanecem encerrados nos limites das evidências registradas. U4 está
-parcialmente executado, não concluído.
+**Checkpoint publicado antes deste detalhamento:** Core `1eca6df9` /
+Community `5e7fb9b3`, em `feature/v0.4.0`. Inclui os diffs anteriores de
+qualificação do MCP, manifest gerado e evidências relidas. U1–U3 permanecem
+concluídos nos limites registrados; U4 permanece parcial.
 
-**Preparação já comprovada por relatórios locais:** 221 testes Core e 25
-Community aprovados, executados contra os dois checkouts explicitamente
-resolvidos; não são testes unitários contra a instalação. O relatório separado
-da instalação isolada registra igualdade de 867 arquivos Python Core, 326
-Community e 79 arquivos frontend, sem diferenças. Closure registra nenhum
-finding/drift, distribuição aprovada e os oito budgets ZERO. Os hashes dos dois
-wheels foram reconferidos na revisão anterior. Não repetir build/regressões sem
-mudança ou evidência de divergência.
+### Resultado preservado
 
-Runtime registrado: ambiente `u4-venv`, home `u4-home`, API8240/MCP8241,
-processo posterior à instalação, Board `9f3f3f78-140d-4344-9951-7b929648eccd`.
-Todos sob `PULSE_REFACTOR/.validation-v040/spec-unified-20261014/`.
-Os recibos agora registram Ideação e Refinamento Done, Spec Approved e dois
-Cards Not Started. Saúde e PID são observações anteriores, não garantia de
-processo atualmente vivo. A evidência anterior
-[de instalação](evidence-u4-planning-checkpoint-20261015.json) continua válida
-somente no escopo descrito; o novo
-[checkpoint documental](evidence-u4-approved-planning-20261015.json) identifica
-recibos, hashes e a falha aberta. Não houve novo teste de comportamento nesta
-revisão. A correção de `workflows/cards.md` ainda precisa entrar no pacote final.
+Preparar Spec e Cards juntos; concluir a validação do planejamento em um
+único ponto. Spec Validation, decomposição, lint, Checklist, Policy Compliance,
+coberturas e seus históricos continuam individualmente identificáveis.
+Preservar dimensões, rubricas, severidades, thresholds, autoria e permissões.
+A conclusão agrega impedimentos, nunca scores de avaliações distintas.
+Não exigir Decision artificial. Execução e entrega mantêm os gates próprios.
 
-### Estado que a próxima execução deve recuperar
+### Estado comprovado pelos recibos existentes
 
-| Objeto | Identidade e último estado observado |
+[Registro da conferência e hashes](evidence-u4-done-planning-20261015.json).
+Os dados abaixo são observações anteriores, não uma nova execução instalada.
+
+| Objeto | Estado e limite da evidência |
 | --- | --- |
-| Ideação | `e4ba3682-8cac-4337-a77b-11259b05147a`, Done; houve correção autoral de aplicabilidade de recursos, não reabertura causada pela unificação. |
-| Refinamento | `a3f286ac-d115-4269-8fce-7028f9536fe6`, Done. |
-| Spec | `dcfb20fb-db6d-5628-b861-831d6a2d140d`, Approved, edição 1/versão 14; sem reabertura. |
-| Task / Test | `5e946696-db4d-5205-a47a-9b46f1115157` / `ee0caea9-97dd-5b9a-93a1-cf87bf0961ee`, Not Started. |
-| Planejamento | FR 1, BR 1, AC 2; quatro obrigações alocadas, dois cenários ligados ao Test; Project Structure com `label.py` e `test_label.py` planejados. A BR tem condição normativa e caminho de verificação, não somente link. |
-| Ciclo | Sem conclusão; lint e Checklist pendentes. Checklist Blocking, binding v1. Sem Guidelines aplicáveis neste Board: não aplicável, não avaliação aprovada. |
-| Fonte externa | Workspace `u4-label-mock`, baseline `e03ee747751fb362058efd7d6d64e3cdfd113791`, fonte `source_cbf7d778cca34860af1dde831a952fc6`; não apresentar baseline como código entregue. |
+| Ideação / Refinamento | Done no percurso U4 existente; não recriar iniciativa. |
+| Spec | `dcfb20fb-db6d-5628-b861-831d6a2d140d`, Done, edição 1/versão 17; implementação 100% e verificação 100%. |
+| Task | `5e946696-db4d-5205-a47a-9b46f1115157`, Done, implementação/verificação 100%. |
+| Test | `ee0caea9-97dd-5b9a-93a1-cf87bf0961ee`, Done, implementação não aplicável e verificação 100%. |
+| Planejamento e execução | FR 1, BR 1, AC 2; quatro obrigações, dois cenários. Lint, Checklist e conclusão composta registrados; provas e testes externos autenticados precederam o fechamento. Board sem Guidelines: não aplicável, não avaliação aprovada. |
+| Qualificação MCP | XMLs sem falhas: 158 testes resources/catálogo, 31 host Community, 23 manifest/inventário. Payload público: 50.066 tokens tools + 2.467 instructions = 52.533; tetos 50.800/53.500 intactos. Medição agora no transporte Community; Core mantém contratos e inventário. |
+| Instalação anterior | Paridade registrada de 867 Python Core, 326 Community e 79 frontend. Isso não cobre os resources posteriormente alterados. |
+| KG | Consulta canonical devolveu nós com origem e contexto relacionado devolveu vínculos. Saúde geral `at_risk`, probes `digest_layer_parity`/`stale_canonical_parity` indisponíveis. Consolidação cognitiva e aceite visual final ainda não encerrados. |
 
-Contrato mock já definido: `normalize_label(text: str) -> str` aplica
-`str.strip()`, preserva caixa/acentos/whitespace interno e rejeita vazio com
-`ValueError("label_required")`. Dois cenários observam normalização e rejeição.
-Não acrescentar produto, integração, Decision ou teste artificial para fechar U4.
+Ambiente de retomada: `PULSE_REFACTOR/.validation-v040/spec-unified-20261014/`,
+`u4-venv`, `u4-home`, API8240/MCP8241, Board
+`9f3f3f78-140d-4344-9951-7b929648eccd`.
+Workspace mock `u4-label-mock`, fonte
+`source_cbf7d778cca34860af1dde831a952fc6`.
+Consultar recibos antes de qualquer repetição. PID/saúde devem ser conferidos
+na retomada; não assumir que o processo anteriormente observado continua vivo.
 
-**Bloqueio conhecido de qualificação:** o último XML de resources registra
-152 passes/1 falha: metadata MCP **51.724 > 50.800 tokens**. As expectativas de
-schema e contagem de 285 tools já foram ajustadas ao contrato implementado;
-os tetos permanecem intactos. Não confundir essa falha com defeito de gate.
+### Sequência restante e critérios de saída
 
-### Sequência executável restante, dentro de U4
-
-| Passo e dependência | Ação delimitada | Saída verificável |
+| Ordem / dependência | Trabalho delimitado | Evidência para encerrar |
 | --- | --- | --- |
-| 1. Resolver qualificação pendente | Comparar o payload efetivo de `tools/list` e os parâmetros do registry usados por `tests/test_mcp_resources.py`, sob as mesmas versões de dependências e o mesmo tokenizador. Localizar a diferença antes de editar. Se o custo real exceder o teto, reduzir prosa redundante mantendo o contrato; se a medição divergir, corrigir a medição com prova do payload público. Não elevar budgets, remover schemas fechados ou iniciar um projeto de lazy loading. | Suíte resources aprovada; custo e método reproduzíveis, mesmos tetos. Catálogo/manifests regenerados pelas ferramentas oficiais somente quando afetados, com testes de drift. Falhas anteriores preservadas no registro. |
-| 2. Recuperar o ambiente e os recibos | Conferir identidade, saúde, imports e bytes Python/frontend/resources do par isolado. Se houve correção de produto, reconstruir/reinstalar o conjunto afetado e reiniciar somente o runtime U4. Reler Spec/Cards e ciclo atual. Usar os IDs acima; não recriar iniciativa nem repetir vínculos automáticos de cenários. | Par e processo identificados; estado atual reconciliado com recibos; home padrão intacta. Schema incompatível exige nova home isolada, nunca conversão; isso só entra na fila se houver mudança real de formato. |
-| 3. Completar pré-requisitos da mesma edição | Obter preflight fresco do lint; registrar análise real pelos seus anchors/fence. Iniciar execução do Checklist com binding/snapshot atual, ler cada item e submeter resultado com fundamento. Consultar Policy Compliance e coberturas; respeitar N/A versus aprovado. | Recibos nativos de lint/Checklist e bloqueios conhecidos resolvidos. Nenhum parecer inventado, conteúdo de requisito duplicado ou policy alterada para conseguir aprovação. |
-| 4. Concluir planejamento uma vez | Reler `get_spec_validation_cycle` depois dos pré-requisitos. Usar novo `expected_planning_manifest`, edição/versão/head e `idempotency_key` na fachada `submit_spec_validation`, com decomposição tipada se necessária e autorizada. Inspecionar resultados, pinpoints e histórico na UI, correlacionando os IDs pelo MCP. | `planning_result` e estado confirmam promoção; sucesso de transporte ou score isolado não bastam. Todas as avaliações e autores identificáveis. Início usa transição própria e não repete parecer Current válido. UV04–UV17/UV22 reaproveitam negativos U2/U3 qualificados. |
-| 5. Executar Cards admitidos | Conferir contexto full/all, gates, Targets e investigação específica do Card antes de começar. Criar somente os arquivos mock planejados e executar os testes externos pelo caminho autenticado. Vincular a prova observada à fonte/revisão e às obrigações que ela verifica; registrar evidência incremental uma vez. | UI e MCP mostram progresso factual parcial/final coerente. Normal Task chega a implementação/verificação 100%; Test sem implementação apresenta somente verificação 100%. Readiness não substitui autorização de execução ou encerramento. |
-| 6. Encerrar e conferir KG | Cumprir Task Validation, relatório de Test, conclusões e demais gates nativos; fechar Cards e Spec. Consultar grafo, realizar consolidação cognitiva e confirmar canonical com origem/vínculos. | Tasks/Test/Spec Done demonstrados por UI/MCP. UV23/UV24 com recibos e capturas; ausência de fila ou nó existente não comprova canonical. |
-| 7. Fechar U4 e publicar | Reconciliar UV01–UV24, distinguindo execução instalada, persistência, componente e fixture. Rodar regressões pertinentes ao diff final, drift e closure; qualificar resources/frontend/wheels finais e o processo que os serviu. Atualizar ledger e commit/push dos repositórios alterados. | Matriz sem aceite indevidamente fechado, oito budgets ZERO, hashes/par publicado e handoff com limites. Não repetir suítes já válidas sem alteração ou lacuna concreta. |
+| 1 — recuperar ambiente e estado | Conferir imports isolados, arquivos instalados, identidade da home e processo. Reler estado atual pelos IDs existentes. Separar divergência de Python/frontend de divergência conhecida de resources. | Runtime correto identificado; nenhuma base/home padrão alterada. Recibos Done confirmados sem replay de criação, validação ou fechamento. |
+| 2 — completar inspeção visual de UV23 | No browser do runtime isolado, abrir Delivery da Task Done, Delivery do Test Done e Coverage/Validation da Spec Done. Correlacionar IDs e resultados com MCP. Usar snapshots novos antes de ações. | Task/Spec mostram implementação/verificação 100%; Test apresenta somente verificação 100%. Resultados individuais/histórico continuam acessíveis. Capturas inspecionadas, não apenas produzidas. Não repetir testes autenticados só para obter tela. |
+| 3 — concluir UV24 e diagnóstico KG | Reler saúde e consultas canonical. Distinguir cache expirado/transitório de falha reproduzível; examinar logs/correlation IDs apenas das probes afetadas. Conferir origem e vínculos da Spec fechada. Ler workflow KG e usar begin/candidate/similarity/reconciliation/commit para conhecimento cognitivo realmente sustentado pelo conteúdo. | Consulta posterior confirma camada canonical e proveniência; recibo da consolidação e inspeção visual do KG. Não fabricar Decision, aprendizado, relação ou duplicar projeção determinística. Ausência de candidato deve ter justificativa rastreável, nunca consolidação fictícia. |
+| 4 — qualificar pacote final, após eventual correção necessária no passo 3 | Empacotar os resources modificados e manifest oficial, mantendo o par final Core/Community identificado. Instalar somente no ambiente U4 e iniciar processo posterior à instalação. Conferir conjuntos e bytes de Python/resources/frontend, imports e resources servidos. | Hashes dos wheels e relatórios finais separados dos anteriores; paridade completa, catálogo/manifests sem drift e oito budgets ZERO no closure. Home padrão preservada; nenhum processo antigo apresentado como novo build. |
+| 5 — fechar matriz e publicar | Relacionar cada UV01–UV24 à prova pertinente; distinguir testes de componente, persistência, fixture, UI/MCP e instalado. Atualizar ledger, identificar limitações e publicar commits dos repositórios alterados. | Nenhum aceite aberto ou inferido só de contagem de testes. Matriz final, hashes, commits/push e estado de retomada coerentes. Somente aqui U4 e a entrega podem ser declarados concluídos. |
 
-### Dependências, testes e condições de parada
+**Tratamento do diagnóstico KG:** não abrir redesign, otimização geral nem
+milestone adicional. Se nova observação resolver a indisponibilidade, registrar
+ambos os resultados. Se persistir, investigar a causa concreta e corrigir somente
+o defeito que impeça o aceite previsto. Uma métrica indisponível não é sucesso
+nem prova automática de corrupção. Busca com nós canonical e fila vazia não
+substituem a conferência das probes; o relatório final explicita qualquer limite.
+Mudança material de autoridade/gate/histórico fora do acordo segue os critérios
+de investigação e ambiguidade do pacote.
 
-- A investigação da falha de metadata é delimitada ao contrato exposto e ao
-  teste existente. Nova autorização só é necessária se a solução exigir mudança
-  material de autoridade, semântica de gate ou histórico fora do plano.
-- O contexto derivado da Spec informa greenfield, mas não projeta o recibo de
-  investigação do Refinamento como prova atual. Não atribuir validade implícita:
-  os Cards precisam de seus próprios preflights atuais. Investigar a herança
-  somente se um aceite/gate concreto depender dela; não abrir redesign do KG.
-- Mudança de backend exige regressão do caminho afetado, incluindo fronteira
-  pública e persistência quando pertinente. Mudança de UI exige testes frontend,
-  tipos/build e inspeção no navegador. Correção apenas documental exige drift e
-  conferência do resource servido, não uma nova passagem completa pela iniciativa.
-- Reutilizar evidências U2 para falhas, permissões, concorrência/replay e U3
-  para sincronização/recuperação/histórico, respeitando seus limites. U4 acrescenta
-  o percurso instalado restante; não declara todos os negativos como executados
-  novamente no browser.
-- Checklist, lint, Policy Compliance, Spec Validation e decomposição mantêm
-  contratos próprios. A conclusão reúne impedimentos; não produz uma média geral,
-  não apaga rejeições nem transforma ausência/indisponibilidade em aprovação.
-- Após timeout, consultar recibo/estado antes de retry. Falha técnica não é
-  resultado avaliativo negativo; não avançar status por escrita direta.
+### Testes, dependências e reutilização das provas
 
-**Próxima ação de execução:** investigar a única falha do XML
-`u4-resources-doc-final.xml`, sem alterar o teto. Em seguida recuperar a Spec
-Approved existente. Este planejamento não executou esses passos.
+| Aceites / superfície | Prova a reaproveitar ou complementar |
+| --- | --- |
+| UV01–UV03 / autoria e Decisions | U1 e recibos U4 de criação em Draft, sem Decision artificial. Preservar negativos de início prematuro e plano de Decision existente; não refazer autoria. |
+| UV04–UV17 e UV22 / gates e transação | Matriz U2 e testes de composição, paridade nativa, permissões, concorrência, replay e persistência referenciados em §6. Reutilizar com seus limites; conclusão instalada U4 complementa, não substitui, os negativos. |
+| UV18–UV21 / interface | `evidence-u3-authority-ui-closeout-20261015.json`, conclusão integrada, progresso e autoridade já registrados. Não repetir os 122 testes frontend distintos sem mudança ou lacuna concreta. |
+| UV23 / percurso instalado | Recibos U4 de conclusão/execução/Done e inspeção visual restante do passo 2; percentuais vêm de provas autenticadas, nunca autodeclaração. |
+| UV24 / grafo | Buscas já existentes são parciais; completar o passo 3 com diagnóstico, consolidação e leitura posterior. |
+| Distribuição / fronteiras | Qualificação final do passo 4; fechamento não pode usar só a paridade Python anterior para afirmar que resources novos foram instalados. |
 
-**Tratamento de falhas:** erro de transporte exige releitura/recibo antes de
-retry; não repetir create ou conclusão às cegas. Defeito reproduzido que impeça
-um aceite recebe correção e regressão dirigida no mesmo U4. Alteração material
-de gate/autoridade/histórico fora das decisões autorizadas segue investigação
-do pacote. Melhorias opcionais não entram nesta entrega. Reutilizar as provas
-U2/U3 com seus limites; não apresentá-las como novas execuções instaladas.
+Para diffs apenas de testes/documentação/resources, executar drift e validação
+do resource servido, sem repetir todo o SDLC. Se houver correção backend,
+rodar regressão dirigida do contrato afetado e persistência quando pertinente.
+Se houver correção visual, incluir testes frontend, tipos/build e inspeção
+no navegador. Tetos de tokens e budgets arquiteturais não serão ampliados.
 
-**Definição de pronto inalterada:** uma conclusão do planejamento, todas as
-avaliações originais preservadas, percurso instalado completo até Done e KG,
-UV01–UV24 demonstrados, ledger e commits publicados. Esta revisão conclui o
-planejamento da retomada; não declara U4 nem a implementação integral concluídos.
+As capturas locais ficam preservadas; commits incluem código/documentos e
+evidências selecionadas, sem incorporar indiscriminadamente dumps do browser.
+Erros de harness ou transporte permanecem distintos de falhas do produto.
+Após timeout, consultar recibo/estado antes de retry; não repetir mutação às cegas.
 
-## Roteiro vigente para execução — conferência de 15/10/2026
+**Próxima ação de execução:** recuperar o runtime U4 e completar a conferência
+visual dos objetos Done existentes; em seguida fechar KG e distribuição.
+Esta revisão conclui o planejamento restante, não a implementação integral.
+
+## Histórico — roteiro de execução anterior, conferência de 15/10/2026
 
 **Checkpoint posterior: U3 encerrado no checkout; U4 é a fila operacional.**
 Community `1c18806d` corrige a limpeza residual do Board após revogação confirmada.

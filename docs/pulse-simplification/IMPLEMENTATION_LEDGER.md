@@ -2,6 +2,26 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento detalhado restante de U4, a partir de Done
+
+Checkpoint prévio publicado: Core `1eca6df9` / Community `5e7fb9b3`.
+Atualizado no lugar o início de
+[SPEC_UNIFIED_VALIDATION_PLAN.md](SPEC_UNIFIED_VALIDATION_PLAN.md), com uma
+única fila operacional; o roteiro Approved anterior passa a histórico.
+U1–U3 e os contratos normativos permanecem intactos. Não há milestone novo.
+
+Sequência delimitada: recuperar ambiente/recibos → conferir visualmente Task,
+Test e Spec Done → concluir consolidação/consulta canonical e diagnóstico das
+probes KG indisponíveis → qualificar resources/wheels/processo finais → fechar
+matriz UV01–UV24, closure e publicação. Cada passo tem dependência, saída e
+limite explícitos. Provas U1–U3 são reutilizadas; nenhuma avaliação, dimensão,
+severidade, threshold, autorização ou histórico é removido.
+
+Revisão apenas documental: dez hashes de recibos/XML/paridade conferidos,
+diffs anteriores salvos e publicados, sem novo teste de comportamento, mutação
+MCP, instalação ou reinício. U4 continua aberto. Próxima execução começa pela
+conferência visual dos objetos Done, após verificar o runtime isolado.
+
 ### 2026-10-15 — checkpoint de execução anterior ao planejamento final de U4
 
 Conferidos os arquivos locais sobre Core `f739db87` / Community `1c18806d`;
