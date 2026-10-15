@@ -2,16 +2,25 @@
 
 ## Roteiro vigente para execução — conferência de 15/10/2026
 
-Esta seção é a única fila operacional. Os roteiros de checkpoints anteriores
-abaixo documentam a evolução; não reabrem trabalho concluído. Permanecem
+**Checkpoint posterior: U3 encerrado no checkout; U4 é a fila operacional.**
+Community `1c18806d` corrige a limpeza residual do Board após revogação confirmada.
+122 testes frontend distintos, tipos e build passaram. Revogação/identidade
+UI/HTTP, retry autorizado e loading/erro/retry da Validation foram inspecionados.
+A matriz UV18–UV21, as provas reaproveitadas e os limites dos fixtures estão em
+[fechamento U3](evidence-u3-authority-ui-closeout-20261015.json).
+O próximo passo é qualificar o par instalado e executar a iniciativa nova até
+Done/KG. Não repetir ensaios U3 nem apresentar checkout como pacote instalado.
+
+Os roteiros U3 de checkpoints anteriores abaixo documentam a evolução; não
+reabrem trabalho concluído. Permanecem
 normativos os contratos de §3–§5 e os aceites UV01–UV24 de §7.
 
 **Base conferida e publicada:** Core `ec775fe1` /
-Community `135454ca`, ambos em `feature/v0.4.0`. Nenhum diff de produto
+Community `1c18806d`, ambos em `feature/v0.4.0`. Nenhum diff de produto
 rastreado encontrado. Capturas locais não rastreadas não integram o produto.
-U1 implementado; U2 qualificado no backend; consumidores previstos de U3
-integrados, incluindo Resources; qualificação integrada de U3 ainda parcial;
-U4 pendente. Não recriar contratos, watcher, editores ou fluxos já entregues.
+U1 implementado; U2 qualificado no backend; U3 qualificado conforme a matriz
+acima, incluindo Resources; U4 pendente. Não recriar contratos, watcher,
+editores ou fluxos já entregues.
 
 **Avanço nativo posterior à conferência:** conclusão composta UI confirmada pelo
 MCP; parecer MCP sucessor reutilizou a decomposição do Owner sem duplicá-la;
@@ -28,7 +37,8 @@ Revogação MCP também foi comprovada na mesma sessão: leitura e escrita negad
 estado preservado e agentes descartáveis desativados. Os 11 hashes dos artefatos
 foram conferidos nesta revisão; trata-se de evidência anterior, não de novo ensaio.
 Ver [autoridade MCP](evidence-u3-native-authority-20261015.json).
-Restam autoridade/identidade **na UI** e reconciliação UV19–UV21; depois U4. Não repetir os submits
+Autoridade/identidade **na UI** e reconciliação UV19–UV21 foram concluídas no
+checkpoint posterior acima; resta U4. Não repetir os submits
 ou as mutações desse fixture para reconstruir evidência já registrada.
 
 **Decisão de produto preservada:** Spec e Cards são preparados juntos; existe

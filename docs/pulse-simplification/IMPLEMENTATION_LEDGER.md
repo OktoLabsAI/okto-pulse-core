@@ -2,6 +2,55 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3 encerrado: revogação UI/HTTP, identidade e recuperação
+
+Community `1c18806d`, Core produto `ec775fe1` (documentação base `b61a7cab`).
+Reprodução no fixture HTTP isolado mostrou Spec/rascunho removidos após 403,
+mas nome do Board e indicadores KG ainda em cache. O watcher compartilhado agora
+confirma a recusa pelo GET nativo do Board antes de limpar seleção, listas e
+estado de Cards; negar uma entidade não remove indevidamente um Board legível.
+Respostas atrasadas de contexto/cliente anterior são descartadas por geração.
+Não houve mudança de permissão, gate, schema, auth do produto ou mecanismo Core.
+
+Regressão inicial: dois casos novos de resposta atrasada falharam porque o signal
+de request concluído já não era cancelado. Corrigido com predicado da geração do
+watcher. **122 testes frontend distintos passaram**, incluindo sete novos casos;
+os sete foram reexecutados após a mensagem de recuperação, sem contagem dupla.
+`tsc --noEmit` e build passaram. ESLint dos arquivos alterados: zero erros/cinco
+warnings; testes de navegação mantêm warnings de act. Build sincronizou 79 arquivos
+empacotados, árvore `f3ea8fcb706574c76a2438da33fd2e22d020e0d7511c37ac2fa1450ca194bf65`.
+
+Browser/API nativos no fixture: API8220/PID11268, Vite5275/PID15256, home
+`u3-authority-home`. Porta Authentication controlada na composição, explicitamente
+distinta do LocalAuthProvider de usuário único. Spec descartável
+`e262df40-8214-4e69-b1d5-02b22b85666c` continua Draft, sem FR persistido.
+403 de leitura/PATCH, ausência de mutação e remoção do rascunho foram observados.
+Após correção, nome/lista do Board e indicadores desapareceram sem Refresh.
+Reload ainda negado não expôs dados; restaurada a autorização, a mesma ação
+recuperou a lista nativa. Troca para `u3-other-human` retornou 404 de Board/Spec
+e retirou o contexto anterior. Owner restaurado ao final; home padrão intacta.
+
+Na Spec principal, API8200/Vite5274, um GET de validation-cycle foi atrasado por
+20s e abortado no browser, sem interromper o servidor. Pulso de loading, estado
+Unavailable sem aprovação e recuperação via Refresh foram inspecionados.
+Pareceres anteriores permaneceram individuais; não houve submit nem mudança de
+estado. Console acresceu o erro intencional: 25 → 26 erros, dois warnings.
+
+Matriz UV18–UV21 reconciliada em
+[evidência de fechamento U3](evidence-u3-authority-ui-closeout-20261015.json),
+com 37 hashes novos e limites por superfície. Auditoria das três evidências
+nativas anteriores: 154/155 hashes correspondem; `delivery-state.json` é estado
+mutável atualizado pelo checkpoint posterior, excluído como prova imutável.
+Recibos de operação e capturas correspondem. UI de identidade/HTTP usa fixture;
+respostas fora de ordem/deduplicação também têm testes de componente, sem alegar
+que estes sejam ensaios de timing nativo no browser.
+
+**Próximo passo: U4**, regressões/closure e wheels pareados, instalação em home
+nova, comparação byte a byte e processo posterior aos artefatos. Depois nova
+Ideação → Refinamento → Spec/Cards em Draft → conclusão unificada → execução →
+Done → KG canonical, com matriz UV01–UV24. U3 encerrado não equivale à entrega
+final; não repetir suas mutações nem recriar contratos já qualificados.
+
 ### 2026-10-15 — planejamento detalhado reconciliado com o checkpoint publicado
 
 Pedido tratado como planejamento: nenhuma implementação, teste de comportamento,
