@@ -11211,6 +11211,9 @@ async def okto_pulse_move_spec(
         return MCPAdapterContract.error(e)
     except ValueError as e:
         from okto_pulse.core.application.delivery_errors import DeliveryGateBlocked
+        from okto_pulse.core.domain.spec_dependency import SpecDependencyOperationError
+        if isinstance(e, SpecDependencyOperationError):
+            return _spec_dependency_error_payload(e)
         if isinstance(e, DeliveryGateBlocked):
             return MCPAdapterContract.error(e)
         return json.dumps({"error": str(e)})

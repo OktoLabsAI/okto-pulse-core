@@ -37,8 +37,17 @@ de parecer, Advisory/Blocking, leitura negada e injeção tipada de indisponibil
 Corrigidas perda do diagnóstico nativo de policy na conclusão composta e projeção
 Advisory sem métricas aplicáveis. Ver
 [evidência lint/policy](evidence-u2-policy-lint-parity-20261014.json).
-Restam o mapa final das demais famílias U2/dependências, U3 e U4; não repetir
+Restam a conferência final das demais famílias U2, U3 e U4; não repetir
 famílias comprovadas sem alteração ou falha nova. Nenhuma instalação final foi executada.
+
+Conferência posterior: [mapa finito U2](evidence-u2-finite-case-map-20261014.json)
+relaciona 120 casos aprovados aos UV e registra os limites de cada prova, sem
+reexecutar suítes só para repetir evidências. UV17 tem dois confrontos nativos
+REST/MCP: predecessor pendente não impede validar planejamento; impede iniciar;
+Done libera início sem nova avaliação. Corrigida perda de código/fatos dessa
+recusa no MCP pelo projetor já existente. Restam somente as comparações públicas
+não demonstradas de arquitetura/recursos/Code Evidence e a conferência final da
+matriz U2, além de U3/U4 completos.
 
 ### Leitura executiva do plano
 
@@ -507,7 +516,7 @@ permitidas. Comparar razão, estado e efeitos persistidos; não somente HTTP 2xx
 | Policy; UV09/10/11 | Community `test_spec_planning_policy_parity.py` (28 passes), `test_skb_b10_policy_transition_rest.py`; Core `test_spec_planning_readiness.py` | Modos aplicáveis, recibo ausente/negativo/positivo e leitura negada confrontados com persistência nativa e escritores públicos; indisponibilidade por injeção tipada depois da resolução real da autoridade. Recusas compostas preservam razões nativas. Autenticação wire e percurso instalado permanecem no U4. |
 | Arquitetura/Code Evidence/alocação; UV09/22 | Core `test_spec_validation_composition.py`, `test_spec_planning_readiness.py`; Community `test_spec_validation_lifecycle_gate.py` | Reaproveitar os 32 casos de cobertura; fechar somente diferenças não demonstradas com os mesmos dados. Skip de cobertura não oculta projeção inválida; não exigir código implementado antes da execução. |
 | Concorrência/replay/permissões; UV11/14–16 | Core `test_spec_validation_composition.py`; Community `test_spec_planning_manifest.py`, `test_validation_cycle_routes_authorization.py` | Mapear fence, rollback, chave/recibo, escopo e reautorização. Falha técnica não deixa parecer parcial; replay não promove novamente nem ignora acesso atual. |
-| Início; UV17 | Gates de início e testes de dependências existentes | Planejamento pode estar validado com predecessor pendente; início continua negado até sua resolução, sem exigir novo parecer ainda Current. |
+| Início; UV17 | Community `test_spec_planning_dependency_parity.py` (REST/MCP, dois passes); regressão Core de dependências/projetor/catálogo (84 passes) | Comprovado: planejamento validado com predecessor pendente, início negado e depois liberado preservando edição/head/pareceres. Completar o próprio lifecycle do predecessor pertence ao percurso U4; no teste sua conclusão é entrada persistida de fixture. |
 
 Entregável de U2: evidência UV → caso → comando/artefato → resultado → limite.
 Caso já coberto recebe referência, não um teste duplicado. Não marcar UV completo

@@ -2,6 +2,52 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — U2/UV17: dependência bloqueia início, preservando planejamento
+
+Base Core `182b6d1d` / Community `769d74f9`. Community deste incremento:
+`aa8c60c8`. Evidência: `evidence-u2-dependency-parity-20261014.json`.
+O mapa `evidence-u2-finite-case-map-20261014.json` relaciona 120 casos aprovados
+em 11 grupos aos UV, com hashes e limites. É reconciliação de resultados já
+executados, não 120 testes novos nem declaração de U2 integralmente concluído.
+
+Dois casos nativos REST/MCP agora atravessam planejamento e início com a mesma
+Spec: FR/BR qualificados, AC, cenário e2e, contribuição integral, Task e Test Card;
+decomposição e lint aceitos; dependência real inserida antes dos pareceres. O
+predecessor In Progress não impede concluir o planejamento em Validated. Preview
+e início real recusam a execução, preservando estado/versão/edição/head/pareceres,
+atividade, eventos e histórico. Depois de o predecessor estar Done, início público
+passa sem novo parecer, mantendo a mesma edição e validação corrente.
+
+A conclusão do predecessor é entrada persistida do fixture; seus próprios gates
+de fechamento serão percorridos no U4. Não foram fabricados código, execução de
+teste, recibo de prova ou porcentagem para satisfazer o teste de planejamento.
+O gate de primeiro início usa plano e adapters Community reais, sem mock de
+aprovação. As tentativas iniciais identificaram lacunas do fixture: plano vazio,
+associação reversa do Test Card, BR incompleta, capability de métodos não composta,
+tipo de cenário inválido e store de estrutura ausente. Corrigidas no fixture;
+nenhum gate relaxado. O arquivo intermediário `u2-dependency-parity-final.xml`
+contém falhas: o artefato aprovado é **`u2-dependency-parity-r9.xml` (2 passes)**.
+
+A reprodução também encontrou perda real de diagnóstico no MCP: move_spec
+reduzia SpecDependencyOperationError a ValueError/texto, enquanto REST conservava
+código e fatos. O MCP agora usa `_spec_dependency_error_payload`, projetor existente,
+preservando `spec_dependencies_incomplete` e os predecessores envolvidos. Nenhuma
+permissão, predicado de dependência ou transição foi alterado. Os testes públicos
+exigem código e ID do predecessor, além da recusa e rollback.
+
+Regressão `u2-dependency-regression.xml`: 84 passes de dependências, projetor fechado
+e catálogo MCP gerado. Catálogo não foi editado, nenhuma tool alterada. Closure
+oficial: 9.035 linhas, oito budgets ZERO, nenhum finding. Tabelas README regeneradas
+e verificadas pelo renderer/validador oficiais sobre esse relatório; artefato final
+ok=true e zero drift. Não houve nova alteração de frontend, instalação ou restart.
+
+Retomada delimitada: U1 implementado; U2 parcial, agora com lint/policy/Checklist e
+UV17 confrontados nos escritores públicos. Usar o mapa de casos para encerrar
+somente comparações não demonstradas de arquitetura/recursos/Code Evidence e
+conferência final de permissões/fences/replay, sem repetir famílias aprovadas.
+Depois completar U3/2e Knowledge/Targets/leitores, editores da Spec e U4 instalado
+até Done/KG conforme o mesmo plano. Nenhuma prova parcial encerra esses milestones.
+
 ### 2026-10-14 — U2: lint/policy nativos e diagnóstico preservado
 
 Base Core `a9538590` / Community `3ed77890`. Community deste incremento:
