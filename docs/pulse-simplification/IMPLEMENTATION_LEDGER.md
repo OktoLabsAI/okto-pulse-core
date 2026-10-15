@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/3c/5b: inspeção de Decision qualificada por UI/MCP
+
+Par preservado: Core `ef5a5db3` / Community `7566db17`. A prova nativa completa
+a integração publicada do pai sem nova alteração de código. A fixture anterior
+tinha planejamento incompleto e a interface recusou a autoria de inspeção;
+nenhum gate foi relaxado. Criada Spec isolada
+`dec9410f-d455-4506-a8fd-f791ee31dc77`, no Board de ensaio existente, com FR,
+AC explicitamente alocado, contribuição de Task, cenário de inspeção e Test Card
+planejados. Sem execução, teste passing, aprovação de produto ou alteração de policy.
+
+Decision `dec_124940d2`: com observação aberta na UI, o MCP alterou a condição
+da versão 8 para 9. Sem Refresh manual, texto e condição original permaneceram;
+Record observation ficou desabilitado. Review inspection base adotou a condição
+atual explicitamente. A leitura MCP confirmou descrição e os dois Cards Not
+Started; a UI registrou somente essa constatação de escopo mock. MCP confirmou
+um registro `decision_review_ec5fe8e36272467db6506c231fd32cae`, com os digests
+atuais e a condição revista, estado verified e histórico íntegro. Capturas de
+conflito, resultado e histórico expandido foram inspecionadas.
+
+Os 154 testes integrados e tipos/lint do checkpoint anterior permanecem válidos;
+não houve rerun sem mudança. Evidência, hashes, preparação nativa e limites em
+`evidence-u3-decision-inspection-parent-20261015.json`. Vite 5274 com API/MCP
+isolados anteriores 8200/8201: qualifica a interação frontend, não o par instalado
+U4. Revogação, remoção e replay mantêm provas de testes; não foram reapresentados
+como testes visuais. Uma leitura diagnóstica recusada por capacidade MCP foi
+registrada como tal; não significou sucesso nem gerou escrita repetida.
+
+5b encerrado dentro desses limites. Próximo: **3c/5c**, integrar Tests e método;
+depois 5d, 3d/UV18–UV21 e U4. Conferência inicial localizou `TestScenariosTab`
+dentro de `SpecModal.tsx`: callback absorve erro e apaga o formulário antes de
+confirmar a escrita; o writer de coleção `scenarioWriteGuard.ts` usa `updateSpec`
+sem versão. O endpoint próprio de método já tem versão nativa. Reproduzir as
+lacunas do pai e usar garantias reais do writer, sem alegar CAS inexistente.
+
 ### 2026-10-15 — planejamento detalhado reconciliado e checkpoint local publicado
 
 Pedido vigente: iniciar o planejamento detalhado da unificação. Preservadas e

@@ -1,0 +1,254 @@
+{
+  "date": "2026-10-15",
+  "scope": "U3/3c/5b Decision inspection parent and live refresh",
+  "core_checkpoint": "ef5a5db3",
+  "community_commit": "7566db17",
+  "tests": {
+    "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-parent-integrated.xml",
+    "sha256": "7e2ca04284b159a6ed330452026a7eac7ad314eab68cbf342e429b7f683bae96",
+    "name": "vitest tests",
+    "tests": "154",
+    "failures": "0",
+    "errors": "0",
+    "time": "139.9588868",
+    "provenance": "Existing run inspected; no rerun after unchanged source."
+  },
+  "checks": {
+    "types": {
+      "session": 69488,
+      "exit_code": 0
+    },
+    "lint": {
+      "session": 87707,
+      "exit_code": 0,
+      "errors": 0,
+      "warnings": 5
+    }
+  },
+  "ui_mcp": {
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "dec9410f-d455-4506-a8fd-f791ee31dc77",
+    "edition": 1,
+    "versions": [
+      8,
+      9
+    ],
+    "decision_id": "dec_124940d2",
+    "record_id": "decision_review_ec5fe8e36272467db6506c231fd32cae",
+    "observations": [
+      "Native incomplete planning projection keeps the inspection form disabled; no gate was relaxed.",
+      "Prepared one qualified FR, one AC with explicit ownership, one planned normal Card, and one inspection scenario allocated to a planned Test Card. No execution/result or policy change.",
+      "Typed an observation in the browser, then changed the Decision condition through MCP from version 8 to 9.",
+      "Without manual Refresh, retained text and original condition; Record observation disabled until explicit Review inspection base.",
+      "Read current description and both Not Started Cards through MCP, reviewed base, authored the actual observation, and submitted through the browser.",
+      "MCP confirms one current verified observation, matching current scope/source digests and expected condition; UI shows verified and expandable native history."
+    ],
+    "recorded": {
+      "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+      "spec_id": "dec9410f-d455-4506-a8fd-f791ee31dc77",
+      "edition": 1,
+      "version": 9,
+      "review_revision": "18a1d15426eb75155723b30f08c657560768359309645af833ccaa122aa6bed2",
+      "complete": true,
+      "decisions": [
+        {
+          "decision_id": "dec_124940d2",
+          "status": "verified",
+          "record_ids": [
+            "decision_review_ec5fe8e36272467db6506c231fd32cae"
+          ],
+          "basis": {
+            "scope_sha256": "f465360c1f62a044fc7758290051d3848204f9c2a28126202cac6cd0b8095667",
+            "sources": [
+              {
+                "reference": "spec:dec9410f-d455-4506-a8fd-f791ee31dc77",
+                "revision": "edition:1",
+                "sha256": "c98996b30c221c9d687bf9755dda8df04b7d4c268bfecb409cc879ee5e749e21"
+              }
+            ],
+            "expected": "The Spec description identifies a disposable mock with no implementation or product approval claim; its two planned Cards remain Not Started."
+          },
+          "separation": {
+            "mode": "off",
+            "allowed": true,
+            "warning": false,
+            "conflicts": [
+              "card_creator:d14ef50a-189e-5282-99fd-8a636bc698df",
+              "card_creator:fd394827-8771-5a49-a1a4-3c23ed991fac",
+              "decision_author"
+            ],
+            "source": "board_settings"
+          }
+        }
+      ],
+      "history": [
+        {
+          "id": "decision_review_ec5fe8e36272467db6506c231fd32cae",
+          "edition": 1,
+          "actor_id": "local-user",
+          "actor_kind": "human",
+          "created_at": "2026-10-15T04:52:25.464665+00:00",
+          "revoked": false,
+          "observations": [
+            {
+              "decision_id": "dec_124940d2",
+              "expected_scope_sha256": "f465360c1f62a044fc7758290051d3848204f9c2a28126202cac6cd0b8095667",
+              "observed": "Inspected Spec version 9: the description explicitly identifies a disposable mock and disclaims implementation or product approval. The MCP Spec read confirms both planned Cards are Not Started. This observation covers mock designation and planning state only; it does not certify implementation or test execution.",
+              "result": "passed",
+              "sources": [
+                {
+                  "reference": "spec:dec9410f-d455-4506-a8fd-f791ee31dc77",
+                  "revision": "edition:1",
+                  "sha256": "c98996b30c221c9d687bf9755dda8df04b7d4c268bfecb409cc879ee5e749e21"
+                }
+              ],
+              "reconciles": [],
+              "expected": "The Spec description identifies a disposable mock with no implementation or product approval claim; its two planned Cards remain Not Started.",
+              "separation": {
+                "mode": "off",
+                "allowed": true,
+                "warning": false,
+                "conflicts": [],
+                "source": "board_settings"
+              }
+            }
+          ]
+        }
+      ],
+      "observation_authority": "authenticated_reviewer_declaration"
+    }
+  },
+  "artifacts": [
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-ac-owner.json",
+      "sha256": "79d06e6b7cbbcb3bd9ab1e5cfd61458405b290fda3641da8bec4c5b2478b0e4d"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-before.json",
+      "sha256": "56de361d42de2ab5f17c5886571036cee1974b739d44abd2ada618c4f314b38c"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-concurrent.json",
+      "sha256": "e2f28b551299a394d42970fab6b7cca5afca61dfa8294d7616ef1a0a3c0d8669"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-create-spec.json",
+      "sha256": "dacd7ade532d9018dc8fe8c5d3a8803459d8b07ebb068b77e9a9d4526ce63699"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-create.json",
+      "sha256": "422d037c9e88829496baecffc654d3618eb13989f4cebee13ef95ba6d0dacf2c"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-delivery-diagnostic.json",
+      "sha256": "23b090947c1bdb9ce5494601a333fbcc4ecb4acad2af093a3e90522c50a35c1d"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-docs-card.json",
+      "sha256": "0a039bb02a31bcecf21bd499bd5dd7aaae62db7ec22aade5c5fa84d610f5c923"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-docs.json",
+      "sha256": "263d39d844c3ae9eb4417982f3cdaba1bc0994c4d0295dc2407ce7934e852578"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-focused-decision.json",
+      "sha256": "00468421c82ff1cc6a71a976c3f02802047f149071b3646720f67799c936824c"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-focused-delivery.json",
+      "sha256": "b3c080c53e188b0fcc0e5a0368db9f8e729050de3db6594ea502949f9584da94"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-focused-plan-after.json",
+      "sha256": "e2846bc0311df4009a72f613fa95908229b11b78cd5a30635eafdebf49674fea"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-focused-plan.json",
+      "sha256": "41a91d10878b63f56c071c0e5d1d55534fb3336f8074363baab649c5f3798cf2"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-focused-read.json",
+      "sha256": "d72f1dcbd8416e4535f02b36d24bb417cd764a66f72b4cedcfba663fc00ded28"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-observed-spec.json",
+      "sha256": "ebefa7361fb1c2148c19ba5a1660760d38bf8ae95cf55aa81dd534b1df62d965"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-recorded.json",
+      "sha256": "417a785670509c168d85e97ba6d2f5e0a892fa472ff1036e8c790300cbc1a84d"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-review-before.json",
+      "sha256": "fd38809677ec11bc7f0db65eec22f39c1139bf76a94947c6701344904b015e72"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-tools-extra.json",
+      "sha256": "3e11a82907cac6a34ef5bbc1e54d6d62e23b0895449517119cdc9b39f2d56304"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-tools.json",
+      "sha256": "6da008f85608e68a84389cf03f874567019f52b44032040c6ec708b9a670bff6"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-fixture-ac.json",
+      "sha256": "4b844e7985ad8fd0c2e8d8179905f4608a3121ec691e9358f46bf800200a6e74"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-fixture-before-plan.json",
+      "sha256": "fbc375ca4ec1fd5d7e2727a3887ced97372fe4f0604371857ac50fc9f320bb21"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-fixture-fr.json",
+      "sha256": "20fb1eaa4ffba3694980643ed8c6a10b3c2a85ea880c120303a0dcd5c62a6070"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-fixture-plan.json",
+      "sha256": "0461bcef7bb5ce571e64f8695d6dafe16f1c891b0088efad222932dd0f53f5b6"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-fixture-review.json",
+      "sha256": "a2eea8bfd0c491b71010380e52f0c89895b3eb3c275ba06bba61997467a056a9"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-fixture-scenario.json",
+      "sha256": "e06d03905136b62cbbbf024e06da89423cda7e5a6e78af7992587437f279cb66"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-fixture-task.json",
+      "sha256": "7d1caaa90a99e46901ae27cdaed1c481e1631fa3055559889254395f2bc4d9ef"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-fixture-test.json",
+      "sha256": "0ec84e3ca50bc1c6f45e219b2d44f4d21e2e2e53f9f2fe197809aeba8085bdd5"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-decision-draft-conflict.yml",
+      "sha256": "f66c82084198129db605aa7b51d4bcb68237d0b32113fff5d44dcccf149b0137"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-decision-draft-conflict.png",
+      "sha256": "8131c92bd68f6c5389c134f7ff73467c6d45fb71c4fe1ed0548ec56a5a049c69"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-decision-recorded.yml",
+      "sha256": "8c542f56a7477e5419e51f8c1f274c3dda88afeb5c4a03f4ee1dab90b47bbd6b"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-decision-recorded.png",
+      "sha256": "bda238946115b1eff408d70a5e107584c9df0bfe8aa450d104dda7a615a7d3ba"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-decision-history.png",
+      "sha256": "c27b74c724af71d91b311331b17aae4bf78eb07974d36634c75a9827fde584df"
+    }
+  ],
+  "limits": [
+    "Isolated Vite 5274 with the previously installed API/MCP 8200/8201. This is frontend interaction qualification, not exact installed pair U4.",
+    "Access revocation, removal, replay, and out-of-order reads remain component/integration test proofs; not newly replayed in browser.",
+    "Initial large mock remains incomplete and its Decision has no recorded observation. Focused fixture preserves all native planning checks.",
+    "One diagnostic read received mcp_admission_saturated while a writer was active; no outcome was inferred from that refusal.",
+    "No closure, wheel rebuild, full lifecycle or canonical KG qualification in this increment. U3 global and U4 remain open."
+  ]
+}

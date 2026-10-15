@@ -3,7 +3,7 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint publicado: Core `0bb61cce` / Community `7566db17`, publicados na
+Checkpoint publicado: Core `ef5a5db3` / Community `7566db17`, publicados na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -51,10 +51,12 @@ v2 → v3, contrato revisto e persistência confirmada. Ver
 O componente de inspeção de Decisions conserva a base e o replay exato.
 `DecisionsTab` agora preserva a observação durante recarga, erro recuperável e
 remoção do item; separa leitura atual de cache e limpa dados em recusa de acesso.
-A assinatura de Decisions já está implementada em `7566db17`, mas ainda não
-qualificada por browser/MCP. O XML integrado existente registra 154 passes;
-tipos e lint foram conferidos nesta revisão. Falta a prova nativa antes de
-encerrar 5b. Evidência do componente em
+A assinatura de Decisions está implementada em `7566db17` e qualificada por
+browser/MCP: versão 8 → 9, rascunho preservado, revisão explícita e escrita UI
+confirmada por leitura MCP, com histórico expandido inspecionado. O XML integrado
+registra 154 passes; tipos/lint aprovados no checkpoint. 5b está encerrado nos
+limites de [inspeção integrada](evidence-u3-decision-inspection-parent-20261015.json).
+Evidência do componente em
 [inspeção de Decision](evidence-u3-decision-inspection-component-20261015.json);
 checkpoint do pai, resultado integrado e limites no ledger.
 O componente de método de cenário também conserva a base: 15 testes aprovados,
@@ -62,7 +64,7 @@ tipos/lint aprovados. Integração com `TestScenariosTab`, recarga e prova visua
 ainda pendentes; Tests permanece fora do watcher. Ver
 [método de cenário](evidence-u3-scenario-method-20261015.json).
 
-**Próxima ação de implementação:** prova UI/MCP de Decision (3c/5b), cenários e Project Structure → refresh global →
+**Próxima ação de implementação:** cenários (3c/5c) e Project Structure → refresh global →
 qualificação integrada U3 → qualificação instalada U4.
 Sequência e condições de saída em §6.2; não reimplementar U1/U2.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
@@ -396,7 +398,7 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint vigente de planejamento:** Core `0bb61cce` / Community `7566db17`.
+**Checkpoint vigente de planejamento:** Core `ef5a5db3` / Community `7566db17`.
 Ambos conferidos em `origin/feature/v0.4.0` em 15/10/2026. A revisão documental
 a partir deste par não representa nova implementação. As alterações locais
 preexistentes de 5b foram preservadas e publicadas antes desta revisão; os 154
@@ -798,14 +800,15 @@ Esses achados são conferência de código, não novas reproduções de runtime.
 
 **5a executado em `81af8c41`**, com 141 casos distintos e prova UI/MCP registrada
 acima. A linha 5a abaixo conserva o escopo e aceite atendidos. Em 5b, componente,
-pai e assinatura estão implementados em `7566db17`; retomar pela prova UI/MCP,
-não refazer a integração. Os 154 testes integrados não substituem essa prova;
+pai e assinatura estão implementados em `7566db17`; a prova UI/MCP foi concluída
+e registrada em `evidence-u3-decision-inspection-parent-20261015.json`.
+Retomar por 5c, sem refazer 5b. Os 154 testes integrados complementam essa prova;
 os limites do backend isolado continuam parte da qualificação U4.
 
 Esta é a decomposição do item 5 existente, não uma ampliação do produto. Cada
 linha deve fechar implementação, regressão pertinente e evidência antes de
-ser qualificada. A assinatura de Decisions já entrou no checkpoint, mas seu
-aceite fica pendente até a prova nativa. A investigação de código abaixo foi
+ser qualificada. A assinatura de Decisions já tem aceite dirigido UI/MCP;
+o quadro conserva a sequência e os critérios das frentes. A investigação abaixo foi
 reconfirmada no checkpoint; falhas ainda sem reprodução não são bugs de runtime
 declarados. Preservar as 222 provas distintas das coleções e os 15 testes do
 componente de método, repetindo apenas os afetados pela integração.
