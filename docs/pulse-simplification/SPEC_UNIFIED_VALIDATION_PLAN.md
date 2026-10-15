@@ -3,7 +3,7 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint publicado: Core `92eb4e8a` / Community `3057e84e`, publicados na
+Checkpoint de código publicado: Core `4755e369` / Community `3c4df986`, publicados na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -402,13 +402,13 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint vigente de planejamento:** Core `92eb4e8a` / Community `3057e84e`.
+**Checkpoint vigente de código:** Core `4755e369` / Community `3c4df986`.
 Ambos conferidos em `origin/feature/v0.4.0` em 15/10/2026. A revisão documental
-a partir deste par não representa nova implementação. O checkpoint já inclui
-a prova UI/MCP de 5b e a confirmação de cenários de 5c, com os resultados
-registrados nas respectivas evidências. A presente revisão conferiu fonte,
-ledger e heads remotos; não reexecutou Vitest, tipos, lint ou o ensaio visual.
-As execuções anteriores permanecem identificadas no ledger, sem contagem dupla.
+a partir deste par acompanha a execução parcial de 5c. O checkpoint inclui
+a prova UI/MCP de 5b, a confirmação de cenários e a proteção da versão autorada
+com recuperação explícita de conflito. Testes, tipos, lint e prova nativa de
+cada incremento estão nas respectivas evidências e no ledger, sem contagem
+dupla. A matriz integral U3/U4 continua aberta.
 Knowledge/Targets têm prova integrada; leitores têm testes aprovados e provas
 UI/MCP dirigidas de Architecture e KB. Os limites da projeção Project Structure
 e do runtime anterior permanecem explícitos para U4. Pares anteriores são
@@ -824,7 +824,7 @@ componente de método, repetindo apenas os afetados pela integração.
 | --- | --- | --- |
 | 5a — classificação arquitetural em Integration | Concluído nos limites registrados: preservar `81af8c41`, a integração de `ArchitectureClassificationsPanel`/`ArchitectureClassificationAuthoring`, a base original e o replay exato. | `evidence-u3-classification-editors-20261015.json`: 141 casos finais e prova UI/MCP com arquitetura v2 → v3, revisão explícita e promoção de IR confirmada. Não repetir sem impacto novo. |
 | 5b — inspeção de Decision | Concluído nos limites registrados: preservar a integração publicada de `DecisionsTab`/`DecisionReviewSection` e a prova UI/MCP da versão 8 → 9, revisão explícita, gravação e leitura do histórico. | `evidence-u3-decision-inspection-parent-20261015.json`, capturas inspecionadas e 154 testes integrados. Não repetir a prova sem impacto novo; ela não substitui o par instalado de U4. |
-| 5c — cenários e método em Tests | Preservar confirmação/propagação de falha em `TestScenariosTab`, corrigidas em `3057e84e`. Integrar `ScenarioVerificationMethodEditor` com leitura atual e recarga do pai; preservar seleção e texto diante de cenário removido. Proteger a base do writer de coleção `persistTestScenariosWithWriteGuard`, que envia `updateSpec` sem versão explícita. Usar garantias nativas, sem CAS global. Conferir também os writers de vínculo e policy montados nessa aba. | Casos de erro de gravação, sucesso com refresh falho, resultado incerto, conflito nativo, cenário removido e perda de acesso. Teste integrado do método com o pai e browser + MCP com seleção preservada e resultado relido. Os 43 passes de confirmação são prova parcial; só assinar Tests após completar 5c. |
+| 5c — cenários e método em Tests | Preservar confirmação e base de versão já qualificadas. O método agora usa a recarga protegida do pai; falta preservar seleção diante de cenário removido e integrar atualidade externa. Conferir mudanças sem bump da versão, resultado incerto e writers de vínculo/policy, sem CAS global. | A prova 10 → 12 qualifica recusa de versão, conservação do texto e revisão explícita. Restam os casos operacionais, reconciliação e método removido antes de assinar Tests; 92 testes backend e 46 frontend não encerram essa integração. |
 | 5d — Project Structure e controles restantes | Conferir a revisão própria, `snapshotGeneration`, conflito e revisão explícita de `ProjectStructureTab` contra refresh externo e permissões. Reutilizar esse contrato; não adaptar a árvore ao helper das coleções. Conferir controles editáveis de Details sem reintroduzir edição de requisitos pela descrição. | Testes de leitura fora de ordem, versão/structure revision, rascunho e perda de acesso; registrar quais controles são somente leitura. A prova nativa de autoria da árvore continua no runtime compatível de U4, sem tratar a recusa do runtime antigo como sucesso. |
 
 Depois de 5a–5d, executar 3d usando os metadados e o watcher existentes. Para
@@ -840,12 +840,24 @@ identificar ações realmente observadas, separadas dos mocks de componentes.
 U4 permanece a qualificação do par exato instalado e da iniciativa nova até
 Done/KG canonical; não converter uma prova isolada de editor em aceite final.
 
-#### Roteiro executável restante — base `92eb4e8a` / `3057e84e`
+#### Roteiro executável restante — base `4755e369` / `3c4df986`
 
 Esta é a fila vigente, subordinada aos itens anteriores. Não acrescenta
-milestone, gate, avaliação ou critério à matriz UV01–UV24. O pedido atual é de
-planejamento: este checkpoint altera somente documentação. A implementação
-seguinte começa em 5c; U1/U2, 5a/5b e a confirmação de cenários são preservados.
+milestone, gate, avaliação ou critério à matriz UV01–UV24. O planejamento foi
+sucedido pela execução parcial de 5c. Preservar U1/U2, 5a/5b, confirmação e
+proteção da versão autorada de cenários, sem tratar esses incrementos como U3
+concluído. O ledger distingue cada checkpoint documental de execução de produto.
+
+**Incremento executado:** a substituição de cenários aceita a versão autorada,
+confere o fence nativo e recusa conflito por REST; o formulário conserva a base,
+recarrega sem apagar texto e exige revisão explícita. Prova UI/MCP: versão
+10 → alteração concorrente → conflito UI → recarga/revisão → versão 12, com
+um único cenário novo e a alteração concorrente preservada. 92 testes backend,
+46 frontend e cinco do catálogo passaram; tipos/lint aprovados e closure ZERO.
+Ver [base autorada de cenários](evidence-u3-scenario-authored-base-20261015.json).
+Tests ainda não está no watcher. Restam a atualidade de mudanças sem bump de
+versão, resultado incerto/reconciliação, método removido e os demais writers da
+aba. Não repetir a prova de versão nem reduzir esses aceites à precondição nova.
 
 | Ordem / dependência | Trabalho e fronteira exatos | Aceite para encerrar |
 | --- | --- | --- |
@@ -861,8 +873,10 @@ seguinte começa em 5c; U1/U2, 5a/5b e a confirmação de cenários são preserv
 **Regra de execução para 5c.1:** a investigação tem inventário finito: substituição
 da coleção, criação, edição de corpo/método, exclusão, vínculo/desvínculo e status
 de cenário. Registrar entrada pública, autorização, versão/fence, efeitos e
-commit de cada caminho tocado. `update_test_scenario` já aceita
-`expected_spec_version`; `SpecUpdate` não o aceita neste checkpoint. Reutilizar
+commit de cada caminho tocado. `update_test_scenario` já aceitava
+`expected_spec_version`; `SpecUpdate` agora o aceita somente com cenários, e a
+UI envia sua base original. Isso não prova atualidade de status/vínculos sem
+bump da versão. Reutilizar
 garantias comprovadas, sem apresentar add/delete como protegidos por versão só
 porque edit está protegido. Não ampliar essa correção para CAS global. Se a
 correção exigir mudar cascata, autoridade ou efeito de evidência/histórico,
@@ -886,7 +900,7 @@ Não há nova etapa de produto, novo gate ou expansão dos UV01–UV24.
 | --- | --- | --- |
 | 1 — U3/2e.1 | Concluído: preservar a prova Knowledge em `evidence-u3-knowledge-targets-20261014.json`. | Revisões 1 → 2 → 3, rascunho preservado, revisão explícita e escrita UI lida pelo MCP. Nenhuma repetição necessária sem alteração. |
 | 2 — U3/2e.2–3 | Implementado e qualificado nos limites de `evidence-u3-resource-readers-live-20261014.json`. Preservar Targets e leitores. | Architecture/KB observadas após MCP e captura inspecionada; Project Structure/dependências em testes frontend. Autoria de árvore nativa recusada pelo contexto no runtime anterior não é prova positiva e permanece no ensaio U4. |
-| 3 — U3/SpecModal | Retomar 3c–3d sobre `3057e84e`: concluir base/recarga/método e resultados incertos de 5c; conferir 5d. Preservar 5a/5b, confirmação de cenários, editores e coleções já qualificados nos limites registrados. Depois invalidar Coverage/recursos/referências/dependências pelo watcher existente. | Rascunho e base preservados; mudança só de Card atualiza Coverage; respostas de outra Spec descartadas. Testes dos editores e consumidores efetivamente alterados e prova browser/MCP. |
+| 3 — U3/SpecModal | Retomar 3c–3d sobre `3c4df986`: concluir atualidade operacional, método removido e resultados incertos de 5c; conferir 5d. Preservar 5a/5b, confirmação/base de versão de cenários, editores e coleções já qualificados. Depois invalidar Coverage/recursos/referências/dependências pelo watcher existente. | Rascunho e base preservados; mudança só de Card atualiza Coverage; respostas de outra Spec descartadas. Testes dos editores e consumidores efetivamente alterados e prova browser/MCP. |
 | 4 — U3/UV18–21 | Conferir o conjunto aberto: atualização MCP, acesso revogado, rede interrompida/recuperada, troca de contexto, histórico e ação de conclusão. Reusar provas parciais pertinentes. | UI legível e funcional, sem cache protegido após revogação, sem submissão duplicada, sem perda silenciosa de edição. U3 pode ser encerrado somente aqui. |
 | 5 — U4/UV01–24 | Qualificar o par exato de wheels/frontend e executar iniciativa mock nova até Cards/Test/Spec Done e KG canonical, conforme roteiro abaixo. | Matriz final com provas reais UI/MCP, paridade byte a byte, processo novo, oito budgets ZERO, commits/pushes pareados. |
 

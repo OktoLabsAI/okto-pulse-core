@@ -2,6 +2,69 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/3c/5c: base de versão e recuperação de conflito qualificadas; integração ainda aberta
+
+Core `4755e369` / Community `3c4df986`, publicados em `feature/v0.4.0`.
+O turno anterior publicou planejamento rastreável; este incremento alterou
+produto e obteve evidência nativa. A leitura integral do pacote já está
+registrada na caracterização de U1; não foi buscada a ideação original.
+
+`SpecUpdate.expected_spec_version` é inteiro positivo estrito, limitado à
+substituição de `test_scenarios`; sem coleção, a precondição é recusada.
+O serviço retira esse metadado antes de persistir/diffar conteúdo e confere
+versão, edição, estado, arquivamento e validação corrente pelo fence público.
+Os workflows internos de criação/edição/exclusão conservam a versão lida.
+Sem precondição explícita, o fence protege a leitura do serviço, não uma base
+antiga desconhecida do cliente. Não é CAS genérico nem garantia sobre mudanças
+operacionais sem bump da versão. Status, evidência, cascata e permissões não
+foram alterados. O adaptador REST projeta o conflito nativo como HTTP 409.
+
+O frontend envia a versão capturada ao abrir o formulário. Mudança recebida
+ou conflito exige revisão explícita, sem trocar a base silenciosamente.
+`Reload scenarios` usa a leitura do pai sem desmontar o formulário, conserva
+texto em falha e impede salvar/revisar enquanto a leitura estiver indisponível.
+Recusa de acesso retira conteúdo protegido. A releitura após salvar método usa
+essa mesma função; `onSpecRefreshed` também descarta outra identidade. Tests
+continua fora do watcher: este incremento não qualifica toda a aba.
+
+Evidência: `evidence-u3-scenario-authored-base-20261015.json`.
+Baseline backend: três falhas porque o schema não admitia a precondição.
+Baseline frontend: dois casos falhos, 27 skips por filtro; não enviava versão
+e não oferecia revisão do rascunho após refresh. Resultado final: **92 testes
+backend, 46 frontend (31 pai + 15 método) e cinco do catálogo aprovados**;
+tipos exit 0, ESLint dirigido sem erros e 12 warnings preexistentes, diff check
+aprovado em ambos. Closure: 9.036 linhas de propriedade, nenhum finding/drift,
+oito budgets ZERO. O catálogo não mudou e não foi editado manualmente.
+
+Correções do ensaio: a `.venv` do Core não tinha Grafx; usada a venv de validação
+existente com os dois `src` explícitos. A primeira regressão ampla teve 90 passes,
+um erro por `-p no:logging` remover `caplog` e uma falha por fixture CRUD não
+implementar a leitura arquitetural do worker. Corrigido o comando e registrado
+o adapter nativo no teste integrado do worker, sem relaxar a asserção. Os 92
+passaram na execução seguinte. XMLs, hashes e limites estão na evidência.
+
+Browser/MCP no runtime isolado de checkout: Spec
+`dec9410f-d455-4506-a8fd-f791ee31dc77`, versão 10, rascunho UI aberto. MCP alterou
+somente notes de `ts_1792040763309`; a tentativa UI foi recusada com conflito,
+preservando texto. Recarga manteve campos e Add desabilitado até Review scenario
+base. Após revisão explícita, UI salvou; MCP confirmou versão 12, exatamente um
+cenário novo `ts_1792063389389`, a nota concorrente e o cenário original intactos.
+Capturas de conflito e resultado inspecionadas. Nenhum teste passing, entrega
+ou aprovação foi fabricado: o novo cenário continua draft e sem evidência.
+
+Runtime API/MCP 8200/8201 reiniciado em processo novo sobre os dois checkouts;
+Vite 5274 aponta ao mesmo backend, inclusive no proxy das rotas relativas.
+Nenhum processo ou home do usuário foi alterado. A instalação diverge dos
+checkouts (23 Python Core e 10 Community no ensaio final); esta prova usa fonte,
+não wheels instaladas. U4 permanece pendente.
+
+**Retomada exata:** continuar 5c, sem repetir a prova 10 → 12. Reproduzir os
+casos de status/vínculo que não avançam `Spec.version`, para fechar a atualidade
+da coleção sem alegar proteção inexistente. Concluir resultado incerto e
+reconciliação, método removido, autorização/geração dos writers restantes da
+aba e integração com o watcher; só então habilitar Tests. Depois 5d, 3d,
+UV18–UV21 e U4. U3 não está encerrado; objetivo integral permanece ativo.
+
 ### 2026-10-15 — planejamento detalhado atualizado sobre o último par publicado
 
 Pedido atual: iniciar o planejamento detalhado da unificação. Conferidos HEADs

@@ -1,0 +1,284 @@
+{
+  "date": "2026-10-15",
+  "checkpoint": {
+    "core": "4755e369",
+    "community": "3c4df986"
+  },
+  "scope": "U3/3c/5c partial: scenario authored version, native fence and explicit conflict recovery",
+  "qualification": {
+    "core_passed": 92,
+    "frontend_passed": 46,
+    "catalog_passed": 5,
+    "types": "npx tsc --noEmit exit 0",
+    "lint": "targeted ESLint exit 0, 0 errors and 12 existing SpecModal warnings",
+    "closure": {
+      "ok": true,
+      "ownership_rows": 9036,
+      "findings": 0,
+      "documentation_findings": 0,
+      "budgets": [
+        {
+          "key": "import_boundary_baseline",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "singleton_baseline",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every singleton_baseline allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "dependency_temporary_exceptions",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "graph_runtime_compatibility",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "rebuild_artifact_compatibility",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "community_private_reach_ins",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "community_adapter_bridges",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "af35_relational_residue",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        }
+      ]
+    },
+    "diff_check": "both repositories passed"
+  },
+  "native": {
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "dec9410f-d455-4506-a8fd-f791ee31dc77",
+    "initial_version": 10,
+    "final_version": 12,
+    "added_scenario_id": "ts_1792063389389",
+    "observed": [
+      "MCP notes edit while UI draft remained open",
+      "UI write refused with spec_version_conflict",
+      "draft retained after refusal and Reload scenarios",
+      "Add Scenario remained disabled until explicit Review scenario base",
+      "UI save and MCP read confirm exactly one new draft scenario, preserving the concurrent note"
+    ],
+    "execution_claim": "None; these are authored mock scenarios, not passing scenario results"
+  },
+  "runtime": {
+    "pid": 34024,
+    "started_at_epoch": 1792062743.8402994,
+    "pythonpath": "D:/Projetos/Techridy/okto_labs_pulse_core/src;D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+    "data_home": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collections-home",
+    "api": "http://127.0.0.1:8200",
+    "mcp": "http://127.0.0.1:8201/mcp",
+    "frontend": "http://127.0.0.1:5274",
+    "mode": "checkout, not installed U4 pair"
+  },
+  "tests": [
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-base-before.xml",
+      "sha256": "1bebfda59b7bf76021b78d4e026eacbfd34ce546e184867200225ba9a596c0d8",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "3",
+          "skipped": "0",
+          "tests": "3",
+          "time": "20.533",
+          "timestamp": "2026-10-15T02:28:14.559154-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-base-ui-before.xml",
+      "sha256": "9c3a69e5d297928f62983a9abd69430b14de8eec1be83fe49e1e981ec51d87c9",
+      "suites": [
+        {
+          "name": "src/components/specs/__tests__/SpecModal.activity.test.tsx",
+          "timestamp": "2026-10-15T11:08:44.106Z",
+          "hostname": "Alienware_m15",
+          "tests": "29",
+          "failures": "2",
+          "errors": "0",
+          "skipped": "27",
+          "time": "2.8960546"
+        }
+      ]
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-base-core.xml",
+      "sha256": "1d1ceb615e8e63ceaf33651360564e2e7118d3070c2de5761623f4e05ea9195f",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "1",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "92",
+          "time": "36.898",
+          "timestamp": "2026-10-15T08:04:00.503396-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-base-core-final.xml",
+      "sha256": "f37a1e554d31772463b7896aeaed2c3c15722900f993cbe2844b32387e658dac",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "92",
+          "time": "23.817",
+          "timestamp": "2026-10-15T08:06:25.071008-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-base-ui-final.xml",
+      "sha256": "0fc356084302fe9d46b08a42944dab09650d200ae1a90499bd336a2a56855a4a",
+      "suites": [
+        {
+          "name": "src/components/specs/__tests__/ScenarioVerificationMethodEditor.test.tsx",
+          "timestamp": "2026-10-15T11:12:24.398Z",
+          "hostname": "Alienware_m15",
+          "tests": "15",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "1.2637457"
+        },
+        {
+          "name": "src/components/specs/__tests__/SpecModal.activity.test.tsx",
+          "timestamp": "2026-10-15T11:12:24.408Z",
+          "hostname": "Alienware_m15",
+          "tests": "31",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "18.744019"
+        }
+      ]
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-base-catalog.xml",
+      "sha256": "8797d232c837cf00517e35cf5a82fab9f53d21f237052ea0b776b4d7d23aedf9",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "5",
+          "time": "14.302",
+          "timestamp": "2026-10-15T08:14:25.993090-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\closure-u3-scenario-base.json",
+      "sha256": "20edd2513da8db338f9e3601006e38d662479cdadb5425010008b53774419fe8"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-base-native-before.json",
+      "sha256": "4321880a683e786fab1443a707f8186c5d3a5a7c68ed5366c570e798574420ee"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-base-native-change.json",
+      "sha256": "470a016ce1cd9218b433e7d6ebd7369eef299fe958f8d5f4c82e6c13f0464c11"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-base-native-after.json",
+      "sha256": "f9a410b200fdf3b78c711ffd8f28ab93e8e10ec7dca86ab868a54fcd46aeb826"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-base-core-final.xml.environment.json",
+      "sha256": "1eacf61a34ee0f8440d83b7f0781a98fe5e5aa39b11178186b377c072cc203cd"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-scenario-base-conflict.yml",
+      "sha256": "d0fe2774a80e56ce89205a318ef84677c5c97619cfbdfb9766e7edf8995d3f87"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-scenario-base-reloaded.yml",
+      "sha256": "2ae78be32f3bd9124c5d29f4fc9dcb0617e047cd98ae61849ebbc9777d8a6a69"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-scenario-base-saved.yml",
+      "sha256": "7d6eb39ef68975f7f9bc2f2de905e73600f081f2b9e5ec958d9e1a1e53d3016d"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-scenario-base-conflict.png",
+      "sha256": "8cd2790df26e9d18729bcf8cb5ab04d21ab473dbd06d240a845861664bb41bc3",
+      "visually_inspected": true
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-scenario-base-saved.png",
+      "sha256": "9bb109ac7f573ebeee4ebb8bba404cc9439cfa24396d6a6a9fa2fbb066ee64d0",
+      "visually_inspected": true
+    }
+  ],
+  "test_environment_corrections": [
+    "Initial Core .venv lacked okto_grafx; use existing validation venv with both checkout roots",
+    "Removed -p no:logging for lifecycle test requiring caplog",
+    "Worker integration test now registers the current native StructuredSpec adapter instead of incomplete CRUD fake"
+  ],
+  "limits": [
+    "Tests is still outside the watcher",
+    "Version precondition alone does not prove freshness of status/link changes that leave Spec.version unchanged",
+    "Unknown transport outcome/reconciliation, removed method draft and remaining writers/currentness still require integration",
+    "No wheel build or installation; no user home changed; U4 end-to-end Done/KG remains pending"
+  ]
+}
