@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — planejamento detalhado reconciliado com o checkpoint publicado
+
+Pedido vigente: iniciar o planejamento detalhado da unificação. Conferidos
+Core `5f5f054d` / Community `77394617` e os mesmos heads no remoto
+`feature/v0.4.0` antes de alterar o plano. Não havia mudança rastreada pendente;
+os snapshots temporários de browser do Community permanecem fora dos commits.
+
+Atualizado o plano único `SPEC_UNIFIED_VALIDATION_PLAN.md`, sem nova frente ou
+critério: U1 implementado, U2/U3 parciais, U4 pendente. Corrigido o checkpoint
+antigo e a tabela que ainda descrevia quatro falhas já resolvidas. Preservadas
+todas as avaliações, rubricas, severidades, thresholds, autores, permissões e
+históricos; uma conclusão consulta os componentes, sem média geral nem aprovação
+fabricada. Decision ausente continua opcional; Decision existente mantém controles.
+
+A inspeção dirigida confirma a fila de U3/2e: Knowledge usa a revisão corrente
+no envio e limpa a escolha em conflito; Targets usa specVersion corrente e não
+confere cancelamento antes de aplicar a resposta da projeção. O plano exige
+preservar base/rascunho antes de conectar invalidação externa, depois concluir
+KB herdada e leitores restantes. São achados estáticos, não falhas reproduzidas
+neste turno. SpecModal ainda limita o watcher à Validation e usa spec.version
+em chaves de editores; protegê-los precede expandir a atualização de leituras.
+
+Sequência de execução fechada: matriz finita U2 → U3/2e Knowledge/Targets/leitores
+→ proteção dos editores e sincronização da Spec → qualificação integrada U3
+→ U4 com instalação isolada e fluxo novo até Done/KG canonical. Reusar provas
+registradas; acrescentar somente casos faltantes. Todos os UV01–UV24 permanecem.
+
+Validação desta revisão: leitura do plano integral, ledger recente, documento de
+entrada e pontos de código afetados; conferência de diff/whitespace. Nenhuma
+mudança de produto, teste de comportamento, instalação, reinício ou mutação de
+dados foi executada. Os resultados de testes citados pertencem aos checkpoints
+anteriores. Planejamento pronto para execução; implementação restante não
+iniciada neste pedido.
+
 ### 2026-10-14 — U3: Delivery oculta, Activity e autoridade de transição
 
 Continuação no mesmo turno; Community `77394617`, sobre `2a6324d3`.
