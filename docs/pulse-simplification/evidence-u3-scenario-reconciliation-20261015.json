@@ -1,0 +1,71 @@
+{
+  "date": "2026-10-15",
+  "scope": "U3/5c collection uncertain response and removed method draft",
+  "core_code": "8291a648",
+  "community_commit": "aeebd6df",
+  "tests": {
+    "name": "vitest tests",
+    "tests": "54",
+    "failures": "0",
+    "errors": "0",
+    "time": "36.6135822"
+  },
+  "typescript_exit": 0,
+  "eslint_errors": 0,
+  "eslint_existing_warnings": 12,
+  "browser": {
+    "url": "http://127.0.0.1:5274",
+    "api_port": 8200,
+    "mcp_port": 8201,
+    "spec_id": "dec9410f-d455-4506-a8fd-f791ee31dc77",
+    "versions": [
+      13,
+      14,
+      15
+    ],
+    "lost_response": "One-use browser route forwards PATCH to real API, aborts only successful response; check reads current state without resubmission.",
+    "removed_method": "UI selects inspection; MCP deletes unlinked mock scenario; deliberate stale create gets conflict, protected reload retains disabled method draft; cancel create and discard removed draft.",
+    "screenshots_visually_inspected": true,
+    "fabricated_execution_evidence": false
+  },
+  "limits": [
+    "Checkout runtime, not installed-pair qualification.",
+    "Tests watcher still disabled.",
+    "Method-write uncertain outcomes and other link/policy writers remain to integrate.",
+    "U3 and U4 remain incomplete."
+  ],
+  "artifacts": [
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-reconciliation-ui-qualified.xml",
+      "sha256": "28935379b973ea39e7c3124dbdcaa001be5eec3b48b36afc1f41b64edf2d0762"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-native-reconcile-before.json",
+      "sha256": "4fbbe51d4cf0c8268e4101cb531f4f170f2182e628e57a417dd55caa72527b2b"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-native-reconcile-after.json",
+      "sha256": "fe67afcd01d52e7a100f507a49a73c4156e0f9115d3b72c4bfdecc4d64e8b1c3"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-native-remove-method.json",
+      "sha256": "fcda6156e95bef78ccc50c12325422a6700498e1acb0d73b548d5aa6ef2b7a72"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-native-removed-method-after.json",
+      "sha256": "edfe6d291d7a6f60249744bcdc53ade556b759c96f264e6dbdfda9126ef045e9"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-scenario-write-uncertain.png",
+      "sha256": "3c8b49cd7dea2234d469577071bf87355e3f588241479b7cef814739106e97bd"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-scenario-write-reconciled.png",
+      "sha256": "25d52a6de5a4b740197ca8365eebf5aaea5b6fda40cd00da8984c056e32d6592"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-removed-method-retained.png",
+      "sha256": "7f9755026db481f813af5ce42eea19536646c87d3ed75d519a0777e208e2f732"
+    }
+  ]
+}

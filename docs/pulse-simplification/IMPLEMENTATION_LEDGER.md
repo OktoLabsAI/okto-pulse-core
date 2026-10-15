@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/5c: resposta incerta e método removido qualificados
+
+Community `aeebd6df` publicado; Core de produto permanece `8291a648`.
+Criação/exclusão de cenário conserva a tentativa original após resposta incerta.
+Releitura que observa o resultado encerra a tentativa sem reenviar; base intacta
+permite retry explícito do mesmo payload/ID/precondições; base alterada não recebe
+retry sobre a nova versão. Recusa de acesso retira o conteúdo. Método em edição
+permanece visível quando seu cenário desaparece, desabilitado e descartável,
+sem recriar o item nem contar o rascunho na cobertura. Corrigida na inspeção visual
+a instrução de revisar/salvar um item removido e a aparência do botão desabilitado.
+
+Qualificação: 54 testes frontend, tipos exit 0, ESLint zero erros/12 warnings
+preexistentes e diff check aprovado. Nova execução após o ajuste visual:
+`u3-scenario-reconciliation-ui-qualified.xml`. Não houve alteração Python;
+as provas backend anteriores permanecem nos limites registrados.
+
+Browser/MCP real isolado, Spec `dec9410f-d455-4506-a8fd-f791ee31dc77`: criação
+na versão 13 encaminhada ao backend, resposta de sucesso abortada uma única vez
+no browser; Check scenario write recuperou a versão 14 e exatamente um cenário
+`ts_1792066602009`. A seguir, seleção inspection não salva; exclusão nativa MCP
+sem Cards vinculados; tentativa deliberadamente obsoleta de criar foi recusada;
+releitura protegida preservou o método removido e desabilitou sua gravação.
+MCP confirmou versão 15, item ausente e nenhum cenário do probe de conflito.
+Criação não salva cancelada e rascunho removido descartado pela UI. Três capturas
+inspecionadas. Nenhuma execução, aprovação ou evidência de implementação fabricada.
+Evidência e hashes: `evidence-u3-scenario-reconciliation-20261015.json`.
+
+Retomada: integrar recuperação do writer de método e writers de vínculo/policy,
+geração/identidade/autoridade do pai, então habilitar Tests no watcher (5c.4).
+Tests ainda não assina atualização externa. Seguem 5d, 3d, UV18–UV21 e U4;
+nenhum encerramento integral alegado. Runtime de checkout 8200/8201 + Vite5274;
+sem reinstalação nem alteração da home do usuário.
+
 ### 2026-10-15 — planejamento detalhado reconciliado com incremento local não publicado
 
 Conferência solicitada de planejamento: HEAD Core `4365ac85` (código

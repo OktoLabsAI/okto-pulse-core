@@ -3,7 +3,7 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint de código: Core `8291a648` / Community `47434062`, na
+Checkpoint de código: Core `8291a648` / Community `aeebd6df`, na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -69,8 +69,11 @@ qualificadas em `4755e369` / `3c4df986`. A substituição da coleção agora tam
 confere snapshot operacional sob fence, com 102 testes backend, 48 frontend e
 prova UI/MCP de mudança sem bump da versão. Ver
 [snapshot operacional](evidence-u3-scenario-operational-snapshot-20261015.json).
-Permanecem pendentes resultados incertos, retenção do método em cenário removido
-e integração dos demais writers; Tests permanece fora do watcher.
+Criação/exclusão com resposta incerta e retenção do método em cenário removido
+foram qualificadas em `aeebd6df`: 54 testes, tipos/lint e prova UI/MCP 13 → 14 → 15.
+Ver [reconciliação de cenários](evidence-u3-scenario-reconciliation-20261015.json).
+Permanecem pendentes recuperação do writer de método e integração dos demais
+writers; Tests permanece fora do watcher.
 Preservar também [método de cenário](evidence-u3-scenario-method-20261015.json).
 
 **Próxima ação de implementação:** cenários (3c/5c) e Project Structure → refresh global →
@@ -80,7 +83,8 @@ Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
 
 ### Retomada detalhada — conferência do trabalho local em 15/10/2026
 
-O checkpoint publicado continua Core `4365ac85` (documentação; código
+**Registro histórico, sucedido pela execução `aeebd6df` descrita acima.**
+O checkpoint publicado na conferência era Core `4365ac85` (documentação; código
 `8291a648`) / Community `47434062`. Há trabalho local ainda não publicado em
 `SpecModal.tsx`, `ScenarioVerificationMethodEditor.tsx`, `scenarioWriteGuard.ts`
 e `SpecModal.activity.test.tsx`. Ele implementa recuperação de criação/exclusão
