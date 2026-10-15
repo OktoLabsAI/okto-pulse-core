@@ -2569,6 +2569,17 @@ class ArchitectureDesignRepository:
             )
         return design
 
+    async def _fence_design_version(
+        self, design: ArchitectureRecord, expected_version: int | None = None,
+    ) -> None:
+        expected_version = design.version if expected_version is None else expected_version
+        if type(expected_version) is not int or expected_version < 1:
+            raise ValueError("expected_version must be a positive integer")
+        if design.version != expected_version or not await get_architecture_persistence_port().fence_version(
+            self.db, design_id=design.id, expected_version=expected_version,
+        ):
+            raise ArchitectureVersionConflict(design.id, expected_version)
+
     async def update(
         self,
         design_id: str,
@@ -2588,13 +2599,7 @@ class ArchitectureDesignRepository:
         expected_version = payload.pop("expected_version", None)
         # Internal updates protect the state read by this operation. An editor
         # additionally supplies the version on which its unsaved content rests.
-        expected_version = design.version if expected_version is None else expected_version
-        if type(expected_version) is not int or expected_version < 1:
-            raise ValueError("expected_version must be a positive integer")
-        if design.version != expected_version or not await get_architecture_persistence_port().fence_version(
-            self.db, design_id=design_id, expected_version=expected_version,
-        ):
-            raise ArchitectureVersionConflict(design_id, expected_version)
+        await self._fence_design_version(design, expected_version)
         change_summary = payload.pop("change_summary", None)
         acknowledgement = payload.pop("architecture_warning_acknowledgement", None)
         semantic_change = bool(SEMANTIC_PATCH_FIELDS & payload.keys())
@@ -2846,6 +2851,7 @@ class ArchitectureDesignRepository:
         actor_id: str | None = None,
         *,
         allow_card_parent_write: bool = False,
+        expected_version: int | None = None,
     ) -> bool:
         design = await self.get(design_id)
         if design is None:
@@ -2854,6 +2860,7 @@ class ArchitectureDesignRepository:
             design.parent_type,
             allow=allow_card_parent_write,
         )
+        await self._fence_design_version(design, expected_version)
         spec_parent_id = (
             self.parent_id_for(design) if design.parent_type == "spec" else None
         )

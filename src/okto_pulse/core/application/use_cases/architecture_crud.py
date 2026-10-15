@@ -481,11 +481,12 @@ class UpdateArchitectureDesignUseCase:
 
 
 class DeleteArchitectureDesignCommand:
-    __slots__ = ("design_id", "board_id")
+    __slots__ = ("design_id", "board_id", "expected_version")
 
-    def __init__(self, design_id: str, board_id: str | None = None) -> None:
+    def __init__(self, design_id: str, board_id: str | None = None, expected_version: int | None = None) -> None:
         self.design_id = design_id
         self.board_id = board_id
+        self.expected_version = expected_version
 
 
 class DeleteArchitectureDesignResult:
@@ -510,7 +511,7 @@ class DeleteArchitectureDesignUseCase:
             board_id=command.board_id,
         )
         repo = uow.services.architecture_designs
-        deleted = await repo.delete(command.design_id, actor.actor_id)
+        deleted = await repo.delete(command.design_id, actor.actor_id, expected_version=command.expected_version)
         if not deleted:
             raise EntityNotFoundError("Architecture design", command.design_id)
         await commit(uow)
@@ -716,6 +717,7 @@ class McpValidateArchitecturePayloadUseCase:
             )
         else:
             patch_payload = ArchitectureDesignUpdate(
+                expected_version=loaded.version,
                 **{
                     key: candidate[key]
                     for key in (
@@ -930,6 +932,7 @@ class UpdateArchitectureDiagramPayloadCommand:
         "change_summary",
         "architecture_warning_acknowledgement",
         "board_id",
+        "expected_version",
     )
 
     def __init__(
@@ -941,6 +944,7 @@ class UpdateArchitectureDiagramPayloadCommand:
         change_summary: str | None,
         architecture_warning_acknowledgement: Any,
         board_id: str | None = None,
+        expected_version: int | None = None,
     ) -> None:
         self.design_id = design_id
         self.diagram_id = diagram_id
@@ -949,6 +953,7 @@ class UpdateArchitectureDiagramPayloadCommand:
         self.change_summary = change_summary
         self.architecture_warning_acknowledgement = architecture_warning_acknowledgement
         self.board_id = board_id
+        self.expected_version = expected_version
 
 
 class UpdateArchitectureDiagramPayloadResult:
@@ -994,6 +999,7 @@ class UpdateArchitectureDiagramPayloadUseCase:
         updated = await repo.update(
             command.design_id,
             ArchitectureDesignUpdate(
+                expected_version=design.version if command.expected_version is None else command.expected_version,
                 diagrams=diagrams,
                 change_summary=command.change_summary
                 or f"Updated diagram payload {command.diagram_id}",
@@ -1021,6 +1027,7 @@ class ImportExcalidrawArchitectureDiagramCommand:
         "change_summary",
         "architecture_warning_acknowledgement",
         "board_id",
+        "expected_version",
     )
 
     def __init__(
@@ -1035,6 +1042,7 @@ class ImportExcalidrawArchitectureDiagramCommand:
         change_summary: str | None,
         architecture_warning_acknowledgement: Any,
         board_id: str | None = None,
+        expected_version: int | None = None,
     ) -> None:
         self.design_id = design_id
         self.title = title
@@ -1046,6 +1054,7 @@ class ImportExcalidrawArchitectureDiagramCommand:
         self.change_summary = change_summary
         self.architecture_warning_acknowledgement = architecture_warning_acknowledgement
         self.board_id = board_id
+        self.expected_version = expected_version
 
 
 class ImportExcalidrawArchitectureDiagramResult:
@@ -1113,6 +1122,7 @@ class ImportExcalidrawArchitectureDiagramUseCase:
         updated = await repo.update(
             command.design_id,
             ArchitectureDesignUpdate(
+                expected_version=design.version if command.expected_version is None else command.expected_version,
                 diagrams=diagrams,
                 change_summary=command.change_summary or "Imported Excalidraw diagram",
                 architecture_warning_acknowledgement=command.architecture_warning_acknowledgement,

@@ -47,7 +47,8 @@ USER_ID = "architecture-repository-user"
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("conflict", ["authored_version", "persistence_fence"])
-async def test_conflicting_update_has_no_content_history_or_event_effects(db_factory, monkeypatch, conflict):
+@pytest.mark.parametrize("operation", ["update", "delete"])
+async def test_conflicting_write_has_no_content_history_or_event_effects(db_factory, monkeypatch, conflict, operation):
     from okto_pulse.core.ports.architecture_persistence import get_architecture_persistence_port
 
     _, ideation_id = await _seed_ideation(db_factory)
@@ -73,9 +74,11 @@ async def test_conflicting_update_has_no_content_history_or_event_effects(db_fac
                 return False
             monkeypatch.setattr(get_architecture_persistence_port(), "fence_version", reject_fence)
         with pytest.raises(ArchitectureVersionConflict):
-            await repo.update(design.id, ArchitectureDesignUpdate(
-                title="Stale", expected_version=1 if conflict == "authored_version" else 2,
-            ), USER_ID)
+            expected = 1 if conflict == "authored_version" else 2
+            if operation == "delete":
+                await repo.delete(design.id, USER_ID, expected_version=expected)
+            else:
+                await repo.update(design.id, ArchitectureDesignUpdate(title="Stale", expected_version=expected), USER_ID)
         await db.flush()
         assert await snapshot() == before
 

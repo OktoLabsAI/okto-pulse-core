@@ -231,6 +231,34 @@ async def _stub_auth(_seed_spec_card):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["delete", "import"])
+async def test_mcp_architecture_operations_reject_stale_version(_seed_spec_card, operation):
+    board_id, spec_id, _ = _seed_spec_card
+    created = await _call(
+        "okto_pulse_add_architecture_design", board_id=board_id, parent_type="spec", parent_id=spec_id,
+        title="Original", global_description="Operation version fixture.", diagrams=_architecture_diagrams(),
+    )
+    assert created.get("success") is True, created
+    original = created["architecture_design"]
+    updated = await _call(
+        "okto_pulse_update_architecture_design", board_id=board_id, design_id=original["id"],
+        title="Current architecture", expected_version=original["version"],
+    )
+    assert updated.get("success") is True, updated
+    args = {"board_id": board_id, "design_id": original["id"], "expected_version": original["version"]}
+    if operation == "import":
+        rejected = await _call("okto_pulse_import_excalidraw_architecture_diagram", **args,
+                               title="Stale diagram", payload_json={"elements": []})
+    else:
+        rejected = await _call("okto_pulse_delete_architecture_design", **args)
+    assert rejected["code"] == "architecture_version_conflict", rejected
+    current = await _call("okto_pulse_get_architecture_design", board_id=board_id, design_id=original["id"])
+    assert current["architecture_design"]["version"] == original["version"] + 1
+    assert current["architecture_design"]["title"] == "Current architecture"
+    assert len(current["architecture_design"]["diagrams"]) == len(original["diagrams"])
+
+
+@pytest.mark.asyncio
 async def test_mcp_authored_version_conflict_preserves_current_architecture(_seed_spec_card):
     board_id, spec_id, _ = _seed_spec_card
     created = await _call(

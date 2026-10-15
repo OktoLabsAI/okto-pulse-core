@@ -50,6 +50,32 @@ def test_rest_update_rejects_the_authored_version_after_another_writer(_client_a
     assert current['version'] == other.json()['version']
 
 
+@pytest.mark.parametrize("operation", ["delete", "import", "payload"])
+def test_architecture_operations_refuse_an_old_authored_base(_client_and_entities, operation):
+    client, ids = _client_and_entities
+    created = client.post(f"/api/v1/ideations/{ids['ideation_id']}/architecture", json=_architecture_body())
+    assert created.status_code == 201, created.text
+    original = created.json()
+    url = f"/api/v1/architecture/{original['id']}"
+    updated = client.patch(url, json={"title": "Current design", "expected_version": original['version']})
+    assert updated.status_code == 200, updated.text
+    current = client.get(url + '?include_payloads=true').json()
+    if operation == "delete":
+        rejected = client.delete(url, params={"expected_version": original['version']})
+    elif operation == "import":
+        rejected = client.post(url + '/diagrams/import-excalidraw', json={
+            "title": "Stale import", "payload": {"elements": []},
+            "expected_version": original['version'],
+        })
+    else:
+        rejected = client.put(url + '/diagrams/diagram-main/payload', json={
+            "payload": {"elements": []}, "expected_version": original['version'],
+        })
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()['detail']['code'] == 'architecture_version_conflict'
+    assert client.get(url + '?include_payloads=true').json() == current
+
+
 @pytest.mark.parametrize("boundaries", [[], ["Tenant data, isolated", "Backend runtime"]])
 def test_rest_boundaries_validate_create_read_and_update(_client_and_entities, boundaries):
     client, ids = _client_and_entities

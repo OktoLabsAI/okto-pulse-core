@@ -13107,8 +13107,12 @@ async def okto_pulse_update_architecture_design(
 
 
 @mcp.tool()
-async def okto_pulse_delete_architecture_design(board_id: str, design_id: str) -> str:
+async def okto_pulse_delete_architecture_design(
+    board_id: str, design_id: str,
+    expected_version: Annotated[int, Field(strict=True, ge=1)] | None = None,
+) -> str:
     """Delete an Architecture Design. Permanent, no undo.
+    Supply the reviewed expected_version to reject deletion after a concurrent edit.
     Docs: okto-pulse://reference/destructive_ops
     """
     ctx = await _get_agent_ctx(board_id)
@@ -13141,7 +13145,7 @@ async def okto_pulse_delete_architecture_design(board_id: str, design_id: str) -
             if perm_err:
                 return _perm_error(perm_err)
             await DeleteArchitectureDesignUseCase().execute(
-                DeleteArchitectureDesignCommand(design_id, board_id=board_id),
+                DeleteArchitectureDesignCommand(design_id, board_id=board_id, expected_version=expected_version),
                 actor=actor,
                 uow=uow,
             )
@@ -13151,6 +13155,8 @@ async def okto_pulse_delete_architecture_design(board_id: str, design_id: str) -
         return _mcp_entity_not_found_error(exc)
     except ConflictError as exc:
         return _mcp_architecture_conflict_error(exc)
+    except ValueError as exc:
+        return _mcp_architecture_error(exc)
     return json.dumps({"success": True})
 
 
@@ -13165,9 +13171,12 @@ async def okto_pulse_import_excalidraw_architecture_diagram(
     description: str = "",
     order_index: int = 0,
     change_summary: str = "",
+    expected_version: Annotated[int, Field(strict=True, ge=1)] | None = None,
 ) -> str:
     """
-    Import an Excalidraw JSON scene into an Architecture Design."""
+    Import an Excalidraw JSON scene into an Architecture Design.
+    Supply the authored expected_version; conflicts require reload and explicit review.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13215,6 +13224,7 @@ async def okto_pulse_import_excalidraw_architecture_diagram(
                     change_summary,
                     None,
                     board_id=board_id,
+                    expected_version=expected_version,
                 ),
                 actor=actor,
                 uow=uow,
@@ -13226,7 +13236,7 @@ async def okto_pulse_import_excalidraw_architecture_diagram(
     except ConflictError as exc:
         return _mcp_architecture_conflict_error(exc)
     except Exception as exc:
-        return json.dumps({"error": str(exc)})
+        return _mcp_architecture_error(exc)
     return json.dumps(
         {"success": True, "architecture_design": _dump_model(result.response)},
         default=str,
