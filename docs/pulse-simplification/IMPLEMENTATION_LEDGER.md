@@ -2,6 +2,47 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — planejamento detalhado reconciliado; checkpoint dos editores
+
+Pedido desta rodada: iniciar o planejamento detalhado da unificação. Mantido
+o documento único `SPEC_UNIFIED_VALIDATION_PLAN.md`, U1–U4 e UV01–UV24. U1
+implementado, U2 qualificado no backend, U3 parcial e U4 pendente. Todas as
+avaliações, critérios, severidades, thresholds, permissões e históricos
+continuam; a unificação é do ponto de conclusão, sem média entre avaliações.
+
+Antes da revisão documental, nove arquivos locais de frontend foram preservados
+e publicados em Community `e2880609`, sobre `a8704e96`; baseline Core `e7641eb6`.
+O commit identifica explicitamente WIP. Não houve nova implementação de produto
+nesta rodada. Capturas operacionais locais de Playwright não foram incluídas.
+
+O incremento separa identidade e versão nos editores FR/AC, critério e
+qualificação; conserva base/rascunho, bloqueia escrita sem leitura atual e
+estende o watcher somente a Validation/FR/AC. Ainda trata todo HTTP 409 como
+conflito de versão e introduz um warning de dependência de hook em qualificação.
+Não está pronto para qualificação integral de U3 nem instalação no usuário.
+
+Conferidos os XMLs existentes: ensaio inicial filtrado com 10 casos executados
+(3 passes/7 falhas) e 50 skips; execução de componentes posterior com 164 passes;
+integração SpecModal mais recente com 68 passes. Não somar reruns, não declarar
+que esses testes foram executados nesta revisão. Novas verificações: tipos
+sessão 40771 exit 0; lint dirigido exit 0, zero erros e 13 warnings, sendo um
+novo; diff check exit 0. Hashes e limites em
+`evidence-u3-spec-editors-planning-checkpoint-20261014.json`.
+
+Próxima execução concreta no mesmo U3: 3a corrigir distinção de conflito e hook;
+3b provar rascunhos/remoção/leitura/autoridade e escrita UI confirmada por MCP;
+3c conferir os demais editores montados; 3d ampliar refresh aos consumidores
+previstos, inclusive Coverage com mudança só de Card. A tentativa anterior de
+abrir Requirements pela Spec aninhada no Card encerrou os modais: causa ainda
+não estabelecida, não contabilizada como sucesso visual. Reproduzir diretamente
+na Spec e pelo Card sem atribuir causa antecipadamente.
+
+Após UV18–UV21, executar U4: par exato de wheels/frontend, paridade byte a byte,
+processo novo em home isolada, closure com oito budgets ZERO, iniciativa mock
+UI/MCP até Cards/Test/Spec Done e consulta/consolidação canonical do KG. Não
+refazer U1/U2 nem Knowledge/Targets/leitores já comprovados sem impacto novo.
+Nenhum runtime reinstalado ou reiniciado nesta revisão de planejamento.
+
 ### 2026-10-14 — U3/2e.3: leitores qualificados e prova UI/MCP retomada
 
 Progresso sobre Core `4125bd0a` / Community `b30ad347`; Community `a8704e96`
