@@ -2,6 +2,55 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — planejamento reconciliado e checkpoint Knowledge publicado
+
+Pedido desta rodada: iniciar o planejamento detalhado. Mantido um único plano,
+`SPEC_UNIFIED_VALIDATION_PLAN.md`, reconciliado com Core `f7c06a63` e Community
+`e34aa415`, ambos publicados antes da revisão documental. U1 implementado;
+U2 qualificado no backend; U3 parcial; U4 pendente. Removida do cabeçalho a
+repetição de estados antigos e corrigidas instruções que ainda apresentavam U2
+como pendente. O histórico permanece neste ledger e nos artefatos referenciados.
+
+Antes da revisão, preservadas as cinco alterações locais de frontend no commit
+Community `e34aa415`, com push em feature/v0.4.0. Nenhuma nova implementação foi
+acrescentada nesta rodada. O incremento existente congela a revisão do rascunho
+de Knowledge, conserva seleção/justificativa em conflito, exige revisão explícita,
+bloqueia escrita com leitura incompleta, limpa conteúdo após leitura negada e
+adia leitores ocultos. CardModal/Resources propagam revisão e visibilidade.
+
+Verificação do checkpoint: `npx tsc -b --pretty false` exit 0; Vitest dirigido
+a CardKnowledgeTab e KnowledgeWorkspace, 33 passes (24 + 9), zero falhas/erros,
+7,6316329 s. JUnit local:
+`PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-knowledge-planning-checkpoint.xml`.
+SHA-256: `5cdd9c6227185017da248eb198bd9cbc36ed99bde5db316eba4356db28ee3c52`.
+`git diff --check` passou. O artefato anterior `u3-knowledge-r3.xml` foi conferido:
+33 passes; não somar a repetição como casos novos. Esta rodada verificou o
+checkpoint final para commit; não executou a integração CardModal/Resources,
+novo browser, E2E, closure ou instalação. A prova visual de Knowledge continua
+pendente; capturas operacionais locais não comprovam esse aceite.
+
+Inspeção atual confirma o próximo trabalho: AddTargetForm ainda recebe
+expected_spec_version da prop corrente; o leitor de Targets aplica a resposta
+sem conferir cancelamento depois do await; SpecModal ainda usa spec.version
+nas chaves de TextRequirementsTab e RequirementVerificationPanel e restringe
+o watcher a validationLive. São achados estáticos, a caracterizar antes de
+corrigir, não novas falhas de runtime alegadas.
+
+Fila fechada para execução, detalhada em §6.2 do plano:
+1. U3/2e.1: comprovar Knowledge por browser aberto + mutação MCP autorizada;
+   preservar rascunho, revisar a base explicitamente e conferir leitura de volta.
+2. U3/2e.2–3: proteger Targets e completar leitores restantes de CardModal.
+3. U3/SpecModal: proteger editores antes de expandir refresh para demais abas.
+4. Encerrar UV18–21 com mutação externa, revogação, reconexão e inspeção visual.
+5. U4: par instalado exato e iniciativa nova UI/MCP até Done/KG; UV01–UV24,
+   oito budgets ZERO e commits/pushes pareados.
+
+Todas as avaliações, dimensões, severidades, thresholds, permissões e históricos
+permanecem; unifica-se a conclusão. Não reabrir U1/U2, inventar Decision, relaxar
+gates nem acrescentar migração/compatibilidade. Nenhum processo ou dado do
+usuário foi alterado. Esta rodada encerra no planejamento; próxima execução
+começa na prova integrada de Knowledge, sem nova rodada genérica de assessment.
+
 ### 2026-10-14 — U2 backend qualificado: recursos, Code Evidence e contexto crítico
 
 Base Core `5ac3772c` / Community `f7e910d4`. Community deste incremento
