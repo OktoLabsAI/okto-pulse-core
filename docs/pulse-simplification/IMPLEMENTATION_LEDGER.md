@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento restante reconciliado com Spec Approved
+
+Checkpoint anterior publicado: Core `2c1241a9`; Community permanece
+`1c18806d`, sem alteração de produto rastreada. Atualizado no lugar o início de
+[SPEC_UNIFIED_VALIDATION_PLAN.md](SPEC_UNIFIED_VALIDATION_PLAN.md), substituindo
+a fila que ainda mandava criar a iniciativa já existente. U1–U3 preservados;
+U4 parcial, sem milestones novos. Contratos normativos §§3–5 e UV01–UV24 intactos.
+
+Fila concreta: resolver a falha de metadata com limites inalterados → conferir
+par isolado e recuperar Spec Approved → concluir lint/Checklist nativos → obter
+manifesto fresco e submeter a conclusão composta → iniciar Cards pelos controles
+próprios → executar o mock e testes autenticados → fechar Cards/Spec → conferir
+KG canonical → matriz final, closure e publicação. Cada passo tem dependência,
+artefato de saída e critério de aceite. Provas U2/U3 serão reutilizadas com seus
+limites; nenhuma aprovação, rubrica, severidade, threshold ou permissão é removida.
+
+Registrados os IDs atuais e hashes de dez artefatos relidos em
+[evidência do planejamento](evidence-u4-approved-planning-20261015.json).
+O registro de identidade é mutável, explicitamente identificado como tal;
+recibos e XML qualificam apenas as observações anteriores. O último contexto
+registra Spec Approved edição 1/versão 14 e ambos os Cards Not Started. O teste
+de resources ainda tem uma falha; isto não constitui aceite final. A diferença
+entre baseline greenfield e ausência de recibo herdado foi delimitada: não
+reutilizar como prova atual, obter preflight próprio dos Cards e investigar
+somente se impedir um aceite concreto.
+
+Nesta revisão: leitura documental, inspeção dirigida do contrato existente e
+`git diff --check`; sem novos testes de comportamento, chamadas ao runtime,
+mutação MCP, instalação ou reinício. Próxima execução começa na falha de
+`u4-resources-doc-final.xml`; não recriar entidades nem repetir trabalho fechado.
+
 ### 2026-10-15 — checkpoint anterior à revisão do planejamento: U4 parcial
 
 Base conferida: Core `a2562b08` / Community `1c18806d`, branch
