@@ -2,6 +2,48 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/3c/5a: classificação arquitetural e Integration qualificadas
+
+Community `81af8c41` publicado sobre `6fe9129f`; Core de partida `5d3d1366`.
+O painel mantém o formulário inline durante recarga, erro recuperável ou remoção
+do candidato, bloqueando a escrita indisponível. Leitura negada remove dados
+e rascunhos protegidos; troca de Board/Spec descarta a identidade anterior.
+O autor captura versão/edição e conserva fontes, campos e fila. A revisão
+explícita pagina o resumo para obter digests atuais e lê detalhes pelo contrato
+público candidato+digest; apresenta contratos antes de adotar a base, sem
+substituir automaticamente conteúdo de IR ou paths autorados.
+
+Retry desconhecido conserva payload/chave e valida recibo pela base original,
+mesmo após nova revisão. Sugestão/revisão tardia é cancelada; IR removida não
+é vinculada silenciosamente. Escrita confirmada permanece durante a leitura
+posterior. Integration assina o watcher; Decisions e Tests ainda aguardam
+proteção de seus writers próprios. Nenhum backend, schema, policy ou gate mudou.
+
+Qualificação: 140 passes integrados (66 classificação + 74 SpecModal), seguidos
+por 67 passes de classificação após proteção da confirmação pós-escrita:
+**141 casos finais distintos**, sem somar reruns. Tipos exit 0 (63516); lint
+dirigido exit 0 sem warnings (92222); integrado sem erros e 12 warnings anteriores
+em SpecModal (90155). Diff check aprovado. Timeout isolado: `beforeEach` retornava
+o mock como cleanup; fixture corrigido, sem relaxar timeout do produto. O XML
+inicial foi produzido durante edição e não é baseline imutável.
+
+Prova UI/MCP: Spec `2baa5f88-eb1a-4aac-9aeb-453707cef290`, edição 1, arquitetura
+`29ad503e-69f9-4146-9c5d-c69e13146c69` v2 → v3 via MCP com IR não salva. Sem
+Refresh manual, título/tipo/descrição permaneceram e Apply ficou desabilitado.
+Revisão mostrou `receipt_id`; após adoção explícita, descrição ajustada e envio
+UI, MCP confirmou Spec v22, IR `ir_cec384b8` e uma classificação Current
+`eef551c1-6acb-4b05-be57-d36917e43119`, com origem na arquitetura v3. Capturas
+da revisão e IR expandida inspecionadas. Cobertura 0/1 continuou visível;
+sem avaliação, implementação ou crédito fictício.
+
+Frontend 5274 e backend isolado anterior 8200/8201: não é par instalado U4.
+O ajuste final de retenção da confirmação tem regressão do pai; não foi
+repetida a promoção nativa apenas para criar outra IR. Runtime do usuário
+intacto. Hashes, resultados e limites em
+`evidence-u3-classification-editors-20261015.json`.
+Próximo: 3c/5b, inspeção de Decision; depois 5c/5d, 3d/UV18–UV21 e U4.
+U3 global permanece parcial; não repetir famílias já qualificadas sem impacto.
+
 ### 2026-10-15 — planejamento restante reconciliado com o checkpoint publicado
 
 Pedido atual: iniciar o planejamento detalhado. Confirmados localmente e por

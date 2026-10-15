@@ -3,7 +3,7 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint publicado: Core `7347ffc0` / Community `6fe9129f`, publicados na
+Checkpoint publicado: Core `5d3d1366` / Community `81af8c41`, publicados na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -43,14 +43,18 @@ exige releitura e reabertura, sem retry automático. Prova UI/MCP de BR: versõe
 222 casos finais distintos aprovados, tipos exit 0 e lint sem erros (28 warnings).
 Detalhes em [coleções da Spec](evidence-u3-collection-editors-20261015.json).
 Refresh habilitado em Business/Contracts/Technical/Observability, além de
-Validation/FR/AC. Integration e Decisions ainda montam writers próprios de
-classificação/inspeção; proteger esses formulários antes de assinar suas abas.
+Validation/FR/AC. Integration foi integrada em `81af8c41`: classificação
+preserva rascunho, exige revisão explícita e mantém replay da base original.
+141 casos finais distintos e prova UI/MCP de promoção de IR, com arquitetura
+v2 → v3, contrato revisto e persistência confirmada. Ver
+[classificação arquitetural](evidence-u3-classification-editors-20261015.json).
+Decisions ainda monta inspeção própria; protegê-la antes de assinar a aba.
 O componente de método de cenário também conserva a base: 15 testes aprovados,
 tipos/lint aprovados. Integração com `TestScenariosTab`, recarga e prova visual
 ainda pendentes; Tests permanece fora do watcher. Ver
 [método de cenário](evidence-u3-scenario-method-20261015.json).
 
-**Próxima ação:** proteger writers aninhados e cenários/Project Structure (3c) → refresh global →
+**Próxima ação:** inspeção de Decision (3c/5b), cenários e Project Structure → refresh global →
 qualificação integrada U3 → qualificação instalada U4.
 Sequência e condições de saída em §6.2; não reimplementar U1/U2.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
@@ -384,7 +388,7 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint vigente de planejamento:** Core `7347ffc0` / Community `6fe9129f`.
+**Checkpoint vigente de planejamento:** Core `5d3d1366` / Community `81af8c41`.
 Ambos conferidos em `origin/feature/v0.4.0` em 15/10/2026. A revisão documental
 a partir deste par não representa nova implementação ou nova execução de testes.
 Knowledge/Targets têm prova integrada; leitores têm testes aprovados e provas
@@ -780,6 +784,10 @@ pelo helper das coleções. Details exibe descrição/contexto por `MarkdownCont
 Esses achados são conferência de código, não novas reproduções de runtime.
 
 #### Próximas intervenções de 3c — sequência de execução
+
+**5a executado em `81af8c41`**, com 141 casos distintos e prova UI/MCP registrada
+acima. A linha 5a abaixo conserva o escopo e aceite atendidos. Retomar por 5b;
+os limites do backend isolado continuam parte da qualificação U4.
 
 Esta é a decomposição do item 5 existente, não uma ampliação do produto. Cada
 linha deve fechar implementação, regressão pertinente e evidência antes de
