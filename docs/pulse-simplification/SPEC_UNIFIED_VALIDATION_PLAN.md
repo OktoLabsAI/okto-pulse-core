@@ -3,7 +3,7 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint de código: Core `8291a648` / Community `5ac5ce06`, na
+Checkpoint de código: Core `8291a648` / Community `be799c37`, na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -89,7 +89,15 @@ Ver [Project Structure integrado](evidence-u3-project-structure-parent-20261015.
 Contexto completo do fixture ainda recusa snapshot de Checklist ausente; autoria
 instalada e percurso integral permanecem U4. A conferência local abaixo é histórica.
 
-**Próxima ação de implementação:** leitores restantes (3d) →
+Coverage/References foram integrados em `be799c37`: mudança somente de Card
+invalida Coverage sem bump de versão/timestamp da Spec; referências abertas
+convergem sem trocar a subaba. Prova UI/MCP e 96 casos distintos aprovados,
+com rechecagem isolada de um timeout, em
+[Coverage e References](evidence-u3-coverage-references-20261015.json).
+Prova de entrega indisponível não recebeu crédito; evolução nativa dos percentuais
+permanece na qualificação integrada. Recursos e dependências ainda estão abertos.
+
+**Próxima ação de implementação:** recursos/dependências restantes (3d) →
 qualificação integrada U3 → qualificação instalada U4.
 Sequência e condições de saída em §6.2; não reimplementar U1/U2.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
@@ -452,12 +460,13 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint vigente de código:** Core `8291a648` / Community `5ac5ce06`.
+**Checkpoint vigente de código:** Core `8291a648` / Community `be799c37`.
 5c foi integrado e qualificado após os checkpoints históricos abaixo: Tests
 assina atualizações externas, preserva cenários/métodos/relatórios e possui
 recuperação protegida de escrita/leitura. Evidência `evidence-u3-tests-watch-20261015.json`.
 5d integrado e qualificado conforme evidência Project Structure acima.
-Retomar por 3d → UV18–UV21 → U4; as referências a Tests fora do watcher
+Coverage/References integrados; retomar recursos/dependências de 3d →
+UV18–UV21 → U4; as referências a Tests fora do watcher
 nos relatos anteriores descrevem os respectivos checkpoints, não o estado vigente.
 Branch `feature/v0.4.0`, incremento de 15/10/2026. A revisão documental
 a partir deste par acompanha a execução parcial de 5c. O checkpoint inclui

@@ -2,6 +2,48 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/3d parcial: Coverage e References atualizam após mudança de Card
+
+Community `be799c37` publicado; Core de produto permanece `8291a648`.
+Coverage/References agora assinam o watcher existente. Coverage recebe também
+a geração da leitura autoritativa, invalidando resumo/Implementation mesmo
+quando versão/timestamp da Spec não mudam. References recarrega os Cards e a
+origem sem trocar a subaba. Origem cadastrada cuja leitura falha é apresentada
+como indisponível, não como inexistente. Falha de sincronização é visível nas
+duas abas e oferece recuperação do workspace; override de Delivery fica
+indisponível enquanto a leitura/autoridade não está atual. Não foi alterado
+qualquer gate nem acrescentado polling periódico de Coverage completo.
+
+Qualificação: 79 casos do pai e 17 de Coverage, **96 casos distintos aprovados**
+nos relatórios finais/rechecagem, sem soma dos casos repetidos. TypeScript exit
+0; ESLint zero erros/11 warnings preexistentes; diff check aprovado. A primeira
+execução tinha seletor novo ambíguo para origem (header e painel); corrigido
+para consultar o painel. A execução seguinte teve um timeout de 5s no caso da
+árvore que recupera leitura completa após gravação: repetido isoladamente com
+mesmas asserções/timeout, passou. XML do timeout foi preservado; não declarar
+que o relatório de 79 casos foi integralmente verde em uma única execução.
+
+Prova UI/MCP no runtime isolado, mesma Spec `dec9410f-d455-4506-a8fd-f791ee31dc77`:
+Card `d14ef50a-189e-5282-99fd-8a636bc698df` renomeado pelo MCP enquanto Coverage
+estava aberta. Spec permaneceu versão 20, updated_at `2026-10-15T18:08:35`;
+requests do browser registram uma consulta Coverage antes e duas depois,
+ambas HTTP200, sem Reload manual. Nova alteração de título com References /
+Derived cards aberta apareceu automaticamente, conservando a subaba. Capturas
+das duas telas foram inspecionadas. Cards continuam Not Started e nenhuma
+evidência/prova foi criada: a prova de entrega permanece Unavailable no fixture.
+Isso demonstra invalidação por Card, não evolução nativa de percentual Delivery.
+
+Evidência/hashes: `evidence-u3-coverage-references-20261015.json`.
+Sem alteração Python, build ou reinstalação. **3d ainda aberto:** recursos e
+dependências restantes, depois UV18–UV21 integrados e U4. Conferência de fonte
+localizou `ArchitectureTab` com `revision/active`, mas o efeito de revisão
+limpa `design`/seleção: proteger autoria antes de conectar esse editor; não
+supor que suporte de leitura dos Cards comprova autoria da Spec. Dependências
+usam `useOpaqueCursorPager` com reset por identidade/filtros, ainda sem token
+externo; preservar os formulários ao integrar a invalidação. São consumidores
+já previstos em 3d, não novas features. Nenhum código local ficou pendente
+neste checkpoint; snapshots operacionais não rastreados foram preservados.
+
 ### 2026-10-15 — U3/5d: Project Structure integrado e qualificado por UI/MCP
 
 Community `5ac5ce06` publicado; Core de produto permanece `8291a648`.
