@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — checkpoint de execução anterior ao planejamento final de U4
+
+Conferidos os arquivos locais sobre Core `f739db87` / Community `1c18806d`;
+fetch confirmou os HEADs sem divergência remota. Este checkpoint preserva os
+diffs de qualificação já existentes nos dois repositórios. Não altera produto,
+policies ou dados do runtime nesta revisão documental.
+
+A medição de metadata foi transferida do registry neutro Core para o payload
+real do host Community. O teste mantém os limites: 50.066 tokens de tools,
+2.467 de instructions, 52.533 combinados, abaixo de 50.800/53.500. Core mantém
+guard de instructions/inventário; fidelidade de schemas fechados continua
+testada. Ajustadas expectativas obsoletas de inventário (285 tools, 46 schemas
+opt-in), com as ferramentas adicionais explicitamente verificadas. Manifest
+de resources regenerado; catálogo sem mudança. XMLs anteriores relidos:
+158 testes de resources/catálogo, 31 de host Community e 23 de manifest/regressão,
+todos sem falhas. Não são novas execuções desta revisão. As falhas anteriores
+permanecem no histórico, incluindo a medição inadequada de 51.724 tokens.
+
+Recibos nativos agora registram Spec Done edição 1/versão 17, Task Done
+100% implementação/100% verificação e Test Done com implementação N/A e
+verificação 100%. Conclusão composta e testes autenticados precederam o
+fechamento. A busca canonical devolveu nós com origem e o contexto relacionado
+devolveu vínculos; isso não encerra consolidação cognitiva nem inspeção visual.
+`kg_health` registrou `overall_state=at_risk`, com probes de paridade
+indisponíveis. Não apresentar fila vazia ou `graph_state=healthy` como saúde
+integral comprovada. Resources alterados ainda exigem qualificação do pacote
+final. U4 continua aberto.
+
+Hashes e limites: [checkpoint Done](evidence-u4-done-planning-20261015.json).
+O próximo planejamento deve substituir a fila Approved já superada por:
+recuperação do ambiente → conferência visual Done → KG/consolidação e diagnóstico
+delimitado → pacote final → matriz UV01–UV24/closure/publicação. Capturas e
+snapshots locais permanecem preservados, sem inclusão indiscriminada no Git.
+
 ### 2026-10-15 — planejamento restante reconciliado com Spec Approved
 
 Checkpoint anterior publicado: Core `2c1241a9`; Community permanece

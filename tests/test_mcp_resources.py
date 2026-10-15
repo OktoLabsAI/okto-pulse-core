@@ -598,25 +598,14 @@ def test_spec_validation_resources_publish_the_calibrated_evaluator_method() -> 
 
 
 def test_initial_footprint_under_budget() -> None:
-    """ts_edd149c4 — Initial MCP server footprint stays within budget per component.
+    """ts_edd149c4 — Guard Core instructions and the declared tool inventory.
 
-    Measures via tiktoken (cl100k_base) the two payloads any MCP client sees
-    on session start:
-      1. ``instructions=`` passed to FastMCP (loaded from agent_instructions.md).
-      2. ``tools/list`` metadata: name + description + JSON schema per tool.
-
-    Budget rationale (post-P0.A + post-P0.B, pre-P1 lazy-loading):
-      - instructions ≤ 10K tokens — P0.A goal (was ~71K pre-rewrite).
-      - tools metadata ≤ 49.85K tokens — reviewed ceiling for 338 tools,
-        including the 20 closed policy-governance schemas and the typed
-        impact_evidence contract (SK-B2-S1); P1 lazy-loading by role will
-        reduce this drastically per session.
-      - combined ≤ 52.5K tokens — overall regression guard.
-
-    A failure in any of the three asserts pinpoints which subsystem regressed.
+    The edition materializes this transport-neutral catalog. Its serialized
+    tools/list schema differs from Core parameters, so public metadata and
+    combined budgets are tested through the real Client in Community's
+    test_mcp_installed_inventory_smoke.py. Do not import FastMCP into Core or
+    weaken the closed-schema assertions above to reduce the measured cost.
     """
-    import json
-
     tiktoken = pytest.importorskip("tiktoken")
     from okto_pulse.core.mcp import server as _srv
 
@@ -628,35 +617,9 @@ def test_initial_footprint_under_budget() -> None:
         f"P0.A rewrite regression."
     )
 
-    parts: list[str] = []
-    for tool_name, tool in _srv.mcp._tool_manager._tools.items():
-        desc = getattr(tool, "description", "") or ""
-        schema = json.dumps(getattr(tool, "parameters", {}), separators=(",", ":"))
-        parts.append(f"{tool_name}\n{desc}\n{schema}")
-    tools_tokens = len(enc.encode("\n".join(parts)))
-    # 49_850: the closed Code Traceability schemas remain fully typed; 70
-    # reviewed descriptions point to lazy family docs and generated JSON-Schema
-    # titles are omitted because property names already carry that identity.
-    # Prior baseline: 338 tools, 49,722 metadata tokens. Delivery adds read and
-    # closed write contracts; reviewed bounds below include their explicit schemas.
-    # Always-loaded prose remains within its unchanged 11,250-character budget.
-    # Further growth needs explicit review; do not weaken closed schemas.
     # The reviewed 282-tool baseline gains the decision-review read/write pair
-    # and the unified Spec validation-cycle read. Token ceilings stay unchanged.
-    assert len(parts) == 285, "MCP tool-count ratchet changed"
-    # F4 also retires public maintenance tools (301 remain). Prior
-    # measured metadata was 57,705 tokens (already over budget); keep the limits
-    # and explicit schema/authority constraints unchanged during retirement.
-    assert tools_tokens <= 50_800, (
-        f"tools/list metadata {tools_tokens} tokens exceeds 50.8K guard — "
-        f"P1 lazy-loading by role will reduce this per session."
-    )
-
-    total = instructions_tokens + tools_tokens
-    assert total <= 53_500, (
-        f"Combined initial footprint {total} tokens exceeds 53.5K guard "
-        f"(instructions={instructions_tokens}, tools={tools_tokens})."
-    )
+    # and the unified Spec validation-cycle read.
+    assert len(_srv.mcp.iter_tools()) == 285, "MCP tool-count ratchet changed"
 
 
 # ---------------------------------------------------------------------------
