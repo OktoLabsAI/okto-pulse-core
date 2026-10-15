@@ -167,7 +167,7 @@ A3 result. Checklist accepts only its complete native result. See
 3. **Read business rules and API contracts**: `okto_pulse_list_business_rules(board_id, spec_id)` and `okto_pulse_list_api_contracts(board_id, spec_id)`.
 4. **Review conclusions of dependencies**: for every card this one will depend on, call `okto_pulse_get_task_conclusions(board_id, dep_card_id)`.
 5. **Create test cards FIRST** — one per test scenario or per small group within `max_scenarios_per_card`, with `card_type="test"`, `test_scenario_ids`, and `spec_id`.
-6. **IMMEDIATELY link each test card to its scenario(s)** via `okto_pulse_link_task(target_type="scenario", board_id, spec_id, target_id=<scenario_id>, card_id)`.
+6. **Creation links the selected scenarios atomically.** Do not repeat those links. Use `okto_pulse_link_task(target_type="scenario", board_id, spec_id, target_id=<scenario_id>, card_id)` only when adding another association after creation.
 7. **Verify full linkage**: run `okto_pulse_list_test_scenarios` — every scenario must show at least one linked task.
 8. **THEN create implementation cards** (`card_type="normal"`) — always pass `spec_id`.
 9. **MANDATORY — Resolve blocking artifacts and review advisory Knowledge for

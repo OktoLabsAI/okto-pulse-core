@@ -2,6 +2,44 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — checkpoint anterior à revisão do planejamento: U4 parcial
+
+Base conferida: Core `a2562b08` / Community `1c18806d`, branch
+`feature/v0.4.0`; fetch dos dois remotos realizado nesta revisão. Preservadas
+as duas alterações locais já existentes: workflow de Cards esclarece que a
+criação vincula os cenários atomicamente; teste do schema MCP reconhece os
+campos da conclusão composta e as 285 ferramentas efetivas. Nenhum teto de
+tokens foi ampliado. Community não tem diff rastreado; capturas de browser
+permanecem locais, fora do commit.
+
+Conferidos os recibos anteriores em
+`PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u4-e2e/`:
+Spec `dcfb20fb-db6d-5628-b861-831d6a2d140d`, Approved, edição 1/versão 14;
+Task `5e946696-db4d-5205-a47a-9b46f1115157` e Test
+`ee0caea9-97dd-5b9a-93a1-cf87bf0961ee` já criados. O inventário de
+planejamento registra FR 1, BR 1 e AC 2, sem obrigação pendente ou sem
+responsável; isso não comprova implementação ou entrega. Checklist está
+Blocking, binding versão 1; ciclo ainda pede lint e execução do Checklist.
+Não repetir criação nem reabrir a Spec apenas para criar Cards.
+
+Falha de qualificação ainda aberta: `u4-resources-doc-final.xml` registra
+**152 passes e 1 falha**, metadata MCP de **51.724 tokens > 50.800**.
+O ensaio anterior tinha 151 passes/2 falhas; ajustes de expectativa de schema
+e inventário resolveram uma delas, sem resolver o orçamento. Este checkpoint
+não apresenta a suíte como verde, não aumenta o budget e não fecha U4.
+Investigar diferença entre registry e serialização pública antes de escolher
+a correção; preservar schemas fechados, autoridade e limites existentes.
+
+Relatório anterior `resume-parity.json`: 867 Python Core, 326 Community,
+79 frontend e processo posterior à instalação. A edição posterior de
+`workflows/cards.md` ainda precisa entrar no pacote final; a paridade Python
+não prova paridade dos resources. Nenhum teste, mutação MCP, instalação ou
+reinício foi executado nesta revisão documental. Home padrão preservada.
+
+Este commit salva o trabalho pendente antes do detalhamento solicitado.
+Próximo trabalho documental: atualizar a fila U4 existente com os recibos
+atuais, a falha aberta e a sequência finita até Done/KG, sem novos milestones.
+
 ### 2026-10-15 — planejamento detalhado de U4 reconciliado com a instalação isolada
 
 Pedido atual atendido como planejamento. Fetch confirmou Core `0cececcc` /

@@ -481,6 +481,9 @@ def test_spec_validation_mcp_schema_is_canonical_and_pinpoints_are_closed() -> N
         "expected_validation_edition",
         "expected_spec_version",
         "expected_head_revision",
+        "idempotency_key",
+        "expected_planning_manifest",
+        "decomposition",
         "confidence",
         "confidence_justification",
         "clarity",
@@ -495,7 +498,7 @@ def test_spec_validation_mcp_schema_is_canonical_and_pinpoints_are_closed() -> N
         "pinpoints",
     }
     assert set(properties) == expected
-    assert set(parameters["required"]) == expected - {"pinpoints"}
+    assert set(parameters["required"]) == expected - {"pinpoints", "decomposition"}
 
     pinpoint = properties["pinpoints"]["anyOf"][0]["items"]
     assert pinpoint["additionalProperties"] is False
@@ -638,7 +641,9 @@ def test_initial_footprint_under_budget() -> None:
     # closed write contracts; reviewed bounds below include their explicit schemas.
     # Always-loaded prose remains within its unchanged 11,250-character budget.
     # Further growth needs explicit review; do not weaken closed schemas.
-    assert len(parts) == 282, "MCP tool-count ratchet changed"
+    # The reviewed 282-tool baseline gains the decision-review read/write pair
+    # and the unified Spec validation-cycle read. Token ceilings stay unchanged.
+    assert len(parts) == 285, "MCP tool-count ratchet changed"
     # F4 also retires public maintenance tools (301 remain). Prior
     # measured metadata was 57,705 tokens (already over budget); keep the limits
     # and explicit schema/authority constraints unchanged during retirement.
