@@ -446,6 +446,12 @@ async def test_last_criterion_removal_survives_delayed_event_and_queue_preparati
     from okto_pulse.core.application.processors.consolidation import _prepare_deterministic_projection
     from okto_pulse.core.events.handlers.consolidation_enqueuer import ConsolidationEnqueuer
     from okto_pulse.core.events.types import SpecSemanticChanged
+    from okto_pulse.core.ports.structured_spec import register_structured_spec_store
+    from okto_pulse.community.adapters.sqlalchemy_structured_spec import CommunitySqlAlchemyStructuredSpecStore
+
+    # This exercises the current worker, including architecture classification
+    # reads. The narrow CRUD fake does not implement that projection contract.
+    register_structured_spec_store(CommunitySqlAlchemyStructuredSpecStore())
 
     board_id, spec_id, _ = await _seed_spec(db_factory,
         scenarios=[{'id': 'ts_a', 'title': 'A', 'status': 'ready', 'linked_criteria': []}])

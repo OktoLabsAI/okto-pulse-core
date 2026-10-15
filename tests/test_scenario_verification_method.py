@@ -278,3 +278,30 @@ async def test_method_version_fence_rechecks_after_initial_read(
             )
         await db.refresh(before)
         assert before.test_scenarios[0].get("verification_method") is None
+
+
+@pytest.mark.asyncio
+async def test_collection_version_fence_rechecks_after_initial_read(db_factory, monkeypatch):
+    _, spec_id, _ = await _seed_spec(db_factory, scenarios=[scenario()])
+    original_fence = service_module._application_fence
+    calls = []
+
+    async def intervening_write(context, entity, record_id, *, expected_values):
+        calls.append(record_id)
+        await context.execute(
+            update(Spec).where(Spec.id == record_id).values(version=expected_values["version"] + 1)
+        )
+        return await original_fence(context, entity, record_id, expected_values=expected_values)
+
+    monkeypatch.setattr(service_module, "_application_fence", intervening_write)
+    async with db_factory() as db:
+        before = await db.get(Spec, spec_id)
+        original_scenarios = [dict(item) for item in before.test_scenarios]
+        with pytest.raises(ValueError, match="spec_version_conflict"):
+            await SpecService(db).update_spec(
+                spec_id, USER,
+                SpecUpdate(test_scenarios=[], expected_spec_version=before.version),
+            )
+        assert calls == [spec_id]
+        await db.refresh(before)
+        assert before.test_scenarios == original_scenarios

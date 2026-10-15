@@ -2241,6 +2241,11 @@ class SpecUpdate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    expected_spec_version: int | None = Field(
+        None, strict=True, ge=1,
+        description="Authored Spec version for a test_scenarios replacement; not a general Spec update precondition.",
+    )
+
     title: str | None = Field(
         None,
         min_length=1,
@@ -2388,6 +2393,12 @@ class SpecUpdate(BaseModel):
     def _project_structure(cls, value: Any) -> Any:
         del value
         raise ValueError("project_structure_requires_structured_entity_boundary")
+
+    @model_validator(mode="after")
+    def _scenario_version_scope(self) -> "SpecUpdate":
+        if self.expected_spec_version is not None and self.test_scenarios is None:
+            raise ValueError("expected_spec_version_requires_test_scenarios")
+        return self
 
 
 class SpecMove(BaseModel):

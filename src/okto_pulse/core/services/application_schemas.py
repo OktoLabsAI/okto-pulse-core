@@ -8,7 +8,7 @@ directly while the DTO migration is completed.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 from okto_pulse.core.models.schemas import (
@@ -31,6 +31,7 @@ class ScenarioContentUpdate(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     test_scenarios: list[TestScenarioWrite]
+    expected_spec_version: int | None = Field(None, strict=True, ge=1)
 
 
 __all__ = [

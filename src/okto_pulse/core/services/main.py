@@ -9826,7 +9826,7 @@ class SpecService:
         updated = await self.update_spec(
             spec_id,
             user_id,
-            ScenarioContentUpdate(test_scenarios=scenarios),
+            ScenarioContentUpdate(test_scenarios=scenarios, expected_spec_version=spec.version),
         )
         new_target = next(
             (
@@ -9919,7 +9919,7 @@ class SpecService:
         updated_spec = await self.update_spec(
             spec_id,
             user_id,
-            ScenarioContentUpdate(test_scenarios=remaining),
+            ScenarioContentUpdate(test_scenarios=remaining, expected_spec_version=spec.version),
         )
         if updated_spec is None:  # defensive: the Spec was resolved above
             raise ValueError("scenario_not_found: spec not found")
@@ -10382,6 +10382,22 @@ class SpecService:
         await _require_spec_unlocked(self.db, spec_id)
 
         update_data = data.model_dump(exclude_unset=True)
+        # This precondition belongs to scenario collection authoring only.
+        # It is command metadata, never content, history or a general Spec CAS.
+        expected_scenario_version = update_data.pop("expected_spec_version", None)
+        if update_data.get("test_scenarios") is not None:
+            scenario_base = spec.version if expected_scenario_version is None else expected_scenario_version
+            if spec.version != scenario_base or not await _application_fence(
+                self.db, "spec", spec.id,
+                expected_values={
+                    "version": scenario_base,
+                    "status": spec.status,
+                    "edition": spec.edition,
+                    "archived": spec.archived,
+                    "current_validation_id": spec.current_validation_id,
+                },
+            ):
+                raise ValueError("spec_version_conflict")
         next_ideation_id = (
             update_data["ideation_id"]
             if "ideation_id" in update_data

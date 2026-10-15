@@ -1614,7 +1614,7 @@ class McpAddTestScenarioUseCase:
         await service.update_spec(
             command.spec_id,
             actor.actor_id,
-            SpecUpdate(test_scenarios=scenarios),
+            SpecUpdate(test_scenarios=scenarios, expected_spec_version=spec.version),
         )
         await commit(uow)
         return McpAddTestScenarioResult(

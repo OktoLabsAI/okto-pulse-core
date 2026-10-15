@@ -180,6 +180,49 @@ def test_rest_patch_spec_valid_scenario_type_persists(rest_spec):
     assert [s["scenario_type"] for s in scenarios] == ["negative"]
 
 
+def test_scenario_collection_rejects_stale_authored_version_without_erasing_first_write(rest_spec):
+    client, _board, spec_id = rest_spec
+    before = client.get(f"/api/v1/specs/{spec_id}").json()
+    base = before["version"]
+    first = client.patch(
+        f"/api/v1/specs/{spec_id}",
+        json={"test_scenarios": [_scenario("manual")], "expected_spec_version": base},
+    )
+    assert first.status_code == 200, first.text
+    stale = client.patch(
+        f"/api/v1/specs/{spec_id}",
+        json={"test_scenarios": [], "expected_spec_version": base},
+    )
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["detail"] == "spec_version_conflict"
+    current = client.get(f"/api/v1/specs/{spec_id}").json()
+    assert current["test_scenarios"] == first.json()["test_scenarios"]
+    assert current["version"] == base + 1
+    assert "expected_spec_version" not in current
+
+
+@pytest.mark.parametrize("expected", [True, 0, -1, "1", 1.5])
+def test_scenario_collection_version_is_strict_positive_integer(rest_spec, expected):
+    client, _board, spec_id = rest_spec
+    response = client.patch(
+        f"/api/v1/specs/{spec_id}",
+        json={"test_scenarios": [], "expected_spec_version": expected},
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_scenario_version_guard_cannot_be_presented_as_generic_spec_cas(rest_spec):
+    client, _board, spec_id = rest_spec
+    before = client.get(f"/api/v1/specs/{spec_id}").json()
+    response = client.patch(
+        f"/api/v1/specs/{spec_id}",
+        json={"title": "Not a scenario write", "expected_spec_version": before["version"]},
+    )
+    assert response.status_code == 422, response.text
+    assert "expected_spec_version_requires_test_scenarios" in response.text
+    assert client.get(f"/api/v1/specs/{spec_id}").json()["title"] == before["title"]
+
+
 def test_rest_patch_rejects_type_alias_without_mutation(rest_spec):
     client, _board, spec_id = rest_spec
     scenario = _scenario(None)
