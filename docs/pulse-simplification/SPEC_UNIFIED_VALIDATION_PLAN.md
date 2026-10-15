@@ -3,7 +3,7 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint de código publicado: Core `4755e369` / Community `3c4df986`, publicados na
+Checkpoint de código: Core `8291a648` / Community `47434062`, na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -65,9 +65,12 @@ formulário em recusa e descarta resposta de outra Spec (`3057e84e`): 43 passes
 integrados e criação UI confirmada por MCP. Ver
 [confirmação de cenários](evidence-u3-scenario-confirmation-20261015.json).
 A base autorada de versão e a recuperação explícita de conflito foram
-qualificadas em `4755e369` / `3c4df986`. Permanecem pendentes a atualidade
-operacional sem bump de versão, resultados incertos e retenção do método em
-cenário removido; Tests permanece fora do watcher.
+qualificadas em `4755e369` / `3c4df986`. A substituição da coleção agora também
+confere snapshot operacional sob fence, com 102 testes backend, 48 frontend e
+prova UI/MCP de mudança sem bump da versão. Ver
+[snapshot operacional](evidence-u3-scenario-operational-snapshot-20261015.json).
+Permanecem pendentes resultados incertos, retenção do método em cenário removido
+e integração dos demais writers; Tests permanece fora do watcher.
 Preservar também [método de cenário](evidence-u3-scenario-method-20261015.json).
 
 **Próxima ação de implementação:** cenários (3c/5c) e Project Structure → refresh global →
@@ -404,11 +407,12 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint vigente de código:** Core `4755e369` / Community `3c4df986`.
-Ambos conferidos em `origin/feature/v0.4.0` em 15/10/2026. A revisão documental
+**Checkpoint vigente de código:** Core `8291a648` / Community `47434062`.
+Branch `feature/v0.4.0`, incremento de 15/10/2026. A revisão documental
 a partir deste par acompanha a execução parcial de 5c. O checkpoint inclui
 a prova UI/MCP de 5b, a confirmação de cenários e a proteção da versão autorada
-com recuperação explícita de conflito. Testes, tipos, lint e prova nativa de
+com recuperação explícita de conflito e snapshot operacional da coleção.
+Testes, tipos, lint e prova nativa de
 cada incremento estão nas respectivas evidências e no ledger, sem contagem
 dupla. A matriz integral U3/U4 continua aberta.
 Knowledge/Targets têm prova integrada; leitores têm testes aprovados e provas
@@ -867,9 +871,9 @@ aba. Não repetir a prova de versão nem reduzir esses aceites à precondição 
 já contém a reprodução de 5c.1: dois casos, um aprovado (status) e um falho
 (task_link), sem erros. Após remover o vínculo pelo serviço nativo, a substituição
 da coleção antiga restaura `linked_task_ids`, mesmo com a mesma versão esperada.
-É uma falha observada na fronteira de serviço; não uma nova prova REST/MCP ou
-uma falha de todas as operações de cenário. O teste está no diff local de
-`tests/test_scenario_verification_method.py`, ainda não publicado.
+É uma falha observada na fronteira de serviço; não uma falha de todas as
+operações de cenário. A reprodução foi sucedida pela correção descrita abaixo;
+o teste integra `tests/test_scenario_verification_method.py`.
 
 Para fechar 5c.1, preservar a versão autorada já implementada e acrescentar
 proteção delimitada da base operacional da coleção: identidade e revisão usadas
@@ -884,9 +888,16 @@ o status continua preservado, a escrita conflitante não deixa efeito parcial e
 uma tentativa explicitamente revista consegue salvar. Estender a prova aos
 transportes afetados e à UI antes de habilitar Tests no watcher.
 
-Esta revisão é documental: não executa a correção, não transforma o teste vermelho
-em aprovação e não reabre U1/U2. A ordem restante é exclusivamente a tabela abaixo;
-seus aceites e a matriz UV01–UV24 delimitam o término do trabalho.
+**Execução posterior desta fronteira:** `scenario_snapshot` é calculado junto da
+resposta REST da coleção, conservado na UI e comparado após refresh sob o fence
+escalar público. Não usa a revisão do watcher lida separadamente. Um conflito
+sem bump exige recarga/revisão; writers nativos de add/corpo/método/delete capturam
+a base da própria leitura. 102 testes backend e 48 frontend aprovados, tipos/lint
+aprovados e prova UI/MCP 12 → 12 → 13: mudança operacional preservada, rascunho
+retido e uma única criação após revisão. Ver a evidência do snapshot operacional.
+Conferir ainda writers operacionais e os demais casos 5c.2–5c.4 antes de ligar
+Tests ao watcher; esse incremento não encerra U3/U4. A ordem restante é a tabela
+abaixo; seus aceites e UV01–UV24 delimitam o término do trabalho.
 
 | Ordem / dependência | Trabalho e fronteira exatos | Aceite para encerrar |
 | --- | --- | --- |

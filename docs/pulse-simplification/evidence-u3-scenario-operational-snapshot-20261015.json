@@ -1,0 +1,253 @@
+{
+  "date": "2026-10-15",
+  "checkpoint": {"core": "8291a648", "community": "47434062"},
+  "scope": "U3/3c/5c.1 scenario collection operational snapshot; partial U3",
+  "qualification": {
+    "core_passed": 102,
+    "frontend_passed": 48,
+    "catalog_passed": 5,
+    "types": "npx tsc --noEmit exit 0",
+    "lint": "targeted ESLint exit 0, 12 existing warnings",
+    "diff_check": "both repositories passed",
+    "closure": {
+      "ok": true,
+      "budgets": [
+        {
+          "current": 0,
+          "expires_on": null,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "key": "import_boundary_baseline",
+          "limit": 0,
+          "ok": true,
+          "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+        },
+        {
+          "current": 0,
+          "expires_on": null,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "key": "singleton_baseline",
+          "limit": 0,
+          "ok": true,
+          "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+        },
+        {
+          "current": 0,
+          "expires_on": null,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "key": "dependency_temporary_exceptions",
+          "limit": 0,
+          "ok": true,
+          "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+        },
+        {
+          "current": 0,
+          "expires_on": null,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "key": "graph_runtime_compatibility",
+          "limit": 0,
+          "ok": true,
+          "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+        },
+        {
+          "current": 0,
+          "expires_on": null,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "key": "rebuild_artifact_compatibility",
+          "limit": 0,
+          "ok": true,
+          "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+        },
+        {
+          "current": 0,
+          "expires_on": null,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "key": "community_private_reach_ins",
+          "limit": 0,
+          "ok": true,
+          "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+        },
+        {
+          "current": 0,
+          "expires_on": null,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "key": "community_adapter_bridges",
+          "limit": 0,
+          "ok": true,
+          "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+        },
+        {
+          "current": 0,
+          "expires_on": null,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "key": "af35_relational_residue",
+          "limit": 0,
+          "ok": true,
+          "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+        }
+      ]
+    }
+  },
+  "native": {
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "dec9410f-d455-4506-a8fd-f791ee31dc77",
+    "versions": [
+      12,
+      12,
+      13
+    ],
+    "concurrent_operation": "MCP scenario status draft to ready; no evidence or execution claimed",
+    "added_scenario_id": "ts_1792065269269",
+    "observed": [
+      "UI refused stale collection with scenario_snapshot_conflict",
+      "draft retained across reload; Add disabled until explicit review",
+      "UI saved once; MCP confirms concurrent status and existing scenario content preserved"
+    ],
+    "serialization_note": "Absent evidence on one prior scenario becomes null through the existing response/write projection; normalized content is identical",
+    "artifact_note": "after-unlink is the helper filename for the read after the MCP status operation; no unlink was performed in this browser probe"
+  },
+  "runtime": {
+    "pid": 39712,
+    "started_at_epoch": 1792064931.511642,
+    "pythonpath": "D:/Projetos/Techridy/okto_labs_pulse_core/src;D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+    "data_home": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collections-home",
+    "api": "http://127.0.0.1:8200",
+    "mcp": "http://127.0.0.1:8201/mcp",
+    "frontend": "http://127.0.0.1:5274",
+    "mode": "checkout, not installed U4 pair"
+  },
+  "tests": [
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-operational-before.xml",
+      "sha256": "6a18b6831d91e086048556ddd7d8b1218cfae95c8ad2ddf00718f9a66808ffba",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "2",
+          "time": "10.649",
+          "timestamp": "2026-10-15T08:35:28.831261-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-core-final.xml",
+      "sha256": "26c28d6887f895ddd8e7d09186b6b42b19107050ee5e257fb0e4e1fb6cfff81c",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "102",
+          "time": "20.199",
+          "timestamp": "2026-10-15T08:48:21.077089-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-ui.xml",
+      "sha256": "c1e9a1dcdafff4e25a1aac000419680e2270b8e205ccd7bf40f6aa72aee2ddab",
+      "suites": [
+        {
+          "name": "src/components/specs/__tests__/ScenarioVerificationMethodEditor.test.tsx",
+          "timestamp": "2026-10-15T11:48:08.864Z",
+          "hostname": "Alienware_m15",
+          "tests": "15",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.9650465"
+        },
+        {
+          "name": "src/components/specs/__tests__/SpecModal.activity.test.tsx",
+          "timestamp": "2026-10-15T11:48:08.875Z",
+          "hostname": "Alienware_m15",
+          "tests": "33",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "20.9506947"
+        }
+      ]
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-catalog.xml",
+      "sha256": "bd9b5cea2e235887fb2206347841e4d320203492ea9dd54c3b218785d82b06b0",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "5",
+          "time": "4.373",
+          "timestamp": "2026-10-15T08:53:54.936092-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\closure-u3-scenario-snapshot.json",
+      "sha256": "d67a63bbf3208cc26a246e1e9aed1b823496f81b1e499f4ad2b97e7f74b11423"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\closure-u3-scenario-snapshot-before-readmes.json",
+      "sha256": "f8cebfd82c7c765b16814539e9d26c67d317631b8b14d4d57609107e9defab69"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-native-before.json",
+      "sha256": "d98508c26fae50d924312da2c68a4482454be63d8524a4ba11db87cba642296a"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-native-status.json",
+      "sha256": "0f4a22b98b3b87e8db9880740ac39ef6d369256490effd15baa1500801235cf6"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-native-after-unlink.json",
+      "sha256": "116e9f15a0145d3ee06e7dd9ad2dffcc8ddaa9461de25fec67f15cd0a02ccef3"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-native-after.json",
+      "sha256": "4fbbe51d4cf0c8268e4101cb531f4f170f2182e628e57a417dd55caa72527b2b"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-core-final.xml.environment.json",
+      "sha256": "1eacf61a34ee0f8440d83b7f0781a98fe5e5aa39b11178186b377c072cc203cd"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-scenario-snapshot-conflict.yml",
+      "sha256": "0df057e2dbd6d2d5f83fb6d6f09d7665180940cdf048cebbe2dbd73fed765b06"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-scenario-snapshot-reloaded.yml",
+      "sha256": "443772ac2ac8159a8a4b898499d1bf6e6c10ec0ee472a149a258ce354fa57f09"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-scenario-snapshot-saved.yml",
+      "sha256": "ee773da4304a596045695617f30c4d63a545c9cffad818871e2789bc274cfb3b"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-scenario-snapshot-conflict.png",
+      "sha256": "9b4896df884c3048bd89ec6995832563a83d347276ed86bb54cb540ccfcd189a",
+      "visually_inspected": true
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-scenario-snapshot-saved.png",
+      "sha256": "325358719718ff6ee8f4b12c097b4daa469044f2c0b09e093c5602d574b1fda1",
+      "visually_inspected": true
+    }
+  ],
+  "limits": [
+    "Native unlink regression is a service test; browser/MCP proof uses a same-version status change",
+    "Snapshot is supplied by full REST Spec reads; MCP scoped mutations retain server-side base capture",
+    "Calls without authored metadata protect the service read, not an unknown client snapshot",
+    "Tests still outside watcher; uncertain outcome/reconciliation, removed method draft and remaining writers are pending",
+    "No wheel build/install or user-home changes; U4 Done/KG remains pending"
+  ]
+}

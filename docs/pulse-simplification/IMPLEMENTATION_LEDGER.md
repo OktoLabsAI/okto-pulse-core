@@ -2,6 +2,66 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/5c: snapshot operacional da coleção protegido e exercitado UI/MCP
+
+Par de código: Core `8291a648` / Community `47434062`, branch `feature/v0.4.0`.
+
+A reprodução vermelha de vínculo restaurado foi corrigida. A resposta REST
+completa da Spec fornece `scenario_snapshot`, calculado sobre a projeção pública
+dos cenários e Board/Spec/edição/versão. O formulário conserva esse valor junto
+da versão autorada; uma escrita com `expected_spec_version` exige também
+`expected_scenario_snapshot`. Ambos são metadados de comando, retirados antes
+da persistência/diff/histórico. O snapshot não é prova nem aprovação.
+
+O serviço adquire o fence escalar público existente e então atualiza a leitura
+sob esse bloqueio, antes de comparar o snapshot. Isso detecta status, evidência
+e vínculos alterados sem bump da versão, inclusive identidade ORM já carregada.
+Conflito retorna `scenario_snapshot_conflict`, projetado como HTTP 409. Os
+writers nativos de add, corpo/método e delete capturam a coleção lida antes da
+substituição; cascata, status, evidência, permissões e versão semântica mantêm
+seus contratos. Chamadas sem metadados autorados protegem a leitura do serviço,
+não uma base antiga desconhecida do cliente; não há CAS global.
+
+Frontend preserva o snapshot no formulário, exige recarga/revisão explícita
+também em conflito sem nova versão e recusa autoria sem snapshot disponível.
+Suítes finais: **102 testes backend, 48 frontend e cinco do catálogo aprovados**;
+tipos aprovados, lint sem erros e 12 warnings preexistentes. A prova adicional
+intervém entre a leitura e o fence com UPDATE real, sem atualizar a identidade
+ORM, e confirma recusa sem sobrescrita. A reprodução original tem um passe
+(status) e uma falha (task_link); ambos passam agora. Não houve exclusão de caso.
+
+Browser/MCP no runtime isolado: Spec `dec9410f-d455-4506-a8fd-f791ee31dc77`,
+versão 12, rascunho aberto. MCP mudou `ts_1792040763309` de draft para ready,
+sem bump da versão nem evidência. O envio UI recebeu conflito, manteve texto;
+Reload scenarios preservou os campos e Add continuou bloqueado até Review.
+Após revisão explícita, UI gravou uma vez e MCP confirmou versão 13 e cenário
+`ts_1792065269269`, ainda draft e sem prova, preservando o estado concorrente.
+Capturas de conflito e resultado foram inspecionadas. Um campo evidence antes
+omitido foi serializado como null pelo caminho já existente; comparação das
+projeções tipadas confirma conteúdo preservado. O ensaio browser usa status;
+a reprodução de unlink está coberta no teste nativo de serviço, não foi alegada
+como interação MCP. O nome local `after-unlink` identifica a leitura após status.
+
+Runtime de checkout reiniciado em PID 39712, API/MCP 8200/8201, Vite 5274,
+com os dois src explícitos e home isolada preservada. Origem dos imports e
+divergência do install registradas pelo runner. Sem build de wheel, reinstalação
+ou mudança na home do usuário. Evidência consolidada em
+`evidence-u3-scenario-operational-snapshot-20261015.json`.
+
+Closure: os oito budgets ficaram ZERO; a primeira execução detectou somente
+drift documental causado pelos dois imports de biblioteca padrão. Matrizes
+dos dois READMEs regeneradas pelo auditor, passando de 9.036 para 9.038 linhas
+totais de propriedade. O relatório inicial foi preservado na evidência.
+A execução final da CLI passou, sem findings ou drift documental. Diff check
+aprovado em ambos; os 23 links locais do plano e os 24 IDs UV foram conferidos.
+
+**Retomada exata:** preservar esta prova 12 → 12 → 13; concluir 5c.2/5c.3:
+resultado incerto/reconciliação, retenção do método removido, geração/autorização
+dos writers de vínculo/policy e integração do pai. Conferir o inventário dos
+writers operacionais antes de declarar concorrência da aba inteira. Tests
+continua fora do watcher. Depois 5c.4, 5d, 3d, UV18–UV21 e U4. U3 parcial;
+objetivo integral permanece ativo. Nenhum gate ou avaliação foi removido.
+
 ### 2026-10-15 — planejamento reconciliado; falha operacional de cenários delimitada
 
 Atendido o pedido de iniciar o planejamento detalhado, sem continuar a
