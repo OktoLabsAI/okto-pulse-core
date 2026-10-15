@@ -2,6 +2,57 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/3d: Dependencies integrado e qualificado por UI/MCP
+
+Community `5c1d8f73` publicado em `feature/v0.4.0`; Core de produto permanece
+`8291a648`. Concluído o diff local preservado no checkpoint de planejamento.
+Dependencies assina o watcher existente, reinicia cursores quando a fonte muda
+e conserva os filtros. Os diálogos mantêm seleção/motivo e versão/edição
+autoradas; nova base exige revisão explícita. Resposta incerta mantém request,
+tokens e chave originais; escrita confirmada seguida de leitura falha oferece
+somente recuperação de leitura. A releitura exige a maior versão entre o
+recibo e a Spec já observada, impedindo regressão em replay antigo.
+
+Recusa de leitura na listagem ou lookup remove conteúdo/formulário protegido.
+Troca de identidade descarta conclusão atrasada; dados em cache não autorizam
+novo envio. O contrato nativo de dependências, permissões e gates foi preservado.
+Não houve alteração Python, nova porta, migração ou exceção arquitetural.
+
+Qualificação final: **145 testes frontend aprovados**, zero falhas/erros/skips
+(`SpecModal.dependencies`: 19; `validationTabs`: 79; `activity`: 47), com
+`--maxWorkers=1`. TypeScript exit 0, lint zero erros/11 warnings preexistentes,
+diff check aprovado. Os 19 passes dirigidos e a execução integrada anterior de
+145 são sobrepostos. O teste anterior que esperava rebase automático da edição
+foi substituído por revisão explícita + nova chave para intenção alterada;
+outro teste exige igualdade integral do replay incerto. Mantidos os XMLs.
+
+Prova nativa no runtime isolado 8200/8201 (PID39712), Vite5274 (PID17304),
+Spec `dec9410f-d455-4506-a8fd-f791ee31dc77`, edição 1:
+- MCP adicionou `e6bfd978-1623-4107-9ef2-64118a068104` enquanto o formulário
+  UI estava aberto: v20 → v21, lista/readiness atualizados automaticamente,
+  seleção preservada e envio bloqueado até Review dependency base.
+- Inclusão UI após revisão criou `820ebe3f-6b5f-4aca-ba3f-fe598e24c304`, v22,
+  confirmada por leitura MCP com autoria humana e sem duplicação.
+- Remoção UI com motivo produziu v23; o GET completo seguinte foi interrompido
+  deliberadamente uma vez. O diálogo reteve a confirmação, bloqueou edição e
+  ofereceu Reload saved dependency. A recuperação fechou o diálogo sem outro
+  DELETE. MCP confirmou v23 inalterada e o histórico de remoção preservado.
+- Capturas de conflito, leitura falha e histórico expandido foram inspecionadas.
+  Requests registram um POST201 e um DELETE200; o erro de rede esperado é o
+  GET abortado. A interceptação tinha `times=1` e foi consumida.
+
+Evidência/hashes: `evidence-u3-dependencies-20261015.json`. Revogação, resposta
+atrasada, replay exato e piso de versão têm testes frontend; não declarar novo
+ensaio nativo de autoridade para esses casos. Cards continuam Not Started;
+não houve execução, prova de entrega ou aprovação fabricada. Este runtime é
+checkout isolado, não qualificação instalada; sem build/reinstalação.
+
+**Retomada:** Resources restantes (Architecture, Mockups e wrapper Knowledge),
+depois UV18–UV21 integrados e U4 instalado/E2E. Dependencies encerra sua linha
+de 3d, não U3 integral. Preservar as provas existentes e não repetir as mutações
+mock sem necessidade. Não há diff de produto pendente deste incremento;
+snapshots operacionais não rastreados foram preservados.
+
 ### 2026-10-15 — planejamento detalhado: fila vigente após Coverage/References
 
 Atendimento ao pedido de planejamento, sem nova implementação. Base conferida:

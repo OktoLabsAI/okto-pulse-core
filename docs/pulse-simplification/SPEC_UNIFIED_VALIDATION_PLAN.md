@@ -3,7 +3,7 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint de código: Core `8291a648` / Community `be799c37`, na
+Checkpoint de código: Core `8291a648` / Community `5c1d8f73`, na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -95,10 +95,16 @@ convergem sem trocar a subaba. Prova UI/MCP e 96 casos distintos aprovados,
 com rechecagem isolada de um timeout, em
 [Coverage e References](evidence-u3-coverage-references-20261015.json).
 Prova de entrega indisponível não recebeu crédito; evolução nativa dos percentuais
-permanece na qualificação integrada. Recursos e dependências ainda estão abertos.
+permanece na qualificação integrada.
 
-**Próxima ação de implementação:** concluir e qualificar o diff local de
-Dependencies → Resources restantes (ambos 3d) → UV18–UV21 → U4.
+Dependencies foi integrado em `5c1d8f73`: base autorada/revisão explícita,
+replay exato, confirmação separada da leitura e proteção de acesso/identidade.
+145 testes frontend passaram; tipos/lint aprovados. UI/MCP comprovou inclusão
+concorrente, revisão e gravação únicas, além de recuperação de leitura após
+remoção sem repetir DELETE, versões 20 → 21 → 22 → 23. Ver
+[Dependencies](evidence-u3-dependencies-20261015.json). Resources permanece aberto.
+
+**Próxima ação de implementação:** Resources restantes (3d) → UV18–UV21 → U4.
 A fila vigente está em §6.2, “Retomada executável de 3d”. Não reimplementar
 U1/U2, Project Structure ou Coverage/References já qualificados.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
@@ -461,12 +467,12 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint vigente de código:** Core `8291a648` / Community `be799c37`.
+**Checkpoint vigente de código:** Core `8291a648` / Community `5c1d8f73`.
 5c foi integrado e qualificado após os checkpoints históricos abaixo: Tests
 assina atualizações externas, preserva cenários/métodos/relatórios e possui
 recuperação protegida de escrita/leitura. Evidência `evidence-u3-tests-watch-20261015.json`.
 5d integrado e qualificado conforme evidência Project Structure acima.
-Coverage/References integrados; retomar recursos/dependências de 3d →
+Coverage/References e Dependencies integrados; retomar Resources de 3d →
 UV18–UV21 → U4; as referências a Tests fora do watcher
 nos relatos anteriores descrevem os respectivos checkpoints, não o estado vigente.
 Branch `feature/v0.4.0`, incremento de 15/10/2026. A revisão documental
@@ -510,7 +516,7 @@ Essas evidências não encerram o milestone nem substituem o E2E.
 | U1 | Cards Not Started em Draft e remoção da exigência de existir Decision. | Percurso real UI/MCP no U4; não refazer a implementação. |
 | U2 — conclusão | Payload composto, permissões independentes, pareceres/históricos nativos, promoção condicionada, recibo/replay e manifesto obrigatório. | Preservar a matriz U2 já qualificada; comprovar autenticação wire e percurso instalado em U4. |
 | U2 — leitura | `include_planning`, 17 componentes, composição pública sem escrita, revisões leves em lote, permissões por componente, paginação REST/MCP e cliente tipado. Revisões de coleções Spec/Card por Board; 11 passes do contrato, 79 de manifesto/leitura/transporte. Admissão sem Checklist comprovada por REST/browser e rollback nativo. | Consumir os contratos existentes em U3 e comprovar o percurso UI/MCP instalado em U4; não recriar metadados de coleção. |
-| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão, SpecsPanel e Kanban; refresh de permissões com proteção de respostas antigas. Knowledge/Targets, leitores, FR/AC/critério/qualificação e coleções têm provas registradas. Integration, Decisions, Tests/5c, Project Structure/5d e Coverage/References qualificados nos limites do ledger. Dependencies possui diff local ainda não publicado. | Concluir Dependencies/Resources (3d), depois UV18–UV21; comprovar progresso nativo de Card sem bump da Spec e os casos integrados ainda não cobertos. Autoria instalada de Project Structure permanece U4. |
+| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão, SpecsPanel e Kanban; refresh de permissões com proteção de respostas antigas. Knowledge/Targets, leitores, FR/AC/critério/qualificação e coleções têm provas registradas. Integration, Decisions, Tests/5c, Project Structure/5d, Coverage/References e Dependencies qualificados nos limites do ledger. | Concluir Resources (3d), depois UV18–UV21; comprovar progresso nativo de Card sem bump da Spec e os casos integrados ainda não cobertos. Autoria instalada de Project Structure permanece U4. |
 | U4 | Regressões parciais registradas no ledger. | Wheels, runtime compatível, browser e iniciativa nova até Done/KG; matriz UV01–UV24. |
 
 #### Retomada executável de 3d — conferência de 15/10/2026
@@ -520,20 +526,15 @@ Essas evidências não encerram o milestone nem substituem o E2E.
 abaixo é a única fila de trabalho vigente; detalha itens existentes, sem novo
 milestone ou mudança nos critérios de §7.
 
-Há trabalho local em `SpecDependenciesTab.tsx` e `SpecModal.tsx`, ainda não
-publicado: base autorada dos diálogos, retenção da tentativa incerta, distinção
-entre escrita confirmada e falha de leitura, identidade e assinatura do watcher.
-Não reaplicar esse diff nem considerá-lo qualificado. A execução já iniciada
-terminou com TypeScript exit 0 e **12 testes: 11 passes, 1 falha**, sem skips,
-em `u3-dependencies-existing.xml`. A falha é a expectativa anterior de adotar
-automaticamente nova edição com a mesma chave de idempotência. O aceite de
-§5 exige revisão explícita; o teste deve demonstrar essa revisão e distinguir
-nova intenção de replay exato. Não remover a asserção de concorrência nem
-relaxar o contrato nativo para fazer o teste passar.
+O WIP de Dependencies identificado na conferência foi concluído e publicado em
+`5c1d8f73`, com 145 testes finais e prova UI/MCP. O XML inicial de 12 casos/uma
+falha permanece como histórico: sua expectativa de rebase automático foi
+substituída por revisão explícita, preservando asserções de concorrência e
+replay exato. Retomar pela linha 2 abaixo; a linha 1 registra o aceite concluído.
 
 | Ordem / item existente | Alteração ou conferência concreta | Saída verificável |
 | --- | --- | --- |
-| 1 — Dependencies / 3d | Concluir o diff local. Preservar seleção/motivo e versão/edição autoradas; só adotar base nova por revisão explícita. Retry incerto reutiliza exatamente payload, tokens e chave; escrita confirmada com falha posterior só repete leitura. Conferir descarte por identidade, revogação na listagem/lookup e recarga sem regressão frente à versão do recibo. Atualização externa invalida paginação, conserva filtros e não autoriza ação a partir de cache. | Suíte existente corrigida segundo o aceite, regressões de conflito/replay/leitura/acesso e teste do pai. Browser aberto + mutação MCP: lista/readiness atualizam, rascunho permanece, revisão explícita e escrita única são confirmadas por leitura pública. Tipos/lint pertinentes; ledger e commit/push. |
+| 1 — Dependencies / 3d | Concluído em `5c1d8f73`: preservar base, replay, confirmação/leitura, piso de versão, identidade/acesso e invalidação de paginação. | 145 passes, tipos/lint e prova UI/MCP em `evidence-u3-dependencies-20261015.json`; não repetir sem impacto novo. |
 | 2 — Architecture / Resources / 3d | Separar snapshot recebido de rascunho autorado antes de transmitir `revision/active` do pai. Manter seleção/edição autorizadas; mudança externa exige revisão da base; resposta antiga não altera outro contexto. Conferir contratos públicos de create/update e recuperação de escrita, sem presumir que oferecem recibo ou fence ausentes. Reutilizar o recurso nativo e os guards existentes. | Testes de refresh durante edição, remoção, leitura negada, falha após escrita e troca de identidade. UI/MCP mostra mudança externa e rascunho preservado; gravação revisada confirmada. Leitura de Architecture em Cards continua protegida. |
 | 3 — Mockups e Knowledge / Resources / 3d | Proteger create/delete e callbacks do pai; transmitir revisão/visibilidade sem remontar formulário. Mockups conserva coleção/base autorada e ID da tentativa; conferir precondições suportadas pelo writer público antes de conectá-lo à recarga externa. Knowledge reutiliza o editor já qualificado, protegendo o formulário de criação e o wrapper da Spec. Atualizar `ResourceGateDisclosure` a partir de leitura autoritativa. | Testes das operações afetadas, falha de leitura, tentativa incerta, subaba oculta/reaberta e revogação. Prova UI/MCP em cada família de escrita alterada; nenhuma criação duplicada ou perda silenciosa. Tipos/lint; ledger e commit/push. |
 | 4 — UV18–UV21 / fim de U3 | Reconciliar evidências existentes por aceite e executar somente os casos ainda não demonstrados: evolução real de Card/Delivery sem bump da Spec, recuperação e autoridade nos consumidores alterados; conclusão composta, resultados individuais e histórico completo. Inspecionar loading, pinpoints, teclado e foco. | Matriz UV → evidência → resultado → limite sem consumidores previstos pendentes. Testes frontend afetados e build aprovados, screenshots inspecionadas, ledger e commit/push de U3. |
@@ -556,8 +557,8 @@ em um contrato nativo, corrigir somente esse contrato/caller/testes no mesmo
 item, mantendo portas públicas e a regra de investigação do pacote. Não
 inventar replay onde a API não o garante. Melhoria opcional fica fora da fila.
 
-Esta revisão é planejamento: preserva o WIP de Dependencies, registra os
-resultados pendentes coletados e não modifica produto, testes ou instalação.
+Esta seção começou como planejamento; a linha 1 foi sucedida pelo incremento
+Dependencies registrado acima. As linhas 2–6 continuam pendentes.
 O fixture atual de Spec tem snapshot de Checklist ausente no contexto full;
 não usar essa limitação como motivo para afrouxar gate. U4 usa a iniciativa nova
 prevista, configurada e admitida pelos caminhos normais.
@@ -1178,10 +1179,10 @@ mockados precisam de execução observada para gerar prova autenticada.
 2. Preservar U3/2e.3, Knowledge/Targets e 2a–2d já qualificados nos limites
    registrados. Não repetir as mutações mock. O percurso instalado de Project
    Structure continua parte do U4; o runtime antigo não o qualificou.
-3. Concluir Dependencies/Resources conforme §6.2, “Retomada executável de 3d”.
+3. Concluir Resources conforme §6.2, “Retomada executável de 3d”.
    Preservar os editores/coleções, Tests, Project Structure e
-   Coverage/References já qualificados. Não reaplicar o diff local de
-   Dependencies nem tratá-lo como aprovado enquanto houver teste falho.
+   Coverage/References e Dependencies já qualificados. Não repetir o trabalho
+   publicado nem as mutações dos fixtures sem impacto novo.
 4. Qualificar ação composta, resultados/histórico e sincronização U3 por
    testes frontend e browser/MCP: conflito, troca de entidade, rede e autoridade.
    Não promover o milestone com consumidor previsto ainda sem atualização.
