@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — planejamento detalhado reconciliado; reprodução pendente preservada
+
+Pedido vigente: iniciar o planejamento detalhado. Mantido
+`SPEC_UNIFIED_VALIDATION_PLAN.md` como documento único, com U1 implementado,
+U2/U3 parciais e U4 pendente. Conferidos código, plano, mapa de casos e resultado
+local; nenhuma correção de produto ou nova execução de testes nesta rodada.
+
+Base Core `99e76654` / Community `aa8c60c8` já publicada. O único arquivo de teste
+pendente, `tests/test_spec_planning_resource_parity.py`, foi inspecionado e
+preservado em Community `f7e910d4`, com push antes da revisão documental.
+Capturas operacionais em `.playwright-cli/` e `output/playwright/` permanecem
+locais conforme os checkpoints anteriores; não são alterações do produto.
+
+O JUnit preexistente `u2-resource-parity.xml` registra 11 passes e 5 falhas em
+77,404 s. Quatro falhas: conclusão composta REST/MCP substitui códigos nativos
+de arquitetura ausente/mockup sem alocação pelo wrapper genérico. Quinta:
+transição direta MCP perde envelope estruturado do erro de arquitetura. As
+asserções finais de rollback desses cinco casos não foram alcançadas; não
+declarar essa propriedade comprovada. A suíte usa persistência nativa e
+identidade de fixture; não comprova autenticação wire. Resultado, casos e hashes
+estão em `evidence-u2-resource-parity-pending-20261014.json`.
+
+Plano de execução fechado: preservar diagnóstico nativo de recursos e tornar
+verdes os 16 casos; completar comparações públicas de Code Evidence; reconciliar
+U2 com a matriz existente; completar Knowledge/Targets/leitores de CardModal;
+proteger editores da Spec antes do refresh global; qualificar U3 por browser e
+MCP; executar U4 com par instalado exato, iniciativa nova até Done e KG canonical.
+Conferência estática confirmou os pontos já previstos: Knowledge usa revisão
+corrente/reset em conflito; Targets usa versão da prop; SpecModal limita watcher
+a Validation e remonta editores por versão. Não são novos alvos nem provas de
+runtime. Aceites e dependências permanecem em §6.2 e UV01–UV24.
+
+Todas as avaliações, critérios, severidades, thresholds, autoria, permissões e
+históricos permanecem. A unificação concentra a conclusão, sem média geral nem
+dispensa de gates de entrega. Sem migração, reinstalação, restart ou mutação dos
+dados do usuário. Verificação desta revisão: artefato JUnit inspecionado,
+referências documentais conferidas e `git diff --check`; não atribuir os testes
+anteriores a uma nova execução. Retomar na reprodução de recursos, sem repetir
+implementações ou famílias já qualificadas.
+
 ### 2026-10-14 — U2/UV17: dependência bloqueia início, preservando planejamento
 
 Base Core `182b6d1d` / Community `769d74f9`. Community deste incremento:

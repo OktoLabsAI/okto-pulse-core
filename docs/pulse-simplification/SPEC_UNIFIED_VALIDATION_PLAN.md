@@ -1,8 +1,14 @@
 # Validação unificada do planejamento da Spec
 
 Plano de 14 de outubro de 2026. **U1 implementado; U2 parcial; U3 parcial; U4 pendente.**
-Revisão de planejamento sobre Core `5f5f054d` / Community `77394617`,
-ambos confirmados no remoto `feature/v0.4.0` antes desta revisão. O checkpoint preserva
+**Base desta revisão:** Core `99e76654` / Community `f7e910d4`, publicados em
+`feature/v0.4.0`. O commit Community preserva a reprodução de recursos já existente:
+11 passes e 5 falhas; não é qualificação de release. Esta rodada é planejamento,
+sem correção de produto, novo teste de comportamento ou reinstalação.
+Detalhes e resultado pendente em §6.2 e no ledger.
+
+Revisão anterior de planejamento sobre Core `5f5f054d` / Community `77394617`,
+ambos publicados no remoto `feature/v0.4.0`. Esse checkpoint preserva
 trabalho parcial; não é uma release qualificada. U2 ganhou 32 casos de paridade de cobertura REST/MCP
 e correção da projeção de resultado malformado: ver
 [evidência parcial U2](evidence-u2-read-write-parity-20261014.json).
@@ -394,8 +400,10 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint atual:** Core `5f5f054d` / Community `77394617`, branch
-`feature/v0.4.0`, publicados antes desta revisão documental. Inclui a prova
+**Checkpoint atual:** Core `99e76654` / Community `f7e910d4`, branch
+`feature/v0.4.0`, publicados antes desta revisão documental. A reprodução de
+recursos foi preservada sem correção; o próximo trabalho é explicitado abaixo.
+O checkpoint anterior Core `5f5f054d` / Community `77394617` inclui a prova
 parcial de sincronização indicada no cabeçalho; **não encerra U2/U3 nem qualifica
 release instalável**. O checkpoint de UI anterior foi
 Core `dee6610b` / Community `fc92616a`.
@@ -503,6 +511,41 @@ somente nas lacunas. Conferir os métodos `get_planning_readiness`,
 sem criar outra implementação de gates.
 
 #### Matriz finita para encerrar a paridade U2
+
+**Primeiro trabalho, já reproduzido:**
+`Community/tests/test_spec_planning_resource_parity.py`, preservado no commit
+`f7e910d4`. O JUnit existente `u2-resource-parity.xml` terminou com 16 casos:
+11 passes, 5 falhas, nenhum erro/skip (77,404 s). A revisão deste plano leu o
+artefato; não reexecutou a suíte. Evidência e hashes em
+[reprodução de recursos](evidence-u2-resource-parity-pending-20261014.json).
+
+1. Em `Core/services/main.py`, preservar o diagnóstico tipado de
+   `ResourceGateViolation` na conclusão composta; o tratamento genérico atual
+   substitui seus códigos por `spec_validation_gate_not_ready`. Quatro falhas
+   cobrem arquitetura ausente e mockup sem alocação, em REST e MCP.
+2. Em `Core/mcp/server.py`, conferir o tratamento de `ResourceGateError` de
+   `move_spec` e reutilizar o projetor de recursos existente. A quinta falha é
+   a transição direta com qualidade desligada: a mensagem vira texto em `error`
+   e perde o envelope estruturado. Conferir os adaptadores de submissão e REST
+   para não trocar uma perda de diagnóstico por erro não tratado.
+3. Manter aplicabilidade, permissões, N/A com justificativa e policies atuais.
+   O ajuste é de propagação do erro, não de aprovação. Atualizar a regressão
+   antiga que espera o wrapper genérico em `test_e2e_regression_hardening.py`.
+   Critério de saída: os 16 casos passam com razões nativas e rollback; nenhuma
+   promoção indevida. Os cinco casos falhos interrompem antes da asserção final
+   de persistência, portanto ainda não comprovam rollback nesses caminhos.
+4. Depois, completar apenas a lacuna pública de Code Evidence: usar o predicado
+   real com projeção válida, incompleta e indisponível, incluindo skips admitidos
+   e qualidade ligada/desligada nos caminhos aplicáveis. Injetar falha na porta
+   de leitura quando necessário, sem mockar aprovação do gate. Comparar resumo,
+   preview, escritor, diagnóstico e estado persistido. Reutilizar os casos
+   existentes de cobertura; não exigir implementação antes de iniciar.
+5. Reconciliar os 120 casos do mapa existente e esses resultados com UV04–17/22;
+   executar apenas regressões impactadas e lacunas demonstradas. Publicar U2
+   somente após as falhas conhecidas estarem resolvidas e os limites registrados.
+
+Esta ordem detalha a família já prevista de arquitetura/recursos/Code Evidence;
+não acrescenta milestone, avaliação, gate ou mudança de autoridade.
 
 Primeiro relacionar os casos já executados aos UV; acrescentar somente a
 combinação ainda não demonstrada. Cada confronto usa a mesma fonte/policy para
