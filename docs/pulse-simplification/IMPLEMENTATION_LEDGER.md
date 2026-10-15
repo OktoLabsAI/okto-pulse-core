@@ -2,6 +2,41 @@
 
 ## Estado para retomada
 
+### 2026-10-14 — planejamento detalhado reconciliado; leitores preservados
+
+Pedido: iniciar o planejamento detalhado. Mantido o documento único
+`SPEC_UNIFIED_VALIDATION_PLAN.md`, U1–U4 e UV01–UV24, sem novos milestones.
+Baseline Core `f6d1878f`; incremento local Community preservado e publicado em
+`b30ad347` antes da revisão documental. Nenhuma implementação adicional nesta
+revisão. Atualizados cabeçalho, §6.2 e sequência final para distinguir trabalho
+comprovado, incremento com testes e prova visual pendente.
+
+Leitores de recursos: seis falhas reproduzidas (100 outros casos filtrados);
+depois, 107 passes: ArchitectureTab 19, CardModal 87 e ResourceGateDisclosure 1.
+Tipos finais, sessão 34447, concluídos com exit 0 após a normalização de
+description nullable. Lint dirigido anterior exit 0/11 warnings existentes;
+diff check exit 0. Código carrega KB herdada apenas na aba visível, substitui
+raízes removidas, transmite revisão/visibilidade ao snapshot Architecture e ao
+Resource Gate, descarta respostas antigas e limpa snapshot após leitura negada.
+Evidência: `evidence-u3-resource-readers-checkpoint-20261014.json`.
+
+Conferência visual **não concluída**: Architecture mock foi validada sem warnings,
+criada na Spec e copiada nativamente para o Card. A UI aberta passou a exibir
+Failed to fetch; conferência de listeners encontrou API/MCP 8200/8201 no PID
+27316, mas nenhum listener 5274. O Vite isolado deixou de estar disponível.
+Não repetir a cópia já aceita nem contabilizar a tela como sucesso. Nesta revisão
+não foi reiniciado nem reinstalado o runtime do usuário. Capturas operacionais
+locais ficaram fora dos commits; evidência sanitizada referencia hashes/IDs.
+
+Retomada concreta: restaurar somente o Vite isolado; conferir o snapshot existente
+e observar uma nova mutação MCP com a UI aberta para provar invalidação. Testar
+a retirada de KB selecionada com rascunho preservado e conferir somente os
+leitores ainda sem prova. Depois proteger os editores da Spec, ampliar o refresh
+global, concluir UV18–UV21 e executar U4 sobre wheels/frontend exatos e home nova.
+Knowledge/Targets já comprovados não voltam à fila. Todas as avaliações,
+critérios, severidades, thresholds, permissões e históricos permanecem; a
+unificação é do ponto de conclusão. U3 parcial e U4 pendente.
+
 ### 2026-10-14 — U3: Knowledge e Targets comprovados por UI/MCP
 
 Progresso sobre Core `13531685` / Community `e34aa415`. Community `ae265bdc`
