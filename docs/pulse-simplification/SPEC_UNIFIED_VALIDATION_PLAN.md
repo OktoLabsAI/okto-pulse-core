@@ -3,8 +3,10 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint de código: Core `867ef70e` / Community `b1b83138`, na
-branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
+Checkpoint publicado: Core `a1330157` (produto `867ef70e`) / Community
+`b1b83138`, na branch `feature/v0.4.0`, confirmado no remoto nesta conferência.
+Há WIP posterior de Architecture nos dois repositórios, descrito em §6.2;
+ele não equivale a incremento qualificado ou a U3 concluído.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
 revisão explícita da base e escrita UI confirmada por leitura MCP. Conjunto
@@ -528,8 +530,8 @@ Essas evidências não encerram o milestone nem substituem o E2E.
 
 #### Retomada executável de 3d — conferência de 15/10/2026
 
-**Base documental conferida:** Core `461a622d` (produto `8291a648`) / Community
-`5c1d8f73`, ambos confirmados no remoto `feature/v0.4.0`.
+**Base documental atual:** Core `a1330157` (produto `867ef70e`) / Community
+`b1b83138`, ambos confirmados no remoto `feature/v0.4.0`.
 As filas anteriores descrevem checkpoints históricos. A sequência
 abaixo é a única fila de trabalho vigente; detalha itens existentes, sem novo
 milestone ou mudança nos critérios de §7.
@@ -574,11 +576,33 @@ prevista, configurada e admitida pelos caminhos normais.
 
 #### Execução restante de Resources — detalhamento das linhas 2 e 3
 
-**Estado após implementação:** update autorado, fence, retenção/revisão de
+**Estado publicado:** update autorado, fence, retenção/revisão de
 rascunho e recuperação de Save estão qualificados em `867ef70e` / `b1b83138`;
-evidência e limites no início do plano. Preservar essas mudanças. Retomar as
-operações create/delete/import de 2c e as precondições que precisarem, depois
-2d e 3a/3b. A tabela continua decompondo o mesmo item 3d, sem novo milestone.
+evidência e limites no início do plano. Preservar essas mudanças.
+
+**WIP conferido nesta revisão de planejamento:** seis arquivos Core e cinco
+Community estendem a precondição às operações delete/import/payload e protegem
+create/delete/import no componente. O serviço reutiliza a porta de fence;
+composição de diagramas conserva a versão da leitura inicial. A UI distingue
+resultado incerto de escrita confirmada com leitura pendente, conserva entrada
+local e não infere sucesso pelo título. `readCurrent` já existe no componente,
+mas Resources ainda não está integrado ao watcher do pai.
+
+Relatórios anteriores, lidos nesta conferência: `u3-architecture-operations-before.xml`
+registra três falhas de caracterização; `u3-architecture-operations-core-final.xml`
+registra **120 passes**, incluindo catálogo; `u3-architecture-operation-recovery-ui.xml`
+registra **34 passes** (31 ArchitectureTab e três ExcalidrawImportDialog).
+Nenhuma nova execução foi feita neste planejamento. Esses resultados não
+comprovam browser, integração do pai, closure final ou artefato instalado.
+
+**Próxima ação exata:** revisar o diff e a suficiência das asserções de 2c,
+especialmente criação v1 quando o design antes selecionado tinha versão maior,
+falha do callback de leitura do pai e respostas após troca de identidade.
+Corrigir somente lacunas demonstradas; executar os testes afetados e provar
+create/import/delete por UI/MCP, incluindo recuperação sem segunda escrita.
+Depois concluir 3a/3b antes de ativar o watcher de Resources em 2d: os painéis
+mantidos montados também recebem props e não podem perder rascunhos ocultos.
+A tabela continua decompondo o mesmo item 3d, sem novo milestone.
 
 **Ponto de partida histórico da conferência de planejamento:** existia
 um diff local de oito arquivos Python (seis Core, dois Community). Ele acrescenta
@@ -605,7 +629,10 @@ relação à instalação: não é qualificação do pacote instalado.
 | 3a — Mockups | Proteger substituição de `screen_mockups` no writer do pai com base autorada e precondições nativas. Conservar ID e payload da tentativa; revisar explicitamente coleção alterada, sem restaurar item removido por composição silenciosa. Aplicar confirmação/recuperação e proteção de identidade/acesso. | Concorrência em coleção, inclusão/exclusão, resposta incerta e leitura falha sem perda/duplicação. Mudança MCP com formulário aberto, escrita UI revisada e releitura MCP; testes do pai/editor afetados. |
 | 3b — wrapper Knowledge e disclosure | Reutilizar `KnowledgeWorkspace` já qualificado; proteger somente criação e callbacks restantes no wrapper da Spec. Conectar visibilidade/revisão sem remontar editor. Atualizar `ResourceGateDisclosure` pela fonte autoritativa e sinalizar indisponibilidade, sem calcular gates no cliente. | Criação única, resposta tardia descartada, rascunho preservado, reabertura de subaba atualizada e dados retirados em perda de acesso. Prova UI/MCP das escritas alteradas; regressões pertinentes dos leitores existentes. |
 
-**Dependências:** 2a → 2b/2c → 2d; 3a/3b reutilizam os contratos já presentes,
+**Dependências:** preservar 2a/2b publicados; concluir a extensão local de
+2a/2c → proteger 3a/3b → integrar os três consumidores em 2d → UV18–UV21 → U4.
+O watcher de Resources só é ativado quando todos os formulários que permanecem
+montados conservarem base e rascunho. 3a/3b reutilizam os contratos já presentes,
 sem exigir outro framework. Todas essas linhas encerram o mesmo item 3d.
 O backend não ganha autoridade para julgar avaliações; a correção de
 concorrência impede uma gravação sobre base ultrapassada. Não introduzir

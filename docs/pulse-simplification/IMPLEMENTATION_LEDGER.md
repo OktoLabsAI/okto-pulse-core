@@ -2,6 +2,41 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento reconciliado com o WIP de operações Architecture
+
+Pedido atendido como planejamento, sem novas alterações de produto ou runtime.
+Confirmados no remoto: Core `a1330157` (produto `867ef70e`) e Community
+`b1b83138`, ambos `feature/v0.4.0`. U1 concluído, U2 qualificado no backend,
+U3 parcial e U4 pendente. Todas as avaliações, critérios, severidades,
+thresholds, permissões e históricos permanecem; unifica-se a conclusão.
+
+Conferido e preservado o WIP: Core `architecture_crud.py`, `mcp/server.py`,
+`services/architecture.py` e testes architecture MCP/repository/REST;
+Community `api/architecture.py`, frontend `services/api.ts`, ArchitectureTab,
+ExcalidrawImportDialog e testes ArchitectureTab. A extensão acrescenta base
+esperada em delete/import/payload e recuperação de criação/importação/exclusão.
+Não foi descartada nem incluída no commit documental deste planejamento.
+Snapshots operacionais não rastreados também permanecem locais.
+
+Relatórios lidos em `PULSE_REFACTOR/.validation-v040/spec-unified-20261014/`:
+- `u3-architecture-operations-before.xml`: três falhas; delete/import aceitaram
+  base antiga; payload não apresentou o conflito de versão esperado.
+- `u3-architecture-operations-core-final.xml`: 120 passes, zero falhas/erros/skips.
+- `u3-architecture-operation-recovery-ui.xml`: 34 passes, zero falhas/erros/skips.
+
+São evidências de execuções anteriores, não testes executados nesta revisão.
+Não encerram integração, browser, closure ou instalação. Atualizado §6.2 do
+plano único: qualificar 2c e suas precondições → proteger Mockups e wrapper
+Knowledge → conectar Resources no pai → UV18–UV21 → U4 instalado/Done/KG.
+Conferir também se o teste de criação com versão menor usa de fato uma seleção
+anterior de versão maior. O watcher só entra depois de protegidos todos os
+formulários mantidos montados; não basta proteger a subaba visível.
+
+Próxima execução começa pelo diff local, sem reimplementar etapas publicadas.
+Não houve nova aprovação, mudança de gate, dados do usuário, reinstall ou
+promoção neste planejamento. O critério final continua U1–U4/UV01–UV24,
+oito budgets ZERO, par instalado comprovado e commits/pushes rastreados.
+
 ### 2026-10-15 — U3/3d: update autorado de Architecture, conflito e recuperação qualificados
 
 Par de produto: Core `867ef70e` / Community `b1b83138`, `feature/v0.4.0`.
