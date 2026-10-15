@@ -5,7 +5,9 @@
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
 Checkpoint de produto: Core `826d5dfa` / Community `d58ee70d`, na branch
 `feature/v0.4.0`. Operações Architecture foram qualificadas no componente e
-por UI/MCP; integração Resources no pai ainda pendente. Não equivale a U3 concluído.
+por UI/MCP. Resources tem integração local ainda não publicada nem qualificada
+por browser/MCP; a fila vigente de §6.2 distingue esse WIP do produto publicado.
+Não equivale a U3 concluído.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
 revisão explícita da base e escrita UI confirmada por leitura MCP. Conjunto
@@ -116,7 +118,8 @@ Create/delete/import foram posteriormente qualificados em `826d5dfa` / `d58ee70d
 120 testes backend, 34 frontend, tipos/lint e closure ZERO. UI/MCP comprovou
 criação, conflito/revisão de importação e recuperação após import/delete sem
 repetir escrita. Ver [operações Architecture](evidence-u3-architecture-operations-20261015.json).
-Faltam proteger Mockups/wrapper Knowledge e integrar Resources automaticamente.
+Mockups/wrapper Knowledge e integração automática de Resources têm WIP local;
+faltam revisão final, auditoria e prova nativa integrada antes de publicá-los.
 A fila vigente está em §6.2, “Retomada executável de 3d”. Não reimplementar
 U1/U2, Project Structure ou Coverage/References já qualificados.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
@@ -479,7 +482,8 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint vigente de código:** Core `867ef70e` / Community `b1b83138`.
+**Checkpoint publicado vigente:** Core `c0167eb6` (produto `826d5dfa`) /
+Community `d58ee70d`. O WIP descrito abaixo não integra esse par.
 5c foi integrado e qualificado após os checkpoints históricos abaixo: Tests
 assina atualizações externas, preserva cenários/métodos/relatórios e possui
 recuperação protegida de escrita/leitura. Evidência `evidence-u3-tests-watch-20261015.json`.
@@ -533,8 +537,8 @@ Essas evidências não encerram o milestone nem substituem o E2E.
 
 #### Retomada executável de 3d — conferência de 15/10/2026
 
-**Base documental atual:** Core `a1330157` (produto `867ef70e`) / Community
-`b1b83138`, ambos confirmados no remoto `feature/v0.4.0`.
+**Base documental atual:** Core `c0167eb6` (produto `826d5dfa`) / Community
+`d58ee70d`, ambos confirmados no remoto `feature/v0.4.0` nesta conferência.
 As filas anteriores descrevem checkpoints históricos. A sequência
 abaixo é a única fila de trabalho vigente; detalha itens existentes, sem novo
 milestone ou mudança nos critérios de §7.
@@ -548,13 +552,13 @@ replay exato. Retomar pela linha 2 abaixo; a linha 1 registra o aceite concluíd
 | Ordem / item existente | Alteração ou conferência concreta | Saída verificável |
 | --- | --- | --- |
 | 1 — Dependencies / 3d | Concluído em `5c1d8f73`: preservar base, replay, confirmação/leitura, piso de versão, identidade/acesso e invalidação de paginação. | 145 passes, tipos/lint e prova UI/MCP em `evidence-u3-dependencies-20261015.json`; não repetir sem impacto novo. |
-| 2 — Architecture / Resources / 3d | Separar snapshot recebido de rascunho autorado antes de transmitir `revision/active` do pai. Manter seleção/edição autorizadas; mudança externa exige revisão da base; resposta antiga não altera outro contexto. Conferir contratos públicos de create/update e recuperação de escrita, sem presumir que oferecem recibo ou fence ausentes. Reutilizar o recurso nativo e os guards existentes. | Testes de refresh durante edição, remoção, leitura negada, falha após escrita e troca de identidade. UI/MCP mostra mudança externa e rascunho preservado; gravação revisada confirmada. Leitura de Architecture em Cards continua protegida. |
-| 3 — Mockups e Knowledge / Resources / 3d | Proteger create/delete e callbacks do pai; transmitir revisão/visibilidade sem remontar formulário. Mockups conserva coleção/base autorada e ID da tentativa; conferir precondições suportadas pelo writer público antes de conectá-lo à recarga externa. Knowledge reutiliza o editor já qualificado, protegendo o formulário de criação e o wrapper da Spec. Atualizar `ResourceGateDisclosure` a partir de leitura autoritativa. | Testes das operações afetadas, falha de leitura, tentativa incerta, subaba oculta/reaberta e revogação. Prova UI/MCP em cada família de escrita alterada; nenhuma criação duplicada ou perda silenciosa. Tipos/lint; ledger e commit/push. |
+| 2 — Architecture / Resources / 3d | Preservar update/create/delete/import publicados. Revisar e qualificar o WIP do pai que transmite `revision/active/readCurrent` e aguarda a releitura completa, sem remontar a autoria. | Mutação MCP com formulário aberto chega automaticamente; rascunho permanece, revisão é explícita e escrita UI é confirmada pelo MCP. Não repetir as provas de operações já publicadas sem alteração relevante. |
+| 3 — Mockups e Knowledge / Resources / 3d | Revisar o WIP de snapshot da coleção e concorrência no writer de Mockups, wrapper Knowledge e callbacks do pai. Concluir qualificação do conjunto Resources conforme roteiro abaixo. | Provas de mesma versão com coleção alterada, recuperação sem segunda escrita, subaba oculta/reaberta e acesso. Testes existentes só são repetidos por mudança ou falha; auditoria/catálogo e browser/MCP ainda pendentes. Ledger e commit/push após qualificação. |
 | 4 — UV18–UV21 / fim de U3 | Reconciliar evidências existentes por aceite e executar somente os casos ainda não demonstrados: evolução real de Card/Delivery sem bump da Spec, recuperação e autoridade nos consumidores alterados; conclusão composta, resultados individuais e histórico completo. Inspecionar loading, pinpoints, teclado e foco. | Matriz UV → evidência → resultado → limite sem consumidores previstos pendentes. Testes frontend afetados e build aprovados, screenshots inspecionadas, ledger e commit/push de U3. |
 | 5 — U4 / artefato | Regressões pertinentes, catálogo gerado, closure e build dos dois wheels/frontend. Instalar par exato em ambiente/home novos, comparar `.py` e frontend byte a byte e iniciar processo posterior à instalação. | Origens dos imports, par de commits, hashes e processos registrados; oito budgets ZERO. Não usar runtime de checkout como prova do artefato. |
 | 6 — U4 / percurso | Nova iniciativa mock: Ideação → Refinamento → Spec e Cards Not Started em Draft → avaliações preservadas → conclusão única → execução → Tasks/Test/Spec Done → busca e consolidação KG. | UV01–UV24 com evidência observada, percentuais aplicáveis em 100%, canonical/proveniência, ledger e commits/pushes finais. Não inventar execução nem afrouxar policy para concluir. |
 
-**Precisão do diagnóstico de Resources:** a leitura atual de
+**Diagnóstico anterior ao WIP atual:** a leitura de
 `ArchitectureTab.tsx` mostra que `readScope` limpa seleção/design; `revision`
 recarrega listas, e a mudança de `selectedSummary` pode substituir `design`
 pelo detalhe recebido. Portanto, não é correto atribuir a limpeza diretamente
@@ -571,19 +575,58 @@ em um contrato nativo, corrigir somente esse contrato/caller/testes no mesmo
 item, mantendo portas públicas e a regra de investigação do pacote. Não
 inventar replay onde a API não o garante. Melhoria opcional fica fora da fila.
 
-Esta seção começou como planejamento; a linha 1 foi sucedida pelo incremento
-Dependencies registrado acima. As linhas 2–6 continuam pendentes.
+Esta seção começou como planejamento; a linha 1 e as operações de Architecture
+foram sucedidas pelos incrementos publicados. A integração das linhas 2–3 tem
+WIP e provas parciais abaixo; as linhas 4–6 continuam pendentes.
 O fixture atual de Spec tem snapshot de Checklist ausente no contexto full;
 não usar essa limitação como motivo para afrouxar gate. U4 usa a iniciativa nova
 prevista, configurada e admitida pelos caminhos normais.
 
 #### Execução restante de Resources — detalhamento das linhas 2 e 3
 
+**Retomada vigente após conferência do WIP de Mockups/Knowledge:** as operações
+Architecture estão publicadas; não reaplicar 2a–2c. O diff local já conecta
+Resources ao watcher no `SpecModal`, transmite visibilidade/atualidade, aguarda
+callbacks de releitura e extrai `SpecKnowledgeResources`. Mockups conserva base,
+snapshot e identidade da tentativa. O backend compara o snapshot sob o fence
+transacional existente; os writers MCP capturam a coleção antes da mutação.
+Isso não modifica o significado de `Spec.version`, que permanece igual nas
+edições de Mockups, nem cria aprovação, coluna persistida ou migração.
+
+**Provas existentes conferidas, não reexecutadas neste planejamento:**
+`u3-mockups-snapshot-core-final.xml` (77 passes),
+`u3-mockups-snapshot-race.xml` (1 pass), `u3-resources-parent.xml` (98 passes) e
+`u3-resources-parent-qualified-cases.xml` (3 passes e 79 skips por seleção).
+Total distinto nesses relatórios: **78 backend e 101 frontend**. A sessão
+TypeScript já iniciada terminou com exit 0. As primeiras reproduções falharam:
+o schema recusava a base; a tentativa baseada somente em versão ainda aceitava
+sobrescrita. Preservar esses registros. Nada disso demonstra browser/MCP do WIP,
+catálogo/closure finais ou par instalado.
+
+| Ordem imediata | Trabalho delimitado sobre o diff existente | Condição de saída |
+| --- | --- | --- |
+| 3a/3b/2d — revisar e qualificar fonte | Conferir normalização do snapshot, guarda após releitura sob fence, captura antes de mutações nos quatro writers MCP e resposta REST de conflito. Revisar callbacks de Resources, respostas de outra identidade, leitura com a mesma versão e snapshot diferente, perda de acesso e confirmação de escrita separada da leitura. Preservar Design System e demais policies. | Sem sobrescrita silenciosa nem efeitos parciais no conflito. Ajustar somente falhas concretas; executar regressões afetadas, tipos/lint, gerador oficial do catálogo e teste de drift. Closure sem findings/drift e oito budgets ZERO; atualizar matrizes README somente pelo renderer oficial se necessário. |
+| 3a/3b/2d — provar integração nativa | No runtime isolado com ambos os checkouts comprovados, abrir rascunho de Architecture e alterar via MCP; repetir para Mockups mantendo a versão da Spec e alterando a coleção. Revisar explicitamente e salvar pela UI, conferindo IDs/conteúdo pelo MCP. Em Knowledge, criar pela UI, interromper uma releitura posterior e recuperar. Exercitar ocultar/reabrir subabas com rascunhos. | Atualização automática sem Refresh manual; campos preservados; snapshot antigo recusado; conteúdo concorrente retido; nenhuma segunda escrita após confirmação. Disclosure reflete a leitura autoritativa. Registrar requests, IDs, versões/snapshots e screenshots inspecionadas; não inferir sucesso por título. |
+| 3d — publicar incremento | Confrontar resultados com os casos já existentes de create/delete, resposta incerta, identidade e acesso. Reutilizar provas suficientes; executar somente lacunas reais. Registrar alcance e limites no ledger e evidência. | Commit/push pareados do incremento Resources, sem incluir snapshots operacionais indiscriminadamente. Resources qualificado não encerra sozinho U3. |
+| UV18–UV21 — fechar U3 | Reconciliar a matriz com evidências existentes. Executar os casos ainda ausentes de Card/Delivery sem bump da Spec, rede, autoridade, conclusão composta, resultados individuais/histórico, teclado/foco/loading. | Todos os consumidores previstos demonstrados, testes/build pertinentes aprovados e conferência visual real. Sem novos consumidores ou redesign opcional na fila. Ledger e commit/push. |
+| U4 — fechar entrega | Qualificar wheels/frontend pareados em instalação/home novas, comprovar arquivos e processo; executar o percurso mock novo previsto em §7/§8 até Cards/Test/Spec Done e consulta/consolidação KG. | UV01–UV24 ligados a prova e limite, oito budgets ZERO, percentuais aplicáveis comprovados e KG canonical. Nenhum gate relaxado ou resultado inventado. Ledger e commit/push finais. |
+
+**Ponto de partida:** o diff local descrito acima, não nova implementação dos
+editores. O processo isolado iniciado anteriormente precisa ter saúde e origem
+conferidas antes do ensaio. Não reiniciar mutações antigas nem usar o runtime da
+home padrão. A Spec antiga sem snapshot de Checklist não qualifica o percurso
+integral; U4 usa a iniciativa nova já prevista, admitida pelos caminhos normais.
+O critério final continua U1–U4 e UV01–UV24; não há milestone adicional.
+
+**Histórico que fundamentou essa retomada:** os parágrafos e itens 2a–3b abaixo
+conservam a decomposição original. Seus relatos de WIP Architecture foram
+sucedidos pelo par publicado; a fila operacional é a tabela imediatamente acima.
+
 **Estado publicado:** update autorado, fence, retenção/revisão de
 rascunho e recuperação de Save estão qualificados em `867ef70e` / `b1b83138`;
 evidência e limites no início do plano. Preservar essas mudanças.
 
-**WIP conferido nesta revisão de planejamento:** seis arquivos Core e cinco
+**WIP Architecture da revisão anterior, hoje publicado:** seis arquivos Core e cinco
 Community estendem a precondição às operações delete/import/payload e protegem
 create/delete/import no componente. O serviço reutiliza a porta de fence;
 composição de diagramas conserva a versão da leitura inicial. A UI distingue
@@ -639,8 +682,8 @@ relação à instalação: não é qualificação do pacote instalado.
 | 3a — Mockups | Proteger substituição de `screen_mockups` no writer do pai com base autorada e precondições nativas. Conservar ID e payload da tentativa; revisar explicitamente coleção alterada, sem restaurar item removido por composição silenciosa. Aplicar confirmação/recuperação e proteção de identidade/acesso. | Concorrência em coleção, inclusão/exclusão, resposta incerta e leitura falha sem perda/duplicação. Mudança MCP com formulário aberto, escrita UI revisada e releitura MCP; testes do pai/editor afetados. |
 | 3b — wrapper Knowledge e disclosure | Reutilizar `KnowledgeWorkspace` já qualificado; proteger somente criação e callbacks restantes no wrapper da Spec. Conectar visibilidade/revisão sem remontar editor. Atualizar `ResourceGateDisclosure` pela fonte autoritativa e sinalizar indisponibilidade, sem calcular gates no cliente. | Criação única, resposta tardia descartada, rascunho preservado, reabertura de subaba atualizada e dados retirados em perda de acesso. Prova UI/MCP das escritas alteradas; regressões pertinentes dos leitores existentes. |
 
-**Dependências:** preservar 2a/2b publicados; concluir a extensão local de
-2a/2c → proteger 3a/3b → integrar os três consumidores em 2d → UV18–UV21 → U4.
+**Dependências vigentes:** preservar 2a–2c publicados; revisar/qualificar o WIP
+3a/3b/2d → publicar Resources → UV18–UV21 → U4.
 O watcher de Resources só é ativado quando todos os formulários que permanecem
 montados conservarem base e rascunho. 3a/3b reutilizam os contratos já presentes,
 sem exigir outro framework. Todas essas linhas encerram o mesmo item 3d.

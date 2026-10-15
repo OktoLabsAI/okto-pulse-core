@@ -2,6 +2,52 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento reconciliado com Mockups/Knowledge e integração Resources
+
+Conferência solicitada atendida como planejamento. Remotos confirmados:
+Core `c0167eb6` (produto `826d5dfa`) / Community `d58ee70d`, ambos
+`feature/v0.4.0`. U1 implementado, U2 qualificado no backend, U3 parcial,
+U4 pendente. Todas as avaliações, critérios, severidades, thresholds,
+permissões, autoria e históricos permanecem; a conclusão é unificada.
+
+Preservado o WIP: seis arquivos Core (schema, fachada pública, serviço,
+use cases MCP de Mockups e dois arquivos de testes); cinco arquivos Community
+rastreados (API Spec, tipos, MockupsTab, SpecModal e testes do pai) e três novos
+arquivos (SpecKnowledgeResources e testes de Mockups/Knowledge). Não foi
+alterado nem incluído no commit documental. Capturas operacionais não rastreadas
+também permanecem locais.
+
+A conferência de fonte confirma que o WIP já conecta Resources ao watcher e
+aguarda os callbacks. O snapshot de Mockups protege mudanças de coleção que
+não incrementam Spec.version, comparando a base após releitura sob o fence;
+os writers MCP capturam sua base antes de alterar a coleção. Não declarar o
+conjunto qualificado só porque os componentes estão implementados.
+
+Relatórios anteriores lidos em `PULSE_REFACTOR/.validation-v040/spec-unified-20261014/`:
+- `u3-mockups-version-before.xml`: 1 falha de caracterização.
+- `u3-mockups-version-core.xml`: 49 passes/1 falha; versão sozinha não impediu sobrescrita.
+- `u3-mockups-snapshot-core-final.xml`: 77 passes.
+- `u3-mockups-snapshot-race.xml`: 1 pass.
+- `u3-resources-parent.xml`: 98 passes.
+- `u3-resources-parent-qualified-cases.xml`: 3 passes/79 skips por seleção.
+
+Os quatro relatórios finais totalizam 78 backend e 101 frontend distintos.
+Não são novos testes desta revisão. A sessão TypeScript pendente `97385` foi
+consultada e encerrou com exit 0. Browser/MCP do WIP, catálogo/closure finais,
+build e pacote instalado ainda não foram qualificados nesta conferência.
+
+Plano único atualizado em §6.2: revisar/qualificar o diff → provar Resources
+por UI/MCP → publicar o incremento → fechar UV18–UV21 → U4 instalado com
+iniciativa mock nova até Done/KG canonical. Operações Architecture publicadas
+não voltam à fila. Não criar outro watcher, CAS geral, camada de migração ou
+nova avaliação. Corrigir somente falha que impeça um aceite já definido.
+
+Próxima execução começa pela revisão final do WIP e evidências faltantes,
+com origem de ambos os checkouts e saúde do runtime isolado comprovadas.
+Nenhuma nova alteração de produto, instalação, mutação de dados ou execução
+de browser foi realizada por este planejamento. A entrega integral permanece
+aberta; este registro não promove U3 nem U4.
+
 ### 2026-10-15 — U3/3d: operações de Architecture qualificadas; integração Resources pendente
 
 Produto Core `826d5dfa` / Community `d58ee70d`. Delete/import/payload conservam
