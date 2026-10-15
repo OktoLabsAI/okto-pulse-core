@@ -87,29 +87,31 @@ Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
 
 ### Retomada detalhada — conferência do trabalho local em 15/10/2026
 
-**Registro histórico, sucedido pela execução `aeebd6df` descrita acima.**
-O checkpoint publicado na conferência era Core `4365ac85` (documentação; código
-`8291a648`) / Community `47434062`. Há trabalho local ainda não publicado em
-`SpecModal.tsx`, `ScenarioVerificationMethodEditor.tsx`, `scenarioWriteGuard.ts`
-e `SpecModal.activity.test.tsx`. Ele implementa recuperação de criação/exclusão
-com resposta incerta e retenção da seleção de método de cenário removido.
-Não tratá-lo como item encerrado nem refazê-lo. O XML local
-`u3-scenario-reconciliation-ui-final.xml` registra 54 testes, zero falhas/erros;
-esta conferência leu o resultado existente, sem executar nova suíte ou ensaio.
+**Base conferida:** Core `9cb255a3` (produto `8291a648`) / Community
+`28ec1871`, ambos publicados em `feature/v0.4.0`. Tests/5c já foi integrado;
+não permanece na fila. O único diff de produto encontrado nesta conferência
+está em `ProjectStructureTab.tsx` e `ProjectStructureTab.test.tsx`.
+Ele acrescenta base autorada, recuperação da tentativa original, retenção de
+rascunho e proteção de identidade/acesso. Preservá-lo e revisá-lo, sem reaplicar.
+O XML local `u3-project-structure-guards.xml` registra 14 testes, zero falhas,
+erros ou skips. Foi lido nesta conferência; não é nova execução nem prova de
+tipos, integração do pai, browser ou instalação.
 
-| Ordem restante | Trabalho e dependência | Critério de encerramento |
+| Ordem restante | Trabalho concreto e dependência | Evidência de saída |
 | --- | --- | --- |
-| 5c.2/5c.3 — concluir o incremento local | Revisar o diff existente; consolidar a prova de resposta perdida após commit; completar a inspeção UI/MCP do método removido. Conferir recuperação do writer de método e dos writers de vínculo/policy, conforme inventário já definido. | Releitura não duplica criação/exclusão; retry mantém a tentativa original; item removido não é recriado; rascunho autorizado é preservado e recusa de acesso retira conteúdo. Evidência, ledger, commit e push. |
-| 5c.4 — integrar Tests | Somente após proteger os writers acima, habilitar a assinatura existente de atualização externa. | Mudança MCP observada com formulário aberto, conflito explícito, revisão da base e gravação confirmada por MCP; testes afetados e inspeção visual. |
-| 5d — Project Structure | Conferir o contrato próprio de revisão, respostas atrasadas, rascunho e autoridade; preservar os controles existentes. | Testes dirigidos dos comportamentos afetados; autoria nativa instalada permanece no roteiro U4. |
-| 3d — leitores restantes | Conectar Coverage, recursos, referências e dependências aos metadados existentes. | Mudança apenas de Card/Delivery atualiza projeções abertas, sem depender de bump da Spec nem consultar Coverage pesado periodicamente. |
-| UV18–UV21 — encerrar U3 | Executar a qualificação integrada já prevista: sincronização, rede, identidade, autoridade, formulário, resultados e histórico. | Cada aceite tem evidência observada; nenhuma avaliação eliminada e nenhum consumidor previsto pendente. |
-| U4 — concluir a entrega | Construir/instalar o par exato em ambiente isolado e executar nova iniciativa UI/MCP até Done e KG canonical. | UV01–UV24, paridade byte a byte, processo novo, catálogo, frontend, oito budgets ZERO e publicação final comprovados. |
+| 5d.1 — concluir o diff local | Revisar base autorada versus tokens atuais, replay exato e resposta de outra identidade. Conferir apresentação do rascunho de nó removido inclusive com itens removidos visíveis, sem dois editores para o mesmo nó. Preservar a API transacional própria da árvore. | Testes dirigidos de refresh/conflito, resposta incerta, remoção, troca de Spec e acesso; tipos/lint pertinentes. Resultados locais existentes não encerram a integração. |
+| 5d.2 — integrar Project Structure/Details | Em `SpecModal`, incluir a aba no watcher existente e fornecer revisão, atualidade e perda de acesso. Proteger `onStructureChange` por Board/Spec e revisões, sem regredir o estado do pai. Recuperar falha de leitura do workspace por releitura completa: carregar só a árvore não comprova atualidade de toda a Spec. Classificar os controles restantes de Details em leitura/escrita, sem reintroduzir requisitos por essa aba. | Testes do pai e componente; UI aberta com rascunho + mudança MCP → atualização, revisão explícita e escrita confirmada por MCP. Autoria no par instalado continua no U4. |
+| 3d — leitores restantes, após proteger os editores | Conferir Coverage, recursos, referências e dependências contra o watcher já existente. Para cada leitor restante, registrar token autoritativo consumido, condição de visibilidade e descarte de resposta antiga; conectar somente o que falta. Reutilizar integrações de Cards/Delivery, SpecsPanel e Kanban. | Mudança apenas de Card/Delivery, sem bump de Spec, atualiza leitores/capas abertos; painel fechado consulta ao abrir. Sem polling pesado periódico, cálculo de gates no cliente ou novo mecanismo de sincronização. |
+| UV18–UV21 — encerrar U3 | Conferir atualização externa, rede/retomada, troca de identidade, revogação, formulário sujo, resultados e histórico. Exercitar a conclusão composta com permissões distintas e inspecionar visualmente a interface. Reusar evidências que já demonstram exatamente o aceite. | Todos os consumidores previstos cobertos; avaliações separadamente legíveis; histórico, pinpoints, loading, foco/teclado e recuperação verificados. Ledger, testes/tipos/build pertinentes e commit/push de U3. |
+| U4.1 — qualificar o artefato | Executar regressões afetadas, catálogo gerado e closure; construir wheels dos dois repos e frontend, instalar em ambiente/home isolados, comparar arquivos byte a byte e iniciar processo posterior à instalação. | Par exato e origem dos imports registrados; frontend empacotado conferido; oito budgets ZERO. Não confundir runtime de checkout com artefato instalado. |
+| U4.2 — concluir o percurso | Nova iniciativa mock via UI/MCP: Ideação → Refinamento → Spec com Cards Not Started em Draft → conclusão unificada → execução → Cards/Test/Spec Done → consulta e consolidação KG. | UV01–UV24 ligados a evidências observadas; nenhum teste/prova/aprovação inventado; percentuais aplicáveis em 100%, KG canonical/proveniência, ledger e commits/pushes finais. |
 
-Esta tabela é um índice operacional de §6.2, não uma nova decomposição de
-milestones. A atualização do planejamento não qualifica o diff local, não
-instala produto e não altera gates. U1/U2 e as provas já aceitas são preservados;
-repetir testes apenas por impacto de alteração ou falha identificada.
+Esta tabela é o índice vigente de §6.2 e substitui as filas de checkpoints
+anteriores, preservadas abaixo como histórico. Não acrescenta milestones nem
+novos contratos. As avaliações e regras da tabela de §3 permanecem integrais.
+A conferência é documental: não alterou produto nem executou novos testes,
+instalou runtime ou qualificou o diff local. Melhorias opcionais não entram na
+fila; falha que impede um aceite existente é corrigida no item correspondente.
 
 ### Leitura executiva do plano
 
@@ -487,7 +489,7 @@ Essas evidências não encerram o milestone nem substituem o E2E.
 | U1 | Cards Not Started em Draft e remoção da exigência de existir Decision. | Percurso real UI/MCP no U4; não refazer a implementação. |
 | U2 — conclusão | Payload composto, permissões independentes, pareceres/históricos nativos, promoção condicionada, recibo/replay e manifesto obrigatório. | Preservar a matriz U2 já qualificada; comprovar autenticação wire e percurso instalado em U4. |
 | U2 — leitura | `include_planning`, 17 componentes, composição pública sem escrita, revisões leves em lote, permissões por componente, paginação REST/MCP e cliente tipado. Revisões de coleções Spec/Card por Board; 11 passes do contrato, 79 de manifesto/leitura/transporte. Admissão sem Checklist comprovada por REST/browser e rollback nativo. | Consumir os contratos existentes em U3 e comprovar o percurso UI/MCP instalado em U4; não recriar metadados de coleção. |
-| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão, SpecsPanel e Kanban; refresh de permissões com proteção de respostas antigas. Knowledge/Targets, leitores, FR/AC/critério/qualificação e coleções têm provas registradas. Integration e Decisions qualificadas; confirmação de cenários corrigida com testes e prova de criação UI/MCP. | Completar base/recarga/método de cenários e conferir Project Structure (3c), depois expandir leituras; comprovar progresso de Card sem bump da Spec, revogação/offline/reconexão no fluxo completo. Autoria nativa de Project Structure permanece U4. |
+| U3 | Resumo, histórico Current/Previous, contribuição independente, payload opcional, registro/promoção distintos e revisão explícita da base. Watcher integrado à Validation/conclusão, SpecsPanel e Kanban; refresh de permissões com proteção de respostas antigas. Knowledge/Targets, leitores, FR/AC/critério/qualificação e coleções têm provas registradas. Integration, Decisions e Tests/5c qualificados nos limites do ledger. Project Structure possui diff local ainda não publicado. | Concluir Project Structure/Details (5d), depois leitores restantes (3d); comprovar progresso de Card sem bump da Spec, revogação/offline/reconexão no fluxo completo. Autoria instalada de Project Structure permanece U4. |
 | U4 | Regressões parciais registradas no ledger. | Wheels, runtime compatível, browser e iniciativa nova até Done/KG; matriz UV01–UV24. |
 
 #### U2 — encerrar backend e contratos antes da interface
@@ -889,9 +891,9 @@ identificar ações realmente observadas, separadas dos mocks de componentes.
 U4 permanece a qualificação do par exato instalado e da iniciativa nova até
 Done/KG canonical; não converter uma prova isolada de editor em aceite final.
 
-#### Roteiro executável restante — checkpoint publicado `8291a648` / `47434062`
+#### Histórico do roteiro — checkpoint publicado `8291a648` / `47434062`
 
-Esta é a fila vigente, subordinada aos itens anteriores. Não acrescenta
+Esta fila é histórica; a retomada vigente está no início deste documento. Não acrescenta
 milestone, gate, avaliação ou critério à matriz UV01–UV24. O planejamento foi
 sucedido pela execução parcial de 5c. Preservar U1/U2, 5a/5b, confirmação e
 proteção da versão autorada de cenários, sem tratar esses incrementos como U3
@@ -985,7 +987,7 @@ Não há nova etapa de produto, novo gate ou expansão dos UV01–UV24.
 | --- | --- | --- |
 | 1 — U3/2e.1 | Concluído: preservar a prova Knowledge em `evidence-u3-knowledge-targets-20261014.json`. | Revisões 1 → 2 → 3, rascunho preservado, revisão explícita e escrita UI lida pelo MCP. Nenhuma repetição necessária sem alteração. |
 | 2 — U3/2e.2–3 | Implementado e qualificado nos limites de `evidence-u3-resource-readers-live-20261014.json`. Preservar Targets e leitores. | Architecture/KB observadas após MCP e captura inspecionada; Project Structure/dependências em testes frontend. Autoria de árvore nativa recusada pelo contexto no runtime anterior não é prova positiva e permanece no ensaio U4. |
-| 3 — U3/SpecModal | Retomar 3c–3d sobre `3c4df986`: concluir atualidade operacional, método removido e resultados incertos de 5c; conferir 5d. Preservar 5a/5b, confirmação/base de versão de cenários, editores e coleções já qualificados. Depois invalidar Coverage/recursos/referências/dependências pelo watcher existente. | Rascunho e base preservados; mudança só de Card atualiza Coverage; respostas de outra Spec descartadas. Testes dos editores e consumidores efetivamente alterados e prova browser/MCP. |
+| 3 — U3/SpecModal | Retomar sobre `28ec1871`: concluir o diff local de Project Structure e sua integração/Details (5d). Preservar 5a/5b/5c, editores e coleções qualificados. Depois invalidar Coverage/recursos/referências/dependências restantes pelo watcher existente (3d). | Rascunho e base preservados; mudança só de Card atualiza Coverage; respostas de outra Spec descartadas. Testes dos editores e consumidores efetivamente alterados e prova browser/MCP. |
 | 4 — U3/UV18–21 | Conferir o conjunto aberto: atualização MCP, acesso revogado, rede interrompida/recuperada, troca de contexto, histórico e ação de conclusão. Reusar provas parciais pertinentes. | UI legível e funcional, sem cache protegido após revogação, sem submissão duplicada, sem perda silenciosa de edição. U3 pode ser encerrado somente aqui. |
 | 5 — U4/UV01–24 | Qualificar o par exato de wheels/frontend e executar iniciativa mock nova até Cards/Test/Spec Done e KG canonical, conforme roteiro abaixo. | Matriz final com provas reais UI/MCP, paridade byte a byte, processo novo, oito budgets ZERO, commits/pushes pareados. |
 

@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento detalhado reconciliado com o trabalho local
+
+Atendimento ao pedido de planejamento, sem nova implementação. Base conferida:
+Core `9cb255a3` (produto `8291a648`) / Community `28ec1871`, branches
+`feature/v0.4.0` sincronizadas com suas referências origin locais. U1 e a
+qualificação backend U2 são preservados; U3 continua parcial e U4 pendente.
+
+O plano `SPEC_UNIFIED_VALIDATION_PLAN.md` agora possui uma única fila de
+retomada vigente: concluir o diff de Project Structure → integrar o pai e
+conferir Details → leitores restantes → UV18–UV21 → U4 instalado/E2E.
+As filas antigas de cenários foram marcadas como históricas ou atualizadas;
+Tests já está no watcher e não deve ser reimplementado. Os itens são
+desdobramentos de 5d/3d/U3/U4 existentes, sem novo milestone, gate ou avaliação.
+
+Trabalho local preservado, ainda não publicado no Community:
+`frontend/src/components/specs/ProjectStructureTab.tsx` e seu teste. O diff
+protege base autorada, tentativa incerta, rascunho e identidade/acesso. O pai
+`SpecModal` ainda não inclui Project Structure em `validationLive`, não fornece
+as novas props de atualidade/recarga/acesso e aplica `onStructureChange` sem
+conferência explícita da identidade/revisões. Essa é a próxima integração
+concreta; a leitura da árvore não deve certificar toda a Spec como atual.
+
+Conferência de evidência existente, sem nova execução: XML local
+`PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-project-structure-guards.xml`
+registra 14 testes, zero falhas, erros ou skips. Isso não comprova tipos/lint,
+integração do pai, browser ou instalação. Os snapshots operacionais não
+rastreados permanecem preservados; não foram incorporados como código.
+
+Todas as avaliações, critérios, severidades, thresholds, autoridades e
+históricos continuam obrigatórios conforme aplicabilidade. Um único ponto
+conclui o planejamento; não há média entre avaliações nem aprovação implícita.
+Sem mudança de escopo, contratos, migrations, runtime ou dados nesta revisão.
+O commit documental não representa publicação nem qualificação do diff local.
+
 ### 2026-10-15 — U3/5c: Tests integrado ao watcher; writers e relatórios protegidos
 
 Community `28ec1871` publicado em `feature/v0.4.0`; Core de produto permanece
