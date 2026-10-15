@@ -3,7 +3,7 @@
 ## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint publicado: Core `5d3d1366` / Community `81af8c41`, publicados na
+Checkpoint publicado: Core `c2e05d69` / Community `1b3f5eaf`, publicados na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -48,7 +48,10 @@ preserva rascunho, exige revisão explícita e mantém replay da base original.
 141 casos finais distintos e prova UI/MCP de promoção de IR, com arquitetura
 v2 → v3, contrato revisto e persistência confirmada. Ver
 [classificação arquitetural](evidence-u3-classification-editors-20261015.json).
-Decisions ainda monta inspeção própria; protegê-la antes de assinar a aba.
+O componente de inspeção de Decisions agora conserva a base e o replay exato:
+10 testes aprovados. Falta integrar `DecisionsTab`, preservar observação de
+item removido, propagar leitura atual e fazer prova UI/MCP antes de assinar a
+aba. Ver [inspeção de Decision](evidence-u3-decision-inspection-component-20261015.json).
 O componente de método de cenário também conserva a base: 15 testes aprovados,
 tipos/lint aprovados. Integração com `TestScenariosTab`, recarga e prova visual
 ainda pendentes; Tests permanece fora do watcher. Ver
@@ -388,7 +391,7 @@ reabrir as iniciativas existentes do usuário para acomodar alterações de sche
 
 ### 6.2 Planejamento detalhado sobre o checkpoint atual
 
-**Checkpoint vigente de planejamento:** Core `5d3d1366` / Community `81af8c41`.
+**Checkpoint vigente de planejamento:** Core `c2e05d69` / Community `1b3f5eaf`.
 Ambos conferidos em `origin/feature/v0.4.0` em 15/10/2026. A revisão documental
 a partir deste par não representa nova implementação ou nova execução de testes.
 Knowledge/Targets têm prova integrada; leitores têm testes aprovados e provas

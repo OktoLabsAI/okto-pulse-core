@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-15",
+  "scope": "U3/3c/5b — DecisionReviewSection component only",
+  "community_commit": "1b3f5eaf",
+  "core_base": "c2e05d69",
+  "tests": [
+    {
+      "path": "D:/Projetos/Techridy/PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-decision-inspection-before.xml",
+      "tests": 7,
+      "failures": 2,
+      "sha256": "7003c43f6f91c1a4c78f98dc2d579d9e31efe9e2a9166441d56f21509ebeba74",
+      "reproduced": ["Changed inspection basis still allowed submission", "Authored observation reappeared after reviewer authority was lost and restored"]
+    },
+    {
+      "path": "D:/Projetos/Techridy/PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-decision-inspection-component.xml",
+      "tests": 10,
+      "failures": 0,
+      "sha256": "2e4c53388fd32c92d99a96e8c2559c089119603b0ebbf8635f5f737cc7d29b3a",
+      "session": 66021,
+      "exit_code": 0
+    }
+  ],
+  "types": {"session": 76231, "exit_code": 0},
+  "lint": {"exit_code": 0, "errors": 0, "warnings": 1, "note": "Existing react-refresh/only-export-components warning for decisionStatusLabel"},
+  "diff_check": "passed",
+  "behavior": [
+    "Capture edition, version, review revision, source basis and reconciliation record IDs when authorship begins.",
+    "Preserve fields across revision changes; require explicit base review and reset reconciliation consent for the new records.",
+    "Reset the authoring identity after authority loss; ignore late completions from another Spec.",
+    "Unknown write outcomes retain the exact original payload and key, including after revision changes; definite rejections allow correcting the intent.",
+    "Current-read availability is an explicit prop, still to be integrated by the parent."
+  ],
+  "limits": [
+    "No new browser/MCP proof for Decision inspection in this increment.",
+    "DecisionsTab still clears reviewData while loading and keys the nested section by edition; parent integration remains required.",
+    "Need preserve the draft when the inspected Decision disappears, gate stale summary/history, propagate readCurrent and qualify actual UI/MCP writes.",
+    "Decisions remains outside the watcher. U3/5b is partial; U3 global and U4 remain incomplete.",
+    "No backend, schema, policy, authority or gate changes; user runtime not reinstalled."
+  ]
+}

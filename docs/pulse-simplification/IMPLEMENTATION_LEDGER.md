@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/3c/5b: componente de inspeção corrigido; pai ainda pendente
+
+Community `1b3f5eaf` publicado após `81af8c41`; Core de partida `c2e05d69`.
+Reprodução: 2 falhas em 7 testes. `DecisionReviewSection` permitia envio sobre
+base trocada e restaurava a observação local depois de perder/recuperar a
+autoridade de revisor. Agora captura edição, versão, revisão, escopo/fontes e
+IDs de reconciliação ao começar a autoria. A mudança exige revisão explícita;
+reconciliação precisa de novo consentimento para os registros da base nova.
+Troca de identidade/autoridade limpa o estado; resposta tardia de outra Spec
+não apaga a observação atual. Leitura indisponível conserva texto e bloqueia envio.
+
+Falha de rede não prova ausência de commit: o componente preserva o pedido
+original e oferece replay exato, sem trocar chave/payload por causa do refresh.
+Recusa definitiva continua corrigível. O teste anterior de edição após erro
+genérico agora usa recusa 422 explícita; um teste separado cobre o resultado
+incerto com revisão concorrente e confirmação do pedido original.
+
+10 testes finais aprovados (66021), tipos exit 0 (76231), lint sem erros e um
+warning preexistente de exportação de `decisionStatusLabel`; diff check passou.
+Hashes/limites: `evidence-u3-decision-inspection-component-20261015.json`.
+Sem nova prova visual deste componente e sem habilitar Decisions no watcher.
+
+Próximo passo exato: integrar o pai `DecisionsTab`, que ainda zera `reviewData`
+ao recarregar e usa edição na chave do filho; preservar observação de Decision
+removida, separar resumo atual de cache, propagar `readCurrent` e comprovar
+UI/MCP. Fixtures existentes de review em testes de coleções são resumos
+incompletos, sem versão/edição: corrigir somente os necessários ao contrato
+integrado, sem defaults fictícios no produto. Depois encerrar 5b, seguir 5c/5d,
+3d/UV18–UV21 e U4. Nenhuma mudança de backend, schema, policy ou gate.
+
 ### 2026-10-15 — U3/3c/5a: classificação arquitetural e Integration qualificadas
 
 Community `81af8c41` publicado sobre `6fe9129f`; Core de partida `5d3d1366`.
