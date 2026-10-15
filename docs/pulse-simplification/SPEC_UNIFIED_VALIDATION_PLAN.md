@@ -78,6 +78,31 @@ qualificação integrada U3 → qualificação instalada U4.
 Sequência e condições de saída em §6.2; não reimplementar U1/U2.
 Histórico completo dos checkpoints: [ledger](IMPLEMENTATION_LEDGER.md).
 
+### Retomada detalhada — conferência do trabalho local em 15/10/2026
+
+O checkpoint publicado continua Core `4365ac85` (documentação; código
+`8291a648`) / Community `47434062`. Há trabalho local ainda não publicado em
+`SpecModal.tsx`, `ScenarioVerificationMethodEditor.tsx`, `scenarioWriteGuard.ts`
+e `SpecModal.activity.test.tsx`. Ele implementa recuperação de criação/exclusão
+com resposta incerta e retenção da seleção de método de cenário removido.
+Não tratá-lo como item encerrado nem refazê-lo. O XML local
+`u3-scenario-reconciliation-ui-final.xml` registra 54 testes, zero falhas/erros;
+esta conferência leu o resultado existente, sem executar nova suíte ou ensaio.
+
+| Ordem restante | Trabalho e dependência | Critério de encerramento |
+| --- | --- | --- |
+| 5c.2/5c.3 — concluir o incremento local | Revisar o diff existente; consolidar a prova de resposta perdida após commit; completar a inspeção UI/MCP do método removido. Conferir recuperação do writer de método e dos writers de vínculo/policy, conforme inventário já definido. | Releitura não duplica criação/exclusão; retry mantém a tentativa original; item removido não é recriado; rascunho autorizado é preservado e recusa de acesso retira conteúdo. Evidência, ledger, commit e push. |
+| 5c.4 — integrar Tests | Somente após proteger os writers acima, habilitar a assinatura existente de atualização externa. | Mudança MCP observada com formulário aberto, conflito explícito, revisão da base e gravação confirmada por MCP; testes afetados e inspeção visual. |
+| 5d — Project Structure | Conferir o contrato próprio de revisão, respostas atrasadas, rascunho e autoridade; preservar os controles existentes. | Testes dirigidos dos comportamentos afetados; autoria nativa instalada permanece no roteiro U4. |
+| 3d — leitores restantes | Conectar Coverage, recursos, referências e dependências aos metadados existentes. | Mudança apenas de Card/Delivery atualiza projeções abertas, sem depender de bump da Spec nem consultar Coverage pesado periodicamente. |
+| UV18–UV21 — encerrar U3 | Executar a qualificação integrada já prevista: sincronização, rede, identidade, autoridade, formulário, resultados e histórico. | Cada aceite tem evidência observada; nenhuma avaliação eliminada e nenhum consumidor previsto pendente. |
+| U4 — concluir a entrega | Construir/instalar o par exato em ambiente isolado e executar nova iniciativa UI/MCP até Done e KG canonical. | UV01–UV24, paridade byte a byte, processo novo, catálogo, frontend, oito budgets ZERO e publicação final comprovados. |
+
+Esta tabela é um índice operacional de §6.2, não uma nova decomposição de
+milestones. A atualização do planejamento não qualifica o diff local, não
+instala produto e não altera gates. U1/U2 e as provas já aceitas são preservados;
+repetir testes apenas por impacto de alteração ou falha identificada.
+
 ### Leitura executiva do plano
 
 **Resultado:** preparar Spec e Cards juntos e concluir a validação do planejamento
@@ -846,7 +871,7 @@ identificar ações realmente observadas, separadas dos mocks de componentes.
 U4 permanece a qualificação do par exato instalado e da iniciativa nova até
 Done/KG canonical; não converter uma prova isolada de editor em aceite final.
 
-#### Roteiro executável restante — base `4755e369` / `3c4df986`
+#### Roteiro executável restante — checkpoint publicado `8291a648` / `47434062`
 
 Esta é a fila vigente, subordinada aos itens anteriores. Não acrescenta
 milestone, gate, avaliação ou critério à matriz UV01–UV24. O planejamento foi
@@ -861,9 +886,11 @@ recarrega sem apagar texto e exige revisão explícita. Prova UI/MCP: versão
 um único cenário novo e a alteração concorrente preservada. 92 testes backend,
 46 frontend e cinco do catálogo passaram; tipos/lint aprovados e closure ZERO.
 Ver [base autorada de cenários](evidence-u3-scenario-authored-base-20261015.json).
-Tests ainda não está no watcher. Restam a atualidade de mudanças sem bump de
-versão, resultado incerto/reconciliação, método removido e os demais writers da
-aba. Não repetir a prova de versão nem reduzir esses aceites à precondição nova.
+Tests ainda não está no watcher. A atualidade operacional da substituição da
+coleção foi qualificada posteriormente pelo snapshot, como registrado abaixo.
+Restam qualificação/publicação da reconciliação e retenção locais, demais
+writers e integração da aba. Não repetir a prova de versão nem reduzir esses
+aceites à precondição nova.
 
 **Conferência de planejamento de 15/10, sobre Core `868818e9` e Community
 `3c4df986`, ambos publicados:** o relatório local

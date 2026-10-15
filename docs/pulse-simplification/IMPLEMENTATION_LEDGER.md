@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento detalhado reconciliado com incremento local não publicado
+
+Conferência solicitada de planejamento: HEAD Core `4365ac85` (código
+`8291a648`) / Community `47434062`, ambos em `feature/v0.4.0` e sem divergência
+indicada em relação ao tracking remoto. Preservado o plano único
+`SPEC_UNIFIED_VALIDATION_PLAN.md`, seus U1–U4 e os 24 aceites UV. Acrescentado
+um índice operacional da fila existente e corrigida a referência de base antiga.
+Todas as avaliações, critérios, severidades, thresholds, permissões e históricos
+continuam preservados; a unificação concentra a conclusão.
+
+Há quatro arquivos locais Community ainda modificados: `SpecModal.tsx`,
+`ScenarioVerificationMethodEditor.tsx`, `scenarioWriteGuard.ts` e
+`SpecModal.activity.test.tsx`. São trabalho em andamento de reconciliação após
+resposta incerta e retenção do método removido. Foram preservados sem alterações
+nesta conferência e não integram o commit documental. O relatório existente
+`PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-scenario-reconciliation-ui-final.xml`
+foi lido: 54 testes, zero falhas/erros. Isso não equivale a nova execução nem
+encerra a conferência visual pendente ou a integração de todos os writers.
+Snapshots operacionais não versionados também foram preservados.
+
+Retomada: concluir qualificação e publicação desse incremento (5c.2/5c.3),
+integrar Tests (5c.4), conferir Project Structure (5d), leitores restantes (3d),
+UV18–UV21 e U4 instalado com nova iniciativa até Done/KG canonical. Não refazer
+U1/U2, watcher, metadados ou provas já aceitas. Este checkpoint altera apenas
+planejamento/ledger; não executa implementação, instalação ou mutação de dados.
+
 ### 2026-10-15 — U3/5c: snapshot operacional da coleção protegido e exercitado UI/MCP
 
 Par de código: Core `8291a648` / Community `47434062`, branch `feature/v0.4.0`.
