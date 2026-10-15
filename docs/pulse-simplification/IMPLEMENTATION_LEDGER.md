@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U3/3c/5c: confirmação de cenários corrigida; integração permanece aberta
+
+Community `3057e84e` publicado sobre `7566db17`; Core de partida `db34c785`.
+Reproduzidas três falhas nos três casos selecionados: o formulário desaparecia
+antes da confirmação, a recusa nativa era absorvida pelo pai e a resposta tardia
+de escrita restaurava a Spec anterior após troca de identidade. Agora o pai
+propaga a falha, a autoria aguarda confirmação, bloqueia envio duplicado e conserva
+campos em recusa; resposta de outra Spec é descartada. Erro em callback de
+atualização após gravação confirmada é informado como recarga, não como falha
+de gravação. Tests continua fora do watcher.
+
+Baseline: três falhas, 25 skips por filtro (63861). Regressão integrada: 43 passes
+sem skips/falhas, sendo 28 SpecModal.activity e 15 ScenarioVerificationMethodEditor
+(93362). Tipos inicialmente detectaram opção `exact` inválida no teste;
+substituída por seletor equivalente `/^Cancel$/`, sem mudança no produto. Tipos
+finais exit 0 (17695). ESLint sem erros, 12 warnings preexistentes (9679).
+Diff check passou. Hashes e limites em `evidence-u3-scenario-confirmation-20261015.json`.
+
+Browser real: criado `ts_1792040763309`, “U3 mock - confirm scenario creation”,
+na Spec isolada `dec9410f-d455-4506-a8fd-f791ee31dc77`. Após confirmação, formulário
+fechou e apareceu uma linha. MCP confirmou versão 10 e conteúdo Given/When/Then
+exato, status draft e ausência de prova. Captura inspecionada. O cenário anterior
+permaneceu íntegro; a cobertura AC exibida não é execução passing. Vite 5274 com
+API/MCP anteriores 8200/8201; não é qualificação U4 ou atualização do runtime do usuário.
+
+**Retomada exata:** continuar 5c; não repetir a prova de 5b nem reimplementar
+a confirmação. Proteger base/atualidade do pai e integrar o método, inclusive
+cenário removido, autorização e recarga tardia. Conferir garantias nativas de
+`scenarioWriteGuard.ts`: ainda substitui a coleção via `updateSpec` sem versão.
+Uma falha de transporte não prova ausência de commit; tratar resultado incerto
+antes de habilitar reenvio/refresh automático. Inventariar link/unlink/policy,
+qualificar concorrência UI/MCP e só então incluir Tests no watcher.
+
+Pontos de fonte conferidos: `SpecUpdate` não contém expected version;
+`SpecService.update_spec` não recebe a base autorada; `McpUpdateTestScenarioCommand`
+e o endpoint de verification-method já suportam `expected_spec_version` e fence.
+Add/delete nativos têm contratos próprios e não devem ser descritos como CAS
+sem prova. Não acrescentar CAS global nem presumir que uma releitura no cliente
+fecha uma corrida de escrita. Após 5c: 5d, 3d/UV18–UV21, U4. Objetivo permanece ativo.
+
 ### 2026-10-15 — U3/3c/5b: inspeção de Decision qualificada por UI/MCP
 
 Par preservado: Core `ef5a5db3` / Community `7566db17`. A prova nativa completa
