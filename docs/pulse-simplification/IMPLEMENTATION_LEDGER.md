@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento restante reconciliado com o checkpoint publicado
+
+Pedido atual: iniciar o planejamento detalhado. Confirmados localmente e por
+`git ls-remote origin refs/heads/feature/v0.4.0`: Core `7347ffc0` e Community
+`6fe9129f`. Não havia alteração rastreada ou commit local pendente. Capturas
+operacionais Playwright não versionadas foram preservadas fora deste commit.
+
+Atualizado o plano único `SPEC_UNIFIED_VALIDATION_PLAN.md`, sem abrir outro
+projeto ou milestone. Corrigidos o checkpoint antigo em §6.2 e o diagnóstico
+das seis coleções, que ainda parecia trabalho pendente apesar de já corrigido.
+Detalhada a sequência restante do item 3c/5: classificação arquitetural,
+inspeção de Decision, integração de cenários/método e revisão própria de Project
+Structure. Cada frente tem arquivos, comportamento esperado, prova de saída
+e dependência para habilitar refresh. Depois seguem 3d, UV18–UV21 e U4.
+
+Conferência dirigida de código confirmou: a classificação ainda desmonta
+formulários por revisão e por ausência de leitura corrente; a inspeção monta
+o request com a base corrente; o callback de cenários absorve falhas e seu
+writer não passa versão explícita; Tests ainda não propaga `readCurrent` ao
+editor de método. Isso é evidência de fonte, não nova reprodução de runtime.
+
+Todas as avaliações, critérios, severidades, thresholds, permissões e históricos
+continuam no escopo. Uma conclusão consulta os componentes aplicáveis, sem
+média entre avaliações nem retirada de gates de execução/entrega. U1 permanece
+implementado, U2 qualificado no backend, U3 parcial e U4 pendente.
+
+Esta rodada altera somente documentação. Sem implementação, testes de
+comportamento, reinstalação ou mudanças no runtime. Validação documental:
+diff check e conferência das referências locais do plano. Próxima intervenção
+de implementação: 3c/5a; não repetir coleções nem a qualificação U2 sem impacto.
+
 ### 2026-10-15 — U3/3c: componente de método de cenário protegido; integração pendente
 
 Community `6fe9129f` publicado após `58eb6399`; Core de partida `b60cab47`.
