@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — planejamento detalhado reconciliado, sem implementação nova
+
+Pedido: iniciar o planejamento detalhado da unificação. Conferidos os HEADs
+Core `ea4fa2ca` / Community `b0a497f4`, ambos sem alterações rastreadas e sem
+commits locais pendentes em relação às referências origin consultadas. Community
+conserva capturas operacionais Playwright não versionadas; não foram incorporadas
+como código nem apresentadas como novas provas.
+
+Atualizado o documento único `SPEC_UNIFIED_VALIDATION_PLAN.md`: data/checkpoint
+vigentes e detalhamento executável do item U3/3c. Preservados U1–U4, UV01–UV24 e
+todas as avaliações, critérios, severidades, thresholds, permissões e históricos.
+U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.
+
+Conferência dirigida de código: BR/TR/IR/OR/Contracts/Decisions chamam `onUpdate`
+e limpam campos sem aguardar confirmação; `syncStructuredCollection` usa a versão
+atual da Spec e absorve falhas. O plano discrimina base original, confirmação de
+escrita, falha posterior de leitura, sequência com efeitos parciais, remoção de
+referências e perda de acesso. Não foi feita nova reprodução de runtime nesta
+revisão; os testes indicados são trabalho futuro, não resultados desta rodada.
+
+Próxima ação: executar 3c sobre esses editores, conferir os demais writers já
+previstos, depois ampliar o watcher (3d) e comprovar UV18–UV21. Em seguida U4:
+par exato instalado, paridade de arquivos, processo novo, iniciativa mock UI/MCP
+até Done/KG canonical e oito budgets ZERO. Não reimplementar U1/U2 nem ampliar
+escopo com melhorias opcionais. Nenhum código de produto, schema, gate, policy
+ou runtime foi alterado nesta rodada de planejamento.
+
 ### 2026-10-14 — U3/3a–3b: conflitos corrigidos e editores comprovados por UI/MCP
 
 Progresso sobre Core `fb5c5e6e` / Community `e2880609`; Community `b0a497f4`

@@ -1,9 +1,9 @@
 # Validação unificada do planejamento da Spec
 
-## Estado vigente — revisão de planejamento de 14/10/2026
+## Estado vigente — revisão de planejamento de 15/10/2026
 
 **U1 implementado; U2 qualificado no backend; U3 parcial; U4 pendente.**
-Checkpoint de código: Core `fb5c5e6e` / Community `b0a497f4`, publicados na
+Checkpoint publicado: Core `ea4fa2ca` / Community `b0a497f4`, publicados na
 branch `feature/v0.4.0`. Esta revisão reconcilia o planejamento com esse par.
 
 Knowledge e Targets têm agora prova integrada UI/MCP: rascunhos preservados,
@@ -706,6 +706,46 @@ do Card. Corrigido o handler para reconhecer somente o próprio fundo; 92
 testes de CardModal e prova visual de navegação/fechamento aprovados. Não reabrir
 essa investigação sem nova evidência. Limites e hashes em
 [evidência dos editores](evidence-u3-spec-editors-live-20261014.json).
+
+#### Execução delimitada de 3c — base, confirmação e consumidores
+
+Conferência de código em 15/10/2026, sobre o par acima; não é uma nova prova
+de runtime. `RulesTab`, `TechnicalRequirementsTab`, `IntegrationRequirementsTab`,
+`ObservabilityRequirementsTab`, `ContractsTab` e `DecisionsTab` recebem
+`onUpdate` sem retorno assíncrono declarado e limpam o formulário logo após
+chamá-lo. No pai, `syncStructuredCollection` inicia em `spec.version`, captura
+erros sem propagá-los e pode executar mais de um comando nativo. Esse caminho
+precisa ser protegido antes de ampliar `validationLive`, hoje restrito a
+Validation/FR/AC. As tarefas abaixo detalham 3c; não acrescentam um milestone.
+
+| Ordem | Intervenção | Resultado verificável |
+| --- | --- | --- |
+| 1 | Acrescentar regressões nas suítes existentes de identidade de requisitos, Contracts, Decisions e edição estruturada de SpecModal. Exercitar a interação, incluindo confirmação assíncrona. | Reproduzir perda de rascunho após recusa e adoção silenciosa de uma revisão externa; distinguir comportamento observado de risco identificado apenas por leitura. |
+| 2 | Fazer cada editor capturar identidade Board/Spec, entidade e base original ao abrir criação/edição. Passar a base explicitamente ao writer do pai e aguardar seu resultado. Reutilizar o tratamento nativo de conflito já aplicado a FR/AC. | Nenhuma gravação usa automaticamente a versão recebida por refresh. Falha conserva os campos; pendência impede envio duplicado; conflito requer leitura e revisão explícita. Não criar versão fictícia para entidade sem CAS próprio. |
+| 3 | Propagar falha de escrita ao editor e separar escrita confirmada de falha posterior de leitura em `syncStructuredCollection`. Manter previews, confirmações de impacto, estados e comandos nativos. | Falha de refresh após create confirmado não oferece novo create. Se uma sequência tiver efeito parcial, reler o estado autoritativo e informar o que foi confirmado antes de qualquer nova tentativa; não declarar atomicidade que o caminho não possui nem repetir a sequência automaticamente. |
+| 4 | Preservar rascunho quando o item ou referência selecionada desaparecer, distinguindo remoção de perda de permissão. Conferir efeitos de foco, chaves e respostas pendentes. | Item removido não é recriado silenciosamente; referência inválida exige correção. Perda de acesso limpa conteúdo protegido; troca de Board/Spec não reaproveita campos nem respostas de outra identidade. |
+| 5 | Conferir os writers de cenários, classificação arquitetural e Project Structure, além dos controles editáveis restantes de Details. Registrar quais superfícies são apenas leitura. | Aplicar proteção somente onde faltar; não transformar leitores em editores nem criar um framework. A autoria de Project Structure ainda precisa de prova nativa em U4, conforme o limite já registrado. |
+| 6 | Executar testes frontend afetados, tipos e lint; observar no browser rascunho local, mudança MCP, revisão explícita e gravação UI confirmada por leitura MCP. | Registrar família/ação efetivamente exercitada e limites. Uma prova visual de um editor não substitui os testes das seis famílias. Só então avançar para 3d. |
+
+Casos mínimos das seis famílias: criar/editar com sucesso, recusa de negócio,
+conflito nativo, refresh durante edição, item/referência removido, leitura
+indisponível, perda de acesso, troca de identidade e escrita confirmada seguida
+de falha de refresh. Cobrir caminhos próprios de Decisions (supersessão) e de
+operações com impacto sem mudar sua autoridade. Não repetir testes de famílias
+inalteradas já qualificadas, salvo quando a alteração no writer compartilhado
+atingir seu comportamento.
+
+Suítes de partida: `RequirementTabIdentity.test.tsx`, `ContractsTab.test.tsx`,
+`DecisionVerificationEditor.test.tsx`, `SpecModal.structuredEditing.test.ts`,
+`SpecModal.validationTabs.test.tsx`, `ScenarioVerificationMethodEditor.test.tsx`,
+`ArchitectureClassificationAuthoring.test.tsx` e `ProjectStructureTab.test.tsx`.
+Ampliar o teste apropriado ao comportamento; não criar uma suíte por item desta
+tabela nem contar testes planejados como executados.
+
+Após 3c, 3d conecta os consumidores ao watcher existente. A prova decisiva é
+alterar Card/Delivery pelo MCP sem mudar `Spec.version` e observar Coverage,
+capas e leitores abertos atualizarem, sem apagar um formulário em edição.
+UV18–UV21 encerram U3; U4 continua obrigatório e distinto dessa prova de frontend.
 
 #### Sequência finita de fechamento a partir deste checkpoint
 
