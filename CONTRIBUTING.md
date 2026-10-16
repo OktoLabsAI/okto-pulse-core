@@ -11,18 +11,23 @@ By submitting a pull request, you agree to our [Contributor License Agreement](.
 ```bash
 # Clone the paired repositories as siblings. The Core test suite verifies
 # cross-edition boundaries against the Community checkout.
-git clone https://github.com/OktoLabsAI/okto-pulse-core.git
-git clone https://github.com/OktoLabsAI/okto-pulse.git
-cd okto-pulse-core
+git clone https://github.com/OktoLabsAI/okto-pulse-core.git okto_labs_pulse_core
+git clone https://github.com/OktoLabsAI/okto-pulse.git okto_labs_pulse_community
+cd okto_labs_pulse_core
 
 # Install Python dependencies (requires Python 3.11+)
-pip install -e ../okto-pulse -e ".[dev]"
+pip install -e ../okto_labs_pulse_community -e ".[dev]"
 
 # Run the fast/default suite
 pytest -q -m "not e2e and not real_kg and not stress" tests
 ```
 
 ## Test Matrix
+
+The explicit checkout names above match the committed `tool.uv.sources` paths.
+For uv-based development, run `uv sync --locked --extra dev` from this directory.
+The Docker/CI workspace uses `okto-pulse-core` and `okto-pulse` instead and
+installs the pair with pip; those names are not the uv source layout.
 
 | Scope | Command | Prerequisites and expected runtime |
 | --- | --- | --- |

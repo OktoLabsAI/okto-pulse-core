@@ -4,6 +4,16 @@
 
 ### 2026-10-16 — Promoção v0.4.0 autorizada, em execução
 
+Segunda rodada: registry aprovado; Core wheel isolado importou 866 módulos sem
+mecanismos proibidos, mas o teste do fake SaaS detectou falta de begin_write e
+das portas de recibos/manifest. Fake completado, capacidades não configuradas
+continuam recusando. Revisões #108/#117 também identificaram UTF-8 corrompido
+em descrições, healthcheck Docker apontando endpoint retirado, Compose prod
+preso em 0.3.3 e build.sh buscando wheels antigos. Correções delimitadas:
+texto restaurado, /health nos dois targets, Compose 0.4.0 e seleção de wheels
+pela versão dos pyprojects. CONTRIBUTING documenta os nomes locais do uv e
+distingue layout Docker/pip; uv lock --check passou nos dois repositórios.
+
 PRs Core #107 / Community #116 integradas em develop; conteúdo idêntico às
 features. Promoções para main: Core #108 / Community #117. Primeira rodada CI:
 Core recusou ausência de get_spec_validation_cycle no manifesto de permissões;
