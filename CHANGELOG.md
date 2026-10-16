@@ -6,93 +6,80 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ---
 
-## [Unreleased]
+## [0.4.0] - Unreleased
+
+### BREAKING CHANGE — no compatibility with earlier Pulse versions
+
+**Pulse 0.4.0 requires a fresh installation with new storage. It cannot open
+or reuse data created by earlier Pulse versions, including 0.3.x. This is not
+an in-place upgrade of an existing data directory.**
+
+- There is one native 0.4.0 contract. No legacy converters, migration backfills,
+  old-format importers or alternative compatibility paths are provided.
+- Incompatible storage is refused with `storage_format_incompatible`.
+  Pulse does not automatically convert, reset or delete the existing data.
+- Previous databases, graph stores and backups cannot be used to seed 0.4.0.
+  Keep them with the original Pulse version if access to that history is needed;
+  do not point either version at the other version's storage.
+- API/MCP clients and edition integrations must use the 0.4.0 contracts.
+  Updating the executable alone does not make old data or payloads compatible.
+- History, recovery, permissions and governance for data produced by the native
+  0.4.0 contract remain supported. Recovery is not migration from an older version.
 
 ### Added
 
-- Current delivery readiness through the existing delivery-evidence query:
-  independent implementation/verification counts, canonical obligation and
-  scenario units, deterministic causes, native evidence references and bounded
-  next actions. Metrics and transition gates share factual assessments;
-  lifecycle closure, N/A, risk acceptance and unavailable evidence stay distinct.
+- Unified Spec planning validation: prepare the Spec and its planned Cards
+  together, then conclude planning at one validation point. Spec Validation,
+  decomposition, requirement lint, Checklist, Policy Compliance and coverage
+  retain their own criteria, severity, authorship, permissions and history.
+- Evidence-derived implementation and verification progress for Cards and Specs,
+  with canonical obligation/scenario counts and actionable delivery-readiness
+  diagnoses. Progress is not an agent-declared percentage or a replacement for
+  lifecycle gates; unavailable evidence and non-applicability stay distinct.
+- Verification plans for Decisions through selected obligations and/or authorized
+  inspection, without requiring an artificial Task or Test for a scope decision.
+- Authenticated external test evidence and traceable execution receipts, with
+  source, revision, scope and currentness checks.
+
+### Changed
+
+- The native lifecycle is organized around Boards, Specs and Cards, without
+  Sprint-dependent execution or legacy migration workflows. Draft Specs permit
+  planning Not Started Cards; execution still requires the appropriate gates.
+- Structured requirements, acceptance criteria, architecture boundaries and
+  verification contracts replace ambiguous free-text authoring paths.
+- Validation currentness follows the relevant edition and semantic state.
+  Previous results remain historical evidence, not automatic approval of a
+  changed edition; Checklist execution and gates use the edition snapshot.
+- Core remains transport-neutral: concrete persistence, graph, filesystem,
+  scheduler and HTTP mechanisms belong to edition adapters. Executable closure
+  checks enforce both dependency directions with all eight temporary budgets zero.
+- MCP instructions and resources now describe the native workflow consistently:
+  atomic scenario linking, explicit Knowledge selection, native arrays and current
+  KG arguments. Common contracts have one Core-owned source; the generated tool
+  catalog and resource manifest are checked for drift.
 
 ### Fixed
 
-- Required complementary verification failures remain visible without Delivery
-  bindings. Specialized reports must observe the delivered canonical source and
-  revision. Both changes to `skip_delivery_evidence` require coverage authority.
+- Delivery diagnoses retain required complementary verification failures and
+  require proof for the delivered source/revision, rather than treating status
+  alone as verified completion.
+- Investigations for different Cards on the same exact source state no longer
+  invalidate each other's proofs; Card scope, expiry, revocation and conflict
+  controls remain enforced.
+- KG readiness authorization, live Card-family reconciliation and graph-unavailable
+  diagnostics follow the public contracts used by the active edition.
+- Spec Done restrictions, proof attachment admission and Amendment coverage
+  revalidation consistently apply their authorized lifecycle and evidence gates.
 
-### Deprecated
+### Removed
 
-- `delivery_completeness` is the retained legacy maturity projection, not the
-  new verification percentage or a gate. Consumers should use
-  `delivery_readiness` (`delivery-readiness/v1`, `metrics_version=2`). Historical
-  records are unchanged; no evidence migration or rewrite is performed.
+- Compatibility and migration paths for pre-0.4.0 Pulse data and contracts.
+- Obsolete MCP guidance requiring Sprints, removed projection profiles,
+  duplicate scenario writes or task-only coverage of Decisions.
 
-### Earlier unreleased changes
-
-- The KG stale reconciler dropped live card rows again: production source
-  readers emit `task`/`test`/`bug` artifact types for cards, and the sweep's
-  governed-type filter treated them as foreign, classifying every live card as
-  source-absent. Card-family subtypes now resolve through the card owner
-  family while the classifier still receives the original artifact type.
-
-- `okto_pulse_kg_find_similar_decisions` lost its typed
-  `graph_unavailable` envelope on the vector path after the Grafx migration:
-  routed adapters raise the fail-closed `GraphUnavailable` directly and the
-  old store-level wrapping was gone. The vector read now classifies through
-  the shared `open_or_classify` seam, restoring the uniform error code and
-  `graph_state` projection.
-
-- Idempotent replay of `okto_pulse_kg_global_discovery_recovery_run` (and
-  `confirm`) deadlocked while a recovery was in flight: the MCP tools
-  evaluated the snapshot fingerprint eagerly on every call, contending for
-  the global operation gate the productive worker holds. The service now
-  computes the fingerprint lazily, exactly when a fresh confirmation or start
-  actually needs it.
-
-- Core use-case type hygiene: the delivery-evidence use cases annotate their
-  unit-of-work parameter, and the SaaS relational test fake gains the
-  fail-closed `delivery_evidence` stub required by the updated protocol.
-
-- MCP tools no longer let a `GuidelinePolicyPersistenceError` escape as a raw
-  protocol error. The single tool-registration boundary now projects every
-  guideline-policy persistence failure through the canonical mapper, so a
-  subject/version conflict such as `semantic_subject_mutation_conflict` reaches
-  agents as a retryable `conflict` outcome envelope carrying `reason_code` and
-  a `refresh_and_retry` next action.
-
-- The quality MCP resources described `proposed_questions` incorrectly. They do
-  materialize real Q&A items on the subject at write time, stay pending until
-  answered or deleted, and one pending item blocks the human close-out; the
-  reference and tool docs now say so and tell agents to omit the field when
-  they do not want pending Q&A.
-
-- Expose the retryable board-erasure lock-contention exception through the
-  public `core.ports.board_erasure_control` contract so editions do not need
-  to import the private KG governance implementation when mapping it to their
-  transport error surface.
-
-- Core 0.3.3 promotion keeps the manifest, package version and lock aligned.
-  The cross-edition dependency audit now assigns `okto-grafx[accel]` to the
-  Community adapter instead of requiring the removed Ladybug runtime; Grafx
-  remains absent from Core runtime dependencies. Merge reconciliation avoids
-  duplicating the requirement-lint MCP permission policy.
-- The dependency audit recognizes requested compatibility extras retained in
-  `uv.lock` metadata when uv omits their empty resolved edge, while still
-  rejecting explicit extra mismatches. The development lock now resolves the
-  current Community wheel and published Grafx 0.0.7; the SQLite driver remains
-  owned and supplied by Community, not directly declared by Core.
-
-- Cancelling historical KG consolidation now fences and removes claimed work as
-  well as pending/paused rows. A stalled legacy claim can no longer leave the
-  run permanently active or prevent a clean restart; already committed graph
-  data remains intact. The cancellation releases its authorization snapshot,
-  boundedly quiesces the consolidation worker around the delete, and restores
-  the worker afterwards so SQLite lock contention cannot hang the request. The
-  terminal snapshot now clears its active total (`enabled=false`) while keeping
-  the former run size only as audit metadata, and a later fresh run receives a
-  new start timestamp.
+See the Community changelog for fresh-start instructions and UI/runtime changes.
+The release date will be recorded when 0.4.0 is published.
 
 ## [0.3.3] - 2026-08-23
 

@@ -2,6 +2,23 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — Changelog da v0.4.0 e aviso de breaking change
+
+Changelogs Core/Community consolidados em `0.4.0 — Unreleased`, sem inventar
+data de publicação. Release notes Community apontam para o changelog vigente.
+Aviso destacado: nenhuma compatibilidade com versões anteriores; instalação
+com armazenamento novo, sem conversores, backfills de migração, importadores
+antigos ou exclusão automática. Orientação para preservar a home antiga e
+inicializar novamente no caminho padrão, considerando também storage externo
+configurado. Histórico/recuperação nativos da v0.4.0 permanecem no escopo.
+
+As antigas notas Unreleased foram consolidadas para retirar descrições de
+caminhos de compatibilidade já removidos. Histórico publicado até 0.3.3
+preservado. Resumo inclui validação unificada mantendo avaliações independentes,
+progresso factual, provas autenticadas, UI e contratos MCP. Conferência documental
+com CLI, plano concluído e interface atual; links/âncoras locais e diff verificados.
+Sem alteração de código, instalação, dados ou nova execução de testes funcionais.
+
 ### 2026-10-15 — Atualização das instruções e resources MCP concluída
 
 Implementado o escopo fechado do [assessment](MCP_INSTRUCTIONS_ASSESSMENT_20261015.md):
