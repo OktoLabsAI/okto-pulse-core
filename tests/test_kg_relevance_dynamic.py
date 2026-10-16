@@ -35,7 +35,7 @@ from kg_schema_testing import (
     LAST_RECOMPUTED_COLUMNS,
     NODE_TYPES,
     SCHEMA_VERSION,
-    _COMMON_NODE_ATTRS,
+    COMMON_NODE_COLUMNS,
 )
 from okto_pulse.core.kg.scoring import (
     SEVERITY_BOOST_BY_LEVEL,
@@ -60,9 +60,6 @@ from okto_pulse.core.services.kg_health_service import (
     get_kg_health,
 )
 
-kg_runtime = pytest.importorskip("okto_pulse.community.adapters.kg_runtime")
-_ensure_last_recomputed_at_columns = kg_runtime._ensure_last_recomputed_at_columns
-apply_schema_to_connection = kg_runtime.apply_schema_to_connection
 
 
 KG_REL_BOARD_ID = "board-kg-relevance-dynamic-test"
@@ -101,60 +98,27 @@ async def kg_rel_board(db_factory):
 # ---------------------------------------------------------------------------
 
 
-def test_ts29_schema_version_is_0_3_3():
-    """SCHEMA_VERSION remains monotonic after last_recomputed_at bootstrap."""
-    assert SCHEMA_VERSION in {
-        "0.3.2",
-        "0.3.3",
-        "0.3.4",
-        "0.3.5",
-        "0.3.6",
-        "0.3.7",
-        "0.3.8",
-        "0.3.9",
-        "0.3.10",
-        "0.3.11",
-        "0.3.12",
-        "0.4.0",
-        "0.5.0",
-    }
+def test_ts29_schema_version_is_current():
+    """Current bootstrap exposes the single supported schema."""
+    assert SCHEMA_VERSION == "0.8.0"
 
 
 def test_ts29_last_recomputed_columns_constant_exposes_string_type():
-    """Migration probe constant declares (last_recomputed_at, STRING) only."""
+    """Current schema constant declares (last_recomputed_at, STRING) only."""
     assert LAST_RECOMPUTED_COLUMNS == (("last_recomputed_at", "STRING"),)
 
 
-def test_ts29_common_node_attrs_includes_last_recomputed_at():
-    """Every node type picks up last_recomputed_at via _build_node_ddl."""
-    assert "last_recomputed_at STRING" in _COMMON_NODE_ATTRS
+def test_ts29_common_node_columns_include_last_recomputed_at():
+    assert ("last_recomputed_at", "STRING") in COMMON_NODE_COLUMNS
 
 
-def test_ts29_eleven_node_types_share_common_attrs_block():
-    """All 11 node types declared by the schema reuse _COMMON_NODE_ATTRS,
-    so the new column reaches every table without per-type drift."""
+def test_ts29_eleven_current_node_manifests_declare_recomputed_at():
+    from okto_pulse.community.adapters.grafx_schema_manifest import PULSE_GRAFX_SCHEMA_MANIFEST
     assert len(NODE_TYPES) == 11
-    # The DDL builder substitutes _COMMON_NODE_ATTRS verbatim — covered by the
-    # existing ``_build_node_ddl`` test, but we re-assert here so a future
-    # refactor that splits attrs per node type breaks IMPL-F too.
-    from kg_schema_testing import _build_node_ddl
-
-    for node_type in NODE_TYPES:
-        ddl = _build_node_ddl(node_type)
-        assert "last_recomputed_at STRING" in ddl
-
-
-def test_ts29_ensure_last_recomputed_helper_signature_matches_siblings():
-    """Helper has (conn, node_type) like _ensure_priority_boost_columns."""
-    sig = inspect.signature(_ensure_last_recomputed_at_columns)
-    assert list(sig.parameters) == ["conn", "node_type"]
-
-
-def test_ts29_apply_schema_to_connection_invokes_last_recomputed_helper():
-    """apply_schema_to_connection wires the new helper into the bootstrap path
-    (legacy boards add the column on next open)."""
-    src = inspect.getsource(apply_schema_to_connection)
-    assert "_ensure_last_recomputed_at_columns" in src
+    for table in PULSE_GRAFX_SCHEMA_MANIFEST.nodes:
+        assert ("last_recomputed_at", "STRING") in {
+            (column.name, column.pulse_type) for column in table.columns
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -459,7 +423,7 @@ async def test_ts33_kg_health_surfaces_latest_completed_tick(
 
 def test_ts34_health_schema_version_is_1_1():
     """The coordinated REST/MCP/Pydantic/frontend contract is version 1.1."""
-    assert HEALTH_SCHEMA_VERSION == "1.1"
+    assert HEALTH_SCHEMA_VERSION == "1.3"
 
 
 # ---------------------------------------------------------------------------
@@ -734,7 +698,9 @@ def test_kg_hit_flushed_event_class_registered():
     # checklist.binding_changed.v1 governance audit, the two RDL events, and
     # quality.clarification_changed.v1 for parent-consolidation invalidation;
     # Code Traceability subsequently added its governed classification events.
-    assert len(EVENT_TYPES) == 64
+    # F3 retired sprint.created, sprint.moved and sprint.closed.
+    assert len(EVENT_TYPES) == 63
+    assert not {"sprint.created", "sprint.moved", "sprint.closed"} & set(EVENT_TYPES)
     assert resolve_event_class("kg.hit_flushed") is KGHitFlushed
 
 
@@ -1392,7 +1358,9 @@ def test_impl_d_kg_daily_tick_event_class_registered():
     assert "kg.tick.daily" in EVENT_TYPES
     # Registry ratchet also includes the two research-decision events,
     # quality clarification, and the governed Code Traceability events.
-    assert len(EVENT_TYPES) == 64
+    # F3 retired sprint.created, sprint.moved and sprint.closed.
+    assert len(EVENT_TYPES) == 63
+    assert not {"sprint.created", "sprint.moved", "sprint.closed"} & set(EVENT_TYPES)
     assert resolve_event_class("kg.tick.daily") is KGDailyTick
 
 
@@ -1718,8 +1686,8 @@ def test_doc_g_drift_review_invariants_preserved():
     import inspect
     from okto_pulse.core.kg import cypher_templates as tpl
 
-    kuzu_graph_store = pytest.importorskip(
-        "okto_pulse.community.adapters.kuzu_graph_store"
+    grafx_graph_store = pytest.importorskip(
+        "okto_pulse.community.adapters.grafx_graph_store"
     )
 
     # (1) BR4 — cypher_templates retain ORDER BY <var>.relevance_score DESC.
@@ -1739,7 +1707,7 @@ def test_doc_g_drift_review_invariants_preserved():
     )
 
     # (2) the public decay reorder policy is invoked by the graph adapter path.
-    src_store = inspect.getsource(kuzu_graph_store)
+    src_store = inspect.getsource(grafx_graph_store)
     assert "apply_decay_reorder" in src_store
 
     # (3) Tick handler updates last_recomputed_at, NOT last_queried_at.

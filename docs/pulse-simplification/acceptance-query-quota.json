@@ -1,0 +1,114 @@
+{
+  "scope": "KG6.5/KG-45 query-count quota removal",
+  "passed": {
+    "core": 114,
+    "community": 52
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Pre-fix reproduction refused the 31st query with rate_limited.",
+    "35 calls through each MCP query entry reach execution, reauthenticate each time and never consult the count limiter.",
+    "35 native Grafx Cypher reads succeed through the real Core query executor.",
+    "Generic limiter port remains fail-closed for explicit consumers.",
+    "Grafx read lanes, MCP concurrent admission, native deadlines and query safety regressions passed."
+  ],
+  "limits": [
+    "No frontend behavior changed.",
+    "Natural/reflective shared native deadline and aggregate bounds remain pending under KG6.5.",
+    "Full-plan inventory remains 78 verified / 33 partial / 135 unaudited; no full-plan completion claim."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/record_query_quota.py": "aa858d0172bb97944f96852dedf7e1f399a69f0fa8d075519ba5ac792b08fe5c",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-quota-final-closure.log": "ac279b244bd8d1959ee37d9af3ed06c63d58ec405708f92cfdd82610e59eafbe",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-quota1-core.xml": "8ed98c08cd33d9b46164af9cbb66fcb919c8be7ad7bca2cf2e6b5e6d8b379cd4",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-quota1-core.log": "bdebe534b4552aa87b5f8d0c0bdeea17d1512f9da2e1c20c0350b75da047161a",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-quota1-community.xml": "e6124a32e065f57e4b1fa3c232d512d10c2d718db500b9743f2e3b57618c3957",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-quota1-community.log": "a0e3b28efab76a6fae85a1a2f104be172dc71fa21b2cdde46d8fd115afc403ae",
+    "PULSE_REFACTOR/.validation-v040/provenance-query-quota1.json": "01f2fc8f73effeb74347aa3ac3da708ac6f130a54235ebed55027d0beff01342",
+    "PULSE_REFACTOR/.validation-v040/provenance-query-quota-final.json": "8e2608798af70dd518e17237087193bc348d09cc624eafb70706a2d914fb560a",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-quota-repro-core.log": "0847b1fa041130036c011d5b9341aef6da924aa0d272b11fa4fe2045d3999fd8",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-quota-repro-core.xml": "203e96430cb56bf842e245fa5009460047486eff48deb023cdcffec1f131c146",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/tier_power.py": "4f635e8ac65bf907afd7ceed3569a7fbd8476adf96feb0fc065b8b69fdca8d5d",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/kg_power_tools.py": "fc10f5ec4210b5eaacf84a5a996a63fd963502e418e205711f1f35402e72d8a4",
+    "okto_labs_pulse_core/tests/test_kg_query_count_policy.py": "2ab69c3fa528f9b99777563acda7ecaee2dfd0c1fecbf0298dc22353cb6d9405",
+    "okto_labs_pulse_core/tests/test_kg_query_policy_mcp.py": "3a802d809ea130bcf6a70aa243fecd55c2dca5016083235374d5210a93783625",
+    "okto_labs_pulse_core/tests/test_kg_query_safety.py": "3ab9350d53464c000c903fbd7275cf7b42fd1591890c028d353cef97232857dd",
+    "okto_labs_pulse_core/tests/test_kg_tier_power.py": "19dc97bf4a77093d45929a5d9441583c0c314f368191ad8101a31434f7d0326e",
+    "okto_labs_pulse_core/tests/test_kg_integration_registry.py": "ad0400b4a82aceb2a3768b08d4b19117cc773be87b1a73fdf2dd803fd44201ac",
+    "okto_labs_pulse_core/tests/test_r03_imp1_inmemory_isolation.py": "b5c39a5e4d1fac03d33f3cea5fa35c5693ff3d9b37f9d056bfdd6075b120c372",
+    "okto_labs_pulse_core/tests/test_kg_reflective_runtime_v2.py": "7695015c3fac842c0cf277f9dcc0334d0c719438f5b9baeaffebc31d526db2bd"
+  }
+}

@@ -15,6 +15,8 @@ drive the REAL MCP evaluate/list tools over a seeded skip + open debt / DLQ.
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.permissions import PermissionSet
+
 from mcp_runtime_testing import register_mcp_test_runtime
 
 import json
@@ -78,7 +80,7 @@ class _Ctx:
     def __init__(self):
         self.agent_id = "mcp-agent"
         self.agent_name = "r5 test3 agent"
-        self.permissions = ["board.read", "kg.admin.settings_read"]
+        self.permissions = PermissionSet({"board": {"read": True}, "kg": {"admin": {"settings_read": True}, "operations": {"cognitive": {"read": True}}}})
 
 
 async def _mcp(name: str, **kwargs) -> dict:
@@ -231,6 +233,7 @@ async def test_ts_85e18262_open_debt_visible_and_blocking_with_active_skip(db_fa
     # BLOCKING: the verdict is the technical tier, NOT ready/skip.
     verdict = await _mcp("okto_pulse_kg_evaluate_cognitive_readiness",
                          board_id=board, source_ref=source_ref)
+    assert "tier" in verdict, verdict
     assert verdict["tier"] == "canonical_debt_open"
     assert verdict["blocking"] is True
 
@@ -260,6 +263,7 @@ async def test_ts_85e18262_dlq_visible_and_blocking_with_active_skip(db_factory)
 
     verdict = await _mcp("okto_pulse_kg_evaluate_cognitive_readiness",
                          board_id=board, source_ref=source_ref)
+    assert "tier" in verdict, verdict
     assert verdict["tier"] == "technical_dlq"
     assert verdict["blocking"] is True
 

@@ -423,30 +423,6 @@ async def test_update_spec_lineage_failure_uses_typed_mcp_envelope(
 @pytest.mark.parametrize(
     ("tool_name", "kwargs"),
     (
-        (
-            "okto_pulse_remove_business_rule",
-            {
-                "board_id": "board-1",
-                "spec_id": "spec-locked",
-                "rule_id": "br-1",
-            },
-        ),
-        (
-            "okto_pulse_remove_api_contract",
-            {
-                "board_id": "board-1",
-                "spec_id": "spec-locked",
-                "contract_id": "api-1",
-            },
-        ),
-        (
-            "okto_pulse_remove_decision",
-            {
-                "board_id": "board-1",
-                "spec_id": "spec-locked",
-                "decision_id": "decision-1",
-            },
-        ),
         *(
             (
                 "okto_pulse_remove_spec_entity",

@@ -96,35 +96,24 @@ def test_mcp_lists_and_context_resolver_share_complete_projection() -> None:
     assert context_payload["content"] == "Body"
 
 
-@pytest.mark.parametrize(
-    "raw",
-    [None, {"contract_version": 7, "purpose": "historical partial value"}],
-    ids=["null-legacy", "partial-legacy"],
-)
-def test_cross_surface_legacy_reads_are_tolerant(raw: object | None) -> None:
-    kb = {
-        "id": "kb-legacy",
-        "title": "Legacy",
-        "content": "Untrusted body must not drive governance",
-        "governance_metadata": raw,
+@pytest.mark.parametrize("reader", [
+    serialize_mcp_knowledge_base,
+    serialize_list_knowledge_base,
+    lambda kb: resolve_artifact_references(
+        SimpleNamespace(knowledge_bases=[kb], screen_mockups=[]),
+        source_type="ideation", source_id="idea-1", source_title="Idea",
+    )["knowledge_bases"][0],
+])
+def test_cross_surface_metadata_is_optional_but_invalid_data_is_refused(reader):
+    from okto_pulse.core.domain.knowledge_governance import KnowledgeGovernanceInvalidMetadata
+    kb = {"id": "kb-1", "title": "Knowledge", "content": "Advisory data"}
+    assert reader(kb)["governance"] == {
+        "authority": "advisory", "metadata_status": "omitted",
+        "missing_fields": ["governance_metadata"], "metadata": None,
     }
-
-    projections = [
-        serialize_mcp_knowledge_base(kb)["governance"],
-        serialize_list_knowledge_base(kb)["governance"],
-        resolve_artifact_references(
-            SimpleNamespace(knowledge_bases=[kb], screen_mockups=[]),
-            source_type="ideation",
-            source_id="idea-1",
-            source_title="Idea",
-        )["knowledge_bases"][0]["governance"],
-    ]
-
-    assert projections[0] == projections[1] == projections[2]
-    assert projections[0]["authority"] == "advisory"
-    assert projections[0]["metadata_status"] == "legacy_incomplete"
-    assert projections[0]["metadata"] is raw
-    assert projections[0]["missing_fields"]
+    kb["governance_metadata"] = {"contract_version": 7, "purpose": "unsupported"}
+    with pytest.raises(KnowledgeGovernanceInvalidMetadata):
+        reader(kb)
 
 
 def test_rest_card_response_projects_inline_knowledge_governance() -> None:
@@ -183,14 +172,22 @@ class _KnowledgeService:
         return [self.kb]
 
 
-class _LegacyPropagationRead:
+class _PropagationRead:
     async def read(self, _target: object) -> SimpleNamespace:
-        return SimpleNamespace(v2_active=False)
+        return SimpleNamespace()
 
 
-class _V2PropagationRead:
-    async def read(self, _target: object) -> SimpleNamespace:
-        return SimpleNamespace(v2_active=True)
+class _EffectiveKnowledgeRead:
+    def __init__(self, kb: SimpleNamespace) -> None:
+        self.kb = kb
+
+    async def get_effective_resources(
+        self, board_id: str, entity_type: str, entity_id: str,
+    ) -> dict:
+        assert (board_id, entity_type, entity_id) == ("board-1", "spec", "entity-1")
+        return {"resources": {"knowledge_base": [
+            {"id": self.kb.id, "hydrated": True, "resource": vars(self.kb)},
+        ]}}
 
 
 @pytest.mark.asyncio
@@ -213,7 +210,8 @@ async def test_consolidated_list_projects_governance_for_each_entity_type(
         spec_knowledge=knowledge_service,
         ideation_knowledge=knowledge_service,
         refinement_knowledge=knowledge_service,
-        knowledge_propagation=_LegacyPropagationRead(),
+        knowledge_propagation=_PropagationRead(),
+        resource_gate=_EffectiveKnowledgeRead(kb),
     )
     result = await McpListKnowledgeUseCase().execute(
         McpListKnowledgeCommand(
@@ -240,7 +238,7 @@ async def test_consolidated_list_projects_governance_for_each_entity_type(
 
 
 @pytest.mark.asyncio
-async def test_spec_consolidated_list_keeps_v2_summary_bounded() -> None:
+async def test_spec_consolidated_list_keeps_effective_summary_bounded() -> None:
     parent = SimpleNamespace(
         id="spec-1",
         board_id="board-1",
@@ -294,7 +292,7 @@ async def test_spec_consolidated_list_keeps_v2_summary_bounded() -> None:
 
     services = SimpleNamespace(
         specs=parent_service,
-        knowledge_propagation=_V2PropagationRead(),
+        knowledge_propagation=_PropagationRead(),
         resource_gate=_ResourceGate(),
     )
 
@@ -330,7 +328,7 @@ async def test_spec_consolidated_list_keeps_v2_summary_bounded() -> None:
         ),
         "governance": {
             "authority": "advisory",
-            "metadata_status": "legacy_incomplete",
+            "metadata_status": "omitted",
             "missing_fields": [
                 "governance_metadata",
             ],

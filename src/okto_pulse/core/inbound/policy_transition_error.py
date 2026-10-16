@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from okto_pulse.core.domain.guideline_policy_transition import (
+from okto_pulse.core.domain.guideline_semantic_transition import (
     PolicyTransitionRejected,
 )
 

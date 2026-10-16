@@ -1,4 +1,4 @@
-"""InMemoryGraphStore — satisfies SemanticGraphStore Protocol for tests.
+"""InMemoryGraphStore â€” satisfies SemanticGraphStore Protocol for tests.
 
 Dict-based storage with basic cosine similarity for vector_search.
 No Kuzu dependency.
@@ -582,6 +582,7 @@ class InMemoryCypherExecutor:
         params: dict[str, Any] | None = None,
         *,
         max_rows: int = 1000,
+        timeout_ms: int | None = None,
     ) -> dict:
         self.queries.append((board_id, cypher, dict(params or {})))
         return {
@@ -597,6 +598,12 @@ class InMemoryCypherExecutor:
 
 
 class _InMemoryGraphTransactionScope:
+    def find_active_node_ids_by_source_refs(self, node_type: str, source_refs: tuple[str, ...]) -> tuple[str, ...]:
+        """Mirror the public exact-reference lookup, including ambiguity."""
+        return tuple(sorted({str(node['id']) for node in self.store._board_nodes(self.board_id).values()
+            if node.get('_type') == node_type and node.get('source_artifact_ref') in source_refs
+            and node.get('superseded_by') in (None, '')}))[:2]
+
     def __init__(self, board_id: str, store: InMemoryGraphStore) -> None:
         self.board_id = board_id
         self.store = store
@@ -838,6 +845,9 @@ class _InMemoryGraphTransactionScope:
         from_id: str,
         to_id: str,
         rule_id: str | None = None,
+        *,
+        layer: str | None = None,
+        created_by: str | None = None,
     ) -> bool:
         return any(
             edge.get("_type") == edge_type
@@ -849,6 +859,8 @@ class _InMemoryGraphTransactionScope:
                 rule_id is None
                 or str(edge.get("rule_id") or "") == rule_id
             )
+            and (layer is None or edge.get('layer') == layer)
+            and (created_by is None or edge.get('created_by') == created_by)
             for edge in self.store._board_edges(self.board_id)
         )
 
@@ -1278,11 +1290,62 @@ class _InMemoryGraphTransactionScope:
         ]
         return receipt
 
+    def _reconcile_spec_relationships(self, intent):
+        from okto_pulse.core.ports.spec_projection import spec_relationship_family
+        family = spec_relationship_family(intent.namespace)
+        nodes = self.store._board_nodes(self.board_id)
+        root = nodes.get(intent.owner_node_id, {})
+        if intent.active_nodes or root.get("source_artifact_ref") != f"spec:{intent.owner_id}":
+            raise ProjectionActiveSetReconciliationError("projection_active_set_scope_invalid", "Owner root mismatch.")
+        desired = set()
+        pairs = set()
+        for edge in intent.active_edges:
+            if (edge.edge_type != family.edge_type or edge.rule_id not in family.rules
+                    or (edge.from_id, edge.to_id) in pairs
+                    or not family.owns_endpoints(owner_id=intent.owner_id,
+                        source_type=edge.from_type, target_type=edge.to_type,
+                        source_ref=nodes.get(edge.from_id, {}).get('source_artifact_ref'),
+                        target_ref=nodes.get(edge.to_id, {}).get('source_artifact_ref'))):
+                raise ProjectionActiveSetReconciliationError("projection_active_set_member_invalid", "Invalid Spec relationship endpoint.")
+            desired.add((edge.from_id, edge.to_id, edge.rule_id))
+            pairs.add((edge.from_id, edge.to_id))
+        owned = {}
+        for edge in self.store._board_edges(self.board_id):
+            if (edge.get('_type') != family.edge_type
+                    or not family.owns_endpoints(owner_id=intent.owner_id,
+                        source_type=edge.get('_from_type'), target_type=edge.get('_to_type'),
+                        source_ref=nodes.get(edge.get('_from'), {}).get('source_artifact_ref'),
+                        target_ref=nodes.get(edge.get('_to'), {}).get('source_artifact_ref'))
+                    or not family.owns_writer(rule_id=edge.get('rule_id'),
+                        layer=edge.get('layer'), created_by=edge.get('created_by'))):
+                continue
+            key = (edge["_from"], edge["_to"], edge["rule_id"])
+            if key in owned:
+                raise ProjectionActiveSetReconciliationError("projection_active_set_source_ref_ambiguous", "Duplicate owned edge.")
+            owned[key] = edge
+        if desired.difference(owned):
+            raise ProjectionActiveSetReconciliationError("projection_active_set_member_missing", "Missing owned edge.")
+        stale = [edge for key, edge in owned.items() if key not in desired]
+        receipt = ProjectionActiveSetReceipt(intent=intent, edge_before_images=tuple(
+            ProjectionEdgeBeforeImage(family.edge_type, family.source_type, edge["_to_type"], edge["_from"], edge["_to"],
+                {key: value for key, value in edge.items() if not key.startswith("_")}) for edge in stale))
+        removed = {id(edge) for edge in stale}
+        self.store._edges[self.board_id] = [edge for edge in self.store._board_edges(self.board_id) if id(edge) not in removed]
+        return receipt
+
     def reconcile_projection_active_set(
         self,
         intent: ProjectionActiveSetIntent,
     ) -> ProjectionActiveSetReceipt:
         """Reconcile one exact relational node or edge projection."""
+
+        from okto_pulse.core.kg.interfaces.graph_transaction import ProjectionRemovalOnlyIntent
+        if isinstance(intent, ProjectionRemovalOnlyIntent):
+            raise ProjectionActiveSetReconciliationError(
+                'projection_active_set_scope_invalid', 'Removal-only namespace is unsupported.')
+        from okto_pulse.core.ports.spec_projection import SPEC_RELATIONSHIP_NAMESPACES
+        if intent.owner_type == "spec" and intent.namespace in SPEC_RELATIONSHIP_NAMESPACES:
+            return self._reconcile_spec_relationships(intent)
 
         if intent.owner_type == "spec" and intent.namespace == "dependencies":
             return self._reconcile_spec_dependency_edges(intent)
@@ -1466,6 +1529,25 @@ class _InMemoryGraphTransactionScope:
         self,
         receipt: ProjectionActiveSetReceipt,
     ) -> None:
+        from okto_pulse.core.ports.spec_projection import SPEC_RELATIONSHIP_NAMESPACES
+        if receipt.intent.owner_type == 'spec' and receipt.intent.namespace in SPEC_RELATIONSHIP_NAMESPACES:
+            from okto_pulse.core.ports.spec_projection import spec_relationship_family
+            family = spec_relationship_family(receipt.intent.namespace)
+            for before in receipt.edge_before_images:
+                current = [edge for edge in self.store._board_edges(self.board_id)
+                           if edge.get("_type") == before.edge_type
+                           and edge.get("_from") == before.from_id and edge.get("_to") == before.to_id
+                           and edge.get("rule_id") == before.attrs.get("rule_id")
+                           and family.owns_writer(rule_id=edge.get("rule_id"),
+                               layer=edge.get("layer"), created_by=edge.get("created_by"))]
+                if current:
+                    if len(current) != 1 or {key: value for key, value in current[0].items() if not key.startswith("_")} != before.attrs:
+                        raise ProjectionActiveSetReconciliationError(
+                            "projection_edge_restore_identity_conflict", "Owned edge changed after removal.")
+                    continue
+                self.store.create_edge(self.board_id, before.edge_type, before.from_id, before.to_id,
+                    dict(before.attrs), from_type=before.from_type, to_type=before.to_type)
+            return
         if not receipt.before_images and not receipt.edge_before_images:
             return
         restored_ids = {item.node_id for item in receipt.before_images}
@@ -1732,16 +1814,6 @@ class InMemoryGraphSchemaManager:
     async def ensure_bootstrapped(self, board_id: str) -> None:
         self.store.bootstrap(board_id)
 
-    async def migrate(self, board_id: str) -> dict[str, Any]:
-        self.store.bootstrap(board_id)
-        return {
-            "board_id": board_id,
-            "migrated": True,
-            "schema_version": SCHEMA_VERSION,
-            "columns_added": {},
-            "errors": [],
-            "duration_ms": 0,
-        }
 
     async def current_version(self, board_id: str) -> str:
         return self._active_store().get_schema_version(board_id) or SCHEMA_VERSION

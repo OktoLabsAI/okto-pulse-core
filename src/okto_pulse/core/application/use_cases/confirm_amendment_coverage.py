@@ -40,7 +40,6 @@ class ConfirmAmendmentCoverageUseCase:
             actor,
             PermissionRequirement(
                 "amendment.coverage.confirm",
-                legacy_operation="card.validation.submit",
             ),
             uow=uow,
             board_id=command.board_id,

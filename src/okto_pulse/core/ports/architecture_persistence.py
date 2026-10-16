@@ -62,6 +62,15 @@ class ArchitecturePersistencePort(Protocol):
         self, context: Any, *, entity: str, record_id: str
     ) -> ArchitectureRecord | None: ...
 
+    async def fence_version(
+        self, context: Any, *, design_id: str, expected_version: int
+    ) -> bool:
+        """Lock the design until transaction end iff its version still matches.
+
+        This does not advance the version or publish a semantic change.
+        """
+        ...
+
     async def create(
         self, context: Any, *, entity: str, values: dict[str, Any]
     ) -> ArchitectureRecord: ...

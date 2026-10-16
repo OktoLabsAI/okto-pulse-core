@@ -34,6 +34,8 @@ async def test_f02_fake_uow_commits_once_and_isolates_transactions() -> None:
     assert factory.created[0].rollback_calls == 0
 
 
+
+
 @pytest.mark.asyncio
 async def test_f02_fake_uow_accepts_conflict_aware_synchronization() -> None:
     factory = FakeSaaSUnitOfWorkFactory()

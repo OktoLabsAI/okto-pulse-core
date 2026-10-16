@@ -1,0 +1,132 @@
+{
+  "scope": "F6/KG7.6 internal explicit reuse after Done, governed projection and recovery",
+  "suites": {
+    "r1-core": {
+      "passed": 108,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "r2-core": {
+      "passed": 51,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "r2-community": {
+      "passed": 14,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Reuse preserves exact Learning identity, original content/context/birth/origin and sealed embedding, adds the explicitly evidenced Bug association, and advances authored provenance.",
+    "Whole predecessor graph fields are compared under the existing writer fence; literal source append uses CAS in the existing compensated coordinator.",
+    "Real SQL/Grafx tests prove two Bug associations, repeat of the same Bug, exact replay, original source history preservation and compensation of a late append failure.",
+    "Old receipt recovery follows exact fingerprint-linked authored revisions and restores the latest literal; each Bug edge still needs its own current source/evidence proof.",
+    "Curated changes after target admission are preserved, not overwritten. Pure domain tests preserve curated predecessor fields and reject altered provenance/birth/evidence or unrelated chains.",
+    "An old work item waits while a newer admitted reuse remains the head, then resumes after that reuse is materialized."
+  ],
+  "limits": [
+    "This internal post-Done reuse path is not complete KG7.6: pre-Done binding, explicit supersedence and REST/MCP/frontend intent selection remain pending.",
+    "First Community campaign retained with 124 passed and 2 failed: the second Bug fixture lacked an explicit link to its signed scenario. The evidence gate was preserved.",
+    "Suite counts overlap; the initial Core campaign precedes the narrowly classified worker-wait change, covered by the final campaign.",
+    "SQL/Grafx are disposable integrations with existing unrelated completion-gate and graph-health fixtures; PostgreSQL contention and full lifecycle acceptance are not qualified here.",
+    "No frontend or real data changed. Candidate promotion, K3/K4 and complete plan acceptance remain pending."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-reuse-materialization-r2.json": "50fb93635f83a20f290b780bf9d9bf1f6aeabc47ffe0d41eb6daf9eb31d7ae8b",
+    "PULSE_REFACTOR/.validation-v040/learning-reuse-materialization-r1-core.xml": "2380787708783a77ceb8b2384acbeff66f01acc89f62a6b45967d0c2fbdefdc8",
+    "PULSE_REFACTOR/.validation-v040/learning-reuse-materialization-r2-core.xml": "a3485fad5b8c2e3f9a3d3b118fd63578bbecd9cdd8084cac9ab0aee98d54bb63",
+    "PULSE_REFACTOR/.validation-v040/learning-reuse-materialization-r2-community.xml": "9c08a6186a8e9be1cb107b73b7e066fde5e89c645d99e383162d2776bf272a45",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-reuse-materialization-r1.json": "350c60b1ab152a1f9383e5232a2cb2e5eb5f40091ab356d3426b4219301e10df",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-reuse-materialization-r2.json": "6c144ae5a16a4b928607830764444c6c4973a0c915b4c030cf5a45db1db2e915",
+    "PULSE_REFACTOR/.validation-v040/learning-reuse-materialization-r1-community.xml": "0e8d1a5227a73b17e21c38eeb5f918c2fdf84ceafc397855dde346416697d2e4",
+    "PULSE_REFACTOR/.validation-v040/run_learning_reuse_materialization.py": "9cbe5d1b981f6285036664ea00c37054d10b846b00a86c2f53861b7889378d43",
+    "PULSE_REFACTOR/.validation-v040/run_learning_reuse_validation.py": "c009066064de4a153aa570a8a460d546a079093dbef2aa65776ca88f520fbd82",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/learning_materialization.py": "d21f5244f11e6293d3c7001730e4682b2f11c738be2eaff23b1d580c9acd46cc",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/learning_closeout.py": "40fe2be82e4fe5383465dbd2c4a72b2849062663ab2368015ca6a86ebe9a6077",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "322a1e77636d0edef7a5a2aefceab4fa563db7465d925e9105f8ce2ff0de6667",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_materialization.py": "ae7794caaa8f653a1045258fa788390364c677702e4a472fd4dd4710761dd2c5",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_materialization_worker.py": "edd3907ccb8d576cb28853b639a2ff273d91e1ae8e5d8ae14cd609031e729794",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/primitives.py": "8d8d8e5fdb7b482ff1c2adc407f3d4c0332da78a1c0393406b3243ada29fa4b1",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/cognitive_closeout_production.py": "252a3c929815eaaf7e90f08e87fd1e87791ec4d9f6d551ca6c4b57acb16b0823",
+    "okto_labs_pulse_core/tests/test_learning_reuse_projection.py": "50446840f6beb54e7d93075c0666c008d772b674fa78a0a1424f49325941658b",
+    "okto_labs_pulse_community/tests/test_learning_reuse_materialization.py": "647c158df4423a448d3021a0c3a5e688b9d518c2f649573fec83071330b11285"
+  }
+}

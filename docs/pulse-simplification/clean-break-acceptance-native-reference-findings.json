@@ -1,0 +1,103 @@
+{
+  "scope": [
+    "KG:KG-27",
+    "KG:KG-29"
+  ],
+  "proof_pair": "dist-native-main58",
+  "source_pair": {
+    "core": "dc7aac89",
+    "community": "fba73e37"
+  },
+  "campaigns": [
+    {
+      "name": "acceptance-native-reference-findings3",
+      "exit_code": 0,
+      "passed": 1,
+      "xml_sha256": "4bf04e32acc9f904231dc3c78ce13a0786c13e2798916eafafb4becefa59a0bd",
+      "tests": [
+        "tests.test_native_reference_findings::test_two_invalid_targets_replay_and_intentional_unlink_are_native"
+      ]
+    },
+    {
+      "name": "acceptance-native-reference-domain1",
+      "exit_code": 0,
+      "passed": 27,
+      "xml_sha256": "d1fdade065bdc09407074c00d5cae015641466eaff39e24931aaa51eb2708633",
+      "tests": [
+        "tests.test_projection_reference_findings::test_reason_changes_keep_identity_but_targets_and_boards_do_not",
+        "tests.test_projection_reference_findings::test_absent_obligation_slot_does_not_invent_a_target",
+        "tests.test_projection_reference_findings::test_explicit_empty_snapshot_is_distinct_from_unavailable",
+        "tests.test_projection_reference_findings::test_snapshot_refuses_scope_drift_and_duplicate_identity[foreign]",
+        "tests.test_projection_reference_findings::test_snapshot_refuses_scope_drift_and_duplicate_identity[duplicate]",
+        "tests.test_projection_reference_findings::test_snapshot_refuses_scope_drift_and_duplicate_identity[same_target_new_reason]",
+        "tests.test_projection_reference_findings::test_durable_roundtrip_preserves_empty_and_identity[findings0]",
+        "tests.test_projection_reference_findings::test_durable_roundtrip_preserves_empty_and_identity[findings1]",
+        "tests.test_projection_reference_findings::test_durable_payload_refuses_corruption[version]",
+        "tests.test_projection_reference_findings::test_durable_payload_refuses_corruption[boolean_version]",
+        "tests.test_projection_reference_findings::test_durable_payload_refuses_corruption[extra]",
+        "tests.test_projection_reference_findings::test_durable_payload_refuses_corruption[identity]",
+        "tests.test_projection_reference_findings::test_durable_payload_refuses_corruption[foreign]",
+        "tests.test_projection_reference_findings::test_durable_payload_refuses_corruption[null]",
+        "tests.test_card_scenario_reference_analysis::test_known_removal_diagnoses_only_the_broken_reference_and_keeps_valid_links",
+        "tests.test_card_scenario_reference_analysis::test_known_absent_parent_retains_intended_selector_without_inventing_endpoint[missing]",
+        "tests.test_card_scenario_reference_analysis::test_known_absent_parent_retains_intended_selector_without_inventing_endpoint[None]",
+        "tests.test_card_scenario_reference_analysis::test_intentional_unlink_with_no_remaining_obligation_is_not_a_finding",
+        "tests.test_card_scenario_reference_analysis::test_incomplete_source_refuses_to_produce_a_complete_snapshot[None]",
+        "tests.test_card_scenario_reference_analysis::test_incomplete_source_refuses_to_produce_a_complete_snapshot[scenarios1]",
+        "tests.test_card_scenario_reference_analysis::test_incomplete_source_refuses_to_produce_a_complete_snapshot[unavailable]",
+        "tests.test_card_scenario_reference_analysis::test_incomplete_source_refuses_to_produce_a_complete_snapshot[scenarios3]",
+        "tests.test_card_scenario_reference_analysis::test_ambiguous_target_is_not_selected_arbitrarily",
+        "tests.test_card_scenario_reference_analysis::test_ambiguous_spec_only_reference_keeps_its_actual_source_selector",
+        "tests.test_card_scenario_reference_analysis::test_order_and_duplicates_in_card_reference_list_do_not_create_new_defects",
+        "tests.test_card_scenario_reference_analysis::test_unilateral_reference_is_explicit_without_changing_observed_link[card]",
+        "tests.test_card_scenario_reference_analysis::test_unilateral_reference_is_explicit_without_changing_observed_link[spec]"
+      ]
+    },
+    {
+      "name": "acceptance-native-reference-storage1",
+      "exit_code": 0,
+      "passed": 9,
+      "xml_sha256": "9f88d328f97bcfc11f4a6faa25fd6fe3f17729d6e81791ed4efcbe124840cf16",
+      "tests": [
+        "tests.test_audit_reference_findings::test_receipt_rollback_commit_empty_closure_and_undo",
+        "tests.test_audit_reference_findings::test_rejects_cross_scope_or_cognitive_source_diagnostics_before_writes[board]",
+        "tests.test_audit_reference_findings::test_rejects_cross_scope_or_cognitive_source_diagnostics_before_writes[owner]",
+        "tests.test_audit_reference_findings::test_rejects_cross_scope_or_cognitive_source_diagnostics_before_writes[type]",
+        "tests.test_audit_reference_findings::test_rejects_cross_scope_or_cognitive_source_diagnostics_before_writes[writer]",
+        "tests.test_audit_reference_findings::test_read_scope_and_corruption_are_not_clean_results",
+        "tests.test_projection_finding_ack::test_absent_snapshot_preserves_exact_historical_wire[None]",
+        "tests.test_projection_finding_ack::test_absent_snapshot_preserves_exact_historical_wire[bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb]",
+        "tests.test_projection_finding_ack::test_digest_binds_reason_even_when_finding_identity_is_stable"
+      ]
+    }
+  ],
+  "proof": {
+    "native_schema": true,
+    "mechanism": "real SQL/Grafx composition, queue worker, audit writer and public audit reader",
+    "assertions": [
+      "two invalid targets for the same owner/field have distinct stable finding IDs",
+      "reevaluation with new queue events retains identical current snapshot and no new finding identities",
+      "removing one target closes only its finding; the other retains identity",
+      "intentional removal of all optional associations yields explicit empty snapshot, stable after repeat",
+      "Card/QAItem/SpecQAItem counts unchanged",
+      "domain suite covers reason changes without identity changes, missing required slot, absent versus unavailable and duplicate/scope refusals",
+      "storage suite covers rollback, scoped reader, undo, empty closure and ACK content integrity"
+    ]
+  },
+  "initial_failures": [
+    {
+      "campaign": "acceptance-native-reference-findings1",
+      "reason": "Test incorrectly equated audit receipts for distinct queue events with growth of current findings. Corrected to finding identities; native audit history preserved."
+    },
+    {
+      "campaign": "acceptance-native-reference-findings2",
+      "reason": "Oracle included audit snapshot from fixture initialization; scoped identity comparison to exercised events while retaining initial history."
+    }
+  ],
+  "limits": [
+    "No KG-28 policy qualification; current missing_link_gate absent, separate authority request pending.",
+    "Native scenario exercises Card scenario references; domain tests qualify reusable finding identity. No claim of all relationship families or global project completion.",
+    "No production changes after published native ledger milestone; closure main58-final and frontend64 remain applicable without rerunning."
+  ],
+  "test_source_sha256": "a3dc8347b09a743a66108de58e932c4ec7dcaab8fccc4942ca5413babf9f8c1d"
+}

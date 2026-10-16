@@ -1,0 +1,99 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE:T04 executor/reviewer handoff",
+  "status": "verified",
+  "coverage": [
+    "Actual Community SQL, authenticator and materialized MCP host resolve two persisted actors, Board grants and valid preset-backed explicit permission documents. Both assert owner_review_required=false.",
+    "Reviewer cannot publish executor implementation evidence; executor can publish the report to validation but cannot submit validation. Each refused call leaves status, version, conclusions, validations, rejections and evidence records unchanged.",
+    "Separate reviewer session reads current version, implementation record and full conclusion manifest, preserving executor attribution; read operations produce no writes. Reviewer then approves to Done or rejects to Rejected under enforce separation.",
+    "After review, original conclusion prefix and all implementation records remain identical; reviewer identity and verdict are recorded. Fresh executor session sees the resulting status and same proof, with no receipt ownership transfer."
+  ],
+  "execution": {
+    "terminal_session": 86303,
+    "exit_code": 0,
+    "passed": 2,
+    "cases": [
+      "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[approve]",
+      "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[reject]"
+    ],
+    "xml": {
+      "file": "learning-reconciliation-review-handoff8-community.xml",
+      "sha256": "007c5ee0e4f8f2226ef9516bf4c9976ddd934c0500eb3f30fc18f24252d61032"
+    },
+    "log": {
+      "file": "learning-reconciliation-review-handoff8-community.log",
+      "sha256": "59c63298112172301502b6eae0715fddaab202f1763b4e33107360ce5c8a7e1e"
+    }
+  },
+  "provenance": {
+    "checked_at": "2026-10-01T00:40:45.035413+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 859,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "dd3963f19d7b15b68ac34e335c75a48b5993cd07",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-evaluation-authority-fix1\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "97e5312876e55fb8bc2f5d305012516c8c2a196f0ef287a2230277c4f2fd6a09",
+          "size": 3792917
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 922,
+        "byte_identical": true,
+        "aggregate_sha256": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+        "chain_hashes": {
+          "source": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+          "wheel": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+          "site_packages": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 373,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "c73c071708969f90d0fed603b2f989ec37052f1c",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-evaluation-authority-fix1\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "5c23034b2f20cd592c1c7b7efb532eea32665882c45b79d39cdb2d50ee091657",
+          "size": 4535075
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 458,
+        "byte_identical": true,
+        "aggregate_sha256": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+        "chain_hashes": {
+          "source": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+          "wheel": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+          "site_packages": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "limits": [
+    "Credential extraction is injected for in-process MCP clients. Authentication, grant resolution, host schema, use cases, Community UOW and SQL are actual implementations; no gate is replaced.",
+    "Entry Spec/task states and external implementation receipt come from the adopted-delivery fixture. Cognitive skip is explicitly enabled in Board policy and impact is off. This does not qualify full T01, receipt generation or HTTP authentication transport.",
+    "Probes1-6 corrected fixtures/assertions: generic MCP error sanitization, preset-less legacy review, nested permission registry flattening and historical agent.entity.read prerequisite. Probe6 observed the native exception without altering it. Probe7 passed with observer; final8 removes observer. No productive authority/gate was modified.",
+    "Only tests/docs changed. Existing productive pair remains byte-identical; prior F16 session31859 exit0 with eight ZERO budgets and frontend session46579 with54 passing cases remain the latest relevant runs."
+  ]
+}

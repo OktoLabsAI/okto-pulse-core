@@ -1,0 +1,72 @@
+{
+  "scope": "Native requirement qualification, four-profile planning and start admission",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "ARQVER:AC-VER-01": [
+      "test_draft_defaults_are_versioned_proposals_not_silent_writes",
+      "test_real_start_requires_four_profile_plan_and_valid_inheritance[missing_profile]",
+      "loads only when requested and materializes a default only after deliberate versioned save"
+    ],
+    "ARQVER:AC-VER-03": [
+      "test_existing_functional_and_new_technical_criteria_share_authoring_and_history"
+    ],
+    "ARQVER:AC-VER-05": [
+      "test_real_start_requires_four_profile_plan_and_valid_inheritance[orphan_criterion]",
+      "test_semantic_review_is_distinct_from_structural_readiness[review_rejects-unrelated_criterion]",
+      "test_semantic_review_is_distinct_from_structural_readiness[condition_corrected-unrelated_criterion]"
+    ],
+    "ARQVER:AC-VER-07": [
+      "test_real_start_requires_four_profile_plan_and_valid_inheritance[missing_operational_work]"
+    ],
+    "ARQVER:AC-VER-10": [
+      "test_real_start_requires_four_profile_plan_and_valid_inheritance[cycle]",
+      "test_real_start_requires_four_profile_plan_and_valid_inheritance[missing_terminal]",
+      "test_cycle_is_detected_even_when_its_digests_are_stale_and_direct_criteria_exist"
+    ],
+    "ARQVER:AC-VER-12": [
+      "test_latency_and_alert_cannot_inherit_only_functional_http_success"
+    ],
+    "ARQVER:ADV-09": [
+      "test_read_only_user_cannot_dispense_active_ir_or_replace_its_cause"
+    ],
+    "ARQVER:ADV-15": [
+      "test_cancelled_sole_ir_implementer_stays_pending_until_authorized_reallocation"
+    ]
+  },
+  "evidence": [
+    "Expanded default proposal regression across FR, TR and OR: no source mutation or fabricated terminal criteria; missing qualification stays unresolved. REST permits a Draft note while OR qualification is pending and rejects start until repaired.",
+    "Existing functional and newly authored technical criteria use the same structured writer, identity/link reader and Spec history. Technical authoring does not create a fictional functional scenario.",
+    "Real start refuses an orphan criterion. A structurally complete but unrelated criterion remains subject to an externally supplied semantic evaluation: real evaluation submission and start enforce reject/approve without internal semantic inference.",
+    "Four-profile planning refuses missing operational Test Card work, cyclic inheritance and missing terminal selection. Authorized reopen and repair permit start with every scenario still ready and Cards not_started.",
+    "Cycle detection checks identity independently of stale digests, marks participating requirement rows and does not produce success by revisiting a node. Source selections and paths remain scoped to the supplied Spec population.",
+    "Technical and operational inheritance of only a functional HTTP-200 condition remains unresolved. The external review rejection is persisted and blocks the real transition.",
+    "Actual viewer Board sharing allows reading an active IR but denies revocation/not_applicable mutation with non-enumerable 404 and unchanged state/history/cause.",
+    "Real cancellation of the sole IR implementer preserves the active IR, marks prior evaluation stale and keeps readiness incomplete. Real Draft revision reallocates work without resurrecting the cancelled Card.",
+    "Frontend requires deliberate versioned acceptance of defaults, separates planning from evidence credit, preserves global pending counts and refuses incompatible execution contracts without conversion."
+  ],
+  "tests": {
+    "core_distinct_passed": 44,
+    "community_passed": 16,
+    "frontend_passed": 29,
+    "total_distinct_passed": 89,
+    "core_main_seconds": 5.37,
+    "core_strengthened_seconds": 4.09,
+    "community_seconds": 47.88,
+    "rerun_cases": 6
+  },
+  "limits": [
+    "REST tests use controlled identity injection and disposable SQL; initial validated states and some assignments are seeded. No full installed authentication or browser E2E claim.",
+    "Semantic judgments are explicit external inputs. Pulse enforces their persisted result and does not determine natural-language adequacy automatically.",
+    "AC-VER-11 is not qualified by structural/semantic-plan tests alone: effective proof reuse remains to be matched to evidence.",
+    "AC-VER-16 and other delivery applicability criteria remain separate from the source-digest tests.",
+    "No product/SPA change, conversion, promotion or real-data operation. Main86 closure remains applicable with all eight budgets zero."
+  ],
+  "artifacts": {
+    "provenance-native-verification-start1.json": "d881b5ac32bc39a638a4b5dc7d3f37da4e543cd340b3eecc1b15b2790eb827cb",
+    "native-verification-start1.xml": "18ae1936fff1e7228de69e25b78ad2f7f197155e06130a6181aa0241bca2b64f",
+    "native-verification-start-core1.xml": "551c4d58c9bc5623c74f6043b1790e3fd100fe5f6416df549500301a07f965bc",
+    "native-verification-start-core2.xml": "039a54aa09f761d63d75e8ac2d3e94858ab28cbce76e36400784fea7e3298fa7",
+    "native-verification-start-frontend1.json": "c0b045da14b876273f918bb6fedd26f7ad61580f4af5a5053e20d5d82075eb04",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

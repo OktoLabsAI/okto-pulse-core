@@ -18,13 +18,11 @@ from okto_pulse.core.domain.code_traceability import (
     ContextualInvestigationOutcomeV2,
     DeliveryContext,
     RefinementSourceContextManifestV2,
-    SourceContextClassificationFenceV2,
     SourceContextRoleCountsV2,
     SpecDeliveryContextProvenance,
     build_source_context_summary_v2,
     canonical_code_traceability_sha256,
     parse_refinement_source_context_manifest_v2,
-    source_context_classification_fence_v2,
     source_context_evidence_item_v2,
     source_context_evidence_payload_v2,
 )
@@ -112,7 +110,6 @@ class SourceContextEvidenceRebaseDelta:
             "existing_scaffold_count": value.existing_scaffold_count,
             "existing_constraint_count": value.existing_constraint_count,
             "reference_pattern_count": value.reference_pattern_count,
-            "uncategorized_legacy_count": value.uncategorized_legacy_count,
         }
 
     def as_dict(self) -> dict[str, object]:
@@ -129,51 +126,18 @@ class SourceContextEvidenceRebaseDelta:
         }
 
 
-@dataclass(frozen=True, slots=True)
-class SourceContextClassificationRebaseDelta:
-    """Human overlay changes remain distinct from authored Evidence context."""
-
-    overlay_changed_evidence_ids: tuple[str, ...]
-    revision_changed_evidence_ids: tuple[str, ...]
-    digest_changed_evidence_ids: tuple[str, ...]
-    fence_revision_changed: bool
-    fence_digest_changed: bool
-    previous_fence: SourceContextClassificationFenceV2
-    next_fence: SourceContextClassificationFenceV2
-
-    @property
-    def changed(self) -> bool:
-        return bool(
-            self.overlay_changed_evidence_ids
-            or self.fence_revision_changed
-            or self.fence_digest_changed
-        )
-
-    def as_dict(self) -> dict[str, object]:
-        return {
-            "changed": self.changed,
-            "overlay_changed_evidence_ids": self.overlay_changed_evidence_ids,
-            "revision_changed_evidence_ids": self.revision_changed_evidence_ids,
-            "digest_changed_evidence_ids": self.digest_changed_evidence_ids,
-            "fence_revision_changed": self.fence_revision_changed,
-            "fence_digest_changed": self.fence_digest_changed,
-            "previous_fence": self.previous_fence.as_dict(),
-            "next_fence": self.next_fence.as_dict(),
-        }
 
 
 @dataclass(frozen=True, slots=True)
 class SourceContextRebaseDelta:
     investigation: SourceContextInvestigationRebaseDelta
     evidence: SourceContextEvidenceRebaseDelta
-    classification: SourceContextClassificationRebaseDelta
 
     @property
     def changed(self) -> bool:
         return bool(
             self.investigation.changed
             or self.evidence.changed
-            or self.classification.changed
         )
 
     def as_dict(self) -> dict[str, object]:
@@ -181,7 +145,6 @@ class SourceContextRebaseDelta:
             "changed": self.changed,
             "investigation": self.investigation.as_dict(),
             "evidence": self.evidence.as_dict(),
-            "classification": self.classification.as_dict(),
         }
 
 
@@ -283,8 +246,6 @@ class SpecCodeEvidenceRebaseResult:
 class _ContextualEvidenceManifestEntry:
     content_sha256: str
     context_sha256: str
-    classification_revision: int | None
-    classification_sha256: str | None
     context_contract_version: int | None
     context_origin: str | None
 
@@ -315,70 +276,23 @@ class SpecCodeEvidenceRebaseService:
             content_sha256 = entry.get("content_sha256")
             context_sha256 = entry.get("context_sha256")
             lifecycle = entry.get("lifecycle_status")
-            classification_revision = entry.get("classification_revision")
-            classification_sha256 = entry.get("classification_sha256")
             context_contract_version = entry.get("context_contract_version")
             context_origin = entry.get("context_origin")
-            legacy_keys = {
-                "evidence_id",
-                "content_sha256",
-                "lifecycle_status",
-                "context_sha256",
-                "classification_revision",
-                "classification_sha256",
+            expected_keys = {
+                "evidence_id", "content_sha256", "lifecycle_status",
+                "context_sha256", "context_contract_version", "context_origin",
             }
-            contextual_keys = {
-                *legacy_keys,
-                "context_contract_version",
-                "context_origin",
-            }
-            keys = frozenset(entry)
             if (
-                keys not in {frozenset(legacy_keys), frozenset(contextual_keys)}
-                or not isinstance(evidence_id, str)
-                or not evidence_id
+                set(entry) != expected_keys
+                or not isinstance(evidence_id, str) or not evidence_id
                 or evidence_id in result
                 or not isinstance(content_sha256, str)
-                or _SHA256_RE.fullmatch(content_sha256.casefold()) is None
+                or _SHA256_RE.fullmatch(content_sha256) is None
                 or not isinstance(context_sha256, str)
-                or _SHA256_RE.fullmatch(context_sha256.casefold()) is None
+                or _SHA256_RE.fullmatch(context_sha256) is None
                 or lifecycle != CodeTraceabilityLifecycleStatus.ACTIVE.value
-                or (
-                    (classification_revision is None)
-                    != (classification_sha256 is None)
-                )
-                or (
-                    classification_revision is not None
-                    and (
-                        type(classification_revision) is not int
-                        or classification_revision < 1
-                        or not isinstance(classification_sha256, str)
-                        or _SHA256_RE.fullmatch(
-                            classification_sha256.casefold()
-                        )
-                        is None
-                    )
-                )
-                or (
-                    keys == frozenset(legacy_keys)
-                    and classification_revision is not None
-                )
-                or (
-                    keys == contextual_keys
-                    and (
-                        context_contract_version not in {None, 2}
-                        or context_origin
-                        not in {
-                            "authored",
-                            "human_legacy_classification",
-                            "unclassified_legacy",
-                        }
-                        or (context_contract_version is None)
-                        != (context_origin == "unclassified_legacy")
-                        or (classification_revision is None)
-                        != (context_origin != "human_legacy_classification")
-                    )
-                )
+                or context_contract_version != 2
+                or context_origin != "authored"
             ):
                 raise CodeEvidenceLinkInvalid(
                     details={"reason": "refinement_snapshot_manifest_invalid"}
@@ -386,12 +300,6 @@ class SpecCodeEvidenceRebaseService:
             result[evidence_id] = _ContextualEvidenceManifestEntry(
                 content_sha256=content_sha256.casefold(),
                 context_sha256=context_sha256.casefold(),
-                classification_revision=classification_revision,
-                classification_sha256=(
-                    None
-                    if classification_sha256 is None
-                    else classification_sha256.casefold()
-                ),
                 context_contract_version=context_contract_version,
                 context_origin=context_origin,
             )
@@ -481,8 +389,6 @@ class SpecCodeEvidenceRebaseService:
     @classmethod
     def _evidence_context_sha256(cls, evidence: object) -> str:
         source_role = cls._field(evidence, "source_role")
-        if source_role is None:
-            source_role = CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY
         try:
             source_role = CodeEvidenceSourceRole(source_role)
         except (TypeError, ValueError) as exc:
@@ -555,23 +461,6 @@ class SpecCodeEvidenceRebaseService:
                 )
             )
         )
-        classification_ids = set(current_evidence) & set(target_evidence)
-        revision_changed = tuple(
-            sorted(
-                evidence_id
-                for evidence_id in classification_ids
-                if current_evidence[evidence_id].classification_revision
-                    != target_evidence[evidence_id].classification_revision
-            )
-        )
-        digest_changed = tuple(
-            sorted(
-                evidence_id
-                for evidence_id in classification_ids
-                if current_evidence[evidence_id].classification_sha256
-                    != target_evidence[evidence_id].classification_sha256
-            )
-        )
         return SourceContextRebaseDelta(
             investigation=SourceContextInvestigationRebaseDelta(
                 head_changed_source_refs=head_changed,
@@ -590,23 +479,6 @@ class SpecCodeEvidenceRebaseService:
                 ),
                 previous_role_counts=current.summary.role_counts,
                 next_role_counts=target.summary.role_counts,
-            ),
-            classification=SourceContextClassificationRebaseDelta(
-                overlay_changed_evidence_ids=tuple(
-                    sorted(set(revision_changed) | set(digest_changed))
-                ),
-                revision_changed_evidence_ids=revision_changed,
-                digest_changed_evidence_ids=digest_changed,
-                fence_revision_changed=(
-                    current.classification_fence.revision
-                    != target.classification_fence.revision
-                ),
-                fence_digest_changed=(
-                    current.classification_fence.payload_sha256
-                    != target.classification_fence.payload_sha256
-                ),
-                previous_fence=current.classification_fence,
-                next_fence=target.classification_fence,
             ),
         )
 
@@ -778,7 +650,6 @@ class SpecCodeEvidenceRebaseService:
         old_manifest = self._snapshot_manifest(current_snapshot)
         new_manifest = self._snapshot_manifest(target_snapshot)
         evidence_by_id: dict[str, CodeEvidence] = {}
-        verified_classifications = []
         for evidence_id, manifest_entry in sorted(new_manifest.items()):
             evidence = await store.get_evidence(
                 board_id=board_id,
@@ -786,58 +657,10 @@ class SpecCodeEvidenceRebaseService:
             )
             actual_context_sha256 = None
             if evidence is not None:
-                if manifest_entry.context_origin == "human_legacy_classification":
-                    classification_reader = getattr(
-                        store,
-                        "get_evidence_classification",
-                        None,
-                    )
-                    if not callable(classification_reader):
-                        raise CodeEvidenceLinkInvalid(
-                            details={
-                                "reason": (
-                                    "target_snapshot_classification_unavailable"
-                                ),
-                                "evidence_id": evidence_id,
-                            }
-                        )
-                    classification = await classification_reader(
-                        board_id=board_id,
-                        evidence_id=evidence_id,
-                        revision=manifest_entry.classification_revision,
-                    )
-                    if (
-                        classification is None
-                        or classification.classification_sha256
-                        != manifest_entry.classification_sha256
-                    ):
-                        raise CodeEvidenceLinkInvalid(
-                            details={
-                                "reason": (
-                                    "target_snapshot_classification_mismatch"
-                                ),
-                                "evidence_id": evidence_id,
-                            }
-                        )
-                    effective_context = source_context_evidence_item_v2(
-                        evidence,
-                        classification,
-                    )
-                    verified_classifications.append(classification)
-                    actual_context_sha256 = canonical_code_traceability_sha256(
-                        source_context_evidence_payload_v2(effective_context)
-                    )
-                elif manifest_entry.context_origin is None:
-                    actual_context_sha256 = self._evidence_context_sha256(
-                        evidence
-                    )
-                else:
-                    effective_context = source_context_evidence_item_v2(
-                        evidence
-                    )
-                    actual_context_sha256 = canonical_code_traceability_sha256(
-                        source_context_evidence_payload_v2(effective_context)
-                    )
+                effective_context = source_context_evidence_item_v2(evidence)
+                actual_context_sha256 = canonical_code_traceability_sha256(
+                    source_context_evidence_payload_v2(effective_context)
+                )
                 if (
                     manifest_entry.context_origin is not None
                     and (
@@ -867,18 +690,6 @@ class SpecCodeEvidenceRebaseService:
                 )
             evidence_by_id[evidence_id] = evidence
 
-        expected_classification_fence = (
-            source_context_classification_fence_v2(verified_classifications)
-        )
-        if (
-            target_source_context.classification_fence
-            != expected_classification_fence
-        ):
-            raise CodeEvidenceLinkInvalid(
-                details={
-                    "reason": "target_snapshot_classification_fence_mismatch"
-                }
-            )
         expected_summary = build_source_context_summary_v2(
             delivery_context=target_source_context.summary.delivery_context,
             delivery_context_provenance=(
@@ -889,7 +700,6 @@ class SpecCodeEvidenceRebaseService:
                 for item in target_source_context.current_receipts
             ),
             evidence=tuple(evidence_by_id.values()),
-            classifications=tuple(verified_classifications),
         )
         if target_source_context.summary != expected_summary:
             raise CodeEvidenceLinkInvalid(
@@ -917,9 +727,6 @@ class SpecCodeEvidenceRebaseService:
         }
         affected_evidence_ids.update(
             source_context_delta.evidence.context_sha256_changed_evidence_ids
-        )
-        affected_evidence_ids.update(
-            source_context_delta.classification.overlay_changed_evidence_ids
         )
         changed_source_refs = set(
             source_context_delta.investigation.head_changed_source_refs
@@ -1043,7 +850,6 @@ class SpecCodeEvidenceRebaseService:
 
 
 __all__ = [
-    "SourceContextClassificationRebaseDelta",
     "SourceContextEvidenceRebaseDelta",
     "SourceContextInvestigationRebaseDelta",
     "SourceContextRebaseDelta",

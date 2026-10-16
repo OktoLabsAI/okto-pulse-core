@@ -81,7 +81,9 @@ def graph_unavailable_error(
     message = (
         f"Knowledge graph for board {board_id} could not be opened "
         f"(graph_state={state}); the on-disk graph is preserved. "
-        "Use the explicit KG Health recovery flow."
+        "Consult KG Health for component status and limitations. "
+        "Recovery requires an authorized external support/release procedure; "
+        "Health has no repair action."
     )
     return KGToolError(
         code="graph_unavailable",

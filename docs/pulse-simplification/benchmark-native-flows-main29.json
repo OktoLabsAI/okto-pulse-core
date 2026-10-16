@@ -1,0 +1,155 @@
+{
+  "format": "pulse-native-flow-measurement/v1",
+  "status": "measured_current_scenarios_not_comparative_acceptance",
+  "goal_complete": false,
+  "pair": {
+    "core": "e55ee8c9a6f5ffa6ebd8b060fa65b492b447bde5",
+    "community": "f341d0c62081157424457fef0e0f2149b315cae5"
+  },
+  "proof_pair": "dist-native-main29",
+  "provenance": "provenance-native-main29.json",
+  "campaign": {
+    "name": "native-mcp-flow-measurement3",
+    "passed": 6,
+    "failed": 0,
+    "seconds": 38.13,
+    "xml_sha256": "386af9fe66973a377eee7ee4f33400c7a2ff16a16a1b22464e1367ef34c5a739"
+  },
+  "artifact": {
+    "file": "benchmark-native-flows-main29-2026-10-07.json.gz",
+    "sha256": "a88a4ad253af7c013056c19d6eba6a580f81c5b32a3de53a713c166cc3785e37",
+    "raw_sha256": "884a4eb4df1777b136be7efc26d546d97b00b9d2716bc12fb2adcb3382f6ff7b"
+  },
+  "summary": {
+    "sessions": 28,
+    "methods": {
+      "initialize": 28,
+      "tools/list": 28,
+      "tools/call": 85
+    },
+    "payload_bytes": 6980645,
+    "tokens_cl100k_base": 1651794,
+    "sql_queries_during_serial_requests": 4211,
+    "request_elapsed_ms": 9606.921399950807,
+    "tools_list_counts": [
+      282
+    ]
+  },
+  "by_case": {
+    "tests/test_executor_reviewer_handoff.py::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[grant-denied-approve]": {
+      "sessions": 5,
+      "methods": {
+        "initialize": 5,
+        "tools/list": 5,
+        "tools/call": 7
+      },
+      "payload_bytes": 1225446,
+      "tokens_cl100k_base": 289522,
+      "sql_queries_during_serial_requests": 267,
+      "request_elapsed_ms": 911.1465000096359,
+      "tools_list_counts": [
+        282
+      ]
+    },
+    "tests/test_executor_reviewer_handoff.py::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[grant-denied-reject]": {
+      "sessions": 8,
+      "methods": {
+        "initialize": 8,
+        "tools/list": 8,
+        "tools/call": 11
+      },
+      "payload_bytes": 1950820,
+      "tokens_cl100k_base": 460653,
+      "sql_queries_during_serial_requests": 446,
+      "request_elapsed_ms": 1143.8773999980185,
+      "tools_list_counts": [
+        282
+      ]
+    },
+    "tests/test_executor_reviewer_handoff.py::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-approve]": {
+      "sessions": 5,
+      "methods": {
+        "initialize": 5,
+        "tools/list": 5,
+        "tools/call": 7
+      },
+      "payload_bytes": 1225371,
+      "tokens_cl100k_base": 289483,
+      "sql_queries_during_serial_requests": 277,
+      "request_elapsed_ms": 752.069099995424,
+      "tools_list_counts": [
+        282
+      ]
+    },
+    "tests/test_executor_reviewer_handoff.py::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-reject]": {
+      "sessions": 8,
+      "methods": {
+        "initialize": 8,
+        "tools/list": 8,
+        "tools/call": 11
+      },
+      "payload_bytes": 1950745,
+      "tokens_cl100k_base": 460619,
+      "sql_queries_during_serial_requests": 456,
+      "request_elapsed_ms": 1087.9623999499017,
+      "tools_list_counts": [
+        282
+      ]
+    },
+    "tests/test_single_agent_spec_execution.py::test_one_agent_preserves_assessments_and_evidence_through_spec_done[False]": {
+      "sessions": 1,
+      "methods": {
+        "initialize": 1,
+        "tools/list": 1,
+        "tools/call": 23
+      },
+      "payload_bytes": 309815,
+      "tokens_cl100k_base": 74541,
+      "sql_queries_during_serial_requests": 1361,
+      "request_elapsed_ms": 2419.003800008795,
+      "tools_list_counts": [
+        282
+      ]
+    },
+    "tests/test_single_agent_spec_execution.py::test_one_agent_preserves_assessments_and_evidence_through_spec_done[True]": {
+      "sessions": 1,
+      "methods": {
+        "initialize": 1,
+        "tools/list": 1,
+        "tools/call": 26
+      },
+      "payload_bytes": 318448,
+      "tokens_cl100k_base": 76976,
+      "sql_queries_during_serial_requests": 1404,
+      "request_elapsed_ms": 3292.862199989031,
+      "tools_list_counts": [
+        282
+      ]
+    }
+  },
+  "versions": {
+    "tiktoken": "0.14.0",
+    "mcp": "1.30.0",
+    "fastmcp": "2.14.7",
+    "pytest": "8.3.4",
+    "sqlalchemy": "2.0.49"
+  },
+  "measurement_contract": "UTF-8, sorted keys, compact JSON, aliases, omit None",
+  "limits": [
+    "Fixture setup and seeded facts are not measured authorship.",
+    "Only actually consumed resources are measured.",
+    "SQL counts cover serial MCP request windows, not fixture setup/verification; they do not establish causality for background work.",
+    "External execution is included in request latency but not separately instrumented.",
+    "No baseline equivalence or cost reduction is established by this capture.",
+    "Rejection variants now include rejected-to-rework-to-approved handoff. Populations differ from the prior six-case capture; no percentage improvement or regression is inferred.",
+    "Every session includes complete tools/list discovery; no resource/read requests occurred. Initial entities and accepted implementation facts remain seeded.",
+    "BASE:T43 remains pending: this current native capture does not establish equivalent full-flow comparative gains or the 50/30 targets.",
+    "Attempt native-mcp-flow-measurement2 selected Community tests from Core: collection failed, zero executed tests. The corrected attempt uses Community cwd."
+  ],
+  "provenance_sha256": "cac1a7642e98f21d890530fa181e3872b2677bc00c5bb2f26f885ab04ff3b945",
+  "module_origins": {
+    "okto_pulse.core": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src\\okto_pulse\\core\\__init__.py",
+    "okto_pulse.community": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src\\okto_pulse\\community\\__init__.py"
+  },
+  "prior_receipt": "benchmark-native-flows.json"
+}

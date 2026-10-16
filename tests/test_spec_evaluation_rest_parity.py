@@ -14,6 +14,8 @@ Findings do ciclo KGDL.01 (2026-06-10):
 from __future__ import annotations
 
 import uuid
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+from okto_pulse.core.domain.execution_contract import SpecExecutionContract
 
 import pytest
 import pytest_asyncio
@@ -40,7 +42,7 @@ def _direct_spec_context_fields(spec_id: str) -> dict[str, object]:
         source_spec_id=spec_id,
         source_spec_version=1,
     )
-    manifest, manifest_sha256 = main_service._direct_spec_source_context_manifest(
+    manifest, manifest_sha256 = main_service.build_direct_spec_source_context_manifest(
         spec_id=spec_id,
         delivery_context=DeliveryContext.BROWNFIELD,
         provenance=provenance,
@@ -81,10 +83,16 @@ async def spec_eval_client(db_factory):
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Spec Eval REST", owner_id=USER_ID))
         db.add(Spec(
+            architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=validated_spec_id,
+                adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode='json'),
+            execution_contract=SpecExecutionContract(board_id=board_id, spec_id=validated_spec_id,
+                adopted_in_edition=1, actor_id=USER_ID, origin='new_spec').model_dump(mode='json'),
             id=validated_spec_id, board_id=board_id, title="Validated Spec",
             status=SpecStatus.VALIDATED, created_by=USER_ID,
-            functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr_one", "text": "FR1"}],
+            acceptance_criteria=[{"id": "ac_one", "text": "AC1"}],
             test_scenarios=[], business_rules=[], api_contracts=[],
+            technical_requirements=[], integration_requirements=[], observability_requirements=[],
             # Skips de cobertura: o teste isola o gate QUALITATIVO de
             # in_progress (evaluations) — os gates de cobertura têm suíte
             # própria.
@@ -92,17 +100,18 @@ async def spec_eval_client(db_factory):
             skip_trs_coverage=True, skip_contract_coverage=True,
             skip_ir_coverage=True, skip_or_coverage=True,
             skip_decisions_coverage=True,
-            # O gate decision-required (spec 4028ebd4) ignora o skip acima e
-            # roda antes do gate qualitativo de evaluations sob teste.
-            decisions=[{"id": "dec_seed", "title": "Seed decision",
-                        "rationale": "Decision de fixture p/ o gate decision-required.",
-                        "status": "active"}],
+            decisions=[],
             **_direct_spec_context_fields(validated_spec_id),
         ))
         db.add(Spec(
+            architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=draft_spec_id,
+                adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode='json'),
+            execution_contract=SpecExecutionContract(board_id=board_id, spec_id=draft_spec_id,
+                adopted_in_edition=1, actor_id=USER_ID, origin='new_spec').model_dump(mode='json'),
             id=draft_spec_id, board_id=board_id, title="Draft Spec",
             status=SpecStatus.DRAFT, created_by=USER_ID,
-            functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr_one", "text": "FR1"}],
+            acceptance_criteria=[{"id": "ac_one", "text": "AC1"}],
             test_scenarios=[], business_rules=[], api_contracts=[],
         ))
         await db.commit()
@@ -142,7 +151,133 @@ def test_submit_and_list_spec_evaluation_via_rest(spec_eval_client):
     assert payload["evaluations"][0]["id"] == evaluation["id"]
 
 
-def test_rest_evaluation_satisfies_in_progress_gate(spec_eval_client):
+def test_planner_without_evaluation_grant_cannot_approve_via_rest(
+    spec_eval_client, monkeypatch,
+):
+    from unittest.mock import AsyncMock
+    from okto_pulse.core.application.service_catalog import (
+        CoreApplicationServiceCatalog,
+    )
+    from okto_pulse.core.domain.permissions import PermissionSet
+
+    client, spec_id, _draft, _board = spec_eval_client
+    permissions = AsyncMock(return_value=PermissionSet({
+        "spec": {
+            "entity": {"read": True, "edit_fields": True},
+            "evaluations": {"read": True, "submit": False},
+            "interact_in": {"validated": True},
+        },
+    }))
+    monkeypatch.setattr(
+        CoreApplicationServiceCatalog, "resolve_user_permissions", permissions,
+    )
+    before = client.get(f"/api/v1/specs/{spec_id}/evaluations").json()
+    # Isolate the attempted write from the independently authorized read above.
+    permissions.reset_mock()
+    response = client.post(
+        f"/api/v1/specs/{spec_id}/evaluations", json=_evaluation_payload(),
+    )
+    assert response.status_code == 403, response.text
+    assert "spec.evaluations.submit" in response.text
+    permissions.assert_awaited_once_with(USER_ID, _board)
+    assert client.get(f"/api/v1/specs/{spec_id}/evaluations").json() == before
+
+
+@pytest.mark.parametrize('denied', ['entity', 'evaluations'])
+def test_decomposition_history_does_not_leak_without_both_read_grants(
+    spec_eval_client, monkeypatch, denied,
+):
+    from unittest.mock import AsyncMock
+    from okto_pulse.core.application.service_catalog import CoreApplicationServiceCatalog
+    from okto_pulse.core.domain.permissions import PermissionSet
+
+    client, spec_id, _draft, _board = spec_eval_client
+    assert client.post(f'/api/v1/specs/{spec_id}/evaluations', json=_evaluation_payload()).status_code == 201
+    flags = {'entity': {'read': True}, 'evaluations': {'read': True}}
+    flags[denied]['read'] = False
+    monkeypatch.setattr(CoreApplicationServiceCatalog, 'resolve_user_permissions',
+                        AsyncMock(return_value=PermissionSet({'spec': flags})))
+    response = client.get(f'/api/v1/specs/{spec_id}/evaluations?view=all&limit=1')
+    assert response.status_code == 403, response.text
+    assert f'spec.{denied}.read' in response.text
+    assert 'Breakdown executavel' not in response.text
+    assert 'evaluations' not in response.json() or isinstance(response.json()['evaluations'], str)
+
+
+@pytest.mark.asyncio
+async def test_decomposition_pages_preserve_complete_native_opinions_and_edition(
+    spec_eval_client, db_factory,
+):
+    client, spec_id, _draft, _board = spec_eval_client
+    path = f'/api/v1/specs/{spec_id}/evaluations'
+    previous = client.post(path, json=_evaluation_payload('reject')).json()['evaluation']
+    # Isolate the projection contract; lifecycle reopening has its own real tests.
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        spec.edition = 2
+        await db.commit()
+    first = client.post(path, json=_evaluation_payload()).json()['evaluation']
+    second = client.post(path, json=_evaluation_payload('request_changes')).json()['evaluation']
+    page = client.get(path, params={'view': 'current', 'limit': 1}).json()
+    assert page['total'] == 2 and page['active_count'] == 2 and page['previous_count'] == 1
+    assert page['evaluations'] == [{**second, 'is_current': True, 'lifecycle_state': 'current'}]
+    following = client.get(path, params={'view': 'current', 'limit': 1, 'offset': 1}).json()
+    assert following['evaluations'] == [{**first, 'is_current': True, 'lifecycle_state': 'current'}]
+    older = client.get(path, params={'view': 'previous', 'limit': 1}).json()
+    assert older['evaluations'] == [{**previous, 'is_current': False, 'lifecycle_state': 'previous'}]
+    assert older['total'] == 1 and older['current_edition'] == 2
+    assert client.get(path, params={'offset': 10}).json()['evaluations'] == []
+    for query in ({'limit': 101}, {'offset': -1}, {'view': 'stale'}):
+        assert client.get(path, params=query).status_code == 422
+
+
+def test_rest_content_and_move_cannot_forge_evaluation(spec_eval_client, monkeypatch):
+    from unittest.mock import AsyncMock
+    from okto_pulse.core.application.service_catalog import CoreApplicationServiceCatalog
+    from okto_pulse.core.domain.permissions import PermissionSet
+
+    client, spec_id, draft_id, board_id = spec_eval_client
+    permissions = AsyncMock(return_value=PermissionSet({'spec': {
+        'entity': {'read': True, 'edit_fields': True},
+        'evaluations': {'read': True, 'submit': False},
+        'validation': {'read': True, 'submit': False},
+        'interact_in': {'draft': True, 'validated': True},
+        'move': {'validated_to_in_progress': True},
+    }}))
+    monkeypatch.setattr(CoreApplicationServiceCatalog, 'resolve_user_permissions', permissions)
+    before = client.get(f'/api/v1/specs/{draft_id}').json()
+    updated = client.patch(f'/api/v1/specs/{draft_id}', json={
+        'title': 'Authorized planner content', 'status': 'validated',
+        'evaluations': [_evaluation_payload()], 'validations': [{'recommendation': 'approve'}],
+    })
+    assert updated.status_code == 422, updated.text
+    assert {tuple(item['loc']) for item in updated.json()['detail']} == {
+        ('body', 'status'), ('body', 'evaluations'), ('body', 'validations'),
+    }
+    assert client.get(f'/api/v1/specs/{draft_id}').json() == before
+    updated = client.patch(f'/api/v1/specs/{draft_id}', json={
+        'title': 'Authorized planner content',
+    })
+    assert updated.status_code == 200, updated.text
+    assert updated.json()['title'] == 'Authorized planner content'
+    assert updated.json()['status'] == before['status'] == 'draft'
+    assert client.get(f'/api/v1/specs/{draft_id}/evaluations').json()['evaluations'] == []
+    blocked = client.post(f'/api/v1/specs/{spec_id}/move', json={'status': 'in_progress'})
+    assert blocked.status_code == 400, blocked.text
+    assert "no evaluation with 'approve'" in blocked.text
+    assert client.get(f'/api/v1/specs/{spec_id}').json()['status'] == 'validated'
+    snapshot = client.get(f'/api/v1/specs/{draft_id}').json()
+    batch = client.patch(f'/api/v1/boards/{board_id}/specs/{draft_id}/project-structure', json={
+        'expected_spec_version': snapshot['version'], 'expected_structure_revision': 0,
+        'idempotency_key': 'forged-review',
+        'operations': [{'operation': 'approve', 'payload': {'evaluations': [_evaluation_payload()]}}],
+    })
+    assert batch.status_code == 400, batch.text
+    assert batch.json()['detail']['details']['issues'][0]['loc'] == ['operations', 0, 'operation']
+    assert client.get(f'/api/v1/specs/{draft_id}').json() == snapshot
+
+
+def test_rest_evaluation_satisfies_in_progress_gate(spec_eval_client, monkeypatch):
     """O cenario exato do finding: usuario so-REST consegue destravar
     validated→in_progress sem MCP."""
     client, spec_id, _draft, _board = spec_eval_client
@@ -155,16 +290,57 @@ def test_rest_evaluation_satisfies_in_progress_gate(spec_eval_client):
         f"/api/v1/specs/{spec_id}/evaluations", json=_evaluation_payload()
     ).status_code == 201
 
+    # This older fixture intentionally isolates the qualitative gate. The
+    # adopted four-profile planning/start flow has real Community integration
+    # coverage in test_verification_start_transition and the reopen regressions.
+    from unittest.mock import AsyncMock
+    planning = AsyncMock(return_value=None)
+    monkeypatch.setattr(main_service.SpecService, "require_execution_contract_ready", planning)
     moved = client.post(f"/api/v1/specs/{spec_id}/move", json={"status": "in_progress"})
     assert moved.status_code == 200, moved.text
     assert moved.json()["status"] == "in_progress"
+    planning.assert_awaited_once()
 
 
-def test_evaluation_rejected_outside_validated_status(spec_eval_client):
+def test_evaluation_rejected_in_draft(spec_eval_client):
     client, _validated, draft_spec_id, _board = spec_eval_client
     resp = client.post(f"/api/v1/specs/{draft_spec_id}/evaluations", json=_evaluation_payload())
     assert resp.status_code == 409
-    assert "must be in 'validated' status" in resp.text
+    assert "must be in 'approved' or 'validated' status" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_evaluation_in_approved_does_not_promote_and_keeps_authorship(spec_eval_client, db_factory):
+    client, spec_id, _draft, _board = spec_eval_client
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        spec.status = SpecStatus.APPROVED
+        await db.commit()
+    response = client.post(f"/api/v1/specs/{spec_id}/evaluations", json=_evaluation_payload())
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["status_before"] == body["status_after"] == "approved"
+    assert not body["state_changed"]
+    assert body["evaluation"]["evaluator_id"] == USER_ID
+    assert body["evaluation"]["spec_edition"] == 1
+    assert body["next_action"]["tool"] == "okto_pulse_submit_spec_validation"
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        assert spec.status == SpecStatus.APPROVED
+        assert len(spec.evaluations) == 1
+        assert not spec.validations
+
+
+@pytest.mark.parametrize("field,value", [
+    ("overall_score", True), ("overall_score", "90"),
+    ("evaluator_id", "forged"), ("overall_justification", "short"),
+])
+def test_decomposition_payload_has_one_strict_contract(spec_eval_client, field, value):
+    client, spec_id, _draft, _board = spec_eval_client
+    data = {**_evaluation_payload(), field: value}
+    response = client.post(f"/api/v1/specs/{spec_id}/evaluations", json=data)
+    assert response.status_code == 422, response.text
+    assert client.get(f"/api/v1/specs/{spec_id}/evaluations").json()["evaluations"] == []
 
 
 def test_evaluation_validates_scores_and_recommendation(spec_eval_client):

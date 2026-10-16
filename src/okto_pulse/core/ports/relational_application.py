@@ -20,11 +20,13 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from .mcp_auth import AgentAuthSession
 
 if TYPE_CHECKING:
+    from .delivery_readiness import DeliveryReadinessReadPort, DeliveryReadinessCursorPort
+    from .spec_coverage_query import SpecCoverageReadPort
+    from .bug_clusters import BugClustersReadPort
     from .checklist import ChecklistPersistencePort
     from .code_investigation import CodeInvestigationStore
     from .code_traceability import CodeTraceabilityReadPort, CodeTraceabilityStore
     from .board_kg_analytics import BoardKgAnalyticsEvidencePort
-    from .delivery_forecast import DeliveryForecastEvidencePort
     from .guideline_policy import (
         GuidelinePolicyPersistencePort,
         SemanticGuidelineAssessmentPersistencePort,
@@ -198,14 +200,26 @@ class RelationalApplicationAdapter(Protocol):
         """Return transaction-scoped delivery proof persistence and projection."""
         ...
 
-    def delivery_forecast_read(self, session: Any) -> "DeliveryForecastEvidencePort":
-        """Return authorized Phase 1 evidence for governed forecasting."""
-
+    def delivery_readiness_read(self, session: Any) -> DeliveryReadinessReadPort:
+        """Return the edition's authorized, consistent DeliveryReadinessReadPort."""
         ...
+
+    def delivery_readiness_cursor(self, session: Any) -> DeliveryReadinessCursorPort:
+        """Return the edition-owned DeliveryReadinessCursorPort."""
+        ...
+
 
     def board_kg_analytics_read(self, session: Any) -> "BoardKgAnalyticsEvidencePort":
         """Return board-only KG/effectiveness evidence with no mutation surface."""
 
+        ...
+
+    def bug_clusters_read(self, session: Any) -> BugClustersReadPort:
+        """Return the bounded, read-only Bug cluster source/projection reader."""
+        ...
+
+    def spec_coverage_read(self, session: Any) -> SpecCoverageReadPort:
+        """Return one bounded Spec source and its authorized admitted proof."""
         ...
 
     def guideline_policy(

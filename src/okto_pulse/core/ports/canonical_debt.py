@@ -7,7 +7,7 @@ from okto_pulse.core.runtime_context import register_runtime_value, require_runt
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Protocol, Sequence
+from typing import Protocol, Sequence, runtime_checkable
 
 
 @dataclass(slots=True)
@@ -35,6 +35,16 @@ class CanonicalDebtRecord:
     evidence_ref: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@runtime_checkable
+class ConditionalCanonicalDebtWriter(Protocol):
+    async def replace_if_current(
+        self, context: object, *, expected: CanonicalDebtRecord,
+        replacement: CanonicalDebtRecord,
+    ) -> bool:
+        """Replace only if every persisted field still matches; never commit."""
+        ...
 
 
 class CanonicalDebtStore(Protocol):
@@ -125,6 +135,7 @@ def reset_canonical_debt_store_for_tests() -> None:
 __all__ = [
     "CanonicalDebtRecord",
     "CanonicalDebtStore",
+    "ConditionalCanonicalDebtWriter",
     "get_canonical_debt_store",
     "register_canonical_debt_store",
     "reset_canonical_debt_store_for_tests",

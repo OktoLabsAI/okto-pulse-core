@@ -1,0 +1,40 @@
+{
+  "scope": "ARQVER:AC-INT-11",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main90",
+  "evidence": [
+    "Fresh native schema: operational OR, linked AC, ready demonstration scenario and in-progress Test Card.",
+    "Actual MCP catalog/Client, Community credential authentication and persisted explicit grants; no permission mocks.",
+    "Full gate context identifies pending scenario, mutation_allowed=false and update_test_scenario_status followed by move_card; no repair/rebuild/start_agent guidance.",
+    "Attempted remediation is refused with interact_in_blocked and required_permission=test_scenario.interact_in.ready.",
+    "Actual health and queue readers serve full health; degraded telemetry calls for inspection only.",
+    "All relational tables compared before/after reads and denial, including agents and queues; only authentication last_used_at excluded.",
+    "Health probes drained before comparison: graph directory paths/bytes unchanged, RebuildProcessor.execute and subprocess.Popen never invoked."
+  ],
+  "results": {
+    "passed": 1,
+    "duration_seconds": 12.1,
+    "session": 17609,
+    "closure_ok": true,
+    "zero_budgets": 8
+  },
+  "limits": [
+    "Controlled native fixture, not observation of an external service or a launched external harness.",
+    "Graph initially unmaterialized and telemetry/source diagnostics partly unavailable; test proves pending-operation remediation and non-mutating health in that state, not graph recovery correctness.",
+    "Only test code changed. No frontend feature change, SPA rebuild, release or real-data operation."
+  ],
+  "fixture_iterations": [
+    "1: exact permission error envelope expected forbidden but actual Permission denied.",
+    "2: required permission belongs in required_permission, not reason.",
+    "3: health reader also requires existing kg.admin.settings_read grant; supplied without changing authorization.",
+    "4-5: registered actual health and queue reader ports omitted by delivery-only setup.",
+    "6: unavailable telemetry legitimately recommends inspect_telemetry, not none.",
+    "7: final assertions pass, including drained background probes."
+  ],
+  "artifacts": {
+    "provenance-native-operational-remediation-20261008.json": "63944203115fcad456d3af29a075d1b5f91724f56664880510c39e2876d7c0c7",
+    "native-operational-remediation-20261008-7.xml": "7836a4cf813d684d1cf542b1e33d1d13cd28b055ed81f2bd23505b3973d8e4ee",
+    "native-operational-remediation-20261008-7.log": "92fb3d36b69fb0624fa1a2e9c2a1beeec66dbbdaa08b687055f34704e41987de",
+    "closure-native-main90.json": "738a5f3f3390888489c030ace3cfdd62c223416a5d689a599dcbf1da759fddfd"
+  }
+}

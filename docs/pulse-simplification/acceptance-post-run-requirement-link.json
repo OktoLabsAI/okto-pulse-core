@@ -1,0 +1,39 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "ARQVER:ADV-13",
+  "status": "verified",
+  "coverage": "A real authenticated MCP agent executes a signed HTTP scenario while its criterion is linked only to FR. The authorized structured writer then adds BR to requirement_links in Draft, without reopening or changing edition. The original receipt still verifies under its original digest, but the new digest differs and actual scenario status admission refuses that receipt without changing scenario, criteria, version or delivery records. The same agent proceeds through real lint, evaluation, start, implementation report and task validation. Actual Spec Done refuses missing test proof. A new signed run under the current links, admitted through scenario status and the Test Card report, then permits Spec Done with preserved assessments and implementation payload.",
+  "executions": [
+    {
+      "terminal_session": 33238,
+      "exit_code": 0,
+      "passed": 2,
+      "seconds": 17.42,
+      "cases": [
+        "tests.test_single_agent_spec_execution::test_one_agent_preserves_assessments_and_evidence_through_spec_done[False]",
+        "tests.test_single_agent_spec_execution::test_one_agent_preserves_assessments_and_evidence_through_spec_done[True]"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-single-agent-late-link2-community.xml",
+          "sha256": "2d5cc50df1ad2fef75b36d70a8ca197c329d6e7dd9571e4b4cb9c1a1a3fbf250"
+        },
+        {
+          "file": "learning-reconciliation-single-agent-late-link2-community.log",
+          "sha256": "995e5e472bc1b741fcb519b077ae53a554bf71696de48cddb99411030d31a86f"
+        }
+      ]
+    }
+  ],
+  "test_source": {
+    "repository": "community",
+    "file": "tests/test_single_agent_spec_execution.py",
+    "sha256": "c5ff0c6967115981364f439961e9e4369bf41bbcefb0cc5c575dfb2eb1715e59"
+  },
+  "limits": [
+    "Two parameter cases: existing BASE T01 regression and late-link path. Initial adopted Draft contents, external implementation investigation receipt, controlled ASGI project and declared resource exemptions are fixtures; SQL, MCP identity/grants, writers, signing/verifying and lifecycle gates are real.",
+    "The old run is issued in Draft and rejected after the link before implementation is recorded. The digest assertion and verification under original scope isolate applicability from later implementation timestamp and review gates. The rejection does not claim the receipt itself was revoked or deleted.",
+    "Probe82833 failed because the test assumed automated evidence exposed scenario_sha256 at its top level. The test now computes the original digest from the persisted scenario and authenticates it against the actual receipt. No product code changed.",
+    "No UI or productive Python changed. provenance-late-link1.json proves source/site/wheels byte equality before execution (Core859/922, Community373/458). Prior F16 session90981 exit0 has all eight budgets ZERO; prior relevant frontend39859 passed8."
+  ]
+}

@@ -1,0 +1,1166 @@
+{
+  "observed_at": "2026-10-16T00:12:08.066376+00:00",
+  "artifacts": [
+    {
+      "path": "okto_labs_pulse_core\\docs\\pulse-simplification\\evidence-u2-finite-case-map-20261014.json",
+      "sha256": "7ddb063edd846eab761ebac27e52785bca32d69196634a874abdaba65524630f"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-policy-regression-core.xml",
+      "sha256": "fbecdf51d9c9be432fc6f857c86e9acf6482af7ceb8872d9bc61a638eec226e0"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-decomposition.xml",
+      "sha256": "bed33e1fa188f0dcbc3fa5b46151ae5a13e76c1694360b55bf15102ae8f9e096"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-manifest-submit-mcp.xml",
+      "sha256": "26cf280cf68e59485b3cf640115409d6bc2cc46eb16553106e57fd80eec08b11"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-code-evidence-domain-parity-original.xml",
+      "sha256": "084164510999c32fa18093ff085f8e9bd5695573e683fd9849cc4ae42a2be247"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-lint-parity-native-r3.xml",
+      "sha256": "1c4e7ec2d3bc85563d8ba946b9bc927924c2ca1aca7a83d18133654a821d842f"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-checklist-parity-final.xml",
+      "sha256": "d85cdf57830289e1e457bc7690369cc896dcd25d0175505bda5373cbbf781b7c"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-checklist-regression.xml",
+      "sha256": "41823437136b6544195558fdff57532234cfddbe97461fbb925bfea445d4f919"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-policy-parity-final.xml",
+      "sha256": "57e17a7d365e9b793c471049ec62b2bcb6b29893435a3fe1aecef29f0785e1bd"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-dependency-parity-r9.xml",
+      "sha256": "ed92e7141129651c1bcda19fa0a906d95ffcc4515f6df23140f2be5f333aaede"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-resource-parity-r3.xml",
+      "sha256": "1789ca653d30d0fa39964a815f48dc3d5eeda76ee331a96bfcd972a54697f72b"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-code-evidence-public-parity-r2.xml",
+      "sha256": "348e78a06767a71e56d80d61dcacce39856d98f354fdf3e2b95aded4f05f6ee6"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-critical-context-parity.xml",
+      "sha256": "7789d1fea1e988f51d901004a4afd23d649d9d75b2f0711840a25db11f4d2b6b"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-resource-regression.xml",
+      "sha256": "1fb51425c2395679598f1f1bb93f81bf88578d2a7b4b86f081a795f2a47d6372"
+    },
+    {
+      "path": "okto_labs_pulse_core\\docs\\pulse-simplification\\evidence-u3-authority-ui-closeout-20261015.json",
+      "sha256": "3ef269a9bc5b61c7b9679f42ad01d7870f7b24b2b98a295c1c10c3f839c6e643"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-authority-before.json",
+      "sha256": "c0501e29d84e0bd041eaaa011919dced45582b52c45df4131b07d3db60cec554"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-authority-denied.json",
+      "sha256": "31edd933e942fd0baa7470c27d37e75c2682fa445f2798fee39e597d5813637d"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-authority-final-after.json",
+      "sha256": "c0501e29d84e0bd041eaaa011919dced45582b52c45df4131b07d3db60cec554"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-authority-other-identity.json",
+      "sha256": "ad9f65daae287d1a8ca6081cc4eb5ca55b2c893461c5a82d9079d6ae7914a07b"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-authority-shell-final.xml",
+      "sha256": "afc7662376c430d082852e6e8718bd1596617205a39d8ba7d74ad0c673650d8c"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-authority-shell-message.xml",
+      "sha256": "65b6b65b3937854539c54bdb13d227f9dea1c25a0266db7e45dcff055a7a1a55"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-before-revoke.png",
+      "sha256": "bf4476193ced7abeb14113bcc9be3520d4046ecfdb22c72605627573a7093df1"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-final-form.yml",
+      "sha256": "c39af4bf60d9fcbeb88f7ecd552a5dc2a6a7570353cc1fc9c8ec51ab889c0227"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-final-functional.yml",
+      "sha256": "4a7e3fce42ff03e3726591bd8531542b67a798e9cdbfda9b03c04be4375757f3"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-final-open.yml",
+      "sha256": "8313fc2cffefff86181ba4d9cca80f1efe663c63afbaddf3ad7cd69d047b67dd"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-form.yml",
+      "sha256": "a4f9be10a4d8e7b5f03ba82cbbab86c7a6f6cae8da06f803ea2cab952b82cfa5"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-functional.yml",
+      "sha256": "7aa8759134a4c2edfab4a03a91a3ae08d2ffb53b5441cb0b2de37b312bc0ea74"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-open.yml",
+      "sha256": "d8533a68d7ea42618d0fb166211f8d3474092eb0b4b41bcc2c9792818250da84"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-other-identity.png",
+      "sha256": "7d70168778dc95778ce900051ae7dc2d44f3908ecb50adae17946cf302f643a0"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-other-identity.yml",
+      "sha256": "2788eb09d2aef6f915e1ef185482cd3fd2bd77bc7f313e7eea9105ee01bff4cc"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-ready.yml",
+      "sha256": "7ff20a4648799c5745cd1ac696ff577378a91c7ca3064ecf019252070a60f0d0"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-recovery-denied.png",
+      "sha256": "5ff6076c1407e87993f45d35a3eadd6d68b94935d1fbb2d7d1251b899d71ed54"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-recovery-denied.yml",
+      "sha256": "7ac8ebf557e108efc5fc1f958fb2e053c9fbde0171a623d5e7e0a6e3db076405"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-recovery-specs.yml",
+      "sha256": "676ca3eafe950a61fbe616c983c1f7d6cb8c8f8b1011a6387b0b66cb5a0728af"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-recovery-start.yml",
+      "sha256": "b2ee6d2ecd49542c4c1eef9272a9635157a2dd1439a6cadd54da8fbc6c7d8804"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-restored.yml",
+      "sha256": "dfa9663007788898207bfe90597b7bf93cb59627be6f26345c5d6d5f07c557f1"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-retry-denied.yml",
+      "sha256": "92c34062e3adc0bef9e4daf28bf5571e0dac188b7b6e5bf3ac3364f287690bb1"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-retry-restored.png",
+      "sha256": "3158401cffd7a158e528c1abde60dbedc4e971b948193eceea4f79c184f7703d"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-retry-restored.yml",
+      "sha256": "786f5e29659693274b0251816c42f2da7b7c0ed43cff06bc26b902f28d561fd3"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-revoked.png",
+      "sha256": "2d9000d3e64c8e3da5a77b62afbad475ec216c37173a532b1bde4965d3a6e95a"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-revoked.yml",
+      "sha256": "cc4df5a5fe4e9c4b9137f28c291db02f73b6caeefdd09910673a52ecd8581cfa"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-shell-cleared.png",
+      "sha256": "fc8b6f3dbbf735ae51ffc75d1c4452d742cd66a5f5c269f18917433f2e00086e"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-shell-cleared.yml",
+      "sha256": "6615ed7cbe03254286d3a4a3751509200e870dc65aff64ba8a831f0592a5cc1d"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-spec-list.yml",
+      "sha256": "bb091b9eec6ff224666f34258b9b890df071c6acb44d1684a66d8496e742accf"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-terms.yml",
+      "sha256": "19cc034279e9547e9ce9ca9d64fd1dfe92d104d083ca6a8f3ebf27e68ad7ed21"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-validation-loading.png",
+      "sha256": "4bb70fbf17c568728a5d08f44d3a04e04e98751fa8fa8e5747ae3060ef483734"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-validation-loading.yml",
+      "sha256": "bc8cff249f56ca6eecf58a4f5df6608087893f3847ba86ac22f26a77704de315"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-validation-read-failure.png",
+      "sha256": "24641ddcd9b1e24c10167a343e0062ca424773435725309bc3f900ede285d4e7"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-validation-read-failure.yml",
+      "sha256": "199dcae9db06abafa6785dffa2310af0da2804c3aadc1fba26e42ef23eb24717"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-validation-recovered.png",
+      "sha256": "36d5c6d44438cda9f08b106cf350d7a15e52ede77b7e516e4f97b4fc4daab6cd"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-validation-recovered.yml",
+      "sha256": "0d653a0e5a1f79a17b6eb06ee5e4f35cef63080fa2bc10333c1fe9679acaa1f0"
+    },
+    {
+      "path": "okto_labs_pulse_community\\src\\okto_pulse\\community\\frontend_dist\\pulse-frontend-contract.json",
+      "sha256": "fa9716ba02a6b6288c8ac737d877a92876d190bb5e2028cf5a559af1bbf98294"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u1-core.xml",
+      "sha256": "23ca7a57225761df38aef27f07be9d94cc934bcb8b3ec8a046ccb550a204d353"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u1-execution-negative.xml",
+      "sha256": "de0a5013188c63b0c41c12a0f57b27ce93c90ecf47cc9e556cacfee154ecb97c"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-core-regression.xml",
+      "sha256": "f098a7840603872516a158f32938d863f144e81a5573469e0a48741755f32c70"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-core-regression.xml.environment.json",
+      "sha256": "150fc8d05c2f735ebe65567518f897fe4f1e44223a2744a03f376b53c60fd260"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-community-regression.xml",
+      "sha256": "b28e81d82973e79cc5caceeace85a8860f71a9a5d7a18fbf02c08e1766db7d5c"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-community-regression.xml.environment.json",
+      "sha256": "150fc8d05c2f735ebe65567518f897fe4f1e44223a2744a03f376b53c60fd260"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-kg-readiness-regression.xml",
+      "sha256": "da39979d09514faa70f49e1213c75d8e2ab5e304a8cfd8ac3f6829d51aeafd57"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-kg-readiness-regression.xml.environment.json",
+      "sha256": "bd4535bfda95eab04671187756a19b71a3b5b48da9dbfa41b1aee4bf5b2713ec"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-kg-actor-final.xml",
+      "sha256": "238e77d07bb4cd21874e4a045937d5880a18a352772fbed5c5fb81df8ed7b30c"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-kg-actor-final.xml.environment.json",
+      "sha256": "bd4535bfda95eab04671187756a19b71a3b5b48da9dbfa41b1aee4bf5b2713ec"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-final-r3-core-resources.xml",
+      "sha256": "29c3b285d1a312b084c608ea251aaf594160b1719a8df917187ce087f122b9d4"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-final-r3-core-resources.xml.environment.json",
+      "sha256": "bd4535bfda95eab04671187756a19b71a3b5b48da9dbfa41b1aee4bf5b2713ec"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-final-r3-community-resources.xml",
+      "sha256": "815b3c603df8ff7caab9feefed495a68ed3bc1a93691d0f5d299e09d71347748"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-final-r3-community-resources.xml.environment.json",
+      "sha256": "bd4535bfda95eab04671187756a19b71a3b5b48da9dbfa41b1aee4bf5b2713ec"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-final-decision-plan.xml",
+      "sha256": "fa3b379c5f40376563bd2f1f4be897b56571c2aa673367f0fdd2def852bc7151"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-final-decision-plan.xml.environment.json",
+      "sha256": "bd4535bfda95eab04671187756a19b71a3b5b48da9dbfa41b1aee4bf5b2713ec"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-final-quality-dimensions.xml",
+      "sha256": "55297edaeb2cf369baeb04f564edd125a98517599e5fd99004d6eb3e21d7c3e4"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-final-quality-dimensions.xml.environment.json",
+      "sha256": "bd4535bfda95eab04671187756a19b71a3b5b48da9dbfa41b1aee4bf5b2713ec"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-host-footprint-final.xml",
+      "sha256": "e51eeeba8d4b90515a051110b79613c49e1d4f94b66e6a43535628d818ce8971"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-host-footprint-final.xml.environment.json",
+      "sha256": "150fc8d05c2f735ebe65567518f897fe4f1e44223a2744a03f376b53c60fd260"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-final-r3-parity.json",
+      "sha256": "31a3102f50f8fb8cbc8ce167c181da43ab98daf45aabbd00d6aed7d1b1d586a6"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-final-r3-wheels\\okto_pulse-0.4.0-py3-none-any.whl",
+      "sha256": "7a44bf805affc7f6e6233a8ea5fc6d31783d9c5c640fa498f7be744e3c074cad"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-final-r3-wheels\\okto_pulse_core-0.4.0-py3-none-any.whl",
+      "sha256": "fe273f66a2c8f1baf7c07a6ddaef6cfb8c814bdcd5354543e4e53897162603d0"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-final-r3-closure.json",
+      "sha256": "5d43217be48efd341df8115b4669e546656a59c091917f064b5b1d1130caf5f1"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\final-installed-spec.json",
+      "sha256": "3573fd98e1dd88f4038182fb33ab4fa872bcf697a3d789ec7a88128fdb5a111c"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\final-installed-task.json",
+      "sha256": "db14dd250732f3eca45c1ace90a7afe87dd577e331e8ba30cacc3e5bf07ec185"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\final-installed-test.json",
+      "sha256": "1133a646adeff188f69eca571560b11aa3f4d60f4d5a79687445571c833bdc9e"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\closeout-pending-after-update.json",
+      "sha256": "bf79ac6718592dd64dc2d32274fe86697b8c2fc78d6aa21baa9c9ca8c549d93e"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\final-installed-kg-query.json",
+      "sha256": "b3dca0493f80644c4c583c8873b9a0bdba140bcb6a8ba359fe8f953e92ca41bc"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\final-installed-health-full.json",
+      "sha256": "4df9ae1bf94684a9a16eb2ff26415bef6126fdd2ac9405656be307f1c0dbc236"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\final-warm-health.json",
+      "sha256": "1213be75a3e294da2e55b2ce7222f080234c509decd57b04cef72edf7fa20a1b"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\final-refreshed-health.json",
+      "sha256": "df9ae1b12f2e43ef08a9f57356838de9ede1f270f5bd43f05939ce9589b69090"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\closeout-cognitive-commit.json",
+      "sha256": "f723f97a43b96e2eb38ce54ba3b288893838708557a14ad5a24456f5c38c8b5e"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\closeout-exact-edges.json",
+      "sha256": "3b6ba2aa83835d458daef1b23d406d8d66bb2b97cedc180bb83b909f80e5dcff"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\closeout-exact-natural.json",
+      "sha256": "e037c2e3c85fc3067dbd30e3c735594936c8d50d106eb0899722f057099f80fd"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\final-installed-health-readiness.json",
+      "sha256": "d4f727934c4b40ffd2224a2775d4593f61aa1a23a1bcf3541984826b34814226"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\allocation-final-context.json",
+      "sha256": "ab24e475f70c714131e5c2b04c925000ea1da156af18a56c5d1cef43eb6276c6"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\test-create.json",
+      "sha256": "4384ee6c2f1e61999d15cac203313603075591cdbf2da5026693f0554b8cdc28"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\planning-concluded-context.json",
+      "sha256": "8656bfd68f61c95cc0bf53fd6be6613b95a4bbc1c0f5720e2fa51d31c33754c4"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\test-normal-execution.json",
+      "sha256": "9cd584598fdeb14af1b1e1bf9fc03430ae0a37d13ffcd13021d79097d5f52d43"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\test-empty-execution.json",
+      "sha256": "4b56f770ee9cb53003077ac5509cce6d67ef4beb40becfa1c4b98309fbe86ee7"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\implementation-readiness-after.json",
+      "sha256": "6ac3e6ff4bf606437e1f73d06da40d85ca460213030d7555beef218d42bbecf3"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\test-normal-task-readiness.json",
+      "sha256": "3be2390dc0082ad36e232d13c6f608516597dbe2f29f096f3de25be9f5a734a4"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\test-empty-task-readiness.json",
+      "sha256": "bd672795627b273d55e95bdbfe74b693e80a59cfcd6c7abbb7a4b7f5907a1dcf"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\spec-done.json",
+      "sha256": "160dfe47518a6f3f0f81eb4f462dfb909a0fbc36a96de86af3e80870242b4872"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\ideation-final-done.json",
+      "sha256": "dbe1abd78f336aa11c420c3f211368ad6e6ff87058efdb1b966cf7d3c7cf96e3"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\refinement-done.json",
+      "sha256": "ae0ddfa72c25970b043380f868be0b156ffb63948417a38f5da472b40d848d2a"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\final-served-workflows-cards.txt",
+      "sha256": "867c7e0382d1335bfec888adca494e6ecfb819246173d3036e30ea1eb1402d82"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-e2e\\final-served-reference-tool-docs-kg.txt",
+      "sha256": "6983a12d010a5760488479efe1a68f2dce2f795d4f5ec2368a97ebd0fc73167f"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u4-final-r3-coverage.png",
+      "sha256": "9a9ec26bde542a46b5a5d48df5fecb06310415dde50bd46f29ae45488e48a7fe"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u4-final-r3-validation.png",
+      "sha256": "0f1bb3e916ea9318f05ec4ed7564d21c69b38e930b3b1b5b2db008dbb1fb3f38"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u4-final-r3-kg.png",
+      "sha256": "48cc9bb75b35af179b3415d504a21843bb43ccbf79c21e631566479589c454f0"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u4-final-r3-structure.png",
+      "sha256": "f66079de705a9b70baeef19d3269744a2c5f78b21f2b26fc67d20348ef91ff48"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u4-final-r3-task-delivery.png",
+      "sha256": "3b3103771968c151bef5d4a73e36082f4310feab2bbe7fd06d6ed74051d26d94"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u4-final-r3-test-delivery.png",
+      "sha256": "f83161fda8414e728ba592367cae6f18df282a3dfca45ef594d8c54e8f5f3d4a"
+    }
+  ],
+  "tests": {
+    "u1-core.xml": {
+      "passed": 209,
+      "failures": 0,
+      "errors": 0
+    },
+    "u1-execution-negative.xml": {
+      "passed": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    "u4-core-regression.xml": {
+      "passed": 221,
+      "failures": 0,
+      "errors": 0
+    },
+    "u4-community-regression.xml": {
+      "passed": 25,
+      "failures": 0,
+      "errors": 0
+    },
+    "u4-kg-readiness-regression.xml": {
+      "passed": 78,
+      "failures": 0,
+      "errors": 0
+    },
+    "u4-kg-actor-final.xml": {
+      "passed": 4,
+      "failures": 0,
+      "errors": 0
+    },
+    "u4-final-r3-core-resources.xml": {
+      "passed": 168,
+      "failures": 0,
+      "errors": 0
+    },
+    "u4-final-r3-community-resources.xml": {
+      "passed": 17,
+      "failures": 0,
+      "errors": 0
+    },
+    "u4-final-decision-plan.xml": {
+      "passed": 15,
+      "failures": 0,
+      "errors": 0
+    },
+    "u4-final-quality-dimensions.xml": {
+      "passed": 5,
+      "failures": 0,
+      "errors": 0
+    },
+    "u4-host-footprint-final.xml": {
+      "passed": 31,
+      "failures": 0,
+      "errors": 0
+    }
+  },
+  "u2_families": [
+    {
+      "criteria": "UV04/UV05/UV06/UV12/UV16",
+      "verified_named_cases": 9,
+      "limit": "Native persistence/service composition; REST/MCP transport cases are listed separately."
+    },
+    {
+      "criteria": "UV06/UV13",
+      "verified_named_cases": 15,
+      "limit": "Current/Previous and native averaging; no UI observation claimed."
+    },
+    {
+      "criteria": "UV10",
+      "verified_named_cases": 3,
+      "limit": "Service combinations auto_validate/skip; policy/lint transport matrices cover quality on/off."
+    },
+    {
+      "criteria": "UV11/UV12/UV16/UV22",
+      "verified_named_cases": 5,
+      "limit": "Existing MCP authority/command harness; does not replace installed wire E2E."
+    },
+    {
+      "criteria": "UV11/UV14/UV15",
+      "verified_named_cases": 16,
+      "limit": "Core composition REST/native fences and rollback. MCP-specific replay differences must only be added if not demonstrated by shared command coverage."
+    },
+    {
+      "criteria": "UV09/UV22: Code Evidence",
+      "verified_named_cases": 12,
+      "limit": "Native gate/preview and summary under explicit projection fixtures; no installed lifecycle claimed."
+    },
+    {
+      "criteria": "UV07",
+      "verified_named_cases": 12,
+      "limit": "12 cases with native lint preflight/authority/admission, REST/MCP actor injection."
+    },
+    {
+      "criteria": "UV07/UV08/UV22",
+      "verified_named_cases": 16,
+      "limit": "16 selected cases passed. Three unrelated old fixture failures in this artifact were resolved by u2-checklist-regression.xml; never label the whole old artifact green."
+    },
+    {
+      "criteria": "UV09/UV10/UV11/UV22: policy",
+      "verified_named_cases": 28,
+      "limit": "28 cases with native binding/receipt and denied-read assertions; unavailable assessment is a typed persistence-boundary fault injection."
+    },
+    {
+      "criteria": "UV17",
+      "verified_named_cases": 2,
+      "limit": "Two native REST/MCP cases: real lint/decomposition/validation, complete FR/BR/AC/scenario/Card plan, dependency preview and execution write. Predecessor completion is a separately committed fixture input, not predecessor closeout E2E; no test execution/proof is manufactured."
+    },
+    {
+      "criteria": "UV09/UV10/UV22: resources",
+      "verified_named_cases": 16,
+      "limit": "16 native same-data summary/preview/REST/MCP cases, with persisted rollback. Actor is fixture-injected; installed wire lifecycle remains U4."
+    },
+    {
+      "criteria": "UV09/UV10/UV22: public Code Evidence",
+      "verified_named_cases": 36,
+      "limit": "36 public comparisons; complete projection is native, incomplete/unavailable faults are injected after native relational resolution. No gate approval mock; not evidence of a production outage or inherited-evidence admission."
+    },
+    {
+      "criteria": "UV11: both composed critical-context guards",
+      "verified_named_cases": 4,
+      "limit": "Four native REST/MCP refusals; first or second full-context resolution is faulted after reading the native subject. Guard is real and no state/history/receipt persists."
+    },
+    {
+      "criteria": "UV09/UV22: coverage parity",
+      "verified_named_cases": 32,
+      "limit": "Existing 32 structural coverage comparisons rerun in the affected Core suite. Reuses the recorded fixture boundaries; not 32 new tests."
+    },
+    {
+      "criteria": "UV12/UV16/UV22: REST composition",
+      "verified_named_cases": 2,
+      "limit": "Two existing REST native-history cases for positive/negative composition; final installed UI/MCP workflow remains U4."
+    }
+  ],
+  "historical_failures_resolved": [
+    {
+      "original": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-checklist-parity-final.xml",
+      "cases": [
+        "tests.test_r4_imp1_gate_contracts::test_move_spec_validated_direct_returns_gate_envelope",
+        "tests.test_r4_imp1_gate_contracts::test_move_spec_validated_raises_gatecontracterror_at_service",
+        "tests.test_r4_imp1_gate_contracts::test_submit_spec_evaluation_success_envelope_is_append_only"
+      ],
+      "passed_successor": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-checklist-regression.xml"
+    }
+  ],
+  "u3": {
+    "artifact_hashes_verified": 37,
+    "matrix": {
+      "UV18": {
+        "result": "qualified in checkout",
+        "evidence": [
+          "evidence-u3-live-validation-sync-20261014.json",
+          "evidence-u3-integrated-conclusion-delivery-20261015.json",
+          "evidence-u3-coverage-native-progress-20261015.json"
+        ],
+        "proves": "Native opinions/Checklist/lint and Card-only implementation/verification changes converge in open consumers, including constant Spec.version."
+      },
+      "UV19": {
+        "result": "qualified in checkout with controlled boundary fixtures",
+        "evidence": [
+          "u3-authority-shell-final.xml",
+          "u3-integration-offline.yml",
+          "u3-integration-online.yml",
+          "u3-authority-other-identity.json",
+          "u3-authority-other-identity.yml"
+        ],
+        "proves": "Watcher tests cover obsolete response, hidden/offline/focus and deduplication. Integration snapshots preserve draft offline/reconnected. New deferred identity/Board tests reject late denial; browser controlled principal swap removes protected scope."
+      },
+      "UV20": {
+        "result": "qualified in checkout with controlled boundary fixtures",
+        "evidence": [
+          "evidence-u3-card-drafts-20261014.json",
+          "evidence-u3-live-validation-sync-20261014.json",
+          "evidence-u3-native-authority-20261015.json",
+          "u3-authority-denied.json",
+          "u3-authority-recovery-denied.png",
+          "u3-authority-retry-restored.png"
+        ],
+        "proves": "Native MCP external changes preserve dirty authoring and require explicit revision review; revoked MCP and HTTP reads/writes denied; UI protected data/draft cleared, authorized retry recovers."
+      },
+      "UV21": {
+        "result": "qualified in checkout",
+        "evidence": [
+          "evidence-u3-integrated-conclusion-delivery-20261015.json",
+          "u3-validation-loading.png",
+          "u3-validation-read-failure.png",
+          "u3-validation-recovered.png",
+          "u3-authority-shell-final.xml"
+        ],
+        "proves": "Composed conclusion and independent history/pinpoints/keyboard previously observed. Pulse loading, unavailable state and native retry now visually inspected; navigation regressions pass."
+      }
+    },
+    "recorded_distinct_frontend_passes": 122,
+    "limits": [
+      "Controlled AuthenticationPort fixture is not a new LocalAuthProvider capability. Component delayed-response tests are not represented as native browser timing tests.",
+      "No new backend behavior tests: product change is frontend only. Previous source closure budgets were zero; packaged pair and installed closure remain U4.",
+      "No new completion, assessment or delivery writes in main fixture; authority Spec remains Draft. No Done or canonical KG claimed.",
+      "User default runtime/home unchanged. Installed wheels are not qualified by this source/Vite run.",
+      "Browser errors include intentional denied/aborted requests and prior fixture errors; no zero-console-error claim.",
+      "Vite fixture first launched with wrong cwd, then one subprocess exited; confirmed absence before Start-Process Hidden restart in frontend cwd. No product stylesheet fix was necessary."
+    ]
+  },
+  "installed_parity": {
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-venv\\Scripts\\python.exe",
+    "prefix": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-venv",
+    "packages": {
+      "core": {
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "source_count": 867,
+        "installed_count": 867,
+        "differences": []
+      },
+      "community": {
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "source_count": 326,
+        "installed_count": 326,
+        "differences": []
+      }
+    },
+    "wheels": {
+      "okto_pulse-0.4.0-py3-none-any.whl": "7a44bf805affc7f6e6233a8ea5fc6d31783d9c5c640fa498f7be744e3c074cad",
+      "okto_pulse_core-0.4.0-py3-none-any.whl": "fe273f66a2c8f1baf7c07a6ddaef6cfb8c814bdcd5354543e4e53897162603d0"
+    },
+    "frontend": {
+      "source_count": 79,
+      "installed_count": 79,
+      "differences": []
+    },
+    "resources": {
+      "source_count": 58,
+      "installed_count": 58,
+      "differences": []
+    },
+    "community_resources": {
+      "source_count": 5,
+      "installed_count": 5,
+      "differences": []
+    },
+    "newest_installed_mtime": 1792108835.3435469
+  },
+  "closure": {
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "evidence": {
+      "af35_s5_ok": true,
+      "community_to_core_import_rows": 1154,
+      "conformance_matrix_ok": true,
+      "core_import_rows": 7861,
+      "dependency_rows": 25,
+      "distribution_report_ok": true,
+      "rebuild_storage_violation_count": 0,
+      "singleton_gate_status": "passed"
+    },
+    "findings": [],
+    "documentation_findings": []
+  },
+  "final_objects": {
+    "spec": {
+      "lifecycle": {
+        "stored_status": "done",
+        "target": "done",
+        "check_status": "not_evaluated",
+        "other_blocker_count": null,
+        "qualification_is_current": true,
+        "reason_codes": [
+          "native_completion_recorded"
+        ],
+        "context_refs": [
+          "spec:dcfb20fb-db6d-5628-b861-831d6a2d140d"
+        ]
+      },
+      "implementation": {
+        "unit": "obligation",
+        "status": "known",
+        "percent": 100,
+        "total": 4,
+        "applicable": 4,
+        "satisfied": 4,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 4,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      },
+      "verification": {
+        "unit": "obligation",
+        "status": "known",
+        "percent": 100,
+        "total": 4,
+        "applicable": 4,
+        "satisfied": 4,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 4,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      }
+    },
+    "task": {
+      "lifecycle": {
+        "stored_status": "done",
+        "target": "done",
+        "check_status": "not_evaluated",
+        "other_blocker_count": null,
+        "qualification_is_current": true,
+        "reason_codes": [
+          "native_completion_recorded"
+        ],
+        "context_refs": [
+          "card:5e946696-db4d-5205-a47a-9b46f1115157"
+        ]
+      },
+      "implementation": {
+        "unit": "obligation",
+        "status": "known",
+        "percent": 100,
+        "total": 4,
+        "applicable": 4,
+        "satisfied": 4,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 4,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      },
+      "verification": {
+        "unit": "obligation",
+        "status": "known",
+        "percent": 100,
+        "total": 4,
+        "applicable": 4,
+        "satisfied": 4,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 4,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      }
+    },
+    "test": {
+      "lifecycle": {
+        "stored_status": "done",
+        "target": "done",
+        "check_status": "not_evaluated",
+        "other_blocker_count": null,
+        "qualification_is_current": true,
+        "reason_codes": [
+          "native_completion_recorded"
+        ],
+        "context_refs": [
+          "card:ee0caea9-97dd-5b9a-93a1-cf87bf0961ee"
+        ]
+      },
+      "implementation": {
+        "unit": "obligation",
+        "status": "not_applicable",
+        "percent": null,
+        "total": 0,
+        "applicable": 0,
+        "satisfied": 0,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 0,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      },
+      "verification": {
+        "unit": "scenario",
+        "status": "known",
+        "percent": 100,
+        "total": 2,
+        "applicable": 2,
+        "satisfied": 2,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 2,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      }
+    }
+  },
+  "cognitive_closeout": {
+    "board_id": "9f3f3f78-140d-4344-9951-7b929648eccd",
+    "selected_kg_generation_id": "cognitive_closeout",
+    "counts": {
+      "pending": 0,
+      "in_progress": 0,
+      "consolidated": 1,
+      "skipped": 0,
+      "failed": 0,
+      "total": 1
+    },
+    "items": [
+      {
+        "item_id": "cogn_8b95ff6fdf9191abd72855a7865c9ea4",
+        "source_ref": "spec:dcfb20fb-db6d-5628-b861-831d6a2d140d",
+        "artifact_type": "spec",
+        "status": "consolidated",
+        "recorded_at": "2026-10-15T23:21:57.208477+00:00",
+        "updated_at": "2026-10-15T23:57:52.881216+00:00",
+        "updated_by_agent_id": "9000eeea-2ddd-410b-ab72-701c2aa61640",
+        "consolidation_session_id": "kgses_071cefe2a81c4506",
+        "reason_code": null
+      }
+    ]
+  },
+  "canonical_query": {
+    "rows": [
+      [
+        "alternative_1e81aa35fc1658d6dbb1bc56",
+        "canonical",
+        "spec:dcfb20fb-db6d-5628-b861-831d6a2d140d:alternative:u4_no_http"
+      ]
+    ],
+    "columns": [
+      "node_id",
+      "n.graph_layer",
+      "n.source_artifact_ref"
+    ],
+    "row_count": 1,
+    "truncated": false,
+    "execution_time_ms": 15.4,
+    "query_state": "canonical_only",
+    "layers_included": [
+      "canonical"
+    ],
+    "canonical_filter_enforced": true,
+    "canonical_filter_mode": "cypher_rewrite",
+    "layer_counts": {
+      "canonical": 1
+    },
+    "working_row_count": 0,
+    "working_omitted_count": 0,
+    "working_omitted_count_exact": true,
+    "working_omitted_count_source": "paired_query",
+    "working_omitted_count_scope": "returned_window",
+    "omitted_layer_counts": {},
+    "sanitization": {
+      "stripped_fields": [],
+      "stripped_count": 0
+    },
+    "row_bounds": {
+      "effective_limit": 10,
+      "hard_cap": 1000,
+      "truncated": false
+    }
+  },
+  "health_limit": {
+    "overall_state": "at_risk",
+    "graph_state": "healthy",
+    "discovery_state": "healthy",
+    "probe_diagnostics": {
+      "graph_snapshot": {
+        "status": "available",
+        "reason": "ok",
+        "age_seconds": 19.517,
+        "refresh_in_progress": false
+      },
+      "artifact_snapshot": {
+        "status": "available",
+        "reason": "ok",
+        "age_seconds": 20.454,
+        "refresh_in_progress": false
+      },
+      "parity_snapshot": {
+        "status": "stale",
+        "reason": "cache_expired_refresh_scheduled",
+        "age_seconds": 20.635,
+        "refresh_in_progress": true
+      },
+      "discovery_snapshot": {
+        "status": "available",
+        "reason": "global_discovery_anchor_primary_present",
+        "age_seconds": 0,
+        "refresh_in_progress": false
+      },
+      "graph_metrics": {
+        "status": "available",
+        "reason": "ok"
+      },
+      "schema_version": {
+        "status": "available",
+        "reason": "ok"
+      },
+      "discovery_telemetry": {
+        "status": "available",
+        "reason": "global_discovery_anchor_primary_present"
+      },
+      "current_generation": {
+        "status": "available",
+        "reason": "ok",
+        "source_status": "available",
+        "snapshot_freshness": {
+          "status": "available",
+          "reason": "ok",
+          "age_seconds": 20.454,
+          "refresh_in_progress": false,
+          "is_stale": false,
+          "max_age_seconds": 30
+        }
+      },
+      "storage_footprint": {
+        "status": "unavailable",
+        "reason": "observation_timeout"
+      },
+      "native_runtime_budget": {
+        "status": "available",
+        "reason": null
+      },
+      "layer_counts": {
+        "status": "unavailable",
+        "reason": "layer_columns_unavailable"
+      },
+      "cognitive_items": {
+        "status": "available",
+        "reason": "ok",
+        "source_status": "available",
+        "snapshot_freshness": {
+          "status": "available",
+          "reason": "ok",
+          "age_seconds": 20.454,
+          "refresh_in_progress": false,
+          "is_stale": false,
+          "max_age_seconds": 30
+        }
+      },
+      "rebuild_source_diagnostics": {
+        "status": "available",
+        "reason": "ok",
+        "source_status": "available",
+        "snapshot_freshness": {
+          "status": "available",
+          "reason": "ok",
+          "age_seconds": 20.454,
+          "refresh_in_progress": false,
+          "is_stale": false,
+          "max_age_seconds": 30
+        }
+      },
+      "stale_canonical_parity": {
+        "status": "unavailable",
+        "reason": "cache_expired_refresh_scheduled"
+      },
+      "digest_layer_parity": {
+        "status": "unavailable",
+        "reason": "global_discovery_read_failed"
+      }
+    },
+    "board_graph_queryable": true,
+    "board_graph_recovery_required": false,
+    "health_issues": [
+      {
+        "code": "board_graph_queryable",
+        "component": "board_graph",
+        "severity": "info",
+        "reason": "queryable",
+        "description": "The board graph opened and returned materialized content; this is not a board-graph recovery signal.",
+        "operator_action": "none"
+      },
+      {
+        "code": "telemetry_unavailable",
+        "component": "health_telemetry",
+        "severity": "warning",
+        "reason": "metric_status:unavailable",
+        "description": "Health sensors are unavailable, so canonical state remains at_risk by policy even when the graph is queryable.",
+        "operator_action": "inspect_telemetry"
+      },
+      {
+        "code": "health_probe_unavailable",
+        "component": "kg_health",
+        "severity": "warning",
+        "reason": "health_probe_unavailable:digest_layer_parity,stale_canonical_parity",
+        "description": "One or more bounded KG Health probes did not complete within the read budget; the endpoint returned fail-safe projections.",
+        "operator_action": "inspect_probe_diagnostics",
+        "probes": [
+          "digest_layer_parity",
+          "stale_canonical_parity"
+        ]
+      }
+    ],
+    "correlation_id": "b84b150b27ce4740bb171efe625d2a7e"
+  },
+  "runtime_process": {
+    "ProcessId": 3776,
+    "CreationDate": "/Date(1792108860671)/",
+    "CommandLine": "\"D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-venv\\Scripts\\python.exe\" -I -X utf8 D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4_runtime.py serve "
+  },
+  "scope_limit": "UV01-UV24 unified validation acceptance. Existing KG health observations remain partially unavailable, never claimed healthy. Default user home/runtime untouched."
+}

@@ -1,0 +1,119 @@
+{
+  "scope": "F6 conditional append of verified cognitive source heads in caller UOW",
+  "suites": {
+    "cognitive-source-cas-core": {
+      "tests": 73,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "cognitive-source-cas-community": {
+      "tests": 61,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Absence and exact current fingerprint preconditions; stale heads refuse writes.",
+    "SQLite concurrent writers from the same head yield exactly one winner.",
+    "All batch preconditions precede staging; caller rollback preserves durable history.",
+    "Current replay is idempotent; historical payload cannot be reported as the current head.",
+    "Historical fingerprint integrity and scoped identity are checked before conditional append."
+  ],
+  "limits": [
+    "No Learning capture envelope, authorization, evidence admission or done gate is added.",
+    "Concurrency is tested on the Community SQLite adapter; other SQL engines are not qualified.",
+    "No frontend surface changes; no new frontend acceptance claimed.",
+    "Installed16 predates this increment; full current-pair installed recovery remains pending."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/cognitive-source-cas-core.xml": "3da831186dd55e34579a0f94cb61fae85f49a9d1c3b4f3c62525d99528c905ff",
+    "PULSE_REFACTOR/.validation-v040/cognitive-source-cas-core.log": "8979dbbdcabe41d3741a6f323a8af7ff967ff52bd3a3f50eb0774c5cdeea5e0b",
+    "PULSE_REFACTOR/.validation-v040/cognitive-source-cas-community.xml": "bbf4e2f9f3158e3717ce6dfaa36e292c2825ad00ea073a1c206b1ffaf3d1c3ba",
+    "PULSE_REFACTOR/.validation-v040/cognitive-source-cas-community.log": "64f3a91272d0be5c797ca674af462620e630bcc873420318478f9bb115fd8eea",
+    "PULSE_REFACTOR/.validation-v040/provenance-cognitive-source-cas.json": "72d6d529f157d7e3602491e43466542caabaee7ce7e894ea8c70388c45579b8c",
+    "PULSE_REFACTOR/.validation-v040/closure-cognitive-source-cas.json": "c7df574eff24083a5c58a61b06046da7b8d3401af926cfc50cc7acb8f11a520a",
+    "PULSE_REFACTOR/.validation-v040/cognitive-source-cas-before.xml": "d44c028ec37d986189e0f22c7a193b6994311faa0af3c1f61011f44dc4bf5f9b",
+    "PULSE_REFACTOR/.validation-v040/cognitive-source-cas-before.log": "0b8114999b487b585a2df4a87ea3fc5ec44482319c32465d327ec3cebacda587",
+    "PULSE_REFACTOR/.validation-v040/run_cognitive_source_cas.py": "be21b84b9e09cf5d5401e034669ba4ccc4d08eb80ea682b57b208ce65168277f",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/kg_cognitive_source.py": "3e95d333f5157043e21c4693a786c1b78ee9d307f542a0969e7823141f67f636",
+    "okto_labs_pulse_core/tests/test_kg_cognitive_source_port.py": "8d372ac145ad963861e68584a578c6d4b263d655709c8f98c6169e0a3912dbc4",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_kg_cognitive_source.py": "d9b818079b84c7eccb4307595873b942ac21fc1d0aba34953bb039a32db6586e",
+    "okto_labs_pulse_community/tests/test_kg_cognitive_source_adapter.py": "db7598ccce3f7c67b647d6d66e2774258574cc73d456f9fe2170ae58262c943c"
+  }
+}

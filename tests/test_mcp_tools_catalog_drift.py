@@ -55,6 +55,14 @@ def test_catalog_file_matches_live_registry():
     )
 
 
+def test_public_schema_tool_does_not_offer_internal_storage_view():
+    from okto_pulse.core.mcp import server
+
+    tools = asyncio.run(server.mcp.get_tools())
+    properties = tools["okto_pulse_kg_schema_info"].parameters["properties"]
+    assert set(properties) == {"board_id"}
+
+
 def test_every_live_tool_has_one_exact_tool_doc_heading():
     index = tool_doc_index()
     assert missing_tool_docs(_live_names(), index) == []

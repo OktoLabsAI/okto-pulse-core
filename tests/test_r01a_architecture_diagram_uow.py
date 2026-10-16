@@ -33,6 +33,8 @@ import copy
 import inspect
 import uuid
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -134,7 +136,7 @@ def _architecture_body(title: str = "FU5-S1C Architecture") -> dict:
                             "type": "arrow",
                             "sourceElementId": "node-client",
                             "targetElementId": "shape-1",
-                            "linkedInterfaceId": "interface-payload",
+                            "linkedInterfaceIds": ["interface-payload"],
                             "connectionType": "elbow",
                         },
                     ],
@@ -176,6 +178,7 @@ async def _seed_parents() -> dict[str, str]:
         )
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(board_id=ids["board"], spec_id=ids["spec"], adopted_in_edition=1, actor_id=USER, inherited_resource_ids=()).model_dump(mode="json"),
                 id=ids["spec"],
                 board_id=ids["board"],
                 title="fu5s1c-spec",

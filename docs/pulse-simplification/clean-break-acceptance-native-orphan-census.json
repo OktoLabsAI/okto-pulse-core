@@ -1,0 +1,126 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_keys": [
+    "KG:KG-25"
+  ],
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main40",
+  "provenance_sha256": "fc95d2a76258c16c2d59910cd6ffb19211977587221443ee1eec03872b97da2d",
+  "runs": [
+    {
+      "name": "acceptance-native-orphan-census1",
+      "xml_sha256": "2cb46dec5893176f1bb7ec6d51e772b76ae46be62004e9942be7a6304952597a",
+      "passed": 29,
+      "failed": 0,
+      "cases": [
+        "tests.test_kg_orphan_integrity::test_orphan_scanner_uses_schema_node_and_relationship_catalogs",
+        "tests.test_kg_orphan_integrity::test_boost_audit_relates_to_endpoints_are_schema_valid",
+        "tests.test_kg_orphan_integrity::test_boost_audit_edges_materialize_and_clear_zero_degree_diagnostics",
+        "tests.test_kg_orphan_integrity::test_scanner_batches_connectivity_with_constant_query_count_for_many_nodes",
+        "tests.test_kg_orphan_integrity::test_scanner_resolves_sources_from_board_scoped_relational_truth",
+        "tests.test_kg_orphan_integrity::test_scanner_query_failures_are_fail_closed[enumeration]",
+        "tests.test_kg_orphan_integrity::test_scanner_query_failures_are_fail_closed[connectivity]",
+        "tests.test_kg_orphan_integrity::test_scanner_detects_only_zero_degree_learning_with_safe_samples",
+        "tests.test_kg_orphan_integrity::test_scanner_batch_connectivity_counts_both_edge_directions",
+        "tests.test_kg_orphan_integrity::test_scanner_does_not_report_allowlisted_board_root_entity",
+        "tests.test_kg_orphan_integrity::test_scanner_allowlists_final_report_root_from_kg_session_id",
+        "tests.test_kg_orphan_integrity::test_scanner_audit_uses_safe_fields_only",
+        "tests.test_projection_connectivity::test_equal_keys_in_different_types_are_distinct_and_input_order_does_not_change_report",
+        "tests.test_projection_connectivity::test_a_self_loop_does_not_satisfy_a_historical_decisions_judgement",
+        "tests.test_projection_connectivity::test_learning_requires_the_existing_canonical_bug_layer[canonical-passed]",
+        "tests.test_projection_connectivity::test_learning_requires_the_existing_canonical_bug_layer[working-rejected]",
+        "tests.test_projection_connectivity::test_type_aware_bug_probe_includes_nonincident_raw_uuid_without_promoting_other_types",
+        "tests.test_projection_connectivity::test_mixed_evidence_keeps_existing_advisory_and_parallel_occurrences",
+        "tests.test_projection_connectivity::test_technical_root_is_observed_without_creating_an_eligibility_claim",
+        "tests.test_projection_connectivity::test_duplicate_missing_selection_and_dangling_edge_are_refused",
+        "tests.test_kg_primitives_connectivity_guard::test_commit_rejects_isolated_learning_before_graph_mutation",
+        "tests.test_kg_primitives_connectivity_guard::test_source_artifact_ref_dedup_hit_without_edge_is_not_successful_merge",
+        "tests.test_kg_primitives_connectivity_guard::test_source_artifact_ref_dedup_hit_with_existing_edge_counts_merge",
+        "tests.test_kg_primitives_connectivity_guard::test_degraded_graph_returns_contextual_error_without_opening_the_graph",
+        "tests.test_kg_primitives_connectivity_guard::test_bug_derived_learning_validates_existing_bug_is_connected",
+        "tests.test_kg_primitives_connectivity_guard::test_commit_auto_attaches_cognitive_decision_to_source_root",
+        "tests.test_kg_primitives_connectivity_guard::test_commit_auto_attaches_cognitive_assumption_to_source_root",
+        "tests.test_kg_rebuild_service::test_completed_run_with_remaining_orphans_blocks_clean_success",
+        "tests.test_kg_health::test_orphan_integrity_warning_is_at_risk_not_recovery_needed"
+      ]
+    },
+    {
+      "name": "acceptance-native-orphan-census4",
+      "xml_sha256": "0f1d5859984526b543310f13fd5356b4198f76572aaf4c050adb3fd831d53ce9",
+      "passed": 1,
+      "failed": 0,
+      "cases": [
+        "tests.test_native_orphan_census::test_native_census_preserves_all_source_content_and_relationships"
+      ]
+    }
+  ],
+  "distinct_final_python_cases": 30,
+  "source_contract_change": "Removed pending_backfill diagnostic and export; existing failed_orphan_validation describes the same orphan count, at-risk classification, integrity warning and blocked rebuild publication. No gate predicate changed.",
+  "native_assertions": [
+    "Fresh schema, actual SQLite/Grafx and current worker: every expected Spec projection node retains its title/content.",
+    "Native census reports zero orphans; complete node properties and relation multiset remain byte-identical before/after observation.",
+    "Synthetic isolated Learning is reported as exactly one orphan; current connectivity guard rejects it.",
+    "Failed census preserves every node property and relationship, including orphan content; no deletion or invented belongs_to."
+  ],
+  "attempts": [
+    {
+      "name": "acceptance-native-orphan-census2",
+      "xml_sha256": "4db0e93359cd9988df74f0102e992ef32aa128f266467ee4dec91ebf7b12b4f8",
+      "passed": 1,
+      "failed": 0,
+      "cases": [
+        "tests.test_native_orphan_census::test_native_census_preserves_all_source_content_and_relationships"
+      ],
+      "explanation": "Initial positive native census passed before adding negative preservation proof."
+    },
+    {
+      "name": "acceptance-native-orphan-census3",
+      "xml_sha256": "a0f8a6c07e212576d5b6656d8d1c523880d6e5b3e625d1b28868b6b3cf841878",
+      "passed": 0,
+      "failed": 1,
+      "cases": [
+        "tests.test_native_orphan_census::test_native_census_preserves_all_source_content_and_relationships"
+      ],
+      "explanation": "Negative fixture attempted CREATE in default read transaction; Grafx refused. Fixture now uses explicit write transaction; product unchanged."
+    }
+  ],
+  "frontend": {
+    "name": "acceptance-native-orphan-ui1",
+    "json_sha256": "f3994492c5de60c9a2ff0fa93d2239a60b32ee608dba7cc96cab6ee14f76857d",
+    "passed": 10,
+    "failed": 0,
+    "cases": [
+      "GraphVisibilityMismatchState renders source-aware diagnostics when health has nodes but graph is empty",
+      "KnowledgeGraphPage — independent diagnostics does not infer a graph total from unavailable Health (null)",
+      "KnowledgeGraphPage — independent diagnostics does not infer a graph total from unavailable Health (140)",
+      "KnowledgeGraphPage — independent diagnostics uses the graph-layer stats census when health metrics are unavailable",
+      "KnowledgeGraphPage — independent diagnostics renders the graph without waiting for the slower diagnostics",
+      "KnowledgeGraphPage — independent diagnostics does not refetch the graph or census when diagnostic permissions become available",
+      "KnowledgeGraphPage — independent diagnostics does not start an onboarding request or refresh after unmount",
+      "KnowledgeGraphPage — independent diagnostics publishes census before slow health and ignores a previous board response",
+      "KnowledgeGraphPage — independent diagnostics keeps navigation available for an empty graph without historical progress",
+      "KnowledgeGraphPage — independent diagnostics removes Code Traceability nodes, incident edges and counts after permission loss"
+    ],
+    "limit": "Vitest/jsdom diagnostics regression; no browser E2E or frontend asset change."
+  },
+  "closure": {
+    "report": "closure-native-main40.json",
+    "sha256": "c4222ae57740577b88a6105a7897fb29548c50f6bd2a91e00bce9c84654efa5c",
+    "ok": true,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    }
+  },
+  "limits": [
+    "Synthetic native fixtures only; no real-board or historical census. Historical migration is outside the clean-break scope.",
+    "Does not qualify KG-16 or KG-24 full relationship-family removal/rebuild parity.",
+    "BASE:T23 and KG:KG-10 pending authority unchanged."
+  ]
+}

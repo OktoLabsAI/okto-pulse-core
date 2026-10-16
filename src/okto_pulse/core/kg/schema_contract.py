@@ -18,7 +18,7 @@ from okto_pulse.core.kg.cognitive_policy import (
     LEARNING_RELATES_TO_TARGETS,
 )
 
-SCHEMA_VERSION = "0.5.0"
+SCHEMA_VERSION = "0.8.0"
 
 
 # Provenance metadata required on every rel (KG Pipeline v2 - spec c48a5c33).
@@ -93,6 +93,7 @@ def _supersedes_endpoint_pairs() -> tuple[tuple[str, str], ...]:
 
 
 MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    ('precedes', (('Entity', 'Bug'), ('Bug', 'Entity'), ('Bug', 'Bug'))),
     ("implements", (("APIContract", "Constraint"),)),
     (
         "supports",
@@ -104,9 +105,26 @@ MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("Entity", "Decision"),
             ("Entity", "TestScenario"),
             ("Entity", "Entity"),
+            ("Bug", "Requirement"),
+            ("Bug", "Constraint"),
+            ("Bug", "Criterion"),
+            ("Bug", "TestScenario"),
+            ("Bug", "APIContract"),
+            ("Bug", "Decision"),
         ),
     ),
-    ("derives_from", (("Entity", "Entity"),)),
+    (
+        "derives_from",
+        (
+            ("Entity", "Entity"),
+            ("Constraint", "Requirement"),
+            ("Requirement", "Requirement"),
+            ("Decision", "Constraint"),
+            ("Constraint", "Constraint"),
+            ("Requirement", "Constraint"),
+        ),
+    ),
+    ("violates", (("Bug", "Requirement"), ("Bug", "Criterion"))),
     ("overlaps", (("Entity", "Entity"),)),
     ("supersedes", _supersedes_endpoint_pairs()),
     (
@@ -251,6 +269,11 @@ STABLE_NODE_PROPERTIES: tuple[str, ...] = (
     "attestation_count",
     "kind_of",
     "last_attested_at",
+    "severity",
+    "source_status",
+    "source_created_at",
+    "source_updated_at",
+    "resolved_at",
     "investigation_receipt_id",
     "source_ref",
     "attestor_actor_id",

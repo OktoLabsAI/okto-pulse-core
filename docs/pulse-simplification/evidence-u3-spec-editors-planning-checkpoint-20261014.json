@@ -1,0 +1,62 @@
+{
+  "checkpoint": "U3 Spec editors — planning reconciliation",
+  "date_local": "2026-10-14",
+  "scope": "Preserve existing work and detail remaining U3/U4 execution; no additional product implementation",
+  "baseline": {
+    "core": "e7641eb6",
+    "community_before": "a8704e96",
+    "community_checkpoint": "e2880609",
+    "branch": "feature/v0.4.0",
+    "community_push": "confirmed"
+  },
+  "existing_artifacts_inspected_not_rerun": [
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-spec-editors-before.xml",
+      "sha256": "53e3e3ea59a546de9d9eedc460a368a4d9786b11c7117912e88734299552d351",
+      "executed": 10,
+      "passed": 3,
+      "failed": 7,
+      "skipped": 50,
+      "meaning": "Initial filtered reproduction; not final qualification"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-spec-editors-r1.xml",
+      "sha256": "79d42de478d4010fc0ac7ee02a4ea4aa92c5ce05ac8e963cde76f3e164f44a94",
+      "passed": 164,
+      "failed": 0,
+      "skipped": 0,
+      "limit": "Predates last partial watcher integration and two integration tests"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-spec-editors-integration.xml",
+      "sha256": "35d8f95cba23f936ffb33b750c2074a69e7fc89cb6e25ab32e2dfed3c5c1b28d",
+      "passed": 68,
+      "failed": 0,
+      "skipped": 0,
+      "limit": "SpecModal.validationTabs only; overlapping cases are not additional unique coverage"
+    }
+  ],
+  "checks_executed_this_review": [
+    {"command": "rtk proxy npx tsc -b --pretty false", "cwd": "community/frontend", "session": 40771, "exit_code": 0},
+    {"command": "rtk proxy npx eslint src/components/specs/TextRequirementsTab.tsx src/components/specs/CriterionVerificationPanel.tsx src/components/specs/RequirementVerificationPanel.tsx src/components/specs/SpecModal.tsx", "cwd": "community/frontend", "exit_code": 0, "errors": 0, "warnings": 13, "new_warning": "RequirementVerificationPanel useEffect missing scope dependency"},
+    {"command": "rtk proxy git diff --check", "cwd": "community", "exit_code": 0}
+  ],
+  "remaining_in_existing_U3_scope": [
+    "Narrow version-conflict handling; current code flags every HTTP 409 as a version conflict",
+    "Preserve structured failure codes as well as thrown transport errors",
+    "Resolve new qualification hook warning without unstable read loops",
+    "Observe editor draft preservation and explicit base review with native browser/MCP writes",
+    "Reproduce unresolved nested-modal closure; prior attempt is not positive UI evidence",
+    "Check remaining mounted Spec editors before enabling global watcher",
+    "Complete UV18–UV21 including Card-only revisions, revocation and network recovery"
+  ],
+  "limits": {
+    "U3_complete": false,
+    "U4_complete": false,
+    "new_browser_or_MCP_execution": false,
+    "new_backend_tests_or_closure": false,
+    "installed_pair_qualified": false,
+    "user_runtime_modified": false,
+    "raw_browser_captures": "Local operational files; not included in checkpoint"
+  }
+}

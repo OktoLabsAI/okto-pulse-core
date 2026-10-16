@@ -7,6 +7,8 @@ from typing import Any
 import uuid
 
 import pytest
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+from task_validation_native_fixtures import native_entry
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -157,6 +159,12 @@ async def rest_graph(db_factory) -> dict[str, str]:
         db.add_all(
             [
                 Spec(
+                    architecture_adoption=ArchitectureAdoptionScope(
+                        board_id=ids[f"{scope}_board"], spec_id=ids[f"{scope}_spec"],
+                        adopted_in_edition=1,
+                        actor_id=OTHER_OWNER if scope != "owned" else ATTACKER,
+                        inherited_resource_ids=(),
+                    ).model_dump(mode="json"),
                     id=ids[f"{scope}_spec"],
                     board_id=ids[f"{scope}_board"],
                     title=f"{scope} spec",
@@ -215,7 +223,10 @@ async def rest_graph(db_factory) -> dict[str, str]:
                     "owned",
                     validations=[
                         {
+                            **native_entry(),
                             "id": ids["owned_validation"],
+                            "board_id": ids["owned_board"],
+                            "card_id": ids["owned_card"],
                             "recommendation": "approve",
                         }
                     ],
@@ -255,7 +266,10 @@ async def rest_graph(db_factory) -> dict[str, str]:
                     linked_test_task_ids=[ids["foreign_test"]],
                     validations=[
                         {
+                            **native_entry(),
                             "id": ids["foreign_validation"],
+                            "board_id": ids["foreign_board"],
+                            "card_id": ids["foreign_card"],
                             "recommendation": "approve",
                         }
                     ],
@@ -420,7 +434,8 @@ async def test_every_foreign_main_card_route_matches_missing_and_has_zero_effect
             template.format(card=_missing("card")),
             **kwargs,
         )
-        assert denied.status_code == missing.status_code == 404, (
+        expected_status = 405 if "/knowledge" in template and method != "GET" else 404
+        assert denied.status_code == missing.status_code == expected_status, (
             method,
             template,
             denied.text,
@@ -531,7 +546,8 @@ async def test_foreign_child_ids_match_missing_and_cannot_mutate_parent(
         else:
             denied = _request(client, method, template.format(child=foreign_id), **kwargs)
             missing = _request(client, method, template.format(child=missing_id), **kwargs)
-        assert denied.status_code == missing.status_code == 404, (
+        expected_status = 405 if "/knowledge" in template and method != "GET" else 404
+        assert denied.status_code == missing.status_code == expected_status, (
             method,
             template,
             denied.text,
@@ -573,8 +589,9 @@ async def test_viewer_reads_but_all_representative_writes_are_hidden(
     ]
     for method, path, kwargs in denied_writes:
         response = _request(client, method, path, **kwargs)
-        assert response.status_code == 404, (method, path, response.text)
-        assert response.json() == {"detail": "Card not found"}
+        retired_writer = "/knowledge" in path and method != "GET"
+        assert response.status_code == (405 if retired_writer else 404), (method, path, response.text)
+        assert response.json() == {"detail": "Method Not Allowed" if retired_writer else "Card not found"}
     assert await _snapshot(db_factory, ids) == before
 
 

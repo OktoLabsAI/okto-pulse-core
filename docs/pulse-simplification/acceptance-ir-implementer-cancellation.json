@@ -1,0 +1,45 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "ARQVER:ADV-15",
+  "status": "verified",
+  "coverage": "A complete four-profile plan has a dedicated sole IR implementer. Actual REST cancellation records actor/reason, preserves the IR and criterion, and applies the existing validated-to-approved rollback with stale evaluations. Public qualification keeps the IR resolved but reports implementation_contribution_card_unavailable and no contribution. The real readiness predicate refuses incomplete planning; REST start refuses the now-invalid approved-to-in_progress edge without writes. Authorized reopen to Draft and structured IR/criterion reallocation restore planning readiness, retaining the active IR and leaving the cancelled Card cancelled.",
+  "executions": [
+    {
+      "terminal_session": 42967,
+      "exit_code": 0,
+      "passed": 13,
+      "cases": [
+        "tests.test_verification_start_transition::test_cancelled_sole_ir_implementer_stays_pending_until_authorized_reallocation",
+        "tests.test_verification_start_transition::test_real_start_requires_four_profile_plan_and_valid_inheritance[missing_profile]",
+        "tests.test_verification_start_transition::test_real_start_requires_four_profile_plan_and_valid_inheritance[missing_operational_work]",
+        "tests.test_verification_start_transition::test_real_start_requires_four_profile_plan_and_valid_inheritance[cycle]",
+        "tests.test_verification_start_transition::test_real_start_requires_four_profile_plan_and_valid_inheritance[missing_terminal]",
+        "tests.test_verification_start_transition::test_real_start_requires_four_profile_plan_and_valid_inheritance[orphan_criterion]",
+        "tests.test_verification_start_transition::test_semantic_review_is_distinct_from_structural_readiness[review_rejects-vague_condition]",
+        "tests.test_verification_start_transition::test_semantic_review_is_distinct_from_structural_readiness[review_rejects-unrelated_criterion]",
+        "tests.test_verification_start_transition::test_semantic_review_is_distinct_from_structural_readiness[review_rejects-insufficient_inheritance]",
+        "tests.test_verification_start_transition::test_semantic_review_is_distinct_from_structural_readiness[condition_corrected-vague_condition]",
+        "tests.test_verification_start_transition::test_semantic_review_is_distinct_from_structural_readiness[condition_corrected-unrelated_criterion]",
+        "tests.test_verification_start_transition::test_semantic_review_is_distinct_from_structural_readiness[condition_corrected-insufficient_inheritance]",
+        "tests.test_verification_start_transition::test_existing_functional_and_new_technical_criteria_share_authoring_and_history"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-ir-cancellation-final-community.xml",
+          "sha256": "1d275acad2924ce336c73651b753b0d8a7b93304391ec23e426b6512e4de695e"
+        },
+        {
+          "file": "learning-reconciliation-ir-cancellation-final-community.log",
+          "sha256": "6994383b193e9b6486a2fd46d8567dd044a4ca57826d71db0409979fa67fe414"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "One new case plus twelve existing regressions. Spec content, approved assessment/validated state and initial Card allocation are seeded; this test does not author the initial review or deliver implementation evidence. REST Board owner identity is injected; lifecycle, persistence, qualification, planning gates and structured writers are real.",
+    "The existing cancellation auto-rollback marks evaluation stale and returns the Spec to approved. Tests assert that exact behavior, not unchanged approval. The plan predicate is tested independently because the public start edge refuses before planning after that rollback.",
+    "Successful reallocation restores planning only. The Spec remains Draft and still needs its normal evaluations/lifecycle; cancellation does not count as delivered work.",
+    "Probes1/2 (sessions52383/36179) assumed unchanged review/status, contradicting existing CardService.move_card auto-rollback. Probe3 (6937) reached reallocation but compared a raw fixture against the writer-normalized metadata. Final uses the typed RequirementVerification dump; no gate, history or authority changed.",
+    "Productive source and UI unchanged; provenance-three-criteria1.json remains the byte-identical source/site/wheel proof. Latest relevant F16 session31859 has eight ZERO budgets; latest frontend session4747 passed34."
+  ]
+}

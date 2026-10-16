@@ -1,16 +1,18 @@
-"""Agnostic domain enums (status / priority / type / lane / complexity).
+"""Agnostic live domain enums (status / priority / type / complexity).
 
 Leaf module — stdlib only (``enum``). It imports NO database/session/SQLAlchemy
 code, so Pydantic schemas (``models/schemas.py``), the MCP server, services and
-workers can read these enums WITHOUT pulling the ORM / ``models/db.py``.
-``models/db.py`` (the ORM tables + TypeDecorators), ``models/schemas.py`` and
-runtime consumers import from HERE; never the reverse.
+workers can read these enums without importing an edition's ORM. Community
+storage codecs, ``models/schemas.py`` and runtime consumers import from here;
+never the reverse.
 
-R01C FR1 (card 91bf32db): these 12 enums were extracted verbatim from
+R01C FR1 (card 91bf32db): the original enums were extracted verbatim from
 ``models/db.py`` to break the transitive ``schemas.py -> db.py -> sqlalchemy``
 import that violated AC1. The serialized string values are FROZEN — they are the
 on-the-wire / on-disk contract (DB column values, JSON payloads, MCP enums) and
-MUST stay byte-identical to the pre-extraction definitions. See sibling leaf
+MUST stay byte-identical to the pre-extraction definitions for retained types.
+Retired Sprint storage values belong to the edition's historical decoder, not
+the live domain or transport exports. See sibling leaf
 ``amendment_eligibility`` for the same pattern.
 """
 
@@ -55,23 +57,6 @@ class RefinementStatus(str, PyEnum):
     APPROVED = "approved"
     DONE = "done"
     CANCELLED = "cancelled"
-
-
-class SprintStatus(str, PyEnum):
-    """Sprint lifecycle status."""
-
-    DRAFT = "draft"
-    ACTIVE = "active"
-    REVIEW = "review"
-    CLOSED = "closed"
-    CANCELLED = "cancelled"
-
-
-class SprintLaneType(str, PyEnum):
-    """Sprint lane type for normal delivery and post-closure hotfix work."""
-
-    NORMAL = "normal"
-    HOTFIX = "hotfix"
 
 
 class SpecStatus(str, PyEnum):
@@ -149,8 +134,6 @@ __all__ = [
     "IdeationComplexity",
     "StoryStatus",
     "RefinementStatus",
-    "SprintStatus",
-    "SprintLaneType",
     "SpecStatus",
     "CardStatus",
     "TestScenarioStatus",

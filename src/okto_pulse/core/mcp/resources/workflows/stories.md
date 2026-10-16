@@ -58,7 +58,7 @@ Stories are lightweight, optional intake items inspired by user stories. They pr
 | `ready` | Good enough to feed ideation | link to an existing Ideation or convert to a new Ideation |
 | `converted` | Terminal result of successful link/conversion | read only for normal flow; do not move out |
 
-`converted` is not a normal manual lifecycle move. It is set by a successful Story-Ideation link or conversion path. `okto_pulse_link_story_to_ideation` always marks the Story as `converted`; the `mark_converted` argument is compatibility-only and does not preserve `ready`. If `okto_pulse_move_story(status="converted")` fails, do not retry with broader permissions; use `okto_pulse_link_story_to_ideation` or `okto_pulse_convert_stories_to_ideation` after the Story is `ready`.
+`converted` is not a normal manual lifecycle move. It is set by a successful Story-Ideation link or conversion path. `okto_pulse_link_story_to_ideation` always marks the Story as `converted`. There is no flag to preserve `ready`. If `okto_pulse_move_story(status="converted")` fails, do not retry with broader permissions; use `okto_pulse_link_story_to_ideation` or `okto_pulse_convert_stories_to_ideation` after the Story is `ready`.
 
 **Derivation guidance:**
 - Several Stories can feed one Ideation when they describe the same problem space.

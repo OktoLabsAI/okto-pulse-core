@@ -1,11 +1,11 @@
 """Consolidation queue application processor (spec c48a5c33).
 
 For each pending queue entry the worker:
-    1. Loads the artifact (Spec/Sprint/Card) from the DB.
+    1. Loads the surviving artifact (such as Spec/Card) through the persistence port.
     2. Runs the pure `DeterministicWorker` (Layer 1) to extract every
        node + edge candidate that can be derived from structured fields,
        with full v0.2.0 provenance metadata (layer/rule_id/created_by).
-    3. Drives the primitives pipeline: begin → propose_reconciliation →
+    3. Drives the primitives pipeline: begin â†’ propose_reconciliation â†’
        commit. The session uses `agent_id="system:historical_consolidation"`
        so the layer-ownership BR allows deterministic edges through.
     4. Runs the embedded graph backend safe-write lifecycle before the queue row is
@@ -76,6 +76,7 @@ from okto_pulse.core.kg.schemas import (
     NodeCandidate,
     ProposeReconciliationRequest,
 )
+from okto_pulse.core.kg.projection_removals import DeferredProjectionProgress
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
     add_edge_candidate,
@@ -98,10 +99,7 @@ from okto_pulse.core.kg.interfaces.graph_transaction import (
     SpecLineageParentIntent,
 )
 from okto_pulse.core.application.processors.dead_letter import route_to_dead_letter
-from okto_pulse.core.kg.schema_layer_guard import (
-    ensure_graph_layer_schema,
-    is_graph_layer_schema_error,
-)
+
 from okto_pulse.core.kg.safe_write_lifecycle import (
     STEP_CHECKPOINT,
     STEP_FLUSH,
@@ -495,7 +493,7 @@ CONSOLIDATION_COMMIT_OPERATION = "consolidation_worker_commit"
 _DEPENDENCY_ENDPOINT_RETRY_DELAY_SECONDS = 1
 _CLAIMABLE_WORK_KINDS = frozenset({"consolidate", "stale_reconcile", "stale_sweep"})
 _GOVERNED_DELETION_ARTIFACT_TYPES = frozenset(
-    {"card", "ideation", "refinement", "spec", "sprint"}
+    {"card", "ideation", "refinement", "spec"}
 )
 _GraphWriteEnter = Callable[[str], GuardedWriteLease]
 
@@ -929,6 +927,47 @@ async def _persist_exact_disposition(
     if replay is None:
         raise RuntimeError("exact_rebuild_disposition_not_persisted")
     return result
+
+
+async def _enqueue_superseded_spec_consumers(db: Any, *, board_id: str, spec_id: str) -> int:
+    """Stage bounded consumers in the same UOW as the new endpoint and its ACK.
+
+    A consumer may have run before this Spec in the fair queue. Its logical
+    source reference is unchanged, but its physical endpoint is now obsolete.
+    Active claims coalesce: the board writer fence makes them read the new
+    endpoint after this transaction. Already-ACKed consumers need a new row.
+    """
+    from okto_pulse.core.ports.application_persistence import (
+        ApplicationFilter, ApplicationQuery, get_application_persistence_port,
+    )
+    from okto_pulse.core.ports.relational_effects import (
+        ConsolidationQueueUpsert, get_relational_effects_port,
+    )
+
+    persistence = get_application_persistence_port()
+    cards = await persistence.list(db, ApplicationQuery(entity="card", filters=(
+        ApplicationFilter("board_id", "eq", board_id),
+        ApplicationFilter("spec_id", "eq", spec_id),
+    )))
+    owners = list(dict.fromkeys(card.id for card in cards))
+    if not owners:
+        return 0
+    bugs = await persistence.list(db, ApplicationQuery(entity="card", filters=(
+        ApplicationFilter("board_id", "eq", board_id),
+        ApplicationFilter("card_type", "eq", "bug"),
+        ApplicationFilter("origin_task_id", "in", tuple(owners)),
+    )))
+    owners = list(dict.fromkeys((*owners, *(bug.id for bug in bugs))))
+    effects = get_relational_effects_port()
+    for owner in owners:
+        await effects.upsert_consolidation_queue_unless_tombstoned(
+            db, ConsolidationQueueUpsert(
+                board_id=board_id, artifact_type="card", artifact_id=owner,
+                priority="normal", source="projection:spec_endpoint_superseded",
+                triggered_by_event="kg.spec_endpoint_superseded", coalesce_active=True,
+            ),
+        )
+    return len(owners)
 
 
 def _observe_spec_dependency_projection_lag_after_ack(
@@ -1452,10 +1491,10 @@ class _DirectBlockingExecution:
 
 
 # Spec 3d89c192 (FR-4): o commit incremental do worker usa o subset
-# não-destrutivo do lifecycle — checkpoint real + verificação + fsync, SEM o
+# nÃ£o-destrutivo do lifecycle â€” checkpoint real + verificaÃ§Ã£o + fsync, SEM o
 # close_reopen_probe. O probe fecha o Database compartilhado (use-after-close
-# com leitores concorrentes) e só é necessário nas lanes de rebuild/recovery,
-# que continuam usando DEFAULT_REQUIRED_STEPS (contrato api_1c9d19e1 prevê
+# com leitores concorrentes) e sÃ³ Ã© necessÃ¡rio nas lanes de rebuild/recovery,
+# que continuam usando DEFAULT_REQUIRED_STEPS (contrato api_1c9d19e1 prevÃª
 # subset custom por caller).
 WORKER_COMMIT_LIFECYCLE_STEPS: tuple[str, ...] = (
     STEP_CHECKPOINT,
@@ -1549,6 +1588,7 @@ async def _commit_consolidation_with_board_graph_lifecycle(
     now: datetime | None = None,
     defer_session_finalization: bool = False,
     enter_graph_write: _GraphWriteEnter | None = None,
+    allow_known_removals: bool = False,
 ):
     """Commit a queue item and prove the persisted graph before ACK.
 
@@ -1586,6 +1626,8 @@ async def _commit_consolidation_with_board_graph_lifecycle(
                 db=db,
                 blocking_execution=blocking_execution,
                 defer_session_finalization=defer_session_finalization,
+                **({'allow_known_removals': True} if allow_known_removals else {}),
+                **({"rebuild_cognitive": True} if _queue_source(entry).startswith("rebuild:") else {}),
             )
         except KGPrimitiveError as exc:
             # The dependency endpoint barrier is deliberately read-only.  It
@@ -1648,7 +1690,7 @@ async def _process_queue_entry_serialized(
     stale_reconcile_telemetry: dict[str, object] | None = None,
     deferred_session_ids: list[str] | None = None,
     enter_graph_write: _GraphWriteEnter | None = None,
-) -> bool | StaleSweepRunReceipt:
+) -> bool | StaleSweepRunReceipt | DeferredProjectionProgress:
     """Process one queue row under a process-local per-board mutex.
 
     The queue claim contract prevents duplicate rows, but reprocess tools,
@@ -1671,7 +1713,7 @@ async def _process_queue_entry_serialized(
 
 
 # ---------------------------------------------------------------------------
-# Adapter: SQLAlchemy artifact → DeterministicWorker dict shape
+# Adapter: SQLAlchemy artifact â†’ DeterministicWorker dict shape
 # ---------------------------------------------------------------------------
 
 
@@ -1710,10 +1752,10 @@ def _spec_to_dict(spec: Any) -> dict:
         "business_rules": spec.business_rules or [],
         "test_scenarios": spec.test_scenarios or [],
         "api_contracts": spec.api_contracts or [],
-        "integration_requirements": getattr(spec, "integration_requirements", None)
-        or [],
-        "observability_requirements": getattr(spec, "observability_requirements", None)
-        or [],
+        # The native source must expose both collections. Missing attributes
+        # are incomplete reads, never authority to retract their graph relations.
+        "integration_requirements": spec.integration_requirements or [],
+        "observability_requirements": spec.observability_requirements or [],
         "decisions": spec.decisions or [],
         "architecture_designs": [
             _architecture_design_to_dict(design)
@@ -1779,29 +1821,6 @@ def _refinement_to_dict(refinement: Any) -> dict:
     }
 
 
-def _sprint_to_dict(sprint: Any) -> dict:
-    return {
-        "id": sprint.id,
-        "board_id": sprint.board_id,
-        "title": sprint.title,
-        "description": sprint.description,
-        "objective": sprint.objective,
-        "expected_outcome": sprint.expected_outcome,
-        "status": getattr(
-            getattr(sprint, "status", None), "value", getattr(sprint, "status", None)
-        ),
-        "spec_id": sprint.spec_id,
-        "lane_type": getattr(
-            getattr(sprint, "lane_type", None),
-            "value",
-            getattr(sprint, "lane_type", None),
-        )
-        or "normal",
-        "origin_sprint_id": getattr(sprint, "origin_sprint_id", None),
-        "origin_bug_id": getattr(sprint, "origin_bug_id", None),
-    }
-
-
 def _card_to_dict(card) -> dict:
     priority = getattr(card, "priority", None)
     severity = getattr(card, "severity", None)
@@ -1817,7 +1836,6 @@ def _card_to_dict(card) -> dict:
         if getattr(card, "card_type", None)
         else "normal",
         "spec_id": card.spec_id,
-        "sprint_id": card.sprint_id,
         "origin_task_id": getattr(card, "origin_task_id", None),
         "linked_test_task_ids": getattr(card, "linked_test_task_ids", None) or [],
         "priority": getattr(priority, "value", priority)
@@ -1983,8 +2001,6 @@ def _run_deterministic_worker(
         payload["quality_assessments"] = quality_assessments
         payload["spec_dependencies"] = spec_dependencies
         return worker.process_spec(payload)
-    if entry.artifact_type == "sprint":
-        return worker.process_sprint(_sprint_to_dict(artifact))
     if entry.artifact_type == "card":
         return worker.process_card(_card_to_dict(artifact))
     if entry.artifact_type == "amendment_hotfix_revision":
@@ -2031,7 +2047,7 @@ def _append_card_entity_node(result: WorkerResult, card: Any) -> str:
                     for part in (
                         card.description or "",
                         (
-                            "Lifecycle: Rejected — rework required."
+                            "Lifecycle: Rejected â€” rework required."
                             if str(
                                 getattr(
                                     getattr(card, "status", None),
@@ -2285,6 +2301,8 @@ async def _materialize_lineage_endpoint_nodes(
     entry: ConsolidationQueueRecord,
     artifact,
     result: WorkerResult,
+    *,
+    persistence=None,
 ) -> WorkerResult:
     """Add local parent/root nodes needed by deterministic lineage edges.
 
@@ -2299,7 +2317,7 @@ async def _materialize_lineage_endpoint_nodes(
             if getattr(link, "story_id", None)
         ]
         if story_ids:
-            stories = await get_consolidation_persistence_port().list_artifacts(
+            stories = await (persistence or get_consolidation_persistence_port()).list_artifacts(
                 db,
                 artifact_type="story",
                 artifact_ids=story_ids,
@@ -2315,7 +2333,7 @@ async def _materialize_lineage_endpoint_nodes(
         return result
 
     if entry.artifact_type == "refinement" and getattr(artifact, "ideation_id", None):
-        ideation = await get_consolidation_persistence_port().load_artifact(
+        ideation = await (persistence or get_consolidation_persistence_port()).load_artifact(
             db,
             artifact_type="ideation",
             artifact_id=artifact.ideation_id,
@@ -2332,7 +2350,7 @@ async def _materialize_lineage_endpoint_nodes(
 
     if entry.artifact_type == "spec":
         if getattr(artifact, "refinement_id", None):
-            refinement = await get_consolidation_persistence_port().load_artifact(
+            refinement = await (persistence or get_consolidation_persistence_port()).load_artifact(
                 db,
                 artifact_type="refinement",
                 artifact_id=artifact.refinement_id,
@@ -2346,7 +2364,7 @@ async def _materialize_lineage_endpoint_nodes(
                     rule_slot="refinement",
                 )
         elif getattr(artifact, "ideation_id", None):
-            ideation = await get_consolidation_persistence_port().load_artifact(
+            ideation = await (persistence or get_consolidation_persistence_port()).load_artifact(
                 db,
                 artifact_type="ideation",
                 artifact_id=artifact.ideation_id,
@@ -2369,6 +2387,8 @@ async def _materialize_authoritative_overlap_endpoint_nodes(
     entry: ConsolidationQueueRecord,
     artifact: Any,
     result: WorkerResult,
+    *,
+    persistence=None,
 ) -> WorkerResult:
     """Stage complete authoritative target roots before overlap relations.
 
@@ -2377,7 +2397,7 @@ async def _materialize_authoritative_overlap_endpoint_nodes(
     an empty graph.  The first phase loads every declared peer through the
     authoritative relational SourceReader and runs the same deterministic
     target projector used by the peer's own live-event queue entry.  Its root
-    and non-overlap provenance edges are staged first (the connectivity guard
+    and its Card backbone are staged first (the connectivity guard
     requires every operational Entity to retain a ``belongs_to`` backbone);
     symmetric overlap relations remain the second phase.  This never fabricates
     a node from an ID and fails before ``begin_consolidation`` when closure is
@@ -2395,7 +2415,7 @@ async def _materialize_authoritative_overlap_endpoint_nodes(
     if not overlap_target_ids:
         return result
 
-    persistence = get_consolidation_persistence_port()
+    persistence = persistence or get_consolidation_persistence_port()
     existing_refs = {node.source_artifact_ref for node in result.nodes}
     for raw_peer_id in overlap_target_ids:
         peer_id = str(raw_peer_id or "").strip()
@@ -2429,8 +2449,9 @@ async def _materialize_authoritative_overlap_endpoint_nodes(
         # The deterministic projector validates every bounded target field and
         # supplies the exact canonical root used when the peer is processed by
         # its own event/rebuild row.  Stage the peer's authoritative provenance
-        # edges, but never its symmetric overlaps: the current row owns the
-        # second-phase overlap edge and both endpoints are now present.
+        # backbone only. Evidence links belong to the peer's own active set;
+        # copying them here would let one owner's batch write another's facts.
+        # Both endpoints are then available for the overlap relation.
         peer_result = _run_deterministic_worker(entry, dict(peer), None)
         peer_roots = [
             node
@@ -2442,7 +2463,9 @@ async def _materialize_authoritative_overlap_endpoint_nodes(
             raise ValueError("code_traceability_overlap_peer_projection_invalid")
         result.nodes.append(peer_roots[0])
         result.edges.extend(
-            edge for edge in peer_result.edges if edge.edge_type != "overlaps"
+            edge for edge in peer_result.edges
+            if edge.edge_type == "belongs_to"
+            and edge.rule_id == "belongs_to/code_traceability_target_card@v2.0"
         )
         existing_refs.add(source_ref)
     return result
@@ -2475,7 +2498,7 @@ def _scenario_candidate_for_id(
             node_type="TestScenario",
             title=title,
             content=_test_scenario_content(ts),
-            source_artifact_ref=_spec_child_ref(spec.id, "test_scenario", ts, index),
+            source_artifact_ref=_spec_child_ref(spec.id, "test_scenario", ts),
             source_confidence=1.0,
         )
     return None
@@ -2493,6 +2516,8 @@ async def _resolve_missing_link_candidates(
     db: Any,
     board_id: str,
     result: WorkerResult,
+    *,
+    persistence=None,
 ) -> WorkerResult:
     """Resolve structured cross-artifact Bug links before commit.
 
@@ -2517,7 +2542,7 @@ async def _resolve_missing_link_candidates(
     if not target_ids:
         return result
 
-    rows = await get_consolidation_persistence_port().list_artifacts(
+    rows = await (persistence or get_consolidation_persistence_port()).list_artifacts(
         db,
         artifact_type="card",
         artifact_ids=tuple(target_ids),
@@ -2532,7 +2557,7 @@ async def _resolve_missing_link_candidates(
         if card.id in test_task_ids and card.spec_id
     }
     if spec_ids:
-        specs = await get_consolidation_persistence_port().list_artifacts(
+        specs = await (persistence or get_consolidation_persistence_port()).list_artifacts(
             db,
             artifact_type="spec",
             artifact_ids=tuple(spec_ids),
@@ -3044,47 +3069,28 @@ async def _process_stale_reconcile_entry(
     return True
 
 
-async def _process_queue_entry(
-    db: Any,
-    entry: ConsolidationQueueRecord,
-    *,
-    blocking_execution: BlockingExecutionPort | None = None,
-    clock: WorkerClockPort | None = None,
-    stale_reconcile_telemetry: dict[str, object] | None = None,
-    deferred_session_ids: list[str] | None = None,
-    enter_graph_write: _GraphWriteEnter | None = None,
-) -> bool | StaleSweepRunReceipt:
-    """Process one queue entry through the primitives pipeline.
-    Returns True on success, False on failure."""
+def _cancelled_refinement_projection(artifact_id):
+    """The same empty RDL replacement for live consolidation and offline plans."""
+    return WorkerResult(
+        raw_content=f"relational-projection-cleanup:refinement:{artifact_id}:cancelled",
+        relational_projection_active_set_intents=(RelationalProjectionActiveSetIntent(
+            owner_type="refinement", owner_id=artifact_id, namespace="rdl", active_refs=(),
+        ),),
+    )
 
-    if _work_kind(entry) == "stale_sweep":
-        return await _process_stale_sweep_entry(
-            db,
-            entry,
-            clock=clock,
-        )
-    if _work_kind(entry) == "stale_reconcile":
-        return await _process_stale_reconcile_entry(
-            db,
-            entry,
-            blocking_execution=blocking_execution,
-            clock=clock,
-            telemetry_details=stale_reconcile_telemetry,
-            enter_graph_write=enter_graph_write,
-        )
-    if _work_kind(entry) != "consolidate":
-        logger.warning(
-            "unsupported consolidation work_kind: %s",
-            _work_kind(entry),
-        )
-        return False
 
+async def _prepare_deterministic_projection(db, entry, *, persistence=None):
+    """Read authoritative inputs for live consolidation and native rebuild.
+
+    No queue mutation, graph session, reconciliation, ACK or cognitive extraction
+    is performed here. True is the existing cancelled-source no-op; False means
+    that the source cannot be loaded or its type is unsupported.
+    """
     if entry.artifact_type not in {
         "story",
         "ideation",
         "refinement",
         "spec",
-        "sprint",
         "card",
         "amendment_hotfix_revision",
         "code_investigation_receipt",
@@ -3093,7 +3099,7 @@ async def _process_queue_entry(
     }:
         logger.warning("unknown artifact_type: %s", entry.artifact_type)
         return False
-    persistence = get_consolidation_persistence_port()
+    persistence = persistence or get_consolidation_persistence_port()
     artifact = await persistence.load_artifact(
         db,
         artifact_type=entry.artifact_type,
@@ -3106,7 +3112,7 @@ async def _process_queue_entry(
             entry.artifact_id,
         )
         # RKG-04 AC3 (ts_317b11ef): a missing source row is a persistent
-        # failure and must stay visible — False routes the entry through
+        # failure and must stay visible â€” False routes the entry through
         # _mark_failed -> backoff -> ConsolidationDeadLetter where diagnose
         # keeps it actionable. True would mask it as success and falsely
         # clear the connectivity class (stale legacy entries included).
@@ -3160,28 +3166,31 @@ async def _process_queue_entry(
                 "artifact_status": str(artifact_status or ""),
             },
         )
-        if entry.artifact_type != "refinement":
+        if entry.artifact_type not in {"refinement", "card"}:
             return True
         # A cancelled Refinement still owns an RDL projection namespace. Run
         # an empty replacement so its relationally-derived children converge
         # without re-materializing the cancelled root.
-        worker_result = WorkerResult(
-            raw_content=(
-                "relational-projection-cleanup:"
-                f"refinement:{entry.artifact_id}:cancelled"
-            ),
-            relational_projection_active_set_intent=(
-                RelationalProjectionActiveSetIntent(
-                    owner_type="refinement",
-                    owner_id=entry.artifact_id,
-                    namespace="rdl",
-                    active_refs=(),
-                )
-            ),
-        )
+        if entry.artifact_type == "card":
+            from okto_pulse.core.ports.card_projection import CARD_CHILD_FAMILIES, BUG_ORIGIN_PROXY_FAMILIES, CARD_DEPENDENCY_NAMESPACE
+            # Replace only this Card's observed links; do not revive its root.
+            worker_result = WorkerResult(
+                raw_content=f"relational-projection-cleanup:card:{entry.artifact_id}:cancelled",
+                relational_projection_active_set_intents=(RelationalProjectionActiveSetIntent(
+                    owner_type="card", owner_id=entry.artifact_id,
+                    namespace="card_scenarios", active_refs=(),
+                ), *(RelationalProjectionActiveSetIntent(
+                    owner_type='card', owner_id=entry.artifact_id,
+                    namespace=family.namespace, active_refs=(),
+                ) for family in (*CARD_CHILD_FAMILIES, *BUG_ORIGIN_PROXY_FAMILIES)), RelationalProjectionActiveSetIntent(
+                    owner_type='card', owner_id=entry.artifact_id,
+                    namespace=CARD_DEPENDENCY_NAMESPACE, active_refs=())),
+            )
+        else:
+            worker_result = _cancelled_refinement_projection(entry.artifact_id)
     else:
         projection_inputs = None
-        if entry.artifact_type in {"ideation", "refinement", "spec"}:
+        if entry.artifact_type in {"ideation", "refinement", "spec", "card"}:
             projection_inputs = await persistence.load_projection_inputs(
                 db,
                 board_id=entry.board_id,
@@ -3194,24 +3203,123 @@ async def _process_queue_entry(
             artifact,
             projection_inputs,
         )
+        if entry.artifact_type == 'spec':
+            from okto_pulse.core.application.processors.architecture_association_projection import prepare_architecture_association_projection
+            worker_result = await prepare_architecture_association_projection(
+                db, board_id=entry.board_id, spec_id=entry.artifact_id, result=worker_result,
+            )
+        if entry.artifact_type == 'card':
+            from okto_pulse.core.application.processors.card_scenario_projection import prepare_card_scenario_projection
+            worker_result = await prepare_card_scenario_projection(db, board_id=entry.board_id,
+                card=artifact, result=worker_result, persistence=persistence)
+            from okto_pulse.core.application.processors.card_dependency_projection import prepare_card_dependency_projection
+            worker_result = prepare_card_dependency_projection(board_id=entry.board_id,
+                card=artifact, inputs=projection_inputs, result=worker_result)
+            from okto_pulse.core.application.processors.bug_origin_proxy_projection import prepare_bug_origin_proxy
+            worker_result = await prepare_bug_origin_proxy(db, board_id=entry.board_id,
+                card=artifact, result=worker_result, persistence=persistence)
         worker_result = await _materialize_lineage_endpoint_nodes(
             db,
             entry,
             artifact,
             worker_result,
+            persistence=persistence,
         )
         worker_result = await _materialize_authoritative_overlap_endpoint_nodes(
             db,
             entry,
             artifact,
             worker_result,
+            persistence=persistence,
         )
         worker_result = await _resolve_missing_link_candidates(
             db,
             entry.board_id,
             worker_result,
+            persistence=persistence,
         )
+    return worker_result, artifact
+
+
+async def _process_queue_entry(
+    db: Any,
+    entry: ConsolidationQueueRecord,
+    *,
+    blocking_execution: BlockingExecutionPort | None = None,
+    clock: WorkerClockPort | None = None,
+    stale_reconcile_telemetry: dict[str, object] | None = None,
+    deferred_session_ids: list[str] | None = None,
+    enter_graph_write: _GraphWriteEnter | None = None,
+) -> bool | StaleSweepRunReceipt | DeferredProjectionProgress:
+    """Process one queue entry through the primitives pipeline.
+    Returns True on success, False on failure."""
+
+    if entry.artifact_type == "sprint":
+        raise ValueError("unsupported_artifact_type")
+
+    if _work_kind(entry) == "stale_sweep":
+        return await _process_stale_sweep_entry(
+            db,
+            entry,
+            clock=clock,
+        )
+    if _work_kind(entry) == "stale_reconcile":
+        return await _process_stale_reconcile_entry(
+            db,
+            entry,
+            blocking_execution=blocking_execution,
+            clock=clock,
+            telemetry_details=stale_reconcile_telemetry,
+            enter_graph_write=enter_graph_write,
+        )
+    if _work_kind(entry) != "consolidate":
+        logger.warning(
+            "unsupported consolidation work_kind: %s",
+            _work_kind(entry),
+        )
+        return False
+
+    # A removal must be derived from source read AFTER the queue/source fence,
+    # retained through the caller UOW. Preserve graph-writer -> SQL-writer order.
+    # Exact candidate rebuild keeps its immutable membership/ACK protocol.
+    allow_known_removals = bool(
+        entry.artifact_type in {'card', 'spec'} and not _queue_source(entry).startswith('rebuild:')
+        and enter_graph_write is not None and deferred_session_ids is not None
+        and _claim_token(entry) is not None
+    )
+    if allow_known_removals:
+        source_lease = enter_graph_write(f'{entry.artifact_type}:{entry.artifact_id}:{entry.id}:source')
+        if not await _queue_claim_is_current_and_unfenced(db, entry):
+            raise _QueueClaimLostOrFenced(f'queue_claim_lost_before_source entry_id={entry.id}')
+        enter_graph_write = lambda mutation_ref: source_lease
+    preparation = await _prepare_deterministic_projection(db, entry)
+    if isinstance(preparation, bool):
+        if allow_known_removals:
+            if preparation:
+                # Preserve the existing cancelled-Spec no-op. The earlier
+                # writer acquisition still requires its normal close/reopen
+                # lifecycle before this queue item can be acknowledged.
+                await _ensure_board_graph_durable(board_id=entry.board_id,
+                    mutation_ref=f'projection-source-noop:{entry.id}', write_lease=source_lease,
+                    blocking_execution=blocking_execution,
+                    failure_timestamp=clock.now() if clock is not None else None)
+                return True
+            # No graph mutation started: unwind the guarded scope as a source
+            # refusal, rather than completing a writer without its lifecycle.
+            raise KGPrimitiveError('relational_projection_source_unavailable',
+                'The fenced relational projection source could not be prepared.')
+        return preparation
+    worker_result, artifact = preparation
     node_candidates = [_worker_node_to_candidate(n) for n in worker_result.nodes]
+    from okto_pulse.core.kg.source_projection_metadata import prepare_root_metadata
+
+    # Only the exact root owns this row's timestamps. Children and reference
+    # nodes must not inherit a parent's dates as if they were their own.
+    metadata_by_candidate = await prepare_root_metadata(
+        db, entry, artifact, node_candidates, get_consolidation_persistence_port(),
+    )
+    for node in node_candidates:
+        node._source_projection_metadata = metadata_by_candidate.get(node.candidate_id)
     edge_candidates = [_worker_edge_to_candidate(e) for e in worker_result.edges]
     raw_content = worker_result.raw_content
 
@@ -3227,11 +3335,11 @@ async def _process_queue_entry(
 
     if (
         not node_candidates
-        and worker_result.relational_projection_active_set_intent is None
+        and not worker_result.relational_projection_active_set_intents
     ):
         return True  # nothing to do, but not a failure
 
-    # 1. begin_consolidation (db=None to skip dedup — historical is forced re-processing)
+    # 1. begin_consolidation (db=None to skip dedup â€” historical is forced re-processing)
     begin_resp = await begin_consolidation(
         BeginConsolidationRequest(
             board_id=entry.board_id,
@@ -3251,9 +3359,10 @@ async def _process_queue_entry(
         relational_projection_candidate_ids=frozenset(
             worker_result.relational_projection_candidate_ids
         ),
-        relational_projection_active_set_intent=(
-            worker_result.relational_projection_active_set_intent
+        relational_projection_active_set_intents=(
+            worker_result.relational_projection_active_set_intents
         ),
+        reference_findings=worker_result.reference_findings,
     )
     session_id = begin_resp.session_id
     if deferred_session_ids is not None:
@@ -3292,10 +3401,22 @@ async def _process_queue_entry(
         now=clock.now() if clock is not None else None,
         defer_session_finalization=deferred_session_ids is not None,
         enter_graph_write=enter_graph_write,
+        **({'allow_known_removals': True} if allow_known_removals else {}),
     )
 
+    if isinstance(commit_resp, DeferredProjectionProgress):
+        return commit_resp
+
+    if (entry.artifact_type == "spec" and commit_resp.nodes_superseded
+            and not _queue_source(entry).startswith("rebuild:")):
+        # Required causal work, not best-effort post-ACK maintenance. Any failure
+        # rolls back this UOW and compensates the deferred graph mutation.
+        await _enqueue_superseded_spec_consumers(
+            db, board_id=entry.board_id, spec_id=entry.artifact_id,
+        )
+
     logger.info(
-        "consolidated %s:%s → nodes_added=%d edges_added=%d",
+        "consolidated %s:%s â†’ nodes_added=%d edges_added=%d",
         entry.artifact_type,
         entry.artifact_id,
         commit_resp.nodes_added,
@@ -3348,7 +3469,6 @@ async def _classify_queue_entry_source_for_debt(
         "ideation",
         "refinement",
         "spec",
-        "sprint",
         "code_investigation_receipt",
         "code_evidence",
         "implementation_target",
@@ -3386,7 +3506,7 @@ def _is_deferred_spec_endpoint(entry: ConsolidationQueueRecord) -> bool:
     error = getattr(entry, "last_error", None)
     return (
         _work_kind(entry) == "consolidate"
-        and getattr(entry, "artifact_type", None) == "spec"
+        and getattr(entry, "artifact_type", None) in {"spec", "card"}
         and not _queue_source(entry).startswith("rebuild:")
         and isinstance(error, str)
         and error.startswith("relational_projection_endpoint_pending:")
@@ -3519,15 +3639,11 @@ async def _filter_administratively_reserved_entries(
 class ConsolidationProcessor:
     """Process consolidation commands without owning a runner or task."""
 
-    # Entries claimed longer than this (minutes) are considered stuck.
-    STALE_CLAIM_MINUTES: int = 30
-
     def __init__(
         self,
         relational_scope_factory=None,
         heartbeat_seconds: int = 30,
         batch_size: int = 5,
-        stale_claim_minutes: int | None = None,
         *,
         clock: WorkerClockPort | None = None,
         blocking_execution: BlockingExecutionPort | None = None,
@@ -3539,7 +3655,6 @@ class ConsolidationProcessor:
         self.relational_scope_factory = relational_scope_factory
         self.heartbeat_seconds = heartbeat_seconds
         self.batch_size = batch_size
-        self._stale_claim_minutes = stale_claim_minutes or self.STALE_CLAIM_MINUTES
         self._clock = clock
         self._blocking_execution = blocking_execution or _DirectBlockingExecution()
         self._last_attempted_count = 0
@@ -3564,7 +3679,7 @@ class ConsolidationProcessor:
         """Return DLQ auto-drain stats for ``board_id`` (FR6, spec R2c).
 
         Returns ``{last_run_at: ISO-string|None, requeued_count: int}``.
-        Both values come from in-process tracking only — process restart
+        Both values come from in-process tracking only â€” process restart
         resets them. The health endpoint uses this to populate the additive
         ``dlq_auto_drain_*`` fields without touching storage.
         """
@@ -3583,20 +3698,16 @@ class ConsolidationProcessor:
         claim crashes or is killed, ``claim_timeout_at`` eventually elapses
         and the next recovery scan picks the row up.
 
-        Falls back to the legacy ``stale_claim_minutes`` cutoff for rows
-        claimed by an older binary that didn't populate ``claim_timeout_at``
-        (so partial migrations don't strand work). Returns the count of
-        rows reset to ``pending``.
+        Incompatible claims are refused by the persistence port before any
+        recovery write. Returns the count reset to pending.
         """
         now = self._now()
-        legacy_cutoff = now - timedelta(minutes=self._stale_claim_minutes)
         async with self.relational_scope_factory() as db:
             store = get_consolidation_persistence_port()
             stale = list(
                 await store.list_stale_claims(
                     db,
                     now=now,
-                    legacy_cutoff=legacy_cutoff,
                 )
             )
             if not stale:
@@ -3928,16 +4039,16 @@ class ConsolidationProcessor:
         """Process up to batch_size pending entries. Returns count processed.
 
         Spec bdcda842 (Sprint 2):
-            * **Claim board-aware** — claim at most one item per board and
+            * **Claim board-aware** â€” claim at most one item per board and
               never select a board already claimed by another owner. Distinct
               boards may share a batch; same-board backlog remains pending
               until the current lease is ACKed or re-pended.
-            * **Backoff-aware claim** — skip items where ``next_retry_at``
+            * **Backoff-aware claim** â€” skip items where ``next_retry_at``
               hasn't elapsed yet (BR Dead-letter / exp backoff).
-            * **DELETE-on-ack** — successful processing removes the row from
+            * **DELETE-on-ack** â€” successful processing removes the row from
               ConsolidationQueue (at-least-once semantics: row stays until
               the consolidate+commit pipeline confirmed).
-            * **Failure path** — increment ``attempts``, persist
+            * **Failure path** â€” increment ``attempts``, persist
               ``last_error``, schedule ``next_retry_at = now + min(2^N, 300)s``
               and put the row back to ``pending`` for the next claim. The
               dead-letter routing (after ``kg_queue_max_attempts``) is
@@ -4362,7 +4473,17 @@ class ConsolidationProcessor:
                             deferred_session_ids=deferred_session_ids,
                             enter_graph_write=_enter_graph_write,
                         )
-                        if isinstance(outcome, StaleSweepRunReceipt):
+                        if isinstance(outcome, DeferredProjectionProgress):
+                            if exact_protocol or deferred_session_ids != [outcome.session_id]:
+                                raise RuntimeError('projection_removal_progress_scope_invalid')
+                            fresh = await store.get_queue_entry(db, entry_id=entry.id)
+                            if fresh is None or not _same_claim(entry, fresh):
+                                raise _QueueClaimLostOrFenced('projection_removal_progress_claim_lost')
+                            await self._defer_relational_projection_endpoint(db, fresh,
+                                error_text=f'{outcome.error_code}:Known removals applied; projection awaits its target.')
+                            # Commit queue retry + finalize compensable removals below.
+                            # No audit, ACK, processed count or post-ACK maintenance.
+                        elif isinstance(outcome, StaleSweepRunReceipt):
                             if (
                                 _work_kind(entry) != "stale_sweep"
                                 or outcome.entry_id != entry.id
@@ -5405,15 +5526,6 @@ class ConsolidationProcessor:
         in the collector ring-buffer so the MemoryPressureCorrelator
         receives a real commit-failure signal.  Non-blocking/non-raising.
 
-        FR6 (spec eaf185c9 / card 81a96a49): a legacy board missing the
-        graph_layer/maturity_status schema raises ``Cannot find property
-        graph_layer for n``. Before that raw string becomes the sole DLQ
-        diagnostic we try the idempotent schema migration+backfill. If it
-        actually repairs the schema we re-pending the entry for an immediate
-        retry instead of counting it toward the dead-letter threshold; if it
-        cannot, we replace the raw error with a structured, actionable
-        diagnostic (or_1f52d4fd) so the dead-letter row names the operational
-        action rather than the opaque binder error.
         """
         claimed_entry = entry
         token = _claim_token(claimed_entry)
@@ -5434,40 +5546,6 @@ class ConsolidationProcessor:
                 retry_after_s=retry_after_s,
             )
             return
-
-        if is_graph_layer_schema_error(error_text):
-            remediation = ensure_graph_layer_schema(
-                entry.board_id, raw_error=error_text
-            )
-            if remediation.recovered:
-                # Schema repaired in place — re-pending for an immediate retry
-                # rather than charging this attempt against the DLQ threshold.
-                entry.last_error = None
-                entry.status = "pending"
-                entry.next_retry_at = self._now()
-                entry.claim_timeout_at = None
-                entry.worker_id = None
-                entry.claimed_at = None
-                entry.claimed_by_session_id = None
-                entry.claim_token = None
-                if db is not None:
-                    await get_consolidation_persistence_port().save_queue_entries(
-                        db,
-                        (entry,),
-                    )
-                logger.info(
-                    "consolidation.schema_layer_recovered artifact=%s:%s "
-                    "board=%s columns_added=%s",
-                    entry.artifact_type,
-                    entry.artifact_id,
-                    entry.board_id,
-                    remediation.columns_added,
-                )
-                return
-            if remediation.needs_structured_error and remediation.structured_message:
-                # Could not migrate — make the DLQ diagnostic actionable so the
-                # raw binder error is never the only thing operators see.
-                error_text = remediation.structured_message
 
         correlation_id = uuid.uuid4().hex
         entry_id = entry.id
@@ -5678,7 +5756,7 @@ class ConsolidationProcessor:
                     )
                     heartbeat.start()
                     heartbeat.ensure_owned()
-                    # Linearize admission with rebuild's reservation→writer
+                    # Linearize admission with rebuild's reservationâ†’writer
                     # order. A rebuild that reserves after this recheck waits
                     # for the complete DLQ transaction; one that reserved
                     # before it makes this worker skip without mutation.

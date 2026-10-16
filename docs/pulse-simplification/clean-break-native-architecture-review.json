@@ -1,0 +1,67 @@
+{
+  "scope": "Architecture classification identity, pagination and revision/withdrawal review",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "ARQVER:AC-ARQ-04": [
+      "test_equivalent_copy_and_layout_keep_persisted_classification_identity",
+      "test_new_candidate_after_batch_is_pending_and_homonymous_origins_stay_distinct",
+      "test_missing_legacy_identity_remains_unresolved_without_writes"
+    ],
+    "ARQVER:AC-ARQ-05": [
+      "test_global_pending_outside_page_and_filter_never_becomes_approval",
+      "test_real_read_currentness_tracks_contracts_not_revision_and_never_writes",
+      "reads only on request and retains off-page pending counts without approval"
+    ],
+    "ARQVER:AC-ARQ-13": [
+      "test_only_semantically_changed_candidate_requires_review",
+      "test_real_read_currentness_tracks_contracts_not_revision_and_never_writes"
+    ],
+    "ARQVER:AC-ARQ-14": [
+      "test_source_withdrawal_preserves_promoted_obligations_and_classification_history",
+      "test_retired_contract_keeps_history_and_normative_ir_without_writes"
+    ],
+    "ARQVER:ADV-02": [
+      "test_conflicting_adopted_revisions_do_not_choose_a_winner",
+      "test_variants_at_same_adopted_owner_keep_provenance_and_conflicts"
+    ],
+    "ARQVER:ADV-07": [
+      "test_real_read_currentness_tracks_contracts_not_revision_and_never_writes",
+      "test_partial_scope_invalidates_only_affected_fragment_or_remainder"
+    ]
+  },
+  "evidence": [
+    "Added SQL regression: an equivalent physical copy and layout-only revision retain the three candidate identities/current classifications, preserve original analyzed provenance and decision payloads, and leave IRs unchanged.",
+    "Homonymous interfaces from distinct roots remain distinct; missing identity is an unresolved issue rather than an ID minted during a read.",
+    "Global state counts include pending items outside the page/filter. Bounded summaries omit full contracts, detail is explicit, and completeness is not inferred from page length.",
+    "One semantic contract change requires review only for that candidate/affected fragment; a physical version change alone does not invalidate it. The prior analyzed contract and actor remain available.",
+    "Source deletion through the real REST route preserves promoted IR obligations and classification history, emits the semantic-change event, marks the source retired and keeps planning/delivery gates incomplete.",
+    "Conflicting adopted revisions remain unresolved with distinct digests; there is no name-based winner or silent promotion suggestion.",
+    "Frontend preserves off-page counts, current/analyzed contract provenance, retired IR obligations and stale-detail rejection; it does not present classification as admission approval."
+  ],
+  "tests": {
+    "core_passed": 34,
+    "community_distinct_passed": 12,
+    "frontend_passed": 20,
+    "new_campaign_distinct_passed": 66,
+    "core_seconds": 4.06,
+    "community_main_seconds": 29.35,
+    "community_added_seconds": 10.46,
+    "reused_witnesses": "native-architecture-read-community1.xml and native-architecture-read-core1.xml on byte-identical main86; no repeat or new-count claim"
+  },
+  "limits": [
+    "Transport authorization uses controlled principals; parity exercises the materialized MCP host and REST route, not a complete installed credential lifecycle.",
+    "Some lifecycle/fault scenarios intentionally seed raw states; no mutation gate is qualified solely by such setup.",
+    "Full start-transition criteria remain separate from read completeness.",
+    "No product/SPA modification or legacy conversion. Main86 closure remains applicable with eight zero budgets; no promotion or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-architecture-review1.json": "cda5f9241fbbc4e39556eaaa12dc9dcb9cd1a5c34596556ee0af8f29370a7fc8",
+    "native-architecture-review-core1.xml": "b1d7346c1cb1dee07e6c119c4d2e77486e16577892772d0fb4b63034753d0578",
+    "native-architecture-review-community1.xml": "d0b77533ae32e886d0dccdb952c5f4a27cafcb7571aa3838a20e3716250a40b5",
+    "native-architecture-review-community2.xml": "fa90e41cd6c1cb68ce1e444cde9cfec126475e32af07ad39c765b4fb6b4a3d57",
+    "native-architecture-review-frontend1.json": "bf456e28c2349b2357a8cb27116cb5385fc0c6aa632350ba353a9e5423411fd9",
+    "native-architecture-read-community1.xml": "b652f2c8bbb0ba138abad5a730889a9600062d8661e1bbd6957338b682ed7097",
+    "native-architecture-read-core1.xml": "f908d6ffab24272e5a93ea6d37f28426460424452af77e95157f16dcee4ab821",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

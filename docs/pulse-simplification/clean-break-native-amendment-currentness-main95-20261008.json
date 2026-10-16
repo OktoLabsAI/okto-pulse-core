@@ -1,0 +1,64 @@
+{
+  "format": "pulse-040-reviewed-increment/v1",
+  "status": "verified_current_pair_review",
+  "criterion_keys": [
+    "BASE:T23"
+  ],
+  "proof_pair": "dist-native-main95",
+  "tested_source": {
+    "core_base": "05b0865d",
+    "community_base": "77bf0041",
+    "qualification": "Core T23 source diff present before builds/tests. Community product unchanged; test and generated README changes only."
+  },
+  "authorization": "User explicitly authorized binding and revalidation of Amendment coverage to semantic revision and current proof. No automatic reopening of Done Bugs.",
+  "results": {
+    "core_distinct_tests": 198,
+    "native_persistence_tests": 1,
+    "frontend_tests": 12,
+    "closure_ok": true,
+    "architecture_budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    }
+  },
+  "verified": [
+    "Typed basis seals exact scenario Spec, edition, authoritative scenario collection epoch, existing semantic digest, full evidence digest/reference and amendment source digest.",
+    "Preview, allowed transitions, execution and completion consume the same current-source resolver through the public persistence port.",
+    "Reset, changed proof/semantics, new edition and reopened Test card invalidate coverage; malformed/missing basis fails closed. No caller boolean grants coverage.",
+    "Native schema/CommunitySemanticSession proves reset then identical restoration cannot revive the old confirmation; reconfirmation updates basis while both exact confirmations remain in append-only audit history.",
+    "Closed Bug remains Done during all source changes and reconfirmation.",
+    "Existing namespace authorization, binding, unrelated/incomplete/cancelled lineage and validator guards remain enforced.",
+    "Frontend replaces previous ready state with pending upon updated authoritative response; no automatic write or bypass."
+  ],
+  "qualification_notes": [
+    "The epoch is the existing authoritative version of the Spec scenario collection: changes to that collection and its task membership require reconfirmation. No new migration, compatibility lane or retrospective basis is generated.",
+    "Core test mirror does not run Community semantic version hooks. Epoch reset/restoration assertions were moved to a real native schema test instead of manually advancing an epoch or relaxing the assertion.",
+    "Core service/public-authority tests and native persistence test are complementary; native test uses the internal attestation store, not a second public authorization campaign.",
+    "Initial parser failure rejected the existing sha256: prefix; corrected to the actual contract. An old fixture used numeric AC links and was made native ID-based. Initial failures remain archived.",
+    "README drift regenerated through official renderer; eight budgets remain zero. UI product unchanged; no SPA rebuild needed."
+  ],
+  "artifacts": {
+    "native-path-b-final-main95-20261008.xml": "52154dee243400e336187f1b13b0a1317b9edd78f7789b322d52cdf2337f3588",
+    "native-path-b-basis-final-r2-main95-20261008.xml": "20e57c0ecb5e36e6d8699b2fe0fe220e59d2379ed38fde9d90e937035ae72f14",
+    "native-path-b-transitions-main95-20261008.xml": "43494b366398118d103dede7eb9786025d41359c646f25dfd597473261cede53",
+    "native-path-b-epoch-main95-r2-20261008.xml": "e1e07606859a4170fe9173a83eb119cacb2b668d86ffc93d5dfcd7779be49cca",
+    "provenance-native-main94.json": "6f4e87bfaf0193e9a329d5b3813baacbcdb50af6295fc6b57b7717f32d2bd1ad",
+    "provenance-native-main95.json": "8110d2e144ad8170f54c255caa436ad2cd52d85e65e170dc046aeda0830725ae",
+    "native-path-b-ui-main94-20261008.json": "dec22880a3bc03fe6785e9945d92357bb28af6e530c1125bf814caabd0ef118a",
+    "closure-native-main95.json": "13667bda13eeaba08ca14d47dd3250fb87c5e9e139afef75caff4b1dbe012d7b",
+    "closure-native-main95-final.json": "6568631b2b7846abbab3954afea644b6189f3eeffdb6c5e9582bf1b40f9959ff",
+    "native-path-b-currentness-main94-20261008.xml": "315a733d75ca7257f621b667480d74d2c2730067badaa2c4d4d5910504fcea3c",
+    "native-path-b-regressions-main94-20261008.xml": "169be0ab76523e70c487373d49714021bc3f13eea52fcf04cf072c67fb3450e3",
+    "native-path-b-main95-20261008.xml": "1d94b12a1e34cd0d16db65bcdff6e5f97588fa312bb93834be06f29af2c33237",
+    "native-path-b-epoch-main95-20261008.xml": "d8f7efc95bca174eb19c5e0ebeb0e388e10bbfbd8202e96909db2213dd16e0e0",
+    "native-path-b-basis-final-main95-20261008.xml": "e4fca565f61eef57e2260c2577b3516363f5bcd779c70ece046acd0ebbbf927f",
+    "native-path-b-basis-probe-main94-20261008.xml": "3be37adabb14601e9a5108bc7f30ac95c4773c720a476d95b4a911e36ef79b07",
+    "native-path-b-basis-probe2-main94-20261008.xml": "d84b3c836821598dd0af199906020c1dcf8a1bee4103d3352aacefc68bb17bf4"
+  }
+}

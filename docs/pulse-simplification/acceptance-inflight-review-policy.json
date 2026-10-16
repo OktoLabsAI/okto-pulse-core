@@ -1,0 +1,239 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "ARQVER:ADV-17",
+  "status": "verified",
+  "reproduction": {
+    "terminal_session": 60868,
+    "exit_code": 1,
+    "log": "learning-reconciliation-policy-race1-community.log",
+    "sha256": "e867b7fc945f9090220d34989a609763294e854740609f3a1251fc3f1fdf5276",
+    "finding": "After task validation reads reviewer_separation_mode=off, a second actual Community semantic session commits BoardService.update_board(enforce) as the owner. The in-flight self-review nevertheless returned an accepted rejection instead of refusing. The failing assertion prevented outer commit: this proves admission under stale policy, not a persisted production incident."
+  },
+  "change": "CardService.submit_task_validation now fences the Board through the existing public application-persistence port and refreshes policy under that fence before deriving thresholds and reviewer separation. The transaction keeps the fence until commit, serializing Board writers. Fence unavailability refuses with task_validation_policy_conflict; a newly enforced independence policy uses the existing reviewer_separation_required. No concrete adapter or private reach-in added to Core.",
+  "coverage": "The same deterministic interleaving now refuses self-review under enforce. An explicit outer commit cannot add validation/rejection/conclusion or alter Card status/version; the human policy and its activity/events remain intact. Existing policy modes, independent reviewer handoff and the complete authenticated single-agent Spec lifecycle still pass. Frontend client propagates both refusal codes without automatic retry; existing validation primitives pass.",
+  "executions": [
+    {
+      "terminal_session": 53740,
+      "exit_code": 0,
+      "passed": 57,
+      "cases": [
+        "tests.test_task_reviewer_separation::test_task_decision_evaluates_creator_assignee_and_executor_conflicts",
+        "tests.test_task_reviewer_separation::test_unrelated_legacy_settings_patch_preserves_absent_compat_source",
+        "tests.test_task_reviewer_separation::test_enforce_allows_an_independent_task_reviewer",
+        "tests.test_task_reviewer_separation::test_off_warn_and_legacy_modes_persist_transparent_decision[None-legacy_absent_compat-False]",
+        "tests.test_task_reviewer_separation::test_off_warn_and_legacy_modes_persist_transparent_decision[off-board_settings-False]",
+        "tests.test_task_reviewer_separation::test_off_warn_and_legacy_modes_persist_transparent_decision[warn-board_settings-True]",
+        "tests.test_task_reviewer_separation::test_enforce_fails_closed_before_validation_or_status_mutation",
+        "tests.test_task_reviewer_separation::test_mcp_enforce_response_projects_action_required_and_remediation",
+        "tests.test_task_reviewer_separation::test_full_task_context_projects_legacy_compat_decision",
+        "tests.test_task_reviewer_separation::test_new_boards_and_default_template_versions_keep_enforce_default",
+        "tests.test_task_reviewer_separation::test_mcp_resources_describe_task_reviewer_separation_contract",
+        "tests.test_task_rejected_lifecycle_core::test_rejection_is_internal_and_only_rework_exit_is_public[normal]",
+        "tests.test_task_rejected_lifecycle_core::test_rejection_is_internal_and_only_rework_exit_is_public[bug]",
+        "tests.test_task_rejected_lifecycle_core::test_test_cards_never_enter_rejected",
+        "tests.test_task_rejected_lifecycle_core::test_completion_decision_keeps_validation_and_completion_outcomes_distinct",
+        "tests.test_task_rejected_lifecycle_core::test_current_cause_requires_a_sealed_record_and_admitted_validation",
+        "tests.test_task_rejected_lifecycle_core::test_rejection_projection_is_bounded_without_rewriting_source_history",
+        "tests.test_task_rejected_lifecycle_core::test_rejected_task_remains_visible_in_working_kg_without_ttl_expiry",
+        "tests.test_task_rejected_lifecycle_core::test_kg_projects_only_generic_rework_signal_not_rejection_cause",
+        "tests.test_task_rejected_lifecycle_core::test_validation_redaction_hides_body_cause_and_aggregate_scores",
+        "tests.test_task_rejected_lifecycle_core::test_operational_freeze_error_does_not_leak_current_cause",
+        "tests.test_task_rejected_lifecycle_core::test_bug_completion_rechecks_missing_regression_evidence",
+        "tests.test_task_rejected_lifecycle_core::test_nested_board_cards_require_validation_read",
+        "tests.test_task_rejected_lifecycle_core::test_board_blockers_redact_rejection_cause_without_validation_read",
+        "tests.test_task_rejected_lifecycle_core::test_validation_analytics_are_leaf_aware_and_strip_ledger_plumbing",
+        "tests.test_task_rejected_lifecycle_core::test_discovery_outputs_only_generic_rework_and_activity_signals",
+        "tests.test_task_rejected_lifecycle_core::test_card_and_board_activity_redact_task_validation_details",
+        "tests.test_task_rejected_lifecycle_core::test_delete_validation_authorizes_read_before_id_lookup",
+        "tests.test_task_rejected_lifecycle_core::test_task_validation_transport_requires_fence_and_idempotency",
+        "tests.test_task_rejected_lifecycle_core::test_rest_move_schema_accepts_rejected_only_for_domain_checked_reorder",
+        "tests.test_task_rejected_lifecycle_core::test_card_create_schema_exposes_only_lifecycle_entry_states",
+        "tests.test_task_rejected_lifecycle_core::test_mcp_create_rejects_consequence_only_initial_status_before_uow",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_200_refetched_body",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_404",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_409_archived",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_valid_selector_variants_reorder_and_return_card_response",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_reorders_within_rejected_but_refuses_inbound_transition",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_route_maps_missing_cancellation_reason_to_typed_400",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_route_maps_cross_column_anchor_to_409",
+        "tests.test_r01a_cards_lifecycle_uow::test_add_dependency_201_then_lists",
+        "tests.test_r01a_cards_lifecycle_uow::test_get_dependencies_empty",
+        "tests.test_r01a_cards_lifecycle_uow::test_add_dependency_409_self_reference",
+        "tests.test_r01a_cards_lifecycle_uow::test_remove_dependency_204_then_404",
+        "tests.test_r01a_cards_lifecycle_uow::test_submit_validation_422_missing_fields",
+        "tests.test_r01a_cards_lifecycle_uow::test_submit_validation_422_bad_recommendation",
+        "tests.test_r01a_cards_lifecycle_uow::test_submit_validation_422_card_not_in_validation",
+        "tests.test_r01a_cards_lifecycle_uow::test_submit_validation_404_missing_card",
+        "tests.test_r01a_cards_lifecycle_uow::test_submit_validation_exact_retry_replays_after_rejected",
+        "tests.test_r01a_cards_lifecycle_uow::test_submit_validation_exact_retry_replays_after_done",
+        "tests.test_r01a_cards_lifecycle_uow::test_list_validations_200_empty",
+        "tests.test_r01a_cards_lifecycle_uow::test_list_validations_404_missing_card",
+        "tests.test_r01a_cards_lifecycle_uow::test_get_validation_200_and_404",
+        "tests.test_r01a_cards_lifecycle_uow::test_get_validation_404_missing_card",
+        "tests.test_r01a_cards_lifecycle_uow::test_delete_validation_is_rejected_as_append_only_history",
+        "tests.test_r01a_cards_lifecycle_uow::test_delete_validation_404_missing_card",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_use_case_raises_for_missing_card",
+        "tests.test_r01a_cards_lifecycle_uow::test_fu4_s2_endpoints_take_uow_not_raw_session"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-policy-race-fix2-core.xml",
+          "sha256": "a817957286d9ffdc3d2b1d50a71b93bae112981d9335f226807c007024d4384d"
+        },
+        {
+          "file": "learning-reconciliation-policy-race-fix2-core.log",
+          "sha256": "07fb0d01326fb4bf248058863c9c5e17e082317542581d3ee587c621c481a7b3"
+        }
+      ]
+    },
+    {
+      "terminal_session": 30791,
+      "exit_code": 0,
+      "passed": 11,
+      "cases": [
+        "tests.test_task_review_currentness::test_review_rechecks_human_policy_changed_after_board_read",
+        "tests.test_task_review_currentness::test_review_cannot_approve_subject_edited_in_another_semantic_session",
+        "tests.test_task_review_currentness::test_direct_done_preserves_required_task_validation[in_progress-normal]",
+        "tests.test_task_review_currentness::test_direct_done_preserves_required_task_validation[in_progress-bug]",
+        "tests.test_task_review_currentness::test_direct_done_preserves_required_task_validation[validation-normal]",
+        "tests.test_task_review_currentness::test_direct_done_preserves_required_task_validation[validation-bug]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[grant-denied-approve]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[grant-denied-reject]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-approve]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-reject]",
+        "tests.test_single_agent_spec_execution::test_one_agent_preserves_assessments_and_evidence_through_spec_done"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-policy-race-fix1-community.xml",
+          "sha256": "bf7ee73656a248206452ebaa8106578c1c4a5229cf7fc7489eb434f5d4672c00"
+        },
+        {
+          "file": "learning-reconciliation-policy-race-fix1-community.log",
+          "sha256": "0af74de0b56910f9b163c2a6f6fea29ed42d6860d301a65ab01ce68c1fe58c7e"
+        }
+      ]
+    },
+    {
+      "terminal_session": 39859,
+      "exit_code": 0,
+      "passed": 8,
+      "cases": [
+        "src/services/__tests__/api.taskValidation.test.ts::task validation REST client > sends the backend write contract and returns the validation entry",
+        "src/services/__tests__/api.taskValidation.test.ts::task validation REST client > keeps legacy-only validation aliases representable",
+        "src/services/__tests__/api.taskValidation.test.ts::task validation REST client > propagates reviewer_separation_required without retrying the rejected review",
+        "src/services/__tests__/api.taskValidation.test.ts::task validation REST client > propagates task_validation_policy_conflict without retrying the rejected review",
+        "src/components/validation-cycle/__tests__/ValidationCyclePrimitives.test.tsx::validation-cycle accessibility contract > has no serious or critical axe violations for all human states in light mode",
+        "src/components/validation-cycle/__tests__/ValidationCyclePrimitives.test.tsx::validation-cycle accessibility contract > has no serious or critical axe violations for all human states in dark mode",
+        "src/components/validation-cycle/__tests__/ValidationCyclePrimitives.test.tsx::validation-cycle accessibility contract > supports keyboard activation, Escape focus return and cached reopening",
+        "src/components/validation-cycle/__tests__/ValidationCyclePrimitives.test.tsx::validation-cycle accessibility contract > records 20 bounded expand/collapse interactions below the 200 ms budget"
+      ],
+      "artifacts": [
+        {
+          "file": "policy-race-fix1-frontend.xml",
+          "sha256": "354a2e41da528ef56116011b3771e20e187bdd3246db3a39ccadb41108fe2d75"
+        },
+        {
+          "file": "policy-race-fix1-frontend.log",
+          "sha256": "a2315cc3ee6f49aa4481b60abd364152d8921d7fd3f7e9d83114317142590efb"
+        }
+      ]
+    }
+  ],
+  "distinct_cases": 76,
+  "final_pair": {
+    "wheels": "dist-learning-reconciliation-policy-race-fix-final",
+    "provenance_file": "provenance-policy-race-final.json",
+    "terminal_session": 72390,
+    "exit_code": 0,
+    "provenance_sha256": "c1a247af230fd6a1c2260a8491faaa5be9a1c0d59611a3352fd56f5ef8ceabbe"
+  },
+  "closure": {
+    "terminal_session": 90981,
+    "exit_code": 0,
+    "file": "learning-reconciliation-policy-race-fix-final-closure.log",
+    "sha256": "00a45482a58c6e70711e91f17db87d6cbda3d10fc1165b5cb381a342c3c24d73",
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": []
+  },
+  "limits": [
+    "The test wraps the read seam only to schedule a real committed owner update after the original read. It calls the actual read, BoardService writer, review service, Community sessions and persistence. Initial Card/context/implementation receipt are fixtures. This is one concrete human-policy race, not exhaustive revocation coverage of every tool.",
+    "Behavioral runs used paired absolute PYTHONPATH after successful post-install byte proof provenance-policy-race-installed1.json. Core859/922 and Community373/458 payloads matched. The final rebuild changes only the error-reference documentation beyond the already-tested Python code; provenance-policy-race-final.json compares that full installed pair, followed by final F16.",
+    "Initial verification session16239 overlapped installation and correctly failed on missing files. It is not qualifying evidence; session69951 after installer91458 completed passed before behavioral tests. Core runner24132 referenced a Community-only test path and ran no tests; corrected runner53740 passed57.",
+    "Frontend uses API mocks and actual client/components, not a browser network E2E. No SPA implementation changed. Catalog registry is unchanged; the generated tools catalog was not edited.",
+    "The new Board serialization may make concurrent policy writers wait for a review transaction. This is the existing persistence fence mechanism; no policy grant, threshold, review identity, historical record or skip rule was relaxed."
+  ]
+}

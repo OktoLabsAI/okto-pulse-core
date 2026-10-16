@@ -1,0 +1,117 @@
+{
+  "criterion": "KG:KG-63",
+  "qualification": "verified_current_pair_review",
+  "proof_pair": "dist-native-main75",
+  "changes": [
+    "Frontend labels median hours from source creation to latest completion, including reopened periods, explicitly not operational MTTR."
+  ],
+  "evidence": [
+    "Reopened Bug example spans creation to latest Done for 72 hours, not the 24-hour final recovery episode; missing history contributes no duration.",
+    "Real SQL history is Board/Card scoped and bounded to latest transitions, excludes foreign events, preserves unknown and clears on reopening.",
+    "Real Grafx transaction replaces/clears resolved_at without changing projection creation.",
+    "Frontend tests render both known and unknown durations with the exact measurement interpretation."
+  ],
+  "tests": {
+    "core_passed": 47,
+    "community_passed": 31,
+    "frontend_passed": 12,
+    "total_distinct_passed": 90
+  },
+  "frontend": {
+    "files": 79,
+    "assets": 78,
+    "tree_sha256": "4df013b2db510c1c4feeb3eeecd452dad4c5c9958ff40a612eb34b564cc90a44",
+    "build": "official npm run build and verify:frontend-dist passed"
+  },
+  "closure": {
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": []
+  },
+  "limits": [
+    "No historical incident reconstruction or operational MTTR added.",
+    "Core fixture initially exceeded the existing two-transition bound; fixed fixture without changing the bound or product semantics.",
+    "Frontend tests use controlled API responses; native persistence proofs are separate, not a live-browser test."
+  ],
+  "artifacts": {
+    "provenance-native-main75.json": "37998bb7112ac15c38e0d19fbcebb1c53beb1bc132bf5df36c3ea77f8d98b14e",
+    "native-bug-duration2.xml": "83dbe4f7de1943ec0b7e42fec180f2606bd4a71afaf86f583f1661a799a772ed",
+    "native-bug-duration-relational1.xml": "73033c93be53305a47d97bd0eefb81e587b67c512209bbb9addda6ea54a522e0",
+    "native-bug-duration-frontend1.json": "ba1e9363c4edd15a6c84b1c52ea789fa2c6ba521b304142b63909ed7edbe77b4",
+    "closure-native-main75.json": "ee30665f2d4163d615fc35d82cadbc94dca845b1b3296f1802f2bf450b297071"
+  }
+}

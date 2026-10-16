@@ -1,19 +1,7 @@
-"""R7 IMP4 — KG Health aggregate + read-only drilldown + human-only skip.
+"""F4 preserves aggregate partition Health and human-only hold authority.
 
-Teeth for spec 7e0a5a28 / card 434d8dcb (AC5/TS5, AC9/TS9):
-
-ENFORCEMENT (human-only, fail-closed):
-- an AGENT (actor_is_human=False) cannot skip/clear an R7 hold via the central
-  service NOR via the direct-ledger MCP update tool; non-R7 skips still work;
-- a HUMAN (actor_is_human=True) may skip an R7 hold (the documented human path);
-- actor_is_human is set by the endpoint, never a client/agent-supplied field.
-
-HEALTH (aggregate-only):
-- canonical_partition_integrity is ONE aggregate health_issues[] entry with
-  counts + drill_down_tool; NO per-node rows in Health; no double-count.
-
-DRILLDOWN (read-only):
-- the unified read model classifies the 4 sources + filters + 400/404 errors.
+The detailed repair inspector is retired. Agent skip/clear restrictions and
+legitimate human decisions still follow the cognitive readiness controls.
 """
 
 from __future__ import annotations
@@ -23,14 +11,6 @@ import uuid
 import pytest
 
 from okto_pulse.core.kg.canonical_learning_partition import HISTORICAL_DEBT_REASON
-from okto_pulse.core.kg.canonical_partition_integrity import (
-    STATUS_CANONICAL_DEBT,
-    STATUS_COGNITIVE_PENDING,
-    STATUS_MIXED_DEFERRED,
-    STATUS_PROVENANCE_ONLY,
-    get_canonical_partition_integrity_detail,
-    list_canonical_partition_integrity,
-)
 from okto_pulse.core.kg.cognitive_readiness import (
     CognitiveReadinessError,
     CognitiveReadinessService,
@@ -39,17 +19,13 @@ from okto_pulse.core.kg.cognitive_readiness import (
 from okto_pulse.core.kg.connectivity_guard import (
     CANONICAL_LEARNING_WORKING_ONLY_REASON,
 )
-from okto_pulse.core.kg.primitives import _apply_graph_node_create
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     compute_cognitive_item_id,
     record_cognitive_working_only_hold,
 )
 from okto_pulse.core.kg.source_maturity import (
-    GRAPH_LAYER_CANONICAL,
     GRAPH_LAYER_WORKING,
-    MATURITY_CANONICAL_ELIGIBLE,
-    MATURITY_WORKING_IMMATURE,
 )
 from sqlalchemy_test_models import Board
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
@@ -131,48 +107,8 @@ def _make_plain_pending(board_id: str, tmp_path) -> tuple[str, str]:
     return source_ref, gen
 
 
-def _node_attrs(source_ref, graph_layer, maturity):
-    return {
-        "title": "imp4 seed", "content": "", "context": "", "justification": "",
-        "source_artifact_ref": source_ref, "created_at": "2026-06-08T00:00:00+00:00",
-        "created_by_agent": "test", "source_confidence": 1.0, "relevance_score": 0.5,
-        "query_hits": 0, "last_queried_at": None, "priority_boost": 0.0,
-        "human_curated": False, "embedding": [0.0] * 384,
-        "graph_layer": graph_layer, "maturity_status": maturity,
-    }
 
 
-def _seed_learning_with_bugs(board_id, *, source_ref, canonical=0, working=0) -> str:
-    from kg_schema_testing import open_board_connection
-    from okto_pulse.core.kg.transaction import TransactionOrchestrator
-
-    learning_id = f"r7i4l_{uuid.uuid4().hex[:12]}"
-    with open_board_connection(board_id) as (_db, kconn):
-        orch = TransactionOrchestrator(
-            graph_scope=kconn,
-            session_id=f"seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
-        )
-        _apply_graph_node_create(
-            orch, "Learning", learning_id,
-            _node_attrs(source_ref, GRAPH_LAYER_CANONICAL, MATURITY_CANONICAL_ELIGIBLE),
-        )
-        for _ in range(canonical):
-            bug_id = f"r7i4cb_{uuid.uuid4().hex[:10]}"
-            _apply_graph_node_create(
-                orch, "Bug", bug_id,
-                _node_attrs(f"bug:{bug_id}", GRAPH_LAYER_CANONICAL, MATURITY_CANONICAL_ELIGIBLE),
-            )
-            orch.create_edge(edge_type="validates", from_id=learning_id, to_id=bug_id,
-                             attrs={"confidence": 1.0}, from_type="Learning", to_type="Bug")
-        for _ in range(working):
-            bug_id = f"r7i4wb_{uuid.uuid4().hex[:10]}"
-            _apply_graph_node_create(
-                orch, "Bug", bug_id,
-                _node_attrs(f"bug:{bug_id}", GRAPH_LAYER_WORKING, MATURITY_WORKING_IMMATURE),
-            )
-            orch.create_edge(edge_type="validates", from_id=learning_id, to_id=bug_id,
-                             attrs={"confidence": 0.9}, from_type="Learning", to_type="Bug")
-    return learning_id
 
 
 # ---------------------------------------------------------------------------
@@ -346,7 +282,8 @@ async def test_health_exposes_aggregate_partition_integrity(db_factory, _tmp_reb
     ]
     assert len(issues) == 1, issues  # exactly ONE aggregate entry
     issue = issues[0]
-    assert issue["drill_down_tool"] == "okto_pulse_kg_canonical_partition_integrity_list"
+    assert "drill_down_tool" not in issue
+    assert issue["operator_action"] == "inspect_kg_health"
     assert issue["counts"]["cognitive_pending"] == 1
     assert issue["counts"]["canonical_debt"] == 1
     assert "precedence_explanation" in issue
@@ -360,126 +297,14 @@ async def test_health_exposes_aggregate_partition_integrity(db_factory, _tmp_reb
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_drilldown_lists_four_sources(db_factory, _tmp_rebuild_dir):
-    from okto_pulse.core.kg.canonical_learning_partition import PARTITION_TARGET_STATUS
-
-    board_id = await _setup_board(db_factory)
-    hold_ref, _g = _make_r7_hold(board_id, _tmp_rebuild_dir)
-    async with db_factory() as db:
-        await upsert_canonical_debt(
-            db, board_id=board_id, artifact_type="bug", artifact_id="bug-d",
-            source_ref=f"card:bug:{uuid.uuid4()}:learning:d",
-            content_hash="clp_d", target_status=PARTITION_TARGET_STATUS,
-            canonical_state="pending", failure_reason=HISTORICAL_DEBT_REASON,
-        )
-        await db.commit()
-    # graph: a MIXED Learning (canonical + working) and a provenance-only one.
-    _seed_learning_with_bugs(
-        board_id, source_ref=f"card:bug:{uuid.uuid4()}:learning:mix",
-        canonical=1, working=1,
-    )
-    _seed_learning_with_bugs(
-        board_id, source_ref=f"learning:provenance:{uuid.uuid4()}",
-        canonical=0, working=0,
-    )
-
-    async with db_factory() as db:
-        result = await list_canonical_partition_integrity(db, board_id=board_id)
-
-    counts = result["counts"]
-    assert counts[STATUS_COGNITIVE_PENDING] == 1
-    assert counts[STATUS_CANONICAL_DEBT] == 1
-    assert counts[STATUS_MIXED_DEFERRED] == 1
-    assert counts[STATUS_PROVENANCE_ONLY] == 1
-    assert result["health_issue_code"] == "canonical_partition_integrity"
-    statuses = {i["status"] for i in result["items"]}
-    assert statuses == {
-        STATUS_COGNITIVE_PENDING, STATUS_CANONICAL_DEBT,
-        STATUS_MIXED_DEFERRED, STATUS_PROVENANCE_ONLY,
-    }
-    # filter by status returns only that bucket.
-    async with db_factory() as db:
-        only_pending = await list_canonical_partition_integrity(
-            db, board_id=board_id, status=STATUS_COGNITIVE_PENDING,
-        )
-    assert {i["status"] for i in only_pending["items"]} == {STATUS_COGNITIVE_PENDING}
-    assert only_pending["items"][0]["source_artifact_ref"] == hold_ref
 
 
-@pytest.mark.asyncio
-async def test_drilldown_invalid_filter_400(db_factory, _tmp_rebuild_dir):
-    board_id = await _setup_board(db_factory)
-    async with db_factory() as db:
-        with pytest.raises(CognitiveReadinessError) as exc:
-            await list_canonical_partition_integrity(
-                db, board_id=board_id, reason_code="not_a_real_reason",
-            )
-    assert exc.value.code == "invalid_filter"
-    assert exc.value.http_status == 400
 
 
-@pytest.mark.asyncio
-async def test_drilldown_detail_not_found_404(db_factory, _tmp_rebuild_dir):
-    board_id = await _setup_board(db_factory)
-    async with db_factory() as db:
-        with pytest.raises(CognitiveReadinessError) as exc:
-            await get_canonical_partition_integrity_detail(
-                db, board_id=board_id, node_id="does-not-exist",
-            )
-    assert exc.value.code == "canonical_partition_item_not_found"
-    assert exc.value.http_status == 404
 
 
-@pytest.mark.asyncio
-async def test_drilldown_detail_mixed_evidence(db_factory, _tmp_rebuild_dir):
-    board_id = await _setup_board(db_factory)
-    node_id = _seed_learning_with_bugs(
-        board_id, source_ref=f"card:bug:{uuid.uuid4()}:learning:mixdetail",
-        canonical=1, working=1,
-    )
-    async with db_factory() as db:
-        detail = await get_canonical_partition_integrity_detail(
-            db, board_id=board_id, node_id=node_id,
-        )
-    assert detail["status"] == STATUS_MIXED_DEFERRED
-    assert len(detail["canonical_edges"]) == 1
-    assert len(detail["working_edges"]) == 1
-    assert detail["working_edges"][0]["to_graph_layer"] == GRAPH_LAYER_WORKING
 
 
 # ---------------------------------------------------------------------------
 # OR1 — dedicated metric kg_canonical_partition_integrity_total
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_or1_metric_queryable_by_reason_and_layer(db_factory, _tmp_rebuild_dir):
-    from okto_pulse.core.kg.canonical_partition_integrity import (
-        get_canonical_partition_integrity_count,
-        get_canonical_partition_integrity_counter_labels,
-        reset_canonical_partition_integrity_counter,
-    )
-
-    board_id = await _setup_board(db_factory)
-    _make_r7_hold(board_id, _tmp_rebuild_dir)  # cognitive_pending / working_only / canonical
-    _seed_learning_with_bugs(
-        board_id, source_ref=f"card:bug:{uuid.uuid4()}:learning:m", canonical=1, working=1,
-    )  # mixed_evidence_deferred / canonical
-
-    reset_canonical_partition_integrity_counter()
-    async with db_factory() as db:
-        await list_canonical_partition_integrity(db, board_id=board_id)
-
-    # Bounded labels (no free text) and queryable by reason_code + graph_layer.
-    assert "reason_code" in get_canonical_partition_integrity_counter_labels()
-    assert "graph_layer" in get_canonical_partition_integrity_counter_labels()
-    assert get_canonical_partition_integrity_count(
-        reason_code=CANONICAL_LEARNING_WORKING_ONLY_REASON, board_id=board_id,
-    ) == 1
-    assert get_canonical_partition_integrity_count(
-        status=STATUS_MIXED_DEFERRED, board_id=board_id,
-    ) == 1
-    assert get_canonical_partition_integrity_count(
-        graph_layer=GRAPH_LAYER_CANONICAL, board_id=board_id,
-    ) >= 2

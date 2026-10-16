@@ -1,0 +1,117 @@
+{
+  "scope": "K3 current Learning applicability on the authenticated private candidate",
+  "campaigns": {
+    "learning-applicability1-core": 42,
+    "learning-applicability1-community": 1,
+    "learning-applicability-integrated1-community": 3
+  },
+  "counts_overlap": true,
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Read-only observation shares source, authored binding, signed evidence and current lineage rules with the governed worker.",
+    "The worker retains its semantic write fence; the observer cannot call the write snapshot assembler.",
+    "Repeated observations preserve every candidate file; adulterated signed evidence and reopened Bug are refused without further writes.",
+    "Projection v8 retains observations and cold checkpoint replay rederives them against the complete authenticated Learning phase.",
+    "Three native coordinator cases cover superseded, reused and fresh Bug roots, original SQL preservation and cold replay.",
+    "Paired installed bytes were proved before behavioral tests; final F16 has eight zero budgets and no documentation drift."
+  ],
+  "limits": [
+    "Observation is not admission. Final history/source/phase composition remains pending; graph reconciliation v18 still refuses completion.",
+    "Old v6/v7 receipts retain their original meaning; unknown historical authorship is not fabricated.",
+    "No UI change, real-data migration, live-process restart, release, tag or deployment.",
+    "Full-plan acceptance inventory remains 78 verified / 33 partial / 135 unaudited."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-applicability-final-closure.log": "5123e9fde64f4c8b4d9f4689adc7652792ebbc91d075940393daf01d7a054709",
+    "PULSE_REFACTOR/.validation-v040/record_learning_applicability.py": "2cb22239531c744fdffb890fea45f84d4e39bc8095811adf40790a5ae3b55a5e",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-applicability1.json": "f41cec7a34361654c46af804b37126fe3b05989aa799bab4e837b73c7aa84105",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-applicability-integrated1.json": "912ccb9de21422e24a584be6c07c76d487a199b2d0be2c95a1562921412cd7fc",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-applicability-final.json": "f5ea32a0a6614a51fdb3e13a496f8408a4d8bd167a1a90dbc33d101cd2082ada",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-applicability1-core.xml": "7ad9d09ad8cc14a588846a6268cf9c76399c6d2b8e4f3d3d0ea972dd57b22488",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-applicability1-core.log": "04743348ed8c72283ed4913bf17a54784a5f21a0fec33b2e1a87c02eba6ce291",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-applicability1-community.xml": "707c98fcc86be50d313db133727030ac69bc57446a26695a94116c9dee178ba2",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-applicability1-community.log": "c4be778fe847d2a645d0eee16f0ebbcc3687c4ec4780c67ce29cd089eb156429",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-applicability-integrated1-community.xml": "64573047271fc580ba084387a4ea636de2369972b60a18de8fd9be44c79d860e",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-applicability-integrated1-community.log": "cab65f6cc065bf8f2bfea043b88448c8bc4fd64c511dca4da942062102da3f24",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "68f3ba3c5e1d62376d36e71e5399c605515ca9f6d8b7a30baf1ab55f949c40aa",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_reconciliation.py": "25e89bdcdf709f37e2e7941b7580fd9c17ab7855c4f03694278750a02f2143b0",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/learning_reconciliation.py": "cdf46c8c5e863d98a602a297d2ecb4088681b5b1053871a9a326b24463bedac7",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_learning_applicability.py": "8a8416c1a4e7f09307287a9d6eb2c0ac6c1acb36134e4d83c4b78522d90eecf2",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_graph_candidate.py": "d94c16c78f489322aae0fd64894867574c53e0f18048de242cd257cf7347e140",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_checkpoint.py": "bfc7632827647d2c06ed84b058896da25b35eebeefa7221a37da633bab649b87",
+    "okto_labs_pulse_community/tests/test_retirement_learning_execution.py": "86c181881c3576ed3c2c614c05123c3867bb2e3fc2bfb66aac595072f0e739fa"
+  }
+}

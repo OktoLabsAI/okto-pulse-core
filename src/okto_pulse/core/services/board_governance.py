@@ -19,10 +19,6 @@ GOVERNANCE_SETTING_KEYS = (
     "allow_agent_self_answering",
     "require_full_context_for_critical_actions",
 )
-LEGACY_ABSENT_SETTING_KEYS = (
-    "skip_task_requirement_link_gate_global",
-    "reviewer_separation_mode",
-)
 QA_SELF_ANSWER_DENIED_ACTION = "qa_self_answer_denied"
 QA_SELF_ANSWER_DENIED_METRIC = METRIC_QA_SELF_ANSWER_DENIED
 SELF_ANSWERING_NOT_ALLOWED_REASON = "self_answering_not_allowed"
@@ -34,7 +30,6 @@ class BoardGovernanceSettings:
 
     allow_agent_self_answering: bool
     require_full_context_for_critical_actions: bool
-    qa_require_role_separation: bool
     settings: dict[str, Any]
 
 
@@ -52,11 +47,7 @@ class QASelfAnsweringNotAllowedError(ValueError):
 
 
 class BoardGovernanceService:
-    """Resolve effective board governance settings with safe defaults.
-
-    Legacy ``qa_require_role_separation`` is retained as input compatibility,
-    but it never grants the canonical positive opt-in for self-answering.
-    """
+    """Resolve current board governance settings with safe defaults."""
 
     def __init__(self, db: object | None = None):
         self.db = db
@@ -64,39 +55,12 @@ class BoardGovernanceService:
     @staticmethod
     def normalize_settings(
         settings: dict[str, Any] | BoardSettings | None,
-        *,
-        read_tolerant: bool = False,
     ) -> dict[str, Any]:
-        """Normalize a settings payload against :class:`BoardSettings`.
-
-        ``read_tolerant`` is OPT-IN and belongs to READ paths only. A
-        persisted/tampered ``impact_evidence_mode`` must never fail-close a
-        move (AC-9 of SK-B2-S1), so read callers degrade it to the ``off``
-        default exactly like ``resolve_impact_evidence_mode``. WRITE callers
-        (board create/update, default-config templates) keep the strict
-        parse: an out-of-enum value there is an authoring error and must be
-        rejected, never silently disabled. Historical Code Traceability
-        ``off``/``null`` values are likewise normalized to Advisory only on
-        tolerant reads; authored values remain closed to Advisory or Blocking.
-        """
+        """Validate stored and authored settings against the current contract."""
 
         if isinstance(settings, BoardSettings):
             return settings.model_dump(mode="json")
         raw = dict(settings or {})
-        if read_tolerant:
-            from okto_pulse.core.services.impact_evidence import (
-                IMPACT_EVIDENCE_MODES,
-            )
-
-            mode = raw.get("impact_evidence_mode")
-            if (
-                mode is not None
-                and str(mode).strip().lower() not in IMPACT_EVIDENCE_MODES
-            ):
-                raw.pop("impact_evidence_mode", None)
-            raw["code_traceability"] = CodeTraceabilitySettings.from_persisted(
-                raw.get("code_traceability")
-            ).model_dump(mode="json")
         return BoardSettings.model_validate(raw).model_dump(mode="json")
 
     @classmethod
@@ -104,16 +68,13 @@ class BoardGovernanceService:
         cls,
         settings: dict[str, Any] | BoardSettings | None,
     ) -> BoardGovernanceSettings:
-        normalized = cls.normalize_settings(settings, read_tolerant=True)
+        normalized = cls.normalize_settings(settings)
         return BoardGovernanceSettings(
             allow_agent_self_answering=bool(
                 normalized.get("allow_agent_self_answering", False)
             ),
             require_full_context_for_critical_actions=bool(
                 normalized.get("require_full_context_for_critical_actions", True)
-            ),
-            qa_require_role_separation=bool(
-                normalized.get("qa_require_role_separation", False)
             ),
             settings=normalized,
         )
@@ -148,29 +109,19 @@ class BoardGovernanceService:
             else dict(patch or {})
         )
         if "code_traceability" in patch_raw:
-            # Validate the authored nested policy before enabling tolerance for
-            # the persisted half of this merge. Otherwise an explicit new
-            # ``off`` could be mistaken for a legacy value and silently
-            # upgraded instead of being rejected by BoardUpdate/default config.
             CodeTraceabilitySettings.model_validate(patch_raw["code_traceability"])
-        preserve_absent = {
-            key
-            for key in LEGACY_ABSENT_SETTING_KEYS
-            if key not in current_raw and key not in patch_raw
-        }
-        # A patch merges PERSISTED state (read) with AUTHORED keys (write).
-        # Tolerance applies only to the persisted half: a value the author is
-        # actually writing stays strict, so a typo is rejected instead of
-        # silently disabling governance, while a previously tampered value
-        # never blocks an unrelated settings edit.
-        # Normalize only the persisted half tolerantly, then validate the
-        # authored patch under the closed write contract. This lets an
-        # unrelated valid patch converge historical ``off`` without letting
-        # that compatibility value back through the API.
-        persisted = cls.normalize_settings(current_raw, read_tolerant=True)
+        persisted = cls.normalize_settings(current_raw)
         normalized = cls.normalize_settings({**persisted, **patch_raw})
-        for key in preserve_absent:
-            normalized.pop(key, None)
+        # The lifecycle already consumes this persisted switch, but the public
+        # BoardSettings authoring contract does not expose it. An unrelated
+        # settings edit must not silently turn blocking into advisory. Preserve
+        # the exact existing value; an unsupported patch gains no authority to
+        # create, replace or erase it. Typed human-only authorship is a separate
+        # F6/KG contract, not an accidental side effect of normalization.
+        if "cognitive_readiness_policy" in current_raw:
+            normalized["cognitive_readiness_policy"] = current_raw[
+                "cognitive_readiness_policy"
+            ]
         return normalized
 
     async def resolve(self, board_id: str) -> BoardGovernanceSettings:

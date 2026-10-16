@@ -63,6 +63,25 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
 @pytest.fixture(scope="module", autouse=True)
 def _bootstrap_global():
     reset_global_discovery_runtime_for_tests()
+    # The routed Global graph is fail-closed until its backend binding exists;
+    # the composition's explicit initialization door publishes it (inside the
+    # durable writer fence, like any Global mutation) before the runtime
+    # bootstrap can inspect the route.
+    from coordination_fakes import FakeWriteLockPort
+    from global_graph_testing import global_discovery_writer_scope
+    from kg_schema_testing import graph_composition
+    from okto_pulse.core.ports.coordination import (
+        CoordinationProviderMissing,
+        get_write_lock_port,
+        register_coordination_providers,
+    )
+
+    try:
+        get_write_lock_port()
+    except CoordinationProviderMissing:
+        register_coordination_providers(write_lock_port=FakeWriteLockPort())
+    with global_discovery_writer_scope(operation="test_global_route_init"):
+        graph_composition().initialize_global_route()
     bootstrap_global_discovery()
     yield
     reset_global_discovery_runtime_for_tests()
@@ -336,10 +355,11 @@ def test_resolver_non_learning_mirrors_raw_layer():
     assert resolve_expected_digest_layer(
         node_type="Decision", raw_graph_layer="working"
     ) == ("working", None)
-    # Fail-closed: a legacy_unknown stays legacy_unknown, never canonical (FR5).
-    assert resolve_expected_digest_layer(
-        node_type="Requirement", raw_graph_layer=LEGACY_UNKNOWN
-    ) == (LEGACY_UNKNOWN, None)
+    for invalid_layer in (LEGACY_UNKNOWN, "", None, "all", "unknown"):
+        with pytest.raises(ValueError, match="global_projection_graph_layer_invalid"):
+            resolve_expected_digest_layer(
+                node_type="Requirement", raw_graph_layer=invalid_layer
+            )
 
 
 def test_resolver_canonical_learning_uses_r7_rule():
@@ -744,12 +764,12 @@ def test_digest_verifier_rejects_cross_board_or_unstable_contains_edge():
 async def test_reconcile_repairs_duplicate_digest_identity_and_verifies_readback(
     monkeypatch,
 ):
-    """Model a legacy Ladybug file that returns two physical rows for one PK.
+    """Model a legacy Grafx file that returns two physical rows for one PK.
 
-    Fresh Ladybug schemas reject a sequential duplicate primary key, so the
+    Fresh Grafx schemas reject a sequential duplicate primary key, so the
     corrupt historical shape is represented at the port boundary here.  The
     Community adapter's one-statement delete/recreate path is covered against a
-    real Ladybug database in its edition test suite.
+    real Grafx database in its edition test suite.
     """
     from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
 
@@ -1311,35 +1331,19 @@ async def test_reconcile_keeps_incomplete_learning_working_no_flip(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_legacy_missing_layer_stays_out_of_canonical(db_factory):
+async def test_missing_layer_refuses_publication_without_conversion(db_factory):
     board_id = await _new_board(db_factory)
     nid = f"req_{uuid.uuid4().hex[:10]}"
-    _seed_node(board_id, "Requirement", nid, layer=None)  # no graph_layer at all
-    assert await _run_outbox(db_factory, board_id, [("Requirement", nid)]) == 1
-    # Published as legacy_unknown, NOT canonical.
-    assert _digest_layer(board_id, nid) == LEGACY_UNKNOWN
-    # A reconcile event must not "heal" it into canonical.
-    assert await _run_outbox_no_refs(db_factory, board_id) == 1
-    assert _digest_layer(board_id, nid) == LEGACY_UNKNOWN
-
-    svc = get_kg_service()
-    canon_ids = {
-        r["id"]
-        for r in svc.query_global(
-            QUERY_TEXT,
-            user_boards=[board_id],
-            graph_layer="canonical",
-            min_similarity=0.1,
+    _seed_node(board_id, "Requirement", nid, layer=None)
+    assert await _run_outbox(db_factory, board_id, [("Requirement", nid)]) == 0
+    assert _digests_for(board_id, nid) == []
+    assert await _run_outbox_no_refs(db_factory, board_id) == 0
+    assert _digests_for(board_id, nid) == []
+    with open_board_connection(board_id) as (_db, conn):
+        result = conn.execute(
+            "MATCH (n:Requirement {id:$id}) RETURN n.graph_layer", {"id": nid}
         )
-    }
-    all_ids = {
-        r["id"]
-        for r in svc.query_global(
-            QUERY_TEXT, user_boards=[board_id], graph_layer="all", min_similarity=0.1
-        )
-    }
-    assert nid not in canon_ids, "legacy_unknown digest leaked into canonical"
-    assert nid in all_ids, "all query must still surface it diagnostically"
+        assert result.rows == ((None,),)
 
 
 @pytest.mark.asyncio

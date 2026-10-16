@@ -153,7 +153,6 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         "default_score_count",
         "default_score_ratio",
         "avg_relevance",
-        "schema_version",
         "health_schema_version",
         "graph_schema_version",
         "contradict_warn_count",
@@ -221,9 +220,9 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         "source_count",
     }
     assert set(result.keys()) == expected_fields
-    assert result["schema_version"] == "1.0"
+    assert "schema_version" not in result
     assert result["health_schema_version"] == HEALTH_SCHEMA_VERSION
-    assert result["health_schema_version"] == "1.1"
+    assert result["health_schema_version"] == "1.3"
     assert isinstance(result["queue_depth"], int)
     assert result["oldest_pending_age_s"] is None or isinstance(
         result["oldest_pending_age_s"], float
@@ -291,9 +290,12 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     assert isinstance(result["canonical_debt"], dict)
     assert isinstance(result["rebuild_diagnostics"], dict)
     assert result["decay_scheduler_diagnostics"]["graph_recovery_required"] is False
-    assert result["storage_footprint_proxy"]["source"] == "runtime_capability"
+    # Source label depends on composition: the routed Community facade reports
+    # "community_graph_routed", a core-registered runtime reports "runtime_capability".
+    _SOURCES = {"runtime_capability", "community_graph_routed"}
+    assert result["storage_footprint_proxy"]["source"] in _SOURCES
     assert result["storage_footprint_proxy"]["is_direct_memory_telemetry"] is False
-    assert result["native_runtime_budget"]["source"] == "runtime_capability"
+    assert result["native_runtime_budget"]["source"] in _SOURCES
     assert result["native_runtime_budget"]["is_direct_memory_telemetry"] is False
 
 
@@ -352,7 +354,7 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
                 {
                     "node_id": "learning_orphan_1",
                     "node_type": "Learning",
-                    "writer_path": "cognitive_consolidation",
+                    "writer_path": "D:/private/foreign-board/token=never-publish",
                     "source_artifact_ref": "bug:bug-1",
                     "source_resolution_status": "unresolved_source_ref",
                     "generation_id": "gen-test",
@@ -364,8 +366,9 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
             "allowlisted_root_count": 0,
             "generation_id": "gen-test",
             "correlation_id": "corr-orphan-health",
-            "zero_orphan_validation": "pending_backfill",
+            "zero_orphan_validation": "failed_orphan_validation",
             "reason": "orphan_count_gt_zero",
+            "internal_probe_extension": {"raw_payload": "never-publish"},
         },
     )
     monkeypatch.setattr(
@@ -375,6 +378,7 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
             "total_nodes": 10,
             "default_score_count": 0,
             "avg_relevance": 0.75,
+            "status": "available",
         },
     )
     monkeypatch.setattr(
@@ -398,6 +402,13 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
 
     assert result["orphan_integrity"]["integrity_warning"] is True
     assert result["orphan_integrity"]["orphan_count"] == 2
+    assert "samples" not in result["orphan_integrity"]
+    assert "internal_probe_extension" not in result["orphan_integrity"]
+    from okto_pulse.core.mcp.kg_query_safety import KGHealthMCPProjection
+    for profile in ("summary", "full"):
+        projected = KGHealthMCPProjection().project(result, profile=profile)
+        assert "never-publish" not in str(projected)
+        assert "learning_orphan_1" not in str(projected)
     assert result["graph_state"] == "at_risk"
     assert result["overall_state"] == "at_risk"
     assert "graph:orphan_integrity_warning" in result["classification_reasons"]
@@ -407,7 +418,7 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
         for issue in result["health_issues"]
         if issue["code"] == "orphan_integrity_warning"
     )
-    assert orphan_issue["operator_action"] == "inspect_orphan_integrity_report"
+    assert orphan_issue["operator_action"] == "inspect_kg_health"
     assert orphan_issue["reason"] == "orphan_count_gt_zero"
 
 
@@ -447,12 +458,13 @@ async def test_default_response_is_conservative_never_healthy(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("observation_status", ["available", "unavailable"])
 async def test_empty_graph_after_materialized_history_requires_recovery(
-    monkeypatch, db_factory, kg_health_board
+    monkeypatch, db_factory, kg_health_board, observation_status
 ):
-    """If SQLite audit proves prior KG materialization but Ladybug reports
-    zero nodes, Health must surface recovery_needed instead of a generic
-    at_risk/empty state.
+    """If SQLite audit proves prior KG materialization but the Community graph runtime (Grafx) reports
+    zero nodes, Health must surface recovery_needed. An unavailable observation
+    does not prove that those previously materialized nodes disappeared.
     """
     now = datetime.now(timezone.utc)
     async with db_factory() as session:
@@ -476,6 +488,16 @@ async def test_empty_graph_after_materialized_history_requires_recovery(
 
     monkeypatch.setattr(
         svc,
+        "_aggregate_graph_metrics",
+        lambda _board_id: {
+            "total_nodes": 0,
+            "default_score_count": 0,
+            "avg_relevance": 0.0,
+            "status": observation_status,
+        },
+    )
+    monkeypatch.setattr(
+        svc,
         "_probe_board_graph_telemetry",
         lambda **_kwargs: svc._telemetry_unavailable("board"),
     )
@@ -488,6 +510,14 @@ async def test_empty_graph_after_materialized_history_requires_recovery(
     async with db_factory() as session:
         result = await get_kg_health(kg_health_board, session)
 
+    if observation_status == "unavailable":
+        assert result["total_nodes"] is None
+        assert result["metric_status"] == "unavailable"
+        assert "graph:empty_after_materialized_history" not in result["classification_reason"]
+        assert result["root_cause"]["materialized_node_count"] is None
+        assert result["overall_state"] != "healthy"
+        return
+
     assert result["total_nodes"] == 0
     assert result["graph_state"] == "recovery_needed"
     assert result["overall_state"] == "recovery_needed"
@@ -496,14 +526,28 @@ async def test_empty_graph_after_materialized_history_requires_recovery(
     assert result["board_graph_queryable"] is False
     assert result["board_graph_recovery_required"] is True
     assert result["primary_health_cause"] == "board_graph_recovery_required"
-    assert result["operator_action"] == "run_local_offline_kg_recovery_executor"
+    assert result["operator_action"] == "none"
     assert any(
         issue["code"] == "board_graph_empty_after_materialized_history"
-        and issue["execution_mode"] == "recovery_only_offline"
-        and issue["recovery_executor"] == "okto-pulse-kg-recovery-only"
-        and "within 2 hours" in issue["remediation"]
+        and issue["operator_action"] == "none"
+        and issue["description"].endswith("The affected graph operations are unavailable.")
+        and "recovery_executor" not in issue
+        and "remediation" not in issue
         for issue in result["health_issues"]
     )
+
+    from okto_pulse.community.api.kg_health import KGHealthResponse
+
+    serialized = KGHealthResponse(**result).model_dump(mode="json")
+    issue = next(
+        item for item in serialized["health_issues"]
+        if item["code"] == "board_graph_empty_after_materialized_history"
+    )
+    assert issue["component"] == "board_graph"
+    assert issue["reason"] == "graph:empty_after_materialized_history"
+    assert issue["description"].endswith("The affected graph operations are unavailable.")
+    assert issue["operator_action"] == "none"
+    assert "recovery_executor" not in issue
 
 
 @pytest.mark.asyncio
@@ -546,6 +590,7 @@ async def test_health_stays_recovery_needed_with_actionable_drilldown(
             "total_nodes": 0,
             "default_score_count": 0,
             "avg_relevance": 0.0,
+            "status": "available",
         },
     )
     monkeypatch.setattr(
@@ -574,14 +619,14 @@ async def test_health_stays_recovery_needed_with_actionable_drilldown(
     assert "empty_after_materialized_history" in root_cause["present_categories"]
     # actionable per-domain drill-down — every operational domain names a tool.
     assert result["operational_domains"]
-    for domain in result["operational_domains"].values():
-        assert domain.get("drill_down_tool")
+    for name in ("active_queue", "dead_letter", "global_outbox_dead_letter"):
+        assert result["operational_domains"][name]["drill_down_tool"] is None
     # an actionable health issue + operator action while the root cause persists.
     assert any(
         issue["code"] == "board_graph_empty_after_materialized_history"
         for issue in result["health_issues"]
     )
-    assert result["operator_action"] == "run_local_offline_kg_recovery_executor"
+    assert result["operator_action"] == "none"
 
 
 @pytest.mark.asyncio
@@ -602,6 +647,7 @@ async def test_queryable_graph_with_unavailable_telemetry_is_not_recovery_requir
             "total_nodes": 7,
             "default_score_count": 1,
             "avg_relevance": 0.61,
+            "status": "available",
         }
 
     svc._aggregate_graph_metrics = _metrics
@@ -673,6 +719,7 @@ async def test_dead_letters_are_operational_debt_not_graph_rebuild_signal(
             "total_nodes": 3,
             "default_score_count": 0,
             "avg_relevance": 0.8,
+            "status": "available",
         }
 
     svc._aggregate_graph_metrics = _metrics
@@ -699,7 +746,7 @@ async def test_dead_letters_are_operational_debt_not_graph_rebuild_signal(
     assert result["board_graph_recovery_required"] is False
     assert any(
         issue["code"] == "dead_letter_backlog"
-        and issue["operator_action"] == "inspect_dead_letters"
+        and issue["operator_action"] == "none"
         for issue in result["health_issues"]
     )
 
@@ -721,6 +768,7 @@ async def test_discovery_open_error_is_concrete_recovery_signal(
             "total_nodes": 5,
             "default_score_count": 0,
             "avg_relevance": 0.7,
+            "status": "available",
         },
     )
     monkeypatch.setattr(svc, "_get_graph_schema_version", lambda _board_id: "0.3.5")
@@ -749,11 +797,19 @@ async def test_discovery_open_error_is_concrete_recovery_signal(
     assert result["metric_status"] == "unavailable"
     assert result["discovery_recovery_required"] is True
     assert result["primary_health_cause"] == "discovery_recovery_required"
-    assert result["operator_action"] == "run_explicit_global_discovery_recovery"
-    assert any(
-        issue["code"] == "discovery_recovery_required"
-        for issue in result["health_issues"]
+    assert result["operator_action"] == "none"
+    from okto_pulse.community.api.kg_health import KGHealthResponse
+
+    serialized = KGHealthResponse(**result).model_dump()
+    issue = next(
+        issue for issue in serialized["health_issues"]
+        if issue["code"] == "discovery_recovery_required"
     )
+    assert issue["component"] == "global_discovery"
+    assert issue["reason"]
+    assert issue["operator_action"] == "none"
+    assert "Global discovery operations are unavailable" in issue["description"]
+    assert serialized["operator_action"] == "none"
 
 
 # --- TS2 / AC2: 404 (BoardNotFoundError) for unknown board ---
@@ -1099,7 +1155,7 @@ async def test_storage_footprint_proxy_payload_is_not_direct_memory_telemetry(
         result = await get_kg_health(kg_health_board, session)
 
     proxy = result["storage_footprint_proxy"]
-    assert proxy["source"] == "runtime_capability"
+    assert proxy["source"] in {"runtime_capability", "community_graph_routed"}
     assert proxy["is_direct_memory_telemetry"] is False
     copy = f"{proxy['description']} {proxy['tooltip']}".lower()
     assert "storage footprint" in copy
@@ -1271,6 +1327,7 @@ async def test_default_score_ratio_skew_emits_alarm_log(
             "total_nodes": 10,
             "default_score_count": 8,
             "avg_relevance": 0.5,
+            "status": "available",
         }
 
     svc._aggregate_graph_metrics = _stub
@@ -1938,6 +1995,7 @@ async def test_each_blocking_health_probe_respects_endpoint_budget(
             "total_nodes": 0,
             "default_score_count": 0,
             "avg_relevance": 0.0,
+            "status": "available",
         },
         "schema_version": None,
         "board_telemetry": svc._telemetry_unavailable("board"),

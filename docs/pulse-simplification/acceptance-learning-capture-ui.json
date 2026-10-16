@@ -1,0 +1,159 @@
+{
+  "scope": "F6 Bug modal independent Learning authorship and persistent history",
+  "suites": {
+    "learning-capture-frontend": {
+      "tests": 85,
+      "failures": 7,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-capture-frontend-r2": {
+      "tests": 86,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-capture-frontend-final": {
+      "tests": 87,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-capture-ui-core": {
+      "tests": 111,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-capture-ui-community": {
+      "tests": 132,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "frontend_tree_sha256": "79bb1b692a0977f84f63554e00d93ef092df660b0dc647db873c68a8245bda28",
+  "frontend_packaged_files": 79,
+  "verified": [
+    "Lazy CardModal integration preserves draft across tab navigation.",
+    "Authenticated client validates Board/Bug/envelopes and preserves cancellation signals.",
+    "Source/create/history permissions remain separate; unauthorized or unresolved source authority makes no requests.",
+    "Exact retries retain capture ID; stale-source conflicts preserve text and require refresh before a new intent.",
+    "Board/Card changes abort prior requests and clear drafts; late source responses are ignored.",
+    "Historical text renders inertly, denied pages clear content and unavailable history is distinct from empty.",
+    "Saved content is pending materialization and never asserts Bug completion or implementation approval.",
+    "Final build/sync/verify and paired source/wheel/site proof include the served SPA.",
+    "Lint ratchet passes without changing warning budgets; generated resource manifest remains current."
+  ],
+  "limits": [
+    "JSDOM tests are not browser pixel inspection or integrated HTTP E2E validation.",
+    "Independent capture/history does not complete joint conclusion capture, reuse/supersedence or other evidence paths.",
+    "Policy/Done binding/outbox/materialization, reopen/recovery and whole-plan acceptance remain outstanding.",
+    "Initial CardModal fixture failures and Fast Refresh lint failure are preserved; final results do not rewrite them.",
+    "Suite counts overlap previous runs and do not represent distinct totals.",
+    "Frontend bundle/browser-data warnings and legacy lint warnings remain; no release/tag/deployment is claimed."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-capture-frontend.xml": "0ee69548722f68490b916eb93793de938ad63e70b6fad69d5fc7e1b656b3d7bb",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-frontend.log": "d969ad26446bfe8d92b43ef1f52a042b9444951e0ba3e4666e5443a16f410144",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-frontend-r2.xml": "2a71d11c318a8874377f159b3802a5782d4af4581b4947c9d2826f3c06858fce",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-frontend-r2.log": "b46f08d242e701b90effc0a43c32928061c6388f341f918b857d4dbb2fedddb4",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-frontend-final.xml": "10533255fff4472974e6d4b99f6e946ad689689913dabaafb2ed6bc697c992c9",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-frontend-final.log": "97a38edac6066af78bd07202c3b66b0ad344e89e338f3997f732da74edc64624",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-ui-core.xml": "3a2d55030e52591d4ec42686382bef0a67ee56680b6c2d9efa2c1ac6c55c2a04",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-ui-test-core.log": "6a928388cb22fbfe251867e62b8b13fe44471b3af62dd0b855d5dacc3d059930",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-ui-community.xml": "36533490e3b2f23ed188464ea4ddf4e8b7f368ed05f6a08138c60c677240157c",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-ui-test-community.log": "bc33f3f741ac440d062b258c21190004cfb45f72cae79a890c8c64cd0ddc8161",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-capture-ui.json": "34b909abf87595a12c05836f7ecb257b7b9128f40340b0df0b25b1d433763220",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-capture-ui.json": "c7adf252d7dbc47c5a0f9358dec4639e8592f35e30f1a2d6c88722212a265a15",
+    "PULSE_REFACTOR/.validation-v040/run_learning_capture_ui.py": "2ede33dc12aa941adf93ad8b7017d8bb99b0591f4ca524088d8a723e3384a0a2",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-frontend-build.log": "ee8c128e90a998feecd58aa50555f860d80374f00889048e8255ccadbd94df7d",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-frontend-build-final.log": "7ee6682f1e9281bbf901b8deb55bab07e744955382ece6e499222a1396159d3f",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-frontend-lint.log": "f99b9d9c6ef53f2bdb1b1b9d37045c6865238c2c86da6cd247e8e44d120e28f0",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-frontend-lint-final.log": "705088bf0258c3c4ea6a676e7e3761d3e2968aab54e499ba0ad66629d9f082eb",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-frontend-verify.log": "ce5b70820e02b07c4ab1f40aa97612c71b5c15a15dc4a79a1f2aadb60d7e9493",
+    "okto_labs_pulse_community/frontend/src/components/kanban/CardModal.tsx": "b6a38c45791f396cfdcf73dc32c68303dab09c92db64a8019825b6f6138bf58f",
+    "okto_labs_pulse_community/frontend/src/components/kanban/LearningCapturePanel.tsx": "536679bedc8416f4abecdc82305e510c9f47ab66fac49bc7e77808d059ed46ed",
+    "okto_labs_pulse_community/frontend/src/components/kanban/__tests__/CardModal.test.tsx": "c6c5c41f2dca04643833e2f8abbd6d43911b02558d4808b8369d86a5ec8531eb",
+    "okto_labs_pulse_community/frontend/src/components/kanban/__tests__/LearningCapturePanel.test.tsx": "e3897aaaf1d6b47c7ec5539f75eb4fcaeacc579a59013248e9fc4dac7a1ae2a5",
+    "okto_labs_pulse_community/frontend/src/services/learning-capture-api.ts": "c46bfb51b0064c8e7b55ae802eb64f9d43f27bede8e83abc221dc50334e8bb37",
+    "okto_labs_pulse_community/frontend/src/services/__tests__/learning-capture-api.test.tsx": "f2487a1d4a56a133f89d2d425170ceee71b1c93b7df75a9d964738c1db530092",
+    "okto_labs_pulse_community/src/okto_pulse/community/frontend_dist/pulse-frontend-contract.json": "16d61d53d041411ea0c7bd11c8b744e3f99c167e6fc6b9574b820bb963c7793f",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/resources/ska_resource_manifest.json": "7a24095a588c83bfc5236021a3c02b1d2a052f2b85afbca34e8722160175df0d",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/resources/workflows/cards.md": "70490c2e3fdefbb9ff3e377e93be05e49858435f8fde5c704f82276af3dfcb9f"
+  }
+}

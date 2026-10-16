@@ -11,8 +11,8 @@ Discovery upsert path (``_apply_event``), the parity reconciler
 
 It is PURE: the caller fetches the (board-scoped) debt/pending overlay once and
 passes the per-artifact reason in. ``raw_graph_layer`` must already be coalesced
-to ``legacy_unknown`` for a missing layer — this resolver NEVER defaults a
-missing layer to ``canonical`` (fail-closed; FR5). R2 (stale canonical demotion
+for diagnostic collection when missing; publication accepts only canonical or
+working and rejects missing/unknown layers without conversion. R2 (stale canonical demotion
 of the source) and R7 partition integrity are out of scope here.
 """
 
@@ -70,8 +70,8 @@ def resolve_expected_digest_layer(
 
     Only a *canonical* ``Learning`` is subject to the R7 publication carve-out
     (reuses :func:`evaluate_canonical_learning_publication`); every other node —
-    and a non-canonical Learning — publishes at its own (already fail-closed)
-    ``raw_graph_layer``. ``exclusion_reason`` is non-None only when a canonical
+    and a working Learning — publishes at its valid ``raw_graph_layer``.
+    Missing or retired layer values cannot become a durable publication state. ``exclusion_reason`` is non-None only when a canonical
     Learning was downgraded to ``working`` (so the caller can emit the metric).
 
     ``relates_to_endpoints`` (S-KG-02) is the non-bug taxonomy evidence
@@ -80,6 +80,8 @@ def resolve_expected_digest_layer(
     Learning publishes at ``canonical`` ONLY with a resolved source + a canonical
     ``relates_to`` to an S-KG-01 taxonomy endpoint (else downgraded to ``working``).
     """
+    if raw_graph_layer not in (GRAPH_LAYER_CANONICAL, GRAPH_LAYER_WORKING):
+        raise ValueError("global_projection_graph_layer_invalid")
     if node_type == LEARNING_NODE_TYPE and raw_graph_layer == GRAPH_LAYER_CANONICAL:
         publishable, reason = evaluate_canonical_learning_publication(
             source_artifact_ref=source_artifact_ref or "",
@@ -384,47 +386,6 @@ async def detect_digest_layer_mismatches(
     )
 
 
-async def list_digest_layer_mismatches(
-    db: object,
-    *,
-    board_id: str,
-    limit: int = 50,
-    offset: int = 0,
-    blocking_execution: BlockingExecutionPort | None = None,
-) -> dict[str, Any]:
-    """Drilldown read model (MCP/REST). Emits one bounded
-    ``kg_discovery_digest_layer_mismatch_total`` sample per observed mismatch
-    (over the UNFILTERED set, mirroring the R7 OR1 pattern)."""
-    from okto_pulse.core.kg.global_discovery.metrics import emit_digest_layer_mismatch
-
-    bounded_limit = max(1, min(int(limit), 200))
-    bounded_offset = max(0, int(offset))
-    evaluation = await detect_digest_layer_mismatches(
-        db,
-        board_id=board_id,
-        blocking_execution=blocking_execution,
-    )
-    mismatches = list(evaluation["items"])
-    for m in mismatches:
-        emit_digest_layer_mismatch(
-            board_id=board_id,
-            expected_layer=m["expected_layer"],
-            actual_layer=m["actual_layer"],
-        )
-    mismatches.sort(key=lambda m: (m["node_type"], m["original_node_id"]))
-    page = mismatches[bounded_offset:bounded_offset + bounded_limit]
-    return {
-        "board_id": board_id,
-        "items": page,
-        "count": len(mismatches),
-        "health_issue_code": DIGEST_LAYER_MISMATCH_CODE,
-        "total": len(mismatches),
-        "limit": bounded_limit,
-        "offset": bounded_offset,
-        "status": evaluation["status"],
-        "evaluation": evaluation["evaluation"],
-        "evaluation_reason": evaluation["reason"],
-    }
 
 
 __all__ = [
@@ -433,7 +394,6 @@ __all__ = [
     "detect_digest_layer_mismatches",
     "evaluate_digest_layer_mismatch_inputs",
     "probe_digest_layer_mismatches",
-    "list_digest_layer_mismatches",
     "LEARNING_NODE_TYPE",
     "DIGEST_LAYER_MISMATCH_CODE",
     "PARITY_STATUS_AVAILABLE",

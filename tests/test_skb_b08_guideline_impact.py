@@ -39,27 +39,14 @@ from okto_pulse.core.domain.guideline_policy import (
     PolicyCurrentness,
     PolicyEntityType,
     PolicySubjectRef,
-    PolicySubjectSnapshot,
-)
-from okto_pulse.core.domain.guideline_semantic_assessment import (
-    SemanticAssessmentAssessor,
-    SemanticGuidelineAssessmentContext,
-    SemanticGuidelineAssessmentSubmission,
-    SemanticMetricAssessment,
-    record_semantic_guideline_assessment,
 )
 from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticMetricWaiver,
     SemanticMetricWaiverAnchor,
     request_semantic_metric_waiver,
 )
-from okto_pulse.core.domain.guideline_semantic_findings import (
-    project_semantic_metric_findings,
-)
 from okto_pulse.core.domain.quality_assessment import (
     EvidenceRef,
-    FindingAnchorType,
-    UnboundFindingAnchor,
 )
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 
@@ -209,61 +196,30 @@ def _requested_semantic_waiver(
         source_version=subject.subject_version,
         content_hash=content_digest,
     )
-    assessment = record_semantic_guideline_assessment(
-        SemanticGuidelineAssessmentSubmission(
-            subject=subject,
-            binding_id=binding.binding_id,
-            expected_binding_revision=binding.binding_revision,
-            guideline_revision_id=revision.revision_id,
-            idempotency_key="impact-waiver-assessment",
-            confidence=90,
-            assessor=SemanticAssessmentAssessor(
-                agent_id="reviewer-1",
-                model_id="model-a",
-            ),
-            metric_results=(
-                SemanticMetricAssessment(
-                    metric_id="metric-segregation",
-                    score=60,
-                    rationale="The current spec mixes domain and adapter concerns.",
-                    evidence_refs=(evidence,),
-                    pinpoints=(
-                        UnboundFindingAnchor(
-                            anchor_type=FindingAnchorType.STRUCTURED_CHILD,
-                            anchor_ref=(
-                                "technical_requirements.metric-segregation"
-                            ),
-                            excerpt_hash="b" * 64,
-                        ),
-                    ),
-                ),
-            ),
-        ),
-        SemanticGuidelineAssessmentContext(
-            subject_snapshot=PolicySubjectSnapshot(
-                subject=subject,
-                content_digest=content_digest,
-                last_semantic_editor_id="editor-1",
-                captured_at=NOW,
-            ),
-            binding=binding,
-            revision=revision,
-            policy_set_digest="c" * 64,
-            binding_head_digest="d" * 64,
-        ),
-        receipt_id="receipt-impact-waiver",
-        recorded_at=NOW + timedelta(minutes=2),
-    )
-    findings = project_semantic_metric_findings(assessment.receipt)
+    from dataclasses import replace
+    from test_skb31_semantic_guideline_v2_findings import _receipt, _result, _pinpoint
+    from okto_pulse.core.domain.guideline_semantic_assessment import SemanticMetricOutcome
+    from okto_pulse.core.domain.guideline_semantic_findings_v2 import project_semantic_metric_findings_v2
+    metric = replace(_result("metric-segregation", outcome=SemanticMetricOutcome.FAIL,
+        pinpoints=(_pinpoint("boundary"),), subject=subject),
+        binding_id=binding.binding_id, guideline_id=revision.guideline_id,
+        revision_id=revision.revision_id, metric_code="segregation", evidence_refs=(evidence,))
+    receipt = replace(_receipt(metric, subject=subject),
+        recorded_at=NOW + timedelta(minutes=2), assessment_assessor_id="reviewer-1",
+        binding_id=binding.binding_id, binding_revision=binding.binding_revision,
+        binding_configuration_digest=binding.configuration_digest,
+        guideline_id=revision.guideline_id, guideline_revision_id=revision.revision_id,
+        guideline_revision_digest=revision.revision_digest)
+    findings = project_semantic_metric_findings_v2(receipt)
     assert len(findings) == 1
     return request_semantic_metric_waiver(
         waiver_id="waiver-impact-1",
         event_id="waiver-impact-event-1",
         anchor=SemanticMetricWaiverAnchor.from_finding(
             findings[0],
-            assessment_assessor_id=assessment.receipt.assessor.agent_id,
+            assessment_assessor_id=receipt.assessment_assessor_id,
         ),
-        justification="Temporary migration exception pending adapter extraction.",
+        justification="Bounded exception pending adapter extraction.",
         evidence_refs=(evidence,),
         requested_by="requester-1",
         requested_at=NOW + timedelta(minutes=3),

@@ -75,6 +75,7 @@ class _FakeKGService:
         cursor: str | None = None,
         node_type: str | None = None,
         graph_layer: str = "canonical",
+        include_code_traceability: bool = True,
     ) -> list[dict]:
         # Stable order (created_at DESC, id DESC). AC-12 requires determinism.
         # The real KGService applies the ORDER BY in Cypher; we replicate it
@@ -111,6 +112,7 @@ class _FakeKGService:
         min_relevance: float | None = None,
         node_type: str | None = None,
         graph_layer: str = "canonical",
+        include_code_traceability: bool = True,
     ) -> int:
         rows = self._rows
         if node_type:
@@ -139,7 +141,7 @@ def client(monkeypatch):
     monkeypatch.setattr(
         kg_routes,
         "_fetch_edges_for_nodes",
-        lambda _board, _ids: (
+        lambda _board, _ids, **_kwargs: (
             [],
             {
                 "edge_read_status": "ok",
@@ -153,7 +155,7 @@ def client(monkeypatch):
     monkeypatch.setattr(
         kg_routes,
         "_count_edges_by_type",
-        lambda _board: (
+        lambda _board, **_kwargs: (
             {"belongs_to": 3},
             {
                 "edge_count_status": "ok",
@@ -336,7 +338,7 @@ class TestResponseShape:
         monkeypatch.setattr(
             kg_routes,
             "_fetch_edges_for_nodes",
-            lambda _board, _ids: (
+            lambda _board, _ids, **_kwargs: (
                 [],
                 {
                     "edge_read_status": "partial_failure",
@@ -445,7 +447,7 @@ class TestNodesAndStats:
         monkeypatch.setattr(
             kg_routes,
             "_count_edges_by_type",
-            lambda _board: (
+            lambda _board, **_kwargs: (
                 {},
                 {
                     "edge_count_status": "ok",

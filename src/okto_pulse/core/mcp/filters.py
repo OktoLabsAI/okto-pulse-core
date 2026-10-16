@@ -26,13 +26,12 @@ unless the service signature changes.
 
 from __future__ import annotations
 
-import json
 from typing import Any, Literal, Optional, TypeAlias
 
 from typing_extensions import TypedDict
 
 BoardEntityType: TypeAlias = Literal[
-    "spec", "ideation", "refinement", "sprint", "story", "topic"
+    "spec", "ideation", "refinement", "story", "topic"
 ]
 QaEntityType: TypeAlias = Literal["spec", "ideation", "refinement"]
 KnowledgeEntityType: TypeAlias = Literal["spec", "ideation", "refinement", "card"]
@@ -57,12 +56,6 @@ class RefinementBoardFilters(IdeationBoardFilters, total=False):
     ideation_id: str
 
 
-class SprintBoardFilters(TypedDict, total=False):
-    status: str
-    spec_id: str
-    include_archived: bool
-
-
 class StoryBoardFilters(TypedDict, total=False):
     status: str
     topic_id: str
@@ -79,7 +72,6 @@ BoardListFilters: TypeAlias = (
     SpecBoardFilters
     | IdeationBoardFilters
     | RefinementBoardFilters
-    | SprintBoardFilters
     | StoryBoardFilters
     | TopicBoardFilters
 )
@@ -90,11 +82,7 @@ class QaFilters(TypedDict, total=False):
     asked_by: str
 
 
-class SprintQaFilters(TypedDict, total=False):
-    status: str
-
-
-QaListFilters: TypeAlias = QaFilters | SprintQaFilters
+QaListFilters: TypeAlias = QaFilters
 
 
 class KnowledgeFilters(TypedDict, total=False):
@@ -115,7 +103,6 @@ ALLOWED_FILTERS_BY_BOARD: dict[str, list[str]] = {
         "derivation_pending",
         "include_archived",
     ],
-    "sprint": ["status", "spec_id", "include_archived"],
     "story": ["status", "topic_id", "linked", "converted", "include_archived"],
     "topic": ["include_archived"],
 }
@@ -125,7 +112,6 @@ ALLOWED_FILTERS_QA: dict[str, list[str]] = {
     "spec": ["status", "asked_by"],
     "ideation": ["status", "asked_by"],
     "refinement": ["status", "asked_by"],
-    "sprint": ["status"],
 }
 
 # okto_pulse_list_knowledge
@@ -155,26 +141,13 @@ _SCOPE_MAP: dict[str, dict[str, list[str]]] = {
 # ---------------------------------------------------------------------------
 
 
-def parse_filter_payload(raw: dict[str, Any] | str | None) -> dict[str, Any]:
-    """Decode the explicit legacy JSON form and require an object payload."""
-
+def validate_filter_payload(raw: dict[str, Any] | None) -> dict[str, Any]:
+    """Require a native object without dropping unknown keys."""
     if raw is None:
         return {}
-    decoded: Any = raw
-    if isinstance(raw, str):
-        if not raw.strip():
-            return {}
-        try:
-            decoded = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ValueError(
-                f"Invalid JSON filter object: {exc.msg} (at pos {exc.pos})"
-            ) from exc
-    if not isinstance(decoded, dict):
-        raise ValueError(
-            f"filters must be an object, got {type(decoded).__name__}"
-        )
-    return dict(decoded)
+    if not isinstance(raw, dict):
+        raise ValueError(f"filters must be a native object, got {type(raw).__name__}")
+    return dict(raw)
 
 
 def validate_filters(

@@ -7,9 +7,9 @@ protocol host that is an ordinary successful ``str`` return, which means domain
 failures are exposed with ``isError=false`` and the annotated ``-> str`` output
 schema double-encodes JSON under ``structuredContent.result``.
 
-``McpToolOutcome`` is the compatibility bridge.  New handlers may return it
-directly; edition adapters can also call :func:`coerce_mcp_tool_outcome` for a
-legacy result while handlers are migrated incrementally.
+``McpToolOutcome`` carries the single public response contract. Handlers
+currently emit domain mappings, JSON or semantic outcomes; classification keeps
+domain failures and action-required responses distinct at the protocol boundary.
 """
 
 from __future__ import annotations
@@ -64,26 +64,26 @@ def _json_default(value: Any) -> Any:
     return str(value)
 
 
-def _native_payload(raw: Any) -> tuple[Any, str | None]:
-    """Decode a legacy JSON string without guessing for ordinary prose."""
+def _native_payload(raw: Any) -> Any:
+    """Decode handler JSON without guessing for ordinary prose."""
 
     if isinstance(raw, McpToolOutcome):
-        return raw.payload, raw.legacy_text
+        return raw.payload
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8", errors="replace")
     if isinstance(raw, str):
         stripped = raw.strip()
         if stripped and stripped[0] in "[{":
             try:
-                return json.loads(stripped), raw
+                return json.loads(stripped)
             except json.JSONDecodeError:
                 pass
-        return raw, raw
+        return raw
     if hasattr(raw, "model_dump"):
-        return raw.model_dump(mode="json"), None
+        return raw.model_dump(mode="json")
     if hasattr(raw, "to_dict"):
-        return raw.to_dict(), None
-    return raw, None
+        return raw.to_dict()
+    return raw
 
 
 def _first_text(payload: Mapping[str, Any], *keys: str) -> str | None:
@@ -160,9 +160,7 @@ def _next_action(
 class McpToolOutcome:
     """Semantic result produced by a Core MCP command.
 
-    ``payload`` always remains a native Python value.  ``legacy_text`` is kept
-    only so an explicitly requested ``profile=legacy`` can preserve the old
-    text response without re-serialising it.
+    ``payload`` always remains a native Python value.
     """
 
     kind: McpOutcomeKind
@@ -172,11 +170,10 @@ class McpToolOutcome:
     retryable: bool = False
     next_action: dict[str, Any] | None = None
     details: dict[str, Any] = field(default_factory=dict)
-    legacy_text: str | None = None
 
     @classmethod
-    def success(cls, payload: Any = None, *, legacy_text: str | None = None) -> "McpToolOutcome":
-        return cls(McpOutcomeKind.SUCCESS, payload=payload, legacy_text=legacy_text)
+    def success(cls, payload: Any = None) -> "McpToolOutcome":
+        return cls(McpOutcomeKind.SUCCESS, payload=payload)
 
     @classmethod
     def action_required(
@@ -186,7 +183,6 @@ class McpToolOutcome:
         code: str,
         message: str | None = None,
         next_action: dict[str, Any] | None = None,
-        legacy_text: str | None = None,
     ) -> "McpToolOutcome":
         return cls(
             McpOutcomeKind.ACTION_REQUIRED,
@@ -195,7 +191,6 @@ class McpToolOutcome:
             message=message,
             retryable=True,
             next_action=next_action,
-            legacy_text=legacy_text,
         )
 
     @classmethod
@@ -208,7 +203,6 @@ class McpToolOutcome:
         retryable: bool = False,
         next_action: dict[str, Any] | None = None,
         details: Mapping[str, Any] | None = None,
-        legacy_text: str | None = None,
     ) -> "McpToolOutcome":
         return cls(
             McpOutcomeKind.ERROR,
@@ -218,7 +212,6 @@ class McpToolOutcome:
             retryable=retryable,
             next_action=next_action,
             details=dict(details or {}),
-            legacy_text=legacy_text,
         )
 
     @property
@@ -262,30 +255,24 @@ class McpToolOutcome:
 
         return json.dumps(self.structured_content(), default=_json_default, separators=(",", ":"))
 
-    def legacy_content(self) -> str:
-        if self.legacy_text is not None:
-            return self.legacy_text
-        if isinstance(self.payload, str):
-            return self.payload
-        return json.dumps(self.payload, default=_json_default)
 
 
 def coerce_mcp_tool_outcome(raw: Any, *, tool_name: str | None = None) -> McpToolOutcome:
-    """Classify a native V2 result or one of the legacy handler return shapes."""
+    """Classify handler results for the canonical MCP response."""
 
     if isinstance(raw, McpToolOutcome):
         return raw
 
-    payload, legacy_text = _native_payload(raw)
+    payload = _native_payload(raw)
     if not isinstance(payload, Mapping):
-        return McpToolOutcome.success(payload, legacy_text=legacy_text)
+        return McpToolOutcome.success(payload)
 
     body = dict(payload)
     explicit_kind = body.get("outcome")
     if explicit_kind in {kind.value for kind in McpOutcomeKind}:
         kind = McpOutcomeKind(str(explicit_kind))
         if kind is McpOutcomeKind.SUCCESS:
-            return McpToolOutcome.success(body.get("data", body), legacy_text=legacy_text)
+            return McpToolOutcome.success(body.get("data", body))
         code = _first_text(body, "error_code", "code") or "domain_error"
         message = _first_text(body, "message", "error", "detail", "reason")
         if kind is McpOutcomeKind.ACTION_REQUIRED:
@@ -294,7 +281,6 @@ def coerce_mcp_tool_outcome(raw: Any, *, tool_name: str | None = None) -> McpToo
                 code=code,
                 message=message,
                 next_action=_next_action(body, tool_name=tool_name, code=code),
-                legacy_text=legacy_text,
             )
         return McpToolOutcome.error(
             code=code,
@@ -303,7 +289,6 @@ def coerce_mcp_tool_outcome(raw: Any, *, tool_name: str | None = None) -> McpToo
             retryable=bool(body.get("retryable", code in _RETRYABLE_CODES)),
             next_action=_next_action(body, tool_name=tool_name, code=code),
             details=body.get("details") if isinstance(body.get("details"), Mapping) else None,
-            legacy_text=legacy_text,
         )
 
     message = _first_text(body, "message", "detail", "reason")
@@ -327,7 +312,6 @@ def coerce_mcp_tool_outcome(raw: Any, *, tool_name: str | None = None) -> McpToo
             code=code,
             message=message,
             next_action=_next_action(body, tool_name=tool_name, code=code),
-            legacy_text=legacy_text,
         )
 
     failure_signal = (
@@ -339,7 +323,7 @@ def coerce_mcp_tool_outcome(raw: Any, *, tool_name: str | None = None) -> McpToo
         # ``invalid_lane_type`` and ``knowledge_governance_invalid_metadata``)
         # intentionally expose ``code`` without duplicating it under ``error``.
         # Treat that shape as a failure unless the producer explicitly marked
-        # the response successful.  This keeps the legacy JSON body intact while
+        # the response successful.  This keeps the domain payload intact while
         # ensuring MCP transports set ``isError=true``.
         or (
             body.get("code") not in (None, "")
@@ -347,7 +331,7 @@ def coerce_mcp_tool_outcome(raw: Any, *, tool_name: str | None = None) -> McpToo
         )
     )
     if not failure_signal:
-        return McpToolOutcome.success(body, legacy_text=legacy_text)
+        return McpToolOutcome.success(body)
 
     if "retryable" in body:
         # An explicit producer decision is authoritative.  In particular,
@@ -367,7 +351,6 @@ def coerce_mcp_tool_outcome(raw: Any, *, tool_name: str | None = None) -> McpToo
         retryable=retryable,
         next_action=_next_action(body, tool_name=tool_name, code=code),
         details=body,
-        legacy_text=legacy_text,
     )
 
 

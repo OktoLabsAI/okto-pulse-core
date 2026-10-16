@@ -25,10 +25,9 @@ from okto_pulse.core.runtime_context import (
 TAKEDOWN_NORMAL_SLO_SECONDS = 120.0
 TAKEDOWN_RECOVERY_SLO_SECONDS = 26.0 * 60.0 * 60.0
 TAKEDOWN_P95_WINDOW_SECONDS = 60 * 60
-TAKEDOWN_SLO_RUNBOOK = (
-    "okto_pulse_kg_global_outbox_dead_letter_reprocess",
-    "okto_pulse_kg_stale_canonical_parity_list",
-)
+# SLO observations preserve delivery debt; they do not expose a repair workflow.
+# Previously persisted alerts remain historical records and are not rewritten.
+TAKEDOWN_SLO_RUNBOOK: tuple[str, ...] = ()
 
 
 class TakedownState(str, Enum):

@@ -17,7 +17,6 @@ from okto_pulse.core.application.use_cases import (
     move_ideation,
     refinements_crud,
     spec_crud,
-    sprints_crud,
     stories_crud,
 )
 from okto_pulse.core.application.use_cases.base import (
@@ -29,7 +28,6 @@ from okto_pulse.core.domain.enums import (
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
-    SprintStatus,
     StoryStatus,
 )
 
@@ -53,9 +51,6 @@ class _TransitionServices:
         self.card = SimpleNamespace(
             id="card-1", board_id=BOARD_ID, status=CardStatus.NOT_STARTED
         )
-        self.sprint = SimpleNamespace(
-            id="sprint-1", board_id=BOARD_ID, status=SprintStatus.DRAFT
-        )
         self.story = SimpleNamespace(
             id="story-1",
             board_id=BOARD_ID,
@@ -77,7 +72,6 @@ class _TransitionServices:
             test_scenarios=[{"id": "scenario-1", "status": "draft"}],
         )
         self.cards = self
-        self.sprints = self
         self.stories = self
         self.ideations = self
         self.refinements = self
@@ -87,8 +81,6 @@ class _TransitionServices:
     async def get_card(self, _entity_id: str) -> Any:
         return self.card
 
-    async def get_sprint(self, _entity_id: str) -> Any:
-        return self.sprint
 
     async def get_story(self, _entity_id: str) -> Any:
         return self.story
@@ -106,9 +98,6 @@ class _TransitionServices:
         self.calls["move_card"] += 1
         return self.card
 
-    async def move_sprint(self, *_args: Any, **_kwargs: Any) -> Any:
-        self.calls["move_sprint"] += 1
-        return self.sprint
 
     async def move_story(self, *_args: Any, **_kwargs: Any) -> Any:
         self.calls["move_story"] += 1
@@ -185,17 +174,6 @@ def _transition_case(name: str) -> tuple[Any, Any, Any, str, str, str, str]:
             "card.move.not_started_to_started",
             "cards:move",
             "card",
-        )
-    if name == "sprint":
-        data = SimpleNamespace(status=SprintStatus.ACTIVE)
-        return (
-            sprints_crud,
-            sprints_crud.MoveSprintUseCase(),
-            sprints_crud.MoveSprintCommand("sprint-1", data),
-            "move_sprint",
-            "sprint.move.draft_to_active",
-            "specs:move",
-            "sprint",
         )
     if name == "rest_story":
         data = SimpleNamespace(status=StoryStatus.TRIAGE)
@@ -299,7 +277,6 @@ def _transition_case(name: str) -> tuple[Any, Any, Any, str, str, str, str]:
     [
         "rest_card",
         "mcp_card",
-        "sprint",
         "rest_story",
         "mcp_story",
         "ideation",
@@ -339,7 +316,7 @@ async def test_transition_denies_before_writer_with_exact_requirement(
     assert len(captured) == 1
     requirement, kwargs = captured[0]
     assert requirement.operation == expected_operation
-    assert requirement.legacy_operation == expected_legacy
+    assert not hasattr(requirement, "legacy_operation")
     assert requirement.entity == expected_entity
     expected_state = "not_started" if case_name.endswith("card") else "draft"
     assert requirement.state == expected_state
@@ -367,7 +344,7 @@ async def test_card_same_status_reorder_uses_edit_fields_permission(
 
     assert uow.services.calls[writer] == 0
     assert captured[0].operation == "card.entity.edit_fields"
-    assert captured[0].legacy_operation == "cards:move"
+    assert not hasattr(captured[0], "legacy_operation")
     assert captured[0].entity == "card"
     assert captured[0].state == "not_started"
 
@@ -427,7 +404,7 @@ async def test_test_scenario_same_status_evidence_uses_execute_permission(
 
     assert uow.services.calls["set_test_scenario_status"] == 0
     assert captured[0].operation == "spec.tests.execute"
-    assert captured[0].legacy_operation == "specs:update"
+    assert not hasattr(captured[0], "legacy_operation")
     assert captured[0].entity == "spec"
     assert captured[0].state == "draft"
 
@@ -441,23 +418,21 @@ async def test_test_scenario_same_status_evidence_uses_execute_permission(
         ("test_scenario", "specs:update"),
     ],
 )
-async def test_legacy_transition_permission_still_authorizes_writer(
+async def test_retired_transition_permission_is_denied_before_writer(
     case_name: str, legacy_permission: str
 ) -> None:
     _module, use_case, command, writer, *_rest = _transition_case(case_name)
     uow = _Uow()
 
-    await use_case.execute(
-        command,
-        actor=_actor([legacy_permission]),
-        uow=uow,
-    )
+    with pytest.raises(PermissionDeniedError):
+        await use_case.execute(command, actor=_actor([legacy_permission]), uow=uow)
+    assert uow.services.calls[writer] == 0
+    assert uow.commits == 0
 
-    assert uow.services.calls[writer] == 1
 
 
 @pytest.mark.asyncio
-async def test_legacy_card_move_authorizes_same_status_reorder() -> None:
+async def test_canonical_card_move_authorizes_same_status_reorder() -> None:
     uow = _Uow()
 
     await mcp_card_crud.McpMoveCardUseCase().execute(
@@ -466,7 +441,7 @@ async def test_legacy_card_move_authorizes_same_status_reorder() -> None:
             BOARD_ID,
             SimpleNamespace(status=CardStatus.NOT_STARTED),
         ),
-        actor=_actor(["cards:move"]),
+        actor=_actor(["card.entity.edit_fields"]),
         uow=uow,
     )
 
@@ -474,7 +449,7 @@ async def test_legacy_card_move_authorizes_same_status_reorder() -> None:
 
 
 @pytest.mark.asyncio
-async def test_legacy_specs_update_authorizes_same_status_scenario_evidence() -> None:
+async def test_canonical_permission_authorizes_same_status_scenario_evidence() -> None:
     uow = _Uow()
 
     await spec_crud.SetTestScenarioStatusUseCase().execute(
@@ -484,7 +459,7 @@ async def test_legacy_specs_update_authorizes_same_status_scenario_evidence() ->
             "draft",
             {"run_id": "run-1"},
         ),
-        actor=_actor(["specs:update"]),
+        actor=_actor(["spec.tests.execute"]),
         uow=uow,
     )
 

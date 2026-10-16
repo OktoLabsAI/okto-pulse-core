@@ -15,13 +15,14 @@ from sqlalchemy_test_models import (
     Card,
     ConsolidationDeadLetter,
     ConsolidationQueue,
+    DomainEventRow,
     Ideation,
     Refinement,
     Spec,
-    Sprint,
     Story,
 )
 from okto_pulse.core.ports.consolidation import (
+    CardLifecycleTransition,
     ConsolidationPoisonRow,
     ConsolidationProjectionInputs,
     ConsolidationQueueRecord,
@@ -41,7 +42,6 @@ _MODELS = {
     "ideation": Ideation,
     "refinement": Refinement,
     "spec": Spec,
-    "sprint": Sprint,
     "card": Card,
     "amendment_hotfix_revision": AmendmentHotfixRevision,
 }
@@ -90,6 +90,22 @@ def _apply(row: Any, record: ConsolidationQueueRecord) -> None:
 class TestSqlAlchemyConsolidationPersistence:
     __test__ = False
 
+    async def latest_card_transitions(
+        self, context: Any, *, board_id: str, card_id: str,
+    ) -> tuple[CardLifecycleTransition, ...]:
+        rows = (await context.execute(
+            select(DomainEventRow).where(
+                DomainEventRow.board_id == board_id,
+                DomainEventRow.event_type == "card.moved",
+                DomainEventRow.payload_json["card_id"].as_string() == card_id,
+            ).order_by(DomainEventRow.occurred_at.desc(), DomainEventRow.id.desc()).limit(2)
+        )).scalars().all()
+        return tuple(CardLifecycleTransition(
+            event_id=row.id, occurred_at=row.occurred_at,
+            from_status=row.payload_json.get("from_status"),
+            to_status=row.payload_json.get("to_status"),
+        ) for row in rows)
+
     async def load_artifact(
         self, context, *, artifact_type: str, artifact_id: str
     ) -> Any | None:
@@ -101,8 +117,6 @@ class TestSqlAlchemyConsolidationPersistence:
             statement = statement.options(selectinload(Ideation.story_links))
         elif artifact_type == "spec":
             statement = statement.options(selectinload(Spec.architecture_designs))
-        elif artifact_type == "sprint":
-            statement = statement.options(selectinload(Sprint.spec))
         elif artifact_type == "card":
             statement = statement.options(selectinload(Card.architecture_designs))
         return (await context.execute(statement)).scalars().first()
@@ -136,27 +150,28 @@ class TestSqlAlchemyConsolidationPersistence:
         return tuple((await context.execute(statement)).scalars().all())
 
     async def list_stale_claims(
-        self, context, *, now, legacy_cutoff
+        self, context, *, now
     ) -> tuple[ConsolidationQueueRecord, ...]:
-        rows = (
-            (
-                await context.execute(
-                    select(ConsolidationQueue).where(
-                        ConsolidationQueue.status == "claimed",
-                        or_(
-                            ConsolidationQueue.claim_token.is_(None),
-                            ConsolidationQueue.claim_timeout_at.is_not(None)
-                            & (ConsolidationQueue.claim_timeout_at < now),
-                            ConsolidationQueue.claim_timeout_at.is_(None)
-                            & ConsolidationQueue.claimed_at.is_not(None)
-                            & (ConsolidationQueue.claimed_at < legacy_cutoff),
-                        ),
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        # A current claim always has an ownership token and an explicit expiry.
+        # Refuse incompatible rows without converting or re-pending them.
+        incompatible = await context.scalar(
+            select(ConsolidationQueue.id).where(
+                ConsolidationQueue.status == "claimed",
+                or_(
+                    ConsolidationQueue.claim_token.is_(None),
+                    ConsolidationQueue.claim_token == "",
+                    ConsolidationQueue.claim_timeout_at.is_(None),
+                ),
+            ).limit(1)
         )
+        if incompatible is not None:
+            raise ValueError("consolidation_claim_format_incompatible")
+        rows = (await context.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.status == "claimed",
+                ConsolidationQueue.claim_timeout_at < now,
+            )
+        )).scalars().all()
         return tuple(_record(row) for row in rows)
 
     async def count_pending(self, context) -> int:
@@ -596,7 +611,7 @@ __all__ = ["TestSqlAlchemyConsolidationPersistence"]
 def _validate_deletion_identity(
     *, artifact_type: str, artifact_id: str, delete_event_id: str
 ) -> None:
-    if artifact_type not in {"card", "spec", "ideation", "refinement", "sprint"}:
+    if artifact_type not in {"card", "spec", "ideation", "refinement"}:
         raise ValueError("invalid_governed_deletion_artifact_type")
     if not artifact_id or not delete_event_id or len(delete_event_id) > 255:
         raise ValueError("invalid_governed_deletion_identity")

@@ -317,9 +317,7 @@ async def test_s2_nc8_reuse_increments_attestation_non_curated(
     assert row["attestation_count"] == 2
     assert row["last_attested_at"] >= first["last_attested_at"]
     # The rewrite is a NEW assertion (FR3/D5): the provenance anchor is
-    # restamped to the session that wrote the current content, so a
-    # re-consolidation clears kg_provenance_drift instead of flagging the
-    # node forever.
+    # restamped to the session that wrote the current content.
     assert row["source_content_hash"] == hash2
     assert row["source_content_hash"] != first["source_content_hash"]
 

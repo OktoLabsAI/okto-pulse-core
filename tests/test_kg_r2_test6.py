@@ -3,7 +3,7 @@
 Scenarios: ts_bb459cfe (AC8 — the event fast-path and the full sweep converge to
 the SAME final state in any order; the second run is a no-op) and ts_f2b3f62c
 (AC11/TR12 — the canonical-current starting state comes from the REAL consolidation
-pipeline, NOT a direct Kuzu/DecisionDigest seed, and the reconciler is convergent
+pipeline, NOT a direct graph/DecisionDigest seed, and the reconciler is convergent
 over it).
 
 Teeth: the second run in each ordering must report ``demoted == []`` and leave the

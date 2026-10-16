@@ -1,0 +1,130 @@
+{
+  "format": "pulse-040-reviewed-increment/v1",
+  "status": "increment_verified_not_full_delivery",
+  "scope": [
+    "KG:KG-11 native Decision supersedence persistence",
+    "KG:KG-24 Decision history and provenance rebuild parity"
+  ],
+  "runs": [
+    {
+      "name": "acceptance-native-decision-predecessor-core1",
+      "proof_pair": "dist-native-main49",
+      "provenance_sha256": "27147739b9647aa233976496951ef15fa4d305e8302a946376002e2db500ec07",
+      "sha256": "4b5bd1ed1cefabc65ac0a0805707af73af406fa35594353ea7026220f0741dac",
+      "passed": 22,
+      "cases": [
+        "tests.test_kg_cognitive_source_commit::test_commit_appends_durable_record_before_success",
+        "tests.test_kg_cognitive_source_commit::test_commit_uses_ambient_uow_and_batches_on_event_loop",
+        "tests.test_kg_cognitive_source_commit::test_nc8_reuse_derives_revision_from_post_update_attestation",
+        "tests.test_kg_cognitive_source_commit::test_missing_store_rejects_cognitive_commit_before_graph_write",
+        "tests.test_kg_cognitive_source_commit::test_missing_context_capability_rejects_before_graph_write",
+        "tests.test_kg_cognitive_source_commit::test_store_outage_aborts_commit_fail_closed_then_retry_works",
+        "tests.test_kg_cognitive_source_commit::test_unexpected_store_failure_keeps_stable_error_and_compensates",
+        "tests.test_kg_cognitive_source_commit::test_explicit_update_repairs_missing_durable_record",
+        "tests.test_kg_cognitive_source_commit::test_explicit_supersede_replay_repairs_missing_durable_record",
+        "tests.test_kg_cognitive_source_commit::test_fresh_identity_replay_repairs_missing_generation_zero_record",
+        "tests.test_kg_cognitive_source_commit::test_nc8_reuse_repairs_missing_generation_zero_record",
+        "tests.test_kg_supersede::test_supersede_decision_creates_node_marks_old_and_makes_edge",
+        "tests.test_kg_supersede::test_supersede_cognitive_type_creates_universal_supersedes_edge",
+        "tests.test_kg_nc8_supersede_trail::test_s7_title_change_supersedes_with_trail",
+        "tests.test_kg_nc8_supersede_trail::test_s7_replay_uses_active_successor_without_duplicate_pk",
+        "tests.test_kg_nc8_supersede_trail::test_s7_same_title_content_change_stays_inplace_update",
+        "tests.test_kg_nc8_supersede_trail::test_s7_case_and_unicode_variants_do_not_supersede",
+        "tests.test_kg_deterministic_identity::test_fresh_create_mints_deterministic_recipe_id",
+        "tests.test_kg_deterministic_identity::test_title_revision_supersedes_with_deterministic_trail",
+        "tests.test_kg_deterministic_identity::test_replay_reuses_already_materialized_deterministic_id",
+        "tests.test_kg_deterministic_identity::test_supersede_mints_generation_plus_one_deterministically",
+        "tests.test_kg_deterministic_identity::test_supersede_missing_source_stays_blocked"
+      ]
+    },
+    {
+      "name": "acceptance-native-cognitive-edge1",
+      "proof_pair": "dist-native-main50",
+      "provenance_sha256": "dc7e451887ddf6c6407898dea73ec39ecb33f2c1ca7f0cf544c7a783afac8063",
+      "sha256": "660887dbf4f5e927d53efbd91fceb4197c860efb1f7fe1149d8db97835805da5",
+      "passed": 8,
+      "cases": [
+        "tests.test_kg_r2_imp2::test_preservation_summary_status_matrix",
+        "tests.test_kg_r2_imp2::test_cognitive_canonical_node_and_edge_survive_rebuild",
+        "tests.test_kg_r2_imp2::test_cognitive_decision_and_alternative_edge_survive_rebuild",
+        "tests.test_kg_r2_imp2::test_restore_is_idempotent",
+        "tests.test_kg_r2_imp2::test_unrestorable_edge_is_degraded_and_fallback_recorded",
+        "tests.test_kg_r2_imp2::test_report_field_exposes_non_learning_loss_fallback_is_learning_only",
+        "tests.test_kg_r2_imp2::test_unreadable_graph_is_recorded_not_silently_passed",
+        "tests.test_kg_r2_imp2::test_without_restore_cognitive_node_is_lost"
+      ]
+    },
+    {
+      "name": "acceptance-native-decision-final-core3",
+      "proof_pair": "dist-native-main54",
+      "provenance_sha256": "b851eacc2d433a4a1d09345933869d2226b22c513a449ecf2e95a5157bbc019f",
+      "sha256": "b70fb8cf0c7dccf100ee20a0e93d10e3f221c2c9168ca5719e860baa4002272c",
+      "passed": 17,
+      "cases": [
+        "tests.test_cognitive_rebuild_identity::test_selects_current_identity_without_recreating_generation_zero",
+        "tests.test_cognitive_rebuild_identity::test_ambiguous_or_missing_active_identity_is_refused[records0]",
+        "tests.test_cognitive_rebuild_identity::test_ambiguous_or_missing_active_identity_is_refused[records1]",
+        "tests.test_cognitive_rebuild_identity::test_foreign_board_is_refused",
+        "tests.test_cognitive_rebuild_identity::test_new_source_without_history_still_has_no_recovered_identity",
+        "tests.test_cognitive_rebuild_identity::test_changed_source_must_follow_normal_supersedence",
+        "tests.test_cognitive_rebuild_identity::test_curated_content_is_preserved_but_maturity_change_is_not_ignored",
+        "tests.test_cognitive_rebuild_identity::test_recovery_cannot_bypass_worker_transaction_boundary[agent:executor-context0-True-overrides0]",
+        "tests.test_cognitive_rebuild_identity::test_recovery_cannot_bypass_worker_transaction_boundary[system:historical_consolidation-None-True-overrides1]",
+        "tests.test_cognitive_rebuild_identity::test_recovery_cannot_bypass_worker_transaction_boundary[system:historical_consolidation-context2-False-overrides2]",
+        "tests.test_cognitive_rebuild_identity::test_recovery_cannot_bypass_worker_transaction_boundary[system:historical_consolidation-context3-True-overrides3]",
+        "tests.test_cognitive_rebuild_identity::test_existing_graph_identity_conflict_is_refused[content-Wrong]",
+        "tests.test_cognitive_rebuild_identity::test_existing_graph_identity_conflict_is_refused[generation-0]",
+        "tests.test_cognitive_rebuild_identity::test_existing_graph_identity_conflict_is_refused[superseded_by-another]",
+        "tests.test_cognitive_rebuild_identity::test_existing_graph_identity_conflict_is_refused[source_artifact_ref-spec:foreign:decision:d]",
+        "tests.test_cognitive_rebuild_identity::test_existing_graph_identity_conflict_is_refused[human_curated-True]",
+        "tests.test_cognitive_rebuild_identity::test_existing_identity_retains_ephemeral_recovery_session"
+      ]
+    },
+    {
+      "name": "acceptance-native-decision-final-native1",
+      "proof_pair": "dist-native-main54",
+      "provenance_sha256": "b851eacc2d433a4a1d09345933869d2226b22c513a449ecf2e95a5157bbc019f",
+      "sha256": "b4b61d0abd4845ceee60fd88f8842b7a29ef7ca87dbb4955597388612b89aae2",
+      "passed": 2,
+      "cases": [
+        "tests.test_native_decision_chain::test_native_decision_revision_keeps_predecessor_and_idempotent_chain[unchanged]",
+        "tests.test_native_decision_chain::test_native_decision_revision_keeps_predecessor_and_idempotent_chain[pending-source]"
+      ]
+    }
+  ],
+  "frontend": {
+    "name": "acceptance-native-decision-ui1",
+    "sha256": "e4233f9e4aba2b06803051128ebb84676c33827259dbc29290c630b10f0016f6",
+    "passed": 27,
+    "scope": "GraphCanvas selection/navigation and DecisionImpactPanel; jsdom, not WebGL E2E"
+  },
+  "closure": {
+    "name": "closure-native-main54-final.json",
+    "sha256": "083681f9ed3647de24dc08f96473f2ed0cf826dbef02ec56718e2470c98c218b",
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    }
+  },
+  "verified": [
+    "All generic supersedence paths stage predecessor and successor snapshots in the same existing UOW.",
+    "Exact rebuild selects verified current Decision identity; matching recovery does not add cognitive authorship/revisions.",
+    "Changed authoritative source creates its next generation while preserving all previous durable revisions and predecessor contents.",
+    "Existing conflicting graph identity, foreign/ambiguous source head and non-worker/override/missing-UOW calls refuse.",
+    "Native queue replay preserves complete source ledger; unchanged-source rebuild preserves Decision identities and complete relationship multiset.",
+    "Canonical cognitive snapshot preserves original edge metadata and historical belongs_to links; old metadata-less snapshot does not receive invented provenance."
+  ],
+  "limits": [
+    "22 predecessor regressions ran on main49 and eight preservation regressions on main50; their relevant behavior remains unchanged. Final17 unit/guard cases and two integrations ran on main54.",
+    "Native rebuild integration exercises real enumeration, exact queue reservation, projection, snapshot and restore on disposable graph; it does not claim full candidate promotion/routing coverage.",
+    "Initial failures and fixture corrections are retained in the ledger; failed runs are excluded from counts.",
+    "Frontend assets unchanged; no migration, real-storage operation or new authority.",
+    "KG-24 and overall delivery still require the remaining fixed acceptance matrix. Index remains63/172/11."
+  ]
+}

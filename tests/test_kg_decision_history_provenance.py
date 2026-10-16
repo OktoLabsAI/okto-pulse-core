@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from okto_pulse.core.kg import cypher_templates
 from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
 from okto_pulse.core.kg.kg_service import KGService
@@ -71,7 +73,7 @@ def test_decision_history_service_projects_source_artifact_ref(monkeypatch) -> N
     assert result[0]["source_artifact_ref"] == source_ref
 
 
-def test_decision_history_service_keeps_legacy_seven_column_store_compatible(
+def test_decision_history_service_rejects_seven_column_store(
     monkeypatch,
 ) -> None:
     class LegacyStore:
@@ -92,10 +94,18 @@ def test_decision_history_service_keeps_legacy_seven_column_store_compatible(
 
     monkeypatch.setattr(kg_service_module, "_get_graph_store", lambda: LegacyStore())
 
-    result = KGService().get_decision_history(
-        "board",
-        "legacy",
-        use_semantic=False,
-    )
+    with pytest.raises(ValueError, match="decision_history_row_shape_invalid"):
+        KGService().get_decision_history("board", "legacy", use_semantic=False)
 
-    assert result[0]["source_artifact_ref"] is None
+def test_decision_history_rejects_a_mixed_result_before_returning_partial_history(monkeypatch):
+    import okto_pulse.core.kg.kg_service as kg_service_module
+
+    current = ["decision", "Title", "Content", None, 0.9, 0.8, None, "spec:s:decision:d"]
+    class MixedStore:
+        def find_by_topic(self, *_args):
+            return [current, current[:7]]
+
+    monkeypatch.setattr(kg_service_module, "_get_graph_store", lambda: MixedStore())
+    with pytest.raises(ValueError, match="decision_history_row_shape_invalid"):
+        KGService().get_decision_history("board", "Title", use_semantic=False)
+    assert current[-1] == "spec:s:decision:d"

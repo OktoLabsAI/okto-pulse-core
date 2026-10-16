@@ -47,7 +47,7 @@ def learning_board():
                 },
             )
     yield bid
-    close_all_connections(bid)
+    close_all_connections()
 
 
 @pytest.mark.asyncio
@@ -105,7 +105,7 @@ def decisions_board():
             "CREATE (a)-[:supersedes {confidence: 0.9, created_by: 'test', layer: 'cognitive'}]->(b)"
         )
     yield bid
-    close_all_connections(bid)
+    close_all_connections()
 
 
 @pytest.mark.asyncio

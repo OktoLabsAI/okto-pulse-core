@@ -1,0 +1,69 @@
+{
+  "scope": "KG7.5/K3 governed selected-Learning writer effect characterization; not candidate execution",
+  "suites": {
+    "1": {
+      "passed": 0,
+      "failed": 1
+    },
+    "2": {
+      "passed": 0,
+      "failed": 1
+    },
+    "3": {
+      "passed": 0,
+      "failed": 1
+    },
+    "4": {
+      "passed": 0,
+      "failed": 1
+    },
+    "5": {
+      "passed": 2,
+      "failed": 0
+    }
+  },
+  "observed": [
+    "Real signed capture selected through the public selection port materializes through the existing governed writer.",
+    "Fresh materialization inserts exactly one audit, node reference, global outbox event, cognitive revision and generation domain event.",
+    "Only the Board materialization-generation setting is inserted or replaced; its generation event refers to the same audit/session.",
+    "The real transactional source fence advances by exactly five; all other original SQL cells remain intact.",
+    "The immutable capture parent and previous source revisions are preserved.",
+    "One Learning and one validates relation to the canonical Bug are introduced.",
+    "The existing degree-delta hook changes only relevance_score and last_recomputed_at on the referenced Bug; other existing properties and relations remain intact.",
+    "Both an absent and a preexisting Board materialization-generation head are covered."
+  ],
+  "preserved_failures": {
+    "1": "Initial incomplete expected footprint omitted generation head and correlated domain event; investigation identified both existing effects.",
+    "2": "Test used node_id on the revision table; actual relation is cognitive_source_id to immutable parent.",
+    "3": "Initial assertion expected no existing graph properties to change.",
+    "4": "Diagnostic rerun identified the existing degree-delta scoring hook and its two usage fields."
+  },
+  "limits": [
+    "No product code or runtime behavior changed in this characterization.",
+    "Fixture substitutes unrelated closeout gates and health checks; this is not full lifecycle acceptance.",
+    "Replay, substantive holds and source-unavailable outcomes still need candidate-specific ownership proofs.",
+    "The candidate SQL delta verifier currently accepts exact deterministic ACKs only; do not merely add these table names to its allowlist.",
+    "Public Core execution composition and candidate SQL/graph receipts remain to implement before claiming historical Learning reconciliation.",
+    "Global inventory unchanged: 78 verified / 33 partial / 135 unaudited. Full initiative not complete."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-effects-characterization-community.xml": "a8ac262e5d2edb6b520825ebc4c7368e1d9c3f95de73c4505685dee1aa4484c5",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-effects-characterization-community.log": "73eb757ec4d7906823ef13d58c3bd1040412620db075cbd19c2d103d3371a707",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-effects-characterization2-community.xml": "dd8757f34a72aa67808ff92ae52d5c2aac0496bf2b2880b0e780975640da0705",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-effects-characterization2-community.log": "87e0ff19153308d222a7d010b8edfd89f9983c8e96852cff21409b2e3753b0f7",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-effects-characterization3-community.xml": "09d397a1c2bb56c990744f5d0b35243e32078bb6177488c347761f0f39ee57b6",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-effects-characterization3-community.log": "616eabd15e58cae0396241f0fe10b09a168b864f09018717335e7a5c55fd92f1",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-effects-characterization4-community.xml": "2e25d8268ee091eacf4064a02b00375bd00d6910e4f8b9c1b90e2dbc15c922ca",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-effects-characterization4-community.log": "b2b7b00c8f7f5b36927126231e0c40d17209d814977793033eb7bde5bcd0f2ba",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-effects-characterization5-community.xml": "2ec8cbbbff0b601fa69dc783a5b2c2415ef83941e4141299f49ac693e6ca600d",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-effects-characterization5-community.log": "f7606fa28b95b54505af41110af18cd25fde783598543a6b7631ecf7efb32380",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-effects-characterization.json": "7026c818a087c68c2de6ba948fee4922db77c6ffc1fcac577b4bce043d58eabc",
+    "PULSE_REFACTOR/.validation-v040/run_learning_reconciliation.py": "47b1007f7ddd346195c93ea729bc9a9e067f7133bd8c3449fb97828604821f97",
+    "okto_labs_pulse_community/tests/test_learning_reconciliation_effects.py": "f371dc272664169a09500ff524c8a9c3a096a3c94eaba4d3af2de262eb93ed76",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_reconciliation.py": "282dc3f337b5c65be41d261d9001905a5e31d57e7ca9998381f1272093fdad2b",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/cognitive_closeout_production.py": "0ff46f77e383f783cf69e2fd4cb9d3a25d6730e228c1fb75f24715bfcfdabc87",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/primitives.py": "79e6db37e7240848e9b82165cc357eba35123577ca52946c2e0550fd7dad16d9",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/materialization_health.py": "eab24043e84ca3a9631ca035c60a77a9481bb0bd2fb5bcccfbc41efda9b3904b",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_sql_delta.py": "3ea4b380bab653776e8d8154b0742a377002c04614df866cef259563e08f150a"
+  }
+}

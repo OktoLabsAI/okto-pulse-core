@@ -1,0 +1,95 @@
+{
+  "scope": "U3/2e.3 checkpoint; component qualification, browser proof pending",
+  "date": "2026-10-14",
+  "branch": "feature/v0.4.0",
+  "core_baseline": "f6d1878f",
+  "community_commit": "b30ad347",
+  "changes": [
+    "Load inherited Knowledge bodies only while the Card Knowledge pane is visible; replace removed roots and discard late responses.",
+    "Propagate Card resource revisions and visibility to Architecture and Resource Gate.",
+    "Refresh Architecture readers with scope/request guards, clear protected snapshots on denied reads, and expose read failure/retry."
+  ],
+  "tests": {
+    "local_artifact_root": "D:/Projetos/Techridy/PULSE_REFACTOR/.validation-v040/spec-unified-20261014",
+    "before": {
+      "artifact": "u3-resource-readers-before.xml",
+      "sha256": "195cbe344a597c9560d32b64b1cde958a46a536f2fb32f8b1e7c7806d9cf366d",
+      "executed": 6,
+      "failed": 6,
+      "skipped": 100,
+      "note": "Filtered reproduction; the JUnit total of 106 includes skipped cases."
+    },
+    "after": {
+      "artifact": "u3-resource-readers-r2.xml",
+      "sha256": "79a2b35b00a53b934bfe4f3bb3d1df113453d549ca6374f309d6c07d5e2d9e3d",
+      "passed": 107,
+      "failed": 0,
+      "skipped": 0,
+      "duration_seconds": 86.7171028,
+      "suites": {
+        "ArchitectureTab": 19,
+        "CardModal": 87,
+        "ResourceGateDisclosure": 1
+      }
+    },
+    "types": {
+      "session": 34447,
+      "exit_code": 0,
+      "note": "Final type check after normalizing nullable Knowledge.description; completion confirmed during this checkpoint."
+    },
+    "lint": {
+      "session": 81015,
+      "exit_code": 0,
+      "existing_warnings": 11
+    },
+    "diff_check_exit_code": 0
+  },
+  "native_setup": {
+    "api": "http://127.0.0.1:8200",
+    "mcp": "http://127.0.0.1:8201/mcp",
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "2baa5f88-eb1a-4aac-9aeb-453707cef290",
+    "card_id": "c8a1a9b4-691c-5175-84be-1d512b6bdda4",
+    "architecture_source_id": "29ad503e-69f9-4146-9c5d-c69e13146c69",
+    "architecture_card_snapshot_id": "08dd60bb-9b7b-45ea-87e7-43ed2af8c678",
+    "validation": {
+      "artifact": "u3-targets-architecture-validate.json",
+      "sha256": "adb64a050934439a541be474b6559ab461cb54738e1abe19f2dea85cacde35af",
+      "valid": true,
+      "issues": 0,
+      "warnings": 0
+    },
+    "create": {
+      "artifact": "u3-targets-architecture-create.json",
+      "sha256": "4e66b54cfd953f7080f024a2f3750f4ac970505f35a7d71cddf90f1df1f0515f"
+    },
+    "copy": {
+      "artifact": "u3-targets-architecture-copy.json",
+      "sha256": "26fcc286f22c286d6d6996bcbdcec07caf18ec9fc014d739ef7266346b6d5c79",
+      "copied_count": 1,
+      "repeat_mutation": false
+    }
+  },
+  "browser": {
+    "session": "pulse-u3-collections",
+    "url": "http://127.0.0.1:5274/",
+    "status": "pending",
+    "observed": "Open Card Resources/Architecture showed Failed to fetch and live-update warnings. Listener check found 8200/8201 under PID 27316, but no listener at 5274; the isolated Vite process was no longer available.",
+    "not_proven": [
+      "Automatic visual convergence after the accepted Architecture copy.",
+      "Removal of a selected Knowledge root while a draft remains open."
+    ],
+    "resume": [
+      "Restore only the isolated Vite frontend with its explicit proxy to 8200; do not touch the user runtime.",
+      "Inspect the existing Card snapshot. An initial load is not proof of automatic invalidation.",
+      "Observe a new authorized native resource mutation with the UI open; inspect the resulting screenshot.",
+      "Use the existing disposable Knowledge root for the selected-root removal case; do not repeat completed writes."
+    ]
+  },
+  "limits": [
+    "This checkpoint does not close U3/2e.3, U3 as a whole, or U4.",
+    "No installed wheel/frontend parity or fresh U2 runtime qualification is claimed.",
+    "No new backend, gate, permission, migration, or general Card CAS was introduced.",
+    "Project Structure/dependency reader review and Spec editor protection remain in the existing plan."
+  ]
+}

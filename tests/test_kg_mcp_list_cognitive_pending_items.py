@@ -194,7 +194,6 @@ def test_response_includes_all_required_contract_keys(
         "selected_kg_generation_id",
         "items",
         "counts",
-        "legacy_mode",
     }
     assert required.issubset(response.keys())
     # Storage-name leaks must NOT be present.
@@ -255,7 +254,9 @@ def test_counts_total_equals_len_items_after_pagination(
     assert response["counts"]["pending"] == 3
 
 
-def test_legacy_mode_true_for_aggregate_only_record(
+@pytest.mark.parametrize("explicit", [True, False])
+def test_aggregate_only_record_is_refused(
+    explicit: bool,
     isolated_base_dir: Path,
     list_tool: Callable[..., Any],
 ) -> None:
@@ -275,21 +276,19 @@ def test_legacy_mode_true_for_aggregate_only_record(
     )
     store.artifact_store.write_json_atomic(store._record_key(BOARD, gen), legacy)
 
-    response = _invoke(list_tool, board_id=BOARD, kg_generation_id=gen)
-    assert response["legacy_mode"] is True
-    assert response["counts"]["total"] == 2
-    refs = {it["source_ref"] for it in response["items"]}
-    assert refs == {"spec:l1", "refinement:l2"}
+    response = _invoke(list_tool, board_id=BOARD, kg_generation_id=gen if explicit else None)
+    assert response["error"]["code"] == "cognitive_pending_unavailable"
+    assert store.artifact_store.read_json(store._record_key(BOARD, gen)) == legacy
 
 
-def test_legacy_mode_false_for_kg03_record(
+def test_native_record_has_no_legacy_mode(
     isolated_base_dir: Path,
     list_tool: Callable[..., Any],
 ) -> None:
     gen = generate_kg_generation_id()
     _materialize(isolated_base_dir, gen, [_row("spec", "s1")])
     response = _invoke(list_tool, board_id=BOARD, kg_generation_id=gen)
-    assert response["legacy_mode"] is False
+    assert "legacy_mode" not in response
 
 
 # -------- Item projection (reason_code, not reason) ---------------------
@@ -560,7 +559,7 @@ def test_omitted_generation_with_no_latest_returns_safe_empty(
     response = _invoke(list_tool, board_id="board-without-any-rebuild")
     assert "error" not in response
     assert response["selected_kg_generation_id"] is None
-    assert response["legacy_mode"] is False
+    assert "legacy_mode" not in response
     assert response["items"] == []
     assert response["counts"] == {
         "pending": 0,

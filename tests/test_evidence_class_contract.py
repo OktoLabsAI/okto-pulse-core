@@ -8,9 +8,8 @@ Unit regressions over the single-source evidence gate
   every class except the direct automated_test_pointer; run_log /
   non_replayable_justified additionally require non_replayable_justification
   (fr_0937529f);
-* write vs read composition: a NEW gated write without evidence_class accepts
-  ONLY the direct test pointer, while run-log-like must be replayable-grade;
-  already-persisted legacy evidence stays valid on READ (ac_8212cdbb);
+* read and write composition uses one contract: direct pointers or logs with
+  replayable-grade detail, regardless of when the proof was persisted;
 * cheap/existing enforcement (fr_958f0c9c / br_078725cc): an explicit run_log /
   non_replayable_justified fails when replay_should_exist=True OR a cheap/
   existing replay signal (test_file_path / replay_command / mcp_replay_manifest)
@@ -49,6 +48,7 @@ def _ok(status, evidence, **kw):
 
 def test_evidence_class_taxonomy():
     assert EVIDENCE_CLASSES == (
+        "verification_report",
         "automated_test_pointer",
         "replay_command",
         "mcp_replay_manifest",
@@ -87,7 +87,7 @@ def test_automated_test_pointer_valid():  # ts_f89dcf2c
     assert ok is False and "test_function" in missing
 
 
-def test_replay_command_accepted_but_legacy_manifest_is_unverified():  # ts_bf3a5210
+def test_replay_command_accepted_but_old_manifest_alias_is_refused():  # ts_bf3a5210
     cmd = {
         "evidence_class": "replay_command",
         "replay_command": "pytest tests/test_x.py::test_y",
@@ -101,7 +101,7 @@ def test_replay_command_accepted_but_legacy_manifest_is_unverified():  # ts_bf3a
     }
     ok, missing = _ok("passed", manifest)
     assert ok is False
-    assert "evidence_v2.legacy_mcp_replay_manifest_unverified" in missing
+    assert "evidence_v2.unsupported_evidence_fields:mcp_replay_manifest" in missing
     # replay_command without expected_output_snapshot → rejected
     ok, missing = _ok(
         "passed", {"evidence_class": "replay_command", "replay_command": "pytest x"}
@@ -212,7 +212,7 @@ def test_run_log_passes_without_any_cheap_signal():
 def test_replayable_helpers():
     assert replay_is_cheap_or_existing({"test_file_path": "x"}) is True
     assert replay_is_cheap_or_existing({"replay_command": "x"}) is True
-    assert replay_is_cheap_or_existing({"mcp_replay_manifest": "x"}) is True
+    assert replay_is_cheap_or_existing({"manifest_ref": "x"}) is True
     assert replay_is_cheap_or_existing({"output_snippet": "x"}) is False
     assert replayable_evidence_required({"replay_should_exist": True}) is True
     assert replayable_evidence_required({"replay_command": "x"}) is True
@@ -224,24 +224,25 @@ def test_replayable_helpers():
 # ---------------------------------------------------------------------------
 
 
-def test_write_unclassed_pointer_grandfathered_but_runlog_rejected():
+def test_current_pointer_passes_and_weak_run_log_is_refused():
     pointer = {"test_file_path": "tests/test_x.py", "test_function": "test_y"}
-    assert _ok("passed", pointer, for_write=True) == (True, [])
+    assert _ok("passed", pointer) == (True, [])
     # run-log-like on a NEW write without a class → rejected, with a hint to
     # declare a replayable class.
     runlog = {"last_run_at": "t", "output_snippet": "1 passed"}
-    ok, missing = _ok("passed", runlog, for_write=True)
+    ok, missing = _ok("passed", runlog)
     assert ok is False
     assert "expected_output_snapshot" in missing
     assert "non_replayable_justification" in missing
     assert any("evidence_class" in m for m in missing)
 
 
-def test_read_legacy_evidence_stays_valid():
-    # legacy run-log-shaped passed evidence (no evidence_class) remains valid on
-    # READ so previously persisted scenarios are not retroactively rejected.
+def test_read_refuses_weak_run_log_without_converting_it():
+    # Persisting a weak log cannot make it admissible on a later read.
     legacy = {"last_run_at": "t", "output_snippet": "1 passed"}
-    assert _ok("passed", legacy) == (True, [])  # for_write=False (default)
+    before = dict(legacy)
+    assert _ok("passed", legacy)[0] is False
+    assert legacy == before
     legacy_pointer = {"test_file_path": "tests/x.py", "test_function": "test_y"}
     assert _ok("automated", legacy_pointer) == (True, [])
 

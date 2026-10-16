@@ -16,7 +16,7 @@ from okto_pulse.core.domain.guideline_policy import (
 from okto_pulse.core.domain.guideline_semantic_currentness import (
     SemanticAssessmentCurrentnessReason,
 )
-from okto_pulse.core.domain.guideline_policy_transition import (
+from okto_pulse.core.domain.guideline_semantic_transition import (
     PolicyTransitionDecision,
     PolicyTransitionDiagnosticCode,
     PolicyTransitionReasonCode,
@@ -41,7 +41,6 @@ MCP_MUTATION_HANDLERS = (
     "okto_pulse_move_ideation",
     "okto_pulse_move_refinement",
     "okto_pulse_move_spec",
-    "okto_pulse_move_sprint",
     "okto_pulse_move_card",
     "okto_pulse_submit_task_validation",
     "okto_pulse_submit_spec_validation",
@@ -60,7 +59,7 @@ def _rejection() -> PolicyTransitionRejected:
         receipt_id="receipt-1",
         currentness=PolicyCurrentness.STALE,
         currentness_reasons=(
-            SemanticAssessmentCurrentnessReason.POLICY_SET_CHANGED,
+            SemanticAssessmentCurrentnessReason.BINDING_CONFIGURATION_CHANGED,
         ),
         inadmissibility_cause=None,
         failed_metric_count=0,
@@ -134,7 +133,7 @@ def test_policy_transition_rejection_projection_is_complete_and_stable() -> None
         "fence_digest": "f" * 64,
         "receipt_ids": ["receipt-1"],
         "currentness": "stale",
-        "currentness_reasons": ["policy_set_changed"],
+        "currentness_reasons": ["binding_configuration_changed"],
         "counts": {
             "applicable_metrics": 5,
             "applicable_blocking_metrics": 5,
@@ -203,7 +202,7 @@ def test_mcp_mutations_catch_policy_rejection_before_value_error(
     )
     assert any(
         isinstance(node, ast.ImportFrom)
-        and node.module == "okto_pulse.core.domain.guideline_policy_transition"
+        and node.module == "okto_pulse.core.domain.guideline_semantic_transition"
         and any(alias.name == "PolicyTransitionRejected" for alias in node.names)
         for node in ast.walk(handler)
     )

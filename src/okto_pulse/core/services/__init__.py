@@ -67,7 +67,6 @@ _register_exports(
 _register_exports(
     "okto_pulse.core.services.bug_workflow_remediation",
     (
-        "BugWorkflowHotfixLaneStatus",
         "BugWorkflowNextAction",
         "BugWorkflowRemediationAction",
         "BugWorkflowRemediationMessage",
@@ -211,9 +210,6 @@ _register_exports(
     "okto_pulse.core.services.knowledge_propagation",
     (
         "KnowledgeCreationPreflightCommand",
-        "KnowledgeGrandfatherAttachment",
-        "KnowledgeGrandfatherCommand",
-        "KnowledgeGrandfatherEvidence",
         "KnowledgeMutationCommand",
         "KnowledgeMutationPreparation",
         "KnowledgeMutationResultV2",
@@ -225,7 +221,6 @@ _register_exports(
         "KnowledgeRefreshCommand",
         "KnowledgeRefreshByKnowledgeIdsCommand",
         "ResolvedKnowledgeAssignment",
-        "classify_legacy_origin",
         "deterministic_knowledge_target_id",
     ),
 )
@@ -283,7 +278,6 @@ __all__ = [
     "BugRegressionScenarioEligibilityResult",
     "EligibleBugRegressionScenario",
     "RejectedBugRegressionScenario",
-    "BugWorkflowHotfixLaneStatus",
     "BugWorkflowNextAction",
     "BugWorkflowRemediationAction",
     "BugWorkflowRemediationMessage",
@@ -379,9 +373,6 @@ __all__ = [
     "knowledge_content_sha256",
     "resolve_knowledge_content_sha256",
     "KnowledgeCreationPreflightCommand",
-    "KnowledgeGrandfatherAttachment",
-    "KnowledgeGrandfatherCommand",
-    "KnowledgeGrandfatherEvidence",
     "KnowledgeMutationCommand",
     "KnowledgeMutationPreparation",
     "KnowledgeMutationResultV2",
@@ -393,7 +384,6 @@ __all__ = [
     "KnowledgeRefreshCommand",
     "KnowledgeRefreshByKnowledgeIdsCommand",
     "ResolvedKnowledgeAssignment",
-    "classify_legacy_origin",
     "deterministic_knowledge_target_id",
     "SpecResourcePropagationService",
     "InMemoryStructuredSpecEntityMetricsSink",

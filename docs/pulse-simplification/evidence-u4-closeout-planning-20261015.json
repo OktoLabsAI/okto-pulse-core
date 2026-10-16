@@ -1,0 +1,64 @@
+{
+  "kind": "documentary_planning_reconciliation",
+  "new_behavior_tests": false,
+  "base_core": "ff471088",
+  "base_community": "54b5b30d",
+  "artifact_root": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014",
+  "artifacts": [
+    {
+      "path": "u4-kg-readiness-regression.xml",
+      "sha256": "da39979d09514faa70f49e1213c75d8e2ab5e304a8cfd8ac3f6829d51aeafd57"
+    },
+    {
+      "path": "u4-kg-actor-final.xml",
+      "sha256": "238e77d07bb4cd21874e4a045937d5880a18a352772fbed5c5fb81df8ed7b30c"
+    },
+    {
+      "path": "u4-final-r2-parity.json",
+      "sha256": "c7dd8e303c45eee065afe74e3a64c82230e220d9832a6c0c66e484d57570ac85"
+    },
+    {
+      "path": "u4-final-r2-closure.json",
+      "sha256": "6035882307bc41a7e803fbb1eb2764c95a2e0447388af9130ce0d3663427fd7a"
+    },
+    {
+      "path": "u4-e2e/corrected-installed-health-readiness.json",
+      "sha256": "5d1e7b94a61bae67050091e91ae46f49b266dc13e52313e288c03f2bb938b576"
+    },
+    {
+      "path": "u4-e2e/closeout-cognitive-pending-list.json",
+      "sha256": "8a71824bc7f8f6ac27410a991fa6db21333b8ee77f54b1c9d31b66ebe6cec99d"
+    },
+    {
+      "path": "u4-e2e/closeout-cognitive-commit.json",
+      "sha256": "f723f97a43b96e2eb38ce54ba3b288893838708557a14ad5a24456f5c38c8b5e"
+    },
+    {
+      "path": "u4-e2e/closeout-exact-cypher.json",
+      "sha256": "ba024d6ed22a93fc52251edc4500f5ac61e8fd0ae4b6a1d499cfe15e117e5ebf"
+    },
+    {
+      "path": "u4-e2e/closeout-exact-natural.json",
+      "sha256": "e037c2e3c85fc3067dbd30e3c735594936c8d50d106eb0899722f057099f80fd"
+    },
+    {
+      "path": "u4-e2e/closeout-exact-edges.json",
+      "sha256": "3b6ba2aa83835d458daef1b23d406d8d66bb2b97cedc180bb83b909f80e5dcff"
+    }
+  ],
+  "normative_section_1_onward_sha256": "33941a99bb1c92f7cc6f1fa819fbe9c6bcf4b8edd43679ed0307de4644ba7d61",
+  "observations": {
+    "core_tests_passed": 78,
+    "community_tests_passed": 4,
+    "closure_r2_ok": false,
+    "closure_budgets_all_zero": true,
+    "closure_remaining_findings": "README matrix mismatch in both repositories; local fixes require new closure",
+    "cognitive_session": "kgses_071cefe2a81c4506",
+    "cognitive_commit": "committed",
+    "pending_item": "cogn_8b95ff6fdf9191abd72855a7865c9ea4",
+    "pending_status": "pending",
+    "installed_readiness_outcome": "success",
+    "health": "at_risk",
+    "resource_parity_limit": "R2 covers Core resources, not Community overlays"
+  }
+}

@@ -1,9 +1,9 @@
 """Tests for FR/AC canonicalization (spec 9d66847f, Phase 1).
 
-Covers the 11 spec scenarios: canonicalization in create/update_spec, id
+Covers the retained product scenarios: canonicalization in create/update_spec, id
 preservation + reorder, duplicate text -> distinct ids + idempotency, hash
 collision, fixed ``_N`` suffix, duplicate ``dict.id`` fail-closed, ``status``
-shape, anti-cycle smoke import, idempotent migrator + dry-run,
+shape, anti-cycle smoke import,
 ``resolve_linked_requirements_to_ids`` and the no-breaking-change regression.
 """
 
@@ -13,22 +13,19 @@ import uuid
 
 import pytest
 
-from sqlalchemy_test_models import Board, Spec, SpecStatus
+from sqlalchemy_test_models import Board
 from okto_pulse.core.models.schemas import SpecCreate, SpecUpdate
 from okto_pulse.core.services.main import SpecService
 from okto_pulse.core.services.spec_entity_canonicalization import (
     DuplicateSpecChildIdError,
     _stable_child_id,
-    canonicalize_fr_ac,
+    canonicalize_spec_children,
     spec_child_id,
     spec_child_text,
 )
 from okto_pulse.core.services.analytics_service import (
     resolve_linked_requirements_to_ids,
     resolve_linked_fr_indices,
-)
-from sqlalchemy_spec_materialization_store import (
-    materialize_legacy_fr_ac_board,
 )
 
 USER = "c4-agent"
@@ -39,29 +36,43 @@ def _id(prefix: str) -> str:
 
 
 # ====================================================================
-# Unit — canonicalize_fr_ac / _stable_child_id
+# Unit — canonicalize_spec_children / _stable_child_id
 # ====================================================================
 
 
 class TestCanonicalizeUnit:
-    def test_string_becomes_dict_with_id_and_status(self):
-        out = canonicalize_fr_ac("functional_requirement", ["FR one", "FR two"])
+    @pytest.mark.parametrize('entity_type', ['functional_requirement', 'acceptance_criterion'])
+    def test_title_is_preserved_separately_from_content(self, entity_type):
+        child = {'id': 'stable', 'title': '  Summary  ', 'text': 'Full content', 'linked_task_ids': ['task']}
+        result = canonicalize_spec_children(entity_type, [child], existing_items=[child])[0]
+        assert result['title'] == 'Summary'
+        assert result['text'] == 'Full content'
+        assert result['id'] == 'stable'
+        assert result['linked_task_ids'] == ['task']
+
+    @pytest.mark.parametrize('title', [42, {}, []])
+    def test_rejects_non_text_title(self, title):
+        with pytest.raises(ValueError, match='spec_requirement_title_invalid'):
+            canonicalize_spec_children('functional_requirement', [{'text': 'Content', 'title': title}])
+
+    def test_new_object_receives_id_and_status(self):
+        out = canonicalize_spec_children("functional_requirement", [{"text": "FR one"}, {"text": "FR two"}])
         assert all(isinstance(x, dict) for x in out)
         assert [x["text"] for x in out] == ["FR one", "FR two"]
         assert all(x["id"].startswith("fr_") for x in out)
         assert all(x["status"] == "active" for x in out)  # ts_929a642c
 
     def test_none_returns_none(self):
-        assert canonicalize_fr_ac("functional_requirement", None) is None
+        assert canonicalize_spec_children("functional_requirement", None) is None
 
     def test_duplicate_text_without_id_distinct_and_idempotent(self):
         # ts_dc92950b
-        out = canonicalize_fr_ac("functional_requirement", ["same", "same"])
+        out = canonicalize_spec_children("functional_requirement", [{"text": "same"}, {"text": "same"}])
         ids = [x["id"] for x in out]
         assert len(set(ids)) == 2, ids
         assert ids[1] == f"{ids[0]}_1"
         # re-run over the output preserves the same two ids (idempotent)
-        again = canonicalize_fr_ac("functional_requirement", out)
+        again = canonicalize_spec_children("functional_requirement", out)
         assert [x["id"] for x in again] == ids
 
     def test_dict_with_id_preserved_and_reorder_stable(self):
@@ -70,26 +81,26 @@ class TestCanonicalizeUnit:
             {"id": "fr_aaaa1111", "text": "A", "status": "active"},
             {"id": "fr_bbbb2222", "text": "B", "status": "active"},
         ]
-        # B as string (no id) + A as dict-with-id, reordered
-        out = canonicalize_fr_ac(
+        # Reorder explicit identities; equal text is not an identity lookup.
+        out = canonicalize_spec_children(
             "functional_requirement",
-            ["B", {"id": "fr_aaaa1111", "text": "A"}],
+            [{"id": "fr_bbbb2222", "text": "B"}, {"id": "fr_aaaa1111", "text": "A"}],
             existing_items=existing,
         )
         by_text = {x["text"]: x["id"] for x in out}
         assert by_text["A"] == "fr_aaaa1111"
-        assert by_text["B"] == "fr_bbbb2222"  # reused via text queue, order-independent
+        assert by_text["B"] == "fr_bbbb2222"  # explicit identity preserved
 
     def test_status_preserved_when_present(self):
         # ts_929a642c
-        out = canonicalize_fr_ac(
+        out = canonicalize_spec_children(
             "acceptance_criterion", [{"text": "X", "status": "revoked"}]
         )
         assert out[0]["status"] == "revoked"
         assert out[0]["id"].startswith("ac_")
 
     def test_extra_fields_preserved(self):
-        out = canonicalize_fr_ac(
+        out = canonicalize_spec_children(
             "functional_requirement", [{"text": "X", "linked_task_ids": ["t1"]}]
         )
         assert out[0]["linked_task_ids"] == ["t1"]
@@ -97,7 +108,7 @@ class TestCanonicalizeUnit:
     def test_duplicate_dict_id_is_fail_closed(self):
         # ts_2c038be6
         with pytest.raises(DuplicateSpecChildIdError):
-            canonicalize_fr_ac(
+            canonicalize_spec_children(
                 "functional_requirement",
                 [{"id": "fr_abc", "text": "A"}, {"id": "fr_abc", "text": "B"}],
             )
@@ -125,7 +136,7 @@ class TestCanonicalizeUnit:
                 return "deadbeef" + "0" * 24
 
         monkeypatch.setattr(canon.hashlib, "md5", lambda *_a, **_k: _FakeMd5())
-        out = canonicalize_fr_ac("functional_requirement", ["TEXT-A", "TEXT-B"])
+        out = canonicalize_spec_children("functional_requirement", [{"text": "TEXT-A"}, {"text": "TEXT-B"}])
         ids = [x["id"] for x in out]
         assert ids[0] == "fr_deadbeef"
         assert ids[1] == "fr_deadbeef_1"  # collision -> deterministic suffix
@@ -148,8 +159,8 @@ class TestResolveLinkedRequirementsToIds:
         resolved, unresolved = resolve_linked_requirements_to_ids(
             ["0", "fr_2222bbbb", "User can log in", "ghost"], self._FRS
         )
-        assert resolved == ["fr_1111aaaa", "fr_2222bbbb"]  # dedup, order
-        assert unresolved == ["ghost"]
+        assert resolved == ["fr_2222bbbb"]  # dedup, order
+        assert unresolved == ["0", "User can log in", "ghost"]
 
 
 # ====================================================================
@@ -167,7 +178,7 @@ def test_no_import_cycle_smoke():
     assert sse.spec_child_id is canon.spec_child_id
     assert spec_child_text({"text": "x"}) == "x"
     assert spec_child_id({"id": "fr_x"}) == "fr_x"
-    assert hasattr(m, "canonicalize_fr_ac")
+    assert hasattr(m, "canonicalize_spec_requirement_fields")
 
 
 # ====================================================================
@@ -193,8 +204,8 @@ async def test_create_spec_canonicalizes(db_factory):
             SpecCreate(
                 title="S",
                 delivery_context="brownfield",
-                functional_requirements=["FR one", "FR two"],
-                acceptance_criteria=["AC one"],
+                functional_requirements=[{"text": "FR one"}, {"text": "FR two"}],
+                acceptance_criteria=[{"text": "AC one"}],
             ),
         )
         await db.commit()
@@ -215,7 +226,7 @@ async def test_update_spec_preserves_ids(db_factory):
             SpecCreate(
                 title="S",
                 delivery_context="brownfield",
-                functional_requirements=["A", "B"],
+                functional_requirements=[{"text": "A"}, {"text": "B"}],
             ),
         )
         await db.commit()
@@ -224,14 +235,14 @@ async def test_update_spec_preserves_ids(db_factory):
 
     async with db_factory() as db:
         updated = await SpecService(db).update_spec(
-            spec_id, USER, SpecUpdate(functional_requirements=["B", "A"])  # reordered strings
+            spec_id, USER, SpecUpdate(functional_requirements=[{"id": original[text], "text": text} for text in ("B", "A")])  # explicit IDs
         )
         await db.commit()
         now = {x["text"]: x["id"] for x in updated.functional_requirements}
-    assert now == original  # ids preserved despite reorder + string input
+    assert now == original  # IDs preserved through reorder
 
 
-async def test_no_breaking_change_text_links(db_factory):
+async def test_current_id_links_survive_requirement_edit(db_factory):
     # ts_fb5fcb7e — legacy linked_requirements by text still validate after canonicalization
     board_id = await _seed_board(db_factory)
     async with db_factory() as db:
@@ -241,7 +252,7 @@ async def test_no_breaking_change_text_links(db_factory):
             SpecCreate(
                 title="S",
                 delivery_context="brownfield",
-                functional_requirements=["User can log in"],
+                functional_requirements=[{"id": "fr_login", "text": "User can log in"}],
                 business_rules=[
                     {
                         "id": "br_x",
@@ -249,7 +260,7 @@ async def test_no_breaking_change_text_links(db_factory):
                         "rule": "r",
                         "when": "w",
                         "then": "t",
-                        "linked_requirements": ["User can log in"],  # by TEXT
+                        "linked_requirements": ["fr_login"],
                     }
                 ],
             ),
@@ -260,89 +271,32 @@ async def test_no_breaking_change_text_links(db_factory):
     # An update that re-canonicalizes FR must not orphan the text-based BR link.
     async with db_factory() as db:
         updated = await SpecService(db).update_spec(
-            spec_id, USER, SpecUpdate(functional_requirements=["User can log in"])
+            spec_id, USER, SpecUpdate(functional_requirements=[{"id": "fr_login", "text": "User can log in"}])
         )
         await db.commit()
     # read-path still resolves the text link to the FR index
     assert resolve_linked_fr_indices(
-        ["User can log in"], updated.functional_requirements
+        ["fr_login"], updated.functional_requirements
     ) == {0}
 
 
-# ====================================================================
-# Integration — migrator (ts_e0731b4b)
-# ====================================================================
+@pytest.mark.parametrize("entity_type", ["functional_requirement", "technical_requirement", "acceptance_criterion"])
+@pytest.mark.parametrize("item", ["Old string", {"title": "Old alias"}, {"description": "Old alias"}, {"text": 42}, {"text": ""}, {"id": 3, "text": "Text"}, {"id": "", "text": "Text"}])
+def test_authored_requirements_refuse_old_shapes(entity_type, item):
+    with pytest.raises(ValueError, match="spec_requirement_"):
+        canonicalize_spec_children(entity_type, [item])
 
 
-async def _seed_legacy_spec(db_factory, board_id, frs, acs) -> str:
-    spec_id = _id("c4-spec")
-    async with db_factory() as db:
-        db.add(
-            Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="Legacy",
-                status=SpecStatus.DRAFT,
-                created_by=USER,
-                functional_requirements=frs,
-                acceptance_criteria=acs,
-            )
-        )
-        await db.commit()
-    return spec_id
+def test_omitted_id_is_new_authorship_even_when_text_matches():
+    first = canonicalize_spec_children("functional_requirement", [{"text": "Same"}])
+    second = canonicalize_spec_children("functional_requirement", [{"text": "Same"}], existing_items=first)
+    assert second[0]["id"] != first[0]["id"]
+    assert first[0]["text"] == second[0]["text"] == "Same"
 
 
-async def test_migrator_idempotent_and_dry_run(db_factory):
-    board_id = await _seed_board(db_factory)
-    spec_id = await _seed_legacy_spec(db_factory, board_id, ["FR a", "FR b"], ["AC a"])
-
-    # dry-run does not persist
-    async with db_factory() as db:
-        summary = await materialize_legacy_fr_ac_board(db, board_id, dry_run=True)
-    assert summary["scanned"] == 1 and summary["changed"] == 1 and summary["errors"] == 0
-    async with db_factory() as db:
-        spec = await SpecService(db).get_spec(spec_id)
-        assert spec.functional_requirements == ["FR a", "FR b"]  # unchanged
-
-    # real run persists
-    async with db_factory() as db:
-        await materialize_legacy_fr_ac_board(db, board_id, dry_run=False)
-    async with db_factory() as db:
-        spec = await SpecService(db).get_spec(spec_id)
-        first_ids = [x["id"] for x in spec.functional_requirements]
-    assert all(i.startswith("fr_") for i in first_ids)
-
-    # second real run is idempotent (same ids, reported as skipped)
-    async with db_factory() as db:
-        summary2 = await materialize_legacy_fr_ac_board(db, board_id, dry_run=False)
-    assert summary2["changed"] == 0 and summary2["skipped"] == 1
-    async with db_factory() as db:
-        spec = await SpecService(db).get_spec(spec_id)
-        second_ids = [x["id"] for x in spec.functional_requirements]
-    assert second_ids == first_ids
-
-
-async def test_migrator_corrupted_spec_is_atomic(db_factory):
-    # IMPL-3 fix (Codex): a spec where ONE field is corrupted (duplicate
-    # dict.id) must not partially persist the other field.
-    board_id = await _seed_board(db_factory)
-    spec_id = await _seed_legacy_spec(
-        db_factory,
-        board_id,
-        ["FR legacy"],  # would canonicalize
-        [{"id": "ac_dup", "text": "A"}, {"id": "ac_dup", "text": "B"}],  # corrupted
-    )
-
-    async with db_factory() as db:
-        summary = await materialize_legacy_fr_ac_board(db, board_id, dry_run=False)
-    assert summary["errors"] == 1
-    assert summary["changed"] == 0
-
-    async with db_factory() as db:
-        spec = await SpecService(db).get_spec(spec_id)
-    # nothing persisted: FR is still the legacy string, AC is byte-identical
-    assert spec.functional_requirements == ["FR legacy"]
-    assert spec.acceptance_criteria == [
-        {"id": "ac_dup", "text": "A"},
-        {"id": "ac_dup", "text": "B"},
-    ]
+@pytest.mark.parametrize("schema", [SpecCreate, SpecUpdate])
+@pytest.mark.parametrize("field", ["functional_requirements", "technical_requirements", "acceptance_criteria"])
+def test_spec_transport_refuses_requirement_strings(schema, field):
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        schema(**{"title": "New spec", field: ["Old string"]})

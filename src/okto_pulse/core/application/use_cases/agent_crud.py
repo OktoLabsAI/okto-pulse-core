@@ -78,7 +78,6 @@ class CreateAgentUseCase:
             actor,
             PermissionRequirement(
                 "agent.entity.create",
-                legacy_operation="profile.update",
             ),
             uow=uow,
         )
@@ -113,7 +112,6 @@ class ListAgentsForUserUseCase:
             actor,
             PermissionRequirement(
                 "agent.entity.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
         )
@@ -151,7 +149,6 @@ class ListAgentsForBoardUseCase:
             actor,
             PermissionRequirement(
                 "agent.board_access.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -192,7 +189,6 @@ class GetAgentUseCase:
             actor,
             PermissionRequirement(
                 "agent.entity.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
         )
@@ -231,7 +227,6 @@ class RegenerateAgentKeyUseCase:
             actor,
             PermissionRequirement(
                 "agent.api_key.rotate",
-                legacy_operation="profile.update",
             ),
             uow=uow,
         )
@@ -269,7 +264,6 @@ class DeleteAgentUseCase:
             actor,
             PermissionRequirement(
                 "agent.entity.delete",
-                legacy_operation="profile.update",
             ),
             uow=uow,
         )
@@ -317,7 +311,6 @@ class GrantBoardAccessUseCase:
             actor,
             PermissionRequirement(
                 "agent.board_access.grant",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -362,7 +355,6 @@ class RevokeBoardAccessUseCase:
             actor,
             PermissionRequirement(
                 "agent.board_access.revoke",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,

@@ -1,0 +1,108 @@
+{
+  "status": "pending_correction",
+  "review_kind": "planning_only_existing_artifact_inspection",
+  "core_commit": "99e766549451aeb94cd07be97370c761d493d12f",
+  "community_checkpoint": "f7e910d4",
+  "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-resource-parity.xml",
+  "artifact_sha256": "952189066f4c05ed37321ead3d3672c25faaa74400082129cd352de99f388158",
+  "test_file": "okto_labs_pulse_community\\tests\\test_spec_planning_resource_parity.py",
+  "test_sha256": "9976ae8626d41026c11ade6fd70bc2dfb54900fed9e634ca23b8a3dc7742a21c",
+  "suite": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "5",
+    "skipped": "0",
+    "tests": "16",
+    "time": "77.404",
+    "timestamp": "2026-10-14T21:50:02.864777-03:00",
+    "hostname": "Alienware_m15"
+  },
+  "cases": [
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[architecture_missing-True-rest]",
+      "result": "failed",
+      "failure": "AssertionError: {'category': 'conflict', 'code': 'spec_validation_gate_not_ready', 'details': {'reason': 'ResourceGateViolation'}, 'error': 'spec_validation_gate_not_ready', ...}\nassert 'spec_validat...ate_not_ready' == 'resource_gat..._architecture'\n  \n  - resource_gate_spec_missing_architecture\n  + spec_validation_gate_not_ready"
+    },
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[architecture_missing-True-mcp]",
+      "result": "failed",
+      "failure": "AssertionError: {'category': 'conflict', 'code': 'spec_validation_gate_not_ready', 'details': {'reason': 'ResourceGateViolation'}, 'error': 'spec_validation_gate_not_ready', ...}\nassert 'spec_validat...ate_not_ready' == 'resource_gat..._architecture'\n  \n  - resource_gate_spec_missing_architecture\n  + spec_validation_gate_not_ready"
+    },
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[architecture_missing-False-rest]",
+      "result": "passed",
+      "failure": null
+    },
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[architecture_missing-False-mcp]",
+      "result": "failed",
+      "failure": "AssertionError: {'error': \"Cannot validate spec: Architecture is required by the board's Spec resource propagation policy and is still missing. Attach an Architecture Design to the spec or mark Architecture as N/A with justification before validation.\"}\nassert None == \"Cannot validate spec: Architecture is required by the board's Spec resource propagation policy and is still missing. Attach an Architecture Design to the spec or mark Architecture as N/A with justification before validation.\"\n +  where None = <built-in method get of dict object at 0x0000013D9A2B5D40>('message')\n +    where <built-in method get of dict object at 0x0000013D9A2B5D40> = {'error': \"Cannot validate spec: Architecture is required by the board's Spec resource propagation policy and is still missing. Attach an Architecture Design to the spec or mark Architecture as N/A with justification before validation.\"}.get\n +  and   \"Cannot validate spec: Architecture is required by the board's Spec resource propagation policy and is still missing. Attach an Architecture Design to the spec or mark Architecture as N/A with justification before validation.\" = SpecPlanningComponent(key='architecture', state='blocked', mode='blocking', applicable=True, native_result='failed', r...sign to the spec or mark Architecture as N/A with justification before validation.\", next_action='review_architecture').message"
+    },
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[architecture_na-True-rest]",
+      "result": "passed",
+      "failure": null
+    },
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[architecture_na-True-mcp]",
+      "result": "passed",
+      "failure": null
+    },
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[architecture_na-False-rest]",
+      "result": "passed",
+      "failure": null
+    },
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[architecture_na-False-mcp]",
+      "result": "passed",
+      "failure": null
+    },
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[architecture_off-True-rest]",
+      "result": "passed",
+      "failure": null
+    },
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[architecture_off-True-mcp]",
+      "result": "passed",
+      "failure": null
+    },
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[architecture_off-False-rest]",
+      "result": "passed",
+      "failure": null
+    },
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[architecture_off-False-mcp]",
+      "result": "passed",
+      "failure": null
+    },
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[uncovered_mockup-True-rest]",
+      "result": "failed",
+      "failure": "AssertionError: {'category': 'conflict', 'code': 'spec_validation_gate_not_ready', 'details': {'reason': 'ResourceGateViolation'}, 'error': 'spec_validation_gate_not_ready', ...}\nassert 'spec_validat...ate_not_ready' == 'resource_gat...task_coverage'\n  \n  - resource_gate_spec_task_coverage\n  + spec_validation_gate_not_ready"
+    },
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[uncovered_mockup-True-mcp]",
+      "result": "failed",
+      "failure": "AssertionError: {'category': 'conflict', 'code': 'spec_validation_gate_not_ready', 'details': {'reason': 'ResourceGateViolation'}, 'error': 'spec_validation_gate_not_ready', ...}\nassert 'spec_validat...ate_not_ready' == 'resource_gat...task_coverage'\n  \n  - resource_gate_spec_task_coverage\n  + spec_validation_gate_not_ready"
+    },
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[uncovered_mockup-False-rest]",
+      "result": "passed",
+      "failure": null
+    },
+    {
+      "name": "test_native_resource_readiness_matches_public_promotions[uncovered_mockup-False-mcp]",
+      "result": "passed",
+      "failure": null
+    }
+  ],
+  "limitations": [
+    "Not rerun during this planning review.",
+    "Five failures stop before final persisted-state equality; rollback is not proven by those cases.",
+    "Native persistence with injected test identity; no authenticated wire or browser acceptance.",
+    "No U2, U3, U4 completion, install or runtime qualification claimed."
+  ]
+}

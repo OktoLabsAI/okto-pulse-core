@@ -1,0 +1,73 @@
+{
+  "criteria": [
+    "KG:KG-50",
+    "KG:KG-51"
+  ],
+  "proof_pair": "dist-native-main68",
+  "review_base": {
+    "core": "3969d869",
+    "community": "3a172484"
+  },
+  "verified": [
+    "Repeated health graph probes cannot checkpoint, acquire mutation fences or fall back to writable participants; native Global observations preserve read-only admission and propagate native deadlines.",
+    "Artifact observations preserve temporary evidence, reject corrupt or old aggregate-only records, do not create absent directories, and refuse incomplete observations instead of repairing data.",
+    "Three real relational census reads issue only SELECT statements and preserve the same source, queue, dead-letter counts and generation.",
+    "Registered REST routes, materialized MCP catalog/transport, installed CLI invocations and composition reject removed maintenance before authority/storage access; current guides and generated catalog remain consistent.",
+    "Frontend Health polling and visibility lifecycle, conservative unavailable states and absence of maintenance controls pass across five suites."
+  ],
+  "tests": {
+    "native-health-observation1.xml": {
+      "tests": "70",
+      "failures": "3",
+      "errors": "0",
+      "time": "77.037"
+    },
+    "native-health-artifacts2.xml": {
+      "tests": "16",
+      "failures": "0",
+      "errors": "0",
+      "time": "3.050"
+    },
+    "native-health-census-readonly1.xml": {
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "time": "7.090"
+    },
+    "native-health-observation-core1.xml": {
+      "tests": "69",
+      "failures": "0",
+      "errors": "0",
+      "time": "7.986"
+    },
+    "native-maintenance-absence1.xml": {
+      "tests": "192",
+      "failures": "0",
+      "errors": "0",
+      "time": "477.904"
+    }
+  },
+  "frontend": {
+    "success": true,
+    "numPassedTests": 83,
+    "numFailedTests": 0,
+    "numPendingTests": 0
+  },
+  "distinct_final_passed": 416,
+  "count_basis": "55 unchanged observation cases +16 corrected artifact cases +1 SQL census +69 Core +192 absence cases +83 frontend.",
+  "initial_failures": "Three artifact fixtures used aggregate-only or incomplete item records. Replaced positive fixtures with the current serializer; added explicit aggregate-only refusal. No product validation weakened.",
+  "limits": [
+    "Evidence composes service/port tests, actual SQL/Grafx/filesystem observations and frontend component tests; it is not a live browser-to-installed-server campaign.",
+    "Unavailable health remains unavailable when a read would need maintenance. The suite does not claim all fixture health states are healthy.",
+    "Only test fixtures changed for these criteria. Later independent Sprint UI cleanup uses main69 and its own receipt; it is not silently included in this proof pair."
+  ],
+  "artifacts": {
+    "provenance-native-health-retirement1.json": "7e2ce0c5e31d5be8bd2ec7a43e484f86a3be302130418b070adfd7a8f3149ee6",
+    "native-health-observation1.xml": "da99deb57763fc23e471e379f7e7cff9d29f3c3bcd98dba8049e03f1ce7952c1",
+    "native-health-artifacts2.xml": "c51e30fcc77c4a9f66fbb6bbc4ef1b7d89f175fe2e71ef6cc9d4542d5c4e4e83",
+    "native-health-census-readonly1.xml": "888e0e3d3e3a531a710d6165a42c6f42fdb8cfca57d1a8bcaf7bf94fa05ae44f",
+    "native-health-observation-core1.xml": "856373344ab15be4376338b556caafdf8e4ebb2183d6c4b6cd54f75ddcc58ae9",
+    "native-maintenance-absence1.xml": "e65e864b590b721d315e3712e2465202468b94b249070f481b573dc6684a0cf1",
+    "native-health-retirement-frontend1.json": "90cc3ffed2b21eeb5a714bb693cab231891dd5908b4d7ab96902a01078d1cb1e"
+  }
+}

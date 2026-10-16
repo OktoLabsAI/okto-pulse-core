@@ -96,7 +96,7 @@ async def _dlq_ids(db_factory, board_id) -> set[str]:
 def _find_by_artifact_rows(board_id: str, artifact_ref: str) -> list:
     """Query through the registered graph_store port (production surface).
 
-    Unlike ``_count_nodes_containing`` (raw Ladybug connection, ts2-only),
+    Unlike ``_count_nodes_containing`` (raw Grafx connection, ts2-only),
     this runs against whichever provider the registry serves: the real
     Community adapter or the sanctioned core in-memory provider. Both match
     ``source_artifact_ref`` by equality, so an absence assert is equivalent

@@ -93,19 +93,16 @@ def _cursor_timestamp_parameter(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def _optional_row_projection(
+def _traceability_row_projection(
     row: list[Any] | tuple[Any, ...],
     *,
     start_index: int,
 ) -> dict[str, Any]:
-    """Map additive semantic columns while accepting legacy-shaped rows."""
-
+    """Map the complete current projection; nullable column values remain valid."""
+    if len(row) < start_index + len(CODE_TRACEABILITY_READ_PROPERTIES):
+        raise ValueError("kg_node_projection_incomplete")
     return {
-        property_name: (
-            row[start_index + offset]
-            if len(row) > start_index + offset
-            else None
-        )
+        property_name: row[start_index + offset]
         for offset, property_name in enumerate(CODE_TRACEABILITY_READ_PROPERTIES)
     }
 
@@ -814,7 +811,7 @@ class KGService:
                         "created_at": _as_iso_timestamp(r[9]),
                         "superseded_by": r[10],
                         "node_type": ntype,
-                        **_optional_row_projection(r, start_index=11),
+                        **_traceability_row_projection(r, start_index=11),
                     }
             except Exception:
                 continue
@@ -889,9 +886,9 @@ class KGService:
                 "source_confidence": r[5],
                 "relevance_score": r[6] if r[6] is not None else 0.5,
                 "source_artifact_ref": r[7],
-                "graph_layer": r[8] if len(r) > 8 and r[8] else "legacy_unknown",
-                "maturity_status": r[9] if len(r) > 9 else None,
-                **_optional_row_projection(r, start_index=10),
+                "graph_layer": r[8] or "legacy_unknown",
+                "maturity_status": r[9],
+                **_traceability_row_projection(r, start_index=10),
             }
             for r in rows
         ]
@@ -1019,6 +1016,8 @@ class KGService:
         seen: set[str] = set()
         merged: list[list] = []
         for r in text_rows + semantic_rows:
+            if not isinstance(r, (list, tuple)) or len(r) != 8:
+                raise ValueError("decision_history_row_shape_invalid")
             if r[0] in seen:
                 continue
             seen.add(r[0])
@@ -1035,11 +1034,7 @@ class KGService:
                 "source_confidence": r[4],
                 "relevance_score": r[5] if r[5] is not None else 0.5,
                 "superseded_by": r[6],
-                # The decision-history surface is a provenance trace.  Keep
-                # backward compatibility with third-party stores that still
-                # emit the legacy seven-column row while projecting the
-                # canonical source ref whenever the store provides it.
-                "source_artifact_ref": r[7] if len(r) > 7 else None,
+                "source_artifact_ref": r[7],
             }
             for r in merged
         ]
@@ -1320,24 +1315,32 @@ class KGService:
         embedder = get_kg_registry().require_embedding_provider()
         query_vec = embedder.encode(topic)
 
-        # The vector path bypasses _cached_call. search.find_similar_nodes_by_type
-        # now re-raises a fail-closed graph-open failure as a typed
-        # KGToolError(code="graph_unavailable") instead of swallowing it into a
-        # silent [] (FR4/FR5); emit the open-failure metric here (OR or_0a8b78be)
-        # before that typed error propagates to the MCP handler.
+        # The vector path bypasses _cached_call, so it classifies graph-open
+        # failures itself: a routed/Grafx adapter raises the fail-closed
+        # GraphUnavailable and ``open_or_classify`` re-raises it as the typed
+        # KGToolError(code="graph_unavailable") instead of letting a raw
+        # exception escape the MCP handler (F4 uniform envelope, FR4/FR5).  A
+        # healthy graph with zero matching rows still returns [] unchanged
+        # (FR8).  Emit the open-failure metric (OR or_0a8b78be) below before
+        # the typed error propagates.
+        from okto_pulse.core.kg.graph_availability import open_or_classify
+
         _t0 = _time.monotonic()
         try:
-            raw = store.vector_search(
+            raw = open_or_classify(
+                lambda: store.vector_search(
+                    board_id=board_id,
+                    node_type="Decision",
+                    query_vec=query_vec,
+                    top_k=top_k * 2,  # fetch extra for re-ranking
+                    min_similarity=min_similarity,
+                    # Find Similar is a canonical knowledge surface.  Working
+                    # nodes remain available through the separately governed
+                    # diagnostic graph-layer paths, but must never leak through
+                    # this default decision-reuse query.
+                    graph_layer="canonical",
+                ),
                 board_id=board_id,
-                node_type="Decision",
-                query_vec=query_vec,
-                top_k=top_k * 2,  # fetch extra for re-ranking
-                min_similarity=min_similarity,
-                # Find Similar is a canonical knowledge surface.  Working
-                # nodes remain available through the separately governed
-                # diagnostic graph-layer paths, but must never leak through
-                # this default decision-reuse query.
-                graph_layer="canonical",
             )
         except KGToolError as exc:
             if exc.code == "graph_unavailable":
@@ -1413,6 +1416,18 @@ class KGService:
                 message=f"Constraint not found: {constraint_id}",
             )
         r = main[0]
+        from okto_pulse.core.ports.card_projection import bug_origin_proxy_read_metadata
+        violations = []
+        for row in violation_rows:
+            if not isinstance(row, (list, tuple)) or len(row) != 7:
+                raise KGToolError(
+                    code="graph_contract_incompatible",
+                    message="Constraint associations require the current provenance contract.",
+                )
+            metadata = bug_origin_proxy_read_metadata(rule_id=row[3], layer=row[4],
+                created_by=row[5], fallback_reason=row[6])
+            violations.append({'id': row[0], 'title': row[1], **metadata,
+                'confidence': row[2]})
         return {
             "id": r[0],
             "title": r[1],
@@ -1421,7 +1436,7 @@ class KGService:
             "source_artifact_ref": r[4],
             "source_confidence": r[5],
             "origins": [{"id": o[0], "title": o[1]} for o in origin_rows],
-            "violations": [{"id": v[0], "title": v[1]} for v in violation_rows],
+            "violations": violations,
         }
 
     # ------------------------------------------------------------------
@@ -1528,19 +1543,6 @@ class KGService:
         # `graph_layer=all`). A wider window + the linear fallback below keep the
         # board-scoped result complete.
         search_k = max(top_k, min(top_k * 5, 500))
-
-        try:
-            from okto_pulse.core.kg.global_discovery_writer import (
-                global_discovery_writer_scope,
-            )
-
-            with global_discovery_writer_scope(
-                operation="query_global.layer_schema_migrate",
-                owner_id="kg-query-global-layer-schema",
-            ):
-                global_runtime.ensure_layer_schema()
-        except Exception as exc:
-            logger.debug("kg.query_global.layer_schema_migrate_failed err=%s", exc)
 
         try:
             from okto_pulse.core.kg.global_discovery_writer import (

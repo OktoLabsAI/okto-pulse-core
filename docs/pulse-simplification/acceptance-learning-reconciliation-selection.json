@@ -1,0 +1,157 @@
+{
+  "scope": "KG7.5/K3 historical Learning work selection in the private upgrade receipt",
+  "suites": {
+    "r1-core": {
+      "passed": 58,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "r1-community": {
+      "passed": 17,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "integration-community": {
+      "passed": 1,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "preserved_failure": {
+    "final-community": {
+      "passed": 4,
+      "failed": 1,
+      "reason": "Bootstrap did not account for its declared additive NULL Learning binding column."
+    },
+    "fixed-community": {
+      "passed": 11,
+      "failed": 1,
+      "reason": "Frozen draft Spec fixture expired by the existing seven-day working TTL; only fixture time was corrected before the offline backup."
+    }
+  },
+  "verified": [
+    "Every source revision is validated before selecting the latest explicit capture per origin.",
+    "Narrative hashes and graph presence cannot manufacture missing original semantic source.",
+    "Multiple historical generations remain ambiguous; no version is selected implicitly.",
+    "Native restoration keeps captures pending and records exact internal work references without writing edges.",
+    "The v2 receipt is rederived from the authenticated snapshot; tampering is refused.",
+    "V1 receipts preserve their exact older field set and cannot borrow new observations.",
+    "An integrated private-candidate checkpoint with literal cognitive restoration still verifies.",
+    "Frozen v034 bootstrap permits only the already-declared additive NULL binding field, preserving old cells; fabricated binding and unknown-column mutations roll back."
+  ],
+  "limits": [
+    "This is work selection and limitation reporting, not completed historical association reconciliation.",
+    "Selected captures still require current-source, evidence, binding, immutable lineage and hold checks under write fences.",
+    "Executing the selected work inside the candidate and proving all SQL/graph deltas remain the next dependency.",
+    "The restoration receipt covers Boards with captured cognitive source rows; missing-source graph inventory remains separately pending in history qualification.",
+    "The final native suite passed four tests before its integrated bootstrap failure; two repeat earlier cases. Counts are not all distinct.",
+    "The fixed suite passed all eleven bootstrap tests before the time-dependent integration fixture failed; its corrected integration is reported separately.",
+    "Global inventory remains 78 verified / 33 partial / 135 unaudited.",
+    "No frontend changes, real-data migration, active runtime restart or final release validation occurred."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-fixed-closure.log": "0bf444203ee7300981db655c84e2390716d669b5b1be04b51912b8d76963fef6",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-repro-community.xml": "3bcf3c4eac45b593a00498956ef343d4f2fd2603b04d2d37eba12db66fbce6bd",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-repro-community.log": "3d89fd79282d284c14fa1f8284c1d4a4ca190ed3c98b28aab05a454edaf89567",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-reconciliation-r1.json": "760161c14826719370e858652fca2bee14e5a37167bf1dc717256def49279c4e",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-reconciliation-repro.json": "ebeb319b1818e511ef5ce7c92ac717ec7abcbc0d2dcd62ac1ab084149b60c0fd",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-reconciliation-r1.json": "305a43bfdad941da3e2f9898c0ca4cc5ef223a97bcd470b2a2aca991941f64bb",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-reconciliation-final.json": "7352aa3c9ed1af5b0f7d549df2b8502a11a36845b84f076f44fd3eebd352767e",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-reconciliation-fixed.json": "ee8d007c45eddf196e16d495e6992abb82a3c381c5436c97b01f3394232aac63",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-final-community.xml": "496f484544fbaf04181633d3402d745b15bb0b6928b534f9ecd31a3aca1e6dec",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-final-community.log": "4a6ae0822fd81d47eefb62642559faf2f073054dc2238fde2f7de92a9bcdfea2",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bootstrap-repro-community.xml": "2678c411b15490cdf506bec1949d6b179e71cbd3248090c6c9cf833a3d660ad9",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bootstrap-repro-community.log": "91a1fd447e2c324252b4bbd6df4740c8ff122ead14dac51fd0fe4081c3828672",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-fixed-community.xml": "9a676b49ab1ba1558fdc80027f6a35e193e79fe2a559b3ff8235303881e786f6",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-fixed-community.log": "05e3e8d6db10dc48b0dd99d61e6bef51d2b41b334a4e3935b2f03537545cbba7",
+    "PULSE_REFACTOR/.validation-v040/run_learning_reconciliation.py": "cb725e5c10d0a8a0366b0a889cc8f84fbdedaeecf6edb9b73eb78062c1d7a4bb",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-r1-core.xml": "2f3501e7b07fbffe19e173492d063d17acab73dfbbc14cb0e425adaf9432be4e",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-r1-community.xml": "8b0b583b15ba3f5344b979fec84f43af36a6a97cf04c7cdd6befccf3b9a43fc8",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-integration-community.xml": "a6dc7ee893d6e4881462eefdc598c4e9805870b72af9582fdc664e81054a5c6b",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_reconciliation.py": "282dc3f337b5c65be41d261d9001905a5e31d57e7ca9998381f1272093fdad2b",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/learning_reconciliation.py": "fb43f635cf6ab200d4684953735dbfc15e25f4020ca6de7e8c2a844423e986e2",
+    "okto_labs_pulse_core/tests/test_learning_reconciliation.py": "658cc9d8d7c15800d3c8cce1ff0653c9cbbdfb7b9235bb3edd8f1fe131bb021b",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_cognitive_restoration.py": "27f7bda8658213ae658569bd15bfe147c313ddddd1bbd4339b37602425768da9",
+    "okto_labs_pulse_community/tests/test_retirement_learning_reconciliation.py": "f470cd550862785343a6cf7fe54015a872e517a7ada7eb26efd828715163faee",
+    "okto_labs_pulse_community/tests/test_retirement_reused_history.py": "a929a5499a3531c9bb412a6ad06bdb68a4959e86c644b76d1a8f54b4a62b1fd9",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_bootstrap.py": "20fcdfafee567af75926cfa70c2cf7ffb880b146a0cea9718d026b8f40787d32",
+    "okto_labs_pulse_community/tests/test_retirement_bootstrap_learning_bindings.py": "5de0cd7660af8b0f8aa99f6c060ef7419a292cd10abe755ed680356d9223e895"
+  }
+}

@@ -167,9 +167,7 @@ def test_s5_null_attestation_reads_as_one_in_recompute(kg_board):
 
 
 def test_s5_find_by_topic_orders_by_attestation_on_read(kg_board):
-    from okto_pulse.community.adapters.kuzu_graph_store import (
-        CommunityKuzuGraphStore,
-    )
+    from kg_schema_testing import graph_composition
     from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
 
     conn_ctx = open_board_connection(kg_board)
@@ -177,7 +175,7 @@ def test_s5_find_by_topic_orders_by_attestation_on_read(kg_board):
         _seed_decision(kconn, "decision_plain", 1)
         _seed_decision(kconn, "decision_attested", 20)
 
-    store = CommunityKuzuGraphStore()
+    store = graph_composition().board.graph_store
     rows = store.find_by_topic(kg_board, "Decision", "Fato", QueryFilters())
     ids = [r[0] for r in rows]
     assert ids.index("decision_attested") < ids.index("decision_plain")

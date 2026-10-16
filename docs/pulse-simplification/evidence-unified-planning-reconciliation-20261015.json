@@ -1,0 +1,151 @@
+{
+  "kind": "documentary_reconciliation",
+  "date": "2026-10-15",
+  "baseline": {
+    "core": "ee80cf2b",
+    "community": "ccc76dfc",
+    "branch": "feature/v0.4.0",
+    "both_match_fetched_origin": true
+  },
+  "status": {
+    "U1": "implemented",
+    "U2": "backend_qualified",
+    "U3": "partial",
+    "U4": "pending"
+  },
+  "new_behavior_tests": false,
+  "live_runtime_read": false,
+  "product_changes": false,
+  "limits": [
+    "Existing artifacts reread; no new browser or MCP execution.",
+    "No authenticated scenario execution inferred from runner registration.",
+    "Source shows differing lifecycle evaluation; adapter snapshots still require comparison.",
+    "Local human Full Control is not evidence of revocable multi-user authentication."
+  ],
+  "scope": {
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2",
+    "card_id": null,
+    "card_type": null,
+    "spec_edition": 2,
+    "spec_version": 20,
+    "card_version": null
+  },
+  "observed": {
+    "coverage": {
+      "state": "available",
+      "authority": "evaluate_delivery_coverage",
+      "complete_for_scope": true,
+      "counts": {
+        "obligations": 4,
+        "implementation_proven": 0,
+        "verification_proven": 0,
+        "observed_obligations": 4,
+        "decisions": 0,
+        "decisions_verified": 0
+      },
+      "blockers": [
+        "delivery_implementation_missing",
+        "delivery_test_result_missing"
+      ],
+      "rejected_record_refs": [
+        "card_delivery_6b543882c22b45e6bf5347e4d25e9812",
+        "card_delivery_dae5ce8149da444bb0a1e97c4b2aca38"
+      ],
+      "interpretation": "admitted_proof_and_authorized_waivers_do_not_approve_other_gates"
+    },
+    "readiness": {
+      "implementation": {
+        "unit": "obligation",
+        "status": "known",
+        "percent": 100,
+        "total": 4,
+        "applicable": 4,
+        "satisfied": 4,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 0,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 4,
+          "missing": 0,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [],
+        "known_counts": null
+      },
+      "verification": {
+        "unit": "obligation",
+        "status": "known",
+        "percent": 0,
+        "total": 4,
+        "applicable": 4,
+        "satisfied": 0,
+        "not_applicable": 0,
+        "waived": 0,
+        "unresolved": 4,
+        "unknown": 0,
+        "counts_by_state": {
+          "satisfied": 0,
+          "missing": 4,
+          "partial": 0,
+          "failed": 0,
+          "stale": 0,
+          "conflict": 0,
+          "waived": 0,
+          "not_applicable": 0,
+          "unknown": 0
+        },
+        "reason_codes": [
+          "verification_not_run"
+        ],
+        "known_counts": null
+      },
+      "lifecycle": {
+        "stored_status": "in_progress",
+        "target": "done",
+        "check_status": "blocked",
+        "other_blocker_count": null,
+        "qualification_is_current": false,
+        "reason_codes": [
+          "cards_incomplete"
+        ],
+        "context_refs": [
+          "spec:38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2"
+        ]
+      }
+    },
+    "test_card_last_recorded": {
+      "id": "ba5cf224-0da8-50fb-be37-4cc572d11e2c",
+      "title": "U3 mock — verify normalize_label",
+      "status": "in_progress",
+      "subject_version": 1,
+      "position": 1
+    }
+  },
+  "artifacts": [
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/coverage-native-before.json",
+      "sha256": "3873bf38d77a770c1b2e4fd429f0d59291612cdbe9f4948763a6a7b0ed0f9e49"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/spec-readiness-before-tests.response.json",
+      "sha256": "9630637336556fca948fb7bb5534c45bbadd8ed7060f3b42fe11c6ed117a8600"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/delivery-test-move-in_progress.json",
+      "sha256": "0131feacd101caba7ca305a17e5fff0df02e02733d50afb1971009cca41312f5"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/delivery-state.json",
+      "sha256": "851605ee07f35b1eb3b6be40ccb43eeb340d05b8f75004a60eb11b7412f8555c"
+    }
+  ],
+  "next_step": "U3 UV18: compare authoritative snapshots and reproduce Coverage/readiness divergence before bounded correction; retain lifecycle gates."
+}

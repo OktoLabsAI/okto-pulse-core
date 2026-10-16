@@ -1,0 +1,34 @@
+{
+  "scope": "ARQVER:AC-VER-18",
+  "status": "partial",
+  "proof_pair": "dist-native-main90",
+  "evidence": [
+    "Actual FastAPI/FastMCP responses equal for combined native qualification, delivery rollup and Card resume, with new sessions and controlled actor context.",
+    "Typed real permission decisions preserved; read flags include required board.read and code_traceability.evidence.read. No mocked authorization decision.",
+    "Frontend mounts requirement, delivery and resume panels with exact backend-generated JSON fixture, showing inherited FR responsibility, promoted IR names/pending work, blocked rollup and executor checkpoint.",
+    "Each panel requests its bounded API once; no getSpec call, no passing checkmark or progress-write authority inferred."
+  ],
+  "results": {
+    "backend_passed": 1,
+    "backend_seconds": 12.7,
+    "frontend_passed": 1
+  },
+  "limits": [
+    "Controlled authentication contexts, not credential/login validation; same reader ID across REST/MCP.",
+    "Partial material progress only. Still add authenticated partial execution evidence and verify its provenance in this combined context before qualifying AC-VER-18.",
+    "No product/frontend implementation or SPA change, no release or real-data operation."
+  ],
+  "iterations": [
+    "1 JSON-normalize tuple/list domain values for wire comparison.",
+    "2 use default Spec rollup query, not Card-only ledger view.",
+    "3-7 corrected fixture permission construction/import and supplied existing board.read prerequisite; no policy relaxation.",
+    "8 final transport test passed."
+  ],
+  "artifacts": {
+    "provenance-native-context-transports-20261008.json": "cac31df3562cc947d1f2c6158f7b6b1b09b7143591ea4db3cd7d3d8571cbf4e0",
+    "native-context-transports-20261008-8.xml": "526aab130402f6c9d5d71b9e2c1a6f14e6b6b741a12178ca4f76f2ea26e6c98c",
+    "native-context-transports-20261008-8.log": "65e327b4108b0a94563a23667e75c9f5b68bda8e56a2d9811b35951f663d2bc0",
+    "native-context-frontend-20261008.json": "1a850a612a4159d3f80975a6ab2bad06683561c058af8ac5773e661601885f10",
+    "native-context-transports-20261008-8-tmp/test_inherited_br_promoted_ir_0/native-context.json": "9f74807cc365bf3f45289e194f80606a87a68bf1baf154c13465d016fb104fc2"
+  }
+}

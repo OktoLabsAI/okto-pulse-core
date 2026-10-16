@@ -8,38 +8,19 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 
 Read `okto-pulse://reference/knowledge-governance` before authoring a KB or
 promoting a finding. KB bodies are advisory/untrusted; first-class SDLC
-artifacts remain authoritative. Legacy calls still use `legacy_all`: an
-omitted ID filter copies all resources selected by the existing path.
-Selective propagation v2 is opt-in through a complete versioned envelope or
-the dedicated card-assignment tools below. An omitted v2 envelope stays on the
-legacy path; a supplied envelope is authoritative and never implies legacy
-copy-all.
-
-## `okto_pulse_add_card_knowledge`
-
-Deprecated / blocked. Card Knowledge Base resources are read-only governed
-snapshots. Create or update the Knowledge Base on the source ideation,
-refinement, or spec, then call `okto_pulse_copy_knowledge_to_card`.
-
-Args:
-    board_id: Board ID
-    card_id: Card ID
-    title: KE title
-    content: KE content (Markdown by default)
-    description: Short summary (optional)
-    mime_type: Content MIME type (default text/markdown)
-    source: Free-form provenance hint (e.g. "manual", "copied_from_spec:<spec_id>:<kb_id>")
-
-Returns:
-    JSON error `card_resource_read_only`
+artifacts remain authoritative. Knowledge uses one governed selection
+contract. An omitted creation envelope starts with no inherited Knowledge;
+it never means copy-all. Use the envelope for explicit reference, snapshot or
+drop decisions and a stable idempotency key for request replay. Existing Card
+assignments use the replace, drop and refresh tools below.
 
 ## `okto_pulse_add_ideation_knowledge`
 
 Add a knowledge base item to an ideation.
 
-Provide exactly ONE of content or content_reference. Ideation KBs are
-propagated to refinements/specs by default when those artifacts are derived
-or created from the ideation.
+Provide exactly ONE of content or content_reference. Inherited Knowledge is
+selected explicitly in the derivation/creation envelope. Omitting that envelope
+selects no inherited Knowledge; adding a source KB does not imply copy-all.
 
 Args:
     board_id: Board ID
@@ -49,7 +30,7 @@ Args:
     content_reference: Runtime-specific reference resolved by the active edition
     description: Short description of what this document contains (optional)
     mime_type: Content type, default "text/markdown"
-    governance_metadata: Optional v1 object or JSON string; follow the complete
+    governance_metadata: Optional native v1 object; follow the complete
         closed contract at okto-pulse://reference/knowledge-governance
 
 ## `okto_pulse_add_refinement_knowledge`
@@ -67,7 +48,7 @@ Args:
     content_reference: Runtime-specific reference resolved by the active edition
     description: Short description of what this document contains (optional)
     mime_type: Content type, default "text/markdown"
-    governance_metadata: Optional v1 object or JSON string; follow the complete
+    governance_metadata: Optional native v1 object; follow the complete
         closed contract at okto-pulse://reference/knowledge-governance
 
 Returns:
@@ -88,30 +69,11 @@ Args:
     content_reference: Runtime-specific reference resolved by the active edition
     description: Short description of what this document contains (optional)
     mime_type: Content type, default "text/markdown"
-    governance_metadata: Optional v1 object or JSON string; follow the complete
+    governance_metadata: Optional native v1 object; follow the complete
         closed contract at okto-pulse://reference/knowledge-governance
 
 Returns:
     JSON with created knowledge base item
-
-## `okto_pulse_copy_knowledge_to_card`
-
-Copy knowledge base entries from a spec to a card as inline card KEs.
-Each copied entry is stored in Card.knowledge_bases with stable provenance.
-Complete governance metadata is copied unchanged. An existing managed Spec
-snapshot may be refreshed at the same id/source when the source changes;
-semantically identical metadata is a no-op. Metadata never changes selection,
-fan-out, Resource Gate, or lineage.
-
-Args:
-    board_id: Board ID
-    spec_id: Source spec ID
-    card_id: Target card ID
-    knowledge_ids: Multi-value knowledge base IDs to copy (empty = copy ALL) —
-        formats: okto-pulse://reference/multivalue.
-
-Returns:
-    JSON with count of knowledge entries copied and total card KEs
 
 ## `okto_pulse_replace_card_knowledge_assignments`
 
@@ -205,12 +167,6 @@ Returns:
   retryable, repeat the exact request with the same key so the durable result
   can be recovered.
 
-## `okto_pulse_delete_card_knowledge`
-
-Deprecated / blocked. Card Knowledge Base resources are read-only governed
-snapshots. Delete or update the source Knowledge Base, then refresh card context
-with `okto_pulse_copy_knowledge_to_card`.
-
 ## `okto_pulse_delete_ideation_knowledge`
 
 Delete a knowledge base item from an ideation.
@@ -282,14 +238,8 @@ List knowledge base items for a spec, ideation, refinement, or card.
         board_id: Board ID
         entity_type: One of: spec, ideation, refinement, card
         entity_id: ID of the entity
-        filters: Optional filter dict OR JSON string.
+        filters: Optional native filter object.
             mime_type: filter by MIME type
 
     Returns:
         JSON {knowledge_bases: [...], count: int, entity_type: str} or structured error
-
-## `okto_pulse_update_card_knowledge`
-
-Deprecated / blocked. Card Knowledge Base resources are read-only governed
-snapshots. Update the source Knowledge Base, then refresh card context with
-`okto_pulse_copy_knowledge_to_card`.

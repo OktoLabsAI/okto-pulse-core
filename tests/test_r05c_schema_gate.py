@@ -80,7 +80,6 @@ def test_ts_fe24d781_gate_deterministic_blocking_oracle_with_ledger():
         "kg/rebuild_service.py",
         "kg/search.py",
         "kg/canonical_learning_partition.py",
-        "kg/schema_layer_guard.py",
         "kg/stale_canonical_parity.py",
         "kg/workers/consolidation.py",
         "mcp/server.py",
@@ -140,21 +139,12 @@ def test_ts_fe24d781_class_a_sites_consume_graph_transaction_port():
     CypherExecutor, so it stays off the ledger.
 
     Since the R01A strangler (50e3193) only ``get_kg_metrics`` consumes the
-    transaction port directly in the route module; ``boost_node`` now goes
-    through ``BoostNodeUseCase`` and its graph read/SET lives in
-    ``kg.governance.boost_node``, which consumes the same port."""
+    transaction port directly in the route module. Manual score tuning was
+    retired by F4; surviving graph consumers retain the public port."""
     import okto_pulse.community.api.kg_routes as kg_routes
-    import okto_pulse.community.api.kg_tick as kg_tick
     import okto_pulse.core.application.kg_tick as kg_tick_application
     import okto_pulse.core.kg.canonical_learning_partition as clp
     import okto_pulse.core.kg.governance as kg_governance
-
-    # The transport is persistence-agnostic and delegates through the composed
-    # service catalog rather than opening a graph transaction itself.
-    tick_route_src = Path(inspect.getsourcefile(kg_tick)).read_text(encoding="utf-8")
-    assert "db.services.kg.dispatch_manual_tick" in tick_route_src
-    assert "graph_transaction.begin" not in tick_route_src
-    assert "open_board_connection" not in tick_route_src
 
     # The Core application policy owns the force-rebuild graph transaction.
     tick_application_src = Path(inspect.getsourcefile(kg_tick_application)).read_text(
@@ -171,16 +161,14 @@ def test_ts_fe24d781_class_a_sites_consume_graph_transaction_port():
 
     # kg_routes: get_kg_metrics consumes the transaction port and the
     # sync edge diagnostics consume CypherExecutor; no raw connection remains.
-    # boost_node was strangled to the use-case layer in R01A (50e3193).
     routes_src = Path(inspect.getsourcefile(kg_routes)).read_text(encoding="utf-8")
     assert routes_src.count("resolve_graph_transaction().begin") == 1
     assert "scope.execute" in routes_src
     assert "open_board_connection" not in routes_src
 
-    # The strangled boost path still consumes the port from governance —
-    # it did not regress to a raw connection.
+    # The retired tuning writer has no hidden governance implementation.
     governance_src = Path(inspect.getsourcefile(kg_governance)).read_text(encoding="utf-8")
-    assert "graph_transaction.begin" in governance_src
+    assert "mutate_boost_node_graph" not in governance_src
 
     # The fully-migrated files are off the ledger.
     report = run_kg_schema_import_classification_gate()

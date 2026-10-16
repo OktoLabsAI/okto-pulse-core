@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 
+from okto_pulse.core.domain.test_scenarios import ADMITTED_VERIFICATION_METHODS
+
 from okto_pulse.core.runtime_context import (
     register_runtime_value,
     reset_runtime_values,
@@ -19,6 +21,11 @@ class TestEvidenceWriteVerification:
 
 
 class TestEvidenceWriteVerifier(Protocol):
+    @property
+    def verification_methods(self) -> frozenset[str]:
+        """Methods this concrete verifier authenticates; never client input."""
+        ...
+
     def verify(
         self,
         *,
@@ -63,8 +70,36 @@ class TestEvidenceExecutionIssuer(Protocol):
     ) -> TestEvidenceExecutionResult: ...
 
 
+@dataclass(frozen=True, slots=True)
+class TestVerificationReportRequest:
+    """Authorized external observation; edition signs submission, never executes it."""
+    board_id: str
+    spec_id: str
+    scenario_id: str
+    scenario_sha256: str
+    actor_id: str
+    report: Mapping[str, Any]
+
+
+class TestVerificationReportIssuer(Protocol):
+    async def admit(self, request: TestVerificationReportRequest) -> TestEvidenceExecutionResult: ...
+
+
 _VERIFIER_KEY = "ports.test_evidence.write_verifier"
 _ISSUER_KEY = "ports.test_evidence.execution_issuer"
+_REPORT_ISSUER_KEY = "ports.test_evidence.report_issuer"
+
+
+def register_test_verification_report_issuer(issuer: TestVerificationReportIssuer) -> None:
+    register_runtime_value(_REPORT_ISSUER_KEY, issuer)
+
+
+def resolve_test_verification_report_issuer() -> TestVerificationReportIssuer | None:
+    return resolve_runtime_value(_REPORT_ISSUER_KEY)  # type: ignore[return-value]
+
+
+def reset_test_verification_report_issuer_for_tests() -> None:
+    reset_runtime_values(_REPORT_ISSUER_KEY)
 
 
 def register_test_evidence_write_verifier(
@@ -80,6 +115,25 @@ def resolve_test_evidence_write_verifier() -> TestEvidenceWriteVerifier | None:
 
 def reset_test_evidence_write_verifier_for_tests() -> None:
     reset_runtime_values(_VERIFIER_KEY)
+
+
+def supported_test_verification_methods() -> frozenset[str] | None:
+    """Unknown capability stays unavailable, including legacy verifier doubles."""
+    verifier = resolve_test_evidence_write_verifier()
+    declared = getattr(verifier, "verification_methods", None)
+    if not isinstance(declared, frozenset) or not all(
+        isinstance(item, str) for item in declared
+    ):
+        return None
+    return declared & ADMITTED_VERIFICATION_METHODS
+
+
+def require_supported_test_verification_method(method: object) -> None:
+    if method is None:
+        return  # Compatibility: absence does not adopt the new verification contract.
+    supported = supported_test_verification_methods()
+    if not isinstance(method, str) or supported is None or method not in supported:
+        raise ValueError("verification_method_unsupported")
 
 
 def register_test_evidence_execution_issuer(
@@ -98,6 +152,11 @@ def reset_test_evidence_execution_issuer_for_tests() -> None:
 
 
 __all__ = [
+    "TestVerificationReportRequest",
+    "TestVerificationReportIssuer",
+    "register_test_verification_report_issuer",
+    "resolve_test_verification_report_issuer",
+    "reset_test_verification_report_issuer_for_tests",
     "TestEvidenceWriteVerification",
     "TestEvidenceWriteVerifier",
     "TestEvidenceExecutionIssuer",
@@ -109,4 +168,6 @@ __all__ = [
     "reset_test_evidence_write_verifier_for_tests",
     "resolve_test_evidence_execution_issuer",
     "resolve_test_evidence_write_verifier",
+    "supported_test_verification_methods",
+    "require_supported_test_verification_method",
 ]

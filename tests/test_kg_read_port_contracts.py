@@ -1,4 +1,4 @@
-"""Storage-independent contracts retained after removing the Ladybug fixtures."""
+"""Storage-independent contracts retained after removing the retired graph-runtime fixtures."""
 
 from types import SimpleNamespace
 

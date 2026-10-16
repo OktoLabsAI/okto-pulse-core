@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
 import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -16,6 +20,93 @@ from sqlalchemy_test_models import ArchitectureFindingRun, Board, Card, CardStat
 
 
 USER_ID = "architecture-rest-user"
+
+
+@pytest.mark.parametrize("version", [0, -1, True, "1", 1.5])
+def test_rest_rejects_invalid_authored_version_without_write(_client_and_entities, version):
+    client, ids = _client_and_entities
+    created = client.post(f"/api/v1/ideations/{ids['ideation_id']}/architecture", json=_architecture_body())
+    assert created.status_code == 201, created.text
+    original = created.json()
+    url = f"/api/v1/architecture/{original['id']}"
+    rejected = client.patch(url, json={"title": "Invalid", "expected_version": version})
+    assert rejected.status_code == 422, rejected.text
+    assert client.get(url).json() == original
+
+
+def test_rest_update_rejects_the_authored_version_after_another_writer(_client_and_entities):
+    client, ids = _client_and_entities
+    created = client.post(f"/api/v1/ideations/{ids['ideation_id']}/architecture", json=_architecture_body())
+    assert created.status_code == 201, created.text
+    original = created.json()
+    url = f"/api/v1/architecture/{original['id']}"
+    other = client.patch(url, json={"title": "Other writer", "expected_version": original['version']})
+    assert other.status_code == 200, other.text
+    stale = client.patch(url, json={"title": "Stale authored title", "expected_version": original['version']})
+    assert stale.status_code == 409, stale.text
+    assert stale.json()['detail']['code'] == 'architecture_version_conflict'
+    current = client.get(url).json()
+    assert current['title'] == 'Other writer'
+    assert current['version'] == other.json()['version']
+
+
+@pytest.mark.parametrize("operation", ["delete", "import", "payload"])
+def test_architecture_operations_refuse_an_old_authored_base(_client_and_entities, operation):
+    client, ids = _client_and_entities
+    created = client.post(f"/api/v1/ideations/{ids['ideation_id']}/architecture", json=_architecture_body())
+    assert created.status_code == 201, created.text
+    original = created.json()
+    url = f"/api/v1/architecture/{original['id']}"
+    updated = client.patch(url, json={"title": "Current design", "expected_version": original['version']})
+    assert updated.status_code == 200, updated.text
+    current = client.get(url + '?include_payloads=true').json()
+    if operation == "delete":
+        rejected = client.delete(url, params={"expected_version": original['version']})
+    elif operation == "import":
+        rejected = client.post(url + '/diagrams/import-excalidraw', json={
+            "title": "Stale import", "payload": {"elements": []},
+            "expected_version": original['version'],
+        })
+    else:
+        rejected = client.put(url + '/diagrams/diagram-main/payload', json={
+            "payload": {"elements": []}, "expected_version": original['version'],
+        })
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()['detail']['code'] == 'architecture_version_conflict'
+    assert client.get(url + '?include_payloads=true').json() == current
+
+
+@pytest.mark.parametrize("boundaries", [[], ["Tenant data, isolated", "Backend runtime"]])
+def test_rest_boundaries_validate_create_read_and_update(_client_and_entities, boundaries):
+    client, ids = _client_and_entities
+    body = _architecture_body()
+    body["entities"][0]["boundaries"] = boundaries
+    checked = client.post("/api/v1/architecture/validate", json=body)
+    assert checked.status_code == 200, checked.text
+    assert checked.json()["valid"] is True
+    created = client.post(f"/api/v1/ideations/{ids['ideation_id']}/architecture", json=body)
+    assert created.status_code == 201, created.text
+    design_id = created.json()["id"]
+    loaded = client.get(f"/api/v1/architecture/{design_id}")
+    assert loaded.json()["entities"][0]["boundaries"] == boundaries
+    replacement = ["Public port only", "Keep comma, and newline\ninside item"]
+    body["entities"][0]["boundaries"] = replacement
+    updated = client.patch(f"/api/v1/architecture/{design_id}", json={"entities": body["entities"]})
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["entities"][0]["boundaries"] == replacement
+
+
+@pytest.mark.parametrize("boundaries", ["Backend", None, [""], [" \n"], ["Valid", 2]])
+def test_rest_boundaries_rejected_by_dry_run_and_create(_client_and_entities, boundaries):
+    client, ids = _client_and_entities
+    body = _architecture_body()
+    body["entities"][0]["boundaries"] = boundaries
+    checked = client.post("/api/v1/architecture/validate", json=body)
+    assert checked.status_code == 200, checked.text
+    assert checked.json()["valid"] is False
+    assert any("entities[0].boundaries" in issue for issue in checked.json()["issues"])
+    created = client.post(f"/api/v1/ideations/{ids['ideation_id']}/architecture", json=body)
+    assert created.status_code == 422, created.text
 
 
 def _id(prefix: str) -> str:
@@ -78,7 +169,7 @@ def _architecture_body(title: str = "Runtime Architecture") -> dict:
                             "type": "arrow",
                             "sourceElementId": "node-client",
                             "targetElementId": "shape-1",
-                            "linkedInterfaceId": "interface-payload",
+                            "linkedInterfaceIds": ["interface-payload"],
                             "connectionType": "elbow",
                         },
                     ],
@@ -100,21 +191,21 @@ def _topology_warning_body() -> dict:
                 "name": "Customer Portal",
                 "entity_type": "web_app",
                 "responsibility": "Sends requests.",
-                "boundaries": "Browser.",
+                "boundaries": ["Browser."],
             },
             {
                 "id": "entity-api",
                 "name": "Pulse API",
                 "entity_type": "api",
                 "responsibility": "Handles requests.",
-                "boundaries": "Backend.",
+                "boundaries": ["Backend."],
             },
             {
                 "id": "entity-audit",
                 "name": "Audit Sink",
                 "entity_type": "service",
                 "responsibility": "Consumes audit records.",
-                "boundaries": "Async sink.",
+                "boundaries": ["Async sink."],
             },
         ],
         "interfaces": [
@@ -205,6 +296,7 @@ async def _client_and_entities():
         )
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Architecture REST Spec",

@@ -19,6 +19,54 @@ from okto_pulse.core.ports.traceability import (
 
 
 class CoreAnalyticsOperations:
+    async def lineage(self, query, *, timeout_ms: int):
+        from okto_pulse.core.ports.relational_services import resolve_traceability_adapter
+        from okto_pulse.core.services.lineage_query import project_lineage
+        snapshot = await resolve_traceability_adapter().read_lineage_snapshot(
+            self.__relational_context, query, timeout_ms=timeout_ms)
+        return project_lineage(query, snapshot)
+
+    async def decision_impact(self, query, *, timeout_ms: int):
+        import time
+        from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout
+        from okto_pulse.core.ports.relational_application import require_relational_application_adapter
+        from okto_pulse.core.services.decision_impact import build_decision_impact_scope, project_decision_impact
+        deadline = time.monotonic() + timeout_ms / 1000
+        reader = require_relational_application_adapter().spec_coverage_read(self.__relational_context)
+        source_query = query.source_query()
+        snapshot = await reader.read(source_query, timeout_ms=timeout_ms)
+        scope = build_decision_impact_scope(snapshot)
+        remaining = int((deadline - time.monotonic()) * 1000)
+        if remaining <= 0:
+            raise GraphQueryTimeout('Decision impact read deadline exceeded.')
+        graph = await reader.read_graph(source_query, scope, snapshot.source_revision, timeout_ms=remaining)
+        return project_decision_impact(query, snapshot, scope, graph)
+
+    async def spec_coverage(self, query, *, timeout_ms: int):
+        from dataclasses import replace
+        import time
+        from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout
+        from okto_pulse.core.ports.relational_application import require_relational_application_adapter
+        from okto_pulse.core.services.spec_coverage_query import project_spec_coverage
+        from okto_pulse.core.services.spec_coverage_graph import build_spec_coverage_graph_scope
+        deadline = time.monotonic() + timeout_ms / 1000
+        reader = require_relational_application_adapter().spec_coverage_read(self.__relational_context)
+        snapshot = await reader.read(query, timeout_ms=timeout_ms)
+        if query.read_graph:
+            scope = build_spec_coverage_graph_scope(snapshot)
+            remaining = int((deadline - time.monotonic()) * 1000)
+            if remaining <= 0:
+                raise GraphQueryTimeout('Spec coverage read deadline exceeded.')
+            observed = await reader.read_graph(query, scope, snapshot.source_revision, timeout_ms=remaining)
+            snapshot = replace(snapshot, graph=observed, graph_scope=scope)
+        return project_spec_coverage(query, snapshot)
+
+    async def bug_clusters(self, query, *, timeout_ms: int):
+        from okto_pulse.core.ports.relational_application import require_relational_application_adapter
+        from okto_pulse.core.services.bug_clusters import project_bug_clusters
+        reader = require_relational_application_adapter().bug_clusters_read(self.__relational_context)
+        return project_bug_clusters(query, await reader.read(query, timeout_ms=timeout_ms))
+
     def __init__(
         self,
         relational_context: object,
@@ -115,22 +163,6 @@ class CoreAnalyticsOperations:
             exclusions=exclusions,
         )
 
-    async def delivery_forecast(self, *, query):  # noqa: ANN001, ANN201
-        from okto_pulse.core.ports.relational_application import (
-            require_relational_application_adapter,
-        )
-        from okto_pulse.core.services.delivery_forecast import (
-            DeliveryForecastService,
-        )
-
-        evidence = require_relational_application_adapter().delivery_forecast_read(
-            self.__relational_context
-        )
-        return await DeliveryForecastService.project(
-            self.__relational_context,
-            query=query,
-            evidence_port=evidence,
-        )
 
     async def delivery_intelligence(
         self,
@@ -206,6 +238,7 @@ class CoreAnalyticsOperations:
                     for spec in specs
                 ]
             )
+        from okto_pulse.core.services.decision_verification_read import decision_delivery_rows
         return build_coverage_traceability_projection(
             query=query,
             as_of=as_of,
@@ -213,6 +246,7 @@ class CoreAnalyticsOperations:
             specs=specs,
             cards=cards,
             code_traceability_contexts=contexts,
+            decision_delivery=await decision_delivery_rows(self.__relational_context, specs),
         )
 
     async def canonical_flow_health(self, *, query, as_of):  # noqa: ANN001, ANN201
@@ -262,12 +296,14 @@ class CoreAnalyticsOperations:
             ),
             order_by="occurred_at",
         )
+        from okto_pulse.core.services.decision_verification_read import decision_delivery_rows
         coverage = build_coverage_traceability_projection(
             query=query,
             as_of=as_of,
             board=boards[0],
             specs=tuple(spec for spec in specs if not spec.archived),
             cards=cards,
+            decision_delivery=await decision_delivery_rows(self.__relational_context, tuple(spec for spec in specs if not spec.archived)),
         )
         return build_flow_health_projection(
             query=query,
@@ -424,24 +460,7 @@ class CoreAnalyticsOperations:
             spec_id,
         )
 
-    async def sprint(self, board_id: str, sprint_id: str):  # noqa: ANN201
-        from okto_pulse.core.services.analytics_service import compute_sprint_analytics
 
-        return await compute_sprint_analytics(
-            self.__relational_context,
-            board_id,
-            sprint_id,
-        )
-
-    async def sprints(self, board_id: str, *, dt_from, dt_to):  # noqa: ANN001, ANN201
-        from okto_pulse.core.services.analytics_service import compute_sprints_analytics
-
-        return await compute_sprints_analytics(
-            self.__relational_context,
-            board_id,
-            dt_from=dt_from,
-            dt_to=dt_to,
-        )
 
     async def agents(self, board_id: str, *, dt_from, dt_to):  # noqa: ANN001, ANN201
         from okto_pulse.core.services.analytics_service import compute_agents
@@ -491,7 +510,6 @@ class CoreAnalyticsOperations:
             _ideation_detail,
             _refinement_detail,
             _spec_detail,
-            _sprint_detail,
         )
 
         reader = {
@@ -499,7 +517,6 @@ class CoreAnalyticsOperations:
             "ideation": _ideation_detail,
             "card": _card_detail,
             "refinement": _refinement_detail,
-            "sprint": _sprint_detail,
         }[entity_type]
         return await reader(self.__relational_context, board_id, entity_id)
 
@@ -594,6 +611,15 @@ class CoreApplicationServiceCatalog:
 
         return ArchitectureDesignRepository(self.__relational_context)
 
+    async def load_spec_architecture_candidates(self, *, board_id: str, spec_id: str):
+        from okto_pulse.core.services.architecture_candidates import (
+            load_spec_architecture_candidates,
+        )
+
+        return await load_spec_architecture_candidates(
+            self.__relational_context, board_id=board_id, spec_id=spec_id,
+        )
+
     @cached_property
     def architecture_diagrams(self):  # noqa: ANN201
         from okto_pulse.core.services.architecture import ArchitectureDiagramStore
@@ -669,6 +695,23 @@ class CoreApplicationServiceCatalog:
         from okto_pulse.core.services.delivery_evidence import delivery_store
 
         return delivery_store(self.__relational_context)
+
+    @cached_property
+    def delivery_readiness_lifecycle(self):  # noqa: ANN201
+        from okto_pulse.core.services.delivery_readiness_lifecycle import DeliveryReadinessLifecycleService
+        from okto_pulse.core.ports.application_persistence import get_application_persistence_port
+
+        return DeliveryReadinessLifecycleService(self, persistence=get_application_persistence_port(),
+            context=self.__relational_context)
+
+    @cached_property
+    def delivery_readiness(self):  # noqa: ANN201
+        from okto_pulse.core.ports.relational_application import require_relational_application_adapter
+        from okto_pulse.core.services.delivery_readiness import DeliveryReadinessService
+
+        adapter = require_relational_application_adapter()
+        return DeliveryReadinessService(adapter.delivery_readiness_read(self.__relational_context),
+            adapter.delivery_readiness_cursor(self.__relational_context))
 
     @cached_property
     def code_traceability_read(self):  # noqa: ANN201
@@ -872,18 +915,6 @@ class CoreApplicationServiceCatalog:
         return SpecService(self.__relational_context)
 
     @cached_property
-    def sprint_qa(self):  # noqa: ANN201
-        from okto_pulse.core.services.main import SprintQAService
-
-        return SprintQAService(self.__relational_context)
-
-    @cached_property
-    def sprints(self):  # noqa: ANN201
-        from okto_pulse.core.services.main import SprintService
-
-        return SprintService(self.__relational_context)
-
-    @cached_property
     def stories(self):  # noqa: ANN201
         from okto_pulse.core.services.main import StoryService
 
@@ -896,6 +927,12 @@ class CoreApplicationServiceCatalog:
         )
 
         return StructuredSpecEntityService(self.__relational_context)
+
+    @cached_property
+    def architecture_classifications(self):  # noqa: ANN201
+        from okto_pulse.core.services.architecture_classification import ArchitectureClassificationService
+
+        return ArchitectureClassificationService(self.__relational_context)
 
     async def resolve_user_permissions(self, user_id: str, board_id: str):  # noqa: ANN201
         from okto_pulse.core.services.main import resolve_user_permissions
@@ -985,7 +1022,7 @@ class CoreApplicationServiceCatalog:
 
         return await compute_card_seen_status(self.__relational_context, card_id)
 
-    async def build_propagation_legacy_report(
+    async def build_propagation_report(
         self,
         *,
         board_id: str,
@@ -995,11 +1032,11 @@ class CoreApplicationServiceCatalog:
         parent_type_filter: str | None = None,
         surface: str = "service",
     ) -> dict[str, object]:
-        from okto_pulse.core.services.architecture_propagation_legacy import (
-            build_propagation_legacy_report,
+        from okto_pulse.core.services.architecture_propagation_report import (
+            build_propagation_report,
         )
 
-        return await build_propagation_legacy_report(
+        return await build_propagation_report(
             self.__relational_context,
             board_id=board_id,
             limit=limit,
@@ -1185,30 +1222,7 @@ class CoreApplicationServiceCatalog:
             require_spec_resource_task_coverage=require_spec_resource_task_coverage,
         )
 
-    async def get_runtime_settings(self):  # noqa: ANN201
-        from okto_pulse.core.services.settings_service import get_runtime_settings
 
-        return await get_runtime_settings(self.__relational_context)
-
-    async def put_runtime_settings(
-        self,
-        values: dict[str, int],
-        *,
-        actor_id: str,
-        migration_plan_ref: str | None,
-        restart_policy: str | None,
-        scheduler_control: object | None,
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.settings_service import put_runtime_settings
-
-        return await put_runtime_settings(
-            self.__relational_context,
-            values,
-            actor_id=actor_id,
-            migration_plan_ref=migration_plan_ref,
-            restart_policy=restart_policy,
-            scheduler_control=scheduler_control,
-        )
 
     async def build_lineage_graph(
         self,

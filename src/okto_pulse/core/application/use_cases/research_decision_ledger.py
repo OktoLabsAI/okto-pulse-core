@@ -12,7 +12,6 @@ from okto_pulse.core.application.use_cases.base import (
 )
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.domain.enums import RefinementStatus
-from okto_pulse.core.domain.permissions import Permissions
 from okto_pulse.core.domain.research_decision_ledger import (
     RefinementLedgerContext,
     ResearchDecisionCommitResult,
@@ -196,7 +195,7 @@ class WriteResearchDecisionUseCase:
             actor=actor,
             uow=uow,
             board_id=board_id,
-            permissions=(Permissions.SPECS_UPDATE, _RDL_APPEND_PERMISSION),
+            permissions=("spec.entity.edit_fields", _RDL_APPEND_PERMISSION),
         )
         service = ResearchDecisionLedgerService()
         expected_refinement_version = (
@@ -323,7 +322,7 @@ class ListResearchDecisionsUseCase:
             actor=actor,
             uow=uow,
             board_id=board_id,
-            permissions=(Permissions.BOARD_READ, _RDL_READ_PERMISSION),
+            permissions=("refinement.entity.read", _RDL_READ_PERMISSION),
         )
         page = await uow.services.research_decisions.list_entries(
             ResearchDecisionListQuery(
@@ -362,7 +361,7 @@ class ListResearchDecisionsRestUseCase:
             actor=actor,
             uow=uow,
             board_id=board_id,
-            permissions=(Permissions.BOARD_READ, _RDL_READ_PERMISSION),
+            permissions=("refinement.entity.read", _RDL_READ_PERMISSION),
         )
         page = await uow.services.research_decisions.list_entries_offset(
             ResearchDecisionOffsetListQuery(
@@ -403,7 +402,7 @@ class GetResearchDecisionHeadUseCase:
             actor=actor,
             uow=uow,
             board_id=board_id,
-            permissions=(Permissions.BOARD_READ, _RDL_READ_PERMISSION),
+            permissions=("refinement.entity.read", _RDL_READ_PERMISSION),
         )
         current = await uow.services.research_decisions.get_current(
             board_id=board_id,

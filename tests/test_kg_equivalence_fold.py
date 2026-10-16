@@ -24,10 +24,6 @@ from okto_pulse.core.kg.equivalence_fold import (
     invalidate_equivalence_fold_cache,
     load_equivalence_mapping,
 )
-from okto_pulse.core.kg.dedup_migration import (
-    migrate_dedup_entities,
-    unmerge_equivalence,
-)
 from okto_pulse.core.ports.kg_equivalence_ledger import (
     require_equivalence_ledger,
 )
@@ -39,12 +35,57 @@ from kg_schema_testing import (
     open_board_connection,
 )
 
-from test_kg_dedup_reversible import (  # noqa: F401  (harness reuse)
-    REF,
-    _seed_duplicates,
-)
+REF = "spec:historical-equivalence"
 
 MAPPING = {"entity_dup0": "entity_dup2", "entity_dup1": "entity_dup2"}
+
+
+def _seed_duplicates(board_id: str) -> None:
+    """3 Entities sharing REF (most recent = survivor) + edges touching
+    the duplicates so the no-repoint invariant is observable."""
+
+    with open_board_connection(board_id) as (_kdb, kconn):
+        for i, ts in enumerate(
+            ("2026-01-01T00:00:00", "2026-02-01T00:00:00", "2026-03-01T00:00:00")
+        ):
+            kconn.execute(
+                f"CREATE (n:Entity {{id: 'entity_dup{i}', title: 'Dup {i}',"
+                f" content: 'c{i}', source_confidence: 0.9,"
+                f" graph_layer: 'canonical', source_artifact_ref: '{REF}',"
+                f" created_at: timestamp('{ts}')}})"
+            )
+        kconn.execute(
+            "CREATE (n:Entity {id: 'entity_other', title: 'Outro',"
+            " source_confidence: 0.9, graph_layer: 'canonical',"
+            " source_artifact_ref: 'spec:other'})"
+        )
+        for i in (0, 1):
+            kconn.execute(
+                f"MATCH (a:Entity {{id: 'entity_dup{i}'}}),"
+                f" (b:Entity {{id: 'entity_other'}}) "
+                f"CREATE (a)-[r:belongs_to {{confidence: 1.0,"
+                f" layer: 'cognitive', created_by_session_id: 's',"
+                f" created_at: timestamp('2026-03-02T00:00:00'),"
+                f" rule_id: '', created_by: 's', fallback_reason: ''}}]->(b)"
+            )
+
+
+def _record_historical_equivalence(board_id):
+    """Seed an existing ledger record; this is not a maintenance command."""
+    from okto_pulse.core.ports.kg_equivalence_ledger import EquivalenceRecord
+
+    record = EquivalenceRecord(
+        record_id=f"eqv_{uuid.uuid4().hex[:16]}",
+        board_id=board_id,
+        node_type="Entity",
+        survivor_id="entity_dup2",
+        merged_ids=("entity_dup0", "entity_dup1"),
+        operation="dedup_entities",
+        created_by="test:historical-fold",
+    )
+    asyncio.run(require_equivalence_ledger().append(record))
+    invalidate_equivalence_fold_cache(board_id)
+    return record
 
 
 # ---------------------------------------------------------------------------
@@ -122,15 +163,16 @@ def fold_board(monkeypatch):
 
 def test_s5_mapping_loads_from_ledger_and_invalidates(fold_board):
     assert load_equivalence_mapping(fold_board) == {}
-    migrate_dedup_entities(fold_board, confirmed=True)
+    _record_historical_equivalence(fold_board)
 
     mapping = load_equivalence_mapping(fold_board)
     assert mapping == MAPPING
 
     ledger = require_equivalence_ledger()
     record = asyncio.run(ledger.active_for_board(fold_board))[0]
-    unmerge_equivalence(fold_board, record.record_id)
-    # Revoke invalidated the cache — members unfold immediately.
+    asyncio.run(ledger.revoke(record.record_id, "historical-revocation"))
+    invalidate_equivalence_fold_cache(fold_board)
+    # Reading a revoked historical record no longer folds its members.
     assert load_equivalence_mapping(fold_board) == {}
 
 
@@ -199,8 +241,8 @@ def test_s5_related_context_folds_members_and_unfolds_on_revoke(fold_board):
 
 
 def test_s5_cypher_raw_is_not_intercepted(fold_board):
-    migrate_dedup_entities(fold_board, confirmed=True)
-    # Raw connection query still sees the member ids (tombstoned, present).
+    _record_historical_equivalence(fold_board)
+    # Raw connection query still sees member ids despite the ledger mapping.
     with open_board_connection(fold_board) as (_kdb, kconn):
         res = kconn.execute(
             f"MATCH (n:Entity) WHERE n.source_artifact_ref = '{REF}' "

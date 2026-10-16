@@ -1,0 +1,162 @@
+{
+  "checkpoint": "U3/2e.1 Knowledge and 2e.2 Targets",
+  "date": "2026-10-14",
+  "community_commit": "ae265bdc",
+  "core_base": "13531685",
+  "scope": "Frontend draft protection and visible-reader invalidation; no backend policy or gate change.",
+  "status": "Knowledge and Targets qualified with component/integration regressions and native UI/MCP round trips. U3/2e.3, Spec editors/global refresh and U4 remain.",
+  "runtime": {
+    "ui": "http://127.0.0.1:5274",
+    "rest": "http://127.0.0.1:8200",
+    "mcp": "http://127.0.0.1:8201/mcp",
+    "backend_pid": 27316,
+    "backend_started_local": "2026-10-14 20:08:30",
+    "user_runtime_pid_untouched": 40020,
+    "limitation": "Source UI with an existing isolated backend, not the final installed pair. Does not prove new U2 backend wire behavior.",
+    "vite_recovery": "PID 38836 and port 5274 were confirmed absent after both browser proofs; restarted only isolated Vite as PID 10876. No user runtime change."
+  },
+  "entities": {
+    "board": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec": "2baa5f88-eb1a-4aac-9aeb-453707cef290",
+    "card": "c8a1a9b4-691c-5175-84be-1d512b6bdda4"
+  },
+  "knowledge": {
+    "root": "922bdae2-6711-41f6-92d3-12de6b7536eb",
+    "initial_revision": 1,
+    "mcp_assignment_revision": 2,
+    "ui_saved_revision": 3,
+    "observed": "MCP reference appeared without Refresh. Drop choice and verbatim draft retained; Save disabled. Review current base then Save produced explicit_empty, confirmed by authenticated MCP.",
+    "screenshot_reviewed": true
+  },
+  "targets": {
+    "source_ref": "source_631b274fba2948298b155fb675399651",
+    "receipt": "code_receipt_f28c37fc90e145819aada76a4cd375f5",
+    "target": "implementation_target_ebed3c5336c5494294ae15a77388aa83",
+    "spec_version_before": 2,
+    "spec_version_after_mcp": 3,
+    "stored_source_spec_version": 3,
+    "observed": "Native accepted receipt from fully observed two-file disposable Git fixture. MCP Spec description update kept UI intent/role/source, blocked Save and displayed Review target base. Explicit review and UI submit created native target; MCP listing verified intent, role read and source_spec_version=3.",
+    "source_observation": "Real file reads, AST symbol resolution, Git clean/revision/rename checks, path/symlink containment, binary/secret scan and deterministic SHA256 manifest. Only this fixture was inspected, not business implementation.",
+    "screenshot_reviewed": true
+  },
+  "tests": {
+    "initial": {
+      "total": 37,
+      "passed": 31,
+      "failed": 6
+    },
+    "intermediate": {
+      "total": 121,
+      "passed": 121
+    },
+    "integration": {
+      "total": 158,
+      "passed": 158
+    },
+    "final_targets": {
+      "total": 41,
+      "passed": 41
+    },
+    "no_double_count": "Intermediate runs overlap; totals must not be added. Final Target run includes late completion while hidden and the final source-empty message guard.",
+    "types": "npx tsc -b --pretty false exit 0 after final product changes",
+    "lint": "Targeted ESLint exit 0. 13 existing warnings (12 CardModal, 1 CardModal.test); none in Targets or its tests.",
+    "coverage": [
+      "Frozen Spec fence and selected source receipt identity",
+      "Typed conflict and explicit retry",
+      "Missing source and failed read",
+      "Hidden reads and completion while hidden",
+      "Out-of-order response and Card switch",
+      "Denied read clears draft/projection",
+      "Same base refresh preserves draft without false conflict",
+      "CardModal/Resources propagate Knowledge revision and visibility"
+    ]
+  },
+  "remaining": [
+    "2e.3 inherited Knowledge and Architecture/readers",
+    "Spec editor protection before global live refresh",
+    "Integrated UV18-21 including revocation/reconnection",
+    "Final installed UI/MCP U4 through Done and canonical KG; UV01-24; closure and wheels"
+  ],
+  "artifacts": [
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-targets-before.xml",
+      "sha256": "73fee0726ae9765f1b824bb6bf06aa748db754e6e9c6a7ce548d682104bc81e2",
+      "result": {
+        "name": "vitest tests",
+        "tests": "37",
+        "failures": "6",
+        "errors": "0",
+        "time": "9.2681319"
+      }
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-targets-r2.xml",
+      "sha256": "8ca0e6f9029a599371d97f30ce6fd80e283a6e99626c6600e1ed87a2c371b486",
+      "result": {
+        "name": "vitest tests",
+        "tests": "121",
+        "failures": "0",
+        "errors": "0",
+        "time": "72.1928404"
+      }
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-knowledge-targets-r3.xml",
+      "sha256": "2f28c710115667eebda08dc35311a611d593390e13fe3be9376615bf3a281096",
+      "result": {
+        "name": "vitest tests",
+        "tests": "158",
+        "failures": "0",
+        "errors": "0",
+        "time": "83.1139616"
+      }
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-targets-final.xml",
+      "sha256": "119191296e5334750303ed7617c190b8c7a10dd5533c3026b342be64dde1ebcb",
+      "result": {
+        "name": "vitest tests",
+        "tests": "41",
+        "failures": "0",
+        "errors": "0",
+        "time": "11.7503396"
+      }
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-knowledge-add.json",
+      "sha256": "1ecb0f9b3153c8aaef30627bcd2883569c0b8802c47b7cc3dc6a62bcb831048b"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-knowledge-assign.json",
+      "sha256": "dee91e2e0854c422e272301a7f38ed2172908d65cd22a14106fa45816e376efd"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-knowledge-read.json",
+      "sha256": "2b5e0f8669294da2a53c2610c93ffae252a6de9f03be4c5c7bd6310180925d24"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-target-source-observation.json",
+      "sha256": "7acc976680a2e389303951d7d1caf4b966dfa707b34d4e8ff6fe807334c88eea"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-targets-receipt.json",
+      "sha256": "f5b0e9f68fa809c5d83ec5226ac2d82dcbbaaed1e120559590e10a9d5c085ddb"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-targets-change-spec.json",
+      "sha256": "3f25fc0a6dc2f89ed79116b2bdf02ad650f1f85bd36a07033566d1045d7c41af"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-targets-list.json",
+      "sha256": "e1820179b40b2b458a648ddf64c3a5ae03664e0705716d011924211409e305cf"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-knowledge-conflict.png",
+      "sha256": "22a16b89fab46bb7080c09660b16eb7a5d8b256ed4362955b85ad62be137001b"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-targets-conflict.png",
+      "sha256": "7b8edabee88fe8126e23f54f5f1172913953ee6f7dd6259a8722893a2fa47b6f"
+    }
+  ]
+}

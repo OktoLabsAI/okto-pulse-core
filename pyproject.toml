@@ -1,6 +1,6 @@
 [project]
 name = "okto-pulse-core"
-version = "0.3.3"
+version = "0.4.0"
 description = "Okto Pulse Core - transport-neutral domain and application engine"
 requires-python = ">=3.11"
 license = {text = "Elastic-2.0"}
@@ -35,7 +35,7 @@ dev = [
     "build>=1.2.0,<2.0.0",
     # The standard Core fixtures exercise the Community-owned local persistence
     # and graph adapters. Keep that edition in the development path only.
-    "okto-pulse>=0.3.3,<1.0.0",
+    "okto-pulse==0.4.0",
     "pyright>=1.1.390,<2.0.0",
     "pytest>=8.0.0,<10.0.0",
     "pytest-asyncio>=0.24.0,<2.0.0",
@@ -58,6 +58,10 @@ Issues = "https://github.com/OktoLabsAI/okto-pulse-core/issues"
 file = "README.md"
 content-type = "text/markdown"
 
+[tool.uv.sources]
+# Paired local development only; published wheel dependencies remain versioned.
+okto-pulse = { path = "../okto_labs_pulse_community", editable = true }
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -68,13 +72,11 @@ packages = ["src/okto_pulse"]
 [tool.hatch.build.targets.wheel.force-include]
 "src/okto_pulse/core/mcp/agent_instructions.md" = "okto_pulse/core/mcp/agent_instructions.md"
 "src/okto_pulse/core/application/processors/tech_entities.yml" = "okto_pulse/core/application/processors/tech_entities.yml"
-"src/okto_pulse/core/kg/agent/prompts/cognitive_agent_v1.md" = "okto_pulse/core/kg/agent/prompts/cognitive_agent_v1.md"
 "src/okto_pulse/core/mcp/resources/workflows/stories.md" = "okto_pulse/core/mcp/resources/workflows/stories.md"
 "src/okto_pulse/core/mcp/resources/workflows/ideations.md" = "okto_pulse/core/mcp/resources/workflows/ideations.md"
 "src/okto_pulse/core/mcp/resources/workflows/refinements.md" = "okto_pulse/core/mcp/resources/workflows/refinements.md"
 "src/okto_pulse/core/mcp/resources/workflows/specs.md" = "okto_pulse/core/mcp/resources/workflows/specs.md"
 "src/okto_pulse/core/mcp/resources/workflows/cards.md" = "okto_pulse/core/mcp/resources/workflows/cards.md"
-"src/okto_pulse/core/mcp/resources/workflows/sprints.md" = "okto_pulse/core/mcp/resources/workflows/sprints.md"
 "src/okto_pulse/core/mcp/resources/workflows/kg.md" = "okto_pulse/core/mcp/resources/workflows/kg.md"
 "src/okto_pulse/core/mcp/resources/reference/errors.md" = "okto_pulse/core/mcp/resources/reference/errors.md"
 "src/okto_pulse/core/mcp/resources/reference/multivalue.md" = "okto_pulse/core/mcp/resources/reference/multivalue.md"
@@ -83,7 +85,6 @@ packages = ["src/okto_pulse"]
 "src/okto_pulse/core/mcp/resources/reference/spec_gates.md" = "okto_pulse/core/mcp/resources/reference/spec_gates.md"
 "src/okto_pulse/core/mcp/resources/reference/policy-compliance.md" = "okto_pulse/core/mcp/resources/reference/policy-compliance.md"
 "src/okto_pulse/core/mcp/resources/reference/project_structure.md" = "okto_pulse/core/mcp/resources/reference/project_structure.md"
-"src/okto_pulse/core/mcp/resources/reference/examples/semantic-guideline-assessment-v1.json" = "okto_pulse/core/mcp/resources/reference/examples/semantic-guideline-assessment-v1.json"
 "src/okto_pulse/core/mcp/resources/reference/examples/semantic-guideline-assessment-v2.json" = "okto_pulse/core/mcp/resources/reference/examples/semantic-guideline-assessment-v2.json"
 
 [tool.pytest.ini_options]

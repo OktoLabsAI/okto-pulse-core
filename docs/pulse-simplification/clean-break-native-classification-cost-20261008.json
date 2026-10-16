@@ -1,0 +1,124 @@
+{
+  "scope": [
+    "BASE:T43",
+    "KG:KG-64",
+    "ARQVER:AC-INT-12"
+  ],
+  "status": "partial",
+  "proof_pair": "dist-native-main90",
+  "evidence": [
+    "Four native schema cases compare one and 26 identical contracts classified individually or in a batch, using complete production MCP catalog.",
+    "Architecture is authored via public MCP, including schema read, validation, warning refusal and explicit whole-payload acknowledgment under existing semantics. No Design row is inserted by the fixture.",
+    "Both paths paginate every candidate and read every full contract. Actual agent authentication/grants distinguish first author from second-session reader.",
+    "Second agent sees complete classification without inferring semantic approval or admission. Database decisions preserve first actor.",
+    "Exact semantic decision equality verified for each population: interface, full source contract, author, disposition, IR references and reason. Batch receipt IDs/times/Spec version sequence legitimately differ.",
+    "Many-contract case: 59 to 34 tools/call; 893761 to 857459 bytes; 224384 to 216168 tokens including full catalog discovery and resource reads."
+  ],
+  "results": {
+    "passed": 4,
+    "seconds": 22.33,
+    "semantic_population_parity": [
+      1,
+      26
+    ]
+  },
+  "summary": {
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[batch-many-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 6,
+        "tools/call": 34
+      },
+      "bytes": 857459,
+      "tokens_cl100k_base": 216168,
+      "tool_calls": {
+        "okto_pulse_get_architecture_design_schema": 1,
+        "okto_pulse_validate_architecture_design_payload": 1,
+        "okto_pulse_add_architecture_design": 2,
+        "okto_pulse_list_architecture_candidates": 28,
+        "okto_pulse_classify_architecture_candidates": 1,
+        "okto_pulse_list_architecture_classifications": 1
+      }
+    },
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[batch-simple-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 6,
+        "tools/call": 8
+      },
+      "bytes": 659502,
+      "tokens_cl100k_base": 153356,
+      "tool_calls": {
+        "okto_pulse_get_architecture_design_schema": 1,
+        "okto_pulse_validate_architecture_design_payload": 1,
+        "okto_pulse_add_architecture_design": 2,
+        "okto_pulse_list_architecture_candidates": 2,
+        "okto_pulse_classify_architecture_candidates": 1,
+        "okto_pulse_list_architecture_classifications": 1
+      }
+    },
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[individual-many-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 6,
+        "tools/call": 59
+      },
+      "bytes": 893761,
+      "tokens_cl100k_base": 224384,
+      "tool_calls": {
+        "okto_pulse_get_architecture_design_schema": 1,
+        "okto_pulse_validate_architecture_design_payload": 1,
+        "okto_pulse_add_architecture_design": 2,
+        "okto_pulse_list_architecture_candidates": 28,
+        "okto_pulse_classify_architecture_candidates": 26,
+        "okto_pulse_list_architecture_classifications": 1
+      }
+    },
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[individual-simple-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 6,
+        "tools/call": 8
+      },
+      "bytes": 659502,
+      "tokens_cl100k_base": 153402,
+      "tool_calls": {
+        "okto_pulse_get_architecture_design_schema": 1,
+        "okto_pulse_validate_architecture_design_payload": 1,
+        "okto_pulse_add_architecture_design": 2,
+        "okto_pulse_list_architecture_candidates": 2,
+        "okto_pulse_classify_architecture_candidates": 1,
+        "okto_pulse_list_architecture_classifications": 1
+      }
+    }
+  },
+  "artifact": {
+    "file": "benchmark-native-classification-main90-20261008.json.gz",
+    "sha256": "4c4fbe34ae568cdf68053a334416f0ee55d2303b4a98d67ad9d5b3dad560cbe5",
+    "raw_sha256": "8382f2a148a2e66723600ea0e6c2e72563b44c1d4c16d56f2605ec232061fe4d"
+  },
+  "artifacts": {
+    "provenance-native-classification-cost-20261008.json": "81c574a14796c31de5c968c3c78626184af3cd73feebd732eb0526aeb47e897a",
+    "native-classification-cost-20261008-6.xml": "267eba13716582a8184e7276e7e54fb1c68f87c7dc8786deec04229c497ab748",
+    "native-classification-measurement90-20261008.xml": "beb861d42c0e5ff9cbc1b6c401b366416753311d1b2a236d448800486be5fd87"
+  },
+  "iterations": [
+    "1/2 authentication refused because fixture composition incomplete; registered realm/application/effects adapters.",
+    "3/4 public authoring rejected unacknowledged warnings; fixture now asserts actual creation instead of accepting generic successful transport.",
+    "5 copying finding keys from failed create failed because new Design IDs scope the keys. Existing native acknowledgment accepts explicit whole-payload acceptance without keys; no gate or product change.",
+    "6 four cases passed; measured campaign adds durable semantic decision assertions and passed.",
+    "Comparison first glob included pytest current directory alias; resolved unique paths before exact parity check."
+  ],
+  "limits": [
+    "Comparable classification segment only; no full-initiative 50/30 or KG traversal savings claim.",
+    "Initial Spec/Ideation/Refinement and grants are fixture inputs; simple/many populations are independent disposable fixtures, not two authored Specs in one measured initiative.",
+    "Both actors have equivalent broad grants. Permission-filter cost variants and promoted normative IR work remain outside this segment.",
+    "All contracts are explicitly contextual under controlled author judgment; no delivery, semantic approval or gate bypass is inferred.",
+    "Token counts are cl100k_base0.14.0 application payload counts, not model billing.",
+    "No acceptance promoted, product/frontend/SPA change, legacy runtime, release or real-data operation."
+  ]
+}

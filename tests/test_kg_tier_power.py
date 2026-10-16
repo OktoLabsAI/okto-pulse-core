@@ -1,4 +1,4 @@
-"""Test suite for Tier Power — Cypher safety, rate limit, NL search, schema info."""
+"""Test suite for Tier Power — Cypher safety, NL search, schema info."""
 
 import os
 import sys
@@ -12,25 +12,21 @@ from okto_pulse.core.kg.tier_power import (
     _apply_canonical_projection,
     _auto_bound_var_length_path,
     _auto_inject_limit,
-    check_rate_limit,
     clamp_max_rows,
     clamp_timeout,
     compute_pattern_hash,
     execute_natural_query,
     get_schema_info,
-    reset_rate_limiter_for_tests,
     validate_cypher_read_only,
 )
 from kg_registry_testing import configure_test_kg_registry
+from okto_pulse.core.kg.interfaces.registry import reset_registry_for_tests
 
 
 @pytest.fixture(autouse=True)
-def _reset_rate():
-    # reset_rate_limiter_for_tests() resets the whole KG registry; R-P2-03 no
-    # longer lazy-builds defaults, so re-configure the embedded fakes explicitly
-    # (this autouse fixture runs after the conftest one, so it must restore a
-    # configured registry for the tests that read get_kg_registry()).
-    reset_rate_limiter_for_tests()
+def _reset_registry():
+    # This suite explicitly uses in-memory providers after the shared fixture.
+    reset_registry_for_tests()
     configure_test_kg_registry(graph_provider="inmemory")
 
 
@@ -110,13 +106,13 @@ class TestSafetyRails:
         assert q.endswith("LIMIT 500")
 
     def test_clamp_timeout(self):
-        assert clamp_timeout(None) == 5000
-        assert clamp_timeout(100) == 1000
+        assert clamp_timeout(None) == 15000
+        assert clamp_timeout(100) == 100
         assert clamp_timeout(50000) == 30000
 
     def test_clamp_max_rows(self):
-        assert clamp_max_rows(None) == 1000
-        assert clamp_max_rows(20000) == 10000
+        assert clamp_max_rows(None) == 200
+        assert clamp_max_rows(20000) == 1000
 
     def test_canonical_projection_omits_working_rows_when_layer_visible(self):
         result = _apply_canonical_projection(
@@ -225,6 +221,7 @@ class TestSafetyRails:
                 params=None,
                 *,
                 max_rows=1000,
+                timeout_ms=None,
             ):
                 assert board_id == "board-x"
                 assert max_rows == 50
@@ -269,7 +266,7 @@ class TestSafetyRails:
         class FakeExecutor:
             seen = ""
 
-            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000):
+            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000, timeout_ms=None):
                 self.seen = cypher
                 return {"rows": [[{"id": "n1"}]], "row_count": 1}
 
@@ -279,7 +276,7 @@ class TestSafetyRails:
         result = execute_cypher_read_only("board-x", "MATCH (n) RETURN n")
 
         assert fake.seen == (
-            "MATCH (n) WHERE n.graph_layer = 'canonical' RETURN n\nLIMIT 1000"
+            "MATCH (n) WHERE n.graph_layer = 'canonical' RETURN n\nLIMIT 200"
         )
         assert result["canonical_filter_enforced"] is True
         assert result["canonical_filter_mode"] == "cypher_rewrite"
@@ -290,7 +287,7 @@ class TestSafetyRails:
         class FakeExecutor:
             seen = ""
 
-            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000):
+            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000, timeout_ms=None):
                 self.seen = cypher
                 return {"rows": [], "row_count": 0}
 
@@ -304,7 +301,7 @@ class TestSafetyRails:
 
         assert fake.seen == (
             "MATCH (n) WHERE n.graph_layer = 'canonical' "
-            "AND (n.title = 'x') RETURN n\nLIMIT 1000"
+            "AND (n.title = 'x') RETURN n\nLIMIT 200"
         )
 
     def test_cypher_rewrite_preserves_starts_with_operator(self):
@@ -313,7 +310,7 @@ class TestSafetyRails:
         class FakeExecutor:
             seen = ""
 
-            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000):
+            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000, timeout_ms=None):
                 self.seen = cypher
                 return {"rows": [], "row_count": 0}
 
@@ -327,7 +324,7 @@ class TestSafetyRails:
 
         assert fake.seen == (
             "MATCH (n) WHERE n.graph_layer = 'canonical' "
-            "AND (n.source_artifact_ref STARTS WITH 'spec:abc') RETURN n\nLIMIT 1000"
+            "AND (n.source_artifact_ref STARTS WITH 'spec:abc') RETURN n\nLIMIT 200"
         )
 
     def test_cypher_rewrite_fails_closed_for_anonymous_nodes(self):
@@ -352,7 +349,7 @@ class TestSafetyRails:
         class FakeExecutor:
             seen = ""
 
-            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000):
+            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000, timeout_ms=None):
                 self.seen = cypher
                 return {
                     "rows": [{"id": "w1", "graph_layer": "working"}],
@@ -372,21 +369,6 @@ class TestSafetyRails:
         assert result["query_state"] == "canonical_and_working"
 
 
-class TestRateLimit:
-    def test_allows_30_then_rejects(self):
-        for _ in range(30):
-            check_rate_limit("agent-rl")
-        with pytest.raises(TierPowerError) as exc:
-            check_rate_limit("agent-rl")
-        assert exc.value.code == "rate_limited"
-        assert "retry_after" in exc.value.details
-
-    def test_different_agents_independent(self):
-        for _ in range(30):
-            check_rate_limit("agent-a")
-        check_rate_limit("agent-b")
-
-
 class TestPatternHash:
     def test_same_shape_same_hash(self):
         h1 = compute_pattern_hash("MATCH (n) WHERE n.id = 'abc' RETURN n")
@@ -403,10 +385,11 @@ class TestSchemaInfo:
     def test_stable_types_count(self):
         info = get_schema_info("board-x")
         assert len(info["stable_node_types"]) == 11
-        # 11 REL_TYPES single-pair entries + 9 MULTI_REL_TYPES declarations.
+        # 11 single-pair entries plus 11 multi-endpoint declarations.
         # SK-M contributes the deterministic Entity -> Entity `precedes` base
         # entry without overloading the cognitive Decision `depends_on` edge.
-        assert len(info["stable_rel_types"]) == 20
+        # Schema 0.6 adds Bug -> Requirement/Criterion `violates` endpoints.
+        assert len(info["stable_rel_types"]) == 22
         assert [row["name"] for row in info["stable_rel_types"]] == [
             "supersedes",
             "contradicts",
@@ -419,9 +402,11 @@ class TestSchemaInfo:
             "tests",
             "validates",
             "precedes",
+            "precedes",
             "implements",
             "supports",
             "derives_from",
+            "violates",
             "overlaps",
             "supersedes",
             "relates_to",
@@ -516,5 +501,5 @@ class TestMCPRegistration:
         import inspect
         from okto_pulse.core.mcp import kg_power_tools
         src = inspect.getsource(kg_power_tools.register_kg_power_tools)
-        # 5 originais + okto_pulse_kg_provenance_drift (spec MKG-B-S1 FR7).
-        assert src.count("@mcp.tool()") == 6
+        # Product queries remain; the F4 maintenance report is retired.
+        assert src.count("@mcp.tool()") == 5

@@ -1,0 +1,134 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE:T05/T06/T07",
+  "status": "verified",
+  "coverage": {
+    "BASE:T05": "Writer session closes; new Community SQL session and store reconstruct the resume from persisted Board/Spec/Card IDs for a successor. Latest short note retains older work and author, unsatisfied obligation and unknown workspace/recovery. Additional cases preserve accumulated impact, partial evidence, dirty invalidation, related signed tests and failed inherited obligation; missing Test Card remains unknown rather than satisfied, and bounded response retains explicit totals/truncation. T04 supplies separate authenticated MCP reader/session coverage.",
+    "BASE:T06": "Actual REST move with seeded approved Spec evaluation and fully classified architecture rejects missing FR contribution or missing Test Card scenario allocation with spec_execution_plan_incomplete. Status remains validated; evaluation, validation history, current pointer and edition remain identical. Repairing only the plan fact allows actual start using the same approval.",
+    "BASE:T07": "Actual REST Done attempt with seeded approved task and both task/Test Card Done refuses absent scenarios at coverage, and ready/unexecuted scenario at delivery evidence. Spec status, version, edition, evaluations, scenario data, task approvals, history and outbox counts remain unchanged."
+  },
+  "executions": [
+    {
+      "terminal_session": 72695,
+      "exit_code": 0,
+      "passed": 11,
+      "cases": [
+        "tests.test_delivery_resume_read::test_resume_does_not_replace_old_work_with_short_latest_note",
+        "tests.test_delivery_resume_read::test_frozen_resume_preserves_history_without_enabling_progress[rejected]",
+        "tests.test_delivery_resume_read::test_frozen_resume_preserves_history_without_enabling_progress[validation]",
+        "tests.test_delivery_resume_read::test_frozen_resume_preserves_history_without_enabling_progress[done]",
+        "tests.test_delivery_resume_read::test_frozen_resume_preserves_history_without_enabling_progress[cancelled]",
+        "tests.test_delivery_resume_read::test_shared_history_does_not_hide_a_late_append",
+        "tests.test_delivery_resume_proofs::test_resume_keeps_partial_proof_author_and_invalidates_it_after_dirty_work",
+        "tests.test_delivery_resume_proofs::test_short_context_checkpoint_retains_prior_accumulated_net_impact",
+        "tests.test_delivery_resume_related_tests::test_related_signed_tests_respect_split_contributions_and_inherited_rule",
+        "tests.test_delivery_resume_related_tests::test_missing_test_owner_is_unknown_work_not_zero_verification",
+        "tests.test_delivery_resume_limits::test_multibyte_manifest_is_capped_without_skipping_progress_cursor"
+      ],
+      "xml": {
+        "file": "learning-reconciliation-fresh-session1-community.xml",
+        "sha256": "d9109b3601d503d2214bef0579ecb9aa8e3caa06b82a0f254c593f459590a73f"
+      },
+      "log": {
+        "file": "learning-reconciliation-fresh-session1-community.log",
+        "sha256": "dd4b1d9615b7f3e44732bc8ad45f122c9b6b84932aeaa197328e887b3ce8b662"
+      }
+    },
+    {
+      "terminal_session": 66709,
+      "exit_code": 0,
+      "passed": 6,
+      "cases": [
+        "tests.test_architecture_start_transition::test_pending_architecture_blocks_actual_start_without_workflow_mutation[3]",
+        "tests.test_architecture_start_transition::test_pending_architecture_blocks_actual_start_without_workflow_mutation[31]",
+        "tests.test_architecture_start_transition::test_approved_spec_cannot_start_with_incomplete_decomposition[contribution]",
+        "tests.test_architecture_start_transition::test_approved_spec_cannot_start_with_incomplete_decomposition[test_owner]",
+        "tests.test_architecture_start_transition::test_task_approvals_do_not_replace_spec_integrated_verification[absent]",
+        "tests.test_architecture_start_transition::test_task_approvals_do_not_replace_spec_integrated_verification[unexecuted]"
+      ],
+      "xml": {
+        "file": "learning-reconciliation-planning-boundary4-community.xml",
+        "sha256": "49593189c20289969676bc1cd313e5bd5c85f56b2ac10da27afad8a914527d6c"
+      },
+      "log": {
+        "file": "learning-reconciliation-planning-boundary4-community.log",
+        "sha256": "dc1d6cd16a882031f95a2132d1d0831ba3fd5645192e7f89ec275ba5f5a0ed42"
+      }
+    }
+  ],
+  "provenance": {
+    "checked_at": "2026-10-01T00:40:45.035413+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 859,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "dd3963f19d7b15b68ac34e335c75a48b5993cd07",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-evaluation-authority-fix1\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "97e5312876e55fb8bc2f5d305012516c8c2a196f0ef287a2230277c4f2fd6a09",
+          "size": 3792917
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 922,
+        "byte_identical": true,
+        "aggregate_sha256": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+        "chain_hashes": {
+          "source": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+          "wheel": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+          "site_packages": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 373,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "c73c071708969f90d0fed603b2f989ec37052f1c",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-evaluation-authority-fix1\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "5c23034b2f20cd592c1c7b7efb532eea32665882c45b79d39cdb2d50ee091657",
+          "size": 4535075
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 458,
+        "byte_identical": true,
+        "aggregate_sha256": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+        "chain_hashes": {
+          "source": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+          "wheel": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+          "site_packages": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "related_evidence": [
+    "acceptance-executor-reviewer-handoff.json"
+  ],
+  "limits": [
+    "17 distinct cases include existing regressions; not17 newly authored scenarios. Resume adapter cases do not authenticate a transport or run a separate OS process. They do prove reconstruction without the writer session/chat; T04 separately exercises persisted credentials/grants with separate MCP clients.",
+    "REST identity is injected as a human Board owner. Accepted Spec evaluation and task approval are seeded to isolate the transition gates. T03/T04 cover actual authority and task review. These cases do not qualify the complete single-agent T01 pipeline.",
+    "T07 fixture explicitly skips cognitive consolidation under existing Board policy; delivery remains blocking. No gate is mocked. The unexecuted case lacks implementation records as well as test records; no claim of an isolated test-only rollup blocker. Existing adopted-report tests and T04 cover actual implementation contribution and task review.",
+    "Planning-boundary1 passed4 before T07 expansion. Probe2 lacked KG composition;3 used a classification fixture with uncovered architecture resources and correctly refused earlier. Final4 uses the base fixture without those unrelated resources plus actual Community KG composition with stub embeddings. No productive code, gate, permission, or history semantics changed.",
+    "Only test/documentation changes since the byte-proven evaluation-authority-fix1 pair. Last relevant F16 session31859 exit0 has all eight budgets ZERO; prior frontend session46579 passed54 cases. No frontend impact in this increment."
+  ]
+}

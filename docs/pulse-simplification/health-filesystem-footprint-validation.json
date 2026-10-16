@@ -1,0 +1,251 @@
+{
+  "scope": "F4 bounded diagnostic filesystem footprint",
+  "base_heads": {
+    "core": "7f9b442e",
+    "community": "4da882e4"
+  },
+  "provenance": {
+    "checked_at": "2026-09-24T05:30:49.716427+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 824,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "7f9b442e0056627f0840ea63a8836455f4af0ddc",
+        "dirty": true,
+        "dirty_entry_count": 1,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-health-filesystem-footprint\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "dfdd85f90d5d4baf83c6f64c4bd6f0cb2b6f9338dee0a2727b630515695cfdea",
+          "size": 3683965
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 887,
+        "byte_identical": true,
+        "aggregate_sha256": "1f4993f25ef5559f84fe7d34dc410c723564318e1bbd399ee41a48666edd86d0",
+        "chain_hashes": {
+          "source": "1f4993f25ef5559f84fe7d34dc410c723564318e1bbd399ee41a48666edd86d0",
+          "wheel": "1f4993f25ef5559f84fe7d34dc410c723564318e1bbd399ee41a48666edd86d0",
+          "site_packages": "1f4993f25ef5559f84fe7d34dc410c723564318e1bbd399ee41a48666edd86d0"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "55ed4cde6fc6f318c5b524ffcd7eaf65b1d9ee9bcee2e853865675f7bdd2f78a",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 359,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "4da882e4d11ff1becf931c4e309619f11bde0571",
+        "dirty": true,
+        "dirty_entry_count": 4,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-health-filesystem-footprint\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "456d789bbfbc093a85b17fbeb3ba3e99203b9998cdf9357f9c476c009dd24050",
+          "size": 4478820
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 444,
+        "byte_identical": true,
+        "aggregate_sha256": "51b7a86840186b5a3273f53ead5fa3974c0b10cc467df101a58f5e1f478cb4fc",
+        "chain_hashes": {
+          "source": "51b7a86840186b5a3273f53ead5fa3974c0b10cc467df101a58f5e1f478cb4fc",
+          "wheel": "51b7a86840186b5a3273f53ead5fa3974c0b10cc467df101a58f5e1f478cb4fc",
+          "site_packages": "51b7a86840186b5a3273f53ead5fa3974c0b10cc467df101a58f5e1f478cb4fc"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "reports": [
+    {
+      "file": "health-filesystem-volume-before.xml",
+      "sha256": "aebccf31217800833419d17c9ed3b2e5d07301707ebcaa273947059185e41304",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "health-filesystem-footprint-core.xml",
+      "sha256": "777783b3763de0224fd971b7b1abf14ba13008bbcd4b192d88814a882e4b9eac",
+      "tests": 93,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "health-filesystem-footprint-community.xml",
+      "sha256": "c07b9101001207c025b6bdd095c8ddbd5fdbe0679ac64a1e46421ad6ca8e4da5",
+      "tests": 94,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "health-filesystem-footprint-frontend.xml",
+      "sha256": "bd497b36a33c09f4cdeed1fb2bca842808b89cadf82c32552fc95d596bcb1fc8",
+      "tests": 58,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "closure": {
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "documentation_findings": [],
+    "evidence": {
+      "af35_s5_ok": true,
+      "community_to_core_import_rows": 1195,
+      "conformance_matrix_ok": true,
+      "core_import_rows": 7438,
+      "dependency_rows": 25,
+      "distribution_report_ok": true,
+      "rebuild_storage_violation_count": 0,
+      "singleton_gate_status": "passed"
+    },
+    "findings": [],
+    "ok": true,
+    "version": "F16.2",
+    "ownership_rows": 8658,
+    "source_report": {
+      "file": "closure-health-filesystem-footprint.json",
+      "sha256": "4fdde79cd8fb4cbdc23c1e69b2fb91c64fba7e3a91f08783f16120a10a960d0a"
+    }
+  },
+  "unchanged_function_asts": {
+    "grafx_board_storage.py": [
+      "_GrafxDirectoryQuarantineArtifactStore.__init__",
+      "_GrafxDirectoryQuarantineArtifactStore._capture",
+      "_GrafxDirectoryQuarantineArtifactStore.quarantine_storage",
+      "_authenticated_manifest",
+      "_binding_artifacts",
+      "_canonical_sha256",
+      "_capture_grafx_board_storage",
+      "_completed_rebuild_discard",
+      "_copy_plain_directory",
+      "_directory_manifest_inventory",
+      "_directory_quarantine_id",
+      "_grafx_board_directory_layout",
+      "_privacy_directory_quarantine_artifacts",
+      "_read_directory_manifest",
+      "_resume_pending_directory_quarantine",
+      "_retired_board_artifacts",
+      "_revalidate_privacy_scope",
+      "_sha256_plain_file",
+      "_software_version",
+      "_write_directory_json_atomic",
+      "erase_grafx_board_privacy_storage",
+      "grafx_board_privacy_scope",
+      "grafx_board_privacy_storage_present",
+      "grafx_board_storage_ref",
+      "grafx_directory_inventory",
+      "quarantine_grafx_board_storage",
+      "storage_residues"
+    ],
+    "grafx_graph_runtime_store.py": [
+      "CommunityGrafxGraphRuntimeStore.__init__",
+      "CommunityGrafxGraphRuntimeStore._configured_max_bytes",
+      "CommunityGrafxGraphRuntimeStore._privacy_scope",
+      "CommunityGrafxGraphRuntimeStore._state",
+      "CommunityGrafxGraphRuntimeStore._state_when_binding_resolution_fails",
+      "CommunityGrafxGraphRuntimeStore.budget_snapshot",
+      "CommunityGrafxGraphRuntimeStore.erase_board_graph",
+      "CommunityGrafxGraphRuntimeStore.exists",
+      "CommunityGrafxGraphRuntimeStore.graph_state",
+      "CommunityGrafxGraphRuntimeStore.purge_board_graph",
+      "_lexically_exists"
+    ]
+  },
+  "limitations": [
+    "Default footprint bounds: 2000 entries, depth 32, cooperative 0.35-second deadline.",
+    "The measurement is not an atomic filesystem snapshot; a blocked OS syscall cannot be preempted.",
+    "graph_state/materialization metadata paths and shared privacy/recovery helpers were not changed.",
+    "BASE:T35/T36, F4 and full paired validation remain open."
+  ]
+}

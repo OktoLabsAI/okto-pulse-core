@@ -11,9 +11,9 @@ import pytest
 from okto_pulse.core.domain.guideline_policy import (
     GuidelineRevisionPageCursor,
     PolicyEntityType,
-    PolicyEvaluationOutcome,
-    PolicyWaiverStatus,
 )
+from okto_pulse.core.domain.guideline_semantic_assessment import SemanticAssessmentState, SemanticMetricOutcome
+from okto_pulse.core.domain.guideline_semantic_exceptions import SemanticMetricWaiverStatus
 from okto_pulse.core.ports.guideline_policy import (
     GuidelineImpactListQuery,
     GuidelinePolicyBindingConflict,
@@ -27,9 +27,9 @@ from okto_pulse.core.ports.guideline_policy import (
     GuidelinePolicySubjectConflict,
     GuidelinePolicyVersionConflict,
     GuidelineRevisionListQuery,
-    PolicyComplianceFindingListQuery,
-    PolicyComplianceReceiptListQuery,
-    PolicyWaiverListQuery,
+    SemanticFindingListQuery,
+    SemanticAssessmentListQuery,
+    SemanticWaiverListQuery,
 )
 
 
@@ -224,22 +224,22 @@ def test_each_persisted_family_has_a_typed_keyset_query() -> None:
         board_id="board-1",
         impact_receipt_id="impact-1",
     )
-    receipt_query = PolicyComplianceReceiptListQuery(
+    receipt_query = SemanticAssessmentListQuery(
         board_id="board-1",
         entity_type=PolicyEntityType.SPEC,
         subject_id="spec-1",
-        outcome=PolicyEvaluationOutcome.FAIL,
+        outcome=SemanticAssessmentState.METRIC_THRESHOLD_FAILED,
     )
-    finding_query = PolicyComplianceFindingListQuery(
+    finding_query = SemanticFindingListQuery(
         board_id="board-1",
         receipt_id="receipt-1",
-        outcome=PolicyEvaluationOutcome.FAIL,
+        outcome=SemanticMetricOutcome.FAIL,
     )
-    waiver_query = PolicyWaiverListQuery(
+    waiver_query = SemanticWaiverListQuery(
         board_id="board-1",
         evaluated_at=NOW,
         guideline_id="guideline-1",
-        status=PolicyWaiverStatus.REQUESTED,
+        status=SemanticMetricWaiverStatus.REQUESTED,
     )
 
     assert revision_query.cursor is revision_cursor
@@ -254,7 +254,7 @@ def test_each_persisted_family_has_a_typed_keyset_query() -> None:
     )
     assert receipt_query.entity_type is PolicyEntityType.SPEC
     assert finding_query.receipt_id == "receipt-1"
-    assert waiver_query.status is PolicyWaiverStatus.REQUESTED
+    assert waiver_query.status is SemanticMetricWaiverStatus.REQUESTED
 
 
 @pytest.mark.parametrize(
@@ -266,23 +266,23 @@ def test_each_persisted_family_has_a_typed_keyset_query() -> None:
             impact_receipt_id="impact-1",
             limit=50,
         ),
-        lambda: PolicyComplianceReceiptListQuery(
+        lambda: SemanticAssessmentListQuery(
             board_id="board-1",
             entity_type="all",  # type: ignore[arg-type]
         ),
-        lambda: PolicyComplianceFindingListQuery(
+        lambda: SemanticFindingListQuery(
             board_id="board-1",
             outcome="fail",  # type: ignore[arg-type]
         ),
-        lambda: PolicyWaiverListQuery(
+        lambda: SemanticWaiverListQuery(
             board_id="board-1",
             evaluated_at=NOW,
             status="requested",  # type: ignore[arg-type]
         ),
-        lambda: PolicyWaiverListQuery(
+        lambda: SemanticWaiverListQuery(
             board_id="board-1",
             evaluated_at=NOW,
-            subject_version=2_147_483_648,
+            subject_edition=2_147_483_648,
         ),
     ],
     ids=(
@@ -291,7 +291,7 @@ def test_each_persisted_family_has_a_typed_keyset_query() -> None:
         "all-is-not-a-target",
         "string-outcome",
         "string-waiver-status",
-        "waiver-subject-version-overflow",
+        "waiver-subject-edition-overflow",
     ),
 )
 def test_queries_fail_closed_on_invalid_windows_and_enum_filters(factory) -> None:

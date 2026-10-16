@@ -6,13 +6,53 @@ version: "1.3"
 
 Before `move_spec` to `done`, read `okto_pulse_get_delivery_evidence` and resolve
 every missing implementation/test row with `okto_pulse_record_delivery_evidence`.
-Only test cards provide verification; planning evidence and Skip flags do not waive
+Test Cards verify executable obligations. Decisions reuse selected obligation
+proofs and/or direct observations via `okto_pulse_get_decision_reviews` and
+`okto_pulse_record_decision_reviews`. Planning evidence and Skip flags do not waive
 delivery proof. See `okto-pulse://reference/tool-docs/code-traceability`.
 
 Validation and curated-checklist gate rules:
 `okto-pulse://reference/spec_gates`.
 
 Full long-form documentation (args, returns, examples, enum prose) for `okto_pulse_*` tools in this family. The `tools/list` surface carries only the compact summary; read here on demand.
+
+## `okto_pulse_get_requirement_verification`
+
+Read explicit/inherited requirement qualification paths and pending issues.
+
+Requires Spec, IR and OR reads before loading bodies. Counts and resolution
+cover the whole population, independent of this page. Supply both requirement
+identity fields for one row and paths_offset for more paths. Responses are
+bounded; inspect truncation/unknown flags. Source digests and versioned default
+proposals are available for authoring verification through the existing
+structured entity writer. With additional spec.tests.read and card.entity.read,
+also resolves declared methods against installed admission capabilities and
+canonical scenario-to-Test-Card assignments, plus declared implementation
+contributions and unambiguous BR responsibility through canonical FR links.
+effective_inventory summarizes the complete prospective delivery population,
+including AC/API/Decision and unlinked Card scope, before pagination. Missing
+supplementary facts return unknown totals; unassigned obligations stay pending.
+Its snapshot digest and contribution scopes are planning facts, not adoption
+of a new delivery contract. Current credit remains under the adopted contract.
+Requirement implementation_plan uses implementation-plan/v1 contributions:
+card_id, scope (whole_requirement or selected_criteria), criterion_ids and
+summary (required for selected_criteria). Author through existing Draft
+structured-entity writes; every Card must already be in linked_task_ids.
+These are declared scopes, not completion claims or approvals. Without those reads, planning
+remains explicitly unavailable. Planning requires no passing result and never
+adopts ARQ/VER or assesses implemented work, dependencies, semantic adequacy or
+delivery evidence.
+
+Parameters: `board_id`, `spec_id`; optional `offset` (default 0), `limit` (1–100,
+default 25). Supply both `requirement_type` and `requirement_id` for one
+obligation. `paths_offset` pages its additional paths. Types:
+`functional_requirement`, `technical_requirement`, `integration_requirement`,
+`observability_requirement`, `business_rule`.
+
+Inspect `population_complete`, `counts_scope`, `criteria_resolution_complete`,
+issues, blockers and truncation. The fixed evidence policy is
+`pulse-verification/v1`; proposals become authored values only when saved.
+This reader performs no writes, backfills or proof execution.
 
 ## `okto_pulse_add_spec_dependency`
 
@@ -110,14 +150,12 @@ Args:
 Returns:
     For `business_rule`/`api_contract` (HARD remove): `{success, removed, remaining, …}`.
     For `decision` (SOFT-delete): `{success, revoked, decision}` — `status` becomes
-    `revoked`, restorable via `okto_pulse_update_decision` with `status=active`.
+    `revoked`, restorable via `okto_pulse_update_spec_entity` with `entity_type="decision", operation="restore"`.
     Unsupported `target_type` returns `{error:"unsupported_target_type", allowed:[…]}`
     (no mutation).
 
-The legacy tools (`okto_pulse_remove_business_rule`, `okto_pulse_remove_api_contract`,
-`okto_pulse_remove_decision`) remain as aliases and delegate to the same
-implementation. Full family contract:
-`okto-pulse://reference/tool-families/spec_entity_remove`.
+Use the canonical tool with an explicit target_type.
+See `okto-pulse://reference/tool-families/spec_entity_remove`.
 
 ## `okto_pulse_answer_spec_question`
 
@@ -144,32 +182,20 @@ Args:
     board_id: Board ID
     spec_id: Spec ID
     question: The question text
-    options: Option labels — multi-value; formats:
-        okto-pulse://reference/multivalue.
-    options_json: Preferred structured options. Pass a native array such as
-        [{"label":"Safer path","recommended":true,"tradeoff":"More setup"}].
-        A JSON-array string is accepted for compatibility. Each item requires
-        label; recommended defaults to false and tradeoff to null. A non-empty
-        options_json takes precedence over options.
+    options: Required native array of objects, e.g.
+        [{"label":"A","recommended":true,"tradeoff":"Costs more"}].
+        label is a non-empty string; recommended defaults to false;
+        tradeoff defaults to null. Strings and unknown fields are rejected.
     question_type: "choice" for single-select (default) or "multi_choice" for multi-select
-    allow_free_text: "true" to also allow a free-text response alongside selections
+    allow_free_text: true to also allow a free-text response alongside selections
 
 Returns:
     JSON with Q&A item including choices
 
-## `okto_pulse_ask_spec_question`
+## `okto_pulse_ask` (`target_type="spec"`)
 
-Ask a question on a spec's Q&A board. Use @Name to direct the question.
-Both humans and agents can ask questions — this is for clarifying spec requirements
-BEFORE work begins on tasks.
-
-Args:
-    board_id: Board ID
-    spec_id: Spec ID
-    question: Question text (use @Name to mention someone)
-
-Returns:
-    JSON with Q&A item details
+Use `okto_pulse_ask` with `target_type="spec"` and `parent_id` naming the target.
+See `okto-pulse://reference/tool-families/qa_ask` for parameters, authorization and results.
 
 ## `okto_pulse_create_spec`
 
@@ -181,9 +207,9 @@ Args:
     title: Spec title
     description: High-level summary of what needs to be built (optional). Supports Markdown and Mermaid diagrams.
     context: Business context — why this spec exists, how it connects to the bigger picture (optional). Supports Markdown and Mermaid diagrams.
-    functional_requirements: Pipe-separated list of functional requirements (e.g. "User can login|User can reset password")
-    technical_requirements: Pipe-separated list of technical constraints (e.g. "Must use OAuth2|Response time < 200ms")
-    acceptance_criteria: Pipe-separated list of acceptance criteria (e.g. "All tests pass|No console errors")
+    functional_requirements: Native array of structured requirement objects; see tools/list.
+    technical_requirements: Native array of structured requirement objects; see tools/list.
+    acceptance_criteria: Native array of structured requirement objects; see tools/list.
     status: Spec status — one of: draft, review, approved, in_progress, done, cancelled (default: draft)
     assignee_id: User/agent ID to assign (optional)
     labels: Multi-value labels — formats: okto-pulse://reference/multivalue.
@@ -207,9 +233,7 @@ Args:
     spec_id: Spec ID
 
 Returns:
-    JSON with success status and a governed `takedown` receipt. Receipts for
-    sprints deleted by the spec cascade are exposed under
-    `takedown.descendant_deletions`.
+    JSON with success status and a governed `takedown` receipt.
 
 ## `okto_pulse_delete_spec_evaluation`
 
@@ -243,9 +267,10 @@ Create a spec draft from a DONE ideation. The ideation must be in 'done' status
 compiled from the ideation but structured fields (requirements, criteria) left empty
 for deliberate analysis.
 
-Artifacts (mockups, KBs, Architecture Designs) from the ideation are
-automatically propagated to the spec. Use mockup_ids/kb_ids/
-architecture_design_ids to select specific ones (default: all).
+Mockups and Architecture Designs use mockup_ids/architecture_design_ids.
+Knowledge uses the governed knowledge_propagation envelope described below;
+omission selects no inherited Knowledge. All derivations return the native
+operation receipt with spec_id, revision and replay status.
 
 An Ideation has no inherited Code Evidence delivery context. Select the
 explicit `delivery_context` for this Spec deliberately; do not infer it from
@@ -254,8 +279,8 @@ repository contents, source access, or an empty Evidence list.
 Args:
     board_id: Board ID
     ideation_id: Ideation ID (must be in 'done' status)
-    mockup_ids: Pipe-separated mockup IDs to propagate (optional, empty = all)
-    kb_ids: Pipe-separated KB IDs to propagate (optional, empty = all)
+    mockup_ids: Native string array of mockup IDs to propagate (optional, empty = all)
+    knowledge_propagation: Governed selection envelope (same fields as refinement derivation below).
     architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
     architecture_propagation_mode: one of copy, derive, reference_only, none.
         "snapshot" is not accepted; copy/derive are the snapshot-copy modes,
@@ -272,27 +297,22 @@ Create a spec draft from a DONE refinement. The refinement must be in 'done' sta
 Context is compiled from the refinement's scope, analysis, decisions, and Q&A.
 The Spec inherits and pins the exact delivery-context provenance and effective
 source-context manifest from the frozen Refinement snapshot. Later live
-Evidence or human-classification changes do not silently rewrite this Spec.
+Evidence changes do not silently rewrite this Spec.
 
-Artifacts (mockups, KBs, Architecture Designs) from the refinement are
-automatically propagated to the spec. Use mockup_ids/kb_ids/
-architecture_design_ids to select specific ones (default: all) on the legacy
-v1 path. Supplying `knowledge_propagation` opts only Knowledge propagation into
-contract v2; mockup and Architecture Design parameters remain independent.
+Mockup and Architecture Design parameters remain independent of governed
+Knowledge selection. Omitted Knowledge selects no sources, never all sources.
 
 Args:
     board_id: Board ID
     refinement_id: Refinement ID (must be in 'done' status)
-    mockup_ids: Pipe-separated mockup IDs to propagate (optional, empty = all)
-    kb_ids: Pipe-separated KB IDs to propagate on legacy v1 (optional,
-        empty = all). Mutually exclusive with knowledge_propagation.
+    mockup_ids: Native string array of mockup IDs to propagate (optional, empty = all)
     architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
     architecture_propagation_mode: one of copy, derive, reference_only, none.
         "snapshot" is not accepted; copy/derive are the snapshot-copy modes,
         while reference_only/none keep only parent linkage.
-    knowledge_propagation: Optional contract-v2 envelope. Omit it to preserve
-        the complete v1 derivation behavior. Supplying it — even with
-        selection_state=omitted — selects v2. Fields:
+    knowledge_propagation: Governed selection envelope. Omission creates an
+        omitted selection with a new operation key. Supply a stable key for
+        exact request replay. Fields:
         - contract_version: 2 (default)
         - selection_state: omitted | explicit_empty | explicit_ids
         - mode: absent for omitted; drop for explicit_empty; reference,
@@ -303,16 +323,11 @@ Args:
         - idempotency_key: required caller-stable key for exact retries
         - expected_revision: omit or pass 0 for creation
 
-`kb_ids` plus `knowledge_propagation` is rejected with
-`conflicting_propagation_parameters`; choose exactly one contract. The v2
-preflight validates the done refinement, parent, selection, and source roots
+Preflight validates the completed parent, selection, and source roots
 before the deterministic spec is inserted.
 
 Returns:
-    Without knowledge_propagation: the unchanged v1 JSON with created spec
-    details.
-
-    With knowledge_propagation: `{success, contract_version, target_type,
+    Always: `{success, contract_version, target_type,
     target_id, spec_id, operation_id, revision, replayed, selection_state,
     assignments}`. An exact retry with the same idempotency key returns the
     original durable result and `replayed=true`. MCP retries a
@@ -337,29 +352,28 @@ Get the FULL consolidated context of a spec. Returns ALL structured data
 needed to evaluate, validate, or review this spec before advancing it.
 
 Includes: requirements, test scenarios, business rules, API contracts, IRs,
-ORs, screen mockups, knowledge bases, Q&A, evaluations, cards, and sprints.
+ORs, screen mockups, knowledge bases, Q&A, evaluations and cards.
 
 **Always call this before evaluating, moving, or creating cards from a spec.**
 
 Args:
     board_id: Board ID
     spec_id: Spec ID
-    include_knowledge: Include knowledge base entries (default "true")
-    include_mockups: Include screen mockups (default "true")
-    include_qa: Include Q&A items (default "true")
-    include_architecture: Include Architecture Designs (default "true")
-    include_superseded: When "false" (default), the `decisions` array
+    include_knowledge: Include knowledge base entries (default true)
+    include_mockups: Include screen mockups (default true)
+    include_qa: Include Q&A items (default true)
+    include_architecture: Include Architecture Designs (default true)
+    include_superseded: When false (default), the `decisions` array
         returns only entries with status="active" — noise reduction for
-        the common "what rules today?" path. Set to "true" to get the
+        the common "what rules today?" path. Set to true to get the
         full history (active + superseded + revoked). A `decisions_stats`
         summary is always included so you can see what was filtered.
-    profile: Response projection — one of: summary (default), detail, full,
-        legacy. Use `summary` for exploration and `full` before evaluating,
+    profile: Response projection — one of: summary (default), detail, full. Use `summary` for exploration and `full` before evaluating,
         moving, or deriving cards. See okto-pulse://reference/projection-profiles.
 
 Returns:
     JSON with complete spec context: all requirements + structured sections +
-    artifacts + cards + sprints. `gate_readiness.spec_checklist` always projects
+    artifacts + cards. `gate_readiness.spec_checklist` always projects
     the canonical curated-checklist mode, allowance, lifecycle state, technical
     compatibility reasons, and follow-up tool names. In `draft` this readiness remains visible
     without prematurely claiming an active transition gate; when an unsatisfied
@@ -400,12 +414,14 @@ Returns:
 
 ## `okto_pulse_get_checklist_binding`
 
-Read the effective curated checklist binding for a board. A legacy board with
-no persisted binding is reported as effective `off`; this read never
-materializes or changes a binding.
+Read Board configuration, or pass `spec_id` to read the binding governing the
+current Spec edition. After entry into validation this is the immutable snapshot;
+Board changes apply to the next edition. A missing required binding is an error.
+This read never creates or changes a binding.
 
 Args:
     board_id: Board ID
+    spec_id: Optional Spec ID; supply it before starting an execution
 
 Returns:
     JSON containing the binding identity/digest, immutable version,
@@ -424,17 +440,14 @@ Mode `off` rejects the operation without creating an execution.
 Args:
     board_id: Board ID
     spec_id: Spec ID
-    binding_id: Current binding digest returned by
-        `okto_pulse_get_checklist_binding`
+    binding_version: The `version` returned by
+        `okto_pulse_get_checklist_binding(board_id, spec_id)`
     spec_edition: Exact current lifecycle edition
     expected_spec_version: Current Spec version
-    idempotency_key: Stable key for exact retries
 
 Returns:
-    JSON with execution ID, frozen identities, revision, status, `replayed`,
-    and the ten immutable template items in their normative order. Each item
-    includes `item_id`, English and Portuguese title/description, and
-    `allow_na`, so the subsequent submission is self-describing over MCP.
+    JSON data with `execution_id`, `spec_edition`, and `status: started`.
+    Retry identities are derived by the server from the native command.
 
 Permissions:
     Requires both Spec update authority and `spec.checklist.execute`.
@@ -450,15 +463,14 @@ Args:
     board_id: Board ID
     spec_id: Spec ID
     execution_id: Open execution ID
-    expected_execution_revision: Current execution revision
-    idempotency_key: Stable key for exact retries
-    results: Array of exactly ten objects with `item_id`, `outcome`
+    spec_edition: Exact current lifecycle edition
+    expected_spec_version: Current Spec version
+    item_results: Array of exactly ten objects with `item_id`, `outcome`
         (`pass`, `fail`, or `not_applicable`), `anchor`, and optional
         `rationale`
 
 Returns:
-    JSON with a compatibility `receipt_id`, aggregate `outcome` (`pass` unless
-    any item is `fail`), request digest, head revision, and `replayed`.
+    JSON data with `result_id`, `spec_edition`, and `status` (`passed` or `failed`).
 
 Permissions:
     Requires both Spec update authority and `spec.checklist.execute`.
@@ -466,12 +478,12 @@ Permissions:
 ## `okto_pulse_get_checklist_receipt`
 
 Read an immutable checklist result and its ordered per-item evidence through
-the compatibility receipt-named API. A result supports a blocking gate only
+the receipt API. A result supports a blocking gate only
 when it is Current for the exact Spec edition and every item is non-failing.
 
 Args:
     board_id: Board ID
-    receipt_id: Compatibility checklist result ID
+    receipt_id: Checklist result ID returned as `result_id` by submission
 
 Returns:
     JSON with the frozen identities, ordered results, source, head revision,
@@ -500,16 +512,16 @@ separating Current from Previous by lifecycle edition.
 Useful for understanding why a spec was validated (or failed). Canonical
 records include five scores, per-score justifications, optional pinpoints,
 outcome, threshold violations, and a resolved_thresholds snapshot of what was
-in effect when the submit happened. Older records preserve their historical
-score/summary or three-metric shape.
+in effect when the submit happened. Every native record uses this same contract;
+incompatible historical shapes are refused without conversion.
 The result matching the active Spec edition is Current. Earlier-edition results
-are Previous; legacy SQL `NULL` editions are `history_only` under Previous and
-can never become Current.
+are Previous. Missing or inconsistent editions are refused without assigning
+an edition to the stored record.
 
 Args:
     board_id: Board ID
     spec_id: Spec ID
-    lifecycle_state: Optional `all|current|previous|history_only` filter
+    lifecycle_state: Optional `all|current|previous` filter
 
 Returns:
     JSON with current_validation_id and validations list (reverse chronological)
@@ -529,12 +541,12 @@ Returns:
 
 ## `okto_pulse_submit_spec_evaluation`
 
-Submit a qualitative evaluation for a spec in 'validated' status.
+Submit a decomposition evaluation in 'approved' or 'validated' status.
 Multiple evaluators can submit independent evaluations.
 
 Args:
     board_id: Board ID
-    spec_id: Spec ID (must be in 'validated' status)
+    spec_id: Spec ID (must be in 'approved' or 'validated' status)
     breakdown_completeness: Score 0-100 — do tasks cover the spec scope?
     breakdown_justification: Why this score
     granularity: Score 0-100 — are tasks properly sized?
@@ -549,6 +561,38 @@ Args:
 
 Returns:
     JSON with created evaluation details
+
+## `okto_pulse_get_spec_validation_cycle`
+
+Read the current validation cycle and the planning basis before concluding a
+Spec. Requires Board access and the native read permission for each component.
+The requested Spec must belong to `board_id`, even if the agent can access
+other Boards. Unreadable components are omitted; an unavailable required basis
+must never be treated as approval.
+
+Args:
+    board_id: Authenticated Board ID.
+    spec_id: Spec in that Board.
+    include_previous: Include bounded historical summaries; default false.
+    include_planning: Include native planning admission components and their
+        combined ready/blocked/unavailable state; default false. This performs
+        the applicable gate reads and is not a lightweight polling request.
+    offset: Previous-result offset, at least zero.
+    limit: Previous-result page size, 1..100; default 25.
+
+Returns:
+    Current native results, visible sections, submission_fence and, with
+    spec.validation.read, planning_manifest. Pass that complete manifest
+    unchanged as expected_planning_manifest to the conclusion. Map the fence's
+    expected_subject_version to expected_spec_version. A manifest detects
+    changes to planning inputs and authority, including changes that do not
+    advance Spec.version; it is not a score or approval. Missing revision
+    authority returns spec_planning_manifest_unavailable instead of a token.
+
+After a conflict, inspect the updated planning inputs before authoring a new
+conclusion. Do not silently refresh the token and retry an unchanged judgment.
+For an interrupted request, replay the exact original payload and operation key;
+the original receipt remains readable subject to current read authorization.
 
 ## `okto_pulse_submit_spec_validation`
 
@@ -569,9 +613,17 @@ with the specific coverage violation. If coverage passes, it computes outcome:
 - FAILED if any threshold violated OR recommendation=reject
 - SUCCESS only if ALL thresholds pass AND recommendation=approve
 
-On SUCCESS, the spec is atomically promoted from 'approved' to 'validated'
-and enters the content lock (update_spec and related tools will raise
-SpecLockedError). Same-edition lifecycle moves and Code
+Quality SUCCESS is an individual result, not a promotion. The Spec moves from
+'approved' to 'validated' only when the applicable decomposition gate also
+passes: Current approval(s), sufficient native average, and no Current reject.
+An optional typed `decomposition` payload records both opinions atomically;
+otherwise the operation consumes Current independent reviews without changing
+their authorship. Joint submission requires both `spec.validation.submit` and
+`spec.evaluations.submit`, including each critical context. A valid negative
+opinion remains in its native history and keeps the Spec Approved. Technical
+failure rolls back both records and any promotion.
+
+Approved already locks content. Same-edition lifecycle moves and Code
 Investigation/Evidence/waiver events preserve Current. To edit after a success,
 move the spec to draft; that opens a new edition, clears Current, and preserves
 the full history. An explicit successor submission is the only other operation
@@ -585,9 +637,14 @@ raising the numbers.
 Args:
     board_id: Board ID
     spec_id: Spec ID (must be in 'approved' status)
+    idempotency_key: Required operation key (1..128 characters). Reuse the exact
+        key and authored payload after interruption; changing input requires a new key.
     expected_validation_edition: Current human lifecycle edition
     expected_spec_version: Current technical Spec version
     expected_head_revision: Current validation head revision
+    expected_planning_manifest: Required complete planning_manifest from
+        okto_pulse_get_spec_validation_cycle, for the same Board/Spec, edition
+        and technical version. Compared transactionally before recording.
     confidence: Score 0-100 — reliability and evidence coverage of the evaluator's whole-current-edition assessment; NOT Spec quality
     confidence_justification: Why this confidence score (min 10 chars)
     clarity: Score 0-100 — how self-contained and understandable the problem, solution, scope, actors, terms, flows and errors are
@@ -598,15 +655,26 @@ Args:
     decidability_justification: Why this decidability score (min 10 chars)
     ambiguity: Score 0-100 — severity and dispersion of materially competing plausible interpretations (LOWER IS BETTER)
     ambiguity_justification: Why this ambiguity score (min 10 chars)
-    pinpoints: Optional closed list of metric-tagged semantic problem locations
+    pinpoints: Optional closed list of compact actionable findings
     recommendation: One of: approve, reject
+    decomposition: Optional object with the native fields documented for
+        okto_pulse_submit_spec_evaluation above (without board_id/spec_id).
+        Evaluator identity and edition are server-owned; extra fields are rejected.
 
 Scoring contract:
     Use a 0-100 integer scale, not 1-5. A value like 5 is treated as 5/100 and
     will usually fail. confidence/clarity/assertiveness/decidability are
     higher-is-better; ambiguity is lower-is-better. Default thresholds are
     70/80/80/80/max-30 respectively. Every score requires its own
-    justification. A pinpoint has `{metric, anchor_type, anchor_ref?, detail}`;
+    justification. A pinpoint has `{metrics, kind, severity, excerpt, detail, recommendation, rationale?, anchor_type, anchor_ref?}`;
+    Include rationale to explain why the finding matters and its concrete impact (max 1000 characters).
+    metrics is a nonempty unique list of quality dimensions. kind is problem or
+    opportunity; severity is low, medium, high or critical. Each finding describes
+    ONE specific issue and one recommended action (max 1000 characters each).
+    excerpt is a short verbatim quote (max 1000 characters) from the authorized
+    anchor; the server verifies the exact substring. Never paste the full Spec
+    as a finding. Multiple affected dimensions belong in the same metrics list.
+    Severity is descriptive and does not replace the existing score gates;
     whole_artifact omits anchor_ref, while field/structured_child/qa require it.
     Prefer a stable structured-child or Q&A ID over a mutable ordinal/index.
     Select the rubric band from evidence before the exact score. Do not derive
@@ -616,8 +684,8 @@ Scoring contract:
     requires a pinpoint for each threshold violation and for an exceptional
     blocker behind reject when all scores pass.
     Pulse validates and stores the evaluator's result but does not perform the
-    evaluation. Historical score/summary and completeness shapes remain
-    readable history, but are not accepted for new submissions.
+    evaluation. Only the current native schema is accepted; no legacy converters
+    or alternative historical shapes are supported.
 
 Coverage contract:
     FR coverage is computed from business_rules[].linked_requirements. Direct
@@ -632,13 +700,35 @@ Coverage contract:
     and remediates coverage; skip changes remain human UI/REST decisions.
 
 Returns:
-    JSON with validation result, outcome, threshold violations, and resolved thresholds.
-    On success, spec_status becomes "validated".
+    JSON with validation_id, validation_edition, is_current, native quality outcome,
+    spec_status, planning_result (ready/blocked), decomposition_ids and planning_blockers.
+    Native scores, thresholds and pinpoints remain available in validation history.
+    No average is computed across quality and decomposition evaluations.
+
+Replay is scoped by authenticated actor and Spec. Identical input returns the
+original operation receipt without another review or promotion, even after a
+later lifecycle transition. Receipt state describes the original operation;
+read the current Spec/cycle for its present state. A reused key with different
+input conflicts. Replay rechecks Spec and assessment read permissions, including
+decomposition read when its IDs are returned. The receipt is committed atomically
+with both native histories and contains no duplicate scores, pinpoints or bodies.
 
 ## `okto_pulse_update_spec`
 
 Update a spec's fields. Content changes (description, context, requirements, criteria) bump the version.
 Only non-empty fields are updated.
+
+Every Spec requires the native joint architecture/verification execution contract,
+created by the server with the Spec and scoped to its Board and edition.
+A missing or incompatible contract is refused; this update command has no
+legacy adoption or conversion option. Architecture Design selection remains
+separate from this contract and does not classify candidates, allocate Cards,
+invent criteria or create proof.
+
+Before first start, all current architecture candidates must be classified and
+the complete verification/implementation plan must resolve. Existing evaluations,
+dependencies and coverage gates still apply; passing execution is not required
+at planning time. Native Done history is not automatically reopened.
 
 Args:
     board_id: Board ID
@@ -646,9 +736,9 @@ Args:
     title: New title (optional, empty = no change)
     description: New description (optional, empty = no change)
     context: New context (optional, empty = no change)
-    functional_requirements: Pipe-separated list of functional requirements (optional, empty = no change)
-    technical_requirements: Pipe-separated list of technical constraints (optional, empty = no change)
-    acceptance_criteria: Pipe-separated list of acceptance criteria (optional, empty = no change)
+    functional_requirements: Native array of structured requirement objects; see tools/list.
+    technical_requirements: Native array of structured requirement objects; see tools/list.
+    acceptance_criteria: Native array of structured requirement objects; see tools/list.
     assignee_id: New assignee (optional, empty = no change)
     labels: Multi-value labels — formats: okto-pulse://reference/multivalue. (optional, empty = no change)
 
@@ -657,6 +747,28 @@ Returns:
 
 ## `okto_pulse_update_spec_entity`
 
+Polymorphic structured spec entity mutation tool for FR, BR, TR, Decision,
+AC, IR, OR and Project structure nodes. Project structure writes require
+expected_spec_version, expected_structure_revision and idempotency_key;
+batch operations are atomic.
+
+AC payloads may include verification_profile (functional, integration,
+technical, operational) and requirement_links [{requirement_type,
+requirement_id, aspect?}]. Types: functional_requirement,
+technical_requirement, integration_requirement, observability_requirement,
+business_rule. Use exact same-Spec IDs, not indices or text. Each target
+appears once, at most 100 links. Missing metadata is allowed in Draft;
+qualification does not grant test evidence, approval or start readiness.
+
+FR/TR/IR/OR/BR payloads accept verification with mode explicit/inherited,
+required_profiles, and inheritance selections {source: {requirement_type,
+requirement_id}, source_digest, criterion_ids, covered_aspect}. Read the current
+source digests/default proposals via okto_pulse_get_requirement_verification.
+An inherited selection does not infer proof from existing BR→FR links.
+
+API Contracts intentionally use okto_pulse_update_spec_api_contract so the richer
+payload shape remains explicit while still delegating to StructuredSpecEntityService.
+
 Before a Spec leaves Draft, agents must populate applicable Project Structure
 or persist a justified `Project Structure: not applicable` declaration in the
 Spec `context` via `okto_pulse_update_spec`, preserving existing context. This
@@ -664,12 +776,6 @@ does not require a fake tree or a Decision with artificial task coverage.
 See `okto-pulse://reference/project-structure` for complete batch examples and
 the scope/edition review protocol. The declaration is an agent-auditable
 context record, not a new Resource Gate N/A resource type.
-
-Polymorphic structured spec entity mutation tool for FR, BR, TR, Decision, AC,
-IR, OR and Project structure nodes.
-
-API Contracts intentionally use okto_pulse_update_spec_api_contract so the richer
-payload shape remains explicit while still delegating to StructuredSpecEntityService.
 
 For `entity_type="project_structure_node"`, read
 `okto-pulse://reference/project-structure` first. Every write requires
@@ -682,14 +788,9 @@ revision; semantic or mixed batches remain Draft-only.
 ## Code Evidence links and dispositions
 
 Read `delivery_context`, effective `source_context`, `source_context_items`,
-and inherited Evidence from full Spec context. Summary role/classification
-counts cover the complete effective set even when item collections are
-bounded. Every item reports `context_origin` as `authored`,
-`human_legacy_classification`, or `unclassified_legacy`; never infer a legacy
-role from its path, type, or claim. Legacy classification is append-only:
-authorized agents use `okto_pulse_classify_legacy_code_evidence` with
-`code_traceability.evidence.classify_legacy`; humans may use UI/REST. A
-classification neither upgrades V1 receipts nor rebases this Spec implicitly.
+and inherited Evidence from full Spec context. Summary role counts cover the
+complete effective set even when item collections are bounded. Every Evidence
+item has `context_origin="authored"` and explicit baseline provenance.
 
 Use
 `okto_pulse_link_code_evidence` and `okto_pulse_unlink_code_evidence` for
@@ -701,7 +802,7 @@ TO-BE path.
 
 A refinement-derived Spec stays bound to its frozen manifest and SHA-256. To
 adopt a later Refinement snapshot, preview the governed Evidence rebase,
-review context/classification/link/disposition deltas, and apply the exact
+review context/link/disposition deltas, and apply the exact
 `preview_sha256`. Do not emulate rebase by copying Evidence or editing the
 manifest. If the agent surface lacks preview/apply, surface the authorized
 UI/REST action.

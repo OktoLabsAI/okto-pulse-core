@@ -6,10 +6,8 @@ the complete envelope before exposing a plan, and never authorizes an
 overwrite.  A persistence adapter may apply a non-dry-run, conflict-free plan
 inside one unit of work.
 
-Legacy ``schema_version=1`` and rule-empty ``schema_version=2`` envelopes are
-accepted only through the dispatcher and become context-only semantic
-guidelines with no bindings.  Executable v2 rules are rejected because no
-lossless rule-to-rubric conversion exists.
+Only the current contract is accepted. Older envelopes are refused without
+conversion, inferred identity, or changes to their rules.
 """
 
 from __future__ import annotations
@@ -25,7 +23,6 @@ from okto_pulse.core.domain.guideline_policy import (
     GUIDELINE_BINDING_ORIGIN_MAX_LENGTH,
     GUIDELINE_BINDING_SOURCE_KIND_MAX_LENGTH,
     GUIDELINE_ID_MAX_LENGTH,
-    GUIDELINE_LEGACY_VERSION_MAX_LENGTH,
     GUIDELINE_REVISION_ID_MAX_LENGTH,
     BoardGuidelineBinding,
     Guideline,
@@ -62,36 +59,8 @@ from okto_pulse.core.domain.quality_canonicalization import canonical_json_bytes
 GUIDELINE_EXPORT_CONTRACT_VERSION = "guideline-export/v3"
 GUIDELINE_EXPORT_SCHEMA_VERSION = "3"
 GUIDELINE_EXPORT_KIND = "guidelines"
-GUIDELINE_EXPORT_LEGACY_V2_CONTRACT_VERSION = "guideline-export/v2"
-GUIDELINE_EXPORT_LEGACY_V2_SCHEMA_VERSION = "2"
-GUIDELINE_EXPORT_LEGACY_SCHEMA_VERSION = "1"
-GUIDELINE_EXPORT_LEGACY_BASELINE_VERSION = "1.0.0"
-GUIDELINE_EXPORT_LEGACY_OWNER = "legacy-import"
-GUIDELINE_EXPORT_LEGACY_ACTOR = "legacy-import"
 
 _SHA256_LENGTH = 64
-_LEGACY_ENVELOPE_REQUIRED_FIELDS = frozenset({"schema_version", "kind", "items"})
-_LEGACY_ENVELOPE_OPTIONAL_FIELDS = frozenset({"exported_at"})
-_LEGACY_ITEM_FIELDS = frozenset(
-    {
-        "title",
-        "content",
-        "tags",
-        "scope",
-        "board_id",
-        "legacy_version",
-        "version",
-        "blocking",
-        "is_blocking",
-        "enforcement",
-        "rules",
-    }
-)
-_LEGACY_EXECUTABLE_RULES_MESSAGE = (
-    "schema v2 executable rules cannot be migrated safely; remove the rules "
-    "to import context-only, or re-author them as semantic metrics and export "
-    "a schema v3 document"
-)
 
 
 class GuidelineImportExportError(ValueError):
@@ -115,7 +84,6 @@ class GuidelineHistoryStatus(str, Enum):
     """How faithfully one exported aggregate represents source history."""
 
     COMPLETE = "complete"
-    BASELINE_ONLY = "baseline_only"
 
 
 class GuidelineImportRevisionDisposition(str, Enum):
@@ -309,14 +277,11 @@ def _domain_error(exc: ValueError, path: str) -> GuidelineImportExportError:
 
 @dataclass(frozen=True, slots=True)
 class GuidelineExportRevision:
-    """One immutable revision plus honest legacy provenance."""
+    """One immutable revision and its publication evidence."""
 
     revision: GuidelineRevision
     published_head_revision: int | None = None
     published_head_updated_at: datetime | None = None
-    legacy_version: str | None = None
-    legacy_version_unresolvable: bool = False
-    legacy_tags: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.revision, GuidelineRevision):
@@ -349,45 +314,6 @@ class GuidelineExportRevision:
                 "guideline_export_published_head_time_before_revision",
                 path="$.published_head_updated_at",
             )
-        legacy_version = _optional_bounded_text(
-            self.legacy_version,
-            "guideline_export_legacy_version_invalid",
-            "$.legacy_version",
-            max_length=GUIDELINE_LEGACY_VERSION_MAX_LENGTH,
-        )
-        if not isinstance(self.legacy_version_unresolvable, bool):
-            raise GuidelineImportExportError(
-                "guideline_export_legacy_resolution_invalid"
-            )
-        if self.legacy_version_unresolvable and legacy_version is None:
-            raise GuidelineImportExportError(
-                "guideline_export_unresolvable_legacy_version_required"
-            )
-        if legacy_version is not None and not self.legacy_version_unresolvable:
-            raise GuidelineImportExportError(
-                "guideline_export_legacy_version_resolution_invalid"
-            )
-        if self.legacy_tags is None:
-            legacy_tags = None
-        else:
-            if not isinstance(self.legacy_tags, tuple | list):
-                raise GuidelineImportExportError("guideline_export_legacy_tags_invalid")
-            legacy_tags = tuple(
-                sorted(
-                    {
-                        _required_text(
-                            item,
-                            "guideline_export_legacy_tag_invalid",
-                            "$.legacy_tags",
-                        )
-                        for item in self.legacy_tags
-                    }
-                )
-            )
-        if legacy_tags is not None and not self.legacy_version_unresolvable:
-            raise GuidelineImportExportError(
-                "guideline_export_legacy_tags_resolution_invalid"
-            )
         object.__setattr__(
             self,
             "published_head_revision",
@@ -398,8 +324,6 @@ class GuidelineExportRevision:
             "published_head_updated_at",
             published_head_updated_at,
         )
-        object.__setattr__(self, "legacy_version", legacy_version)
-        object.__setattr__(self, "legacy_tags", legacy_tags)
 
     @property
     def revision_id(self) -> str:
@@ -413,18 +337,6 @@ class GuidelineExportRevision:
     def revision_digest(self) -> str:
         return self.revision.revision_digest
 
-    @property
-    def legacy_version_as_int(self) -> int | None:
-        """Compatibility projection without losing the textual source value."""
-
-        if self.legacy_version is None or not self.legacy_version.isascii():
-            return None
-        if not self.legacy_version.isdigit():
-            return None
-        parsed = int(self.legacy_version)
-        return parsed if parsed <= POLICY_SQL_INTEGER_MAX else None
-
-
 @dataclass(frozen=True, slots=True)
 class GuidelineExportBinding:
     """Logical binding history plus physical provenance and evidence."""
@@ -433,11 +345,9 @@ class GuidelineExportBinding:
     physical_source_kind: str
     binding_origin: str
     materialization: GuidelineBindingMaterialization
-    legacy_source_id: str | None = None
-    legacy_guideline_version: str | None = None
-    legacy_template_id: str | None = None
-    legacy_template_version: str | None = None
-    legacy_version_unresolvable: bool = False
+    materialized_revision_number: int | None = None
+    materialized_template_id: str | None = None
+    materialized_template_version: int | None = None
     evidence_refs: tuple[tuple[str, str], ...] = ()
     binding_digest: str | None = None
 
@@ -460,33 +370,21 @@ class GuidelineExportBinding:
                     max_length=max_length,
                 ),
             )
+        if self.physical_source_kind != "native":
+            raise GuidelineImportExportError("guideline_export_binding_source_kind_invalid")
         if not isinstance(self.materialization, GuidelineBindingMaterialization):
             raise GuidelineImportExportError(
                 "guideline_export_binding_materialization_invalid"
             )
-        for field_name, max_length in (
-            ("legacy_source_id", GUIDELINE_ID_MAX_LENGTH),
-            ("legacy_guideline_version", GUIDELINE_LEGACY_VERSION_MAX_LENGTH),
-            ("legacy_template_id", GUIDELINE_ID_MAX_LENGTH),
-            ("legacy_template_version", GUIDELINE_LEGACY_VERSION_MAX_LENGTH),
-        ):
+        object.__setattr__(self, "materialized_template_id", _optional_bounded_text(
+            self.materialized_template_id, "guideline_export_binding_template_id_invalid",
+            "$.materialized_template_id", max_length=GUIDELINE_ID_MAX_LENGTH,
+        ))
+        for field_name in ("materialized_revision_number", "materialized_template_version"):
             value = getattr(self, field_name)
-            if value is not None and not isinstance(value, str):
-                value = str(value)
-            object.__setattr__(
-                self,
-                field_name,
-                _optional_bounded_text(
-                    value,
-                    f"guideline_export_binding_{field_name}_invalid",
-                    f"$.{field_name}",
-                    max_length=max_length,
-                ),
-            )
-        if not isinstance(self.legacy_version_unresolvable, bool):
-            raise GuidelineImportExportError(
-                "guideline_export_binding_legacy_resolution_invalid"
-            )
+            if value is not None:
+                _strict_int(value, "guideline_export_binding_materialization_invalid",
+                            f"$.{field_name}", minimum=1)
         if not isinstance(self.evidence_refs, tuple | list):
             raise GuidelineImportExportError(
                 "guideline_export_binding_evidence_refs_invalid"
@@ -535,11 +433,6 @@ class GuidelineExportBinding:
         object.__setattr__(self, "evidence_refs", refs_tuple)
         object.__setattr__(self, "binding_digest", expected_digest)
 
-    def __getattr__(self, name: str) -> object:
-        """Compatibility projection for immutable logical binding fields."""
-
-        return getattr(self.binding, name)
-
     @property
     def candidate_key(self) -> tuple[str, str, str, int]:
         return (
@@ -556,11 +449,9 @@ class GuidelineExportBinding:
             "physical_source_kind": self.physical_source_kind,
             "binding_origin": self.binding_origin,
             "materialization": self.materialization.value,
-            "legacy_source_id": self.legacy_source_id,
-            "legacy_guideline_version": self.legacy_guideline_version,
-            "legacy_template_id": self.legacy_template_id,
-            "legacy_template_version": self.legacy_template_version,
-            "legacy_version_unresolvable": self.legacy_version_unresolvable,
+            "materialized_revision_number": self.materialized_revision_number,
+            "materialized_template_id": self.materialized_template_id,
+            "materialized_template_version": self.materialized_template_version,
             "evidence_refs": [list(item) for item in self.evidence_refs],
         }
         if include_digest:
@@ -578,7 +469,7 @@ class GuidelineExportAggregate:
     retirement: GuidelineRetirement | None = None
     bindings: tuple[GuidelineExportBinding, ...] = ()
     history_status: GuidelineHistoryStatus = GuidelineHistoryStatus.COMPLETE
-    migration_notes: tuple[str, ...] = ()
+    import_notes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.identity, Guideline):
@@ -825,29 +716,15 @@ class GuidelineExportAggregate:
                     ) from exc
                 previous_binding = binding
 
-        if not isinstance(self.migration_notes, tuple | list) or any(
+        if not isinstance(self.import_notes, tuple | list) or any(
             not isinstance(item, str) or not item.strip()
-            for item in self.migration_notes
+            for item in self.import_notes
         ):
-            raise GuidelineImportExportError("guideline_export_migration_notes_invalid")
-        migration_notes = tuple(sorted(set(self.migration_notes)))
-        if self.history_status is GuidelineHistoryStatus.BASELINE_ONLY:
-            if len(revisions) != 1 or not revisions[0].legacy_version_unresolvable:
-                raise GuidelineImportExportError(
-                    "guideline_export_baseline_history_mismatch"
-                )
-            if revisions[0].revision.metrics or bindings:
-                raise GuidelineImportExportError(
-                    "guideline_export_legacy_baseline_must_be_contextual"
-                )
-        elif any(item.legacy_version is not None for item in revisions):
-            raise GuidelineImportExportError(
-                "guideline_export_complete_history_legacy_metadata_forbidden"
-            )
-
+            raise GuidelineImportExportError("guideline_export_import_notes_invalid")
+        import_notes = tuple(sorted(set(self.import_notes)))
         object.__setattr__(self, "revisions", revisions)
         object.__setattr__(self, "bindings", bindings)
-        object.__setattr__(self, "migration_notes", migration_notes)
+        object.__setattr__(self, "import_notes", import_notes)
 
     @property
     def guideline_id(self) -> str:
@@ -893,7 +770,7 @@ class GuidelineExportSnapshot:
                             "guideline_export_snapshot_board_mismatch"
                         )
                 if any(
-                    binding.board_id != source_board_id
+                    binding.binding.board_id != source_board_id
                     for binding in aggregate.bindings
                 ):
                     raise GuidelineImportExportError(
@@ -925,11 +802,7 @@ class GuidelineExportEnvelope:
             )
         if self.kind != GUIDELINE_EXPORT_KIND:
             raise GuidelineImportExportError("guideline_export_kind_invalid")
-        if self.source_schema_version not in {
-            GUIDELINE_EXPORT_SCHEMA_VERSION,
-            GUIDELINE_EXPORT_LEGACY_V2_SCHEMA_VERSION,
-            GUIDELINE_EXPORT_LEGACY_SCHEMA_VERSION,
-        }:
+        if self.source_schema_version != GUIDELINE_EXPORT_SCHEMA_VERSION:
             raise GuidelineImportExportError(
                 "guideline_export_source_schema_version_invalid"
             )
@@ -1308,6 +1181,8 @@ def guideline_import_digest(
     )
 
 
+
+
 @dataclass(frozen=True, slots=True)
 class GuidelineImportPlan:
     envelope: GuidelineExportEnvelope
@@ -1559,11 +1434,7 @@ def _revision_payload(exported: GuidelineExportRevision) -> dict[str, object]:
         "published_head_updated_at": _datetime_payload(
             exported.published_head_updated_at
         ),
-        "legacy_version": exported.legacy_version,
-        "legacy_version_unresolvable": exported.legacy_version_unresolvable,
-        "legacy_tags": (
-            list(exported.legacy_tags) if exported.legacy_tags is not None else None
-        ),
+
     }
 
 
@@ -1643,7 +1514,7 @@ def _aggregate_payload(
         "retirement": _retirement_payload(aggregate.retirement),
         "bindings": [binding.digest_payload() for binding in aggregate.bindings],
         "history_status": aggregate.history_status.value,
-        "migration_notes": list(aggregate.migration_notes),
+        "import_notes": list(aggregate.import_notes),
     }
 
 
@@ -1702,21 +1573,6 @@ def build_guideline_export_v3(
     )
 
 
-def build_guideline_export_v2(
-    snapshot: GuidelineExportSnapshot
-    | tuple[GuidelineExportAggregate, ...]
-    | list[GuidelineExportAggregate],
-    *,
-    exported_at: datetime,
-    source_board_id: str | None = None,
-) -> GuidelineExportEnvelope:
-    """Deprecated import alias delegating to the semantic v3 builder."""
-
-    return build_guideline_export_v3(
-        snapshot,
-        exported_at=exported_at,
-        source_board_id=source_board_id,
-    )
 
 
 def guideline_export_payload(
@@ -1822,9 +1678,6 @@ def _parse_revision(raw: object, path: str) -> GuidelineExportRevision:
                 "tags",
                 "published_head_revision",
                 "published_head_updated_at",
-                "legacy_version",
-                "legacy_version_unresolvable",
-                "legacy_tags",
             }
         ),
         path=path,
@@ -1900,34 +1753,6 @@ def _parse_revision(raw: object, path: str) -> GuidelineExportRevision:
             value["published_head_updated_at"],
             "guideline_export_published_head_updated_at_invalid",
             f"{path}.published_head_updated_at",
-        ),
-        legacy_version=_optional_text(
-            value["legacy_version"],
-            "guideline_export_legacy_version_invalid",
-            f"{path}.legacy_version",
-        ),
-        legacy_version_unresolvable=_strict_bool(
-            value["legacy_version_unresolvable"],
-            "guideline_export_legacy_resolution_invalid",
-            f"{path}.legacy_version_unresolvable",
-        ),
-        legacy_tags=(
-            None
-            if value["legacy_tags"] is None
-            else tuple(
-                _required_text(
-                    item,
-                    "guideline_export_legacy_tag_invalid",
-                    f"{path}.legacy_tags[{index}]",
-                )
-                for index, item in enumerate(
-                    _sequence(
-                        value["legacy_tags"],
-                        "guideline_export_legacy_tags_invalid",
-                        f"{path}.legacy_tags",
-                    )
-                )
-            )
         ),
     )
 
@@ -2204,11 +2029,9 @@ def _parse_binding(raw: object, path: str) -> GuidelineExportBinding:
                 "physical_source_kind",
                 "binding_origin",
                 "materialization",
-                "legacy_source_id",
-                "legacy_guideline_version",
-                "legacy_template_id",
-                "legacy_template_version",
-                "legacy_version_unresolvable",
+                "materialized_revision_number",
+                "materialized_template_id",
+                "materialized_template_version",
                 "evidence_refs",
                 "binding_digest",
             }
@@ -2252,31 +2075,13 @@ def _parse_binding(raw: object, path: str) -> GuidelineExportBinding:
             "guideline_export_binding_materialization_invalid",
             f"{path}.materialization",
         ),
-        legacy_source_id=_optional_text(
-            value["legacy_source_id"],
-            "guideline_export_binding_legacy_source_id_invalid",
-            f"{path}.legacy_source_id",
+        materialized_revision_number=value["materialized_revision_number"],
+        materialized_template_id=_optional_text(
+            value["materialized_template_id"],
+            "guideline_export_binding_materialized_template_id_invalid",
+            f"{path}.materialized_template_id",
         ),
-        legacy_guideline_version=_optional_text(
-            value["legacy_guideline_version"],
-            "guideline_export_binding_legacy_guideline_version_invalid",
-            f"{path}.legacy_guideline_version",
-        ),
-        legacy_template_id=_optional_text(
-            value["legacy_template_id"],
-            "guideline_export_binding_legacy_template_id_invalid",
-            f"{path}.legacy_template_id",
-        ),
-        legacy_template_version=_optional_text(
-            value["legacy_template_version"],
-            "guideline_export_binding_legacy_template_version_invalid",
-            f"{path}.legacy_template_version",
-        ),
-        legacy_version_unresolvable=_strict_bool(
-            value["legacy_version_unresolvable"],
-            "guideline_export_binding_legacy_resolution_invalid",
-            f"{path}.legacy_version_unresolvable",
-        ),
+        materialized_template_version=value["materialized_template_version"],
         evidence_refs=evidence_refs,
         binding_digest=_required_text(
             value["binding_digest"],
@@ -2298,7 +2103,7 @@ def _parse_aggregate(raw: object, path: str) -> GuidelineExportAggregate:
                 "retirement",
                 "bindings",
                 "history_status",
-                "migration_notes",
+                "import_notes",
             }
         ),
         path=path,
@@ -2326,14 +2131,14 @@ def _parse_aggregate(raw: object, path: str) -> GuidelineExportAggregate:
     notes = tuple(
         _required_text(
             item,
-            "guideline_export_migration_note_invalid",
-            f"{path}.migration_notes[{index}]",
+            "guideline_export_import_note_invalid",
+            f"{path}.import_notes[{index}]",
         )
         for index, item in enumerate(
             _sequence(
-                value["migration_notes"],
-                "guideline_export_migration_notes_invalid",
-                f"{path}.migration_notes",
+                value["import_notes"],
+                "guideline_export_import_notes_invalid",
+                f"{path}.import_notes",
             )
         )
     )
@@ -2352,7 +2157,7 @@ def _parse_aggregate(raw: object, path: str) -> GuidelineExportAggregate:
             "guideline_export_history_status_invalid",
             f"{path}.history_status",
         ),
-        migration_notes=notes,
+        import_notes=notes,
     )
 
 
@@ -2437,695 +2242,33 @@ def _parse_v3(raw: Mapping[str, Any]) -> GuidelineExportEnvelope:
     )
 
 
-def _legacy_v2_revision_digest(
-    *,
-    title: str,
-    content: str,
-    tags: tuple[str, ...],
-) -> str:
-    """Reproduce the rule-empty ``guideline-revision-digest/v1`` bytes."""
-
-    return canonical_guideline_sha256(
-        {
-            "contract": "guideline-revision-digest/v1",
-            "title": title,
-            "content": content,
-            "tags": tuple(sorted(tags)),
-            "rules": (),
-        }
-    )
 
 
-def _parse_legacy_v2_revision(
-    raw: object,
-    path: str,
-) -> GuidelineExportRevision:
-    value = _mapping(raw, "guideline_export_revision_invalid", path)
-    _closed(
-        value,
-        required=frozenset(
-            {
-                "revision_id",
-                "guideline_id",
-                "revision_number",
-                "semantic_version",
-                "title",
-                "content",
-                "content_digest",
-                "rules",
-                "created_by",
-                "created_at",
-                "parent_revision_id",
-                "tags",
-                "published_head_revision",
-                "published_head_updated_at",
-                "legacy_version",
-                "legacy_version_unresolvable",
-                "legacy_tags",
-            }
-        ),
-        path=path,
-    )
-    rules = _sequence(
-        value["rules"],
-        "guideline_export_revision_rules_invalid",
-        f"{path}.rules",
-    )
-    if rules:
-        raise GuidelineImportExportError(
-            "legacy_executable_rules_unsupported",
-            path=f"{path}.rules",
-            message=_LEGACY_EXECUTABLE_RULES_MESSAGE,
-        )
-    tags = tuple(
-        _required_text(
-            item,
-            "guideline_export_revision_tag_invalid",
-            f"{path}.tags[{index}]",
-        )
-        for index, item in enumerate(
-            _sequence(
-                value["tags"],
-                "guideline_export_revision_tags_invalid",
-                f"{path}.tags",
-            )
-        )
-    )
-    title = _required_text(
-        value["title"],
-        "guideline_revision_title_required",
-        f"{path}.title",
-    )
-    content = _required_text(
-        value["content"],
-        "guideline_revision_content_required",
-        f"{path}.content",
-    )
-    try:
-        supplied_digest = normalize_guideline_sha256(
-            value["content_digest"],
-            "guideline_export_revision_digest_invalid",
-        )
-    except GuidelinePolicyContractError as exc:
-        raise _domain_error(exc, f"{path}.content_digest") from exc
-    if supplied_digest != _legacy_v2_revision_digest(
-        title=title,
-        content=content,
-        tags=tags,
-    ):
-        raise GuidelineImportExportError(
-            "guideline_export_revision_digest_mismatch",
-            path=f"{path}.content_digest",
-        )
-    try:
-        revision = GuidelineRevision(
-            revision_id=value["revision_id"],
-            guideline_id=value["guideline_id"],
-            revision_number=_strict_int(
-                value["revision_number"],
-                "guideline_export_revision_number_invalid",
-                f"{path}.revision_number",
-                minimum=1,
-            ),
-            semantic_version=value["semantic_version"],
-            title=title,
-            content=content,
-            metrics=(),
-            created_by=value["created_by"],
-            created_at=_parse_datetime(
-                value["created_at"],
-                "guideline_export_revision_created_at_invalid",
-                f"{path}.created_at",
-            ),
-            parent_revision_id=_optional_text(
-                value["parent_revision_id"],
-                "guideline_export_revision_parent_invalid",
-                f"{path}.parent_revision_id",
-            ),
-            tags=tags,
-        )
-    except GuidelinePolicyContractError as exc:
-        raise _domain_error(exc, path) from exc
-    return GuidelineExportRevision(
-        revision=revision,
-        published_head_revision=_strict_int(
-            value["published_head_revision"],
-            "guideline_export_published_head_revision_invalid",
-            f"{path}.published_head_revision",
-            minimum=1,
-        ),
-        published_head_updated_at=_parse_datetime(
-            value["published_head_updated_at"],
-            "guideline_export_published_head_updated_at_invalid",
-            f"{path}.published_head_updated_at",
-        ),
-        legacy_version=_optional_text(
-            value["legacy_version"],
-            "guideline_export_legacy_version_invalid",
-            f"{path}.legacy_version",
-        ),
-        legacy_version_unresolvable=_strict_bool(
-            value["legacy_version_unresolvable"],
-            "guideline_export_legacy_resolution_invalid",
-            f"{path}.legacy_version_unresolvable",
-        ),
-        legacy_tags=(
-            None
-            if value["legacy_tags"] is None
-            else tuple(
-                _required_text(
-                    item,
-                    "guideline_export_legacy_tag_invalid",
-                    f"{path}.legacy_tags[{index}]",
-                )
-                for index, item in enumerate(
-                    _sequence(
-                        value["legacy_tags"],
-                        "guideline_export_legacy_tags_invalid",
-                        f"{path}.legacy_tags",
-                    )
-                )
-            )
-        ),
-    )
 
 
-def _validate_legacy_v2_binding(raw: object, path: str) -> None:
-    """Validate the closed v2 shell before discarding executable policy state."""
-
-    value = _mapping(raw, "guideline_export_binding_snapshot_invalid", path)
-    _closed(
-        value,
-        required=frozenset(
-            {
-                "binding",
-                "physical_source_kind",
-                "binding_origin",
-                "materialization",
-                "legacy_source_id",
-                "legacy_guideline_version",
-                "legacy_template_id",
-                "legacy_template_version",
-                "legacy_version_unresolvable",
-                "evidence_refs",
-                "binding_digest",
-            }
-        ),
-        path=path,
-    )
-    logical = _mapping(
-        value["binding"],
-        "guideline_export_binding_invalid",
-        f"{path}.binding",
-    )
-    _closed(
-        logical,
-        required=frozenset(
-            {
-                "binding_id",
-                "board_id",
-                "guideline_id",
-                "revision_id",
-                "semantic_version",
-                "revision_digest",
-                "priority",
-                "binding_revision",
-                "adopted_by",
-                "adopted_at",
-                "default_enforcement",
-                "state",
-                "source_kind",
-            }
-        ),
-        path=f"{path}.binding",
-    )
-    _enum_value(
-        logical["default_enforcement"],
-        GuidelineEnforcement,
-        "guideline_export_binding_enforcement_invalid",
-        f"{path}.binding.default_enforcement",
-    )
-    _sequence(
-        value["evidence_refs"],
-        "guideline_export_binding_evidence_refs_invalid",
-        f"{path}.evidence_refs",
-    )
-    _required_text(
-        value["binding_digest"],
-        "guideline_export_binding_digest_invalid",
-        f"{path}.binding_digest",
-    )
 
 
-def _parse_legacy_v2(raw: Mapping[str, Any]) -> GuidelineExportEnvelope:
-    """Import rule-empty v2 history as context-only semantic v3 history."""
-
-    _closed(
-        raw,
-        required=frozenset(
-            {
-                "contract_version",
-                "schema_version",
-                "kind",
-                "exported_at",
-                "source_board_id",
-                "content_digest",
-                "guidelines",
-            }
-        ),
-        path="$",
-    )
-    if raw["contract_version"] != GUIDELINE_EXPORT_LEGACY_V2_CONTRACT_VERSION:
-        raise GuidelineImportExportError(
-            "guideline_export_contract_version_unsupported",
-            path="$.contract_version",
-        )
-    if raw["kind"] != GUIDELINE_EXPORT_KIND:
-        raise GuidelineImportExportError(
-            "guideline_export_kind_invalid",
-            path="$.kind",
-        )
-    raw_guidelines = _sequence(
-        raw["guidelines"],
-        "guideline_export_guidelines_invalid",
-        "$.guidelines",
-    )
-    expected_legacy_digest = canonical_guideline_sha256(
-        {
-            "contract_version": GUIDELINE_EXPORT_LEGACY_V2_CONTRACT_VERSION,
-            "schema_version": GUIDELINE_EXPORT_LEGACY_V2_SCHEMA_VERSION,
-            "kind": GUIDELINE_EXPORT_KIND,
-            "source_board_id": raw["source_board_id"],
-            "guidelines": raw_guidelines,
-        }
-    )
-    aggregates: list[GuidelineExportAggregate] = []
-    for aggregate_index, raw_aggregate in enumerate(raw_guidelines):
-        path = f"$.guidelines[{aggregate_index}]"
-        value = _mapping(
-            raw_aggregate,
-            "guideline_export_aggregate_invalid",
-            path,
-        )
-        _closed(
-            value,
-            required=frozenset(
-                {
-                    "identity",
-                    "revisions",
-                    "head",
-                    "retirement",
-                    "bindings",
-                    "history_status",
-                    "migration_notes",
-                }
-            ),
-            path=path,
-        )
-        revisions = tuple(
-            _parse_legacy_v2_revision(
-                item,
-                f"{path}.revisions[{revision_index}]",
-            )
-            for revision_index, item in enumerate(
-                _sequence(
-                    value["revisions"],
-                    "guideline_export_revisions_invalid",
-                    f"{path}.revisions",
-                )
-            )
-        )
-        raw_bindings = _sequence(
-            value["bindings"],
-            "guideline_export_bindings_invalid",
-            f"{path}.bindings",
-        )
-        for binding_index, raw_binding in enumerate(raw_bindings):
-            _validate_legacy_v2_binding(
-                raw_binding,
-                f"{path}.bindings[{binding_index}]",
-            )
-        notes = [
-            _required_text(
-                item,
-                "guideline_export_migration_note_invalid",
-                f"{path}.migration_notes[{note_index}]",
-            )
-            for note_index, item in enumerate(
-                _sequence(
-                    value["migration_notes"],
-                    "guideline_export_migration_notes_invalid",
-                    f"{path}.migration_notes",
-                )
-            )
-        ]
-        notes.append("legacy_v2_contextual_only")
-        if raw_bindings:
-            notes.append("legacy_v2_bindings_dropped_contextual_only")
-        retirement = _parse_retirement(
-            value["retirement"],
-            f"{path}.retirement",
-        )
-        if retirement is not None:
-            retirement = replace(
-                retirement,
-                retired_revision_digest=revisions[-1].revision_digest,
-            )
-        aggregates.append(
-            GuidelineExportAggregate(
-                identity=_parse_identity(
-                    value["identity"],
-                    f"{path}.identity",
-                ),
-                revisions=revisions,
-                head=_parse_head(value["head"], f"{path}.head"),
-                retirement=retirement,
-                bindings=(),
-                history_status=_enum_value(
-                    value["history_status"],
-                    GuidelineHistoryStatus,
-                    "guideline_export_history_status_invalid",
-                    f"{path}.history_status",
-                ),
-                migration_notes=tuple(notes),
-            )
-        )
-    if raw["content_digest"] != expected_legacy_digest:
-        raise GuidelineImportExportError(
-            "guideline_export_content_digest_mismatch",
-            path="$.content_digest",
-        )
-    normalized = tuple(aggregates)
-    _validate_successor_graph(normalized)
-    snapshot = GuidelineExportSnapshot(
-        aggregates=normalized,
-        source_board_id=_optional_text(
-            raw["source_board_id"],
-            "guideline_export_source_board_id_invalid",
-            "$.source_board_id",
-        ),
-    )
-    return GuidelineExportEnvelope(
-        contract_version=GUIDELINE_EXPORT_CONTRACT_VERSION,
-        schema_version=GUIDELINE_EXPORT_SCHEMA_VERSION,
-        kind=GUIDELINE_EXPORT_KIND,
-        exported_at=_parse_datetime(
-            raw["exported_at"],
-            "guideline_export_exported_at_invalid",
-            "$.exported_at",
-        ),
-        source_board_id=snapshot.source_board_id,
-        content_digest=_content_digest(
-            snapshot.aggregates,
-            snapshot.source_board_id,
-        ),
-        guidelines=snapshot.aggregates,
-        source_schema_version=GUIDELINE_EXPORT_LEGACY_V2_SCHEMA_VERSION,
-    )
 
 
-def _legacy_version(item: Mapping[str, Any]) -> str:
-    raw = item.get("legacy_version", item.get("version", "1"))
-    if raw is None:
-        return "1"
-    if isinstance(raw, bool) or not isinstance(raw, str | int | float):
-        raise GuidelineImportExportError("guideline_export_legacy_version_invalid")
-    normalized = str(raw).strip()
-    if not normalized:
-        raise GuidelineImportExportError("guideline_export_legacy_version_invalid")
-    return normalized
 
 
-def _legacy_blocking_requested(
-    item: Mapping[str, Any],
-    *,
-    path: str,
-) -> tuple[bool, bool]:
-    """Validate compatibility hints without importing executable rules."""
-
-    blocking = False
-
-    def inspect(candidate: Mapping[str, Any], candidate_path: str) -> None:
-        nonlocal blocking
-        for field_name in ("blocking", "is_blocking"):
-            if field_name in candidate:
-                blocking = (
-                    _strict_bool(
-                        candidate[field_name],
-                        "guideline_export_legacy_blocking_invalid",
-                        f"{candidate_path}.{field_name}",
-                    )
-                    or blocking
-                )
-        if "enforcement" in candidate:
-            enforcement = _required_text(
-                candidate["enforcement"],
-                "guideline_export_legacy_enforcement_invalid",
-                f"{candidate_path}.enforcement",
-            ).lower()
-            if enforcement not in {
-                GuidelineEnforcement.ADVISORY.value,
-                GuidelineEnforcement.BLOCKING.value,
-            }:
-                raise GuidelineImportExportError(
-                    "guideline_export_legacy_enforcement_invalid",
-                    path=f"{candidate_path}.enforcement",
-                )
-            blocking = enforcement == GuidelineEnforcement.BLOCKING.value or blocking
-
-    inspect(item, path)
-    raw_rules = item.get("rules")
-    if raw_rules is None:
-        return blocking, False
-    rules = _sequence(
-        raw_rules,
-        "guideline_export_legacy_rules_invalid",
-        f"{path}.rules",
-    )
-    for index, raw_rule in enumerate(rules):
-        rule = _mapping(
-            raw_rule,
-            "guideline_export_legacy_rule_invalid",
-            f"{path}.rules[{index}]",
-        )
-        inspect(rule, f"{path}.rules[{index}]")
-    return blocking, bool(rules)
 
 
-def _parse_legacy_v1(
-    raw: Mapping[str, Any],
-    *,
-    fallback_exported_at: datetime | None,
-) -> GuidelineExportEnvelope:
-    allowed = _LEGACY_ENVELOPE_REQUIRED_FIELDS | _LEGACY_ENVELOPE_OPTIONAL_FIELDS
-    unknown = set(raw) - allowed
-    missing = _LEGACY_ENVELOPE_REQUIRED_FIELDS - set(raw)
-    if missing:
-        raise GuidelineImportExportError(
-            "guideline_export_field_required",
-            path=f"$.{sorted(missing)[0]}",
-        )
-    if unknown:
-        raise GuidelineImportExportError(
-            "guideline_export_unknown_field",
-            path=f"$.{sorted(unknown)[0]}",
-        )
-    if raw["kind"] != GUIDELINE_EXPORT_KIND:
-        raise GuidelineImportExportError(
-            "guideline_export_kind_invalid",
-            path="$.kind",
-        )
-    if "exported_at" in raw:
-        exported_at = _parse_datetime(
-            raw["exported_at"],
-            "guideline_export_exported_at_invalid",
-            "$.exported_at",
-        )
-    else:
-        exported_at = _aware_utc(
-            fallback_exported_at or datetime(1970, 1, 1, tzinfo=timezone.utc),
-            "guideline_export_exported_at_invalid",
-            "$.exported_at",
-        )
-    items = _sequence(
-        raw["items"],
-        "guideline_export_legacy_items_invalid",
-        "$.items",
-    )
-    aggregates: list[GuidelineExportAggregate] = []
-    seen_ids: set[str] = set()
-    for index, raw_item in enumerate(items):
-        path = f"$.items[{index}]"
-        item = _mapping(
-            raw_item,
-            "guideline_export_legacy_item_invalid",
-            path,
-        )
-        unknown_item_fields = set(item) - _LEGACY_ITEM_FIELDS
-        if unknown_item_fields:
-            raise GuidelineImportExportError(
-                "guideline_export_unknown_field",
-                path=f"{path}.{sorted(unknown_item_fields)[0]}",
-            )
-        title = _required_text(
-            item.get("title"),
-            "guideline_export_legacy_title_required",
-            f"{path}.title",
-        )
-        content = _required_text(
-            item.get("content"),
-            "guideline_export_legacy_content_required",
-            f"{path}.content",
-        )
-        scope = _enum_value(
-            item.get("scope", GuidelineScope.GLOBAL.value),
-            GuidelineScope,
-            "guideline_export_legacy_scope_invalid",
-            f"{path}.scope",
-        )
-        board_id = _optional_text(
-            item.get("board_id"),
-            "guideline_export_legacy_board_id_invalid",
-            f"{path}.board_id",
-        )
-        tags_raw = item.get("tags")
-        tags_sequence = (
-            ()
-            if tags_raw is None
-            else _sequence(
-                tags_raw,
-                "guideline_export_legacy_tags_invalid",
-                f"{path}.tags",
-            )
-        )
-        tags = tuple(
-            _required_text(
-                tag,
-                "guideline_export_legacy_tag_invalid",
-                f"{path}.tags[{tag_index}]",
-            )
-            for tag_index, tag in enumerate(tags_sequence)
-        )
-        legacy_version = _legacy_version(item)
-        identity_seed = {
-            "contract": "guideline-export/v1-baseline-identity",
-            "title": title,
-            "content": content,
-            "tags": sorted(tags),
-            "scope": scope.value,
-            "board_id": board_id,
-            "legacy_version": legacy_version,
-        }
-        identity_digest = canonical_guideline_sha256(identity_seed)
-        # Durable identity columns are VARCHAR(36).  Keep the descriptive
-        # deterministic prefixes while retaining 76 bits of collision space.
-        guideline_id = f"legacy-guideline-{identity_digest[:19]}"
-        if guideline_id in seen_ids:
-            raise GuidelineImportExportError(
-                "guideline_export_duplicate_guideline_id",
-                path=path,
-            )
-        seen_ids.add(guideline_id)
-        revision_id = f"legacy-revision-{identity_digest[:20]}"
-        try:
-            identity = Guideline(
-                guideline_id=guideline_id,
-                owner_id=GUIDELINE_EXPORT_LEGACY_OWNER,
-                scope=scope,
-                board_id=board_id,
-                context_scope=GuidelineContextScope.ALL,
-                created_at=exported_at,
-            )
-            revision = GuidelineRevision(
-                revision_id=revision_id,
-                guideline_id=guideline_id,
-                revision_number=1,
-                semantic_version=GUIDELINE_EXPORT_LEGACY_BASELINE_VERSION,
-                title=title,
-                content=content,
-                metrics=(),
-                created_by=GUIDELINE_EXPORT_LEGACY_ACTOR,
-                created_at=exported_at,
-                parent_revision_id=None,
-                tags=tags,
-            )
-            head = GuidelineHead(
-                guideline_id=guideline_id,
-                revision_id=revision_id,
-                revision_number=1,
-                semantic_version=GUIDELINE_EXPORT_LEGACY_BASELINE_VERSION,
-                head_revision=1,
-                updated_at=exported_at,
-            )
-        except GuidelinePolicyContractError as exc:
-            raise _domain_error(exc, path) from exc
-        notes = [
-            "legacy_history_unresolvable",
-            "legacy_identity_synthesized",
-            "legacy_v1_contextual_baseline",
-        ]
-        blocking_requested, rules_present = _legacy_blocking_requested(
-            item,
-            path=path,
-        )
-        if rules_present:
-            notes.append("legacy_rules_dropped_contextual_baseline")
-        if blocking_requested:
-            notes.append("legacy_blocking_downgraded_to_advisory")
-        aggregates.append(
-            GuidelineExportAggregate(
-                identity=identity,
-                revisions=(
-                    GuidelineExportRevision(
-                        revision=revision,
-                        published_head_revision=1,
-                        published_head_updated_at=exported_at,
-                        legacy_version=legacy_version,
-                        legacy_version_unresolvable=True,
-                        legacy_tags=tags,
-                    ),
-                ),
-                head=head,
-                bindings=(),
-                history_status=GuidelineHistoryStatus.BASELINE_ONLY,
-                migration_notes=tuple(notes),
-            )
-        )
-    snapshot = GuidelineExportSnapshot(aggregates=tuple(aggregates))
-    return GuidelineExportEnvelope(
-        contract_version=GUIDELINE_EXPORT_CONTRACT_VERSION,
-        schema_version=GUIDELINE_EXPORT_SCHEMA_VERSION,
-        kind=GUIDELINE_EXPORT_KIND,
-        exported_at=exported_at,
-        source_board_id=None,
-        content_digest=_content_digest(snapshot.aggregates, None),
-        guidelines=snapshot.aggregates,
-        source_schema_version=GUIDELINE_EXPORT_LEGACY_SCHEMA_VERSION,
-    )
 
 
 def parse_guideline_export(
     raw: object,
-    *,
-    legacy_exported_at: datetime | None = None,
 ) -> GuidelineExportEnvelope:
-    """Dispatch and fully validate v3 or a context-only legacy import."""
+    """Validate the current contract without conversion or fallback."""
 
     envelope = _mapping(
         raw,
         "guideline_export_envelope_invalid",
         "$",
     )
-    schema_version = str(envelope.get("schema_version", "")).strip()
+    schema_version = envelope.get("schema_version")
     if schema_version == GUIDELINE_EXPORT_SCHEMA_VERSION:
         return _parse_v3(envelope)
-    if schema_version == GUIDELINE_EXPORT_LEGACY_V2_SCHEMA_VERSION:
-        return _parse_legacy_v2(envelope)
-    if schema_version == GUIDELINE_EXPORT_LEGACY_SCHEMA_VERSION:
-        return _parse_legacy_v1(
-            envelope,
-            fallback_exported_at=legacy_exported_at,
-        )
     raise GuidelineImportExportError(
         "guideline_export_schema_version_unsupported",
         path="$.schema_version",
@@ -3187,11 +2330,11 @@ def _remap_aggregate(
         aggregate,
         identity=identity,
         bindings=bindings,
-        migration_notes=tuple(
+        import_notes=tuple(
             sorted(
                 set(
                     (
-                        *aggregate.migration_notes,
+                        *aggregate.import_notes,
                         *(("binding_history_stored_inert",) if bindings else ()),
                     )
                 )
@@ -3385,7 +2528,7 @@ def plan_guideline_import(
             )
 
         diagnostics = [
-            *aggregate.migration_notes,
+            *aggregate.import_notes,
             *identity_diagnostics,
         ]
         planned_bindings = {
@@ -3508,17 +2651,16 @@ def plan_guideline_import(
             )
         else:
             binding_disposition = GuidelineImportBindingDisposition.STORE_INERT_HISTORY
-        entries.append(
-            GuidelineImportPlanEntry(
-                aggregate=aggregate,
-                revision_actions=tuple(actions),
-                binding_disposition=binding_disposition,
-                binding_candidates=tuple(candidates),
-                identity_conflicts=tuple(identity_conflicts),
-                binding_conflicts=tuple(binding_conflicts),
-                diagnostics=tuple(diagnostics),
-            )
+        entry = GuidelineImportPlanEntry(
+            aggregate=aggregate,
+            revision_actions=tuple(actions),
+            binding_disposition=binding_disposition,
+            binding_candidates=tuple(candidates),
+            identity_conflicts=tuple(identity_conflicts),
+            binding_conflicts=tuple(binding_conflicts),
+            diagnostics=tuple(diagnostics),
         )
+        entries.append(entry)
 
     has_conflict = any(entry.has_conflict for entry in entries)
     if has_conflict:
@@ -3551,10 +2693,6 @@ def plan_guideline_import(
 __all__ = [
     "GUIDELINE_EXPORT_CONTRACT_VERSION",
     "GUIDELINE_EXPORT_KIND",
-    "GUIDELINE_EXPORT_LEGACY_BASELINE_VERSION",
-    "GUIDELINE_EXPORT_LEGACY_SCHEMA_VERSION",
-    "GUIDELINE_EXPORT_LEGACY_V2_CONTRACT_VERSION",
-    "GUIDELINE_EXPORT_LEGACY_V2_SCHEMA_VERSION",
     "GUIDELINE_EXPORT_SCHEMA_VERSION",
     "ExistingGuidelineRevision",
     "GuidelineBindingMaterialization",

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from okto_pulse.core.runtime_context import register_runtime_value, require_runtime_value, reset_runtime_values
 
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 _RESOURCE_GATE_KEY = "ports.relational_services.resource_gate"
 _RUNTIME_SETTINGS_KEY = "ports.relational_services.runtime_settings"
@@ -67,7 +67,9 @@ class ResourceGateMetadataLineageAdapter(Protocol):
     async def load_parent_refs_metadata(
         self, board_id: str, root: Any
     ) -> list[Any]: ...
-    async def collect_refs_metadata(self, ref: Any) -> dict[str, list[dict]]: ...
+    async def collect_refs_metadata(
+        self, ref: Any, *, resource_types: tuple[str, ...] | None = None,
+    ) -> dict[str, list[dict]]: ...
     async def filter_inherited_refs_metadata(
         self,
         root: Any,
@@ -90,11 +92,18 @@ def resolve_resource_gate_adapter_factory() -> ResourceGateAdapterFactory:
     return require_runtime_value(_RESOURCE_GATE_KEY, "resource_gate_relational_adapter_not_configured")
 
 
-def register_runtime_settings_adapter(adapter: Any) -> None:
+@runtime_checkable
+class RuntimeSettingsStartupPort(Protocol):
+    """Hydrate validated deployment settings before edition runtime composition."""
+
+    async def apply_persisted_settings_to_core_settings(self) -> dict[str, Any]: ...
+
+
+def register_runtime_settings_adapter(adapter: RuntimeSettingsStartupPort) -> None:
     register_runtime_value(_RUNTIME_SETTINGS_KEY, adapter)
 
 
-def resolve_runtime_settings_adapter() -> Any:
+def resolve_runtime_settings_adapter() -> RuntimeSettingsStartupPort:
     return require_runtime_value(_RUNTIME_SETTINGS_KEY, "runtime_settings_relational_adapter_not_configured")
 
 
@@ -111,6 +120,7 @@ def reset_relational_service_adapters_for_tests() -> None:
 
 
 __all__ = [
+    "RuntimeSettingsStartupPort",
     "ResourceGateAdapterFactory",
     "ResourceGateMetadataLineageAdapter",
     "ResourceGateRelationalAdapter",

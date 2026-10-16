@@ -49,6 +49,10 @@ __all__ = [
     "CognitiveSourcePersistedRevision",
     "CognitiveSourceRecord",
     "CognitiveSourceStore",
+    "ConditionalCognitiveSourceWriter",
+    "TransactionalCognitiveSourceReader",
+    "HistoricalCognitiveSourceReader",
+    "FingerprintCognitiveSourceReader",
     "LatestVerifiedCognitiveSourceReader",
     "SealedBirthRestoration",
     "canonical_cognitive_source_fingerprint",
@@ -57,6 +61,7 @@ __all__ = [
     "latest_cognitive_source_records",
     "register_cognitive_source_store",
     "require_cognitive_source_store",
+    "require_cognitive_source_head",
     "reset_cognitive_source_store_for_tests",
     "resolve_cognitive_source_store",
     "restore_sealed_birth_fields",
@@ -92,6 +97,13 @@ class CognitiveSourceError(Exception):
             if part
         )
         super().__init__(f"{failure_reason}{(' [' + detail + ']') if detail else ''}")
+
+
+class CognitiveSourceUnavailable(CognitiveSourceError):
+    """Edition-classified technical I/O failure; retry after recovery.
+
+    This never represents an integrity, scope or immutable-revision conflict.
+    """
 
 
 class CognitiveSourceConflict(CognitiveSourceError):
@@ -192,8 +204,10 @@ def canonical_cognitive_source_fingerprint(
 class CognitiveSourceRecord:
     """One immutable durable record of a committed cognitive node.
 
-    ``payload`` carries EVERY attribute persisted on the graph node so a
-    replay is a literal restoration; ``evidence_refs`` preserves the
+    Legacy ``payload`` carries EVERY attribute persisted on the graph node so
+    replay is literal. A versioned Learning capture instead retains semantic
+    content awaiting governed materialization; it is never literal replay.
+    ``evidence_refs`` preserves the
     original evidence binding (board decisions f47eff53e116/da16db6d1c4f:
     cognitive nodes are never re-generated without evidence).
     """
@@ -540,6 +554,125 @@ class LatestVerifiedCognitiveSourceReader(Protocol):
     async def enumerate_latest_verified(
         self, board_id: str
     ) -> tuple[CognitiveSourceRecord, ...]: ...
+
+
+@runtime_checkable
+class TransactionalCognitiveSourceReader(Protocol):
+    async def read_latest_in_context(
+        self, context: object, *, board_id: str, node_id: str, generation: int,
+    ) -> CognitiveSourceRecord | None:
+        """Verify all scoped revisions and read the head in the caller's UOW.
+
+        This read grants no lock itself; conditional mutations still require CAS.
+        It must include staged writes visible to that same transaction.
+        """
+        ...
+
+
+@runtime_checkable
+class HistoricalCognitiveSourceReader(Protocol):
+    async def read_revision_in_context(
+        self, context: object, *, board_id: str, node_id: str, generation: int,
+        source_revision: int,
+    ) -> CognitiveSourceRecord | None:
+        """Read one immutable revision after auditing the complete scoped history.
+
+        A later materialized projection does not replace the authored capture.
+        Missing/corrupt history cannot be supplied by the graph or a cache.
+        This read grants no lock, permission or current applicability.
+        """
+        ...
+
+
+@runtime_checkable
+class TransactionalCognitiveHistoryReader(Protocol):
+    async def read_history_in_context(
+        self, context: object, *, board_id: str, node_id: str, generation: int,
+    ) -> tuple[CognitiveSourceRecord, ...]:
+        """Return all verified revisions of one identity in revision order.
+
+        Include staged writes in the caller UOW. Missing identity is an empty
+        tuple; wrong scope, any corrupt revision or unavailable storage fails.
+        Never truncate or return only the head: an omitted historical scope
+        replacement must not be erased by a later property-map revision.
+        This is neither semantic qualification nor a lock; writers still need
+        conditional append under their caller-owned transaction.
+        """
+        ...
+
+
+@runtime_checkable
+class BoundedCognitiveHistoryReader(Protocol):
+    async def read_bounded_history_in_context(
+        self, context: object, *, board_id: str, node_id: str, generation: int,
+        max_records: int,
+    ) -> tuple[CognitiveSourceRecord, ...]:
+        """Read complete verified history, or refuse before unbounded loading.
+
+        max_records is a positive limit including revision zero (at most 200).
+        A missing identity returns (). Exceeding the limit raises
+        CognitiveSourceUnavailable('cognitive_source_history_limit'); never
+        return a truncated history as complete. Include caller-staged writes.
+        This read grants neither authority nor current applicability.
+        """
+        ...
+
+
+@runtime_checkable
+class FingerprintCognitiveSourceReader(Protocol):
+    async def read_fingerprint_in_context(
+        self, context: object, *, board_id: str, node_id: str, generation: int,
+        fingerprint: str,
+    ) -> CognitiveSourceRecord | None:
+        """Select one exact revision after auditing all history of the identity.
+
+        Captures and literal revisions may share an identity. A selection must
+        never silently resolve to revision zero or the latest head. Missing
+        identity/fingerprint returns None; corrupt, foreign or ambiguous
+        history fails closed. No lock, permission or applicability is granted.
+        """
+        ...
+
+
+@runtime_checkable
+class ConditionalCognitiveSourceWriter(Protocol):
+    async def append_many_if_current_in_context(
+        self, context: object, records: tuple[CognitiveSourceRecord, ...], *,
+        expected_fingerprints: tuple[str | None, ...],
+    ) -> tuple[str, ...]:
+        """Compare verified current heads and stage one atomic append batch.
+
+        One expectation per distinct scoped record; None requires absence.
+        The edition serializes comparison with all writers of those identities.
+        A stale head is a conflict, including replay after a later revision.
+        Never commit or roll back the caller's UOW. Authorization, idempotency
+        of a domain request and evidence admission remain the caller's duties.
+        """
+        ...
+
+
+def require_cognitive_source_head(
+    record: CognitiveSourceRecord, *, expected_fingerprint: str | None,
+    history: tuple[CognitiveSourceRecord, ...],
+) -> None:
+    """Pure CAS semantics after the edition has serialized the scoped read."""
+    if expected_fingerprint is not None and (type(expected_fingerprint) is not str
+            or len(expected_fingerprint) != 64
+            or any(character not in '0123456789abcdef' for character in expected_fingerprint)):
+        raise ValueError('cognitive_source_precondition_invalid')
+    incoming = _verified_record_fingerprint(record)
+    latest = latest_cognitive_source_records(history)
+    def identity(item):
+        return item.board_id, item.node_type, item.node_id, item.generation
+    if len(latest) > 1 or (latest and identity(latest[0]) != identity(record)):
+        raise CognitiveSourceConflict('cognitive_source_scope_conflict', board_id=record.board_id, node_id=record.node_id)
+    current = _verified_record_fingerprint(latest[0]) if latest else None
+    if current != expected_fingerprint:
+        raise CognitiveSourceConflict('cognitive_source_head_changed', board_id=record.board_id, node_id=record.node_id)
+    if incoming != current and any(_verified_record_fingerprint(prior) == incoming for prior in history):
+        # Legacy append resolves old identical payloads to their original row.
+        # A conditional write must not report that as a new current head.
+        raise CognitiveSourceConflict('cognitive_source_non_head_replay', board_id=record.board_id, node_id=record.node_id)
 
 
 @runtime_checkable

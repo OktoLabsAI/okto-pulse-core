@@ -642,6 +642,6 @@ async def get_active_queue_drilldown(
         },
         "alert_threshold": alert_threshold,
         "stuck_age_seconds": stuck_age_s,
-        "drill_down_tool": "okto_pulse_kg_queue_drilldown",
+        "drill_down_tool": None,
         "sources": sources,
     }

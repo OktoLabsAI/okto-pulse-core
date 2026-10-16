@@ -43,17 +43,8 @@ class DiscoveryCardFact:
     status: Any
     priority: Any
     spec_id: str | None
-    sprint_id: str | None
     archived: bool
     updated_at: datetime | None
-
-
-@dataclass(frozen=True, slots=True)
-class DiscoverySprintFact:
-    id: str
-    board_id: str
-    title: str
-    status: Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,18 +100,6 @@ class DiscoveryExecutionReadPort(Protocol):
         *,
         refs: Sequence[tuple[str, str]],
     ) -> dict[tuple[str, str], str]: ...
-
-    async def list_sprints(
-        self, context: Any, *, board_id: str
-    ) -> tuple[DiscoverySprintFact, ...]: ...
-
-    async def list_cards_for_sprints(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-        sprint_ids: Sequence[str],
-    ) -> tuple[DiscoveryCardFact, ...]: ...
 
     async def list_dependencies_for_cards(
         self, context: Any, *, card_ids: Sequence[str]
@@ -184,7 +163,6 @@ __all__ = [
     "DiscoveryExecutionReadPort",
     "DiscoveryMentionFact",
     "DiscoverySpecFact",
-    "DiscoverySprintFact",
     "get_discovery_execution_read_port",
     "register_discovery_execution_read_port",
     "reset_discovery_execution_read_port_for_tests",

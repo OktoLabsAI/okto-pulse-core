@@ -105,7 +105,7 @@ def _attempt(
     )
 
 
-def test_applied_is_the_backward_compatible_default_and_advances_revision() -> None:
+def test_applied_is_the_default_and_advances_revision() -> None:
     receipt = _receipt()
 
     assert receipt.outcome is KnowledgeMutationOutcome.APPLIED
@@ -121,24 +121,11 @@ def test_applied_is_the_backward_compatible_default_and_advances_revision() -> N
         _receipt(revision=4)
 
 
-def test_grandfathered_is_terminal_and_advances_revision() -> None:
-    receipt = _receipt(
-        outcome=KnowledgeMutationOutcome.GRANDFATHERED,
-        operation_kind=KnowledgeMutationKind.GRANDFATHER,
-    )
-
-    assert receipt.outcome is KnowledgeMutationOutcome.GRANDFATHERED
-    assert receipt.revision == receipt.previous_revision + 1
-    assert receipt.to_dict()["outcome"] == "grandfathered"
-
-    with pytest.raises(
-        ValueError, match="knowledge_propagation_receipt_revision_invalid"
-    ):
-        _receipt(
-            outcome="grandfathered",
-            operation_kind="grandfather",
-            revision=4,
-        )
+def test_imported_operation_and_outcome_are_not_current_vocabulary() -> None:
+    with pytest.raises(ValueError):
+        KnowledgeMutationKind("grandfather")
+    with pytest.raises(ValueError):
+        KnowledgeMutationOutcome("grandfathered")
 
 
 @pytest.mark.parametrize(
@@ -301,7 +288,6 @@ def test_attempt_accepts_only_replayed_or_rejected() -> None:
     for invalid in (
         KnowledgeMutationOutcome.APPLIED,
         KnowledgeMutationOutcome.NOOP,
-        KnowledgeMutationOutcome.GRANDFATHERED,
     ):
         with pytest.raises(
             ValueError, match="knowledge_propagation_attempt_outcome_invalid"

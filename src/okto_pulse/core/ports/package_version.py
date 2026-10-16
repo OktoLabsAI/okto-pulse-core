@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib.metadata import PackageNotFoundError, version as metadata_version
 from typing import Mapping, Protocol, runtime_checkable
 
 
@@ -17,17 +16,6 @@ class PackageVersionProvider(Protocol):
 
 
 @dataclass(frozen=True)
-class ImportlibMetadataVersionProvider:
-    """Resolve versions from installed package metadata."""
-
-    def version(self, package_name: str) -> str | None:
-        try:
-            return metadata_version(package_name)
-        except PackageNotFoundError:
-            return None
-
-
-@dataclass(frozen=True)
 class MappingPackageVersionProvider:
     """Static package version provider useful for edition composition/tests."""
 
@@ -38,7 +26,6 @@ class MappingPackageVersionProvider:
 
 
 __all__ = [
-    "ImportlibMetadataVersionProvider",
     "MappingPackageVersionProvider",
     "PackageVersionProvider",
 ]

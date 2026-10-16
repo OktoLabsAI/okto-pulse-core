@@ -123,12 +123,12 @@ async def _seed(tmp: str) -> None:
     )
     now = datetime.now(timezone.utc)
     async with _db_mod.get_session_factory()() as s:
-        s.add(Board(id="B1", name="B1", owner_id="A1", created_at=now, updated_at=now))
-        s.add(Board(id="B2", name="B2", owner_id="A2", created_at=now, updated_at=now))
+        s.add(Board(id="B1", realm_id="local", name="B1", owner_id="A1", created_at=now, updated_at=now))
+        s.add(Board(id="B2", realm_id="local", name="B2", owner_id="A2", created_at=now, updated_at=now))
         for aid, key, active in (("A1", "kA1", True), ("A2", "kA2", True), ("IN", "kIn", False)):
             s.add(Agent(id=aid, name=aid, api_key=key, api_key_hash=_HASH(key),
                         is_active=active, created_by="o", created_at=now,
-                        permission_flags=None, permissions=[]))
+                        permission_flags=None))
         s.add(AgentBoard(id="AB1", agent_id="A1", board_id="B1", granted_by="o", granted_at=now))
         s.add(AgentBoard(id="AB2", agent_id="A2", board_id="B2", granted_by="o", granted_at=now))
         await s.commit()

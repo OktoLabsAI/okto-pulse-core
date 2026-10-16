@@ -19,13 +19,13 @@ Args:
     board_id: Board ID to retrieve.
     include: Comma-separated list of collections to inline. Accepts any
         subset of `ideations`, `specs`, `cards`, `agents`. Pass `*` to
-        inline every collection (legacy shape).
+        inline every supported collection.
 
 Returns:
     JSON string with the board overview, plus any inlined collections.
 
 The returned `settings.skip_code_evidence_coverage_global` flag controls the
-Board-wide Code Evidence Matrix coverage skip. Missing legacy values resolve to
+Board-wide Code Evidence Matrix coverage skip. An omitted setting resolves to
 `false`. Its effective value for a Spec is the OR of this Board setting and the
 Spec's audited `skip_code_evidence_coverage` flag.
 
@@ -99,8 +99,8 @@ Use this to define the gate/settings defaults that future boards should
 inherit. Creating a version does not activate it unless `activate=true`
 (single-active is enforced). New versions default
 `reviewer_separation_mode="enforce"`; pass `warn` or `off` explicitly only when
-that is the intended policy. Historical boards/templates with the field absent
-are not backfilled and resolve through `legacy_absent_compat`.
+that is the intended policy. An omitted setting uses the current `enforce`
+default; invalid policy values are refused without conversion.
 The same `enforce` default is materialized when a new board is created before
 any active template exists; an explicitly supplied `warn`/`off` is preserved.
 The curated Spec checklist default is human-owned and is intentionally not an
@@ -203,18 +203,17 @@ Returns:
 List top-level entities of a board by type.
 
     Consolidates: list_specs, list_ideations, list_refinements,
-    list_sprints, list_stories, list_topics.
+    list_stories, list_topics.
 
     Use this single tool instead of the individual list_* tools.
 
     Args:
         board_id: Board ID
-        entity_type: One of: spec, ideation, refinement, sprint, story, topic
-        filters: Optional filter dict OR JSON string; validated server-side per entity_type.
+        entity_type: One of: spec, ideation, refinement, story, topic
+        filters: Optional native filter object; validated server-side per entity_type.
             spec: status, labels, assignee_id
             ideation: status, labels, derivation_pending
             refinement: status, labels, ideation_id, derivation_pending
-            sprint: status (requires filters.spec_id to identify parent spec)
             story: status, topic_id, linked, converted, include_archived
             topic: include_archived
         limit: Max results (default 100, max 200)

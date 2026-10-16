@@ -94,3 +94,10 @@ def test_claimed_board_and_batch_limit_still_hold_after_dependency_promotion():
     other = _row("other", board="other")
     assert _select([deferred, prerequisite, other], claimed=frozenset({"board"})) == [other]
     assert _select([deferred, prerequisite, other], limit=1) == [prerequisite]
+
+
+def test_card_wait_yields_to_its_unmaterialized_spec():
+    card = _row('card', error=WAIT, retry=NOW - timedelta(seconds=30))
+    card.artifact_type = 'card'
+    spec = _row('spec')
+    assert _select([card, spec]) == [spec]

@@ -15,7 +15,6 @@ from types import SimpleNamespace
 import pytest
 
 from okto_pulse.core.application.use_cases.base import ActorContext
-from okto_pulse.community.adapters.graph_connection_pool import reset_connection_pool_for_tests
 from kg_schema_testing import (
     bootstrap_board_graph,
     close_all_connections,
@@ -46,7 +45,6 @@ def board():
     bootstrap_board_graph(bid)
     yield bid
     close_all_connections()
-    reset_connection_pool_for_tests()
 
 
 def _seed_mixed_graph(board_id: str) -> None:

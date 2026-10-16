@@ -19,7 +19,7 @@ RECOVERY_HEARTBEAT_INTERVAL_MS = 5 * 1_000
 RECOVERY_WORKER_LEASE_MS = 15 * 1_000
 RECOVERY_PREPARED_TTL_SECONDS = 300
 GLOBAL_RECOVERY_SLOT_ID = "_global"
-GLOBAL_RECOVERY_STATUS_TOOL = "okto_pulse_kg_global_discovery_recovery_status"
+INTERNAL_RECOVERY_STATUS_OPERATION = "status"
 
 
 def _require_non_empty(value: str, *, field: str) -> str:
@@ -1014,11 +1014,11 @@ class RecoveryRunStatus:
     def to_dict(self) -> dict[str, object]:
         action_required: str | None
         if self.phase is RecoveryRunPhase.PREPARED:
-            action_required = "call_okto_pulse_kg_global_discovery_recovery_confirm"
+            action_required = "internal_confirmation_required"
         elif self.state.is_terminal:
             action_required = None
         else:
-            action_required = GLOBAL_RECOVERY_STATUS_TOOL
+            action_required = "internal_status_observation"
         return {
             "run_id": self.run_id,
             "actor_id": self.actor_id,
@@ -1031,7 +1031,7 @@ class RecoveryRunStatus:
             "phase": self.phase.value,
             "preparation_state": self.preparation_state,
             "confirmation_state": self.confirmation_state.value,
-            "status_tool": GLOBAL_RECOVERY_STATUS_TOOL,
+            "status_operation": INTERNAL_RECOVERY_STATUS_OPERATION,
             "action_required": action_required,
             "counts": self.counts.to_dict(),
             "heartbeat_at": self.heartbeat_at.isoformat(),
@@ -2309,7 +2309,7 @@ __all__ = [
     "RECOVERY_PREPARED_TTL_SECONDS",
     "RECOVERY_WORKER_LEASE_MS",
     "GLOBAL_RECOVERY_SLOT_ID",
-    "GLOBAL_RECOVERY_STATUS_TOOL",
+    "INTERNAL_RECOVERY_STATUS_OPERATION",
     "RecoveryAttempt",
     "RecoveryAuditReasonInvalid",
     "RecoveryBindingConflict",

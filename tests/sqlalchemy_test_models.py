@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -34,12 +35,27 @@ from okto_pulse.core.domain.enums import (
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
-    SprintLaneType,
-    SprintStatus,
     StoryStatus,
 )
 
 Base = declarative_base()
+
+
+class SprintStatus(str, Enum):
+    """Frozen legacy fixture values, intentionally absent from the Core package."""
+
+    DRAFT = "draft"
+    ACTIVE = "active"
+    REVIEW = "review"
+    CLOSED = "closed"
+    CANCELLED = "cancelled"
+
+
+class SprintLaneType(str, Enum):
+    """Frozen lane values used only to construct pre-retirement test storage."""
+
+    NORMAL = "normal"
+    HOTFIX = "hotfix"
 
 if TYPE_CHECKING:
     pass
@@ -1040,6 +1056,8 @@ class Spec(Base):
     """Spec model - represents a specification that drives card creation."""
 
     __tablename__ = "specs"
+    architecture_adoption: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    execution_contract: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -1142,6 +1160,10 @@ class Spec(Base):
         nullable=False, server_default=text("false")
     )
     skip_code_evidence_coverage: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
+    # Keep the test-owned table compatible with the Community delivery reader.
+    skip_delivery_evidence: Mapped[bool] = mapped_column(
         nullable=False, server_default=text("false")
     )
     # If true, spec can skip qualitative validation (validated→in_progress without evaluations)
@@ -1589,6 +1611,7 @@ class Card(Base):
         nullable=True,
         index=True,
     )
+    migrated_validation_policy: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     details: Mapped[str | None] = mapped_column(Text, nullable=True)  # Rich text/HTML
@@ -1634,6 +1657,7 @@ class Card(Base):
     # general_justification, recommendation, outcome, threshold_violations, created_at}]
     validations: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # Append-only rejection history plus the bounded Current cause projection.
+    learning_closeout_bindings: Mapped[list | None] = mapped_column(JSON, nullable=True)
     rejection_records: Mapped[list | None] = mapped_column(JSON, nullable=True)
     current_rejection_kind: Mapped[str | None] = mapped_column(
         String(64), nullable=True
@@ -2268,7 +2292,6 @@ class Agent(Base):
     )
     api_key_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True)
-    permissions: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # Granular permission flags (new system) — JSON dict with nested flags
     permission_flags: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Preset ID — FK to permission_presets (nullable, agent may have custom flags without preset)
@@ -3063,6 +3086,9 @@ class ConsolidationAudit(Base):
         DateTime(timezone=True), nullable=True
     )
     error_details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reference_findings: Mapped[dict | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True
+    )
 
 
 class KuzuNodeRef(Base):

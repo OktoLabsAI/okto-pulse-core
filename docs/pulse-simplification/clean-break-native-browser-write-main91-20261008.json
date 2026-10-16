@@ -1,0 +1,42 @@
+{
+  "scope": "DEI:DEI-T64 browser Card submission and REST/MCP readback",
+  "status": "partial",
+  "proof_pair": "dist-native-main91",
+  "base_commits": {
+    "core": "f8888dca",
+    "community": "892bace2"
+  },
+  "results": {
+    "integrated_python_test": {
+      "passed": 1,
+      "seconds": 24.86
+    },
+    "nested_playwright": {
+      "passed": 2,
+      "seconds": 11.3
+    },
+    "record_count_after_write_and_replay": 4
+  },
+  "evidence": [
+    "Production Test Card component submits a real POST associating an existing authenticated demonstration with FR/BR/AC.",
+    "Persisted association is authored by human author on test-card; prior proof remains authored by agent-1.",
+    "Exact REST replay returns the same ID and replayed=true; only checkpoint, implementation, original test and browser association exist.",
+    "Fresh REST/MCP rollup matches exactly after the browser mutation; global delivery remains blocked by unproven IRs.",
+    "Only fixture permissions changed: spec.tests.execute also requires spec.tests.update_status under the existing policy. The original refusal is retained."
+  ],
+  "artifacts_sha256": {
+    "provenance-native-browser-write-main91.json": "8ac3e4fbb95ff162718277f03d96a2561d20f42ba3f0b4c0b1fe48c4561c8dd8",
+    "native-browser-write-main91-20261008.xml": "d5a02a14bdb7f4d5d45d32c53fcab0eb9d42f19f5f0f68e1b562258baf300bf6",
+    "native-browser-write-main91-20261008-r2.xml": "eee651c2fb3b139a986aca273fad2527333362750e753582e40d8b5c386f08ef",
+    "native-browser-write-main91-20261008-r3.xml": "a6c30547e72f1ab6dbb330d0d3488157517c05192650c46f4b0f9272c88eff33",
+    "native-browser-write-main91-20261008-r3-tmp\\test_inherited_br_promoted_ir_0\\browser.log": "c0005231e8fbbbfdd1bac5ce2c026bcf7435bb28087fa504d70991a33e6de9f8",
+    "native-browser-write-main91-20261008-r3-tmp\\test_inherited_br_promoted_ir_0\\browser-write.json": "5c294ca6b2a20ea31d78f64b36d64947a55ef1b34118ea2b486f5e2e8ad54a46",
+    "native-browser-write-main91-20261008-r3-tmp\\test_inherited_br_promoted_ir_0\\browser\\delivery-evidence-records--fddc8-erves-partial-Spec-coverage\\native-card-association.png": "715cc09ce08b1d87b0be8b4e5fd460b28e99000bfd420bb239dc958211eebc37"
+  },
+  "limits": [
+    "Runs production components under Vite fixture, not the installed complete SPA.",
+    "Native source/accepted execution/test evidence are controlled inputs; real issuer/verifier, admission, public writer, UOW and storage execute.",
+    "This does not claim external test execution by the browser or login validation.",
+    "DEI-T64 remains pending packaged SPA navigation. No further read/write fixture iteration is required absent a new failure."
+  ]
+}

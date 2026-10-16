@@ -1,0 +1,31 @@
+{
+  "criterion": "KG:KG-48",
+  "qualification": "partial_current_pair_review",
+  "proof_pair": "dist-native-main68",
+  "review_base": {
+    "core": "39cae6e5",
+    "community": "9209e33a"
+  },
+  "verified": [
+    "Actual authored Learning lifecycle succeeds with reviewer identity equal to the capture author when reviewer separation is off and exact review grants are present.",
+    "The same workflow still denies an actor lacking card.validation.submit, regardless of whether a distinct reviewer will later be used.",
+    "SQL/Grafx durable capture, Done binding, canonical Bug/Learning projection, replay idempotency and no optional LLM activation pass for both reviewer identities.",
+    "Authenticated single-agent MCP workflow reaches Spec Done, preserving validation/evaluation and signed delivery/test evidence in both requirement-link cases."
+  ],
+  "tests": {
+    "tests": "4",
+    "failures": "0",
+    "errors": "0",
+    "time": "69.920"
+  },
+  "limits": [
+    "Learning uses the actual use-case/adapter graph with an injected actor context; the Spec workflow resolves a stored API-key credential through the Community MCP authenticator.",
+    "External implementation receipt is a fixture; test scenario evidence is signed from an actual in-process HTTP replay.",
+    "Four governed query capabilities and remaining governed operations are not all exercised in this campaign. KG48 remains pending in the acceptance index.",
+    "No product/frontend change, reinstall or new architecture closure; main68 remains byte-identical."
+  ],
+  "artifacts": {
+    "provenance-native-single-agent1.json": "4520cc9064b44a0da7223ba00effe881207a5b8f0d679539ecf29193765660b7",
+    "native-single-agent-learning1.xml": "dbe709b505e6a16587537e9a81e161bca00cfb9a643744dcfe6221c03e2d67e8"
+  }
+}

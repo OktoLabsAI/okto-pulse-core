@@ -1,0 +1,1056 @@
+{
+  "assessment_date": "2026-10-15",
+  "baseline": {
+    "core": "3376ba3f",
+    "community": "8e75f23f"
+  },
+  "captured_at": "2026-10-16T00:25:05.876392+00:00",
+  "runtime": "http://127.0.0.1:8241/mcp",
+  "counts": {
+    "tools": 285,
+    "resources": 54,
+    "templates": 0,
+    "local_markdown": 60,
+    "effective_duplicate_groups": 2
+  },
+  "verification": {
+    "parity": {
+      "core": {
+        "source_py": 867,
+        "installed_py": 867,
+        "mismatches": []
+      },
+      "community": {
+        "source_py": 326,
+        "installed_py": 326,
+        "mismatches": []
+      }
+    },
+    "schema_examples": [
+      {
+        "case": "old_decision_alternatives",
+        "tool": "okto_pulse_add_decision",
+        "valid": false,
+        "errors": [
+          "'A|B' is not valid under any of the given schemas"
+        ]
+      },
+      {
+        "case": "native_decision_alternatives",
+        "tool": "okto_pulse_add_decision",
+        "valid": true,
+        "errors": []
+      },
+      {
+        "case": "old_cognitive_readiness_target",
+        "tool": "okto_pulse_kg_evaluate_cognitive_readiness",
+        "valid": false,
+        "errors": [
+          "'source_ref' is a required property"
+        ]
+      },
+      {
+        "case": "native_cognitive_readiness_target",
+        "tool": "okto_pulse_kg_evaluate_cognitive_readiness",
+        "valid": true,
+        "errors": []
+      }
+    ],
+    "artifacts": {
+      "wire-inventory.json": {
+        "bytes": 586426,
+        "sha256": "18ae7b9eabde0774568c03c7df1e1ad827c31997ede6c1411aebc6591026cff2"
+      },
+      "served-instructions.md": {
+        "bytes": 11014,
+        "sha256": "919ae9dae6cd25d8f4c0df70292d69c08c9f653350b7544ec3ad54a843cc2760"
+      },
+      "served-bodies.json": {
+        "bytes": 704761,
+        "sha256": "fe843efcd5d69636df066784501d6d3be85ca5c7b999976484d74d089f62e14e"
+      },
+      "scan.json": {
+        "bytes": 117312,
+        "sha256": "a12634742cda6eb2dd412fb929ace6f3240dee60aa6ab669a5de428f3337370d"
+      },
+      "analysis.json": {
+        "bytes": 354789,
+        "sha256": "d03d7a586b72a906f1e37a8a01dc32a50dca4d3550da340480cc3ee34b4c0d5f"
+      },
+      "collect.py": {
+        "bytes": 6142,
+        "sha256": "714ccf5938b9fded837c7af290407e031cab728af7365ed60af8934a4bec5e98"
+      },
+      "analyze.py": {
+        "bytes": 2908,
+        "sha256": "dc3b8a14012215c227b5359e2593e83618786e170a76c18c51a556f0330fcb86"
+      }
+    }
+  },
+  "resource_inventory": [
+    {
+      "uri": "okto-pulse://reference/card_types",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\card_types.md"
+      ],
+      "bytes": 8504,
+      "sha256": "48b754f24a7431144e0e574e71f48756eea47073beb7c601f848538b80e91903"
+    },
+    {
+      "uri": "okto-pulse://reference/code-traceability",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\code_traceability.md"
+      ],
+      "bytes": 49690,
+      "sha256": "bc8a945a48c4cb94f68b122ceb8346a07ed0bf23437978911de8c0f4ef9f88db"
+    },
+    {
+      "uri": "okto-pulse://reference/destructive_ops",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\destructive_ops.md"
+      ],
+      "bytes": 7187,
+      "sha256": "c62e0d063b4f50dc53b7fab57a9add5a246540fa8f80f38edeae83a93cf58821"
+    },
+    {
+      "uri": "okto-pulse://reference/errors",
+      "owners": [
+        "okto_labs_pulse_community\\src\\okto_pulse\\community\\resources\\operational\\reference\\errors.md"
+      ],
+      "bytes": 39779,
+      "sha256": "ecd0a7c8c01f5ed34a30d9d5594db7ae14e9e907dc4ab7bec373065c5c6faa66"
+    },
+    {
+      "uri": "okto-pulse://reference/kg-health",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\kg-health.md"
+      ],
+      "bytes": 7433,
+      "sha256": "8615c83f9745fae98b4dc6903a4c142b3e30eb0ad7b82ea8652b5a316688a412"
+    },
+    {
+      "uri": "okto-pulse://reference/knowledge-governance",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\knowledge-governance.md"
+      ],
+      "bytes": 6952,
+      "sha256": "6efa1b6d6e9836082468d730d9892439b306b760b8383e3c8e1f11fd31e00535"
+    },
+    {
+      "uri": "okto-pulse://reference/list_tools",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\list_tools.md"
+      ],
+      "bytes": 4519,
+      "sha256": "3010bb858da05a27b908bb2d778759d6e41fcd8573b198a3682322d4e810b6c4"
+    },
+    {
+      "uri": "okto-pulse://reference/multivalue",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\multivalue.md"
+      ],
+      "bytes": 1410,
+      "sha256": "06cdfe5d3ed6d35a1b65fc44066f1f5d3880c074e48af6184a45b68d7d73557a"
+    },
+    {
+      "uri": "okto-pulse://reference/policy-compliance",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\policy-compliance.md"
+      ],
+      "bytes": 10307,
+      "sha256": "0adf268c3b99de914097ffb0cd4735caa4796fde99245ddad326989b451c7096"
+    },
+    {
+      "uri": "okto-pulse://reference/project-structure",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\project_structure.md"
+      ],
+      "bytes": 10531,
+      "sha256": "6fd1a04b5dadd02c97c1ee62556ff62e2b5806f0af7a2e3ee14559f38c44a145"
+    },
+    {
+      "uri": "okto-pulse://reference/projection-profiles",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\projection_profiles.md"
+      ],
+      "bytes": 9501,
+      "sha256": "a77f63e230e31e53b36bc8884c323196da0523a9391dc0d801a212e096681944"
+    },
+    {
+      "uri": "okto-pulse://reference/quality-assessments",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\quality-assessments.md"
+      ],
+      "bytes": 6573,
+      "sha256": "011e465186964ef74907efb77ead12ef795e8664f27f9b7e982f464ecd8e4d3b"
+    },
+    {
+      "uri": "okto-pulse://reference/spec_gates",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\spec_gates.md"
+      ],
+      "bytes": 36352,
+      "sha256": "63ff8b2f62a6e96fa842bd320feab2516d22de908fd5a0538b695652542d2d09"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/activity",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\activity.md"
+      ],
+      "bytes": 2540,
+      "sha256": "950c2773603aeb57345f7b66be4086664464647c1f5792bd5939620605ecf621"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/agent",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\agent.md"
+      ],
+      "bytes": 1029,
+      "sha256": "ce1266e97000b0f99470bff529766d4eaf526e71017288b3fc709f50b2cef607"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/analytics",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\analytics.md"
+      ],
+      "bytes": 1142,
+      "sha256": "ea90431d21f5a7409fbeeae0c16de56ddc92b2df67f83e5f7f442057adf5a9d1"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/api-contract",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\api-contract.md"
+      ],
+      "bytes": 3954,
+      "sha256": "cd40ee66c6bb6ca472623956ba3145d09ef1021a25fd5225506910832e284904"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/architecture",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\architecture.md"
+      ],
+      "bytes": 23990,
+      "sha256": "0ae3a66e21df94926efa34c856f099bd3cf8f763ce7c83525045e98313909025"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/attachment",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\attachment.md"
+      ],
+      "bytes": 1384,
+      "sha256": "f6d2da9122b5590047c896bf142f7c9e2d4dfc08c4f4c42c0fe8be5de118a19a"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/board",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\board.md"
+      ],
+      "bytes": 9054,
+      "sha256": "1f401aa22179d65c2561a2778eb797064f8a12251773f4465a9a3813b246912d"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/business-rule",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\business-rule.md"
+      ],
+      "bytes": 1858,
+      "sha256": "e66d855ef3ebe1ff9dc5c2d47a31079cbdb3f6881cca6e4283f66685f1af96a6"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/card",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\card.md"
+      ],
+      "bytes": 22045,
+      "sha256": "fa0c8a77a25cb1fb14a89358b3c0d4c0edc79d9b039272477b07c51952f1eb02"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/code-traceability",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\code-traceability.md"
+      ],
+      "bytes": 40642,
+      "sha256": "c6c5adbe0cfa959f22faad84627ebd7bdd3a2eea7c01ad2d0e1483c5db73c865"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/comment",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\comment.md"
+      ],
+      "bytes": 1701,
+      "sha256": "4aa757d478c1f7c19053fbf5af8c968ec953c31c2fa20c5f10e99f619cfe7090"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/decision",
+      "owners": [
+        "okto_labs_pulse_community\\src\\okto_pulse\\community\\resources\\operational\\reference\\tool-docs\\decision.md"
+      ],
+      "bytes": 2267,
+      "sha256": "1aa7a0d8e8b78e6a378f3fe0a2d1967c49d203791289e1dae4551083e3ec3d59"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/guideline",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\guideline.md"
+      ],
+      "bytes": 15299,
+      "sha256": "f01c7220d79fe470093f8fe5ec2d03de475b443a46715140a333982fba6a3f23"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/ideation",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\ideation.md"
+      ],
+      "bytes": 8757,
+      "sha256": "05ae382fc432bd3494adfa37a3847abea81267a3523d912b1d30f10e3a728473"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/integration-requirement",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\integration-requirement.md"
+      ],
+      "bytes": 956,
+      "sha256": "6a7f74937e06523b811f51946f83ba0a8bef0d69552c64e23081a1a418900f05"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/kg",
+      "owners": [
+        "okto_labs_pulse_community\\src\\okto_pulse\\community\\resources\\operational\\reference\\tool-docs\\kg.md"
+      ],
+      "bytes": 36772,
+      "sha256": "a97fd29b66c0ea4e773350df402cc25215d9785f18113e661bc34a0d6c473187"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/knowledge",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\knowledge.md"
+      ],
+      "bytes": 8605,
+      "sha256": "51bd5e494b5253e5facb443f9b96c551a7bec8f3b7d26b3a51a3a93da6f2553d"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/misc",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\misc.md"
+      ],
+      "bytes": 18895,
+      "sha256": "0d97af0606d0f54828a9826c558aef7c190b1e119ced4d6a191d0f242197f1d0"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/mockup",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\mockup.md"
+      ],
+      "bytes": 6588,
+      "sha256": "e23f1c1ac19eb17ba2d3f07e819d0bf3659dabb9510d38a9fdbfa2c4c2466901"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/observability-requirement",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\observability-requirement.md"
+      ],
+      "bytes": 863,
+      "sha256": "7549511fe22cd136ea0b72f3efa7e75cfc1ddea5d18f1fcfa73d032101a88cca"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/qa",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\qa.md"
+      ],
+      "bytes": 2033,
+      "sha256": "6e699abd69514bee307ce92675c3903745332bcb6e59e213725b6864d5bfd5a1"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/quality",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\quality.md"
+      ],
+      "bytes": 12163,
+      "sha256": "6ef0233c9248b18a280ddc4b21611de2a5d7c3fe9c6df02974356c24ccfb445c"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/refinement",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\refinement.md"
+      ],
+      "bytes": 11213,
+      "sha256": "8ea6ac660acb49e9f55089715da763193719cee4c7059e382a2ca1118eaf0d8a"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/snapshot",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\snapshot.md"
+      ],
+      "bytes": 723,
+      "sha256": "3e9638c1e38088809e71fa3f8a86cf6c3a414992e0b7d692b8be27fe7c6c7567"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/spec",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\spec.md"
+      ],
+      "bytes": 39053,
+      "sha256": "3fb6cbd5dd7aa2bd4cb8df62612295c4ca918173cc12871ed3c5e3dd32e58893"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/story",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\story.md"
+      ],
+      "bytes": 1098,
+      "sha256": "2118dd52fc3e16b6ab261231b15f1292abc73d7c4fe12fbcf4a1414e7f74f6fa"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/test-scenario",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\test-scenario.md"
+      ],
+      "bytes": 25360,
+      "sha256": "d4c3f8e1a8262c791e3c610225cbf68a289ce91d384a7010d8edec1a166f88ae"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/topic",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\topic.md"
+      ],
+      "bytes": 795,
+      "sha256": "e8c988954808b5adba8f029a0c00d4d1c1c1a127e01906ae526356ecf7723810"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-docs/traceability",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\traceability.md"
+      ],
+      "bytes": 7112,
+      "sha256": "f74891d4ab28b9ae3c660203bf859ca7550202cab43f19c27045dcc3e4617801"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-families/qa_ask",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-families\\qa_ask.md"
+      ],
+      "bytes": 1056,
+      "sha256": "2e351de10a00cf2993678b562c07cfa8243b0a5a0b48c0e2ac3f98afb477298b"
+    },
+    {
+      "uri": "okto-pulse://reference/tool-families/spec_entity_remove",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-families\\spec_entity_remove.md"
+      ],
+      "bytes": 1445,
+      "sha256": "b9d8dc88ebf683259aea31c3d315dd0dda27827eed9bb032614c7ddbbd3bcc2f"
+    },
+    {
+      "uri": "okto-pulse://reference/tools_catalog",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tools_catalog.md"
+      ],
+      "bytes": 27355,
+      "sha256": "3250a75816d48ff3d560bf1b933c3ee27b444d6e661db5d13446d260184f39b8"
+    },
+    {
+      "uri": "okto-pulse://reference/transitions",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\transitions.md"
+      ],
+      "bytes": 6772,
+      "sha256": "dd671614bfb067ff32c6ab669aeca713d8b94cbad2ef7f382937cb5d40c7a563"
+    },
+    {
+      "uri": "okto-pulse://server-manifest",
+      "owners": [],
+      "bytes": 278,
+      "sha256": "d8164d31eef724065fd17429520fe67a1729af0f0bb2684bab404e2de132caf9"
+    },
+    {
+      "uri": "okto-pulse://workflows/cards",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\workflows\\cards.md"
+      ],
+      "bytes": 35444,
+      "sha256": "632cfcebe2f1ed6c6ca8ee017782e44c050e42f266e9e1c7fd103faeef333bdd"
+    },
+    {
+      "uri": "okto-pulse://workflows/ideations",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\workflows\\ideations.md"
+      ],
+      "bytes": 13794,
+      "sha256": "1b8f050af5409e72189b4d11b97afd6c98b457c939ce332275b90dd13268aeb7"
+    },
+    {
+      "uri": "okto-pulse://workflows/kg",
+      "owners": [
+        "okto_labs_pulse_community\\src\\okto_pulse\\community\\resources\\operational\\workflows\\kg.md"
+      ],
+      "bytes": 27099,
+      "sha256": "600c890c1c522e1415817aae135f3c431c77031fdc2e17f6502d9d646fb27de8"
+    },
+    {
+      "uri": "okto-pulse://workflows/preflight",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\workflows\\preflight.md"
+      ],
+      "bytes": 16168,
+      "sha256": "a8f3f786d1d6e4553893c8a63f8b03a2d916a0dbc12fc28f9daa9f115bb88c8b"
+    },
+    {
+      "uri": "okto-pulse://workflows/refinements",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\workflows\\refinements.md"
+      ],
+      "bytes": 19637,
+      "sha256": "3cfc2e7636dc6d14fb961279714326156a4c7a6aaacbb1ab9f60741cbab09aec"
+    },
+    {
+      "uri": "okto-pulse://workflows/specs",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\workflows\\specs.md"
+      ],
+      "bytes": 25480,
+      "sha256": "4471f526b97737ecfe72a5f1449d05b00c7c18d3eeb8adb907222bd4702f3742"
+    },
+    {
+      "uri": "okto-pulse://workflows/stories",
+      "owners": [
+        "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\workflows\\stories.md"
+      ],
+      "bytes": 6289,
+      "sha256": "14d1e13d605ed30bbbebfd1a63bf62d3643ca5f7f13e6cca83f8924661384c0b"
+    }
+  ],
+  "argument_drift": [
+    {
+      "path": "okto_labs_pulse_community\\src\\okto_pulse\\community\\resources\\operational\\reference\\tool-docs\\kg.md",
+      "tool": "okto_pulse_kg_list_cognitive_readiness_items",
+      "argument": "entity_type",
+      "line": 382,
+      "actual_arguments": [
+        "board_id",
+        "signal",
+        "artifact_id",
+        "source_ref",
+        "reason_code",
+        "status",
+        "search",
+        "limit",
+        "offset",
+        "kg_generation_id"
+      ]
+    },
+    {
+      "path": "okto_labs_pulse_community\\src\\okto_pulse\\community\\resources\\operational\\reference\\tool-docs\\kg.md",
+      "tool": "okto_pulse_kg_list_cognitive_readiness_items",
+      "argument": "entity_id",
+      "line": 382,
+      "actual_arguments": [
+        "board_id",
+        "signal",
+        "artifact_id",
+        "source_ref",
+        "reason_code",
+        "status",
+        "search",
+        "limit",
+        "offset",
+        "kg_generation_id"
+      ]
+    },
+    {
+      "path": "okto_labs_pulse_community\\src\\okto_pulse\\community\\resources\\operational\\reference\\tool-docs\\kg.md",
+      "tool": "okto_pulse_kg_evaluate_cognitive_readiness",
+      "argument": "entity_type",
+      "line": 400,
+      "actual_arguments": [
+        "board_id",
+        "source_ref",
+        "kg_generation_id"
+      ]
+    },
+    {
+      "path": "okto_labs_pulse_community\\src\\okto_pulse\\community\\resources\\operational\\reference\\tool-docs\\kg.md",
+      "tool": "okto_pulse_kg_evaluate_cognitive_readiness",
+      "argument": "entity_id",
+      "line": 400,
+      "actual_arguments": [
+        "board_id",
+        "source_ref",
+        "kg_generation_id"
+      ]
+    },
+    {
+      "path": "okto_labs_pulse_community\\src\\okto_pulse\\community\\resources\\operational\\reference\\tool-docs\\kg.md",
+      "tool": "okto_pulse_kg_record_cognitive_skip",
+      "argument": "entity_type",
+      "line": 442,
+      "actual_arguments": [
+        "board_id",
+        "source_ref",
+        "reason_code",
+        "justification",
+        "evidence_refs",
+        "revisit_at",
+        "kg_generation_id"
+      ]
+    },
+    {
+      "path": "okto_labs_pulse_community\\src\\okto_pulse\\community\\resources\\operational\\reference\\tool-docs\\kg.md",
+      "tool": "okto_pulse_kg_record_cognitive_skip",
+      "argument": "entity_id",
+      "line": 442,
+      "actual_arguments": [
+        "board_id",
+        "source_ref",
+        "reason_code",
+        "justification",
+        "evidence_refs",
+        "revisit_at",
+        "kg_generation_id"
+      ]
+    },
+    {
+      "path": "okto_labs_pulse_community\\src\\okto_pulse\\community\\resources\\operational\\reference\\tool-docs\\kg.md",
+      "tool": "okto_pulse_kg_record_cognitive_skip",
+      "argument": "reason",
+      "line": 442,
+      "actual_arguments": [
+        "board_id",
+        "source_ref",
+        "reason_code",
+        "justification",
+        "evidence_refs",
+        "revisit_at",
+        "kg_generation_id"
+      ]
+    },
+    {
+      "path": "okto_labs_pulse_community\\src\\okto_pulse\\community\\resources\\operational\\reference\\tool-docs\\kg.md",
+      "tool": "okto_pulse_kg_clear_cognitive_skip",
+      "argument": "entity_type",
+      "line": 458,
+      "actual_arguments": [
+        "board_id",
+        "source_ref",
+        "kg_generation_id"
+      ]
+    },
+    {
+      "path": "okto_labs_pulse_community\\src\\okto_pulse\\community\\resources\\operational\\reference\\tool-docs\\kg.md",
+      "tool": "okto_pulse_kg_clear_cognitive_skip",
+      "argument": "entity_id",
+      "line": 458,
+      "actual_arguments": [
+        "board_id",
+        "source_ref",
+        "kg_generation_id"
+      ]
+    },
+    {
+      "path": "okto_labs_pulse_community\\src\\okto_pulse\\community\\resources\\operational\\reference\\tool-docs\\kg.md",
+      "tool": "okto_pulse_kg_clear_cognitive_skip",
+      "argument": "reason",
+      "line": 458,
+      "actual_arguments": [
+        "board_id",
+        "source_ref",
+        "kg_generation_id"
+      ]
+    },
+    {
+      "path": "okto_labs_pulse_community\\src\\okto_pulse\\community\\resources\\operational\\reference\\tool-docs\\kg.md",
+      "tool": "okto_pulse_kg_schema_info",
+      "argument": "include_internal",
+      "line": 609,
+      "actual_arguments": [
+        "board_id"
+      ]
+    }
+  ],
+  "sampled_schemas": {
+    "okto_pulse_update_test_scenario_status": {
+      "properties": {
+        "board_id": {
+          "type": "string"
+        },
+        "spec_id": {
+          "type": "string"
+        },
+        "scenario_id": {
+          "type": "string"
+        },
+        "status": {
+          "description": "draft | ready | automated | passed | failed",
+          "type": "string"
+        },
+        "evidence": {
+          "default": "",
+          "description": "JSON evidence; passed/failed require an evidence_class payload or a full run-log (NC-9 gate)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "board_id",
+        "spec_id",
+        "scenario_id",
+        "status"
+      ],
+      "type": "object"
+    },
+    "okto_pulse_add_decision": {
+      "properties": {
+        "board_id": {
+          "type": "string"
+        },
+        "spec_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "context": {
+          "default": "",
+          "type": "string"
+        },
+        "alternatives_considered": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "supersedes_decision_id": {
+          "default": "",
+          "type": "string"
+        },
+        "linked_requirements": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "notes": {
+          "default": "",
+          "type": "string"
+        },
+        "verification": {
+          "anyOf": [
+            {
+              "properties": {
+                "obligation_refs": {
+                  "items": {
+                    "maxLength": 255,
+                    "pattern": "^(fr|tr|br|ir|or|ac|api):[^:\\s]+$",
+                    "type": "string"
+                  },
+                  "maxItems": 100,
+                  "type": "array"
+                },
+                "inspection": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "condition": {
+                          "maxLength": 2000,
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "scope_refs": {
+                          "items": {
+                            "properties": {
+                              "kind": {
+                                "enum": [
+                                  "spec",
+                                  "obligation"
+                                ],
+                                "type": "string"
+                              },
+                              "id": {
+                                "maxLength": 255,
+                                "minLength": 1,
+                                "pattern": "^\\S+$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "id"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "minItems": 1,
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "condition",
+                        "scope_refs"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "board_id",
+        "spec_id",
+        "title",
+        "rationale"
+      ],
+      "type": "object"
+    },
+    "okto_pulse_kg_schema_info": {
+      "properties": {
+        "board_id": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "okto_pulse_kg_list_cognitive_readiness_items": {
+      "properties": {
+        "board_id": {
+          "type": "string"
+        },
+        "signal": {
+          "default": "all",
+          "type": "string"
+        },
+        "artifact_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "search": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "limit": {
+          "default": 50,
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "type": "integer"
+        },
+        "kg_generation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "board_id"
+      ],
+      "type": "object"
+    },
+    "okto_pulse_kg_evaluate_cognitive_readiness": {
+      "properties": {
+        "board_id": {
+          "type": "string"
+        },
+        "source_ref": {
+          "type": "string"
+        },
+        "kg_generation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "board_id",
+        "source_ref"
+      ],
+      "type": "object"
+    },
+    "okto_pulse_kg_record_cognitive_skip": {
+      "properties": {
+        "board_id": {
+          "type": "string"
+        },
+        "source_ref": {
+          "type": "string"
+        },
+        "reason_code": {
+          "type": "string"
+        },
+        "justification": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "evidence_refs": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "revisit_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kg_generation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "board_id",
+        "source_ref",
+        "reason_code"
+      ],
+      "type": "object"
+    },
+    "okto_pulse_kg_clear_cognitive_skip": {
+      "properties": {
+        "board_id": {
+          "type": "string"
+        },
+        "source_ref": {
+          "type": "string"
+        },
+        "kg_generation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "board_id",
+        "source_ref"
+      ],
+      "type": "object"
+    }
+  },
+  "limits": [
+    "All published bodies and descriptions scanned; semantic review directed by rules and discrepancies.",
+    "No mutation tools invoked; no new full product E2E run claimed.",
+    "Offline JSON Schema validity does not prove authority or record identity."
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "format": "pulse-040-characterization/v1",
+  "status": "defect_reproduced_authority_pending",
+  "criterion_keys": [
+    "KG:KG-10"
+  ],
+  "proof_pair": "dist-native-main57",
+  "run": {
+    "name": "acceptance-native-kg10-guard1",
+    "sha256": "2884c69f9ee3fceb1f4e22e360f45439b15906e25e4df17bf8b229f057f84bfc",
+    "characterization_passed": 1,
+    "seconds": 234.3
+  },
+  "provenance_sha256": "ca47dc45e72af85f0893cb9aad7d00fbbc00d50ee1954bf23ecb7aa0f69ffe40",
+  "observed": [
+    "Native current schema admits incremental removal of all seven Spec relationship families.",
+    "Cold rebuild of the same source rejects the unlinked structured Decision with missing_required_edge.",
+    "Characterization success certifies the defect, not acceptance or rebuild parity."
+  ],
+  "proposal": "Only internally authenticated, owner-validated structured Spec Decisions may use real belongs_to provenance without invented judgement. Generic cognitive Decision guard remains unchanged.",
+  "authorization": "Pending user answer requested asynchronously in this turn, per plan 10.2/10.4; do not implement dependent guard change without it."
+}

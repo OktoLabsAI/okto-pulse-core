@@ -20,10 +20,9 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 @dataclass(frozen=True, slots=True)
 class AuthorizeOperationCommand:
-    """One canonical operation and its pre-introduction compatibility token."""
+    """One canonical operation in its requested Board scope."""
 
     operation: str
-    legacy_operation: str | None = None
     board_id: str | None = None
 
 
@@ -49,7 +48,6 @@ class AuthorizeOperationUseCase:
             actor,
             PermissionRequirement(
                 operation,
-                legacy_operation=command.legacy_operation,
             ),
             uow=uow,
             board_id=command.board_id,

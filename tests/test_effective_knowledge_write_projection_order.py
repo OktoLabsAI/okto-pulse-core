@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from datetime import datetime, UTC
 
 import pytest
 
@@ -90,7 +91,11 @@ async def test_commit_precedes_refetch_and_effective_knowledge_projection(
     )
     target_status = CardStatus.STARTED if target_type == "card" else SpecStatus.REVIEW
     entity = SimpleNamespace(
-        id="entity-1", board_id="board-1", status=current_status
+        id="entity-1", board_id="board-1", status=current_status,
+        title="Entity", description="", details="", subject_version=1,
+        priority="none", position=0, assignee_id=None, created_by="actor-1",
+        created_at=datetime(2026, 10, 7, tzinfo=UTC),
+        updated_at=datetime(2026, 10, 7, tzinfo=UTC), due_date=None, labels=[]
     )
 
     async def guard(*_args, **_kwargs):
@@ -110,7 +115,7 @@ async def test_commit_precedes_refetch_and_effective_knowledge_projection(
         assert refreshed is entity
         assert events[-1] == "refetch"
         events.append("project")
-        return SimpleNamespace(id=refreshed.id, projected_for=target_type)
+        return SimpleNamespace(**{**vars(refreshed), "title": f"Projected {target_type}"})
 
     service = SimpleNamespace(**{mutation_name: mutate, refetch_name: refetch})
     services = SimpleNamespace(**{service_name: service})
@@ -142,7 +147,7 @@ async def test_commit_precedes_refetch_and_effective_knowledge_projection(
     )
 
     projected = getattr(result, target_type)
-    assert projected.projected_for == target_type
+    assert projected.title == f"Projected {target_type}"
     assert events == ["guard", "mutate", "commit", "refetch", "project"]
 
 
@@ -178,7 +183,11 @@ async def test_missing_post_commit_refetch_is_explicit_and_not_projected(
     )
     target_status = CardStatus.STARTED if target_type == "card" else SpecStatus.REVIEW
     entity = SimpleNamespace(
-        id="entity-1", board_id="board-1", status=current_status
+        id="entity-1", board_id="board-1", status=current_status,
+        title="Entity", description="", details="", subject_version=1,
+        priority="none", position=0, assignee_id=None, created_by="actor-1",
+        created_at=datetime(2026, 10, 7, tzinfo=UTC),
+        updated_at=datetime(2026, 10, 7, tzinfo=UTC), due_date=None, labels=[]
     )
 
     async def guard(*_args, **_kwargs):

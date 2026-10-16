@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+RETIRED_DISCOVERY_INTENT_NAMES = frozenset({"blockers_current_sprint"})
+
+
 DEFAULT_DISCOVERY_INTENTS: tuple[dict[str, Any], ...] = (
 
     # --- Coverage & Tracing ---
@@ -50,7 +53,7 @@ DEFAULT_DISCOVERY_INTENTS: tuple[dict[str, Any], ...] = (
         "label": "Which test scenarios have no task?",
         "description": (
             "Lists TestScenario nodes that are not linked to any "
-            "implementation card — likely blindspots in the sprint plan."
+            "implementation card — coverage gaps on the current board."
         ),
         "category": "coverage_tracing",
         "tool_binding": "okto_pulse_list_test_scenarios",
@@ -128,11 +131,11 @@ DEFAULT_DISCOVERY_INTENTS: tuple[dict[str, Any], ...] = (
 
     # --- Dependencies & Blockers ---
     {
-        "name": "blockers_current_sprint",
-        "label": "What is blocking the current sprint?",
+        "name": "blocked_cards",
+        "label": "What is blocking cards on this board?",
         "description": (
-            "Lists cards blocked by unresolved dependencies in the active "
-            "sprint so the team can focus on unblocking them first."
+            "Lists non-archived cards with unresolved dependencies, explicit "
+            "pauses, required rework, or stale execution on this board."
         ),
         "category": "dependencies_blockers",
         "tool_binding": "okto_pulse_list_blockers",

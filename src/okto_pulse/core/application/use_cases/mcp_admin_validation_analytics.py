@@ -218,7 +218,6 @@ class McpListDefaultGuidelineCandidatesUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.candidates_read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -259,7 +258,6 @@ class McpUpdateDefaultGuidelineRefsUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.guidelines.edit",
-                legacy_operation="guidelines.adoption.manage",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -306,7 +304,6 @@ class McpSetDefaultDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.set_design_system",
-                legacy_operation="spec.entity.edit_fields",
             ),
             uow=uow,
         )
@@ -392,7 +389,6 @@ class McpListDesignSystemsUseCase:
             actor,
             PermissionRequirement(
                 "design_system.entity.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -451,7 +447,6 @@ class McpGetDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.entity.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -501,7 +496,6 @@ class McpCreateDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.entity.create",
-                legacy_operation="spec.architecture.create",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -566,7 +560,6 @@ class McpUpdateDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.entity.edit",
-                legacy_operation="spec.architecture.edit",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -625,7 +618,6 @@ class McpDeleteDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.entity.delete",
-                legacy_operation="spec.architecture.delete",
             ),
             uow=uow,
             board_id=command.board_id,

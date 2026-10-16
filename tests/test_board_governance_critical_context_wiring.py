@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
 from mcp_runtime_testing import register_mcp_test_runtime
 
 import json
@@ -42,6 +44,10 @@ async def _seed_board_spec_card(
         settings=board_settings if board_settings is not None else {},
     )
     spec = Spec(
+        architecture_adoption=ArchitectureAdoptionScope(
+            board_id=board_id, spec_id=spec_id,
+            adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=(),
+        ).model_dump(mode="json"),
         id=spec_id,
         board_id=board_id,
         title="Guarded Spec",
@@ -50,6 +56,10 @@ async def _seed_board_spec_card(
         created_by=USER_ID,
         skip_decisions_coverage=True,
         evaluations=[],
+        functional_requirements=[{
+            "id": "fr_guarded", "text": "Guarded requirement",
+            "linked_task_ids": [card_id],
+        }],
     )
     card = Card(
         id=card_id,
@@ -478,6 +488,30 @@ async def test_read_only_mcp_paths_do_not_invoke_critical_context_guard(
         spec_id = spec.id
         await db.commit()
 
+    # This read targets an admitted edition with an explicit OFF snapshot.
+    # Keep its native binding visible without invoking a write/context guard.
+    from okto_pulse.core.domain.checklist import ChecklistBinding, ChecklistMode
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
+
+    adapter = require_relational_application_adapter()
+    original_checklists = adapter.checklists
+
+    def edition_checklists(session):
+        persistence = original_checklists(session)
+
+        async def get_validation_binding(**scope):
+            assert scope["board_id"] == board_id
+            assert scope["spec_id"] == spec_id
+            assert scope["spec_edition"] == 1
+            return ChecklistBinding(board_id=board_id, mode=ChecklistMode.OFF, version=1)
+
+        persistence.get_validation_binding = get_validation_binding
+        return persistence
+
+    monkeypatch.setattr(adapter, "checklists", edition_checklists)
+
     guard_calls: list[dict] = []
 
     async def forbidden_guard(*_args, **kwargs):
@@ -564,8 +598,6 @@ async def test_bg01_4_inventory_has_no_silent_service_layer_gaps():
         ("SpecService", "submit_spec_validation"),
         ("IdeationService", "move_ideation"),
         ("RefinementService", "move_refinement"),
-        ("SprintService", "move_sprint"),
-        ("SprintService", "submit_evaluation"),
         ("StoryService", "move_story"),
         ("StoryService", "archive_story"),
         ("ArchiveService", "archive_tree"),

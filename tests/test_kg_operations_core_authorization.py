@@ -11,15 +11,9 @@ import pytest
 
 from okto_pulse.core.application.use_cases import (
     cognitive_readiness,
-    dlq_reprocess,
     kg_health,
     kg_routes_crud,
-    list_cognitive_dlq,
-    list_dead_letter_rows,
-    list_stale_canonical_parity,
-    mcp_kg_crud,
     operational_rest,
-    queue_health,
 )
 from okto_pulse.core.application.use_cases.authorization import (
     PermissionRequirement,
@@ -33,10 +27,6 @@ from okto_pulse.core.domain.permissions import (
     KG_OPERATIONS_PERMISSION_INTRODUCTION_V1,
     PermissionSet,
 )
-from okto_pulse.core.domain.code_traceability_kg import (
-    CODE_TRACEABILITY_KG_READ_PERMISSIONS,
-    KGDeadLetterReprocessScope,
-)
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 
 
@@ -45,45 +35,10 @@ BOARD_ID = "board-kg-operations"
 
 _NAMESPACE_REQUIREMENTS = (
     ("kg.operations.health.read", "kg.admin.settings_read"),
-    ("kg.operations.integrity.read", "kg.admin.settings_read"),
-    ("kg.operations.integrity.reconcile", "kg.admin.settings_write"),
-    ("kg.operations.integrity.backfill", "kg.admin.settings_write"),
     ("kg.operations.cognitive.read", "kg.admin.settings_read"),
     ("kg.operations.cognitive.skip", "kg.admin.settings_write"),
     ("kg.operations.cognitive.clear", "kg.admin.settings_write"),
-    ("kg.operations.queue.read", "kg.admin.settings_read"),
-    ("kg.operations.queue.reprocess", "kg.admin.settings_write"),
     ("kg.operations.audit.read", "kg.admin.settings_read"),
-    ("kg.operations.schema.migrate", "kg.admin.settings_write"),
-    ("kg.operations.tick.run", "kg.admin.settings_write"),
-    ("kg.operations.global_outbox.read", "kg.admin.settings_read"),
-    ("kg.operations.global_outbox.reprocess", "kg.admin.settings_write"),
-    ("kg.operations.global_outbox.verify", "kg.admin.settings_read"),
-    ("kg.operations.global_recovery.preflight", "kg.admin.settings_read"),
-    ("kg.operations.global_recovery.confirm", "kg.admin.settings_write"),
-    ("kg.operations.global_recovery.read", "kg.admin.settings_read"),
-    ("kg.operations.global_recovery.cancel", "kg.admin.settings_write"),
-    ("kg.operations.global_recovery.resume", "kg.admin.settings_write"),
-    ("kg.operations.global_recovery.run", "kg.admin.settings_write"),
-    (
-        "kg.operations.historical.read",
-        "kg.admin.historical_consolidation",
-    ),
-    (
-        "kg.operations.historical.start",
-        "kg.admin.historical_consolidation",
-    ),
-    (
-        "kg.operations.historical.cancel",
-        "kg.admin.historical_consolidation",
-    ),
-    ("kg.operations.node.boost", "kg.admin.settings_write"),
-    ("kg.operations.settings.read", "kg.admin.settings_read"),
-    ("kg.operations.settings.write", "kg.admin.settings_write"),
-    ("kg.operations.rebuild.preflight", "kg.admin.settings_read"),
-    ("kg.operations.rebuild.confirm", "kg.admin.settings_write"),
-    ("kg.operations.rebuild.run", "kg.admin.settings_write"),
-    ("kg.operations.quarantine.restore", "kg.admin.settings_write"),
     ("kg.operations.board.erase", "kg.admin.wipe_board"),
 )
 
@@ -116,7 +71,6 @@ def test_each_kg_operation_declares_and_accepts_its_two_authorities(
     )
     requirement = PermissionRequirement(
         operation,
-        legacy_operation=historical_authority,
     )
 
     canonical = decide_authorization(
@@ -141,7 +95,7 @@ def test_each_kg_operation_declares_and_accepts_its_two_authorities(
     )
 
     assert canonical.allowed is True
-    assert historical.allowed is True
+    assert historical.allowed is False
     assert canonical_without_historical_ceiling.allowed is False
 
 
@@ -207,11 +161,6 @@ class _KgWriterSpy:
         self._write("queue.retry")
         return {}
 
-    async def mutate_boost_node_graph(
-        self, *_args: Any, **_kwargs: Any
-    ) -> dict[str, Any]:
-        self._write("node.boost")
-        return {}
 
     async def enqueue_digest_layer_reconciliation(
         self, **_kwargs: Any
@@ -230,9 +179,6 @@ class _KgWriterSpy:
     ) -> dict[str, Any]:
         self._write("queue.connectivity_reprocess")
         return {}
-
-    async def invoke_rebuild_admission(self, *_args: Any, **_kwargs: Any) -> None:
-        self._write("rebuild.admission")
 
 
 class _Uow:
@@ -264,88 +210,11 @@ _WRITE_CASES: tuple[
     ...,
 ] = (
     (
-        kg_routes_crud.StartHistoricalUseCase(),
-        lambda: kg_routes_crud.StartHistoricalCommand(BOARD_ID),
-        "kg.operations.historical.start",
-        "kg.admin.historical_consolidation",
-        True,
-    ),
-    (
-        kg_routes_crud.CancelHistoricalUseCase(),
-        lambda: kg_routes_crud.CancelHistoricalCommand(BOARD_ID),
-        "kg.operations.historical.cancel",
-        "kg.admin.historical_consolidation",
-        True,
-    ),
-    (
         kg_routes_crud.DeleteBoardKgUseCase(),
         lambda: kg_routes_crud.DeleteBoardKgCommand(BOARD_ID),
         "kg.operations.board.erase",
         "kg.admin.wipe_board",
         True,
-    ),
-    (
-        kg_routes_crud.RetryPendingEntryUseCase(),
-        lambda: kg_routes_crud.RetryPendingEntryCommand(BOARD_ID, "queue-1"),
-        "kg.operations.queue.reprocess",
-        "kg.admin.settings_write",
-        True,
-    ),
-    (
-        kg_routes_crud.BoostNodeUseCase(),
-        lambda: kg_routes_crud.BoostNodeCommand(BOARD_ID, "node-1"),
-        "kg.operations.node.boost",
-        "kg.admin.settings_write",
-        True,
-    ),
-    (
-        mcp_kg_crud.ReconcileDigestLayerUseCase(),
-        lambda: mcp_kg_crud.ReconcileDigestLayerCommand(
-            BOARD_ID,
-            reason="incident_42_digest_drift",
-        ),
-        "kg.operations.integrity.reconcile",
-        "kg.admin.settings_write",
-        True,
-    ),
-    (
-        dlq_reprocess.ReprocessDeadLetterRowsUseCase(),
-        lambda: dlq_reprocess.ReprocessDeadLetterRowsCommand(BOARD_ID),
-        "kg.operations.queue.reprocess",
-        "kg.admin.settings_write",
-        False,
-    ),
-    (
-        dlq_reprocess.ReprocessConnectivityDlqUseCase(),
-        lambda: dlq_reprocess.ReprocessConnectivityDlqCommand(
-            BOARD_ID,
-            ["dead-letter-1"],
-        ),
-        "kg.operations.queue.reprocess",
-        "kg.admin.settings_write",
-        False,
-    ),
-    (
-        mcp_kg_crud.RebuildAdmissionGateUseCase(),
-        lambda: mcp_kg_crud.RebuildAdmissionGateCommand(
-            BOARD_ID,
-            refuse_fn=lambda *_args, **_kwargs: None,
-            include_health=True,
-        ),
-        "kg.operations.rebuild.preflight",
-        "kg.admin.settings_read",
-        False,
-    ),
-    (
-        mcp_kg_crud.RebuildAdmissionGateUseCase(),
-        lambda: mcp_kg_crud.RebuildAdmissionGateCommand(
-            BOARD_ID,
-            refuse_fn=lambda *_args, **_kwargs: None,
-            include_health=False,
-        ),
-        "kg.operations.rebuild.run",
-        "kg.admin.settings_write",
-        False,
     ),
 )
 
@@ -355,16 +224,7 @@ _WRITE_CASES: tuple[
     ("use_case", "command_factory", "operation", "legacy", "expects_lookup"),
     _WRITE_CASES,
     ids=(
-        "historical-start",
-        "historical-cancel",
         "board-erase",
-        "pending-retry",
-        "node-boost",
-        "integrity-reconcile",
-        "dead-letter-reprocess",
-        "connectivity-reprocess",
-        "rebuild-preflight",
-        "rebuild-run",
     ),
 )
 async def test_each_dedicated_kg_writer_authorizes_after_lookup_and_before_write(
@@ -375,13 +235,7 @@ async def test_each_dedicated_kg_writer_authorizes_after_lookup_and_before_write
     expects_lookup: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = (
-        kg_routes_crud
-        if use_case.__class__.__module__.endswith("kg_routes_crud")
-        else dlq_reprocess
-        if use_case.__class__.__module__.endswith("dlq_reprocess")
-        else mcp_kg_crud
-    )
+    module = kg_routes_crud
     captured: list[tuple[PermissionRequirement, dict[str, Any]]] = []
 
     async def _deny(
@@ -406,105 +260,12 @@ async def test_each_dedicated_kg_writer_authorizes_after_lookup_and_before_write
         await use_case.execute(command_factory(), actor=actor, uow=uow)
 
     requirement, kwargs = captured[0]
-    assert requirement == PermissionRequirement(operation, legacy_operation=legacy)
+    assert requirement == PermissionRequirement(operation)
     assert kwargs["board_id"] == BOARD_ID
     assert kwargs["uow"] is uow
     assert uow.events == ([f"lookup:{BOARD_ID}"] if expects_lookup else [])
     assert uow.commits == 0
     assert uow.rollbacks == 0
-
-
-@pytest.mark.asyncio
-async def test_code_traceability_dlq_reprocess_requires_all_read_leaves_and_commits_only_mutation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def _allow_operation(*_args: Any, **_kwargs: Any) -> None:
-        return None
-
-    monkeypatch.setattr(dlq_reprocess, "require_authorization", _allow_operation)
-    command = dlq_reprocess.ReprocessDeadLetterRowsCommand(
-        BOARD_ID,
-        dead_letter_ids=["dlq-ct-1", "dlq-ct-2"],
-        limit=2,
-        scope=KGDeadLetterReprocessScope.CODE_TRACEABILITY,
-    )
-
-    denied_uow = _Uow()
-    with pytest.raises(PermissionDeniedError):
-        await dlq_reprocess.ReprocessDeadLetterRowsUseCase().execute(
-            command,
-            actor=ActorContext(
-                "operator",
-                "mcp",
-                board_id=BOARD_ID,
-                permissions=CODE_TRACEABILITY_KG_READ_PERMISSIONS[:-1],
-            ),
-            uow=denied_uow,
-        )
-    assert "write:queue.dead_letter_reprocess" not in denied_uow.events
-    assert denied_uow.commits == 0
-
-    captured: dict[str, Any] = {}
-
-    async def _reprocess(board_id: str, **kwargs: Any) -> dict[str, Any]:
-        captured.update({"board_id": board_id, **kwargs})
-        return {
-            "success": False,
-            "blocked": True,
-            "mutated": False,
-            "scope": "code_traceability",
-            "selected": 0,
-        }
-
-    allowed_uow = _Uow()
-    allowed_uow.services.kg = SimpleNamespace(reprocess_dead_letter_rows=_reprocess)
-    result = await dlq_reprocess.ReprocessDeadLetterRowsUseCase().execute(
-        command,
-        actor=ActorContext(
-            "operator",
-            "mcp",
-            board_id=BOARD_ID,
-            permissions=CODE_TRACEABILITY_KG_READ_PERMISSIONS,
-        ),
-        uow=allowed_uow,
-    )
-
-    assert result.data["blocked"] is True
-    assert captured == {
-        "board_id": BOARD_ID,
-        "dead_letter_ids": ["dlq-ct-1", "dlq-ct-2"],
-        "limit": 2,
-        "scope": KGDeadLetterReprocessScope.CODE_TRACEABILITY,
-    }
-    assert allowed_uow.commits == 0
-
-    async def _reprocess_mutating(
-        _board_id: str,
-        **_kwargs: Any,
-    ) -> dict[str, Any]:
-        return {
-            "success": True,
-            "blocked": False,
-            "mutated": True,
-            "scope": "code_traceability",
-            "selected": 2,
-        }
-
-    mutating_uow = _Uow()
-    mutating_uow.services.kg = SimpleNamespace(
-        reprocess_dead_letter_rows=_reprocess_mutating
-    )
-    await dlq_reprocess.ReprocessDeadLetterRowsUseCase().execute(
-        command,
-        actor=ActorContext(
-            "operator",
-            "mcp",
-            board_id=BOARD_ID,
-            permissions=CODE_TRACEABILITY_KG_READ_PERMISSIONS,
-        ),
-        uow=mutating_uow,
-    )
-    assert mutating_uow.commits == 1
 
 
 _REST_OPERATION_CASES: tuple[
@@ -549,74 +310,6 @@ _REST_OPERATION_CASES: tuple[
         "kg.operations.cognitive.read",
         "kg.admin.settings_read",
     ),
-    (
-        operational_rest.ListCanonicalDebtUseCase(),
-        lambda: operational_rest.CanonicalDebtListCommand(
-            BOARD_ID,
-            None,
-            None,
-            50,
-            0,
-        ),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-    ),
-    (
-        operational_rest.RetryCanonicalDebtUseCase(),
-        lambda: operational_rest.CanonicalDebtRetryCommand(
-            BOARD_ID,
-            "debt-1",
-            None,
-        ),
-        "kg.operations.queue.reprocess",
-        "kg.admin.settings_write",
-    ),
-    (
-        operational_rest.ListCanonicalPartitionIntegrityUseCase(),
-        lambda: operational_rest.CanonicalPartitionListCommand(
-            BOARD_ID,
-            None,
-            None,
-            None,
-            None,
-            None,
-            50,
-            0,
-        ),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-    ),
-    (
-        operational_rest.GetCanonicalPartitionIntegrityDetailUseCase(),
-        lambda: operational_rest.CanonicalPartitionDetailCommand(BOARD_ID, "node-1"),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-    ),
-    (
-        operational_rest.ListDigestLayerMismatchUseCase(),
-        lambda: operational_rest.DigestLayerMismatchListCommand(BOARD_ID, 50, 0),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-    ),
-    (
-        operational_rest.GetOrphanIntegrityReportUseCase(),
-        lambda: operational_rest.OrphanIntegrityReportCommand(BOARD_ID, None, 25),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-    ),
-    (
-        operational_rest.RunOrphanBackfillUseCase(),
-        lambda: operational_rest.OrphanBackfillCommand(
-            BOARD_ID,
-            None,
-            True,
-            None,
-            25,
-            None,
-        ),
-        "kg.operations.integrity.backfill",
-        "kg.admin.settings_write",
-    ),
 )
 
 
@@ -629,13 +322,6 @@ _REST_OPERATION_CASES: tuple[
         "cognitive-clear",
         "cognitive-metrics",
         "cognitive-inventory",
-        "canonical-debt-list",
-        "canonical-debt-retry",
-        "partition-list",
-        "partition-detail",
-        "digest-list",
-        "orphan-report",
-        "orphan-backfill",
     ),
 )
 async def test_operational_rest_authorizes_before_any_kg_service_call(
@@ -669,7 +355,7 @@ async def test_operational_rest_authorizes_before_any_kg_service_call(
         await use_case.execute(command_factory(), actor=actor, uow=uow)
 
     requirement, kwargs = captured[0]
-    assert requirement == PermissionRequirement(operation, legacy_operation=legacy)
+    assert requirement == PermissionRequirement(operation)
     assert kwargs == {"uow": uow, "board_id": BOARD_ID}
     assert uow.events == [f"lookup:{BOARD_ID}"]
     assert uow.commits == 0
@@ -734,114 +420,6 @@ _READ_CASES: tuple[
         "kg.admin.settings_read",
         True,
     ),
-    (
-        kg_routes_crud,
-        kg_routes_crud.GetHistoricalProgressUseCase(),
-        lambda: kg_routes_crud.GetHistoricalProgressCommand(BOARD_ID),
-        "kg.operations.historical.read",
-        "kg.admin.historical_consolidation",
-        True,
-    ),
-    (
-        kg_routes_crud,
-        kg_routes_crud.ListPendingUseCase(),
-        lambda: kg_routes_crud.ListPendingCommand(BOARD_ID),
-        "kg.operations.queue.read",
-        "kg.admin.settings_read",
-        True,
-    ),
-    (
-        kg_routes_crud,
-        kg_routes_crud.ListPendingTreeUseCase(),
-        lambda: kg_routes_crud.ListPendingTreeCommand(BOARD_ID),
-        "kg.operations.queue.read",
-        "kg.admin.settings_read",
-        True,
-    ),
-    (
-        mcp_kg_crud,
-        mcp_kg_crud.ListCanonicalDebtUseCase(),
-        lambda: mcp_kg_crud.ListCanonicalDebtCommand(BOARD_ID),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-        False,
-    ),
-    (
-        mcp_kg_crud,
-        mcp_kg_crud.ListCanonicalPartitionIntegrityUseCase(),
-        lambda: mcp_kg_crud.ListCanonicalPartitionIntegrityCommand(BOARD_ID),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-        False,
-    ),
-    (
-        mcp_kg_crud,
-        mcp_kg_crud.ListDigestLayerMismatchUseCase(),
-        lambda: mcp_kg_crud.ListDigestLayerMismatchCommand(BOARD_ID),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-        False,
-    ),
-    (
-        mcp_kg_crud,
-        mcp_kg_crud.AuditOriginatesFromContractUseCase(),
-        lambda: mcp_kg_crud.AuditOriginatesFromContractCommand(BOARD_ID),
-        "kg.operations.audit.read",
-        "kg.admin.settings_read",
-        False,
-    ),
-    (
-        dlq_reprocess,
-        dlq_reprocess.DiagnoseConnectivityDlqUseCase(),
-        lambda: dlq_reprocess.DiagnoseConnectivityDlqCommand(BOARD_ID),
-        "kg.operations.queue.read",
-        "kg.admin.settings_read",
-        False,
-    ),
-    (
-        dlq_reprocess,
-        dlq_reprocess.VerifyConnectivityClassUseCase(),
-        lambda: dlq_reprocess.VerifyConnectivityClassCommand(BOARD_ID),
-        "kg.operations.queue.read",
-        "kg.admin.settings_read",
-        False,
-    ),
-    (
-        list_cognitive_dlq,
-        list_cognitive_dlq.ListCognitiveDlqUseCase(),
-        lambda: list_cognitive_dlq.ListCognitiveDlqCommand(
-            BOARD_ID,
-            limit=50,
-            offset=0,
-        ),
-        "kg.operations.cognitive.read",
-        "kg.admin.settings_read",
-        False,
-    ),
-    (
-        list_dead_letter_rows,
-        list_dead_letter_rows.ListDeadLetterRowsUseCase(),
-        lambda: list_dead_letter_rows.ListDeadLetterRowsCommand(BOARD_ID),
-        "kg.operations.queue.read",
-        "kg.admin.settings_read",
-        True,
-    ),
-    (
-        list_stale_canonical_parity,
-        list_stale_canonical_parity.ListStaleCanonicalParityUseCase(),
-        lambda: list_stale_canonical_parity.ListStaleCanonicalParityCommand(BOARD_ID),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-        True,
-    ),
-    (
-        queue_health,
-        queue_health.GetQueueDrilldownUseCase(),
-        lambda: queue_health.GetQueueDrilldownCommand(BOARD_ID),
-        "kg.operations.queue.read",
-        "kg.admin.settings_read",
-        True,
-    ),
 )
 
 
@@ -863,19 +441,6 @@ _READ_CASES: tuple[
         "cognitive-list",
         "cognitive-evaluate",
         "audit-list",
-        "historical-progress",
-        "pending-list",
-        "pending-tree",
-        "canonical-debt",
-        "partition-integrity",
-        "digest-mismatch",
-        "origin-audit",
-        "connectivity-diagnose",
-        "connectivity-verify",
-        "cognitive-dlq",
-        "dead-letter-list",
-        "stale-parity",
-        "queue-drilldown",
     ),
 )
 async def test_each_dedicated_kg_reader_checks_the_specific_operation(
@@ -911,44 +476,8 @@ async def test_each_dedicated_kg_reader_checks_the_specific_operation(
         await use_case.execute(command_factory(), actor=actor, uow=uow)
 
     requirement, kwargs = captured[0]
-    assert requirement == PermissionRequirement(operation, legacy_operation=legacy)
+    assert requirement == PermissionRequirement(operation)
     assert kwargs["board_id"] == BOARD_ID
     assert kwargs["uow"] is uow
     assert uow.events == ([f"lookup:{BOARD_ID}"] if expects_lookup else [])
-    assert uow.commits == 0
-
-
-@pytest.mark.asyncio
-async def test_global_queue_reader_uses_the_same_canonical_requirement(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: list[tuple[PermissionRequirement, ...]] = []
-
-    async def _deny(
-        _actor: ActorContext,
-        *requirements: PermissionRequirement,
-        **_kwargs: Any,
-    ) -> None:
-        captured.append(requirements)
-        raise PermissionDeniedError("denied")
-
-    monkeypatch.setattr(queue_health, "require_any_authority", _deny)
-    uow = _Uow()
-
-    with pytest.raises(PermissionDeniedError, match="denied"):
-        await queue_health.GetQueueHealthUseCase().execute(
-            queue_health.GetQueueHealthCommand(),
-            actor=ActorContext("operator", "rest", permissions=()),
-            uow=uow,
-        )
-
-    assert captured == [
-        (
-            PermissionRequirement(
-                "kg.operations.queue.read",
-                legacy_operation="kg.admin.settings_read",
-            ),
-        )
-    ]
-    assert uow.events == []
     assert uow.commits == 0

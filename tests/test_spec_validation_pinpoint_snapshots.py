@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from spec_validation_fixtures import native_validation
+from spec_planning_fixtures import manifest_payload, ManifestDouble
+
 import pytest
 
 from okto_pulse.core.application.use_cases.base import (
@@ -40,16 +43,19 @@ def _anchor() -> AnchorSnapshot:
 
 def _pinpoint() -> SpecValidationPinpoint:
     return SpecValidationPinpoint(
-        metric=SpecValidationMetric.DECIDABILITY,
+        metrics=(SpecValidationMetric.DECIDABILITY,),
+        kind="problem", severity="medium", excerpt="Given a valid request",
+        recommendation="Specify the expected measurable bounds.",
         anchor_type=SpecValidationPinpointAnchorType.STRUCTURED_CHILD,
         anchor_ref="ac_123",
         detail="Quantify the expected response time.",
+        rationale="Without a response bound, the acceptance test cannot distinguish pass from fail.",
     )
 
 
-def test_sealed_snapshot_round_trips_and_legacy_is_explicit() -> None:
+def test_sealed_snapshot_round_trips_without_resolving_current_content() -> None:
     sealed = _pinpoint().seal(_anchor())
-    projected = sealed.to_historical_dict()
+    projected = sealed.to_dict()
     snapshot = projected["anchor_snapshot"]
     assert snapshot["label"].startswith("AC-1")
     assert snapshot["text"].startswith("Given a valid request")
@@ -57,17 +63,61 @@ def test_sealed_snapshot_round_trips_and_legacy_is_explicit() -> None:
     assert len(snapshot["source_digest"]) == 64
     assert snapshot["source_version"] == "17:edition:3"
     assert SpecValidationPinpoint.from_dict(projected) == sealed
-
-    legacy = _pinpoint().to_historical_dict()["anchor_snapshot"]
-    assert legacy == {
-        "contract_version": "spec-validation-pinpoint-snapshot/v1",
-        "availability_at_seal": "legacy_unavailable",
-    }
+    assert projected["rationale"] == _pinpoint().rationale
 
     response = SpecValidationResponse.model_validate(
-        {"id": "legacy-validation", "pinpoints": [_pinpoint().to_dict()]}
+        native_validation("validation", 3, pinpoints=[projected])
     ).model_dump(exclude_none=True)
-    assert response["pinpoints"][0]["anchor_snapshot"] == legacy
+    assert response["pinpoints"][0]["anchor_snapshot"] == snapshot
+
+
+def test_quote_must_be_verbatim_and_dimensions_are_unique():
+    from dataclasses import replace
+    with pytest.raises(ValueError, match="excerpt_not_verbatim"):
+        replace(_pinpoint(), excerpt="An invented quote").seal(_anchor())
+    with pytest.raises(ValueError, match="metrics_invalid"):
+        replace(_pinpoint(), metrics=(SpecValidationMetric.CLARITY, SpecValidationMetric.CLARITY))
+    sealed = replace(_pinpoint(), metrics=(SpecValidationMetric.DECIDABILITY, SpecValidationMetric.CLARITY)).seal(_anchor())
+    assert sealed.to_dict()["metrics"] == ["clarity", "decidability"]
+
+
+def test_sealed_native_history_is_read_without_inventing_new_fields():
+    from copy import deepcopy
+    from okto_pulse.core.models.schemas import SpecValidationSubmit
+    old = {"metric": "clarity", "anchor_type": "field", "anchor_ref": "description",
+           "detail": "Previously recorded observation.", "anchor_snapshot": _pinpoint().seal(_anchor()).to_dict()["anchor_snapshot"]}
+    original = deepcopy(old)
+    result = SpecValidationResponse.model_validate(native_validation("old-native", 3, pinpoints=[old])).model_dump(exclude_none=True)
+    assert result["pinpoints"] == [original]
+    payload = _payload()
+    payload["pinpoints"] = [{k:v for k,v in old.items() if k != "anchor_snapshot"}]
+    with pytest.raises(ValueError):
+        SpecValidationSubmit.model_validate(payload)
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("kind", "defect"), ("severity", "urgent"), ("excerpt", "x" * 1001),
+    ("recommendation", " "), ("detail", "x" * 1001), ("metrics", []),
+    ("rationale", " "), ("rationale", "x" * 1001),
+])
+def test_actionable_contract_is_enforced_by_rest_and_shared_command(field, value):
+    from okto_pulse.core.models.schemas import SpecValidationSubmit
+    payload = _payload()
+    payload["pinpoints"][0][field] = value
+    with pytest.raises(ValueError):
+        SpecValidationSubmit.model_validate(payload)
+    with pytest.raises(CommandValidationError):
+        SubmitSpecValidationCommand("spec-1", payload).validate()
+
+
+@pytest.mark.parametrize("snapshot", [None, {"availability_at_seal": "legacy_unavailable"}])
+def test_old_pinpoint_without_native_snapshot_is_rejected(snapshot):
+    from pydantic import ValidationError
+    data = _pinpoint().to_dict()
+    if snapshot is not None:
+        data["anchor_snapshot"] = snapshot
+    with pytest.raises(ValidationError):
+        SpecValidationResponse.model_validate(native_validation("incompatible", 3, pinpoints=[data]))
 
 
 class _Projection:
@@ -106,7 +156,22 @@ class _Specs:
 
     async def submit_spec_validation(self, **kwargs: object) -> dict[str, object]:
         self.submitted = kwargs["data"]
-        return {"id": "validation-1", **self.submitted}
+        return {
+            "validation_id": "validation-1", "validation_edition": 3, "is_current": True,
+            "outcome": "success", "spec_status": "approved", "planning_result": "blocked",
+            "decomposition_ids": [], "planning_blockers": ["decomposition_approval_missing"],
+        }
+
+
+class _Receipts:
+    def __init__(self):
+        self.rows = {}
+
+    async def get(self, scope):
+        return self.rows.get(scope)
+
+    async def save(self, receipt):
+        self.rows[receipt.scope] = receipt
 
 
 class _Uow:
@@ -115,9 +180,14 @@ class _Uow:
         self.services = SimpleNamespace(specs=self.specs)
         self.semantic_subject_projection = _Projection()
         self.commit_calls = 0
+        self.spec_validation_receipts = _Receipts()
+        self.spec_planning_manifest = ManifestDouble()
 
     async def commit(self) -> None:
         self.commit_calls += 1
+
+    async def begin_write(self) -> None:
+        pass
 
 
 def _payload(
@@ -126,6 +196,8 @@ def _payload(
     anchor_ref: str | None = "ac_123",
 ) -> dict[str, object]:
     return {
+        "idempotency_key": "snapshot-review",
+        "expected_planning_manifest": manifest_payload("spec-1", edition=3, version=17),
         "expected_validation_edition": 3,
         "expected_spec_version": 17,
         "expected_head_revision": 0,
@@ -142,9 +214,11 @@ def _payload(
         "recommendation": "approve",
         "pinpoints": [
             {
-                "metric": "decidability",
+                "metrics": ["decidability"], "kind": "problem", "severity": "medium",
+                "excerpt": "Given a valid request", "recommendation": "Specify the expected measurable bounds.",
                 "anchor_type": anchor_type,
                 "detail": "Quantify the expected response time.",
+                "rationale": "Without a bound, the acceptance test has no objective pass condition.",
             }
             | ({"anchor_ref": anchor_ref} if anchor_ref is not None else {})
         ],
@@ -166,7 +240,9 @@ async def test_submit_use_case_seals_snapshot_before_persistence() -> None:
         uow=uow,
     )
 
-    snapshot = result.payload["pinpoints"][0]["anchor_snapshot"]
+    assert result.payload["validation_id"] == "validation-1"
+    snapshot = uow.specs.submitted["pinpoints"][0]["anchor_snapshot"]
+    assert uow.specs.submitted["pinpoints"][0]["rationale"] == _payload()["pinpoints"][0]["rationale"]
     assert snapshot["availability_at_seal"] == "available"
     assert snapshot["label"].startswith("AC-1")
     assert uow.commit_calls == 1
@@ -201,7 +277,8 @@ async def test_all_anchor_kinds_are_sealed_from_authorized_projection(
         ),
         uow=uow,
     )
-    assert result.payload["pinpoints"][0]["anchor_snapshot"][
+    assert result.payload["validation_id"] == "validation-1"
+    assert uow.specs.submitted["pinpoints"][0]["anchor_snapshot"][
         "availability_at_seal"
     ] == "available"
 

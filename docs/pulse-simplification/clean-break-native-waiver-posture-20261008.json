@@ -1,0 +1,34 @@
+{
+  "scope": "DEI-T58 waiver/revoke and factual delivery posture",
+  "status": "partial_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "DEI:DEI-T58",
+  "results": {
+    "community_passed": 6,
+    "community_seconds": 13.92,
+    "community_session": 9349,
+    "core_passed": 85,
+    "core_seconds": 4.11,
+    "frontend_passed": 44
+  },
+  "evidence": [
+    "Native schema and real RecordDeliveryEvidenceUseCase/authorizer: human without create/clear permission and agent with those permissions both refused; authorized human can waive and revoke.",
+    "Implementation and test waivers are phase-specific. Both can satisfy policy while implementation_ids/test_ids remain empty. Unauthorized revoke leaves projection unchanged; authorized revoke restores incomplete verdict without reopening Done or erasing three historical exception records.",
+    "Native skip gate test and advisory/blocking Card completion preserve factual incomplete projection. Blocking refuses; advisory permits Done without synthetic evidence.",
+    "Core domain tests verify waiver identity, scope, phase, authorization and semantic currentness; effective coverage preserves missing work.",
+    "44 frontend tests pass, including human waiver routing to native Spec exceptions, staged Card contributions and separate factual rollup presentation."
+  ],
+  "limits": [
+    "Skip is set via controlled SQL in the gate test: authorization to modify skip itself is NOT qualified here. DEI-T58 remains pending until that authority boundary is verified.",
+    "Principal permissions are supplied fixture facts, with real authorizer and persistence; no installed transport authentication claim.",
+    "No product/frontend implementation or SPA changes. Only misleading legacy wording in a test title was corrected.",
+    "Main88 source/wheel/install proof and zero-budget closure unchanged."
+  ],
+  "artifacts": {
+    "provenance-native-rework-proof-20261008.json": "25da411d343a2eb8c9d648bdc34fc75c07db08bab58c8d9d41c350183be8372e",
+    "native-waiver-posture-20261008.xml": "311c413f60bd8426be21c45644fe28a7f780b7f1537444e5ae3dc2249fe7b21b",
+    "native-waiver-domain-20261008.xml": "eb9c8b38f097f91aad481a00bb117ebdb67fc75f7e246d6552f6c0b400e5a07e",
+    "native-waiver-posture-frontend-20261008.json": "66266595670985c16ea482213f74201b2c24fbe2ad4789fc9a5e3a95ef103094",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

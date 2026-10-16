@@ -24,22 +24,22 @@ from okto_pulse.core.domain.guideline_policy import (
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticAssessmentInadmissibilityCause,
-    SemanticGuidelineAssessmentReceipt,
     SemanticMetricOutcome,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
-    SemanticAssessmentCurrentSnapshot,
+    NativeSemanticAssessmentCurrentSnapshot,
     SemanticAssessmentCurrentnessReason,
-    assess_semantic_assessment_currentness,
+    assess_native_semantic_assessment_fences,
 )
 from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticMetricWaiver,
     SemanticPolicySkip,
     SemanticPolicySkipStatus,
 )
-from okto_pulse.core.domain.guideline_semantic_findings import (
-    SemanticMetricFinding,
-    project_semantic_metric_findings,
+from okto_pulse.core.domain.guideline_semantic_findings_v2 import (
+    SemanticMetricFindingV2,
+    SemanticAssessmentReceiptProjectionV2,
+    project_semantic_metric_findings_v2,
 )
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 from okto_pulse.core.domain.sdlc_registry import (
@@ -151,7 +151,7 @@ def _same_subject(
     board_id: str,
     entity_type: PolicyEntityType,
     subject_id: str,
-    snapshot: SemanticAssessmentCurrentSnapshot,
+    snapshot: NativeSemanticAssessmentCurrentSnapshot,
 ) -> bool:
     return (
         snapshot.subject.board_id == board_id
@@ -162,7 +162,7 @@ def _same_subject(
 
 def _skip_matches_current(
     skip: SemanticPolicySkip,
-    current: SemanticAssessmentCurrentSnapshot,
+    current: NativeSemanticAssessmentCurrentSnapshot,
 ) -> bool:
     scope = skip.scope
     return (
@@ -185,7 +185,7 @@ def _skip_matches_current(
 
 
 def _current_snapshot_payload(
-    snapshot: SemanticAssessmentCurrentSnapshot,
+    snapshot: NativeSemanticAssessmentCurrentSnapshot,
 ) -> dict[str, object]:
     return {
         "subject": {
@@ -208,9 +208,6 @@ def _current_snapshot_payload(
         "binding_configuration_digest": (
             snapshot.binding_configuration_digest
         ),
-        "policy_set_digest": snapshot.policy_set_digest,
-        "binding_head_digest": snapshot.binding_head_digest,
-        "input_digest": snapshot.input_digest,
     }
 
 
@@ -222,9 +219,9 @@ class SemanticBindingComplianceSnapshot:
     guideline_id: str
     enforcement: GuidelineEnforcement
     applicable_metric_count: int
-    current_snapshot: SemanticAssessmentCurrentSnapshot
-    receipt: SemanticGuidelineAssessmentReceipt | None = None
-    findings: tuple[SemanticMetricFinding, ...] = ()
+    current_snapshot: NativeSemanticAssessmentCurrentSnapshot
+    receipt: SemanticAssessmentReceiptProjectionV2 | None = None
+    findings: tuple[SemanticMetricFindingV2, ...] = ()
     waivers: tuple[SemanticMetricWaiver, ...] = ()
     skip: SemanticPolicySkip | None = None
     assessment_available: bool = True
@@ -268,7 +265,7 @@ class SemanticBindingComplianceSnapshot:
         )
         if not isinstance(
             self.current_snapshot,
-            SemanticAssessmentCurrentSnapshot,
+            NativeSemanticAssessmentCurrentSnapshot,
         ):
             raise GuidelinePolicyContractError(
                 "semantic_transition_current_snapshot_invalid"
@@ -282,7 +279,7 @@ class SemanticBindingComplianceSnapshot:
             )
         if self.receipt is not None and not isinstance(
             self.receipt,
-            SemanticGuidelineAssessmentReceipt,
+            SemanticAssessmentReceiptProjectionV2,
         ):
             raise GuidelinePolicyContractError(
                 "semantic_transition_receipt_invalid"
@@ -295,7 +292,7 @@ class SemanticBindingComplianceSnapshot:
                 "semantic_transition_receipt_scope_mismatch"
             )
         findings = tuple(self.findings)
-        if any(not isinstance(item, SemanticMetricFinding) for item in findings):
+        if any(not isinstance(item, SemanticMetricFindingV2) for item in findings):
             raise GuidelinePolicyContractError(
                 "semantic_transition_findings_invalid"
             )
@@ -319,7 +316,7 @@ class SemanticBindingComplianceSnapshot:
         if self.receipt is not None:
             canonical_findings = tuple(
                 sorted(
-                    project_semantic_metric_findings(self.receipt),
+                    project_semantic_metric_findings_v2(self.receipt),
                     key=lambda item: item.finding_id,
                 )
             )
@@ -413,7 +410,7 @@ class SemanticBindingComplianceSnapshot:
             SemanticAssessmentCurrentnessReason, ...
         ] = ()
         if self.receipt is not None:
-            assessment = assess_semantic_assessment_currentness(
+            assessment = assess_native_semantic_assessment_fences(
                 self.receipt,
                 self.current_snapshot,
             )
@@ -421,7 +418,7 @@ class SemanticBindingComplianceSnapshot:
             currentness_reasons = assessment.reasons
             if (
                 currentness is PolicyCurrentness.CURRENT
-                and self.receipt.metric_count
+                and len(self.receipt.metric_results)
                 != self.applicable_metric_count
             ):
                 raise GuidelinePolicyContractError(
@@ -943,7 +940,7 @@ def _evaluate_binding(
             ),
         )
 
-    canonical_findings = project_semantic_metric_findings(snapshot.receipt)
+    canonical_findings = project_semantic_metric_findings_v2(snapshot.receipt)
     supplied_findings = {item.finding_id: item for item in snapshot.findings}
     waived_count = 0
     for finding in canonical_findings:
@@ -1068,6 +1065,7 @@ class PolicyTransitionSnapshot:
     advisory_issue_count: int = field(init=False)
     skipped_binding_count: int = field(init=False)
     fence_digest: str = field(init=False)
+    observation_digest: str = field(init=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -1171,27 +1169,22 @@ class PolicyTransitionSnapshot:
         }
         for field_name, value in count_fields.items():
             object.__setattr__(self, field_name, value)
-        object.__setattr__(
-            self,
-            "fence_digest",
-            canonical_sha256(
-                {
-                    "contract": POLICY_TRANSITION_CONTRACT_VERSION,
-                    "board_id": self.board_id,
-                    "entity_type": self.entity_type.value,
-                    "subject_id": self.subject_id,
-                    "expected_from_status": self.expected_from_status,
-                    "subject_available": self.subject_available,
-                    "evaluated_at": evaluated_at.isoformat(),
-                    "bindings": [
-                        _binding_snapshot_payload(item) for item in bindings
-                    ],
-                    "binding_decisions": [
-                        item.to_payload() for item in decisions
-                    ],
-                }
-            ),
-        )
+        fence_payload = {
+            "contract": POLICY_TRANSITION_CONTRACT_VERSION,
+            "board_id": self.board_id,
+            "entity_type": self.entity_type.value,
+            "subject_id": self.subject_id,
+            "expected_from_status": self.expected_from_status,
+            "subject_available": self.subject_available,
+            "evaluated_at": evaluated_at.isoformat(),
+            "bindings": [_binding_snapshot_payload(item) for item in bindings],
+            "binding_decisions": [item.to_payload() for item in decisions],
+        }
+        object.__setattr__(self, "fence_digest", canonical_sha256(fence_payload))
+        # Read pagination compares facts and time-dependent outcomes, not the
+        # wall-clock tick. The original time-bound mutation fence is unchanged.
+        object.__setattr__(self, "observation_digest", canonical_sha256(
+            {key: value for key, value in fence_payload.items() if key != "evaluated_at"}))
 
 
 @dataclass(frozen=True, slots=True)
@@ -1218,6 +1211,7 @@ class PolicyTransitionDecision:
     skipped_binding_count: int
     fence_digest: str
     decision_digest: str = field(init=False)
+    observation_digest: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.entity_type, PolicyEntityType):
@@ -1517,6 +1511,9 @@ class PolicyTransitionDecision:
                 "policy_transition_decision_fence_digest_invalid",
             ),
         )
+        if self.observation_digest is not None:
+            object.__setattr__(self, "observation_digest", _sha256(
+                self.observation_digest, "policy_transition_observation_digest_invalid"))
         object.__setattr__(
             self,
             "decision_digest",
@@ -1563,14 +1560,8 @@ class PolicyTransitionDecision:
         return self.reason_codes[0]
 
     @property
-    def receipt_id(self) -> str | None:
-        """Deprecated single-receipt compatibility seam."""
-
-        return self.receipt_ids[0] if len(self.receipt_ids) == 1 else None
-
-    @property
     def currentness(self) -> PolicyCurrentness | None:
-        """Deprecated aggregate compatibility seam."""
+        """Aggregate currentness exposed by transition previews and rejections."""
 
         values = {
             item.currentness
@@ -1615,10 +1606,6 @@ class PolicyTransitionRejected(GuidelinePolicyContractError):
         self.failed_metric_count = decision.failed_metric_count
         self.blocking_metric_count = decision.blocking_metric_count
         super().__init__(decision.reason_code.value)
-
-    @property
-    def receipt_id(self) -> str | None:
-        return self.decision.receipt_id
 
     @property
     def currentness(self) -> PolicyCurrentness | None:
@@ -1678,6 +1665,7 @@ def _decision(
         advisory_issue_count=snapshot.advisory_issue_count,
         skipped_binding_count=snapshot.skipped_binding_count,
         fence_digest=snapshot.fence_digest,
+        observation_digest=snapshot.observation_digest,
     )
 
 

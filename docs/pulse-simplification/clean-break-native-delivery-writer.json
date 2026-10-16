@@ -1,0 +1,125 @@
+{
+  "scope": "DEI-T53: obsolete Spec implementation/test requests rejected; canonical Card writes consumed by current rollup",
+  "proof_pair": "dist-native-main85",
+  "criterion_keys": [
+    "DEI:DEI-T53"
+  ],
+  "investigation": [
+    "Spec REST endpoint accepts only waiver/revoke through closed DeliveryEvidenceInput.",
+    "Use case authorizes then require_exception_kind rejects bypassed Pydantic construction; adapter applies same guard before lock or write.",
+    "Canonical Card endpoint and MCP tool share RecordCardDeliveryEvidenceUseCase and CommunityDeliveryEvidenceStore; real SQL projection consumes implementation and authenticated test records."
+  ],
+  "changes": [
+    "Clarified current Spec exception and Card recording descriptions; no migration or old writer preserved.",
+    "Parametrized obsolete-request rejection, direct-writer rejection and REST/MCP roundtrip tests for full native schema and original metadata fixture.",
+    "Native-schema fixture keeps a normal Card and issues signed test observations after the implementation receipt; shared producer accepts an explicit observation time without changing its default."
+  ],
+  "tests": {
+    "core_passed": 31,
+    "community_passed": 68,
+    "total_distinct_passed": 99,
+    "core_seconds": 7.17,
+    "community_seconds": 83.9,
+    "initial_campaign": "native-delivery-writer1:34 passed/2 failed; Bug fixture used an old signed test timestamp before the new implementation. Gate correctly refused stale evidence. Fixed fixture, not product gate."
+  },
+  "evidence": [
+    "POST old Spec implementation/test returns422 delivery_card_scope_required; neither evidence table changes and no commit occurs.",
+    "Direct use-case and adapter calls with model_construct cannot bypass rejection; no lock/write/commit.",
+    "Canonical REST and MCP writes persist implementation and signed test; rollup allowed changes from false to true.",
+    "Forged verified flag rejected and stale Card version returns conflict.",
+    "Existing waiver/revoke and authorization denial tests remain in the passing suite."
+  ],
+  "closure": {
+    "ok": true,
+    "findings": [],
+    "documentation_findings": [],
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ]
+  },
+  "limits": [
+    "Transport tests use controlled principals and authorization fixtures; not authentication E2E or all DEI authority criteria.",
+    "Native SQL schema, guards and evidence verifier are real and disposable.",
+    "No frontend behavior changed; no new UI qualification claimed.",
+    "No converter, old reader, gate change, real data operation or promotion.",
+    "KG10 failing WIP remains outside this commit."
+  ],
+  "artifacts": {
+    "provenance-native-main85.json": "7e5d5b85b923d4bc89bf465744cf4423fd3ce2856c74468e456229870b6ffd8a",
+    "native-delivery-writer1.xml": "6550b183f491619c2e232a4ff5c06a11b675b203816fb04ec1726fffd0bbc328",
+    "native-delivery-writer2.xml": "c69e36b2802c5f5199f686ce6ebac87ed4724e6ac95cbab895a21f1ee7707481",
+    "native-delivery-writer-core1.xml": "88c1da661b58235c725bfe945f915063cfb86ee3441dee3b45553174ecd2fefc",
+    "closure-native-main85.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

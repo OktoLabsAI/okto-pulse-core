@@ -11,9 +11,8 @@ REST and MCP adapters:
 * roll back conflicts and persistence failures without exposing a transport
   framework or a concrete database type.
 
-Legacy ``schema_version=1`` dispatch remains a domain concern.  The existing
-v1 routes intentionally continue to use their compatibility use cases until
-the inbound surfaces migrate in SK-B B13/B14.
+All inbound surfaces use the current closed contract. Older envelopes are
+refused by the codec before persistence access.
 """
 
 from __future__ import annotations
@@ -166,10 +165,10 @@ def _normalize_guideline_import_global(
                 scope=GuidelineScope.GLOBAL,
                 board_id=None,
             ),
-            migration_notes=tuple(
+            import_notes=tuple(
                 sorted(
                     {
-                        *aggregate.migration_notes,
+                        *aggregate.import_notes,
                         "import_destination_normalized_global",
                     }
                 )
@@ -259,8 +258,8 @@ def _version_existing_guideline_ids(
             published_head_updated_at=created_at,
         )
         notes = {
-            *current.migration_notes,
-            *source.migration_notes,
+            *current.import_notes,
+            *source.import_notes,
             "same_id_import_version_bump",
         }
         if source.bindings:
@@ -280,7 +279,7 @@ def _version_existing_guideline_ids(
                 retirement=None,
                 bindings=current.bindings,
                 history_status=current.history_status,
-                migration_notes=tuple(sorted(notes)),
+                import_notes=tuple(sorted(notes)),
             )
         )
     return build_guideline_export_v3(
@@ -298,7 +297,6 @@ class ExportGuidelinePolicyCommand:
 
     board_id: str | None = None
     guideline_ids: tuple[str, ...] = ()
-    include_binding_history: bool = True
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -323,8 +321,6 @@ class ExportGuidelinePolicyCommand:
         if len(set(guideline_ids)) != len(guideline_ids):
             raise ValueError("guideline_export_guideline_ids_duplicate")
         object.__setattr__(self, "guideline_ids", tuple(sorted(guideline_ids)))
-        if not isinstance(self.include_binding_history, bool):
-            raise ValueError("guideline_export_include_binding_history_invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,7 +354,6 @@ class ExportGuidelinePolicyV3UseCase:
             owner_id=actor.actor_id,
             board_id=command.board_id,
             guideline_ids=(command.guideline_ids or None),
-            include_binding_history=command.include_binding_history,
         )
         envelope = build_guideline_export_v3(
             snapshot,

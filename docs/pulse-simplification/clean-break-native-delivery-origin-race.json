@@ -1,0 +1,30 @@
+{
+  "scope": "DEI-T08 append refuses changed Card origin or Spec edition after competing commit",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "DEI:DEI-T08",
+  "result": {
+    "passed": 4,
+    "failed": 0,
+    "seconds": 11.81,
+    "terminal_session": 18367
+  },
+  "evidence": [
+    "Native current schema with real SQL and two independent sessions. First session retains stale Card/Spec objects and a prepared command after ending its read transaction.",
+    "At the append lock hook, the competing writer changes Card.spec_id or advances Spec edition with a matching native execution contract, then commits.",
+    "The first session is explicitly asserted stale before the production write fence runs; no reader refresh is supplied by the test.",
+    "Production single and batch append both reject delivery_edition_conflict; committing afterward persists no Card delivery row.",
+    "An independent observer confirms the competing writer change remains intact and no binding refers to the old origin."
+  ],
+  "limits": [
+    "The race is a deterministic interleaving at the real write-fence entry, not a latency benchmark.",
+    "Competing origin mutation is controlled SQL fixture input; this tests append origin revalidation, not permission to move a Card or reopen a Spec.",
+    "No product/frontend source changed; previously checked delivery UI evidence and main88 closure remain applicable. No real-data operation or promotion."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-authority1.json": "f0f72e18336579d4b256dcc280b4eec923462a247084a1fd77a77c8287b65b4a",
+    "native-delivery-origin-race1.xml": "b63d1f210534d14c909742abcff2c56a44ad89d9e8f09fbae3c14a93a8374104",
+    "native-delivery-envelope-frontend1.json": "a751880c26e35030dc6efc27dfb79d81a4f937cd3ffa9d2bf7f490e31f2d146d",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

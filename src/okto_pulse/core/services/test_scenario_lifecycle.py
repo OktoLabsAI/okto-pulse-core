@@ -22,10 +22,12 @@ import re
 from typing import Any, Mapping
 
 from okto_pulse.core.domain.enums import TestScenarioStatus
+from okto_pulse.core.domain.criterion_verification import criterion_verification_fields
 from okto_pulse.core.domain.sdlc_registry import is_transition_allowed
 from okto_pulse.core.domain.test_scenarios import (
     DEFAULT_SCENARIO_TYPE,
     VALID_SCENARIO_TYPES,
+    validate_verification_method,
 )
 
 # --------------------------------------------------------------------------
@@ -55,6 +57,7 @@ SEMANTIC_FIELDS: tuple[str, ...] = (
     "then",
     "scenario_type",
     "linked_criteria",
+    "verification_method",
 )
 
 #: Editing only these fields preserves status and evidence.
@@ -146,29 +149,14 @@ def validate_scenario_type(value: object) -> str:
     return value  # type: ignore[return-value]
 
 
-def validate_scenario_types_for_write(
-    new_scenarios: object, old_scenarios: object
-) -> None:
-    """Whole-list write guard for the spec create/update persistence paths.
-
-    Validates the scenario_type of every scenario that is NEW or whose
-    scenario_type CHANGED relative to ``old_scenarios`` (matched by ``id``).
-    Scenarios whose scenario_type is unchanged are GRANDFATHERED so historical
-    or legacy values keep reading, listing and re-serializing without breaking
-    (spec ac16b3c9 FR5/AC5; the rule only forbids accepting an invalid value on
-    a *new* write). Raises :class:`InvalidScenarioTypeError` on the first
-    new/changed invalid value BEFORE any mutation; never normalizes.
-    """
-    old_by_id: dict[Any, Any] = {
-        s.get("id"): s for s in (old_scenarios or []) if isinstance(s, dict)
-    }
-    for s in new_scenarios or []:
-        if not isinstance(s, dict) or "scenario_type" not in s:
-            continue
-        new_type = s.get("scenario_type")
-        prev = old_by_id.get(s.get("id"))
-        if prev is None or prev.get("scenario_type") != new_type:
-            validate_scenario_type(new_type)
+def validate_scenario_types_for_write(new_scenarios: object, old_scenarios: object) -> None:
+    """Validate every resolved scenario; unchanged invalid values are refused."""
+    del old_scenarios
+    for scenario in new_scenarios or []:
+        if not isinstance(scenario, dict):
+            raise ValueError("test_scenario_object_required")
+        validate_scenario_type(scenario.get("scenario_type"))
+        validate_verification_method(scenario.get("verification_method"))
 
 
 def resolve_scenario_types_for_whole_list_write(
@@ -181,14 +169,11 @@ def resolve_scenario_types_for_whole_list_write(
     ``model_dump(exclude_unset=True)``.  Before replacing the persisted JSON
     list we therefore resolve omission by identity:
 
-    * existing item -> preserve its exact stored value, including an unknown
-      historical value;
+    * existing item -> preserve its current stored value, then validate it;
     * new item -> use the canonical ``integration`` default;
     * explicit item -> preserve it for fail-closed validation.
 
-    The input objects are copied and never mutated. Non-dict legacy values are
-    returned unchanged so the surrounding write validation can retain its
-    existing compatibility behavior.
+    The input objects are copied and never mutated. Malformed items are refused.
     """
 
     old_by_id: dict[Any, dict[str, Any]] = {
@@ -197,9 +182,11 @@ def resolve_scenario_types_for_whole_list_write(
     resolved: list[object] = []
     for item in new_scenarios or []:
         if not isinstance(item, dict):
-            resolved.append(item)
-            continue
+            raise ValueError("test_scenario_object_required")
         candidate = dict(item)
+        previous = old_by_id.get(candidate.get("id"))
+        if "verification_method" not in candidate and previous is not None and "verification_method" in previous:
+            candidate["verification_method"] = previous["verification_method"]
         if "scenario_type" not in candidate:
             previous = old_by_id.get(candidate.get("id"))
             if previous is None:
@@ -218,15 +205,7 @@ EVIDENCE_REQUIRED_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
         ("test_file_path",),
         ("test_function",),
     ),
-    # passed/failed: last_run_at required + (output_snippet OR test_run_id)
-    "passed": (
-        ("last_run_at",),
-        ("output_snippet", "test_run_id"),  # one-of
-    ),
-    "failed": (
-        ("last_run_at",),
-        ("output_snippet", "test_run_id"),  # one-of
-    ),
+
 }
 
 # --------------------------------------------------------------------------
@@ -236,6 +215,7 @@ EVIDENCE_REQUIRED_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
 #: The authoritative evidence_class taxonomy (fr_75e54f55). One allowlist; an
 #: invalid value fails closed (never normalized), mirroring scenario_type.
 EVIDENCE_CLASSES: tuple[str, ...] = (
+    "verification_report",
     "automated_test_pointer",
     "replay_command",
     "mcp_replay_manifest",
@@ -310,14 +290,13 @@ def validate_evidence_class(value: object) -> str:
 #: Fields whose presence proves a deterministic replay already exists or is
 #: cheap to produce (tr_1fd44294): an existing test (``test_file_path``), an
 #: existing command/script (``replay_command``) or a deterministic MCP replay
-#: manifest writable under bounded setup (``mcp_replay_manifest``). When one is
+#: manifest reference (``manifest_ref``). When one is
 #: present, a run-log-only payload is NOT acceptable because the replayable
 #: artifact is already at hand.
 _CHEAP_OR_EXISTING_REPLAY_FIELDS: tuple[str, ...] = (
     "test_file_path",
     "replay_command",
     "manifest_ref",
-    "mcp_replay_manifest",
 )
 
 
@@ -346,10 +325,7 @@ def replayable_evidence_required(evidence: dict | None) -> bool:
 
 
 def infer_evidence_class(evidence: dict | None) -> str | None:
-    """Best-effort classification of evidence for DISPLAY / upgrade ONLY
-    (ac_8212cdbb). Never used to retroactively reject already-persisted legacy
-    evidence — that path stays on the lenient per-status rules. Returns the
-    explicit class when set, else infers from the present fields, else None."""
+    """Display classification of current fields; never grants evidence authority."""
     if not evidence:
         return None
     explicit = evidence.get("evidence_class")
@@ -359,7 +335,7 @@ def infer_evidence_class(evidence: dict | None) -> str | None:
         return "automated_test_pointer"
     if evidence.get("replay_command"):
         return "replay_command"
-    if evidence.get("manifest_ref") or evidence.get("mcp_replay_manifest"):
+    if evidence.get("manifest_ref"):
         return "mcp_replay_manifest"
     if evidence.get("manual_checklist_ref"):
         return "manual_checklist"
@@ -390,6 +366,7 @@ _ATTESTATION_V2_KEYS = frozenset(
         "assertions",
         "provenance",
         "attestation_sha256",
+        "execution_basis",
     }
 )
 _ASSERTION_V2_KEYS = frozenset({"name", "expected", "observed", "status", "message"})
@@ -405,7 +382,6 @@ class EvidenceVerificationResult:
     verified: bool
     reason_codes: tuple[str, ...] = ()
     contract_version: int | None = None
-    legacy: bool = False
 
 
 def _as_plain_mapping(value: object) -> dict[str, Any] | None:
@@ -445,6 +421,8 @@ def compute_execution_attestation_sha256(
     unsigned = {
         key: value for key, value in plain.items() if key != "attestation_sha256"
     }
+    if unsigned.get("execution_basis") is None:
+        unsigned.pop("execution_basis", None)
     # Pydantic materializes the optional assertion message as ``None`` while a
     # raw JSON producer may omit it. Canonicalize that one optional field so a
     # typed request round-trip cannot invalidate an otherwise identical proof.
@@ -461,7 +439,9 @@ def compute_execution_attestation_sha256(
     return f"{EVIDENCE_V2_DIGEST_PREFIX}{digest}"
 
 
-def _semantic_acceptance_criterion(value: object) -> dict[str, str | None]:
+def _semantic_acceptance_criterion(
+    value: object, *, include_verification: bool = False
+) -> dict[str, Any]:
     """Project an AC to the stable identity/text that affects test semantics.
 
     Task backlinks and other workflow metadata deliberately do not participate:
@@ -479,6 +459,7 @@ def _semantic_acceptance_criterion(value: object) -> dict[str, str | None]:
         return {
             "id": str(identifier) if identifier not in (None, "") else None,
             "text": str(text) if text is not None else "",
+            **(criterion_verification_fields(value) if include_verification else {}),
         }
     return {"id": None, "text": str(value) if value is not None else ""}
 
@@ -509,11 +490,20 @@ def compute_test_scenario_semantic_sha256(
     if linked is None:
         linked_values: list[str] = []
     elif isinstance(linked, (list, tuple)):
-        linked_values = [str(item) for item in linked]
+        if any(not _non_empty_string(item) for item in linked) or len(set(linked)) != len(linked):
+            raise ValueError("scenario_criterion_scope_invalid")
+        linked_values = sorted(linked)
     else:
         raise TypeError("linked_criteria must be a list or tuple")
+    selected = []
+    for identity in linked_values:
+        matches = [item for item in (acceptance_criteria or ())
+                   if isinstance(item, Mapping) and item.get("id") == identity]
+        if len(matches) != 1:
+            raise ValueError("scenario_criterion_scope_unresolved")
+        selected.append(_semantic_acceptance_criterion(matches[0], include_verification=True))
     payload = {
-        "semantic_schema_version": 1,
+        "semantic_schema_version": 3,
         "identity": {
             "board_id": str(board_id),
             "spec_id": str(spec_id),
@@ -525,11 +515,12 @@ def compute_test_scenario_semantic_sha256(
             "when": str(plain.get("when") or ""),
             "then": str(plain.get("then") or ""),
             "linked_criteria": linked_values,
+            "verification_method": plain.get("verification_method"),
         },
-        "acceptance_criteria": [
-            _semantic_acceptance_criterion(item) for item in (acceptance_criteria or ())
-        ],
+        "acceptance_criteria": selected,
     }
+    # One native prospective contract: unrelated criteria and editorial metadata
+    # do not invalidate this observation; selected qualification and links do.
     digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
     return f"{EVIDENCE_V2_DIGEST_PREFIX}{digest}"
 
@@ -568,9 +559,7 @@ def verify_mcp_replay_evidence_v2(
     string or a caller-supplied boolean is insufficient: the product runtime
     must have been exercised, the outcome must match the scenario status, each
     assertion must be internally coherent, and both manifest/attestation
-    digests plus producer provenance must be present. Historical
-    ``mcp_replay_manifest`` values remain readable but return
-    ``legacy_mcp_replay_manifest_unverified``.
+    digests plus producer provenance must be present. Unsupported fields fail closed.
     """
 
     ev = _as_plain_mapping(evidence) if evidence is not None else None
@@ -582,36 +571,34 @@ def verify_mcp_replay_evidence_v2(
     manifest_ref = ev.get("manifest_ref")
     attestation = _as_plain_mapping(ev.get("execution_attestation"))
     execution_receipt = ev.get("execution_receipt")
-    legacy_value = ev.get("mcp_replay_manifest")
-    has_legacy = legacy_value not in (None, "", {})
+    if "mcp_replay_manifest" in ev:
+        return EvidenceVerificationResult(
+            False, ("evidence_v2.unsupported_evidence_fields:mcp_replay_manifest",), EVIDENCE_V2_SCHEMA_VERSION
+        )
     if not _non_empty_string(manifest_ref) or attestation is None:
         reasons: list[str] = []
         if not _non_empty_string(manifest_ref):
             reasons.append("evidence_v2.manifest_ref_required")
         if attestation is None:
             reasons.append("evidence_v2.execution_attestation_required")
-        if has_legacy:
-            reasons.append("evidence_v2.legacy_mcp_replay_manifest_unverified")
         return EvidenceVerificationResult(
             False,
             tuple(reasons),
             EVIDENCE_V2_SCHEMA_VERSION,
-            legacy=has_legacy,
         )
 
     reasons = []
+    if attestation.get("execution_basis") is not None:
+        from okto_pulse.core.models.schemas import TestExecutionBasis
+        try:
+            TestExecutionBasis.model_validate(attestation["execution_basis"])
+        except (TypeError, ValueError):
+            reasons.append("evidence_v2.execution_basis_invalid")
     # This is deliberately only a structural check.  A receipt is opaque to
     # CORE and must be authenticated by the registered edition verifier before
     # any write.  A public SHA over caller-controlled fields is not authority.
     if not _non_empty_string(execution_receipt):
         reasons.append("evidence_v2.execution_receipt_required")
-    if has_legacy:
-        if (
-            not isinstance(legacy_value, str)
-            or legacy_value.strip() != manifest_ref.strip()
-        ):
-            reasons.append("evidence_v2.ambiguous_legacy_manifest")
-
     unexpected = sorted(set(attestation) - _ATTESTATION_V2_KEYS)
     if unexpected:
         reasons.append(
@@ -732,7 +719,6 @@ def verify_mcp_replay_evidence_v2(
         verified=not reasons,
         reason_codes=tuple(reasons),
         contract_version=EVIDENCE_V2_SCHEMA_VERSION,
-        legacy=False,
     )
 
 
@@ -788,24 +774,17 @@ _DECLARE_CLASS_HINT = (
 )
 
 
-def _validate_unclassed_gated_write(
+def _validate_pointer_or_run_log(
     status: str, evidence: dict | None
 ) -> tuple[bool, list[str]]:
-    """Write-side gate for a NEW gated write that omits evidence_class
-    (spec 9e0bf979).
+    """Current pointer or replayable-grade log shape when no class is supplied.
 
-    Only the legacy direct automated-test-pointer shape (``test_file_path`` +
-    ``test_function``) is grandfathered without an explicit class. Any other
-    shape — notably run-log-like (``last_run_at`` + ``output_snippet``/
-    ``test_run_id``) — must carry replayable-quality fields
-    (``expected_output_snapshot`` + ``non_replayable_justification``),
-    equivalent to declaring ``run_log``/``non_replayable_justified``, so a weak
-    run-log payload can no longer pass a new validation silently (fr_0937529f,
-    br_078725cc). Already-persisted legacy evidence is unaffected: this runs
-    only when ``for_write=True``."""
+    These are the same structural requirements on every read and write.
+    Installation authentication and method binding remain separate gates.
+    """
     ev = evidence or {}
     if ev.get("test_file_path") and ev.get("test_function"):
-        return True, []  # legacy automated_test_pointer flow
+        return True, []
     if status == "automated":
         # automated has no run-log substitute — it needs the test pointer.
         return _apply_evidence_rules(EVIDENCE_REQUIRED_KEYS["automated"], ev)
@@ -828,7 +807,6 @@ def validate_test_scenario_evidence(
     status: str,
     evidence: dict | None,
     *,
-    for_write: bool = False,
     scenario_id: str | None = None,
 ) -> tuple[bool, list[str]]:
     """Return ``(ok, missing_keys)``; empty ``missing_keys`` means valid.
@@ -836,20 +814,22 @@ def validate_test_scenario_evidence(
     Composition (spec 9e0bf979):
 
     * MCP replay evidence is always verified against the semantic V2 contract
-      (runtime, assertions, binding, digests and provenance); its legacy alias
-      remains readable but unverified;
+      (runtime, assertions, binding, digests and provenance); the retired alias
+      is rejected;
     * every other EXPLICIT, valid ``evidence_class`` is validated against that
       class's minimum fields in BOTH read and write contexts;
-    * without an explicit class, ``for_write=True`` applies the write-side gate
-      (:func:`_validate_unclassed_gated_write`: only a direct test pointer is
-      grandfathered, run-log-like must be replayable-grade), while the default
-      read context keeps the legacy per-status rules so previously persisted
-      evidence stays valid and readable (ac_8212cdbb).
+    * without an explicit class, a direct test pointer or replayable-grade
+      run log must satisfy the same current structural requirements.
+
 
     An invalid ``evidence_class`` value always fails closed (never normalized).
     Each rule group is AND; a multi-key group is one-of (OR).
     """
-    if status not in GATED_STATUSES:
+    if isinstance(evidence, dict) and "mcp_replay_manifest" in evidence:
+        return False, ["evidence_v2.unsupported_evidence_fields:mcp_replay_manifest"]
+    report_claim = isinstance(evidence, dict) and (evidence.get("evidence_class") == "verification_report"
+        or evidence.get("verification_report") is not None)
+    if status not in GATED_STATUSES and not report_claim:
         return True, []
 
     explicit_class: str | None = None
@@ -862,13 +842,22 @@ def validate_test_scenario_evidence(
                 ]
             explicit_class = str(raw_class)
 
+    if explicit_class == "verification_report":
+        from okto_pulse.core.domain.verification_report import VerificationReportEvidence, verification_report_scenario_status
+        try:
+            parsed = VerificationReportEvidence.model_validate(evidence)
+            if verification_report_scenario_status(parsed.verification_report) != status:
+                return False, ["verification_report_result_mismatch"]
+        except (TypeError, ValueError):
+            return False, ["verification_report_invalid"]
+        return True, []
+
     claims_mcp_replay = bool(
         evidence
         and (
             explicit_class == "mcp_replay_manifest"
             or evidence.get("manifest_ref") is not None
             or evidence.get("execution_attestation") is not None
-            or evidence.get("mcp_replay_manifest") is not None
         )
     )
     if claims_mcp_replay:
@@ -894,30 +883,26 @@ def validate_test_scenario_evidence(
         return _apply_evidence_rules(
             EVIDENCE_CLASS_REQUIRED_KEYS[explicit_class], evidence
         )
-    if for_write:
-        return _validate_unclassed_gated_write(status, evidence)
-    return _apply_evidence_rules(EVIDENCE_REQUIRED_KEYS.get(status) or (), evidence)
+    return _validate_pointer_or_run_log(status, evidence)
 
 
 def scenario_has_required_evidence(
-    scenario: dict[str, Any], *, for_write: bool = False
+    scenario: dict[str, Any]
 ) -> bool:
     """Whether a scenario carries the evidence its status requires.
 
-    Reads ``evidence`` (or the legacy ``latest_evidence`` key). Re-expressed on
-    top of :func:`validate_test_scenario_evidence` so the rule has one source.
+    Reads the current ``evidence`` field. Re-expressed on top of :func:`validate_test_scenario_evidence` so the rule has one source.
     A non-gated status always passes.
     """
     status = scenario.get("status")
     if status not in GATED_STATUSES:
         return True
-    evidence = scenario.get("evidence") or scenario.get("latest_evidence")
+    evidence = scenario.get("evidence")
     if not isinstance(evidence, dict):
         return False
     ok, _missing = validate_test_scenario_evidence(
-        str(status),
+        status.value if isinstance(status, TestScenarioStatus) else str(status),
         evidence,
-        for_write=for_write,
         scenario_id=str(scenario.get("id")) if scenario.get("id") is not None else None,
     )
     return ok
@@ -930,7 +915,7 @@ def scenario_has_authenticated_required_evidence(
     scenario: dict[str, Any],
     acceptance_criteria: list[object],
 ) -> bool:
-    """Authenticate Evidence V2 while preserving structural legacy evidence.
+    """Authenticate current execution evidence after structural validation.
 
     Evidence V2 must resolve through the registered edition verifier and bind
     the scenario's current semantic digest.  The verifier deliberately receives
@@ -940,7 +925,18 @@ def scenario_has_authenticated_required_evidence(
 
     if not scenario_has_required_evidence(scenario):
         return False
-    evidence = scenario.get("evidence") or scenario.get("latest_evidence")
+    from okto_pulse.core.domain.verification_report import require_evidence_method_binding
+    try:
+        require_evidence_method_binding(scenario.get("verification_method"), scenario.get("evidence"))
+    except (TypeError, ValueError):
+        return False
+    if scenario.get("verification_method") is not None and scenario.get("status") in GATED_STATUSES:
+        from okto_pulse.core.ports.test_evidence import require_supported_test_verification_method
+        try:
+            require_supported_test_verification_method(scenario["verification_method"])
+        except (TypeError, ValueError):
+            return False
+    evidence = scenario.get("evidence")
     claims_v2 = bool(
         isinstance(evidence, dict)
         and (
@@ -950,7 +946,7 @@ def scenario_has_authenticated_required_evidence(
         )
     )
     if not claims_v2:
-        return True
+        return not (scenario.get("verification_method") is not None and scenario.get("status") in {"passed", "failed"})
 
     from okto_pulse.core.ports.test_evidence import (
         resolve_test_evidence_write_verifier,
@@ -994,7 +990,7 @@ def reexecutable_evidence_reference(scenario: dict[str, Any]) -> str:
         return ""
     if not scenario_has_required_evidence(scenario):
         return ""
-    evidence = scenario.get("evidence") or scenario.get("latest_evidence")
+    evidence = scenario.get("evidence")
     if not isinstance(evidence, dict):
         return ""
 

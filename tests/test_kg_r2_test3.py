@@ -31,7 +31,7 @@ from r2_scenario_helpers import (
 )
 
 from okto_pulse.core.kg.stale_canonical_parity import list_stale_canonical_parity
-from okto_pulse.core.services.kg_health_service import get_kg_health
+from r2_scenario_helpers import health_with_completed_probes
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
     RealBoardGraphTransactionForTests,
@@ -78,21 +78,17 @@ async def test_health_surfaces_stale_parity_with_mutation_allowed_false(db_facto
     canonical_before = await count_canonical(board_id, "Requirement")
     assert canonical_before >= 1
 
-    async with db_factory() as db:
-        health = await get_kg_health(board_id, db)
+    health = await health_with_completed_probes(db_factory, board_id)
 
     issues = _issues(health, SCP)
     assert len(issues) == 1, issues
     issue = issues[0]
-    assert issue["drill_down_tool"] == "okto_pulse_kg_stale_canonical_parity_list"
+    assert "drill_down_tool" not in issue
+    assert "sample" not in issue
+    assert issue["operator_action"] == "inspect_kg_health"
+    assert issue["count"] >= 1
     # Literal contract flag (codex guidance) — the diagnostic declares no-mutation.
     assert issue["mutation_allowed"] is False
-    sample = issue["sample"]
-    for field in (
-        "board_graph_stale", "global_discovery_stale_digest", "expected_graph_layer",
-        "expected_maturity_status", "current_source_status", "recommended_action",
-    ):
-        assert field in sample, field
 
     # The drilldown payload carries the same literal flag ...
     async with db_factory() as db:
@@ -115,10 +111,8 @@ async def test_stale_parity_precedence_documented_and_primary_is_deterministic(d
     board_id = await new_board(db_factory, "r2t3")
     await _make_stale_spec(db_factory, board_id)
 
-    async with db_factory() as db:
-        health1 = await get_kg_health(board_id, db)
-    async with db_factory() as db:
-        health2 = await get_kg_health(board_id, db)
+    health1 = await health_with_completed_probes(db_factory, board_id)
+    health2 = await health_with_completed_probes(db_factory, board_id)
 
     issues = _issues(health1, SCP)
     assert len(issues) == 1, issues
@@ -161,7 +155,7 @@ async def test_stale_parity_distinct_and_does_not_mask_canonical_debt(db_factory
             canonical_state="pending", failure_reason="some_reason",
         )
         await db.commit()
-        health = await get_kg_health(board_id, db)
+    health = await health_with_completed_probes(db_factory, board_id)
 
     # Both present as DISTINCT categories (exactly one each — no double-count) ...
     assert len(_issues(health, SCP)) == 1

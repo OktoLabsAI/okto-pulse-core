@@ -15,7 +15,6 @@ from sqlalchemy_test_models import (
     Ideation,
     Refinement,
     Spec,
-    Sprint,
 )
 from okto_pulse.core.ports.discovery_execution import (
     DiscoveryActivityFact,
@@ -24,7 +23,6 @@ from okto_pulse.core.ports.discovery_execution import (
     DiscoveryDependentCardFact,
     DiscoveryMentionFact,
     DiscoverySpecFact,
-    DiscoverySprintFact,
 )
 
 
@@ -72,11 +70,6 @@ def _card_fact(row: Any) -> DiscoveryCardFact:
         priority=getattr(row, "priority", None),
         spec_id=(
             str(getattr(row, "spec_id")) if getattr(row, "spec_id", None) else None
-        ),
-        sprint_id=(
-            str(getattr(row, "sprint_id"))
-            if getattr(row, "sprint_id", None)
-            else None
         ),
         archived=bool(getattr(row, "archived", False)),
         updated_at=getattr(row, "updated_at", None),
@@ -141,7 +134,6 @@ class TestSqlAlchemyDiscoveryExecutionReader:
             "spec": Spec,
             "ideation": Ideation,
             "refinement": Refinement,
-            "sprint": Sprint,
         }
         output: dict[tuple[str, str], str] = {}
         for entity_type, ids in by_type.items():
@@ -154,41 +146,6 @@ class TestSqlAlchemyDiscoveryExecutionReader:
             for row_id, title in rows:
                 output[(entity_type, str(row_id))] = title or ""
         return output
-
-    async def list_sprints(
-        self, context: Any, *, board_id: str
-    ) -> tuple[DiscoverySprintFact, ...]:
-        rows = (
-            await context.execute(
-                select(Sprint).where(
-                    Sprint.board_id == board_id,
-                )
-            )
-        ).scalars().all()
-        return tuple(
-            DiscoverySprintFact(str(row.id), str(row.board_id), row.title or "", row.status)
-            for row in rows
-        )
-
-    async def list_cards_for_sprints(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-        sprint_ids: Sequence[str],
-    ) -> tuple[DiscoveryCardFact, ...]:
-        if not sprint_ids:
-            return ()
-        rows = (
-            await context.execute(
-                select(Card).where(
-                    Card.board_id == board_id,
-                    Card.archived.is_(False),
-                    Card.sprint_id.in_(tuple(sprint_ids)),
-                )
-            )
-        ).scalars().all()
-        return tuple(_card_fact(row) for row in rows)
 
     async def list_dependencies_for_cards(
         self, context: Any, *, card_ids: Sequence[str]

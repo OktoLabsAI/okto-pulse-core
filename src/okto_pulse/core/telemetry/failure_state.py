@@ -11,8 +11,7 @@ and every public/status projection NEVER carry ``install_token``,
 built from an *allowlist* of the schema fields, so a future field added to the
 stored block (or a secret accidentally written next to it) cannot leak.
 
-Scope boundary: this module owns the schema, its (de)serialisation, legacy
-migration and the redaction/projection primitives. Computing ``next_retry_at``
+Scope boundary: this module owns the schema, its (de)serialisation and the redaction/projection primitives. Computing ``next_retry_at``
 via backoff is R1-B; classifying reason codes (UNKNOWN_INSTALL / INVALID_
 SIGNATURE / DUPLICATE) is R1-C; event watermark/delta is R3. Callers in those
 cards mutate the state through :func:`merge`.
@@ -24,10 +23,12 @@ import hashlib
 from dataclasses import dataclass, replace
 from typing import Any
 
+from okto_pulse.core.domain.telemetry_modes import validate_failure_state_carrier
+
 # --- Operational status vocabulary ----------------------------------------
 # ``status`` is the coarse operational state; ``reason_code`` carries the
 # specific backend/transport code (e.g. UNKNOWN_INSTALL, USAGE_500).
-STATUS_UNKNOWN = "unknown"  # no recorded publish outcome yet (e.g. legacy migration)
+STATUS_UNKNOWN = "unknown"  # no recorded publish outcome yet
 STATUS_OK = "ok"  # last publish succeeded
 STATUS_DEGRADED = "degraded"  # transient failure, a retry is scheduled (next_retry_at)
 STATUS_BLOCKED = "blocked"  # publishing blocked by consent_state
@@ -38,7 +39,7 @@ VALID_STATUSES = frozenset(
 
 # --- Consent vocabulary (aligned with telemetry modes) ---------------------
 CONSENT_GRANTED = "granted"  # anonymous_beacon opt-in active
-CONSENT_BLOCKED = "blocked"  # disabled / local_only / consent not for beacon
+CONSENT_BLOCKED = "blocked"  # disabled / consent not for beacon
 CONSENT_UNKNOWN = "unknown"  # no mode recorded yet
 VALID_CONSENT = frozenset({CONSENT_GRANTED, CONSENT_BLOCKED, CONSENT_UNKNOWN})
 
@@ -164,25 +165,15 @@ def _coerce_int(value: Any, *, default: int = 0) -> int:
 
 
 def read_failure_state(state: dict[str, Any]) -> FailureState:
-    """Read the base failure-state from a telemetry ``state`` dict.
-
-    When the state has no ``failure_state`` block (legacy ``state.json``),
-    build safe, actionable defaults derived from the recorded ``mode`` and any
-    legacy success timestamp (``last_send_at``). Unknown/extra keys in a stored
-    block are ignored so future extensions (R5A) never break the base reader,
-    and a secret accidentally written into the block is dropped on read.
-    """
+    """Read native status; only a state without prior sends gets initial defaults."""
+    validate_failure_state_carrier(state)
     mode = state.get("mode")
     default_consent = consent_state_from_mode(mode if isinstance(mode, str) else None)
 
     raw = state.get(FAILURE_STATE_KEY)
     if not isinstance(raw, dict):
-        # Legacy migration: safe defaults; seed last_success_at from the legacy
-        # ``last_send_at`` field when present so status stays actionable.
-        legacy_success = _coerce_opt_str(state.get("last_send_at"))
         return FailureState(
             status=STATUS_UNKNOWN,
-            last_success_at=legacy_success,
             publish_enabled=(default_consent == CONSENT_GRANTED),
             consent_state=default_consent,
         )

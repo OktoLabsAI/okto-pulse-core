@@ -27,6 +27,8 @@ results with an honest banner.
 
 from __future__ import annotations
 
+from okto_pulse.core.discovery_intent_catalog import RETIRED_DISCOVERY_INTENT_NAMES
+
 from dataclasses import dataclass
 import logging
 import re
@@ -118,6 +120,8 @@ async def execute_intent(
     Raises:
         ValueError: if tool_binding is unknown or a required param is missing.
     """
+    if getattr(intent, "name", None) in RETIRED_DISCOVERY_INTENT_NAMES:
+        raise ValueError("discovery_intent_retired")
     binding = intent.tool_binding
 
     normalized_params_schema = normalize_discovery_params_schema(intent.params_schema)
@@ -612,7 +616,7 @@ def _entity_ref(action: str, details: dict | None, card_id: str | None) -> tuple
     Ideação 33cb4fa3: rows in Global Discovery need a stable pointer to
     the entity they affect so the frontend can offer an "Open entity"
     action. ActivityLog persists the target id inside ``details`` (keyed
-    by ``{spec,ideation,refinement,sprint}_id``) or directly on the
+    by ``{spec,ideation,refinement}_id``) or directly on the
     row's ``card_id`` column. The order below matters: a ``spec_moved``
     row can also carry a ``card_id`` set to null, so we prefer the
     details-level key and only fall back to ``card_id`` when no richer
@@ -620,7 +624,6 @@ def _entity_ref(action: str, details: dict | None, card_id: str | None) -> tuple
     """
     d = details or {}
     for key, etype in (
-        ("sprint_id", "sprint"),
         ("spec_id", "spec"),
         ("ideation_id", "ideation"),
         ("refinement_id", "refinement"),
@@ -657,12 +660,6 @@ _ACTION_VERBS: dict[str, str] = {
     "refinement_updated": "updated refinement",
     "refinement_deleted": "deleted refinement",
     "refinement_moved": "moved refinement",
-    "sprint_created": "created sprint",
-    "sprint_updated": "updated sprint",
-    "sprint_deleted": "deleted sprint",
-    "sprint_moved": "moved sprint",
-    "sprint_tasks_assigned": "assigned tasks to sprint",
-    "sprint_evaluation_submitted": "submitted sprint evaluation",
     "validation_submitted": "submitted task validation",
     "evaluation_submitted": "submitted evaluation",
     "tasks_assigned": "assigned tasks",
@@ -693,7 +690,7 @@ async def _exec_activity_log(db: Any, board_id: str) -> dict:
     Previously rows carried just the verb (``card_moved``) and a
     truncated card id, forcing the user to open the card grid to learn
     which card. Each row now resolves the affected entity (card, spec,
-    sprint, ideation, refinement) and surfaces:
+    ideation, refinement) and surfaces:
 
     - ``title`` — the entity's own title (or the verb if unknown)
     - ``summary`` — ``"{actor} {verb} {entity_title} · {when}"``
@@ -777,58 +774,16 @@ async def _exec_activity_log(db: Any, board_id: str) -> dict:
 
 
 async def _exec_blockers(db: Any, board_id: str) -> dict:
-    """Discovery intent `blockers_current_sprint` — honest implementation.
-
-    Ideação bf6a3766: the v1 dispatch called ``compute_blockers`` (a
-    board-wide triage) and returned every uncovered scenario on the board,
-    misrepresenting them as "blockers on the current sprint". Three fixes:
-
-    1. **Scope to active sprint(s)** — no active sprint ⇒ zero rows, not
-       a silent fallback to board-wide triage.
-    2. **Only real blockers** — cards whose forward progress is gated by
-       unresolved card dependencies, explicit ``on_hold``, or ``stale``
-       state. Test-coverage gaps are reported by a separate intent
-       (``scenarios_without_tasks``); surfacing them here duplicated
-       results and hid the real dependency chain.
-    3. **Emit sprint_id on every row** — the frontend can then group by
-       sprint if multiple are active concurrently.
-    """
+    """Report existing blocker criteria for non-archived Cards in the Board."""
     from datetime import datetime as _dt, timezone as _tz, timedelta as _td
 
-    from okto_pulse.core.domain.enums import CardStatus, SprintStatus
+    from okto_pulse.core.domain.enums import CardStatus
 
     reader = get_discovery_execution_read_port()
-    sprints = await reader.list_sprints(
-        db,
-        board_id=board_id,
-    )
-    active_sprints = list(
-        sprint
-        for sprint in sprints
-        if sprint.status == SprintStatus.ACTIVE
-    )
-
-    if not active_sprints:
-        return _ok(
-            rows=[],
-            columns=["Type", "Title", "Reason"],
-            tool_binding="okto_pulse_list_blockers",
-            extra={
-                "summary": {},
-                "message": "No active sprint on this board — no blockers to report.",
-            },
-        )
-
-    active_sprint_ids = [s.id for s in active_sprints]
-    sprint_title_by_id = {s.id: s.title for s in active_sprints}
-
-    cards = list(
-        await reader.list_cards_for_sprints(
-            db,
-            board_id=board_id,
-            sprint_ids=active_sprint_ids,
-        )
-    )
+    cards = list(await reader.list_board_cards(db, board_id=board_id))
+    if not cards:
+        return _ok([], columns=["Type", "Title", "Reason"],
+                   tool_binding="okto_pulse_list_blockers", extra={"summary": {}})
     card_by_id = {c.id: c for c in cards}
 
     deps_rows = list(
@@ -841,8 +796,7 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
     for d in deps_rows:
         deps_by_card.setdefault(d.card_id, []).append(d.depends_on_id)
 
-    # Resolve dependency targets outside the sprint too (a sprint card may
-    # depend on a card that lives elsewhere on the board).
+    # Resolve targets outside the active population (e.g. archived Cards).
     external_dep_ids = {
         dep_id
         for dep_list in deps_by_card.values()
@@ -878,8 +832,6 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
 
     rows: list[dict] = []
     for c in cards:
-        sprint_title = sprint_title_by_id.get(c.sprint_id, "")
-
         if c.status in active_states:
             unresolved: list[dict] = []
             for dep_id in deps_by_card.get(c.id, []):
@@ -902,7 +854,7 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
                         "type": "blocked_card",
                         "title": c.title,
                         "summary": (
-                            f"Sprint '{sprint_title}' · blocked by "
+                            "Blocked by "
                             f"{len(unresolved)} unresolved dep(s)"
                         ),
                         "meta": {
@@ -911,8 +863,6 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
                             "entity_title": c.title,
                             "card_id": c.id,
                             "card_status": c.status.value,
-                            "sprint_id": c.sprint_id,
-                            "sprint_title": sprint_title,
                             "blocking_cards": unresolved,
                         },
                     }
@@ -924,15 +874,13 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
                     "id": c.id,
                     "type": "on_hold_card",
                     "title": c.title,
-                    "summary": f"Sprint '{sprint_title}' · explicitly paused",
+                    "summary": "Explicitly paused",
                     "meta": {
                         "entity_type": "card",
                         "entity_id": c.id,
                         "entity_title": c.title,
                         "card_id": c.id,
                         "card_status": c.status.value,
-                        "sprint_id": c.sprint_id,
-                        "sprint_title": sprint_title,
                         "updated_at": (
                             c.updated_at.isoformat() if c.updated_at else None
                         ),
@@ -946,15 +894,13 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
                     "id": c.id,
                     "type": "rejected_card",
                     "title": c.title,
-                    "summary": f"Sprint '{sprint_title}' · rework required",
+                    "summary": "Rework required",
                     "meta": {
                         "entity_type": "card",
                         "entity_id": c.id,
                         "entity_title": c.title,
                         "card_id": c.id,
                         "card_status": c.status.value,
-                        "sprint_id": c.sprint_id,
-                        "sprint_title": sprint_title,
                     },
                 }
             )
@@ -971,7 +917,7 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
                         "type": "stale_card",
                         "title": c.title,
                         "summary": (
-                            f"Sprint '{sprint_title}' · stuck for {age_h}h "
+                            f"Stuck for {age_h}h "
                             f"in {c.status.value}"
                         ),
                         "meta": {
@@ -980,8 +926,6 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
                             "entity_title": c.title,
                             "card_id": c.id,
                             "card_status": c.status.value,
-                            "sprint_id": c.sprint_id,
-                            "sprint_title": sprint_title,
                             "last_updated": upd.isoformat(),
                             "age_hours": age_h,
                             "stale_hours_threshold": STALE_HOURS,
@@ -999,7 +943,6 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
         tool_binding="okto_pulse_list_blockers",
         extra={
             "summary": summary,
-            "active_sprint_ids": active_sprint_ids,
         },
     )
 
@@ -1443,18 +1386,6 @@ def _item_title(item: dict[str, Any], child_type: SpecChildType) -> str:
     return child_type.replace("_", " ").title()
 
 
-def _requirement_title(item: Any) -> str:
-    """Render legacy strings and current structured FR/AC values uniformly."""
-
-    if isinstance(item, dict):
-        for key in ("text", "title", "name", "label", "description"):
-            value = item.get(key)
-            if value not in (None, ""):
-                return str(value)[:160]
-        return ""
-    return str(item or "")[:160]
-
-
 def _uncovered_child_row(
     *,
     spec: Any,
@@ -1494,28 +1425,18 @@ def _uncovered_child_row(
 
 
 async def _exec_uncovered_requirements(db: Any, board_id: str) -> dict:
-    """NEW aggregator (ideação d1783b03): lists spec children that have
-    incomplete deterministic coverage across the specs on the board.
+    """List current Spec coverage gaps without a planning-cycle dimension.
 
-    Design after user review (conversa de fechamento da ideação):
-
-    1. **Specs `cancelled` são excluídas** — trabalho abandonado não é débito.
-    2. **Specs `done` continuam incluídas** — fechar a spec não cobre o gap;
-       ele pode ter sido aceito explicitamente via `skip_*_coverage` no
-       momento da validation. O dashboard continua enxergando o link
-       faltante e precisa reportá-lo para o usuário decidir.
-    3. **Usamos a mesma função canônica que o validation gate**
-       (`analytics_service.compute_spec_coverage`) para evitar drift entre
-       "o que o gate considera uncovered" e "o que o intent reporta".
-       Isso também descarta TRs em forma string legacy (o gate também não
-       conta esses) e cobre BR/API/IR/OR/Decision linkage por task.
-    4. Cada row carrega `meta.spec_status`, `meta.skipped_at_validation`
-       (True se o gate passou com skip=true naquela categoria — por-spec
-       OU por-board) e `meta.in_flight` — o frontend pode agrupar por
-       categoria ou filtrar "só acionáveis".
+    Cancelled Specs are excluded; Done Specs retain visible gaps even when
+    validation coverage was explicitly waived. Coverage uses the canonical
+    summary shared with validation, without converting persisted children.
     """
     from okto_pulse.core.domain.enums import SpecStatus
     from okto_pulse.core.services.analytics_service import spec_coverage_summary
+    from okto_pulse.core.services.spec_entity_canonicalization import (
+        SPEC_REQUIREMENT_FIELDS,
+        validate_stored_spec_children,
+    )
 
     reader = get_discovery_execution_read_port()
     board_settings = await reader.get_board_settings(db, board_id=board_id)
@@ -1556,6 +1477,8 @@ async def _exec_uncovered_requirements(db: Any, board_id: str) -> dict:
 
     rows: list[dict] = []
     for spec in specs:
+        for field_name, _ in SPEC_REQUIREMENT_FIELDS:
+            validate_stored_spec_children(list(getattr(spec, field_name) or ()))
         cov = spec_coverage_summary(spec, cards=cards_by_spec.get(spec.id, []))
         status_value = getattr(spec.status, "value", str(spec.status))
         is_in_flight = spec.status in IN_FLIGHT
@@ -1593,13 +1516,13 @@ async def _exec_uncovered_requirements(db: Any, board_id: str) -> dict:
 
         frs = spec.functional_requirements or []
         for idx in cov["fr_uncovered_indices"]:
-            child_id = str(idx)
+            child_id = frs[idx]["id"]
             child_ref = f"spec:{spec.id}:{SPEC_CHILD_TYPE_FUNCTIONAL_REQUIREMENT}:{child_id}"
             rows.append(
                 {
-                    "id": f"{spec.id}:fr:{idx}",
+                    "id": child_ref,
                     "type": "UncoveredFR",
-                    "title": _requirement_title(frs[idx] if idx < len(frs) else ""),
+                    "title": frs[idx]["text"][:160],
                     "summary": (
                         f"spec: {spec.title} · status: {status_value}"
                         f" · FR #{idx}"
@@ -1625,13 +1548,13 @@ async def _exec_uncovered_requirements(db: Any, board_id: str) -> dict:
 
         acs = spec.acceptance_criteria or []
         for idx in cov["ac_uncovered_indices"]:
-            child_id = str(idx)
+            child_id = acs[idx]["id"]
             child_ref = f"spec:{spec.id}:{SPEC_CHILD_TYPE_ACCEPTANCE_CRITERION}:{child_id}"
             rows.append(
                 {
-                    "id": f"{spec.id}:ac:{idx}",
+                    "id": child_ref,
                     "type": "UncoveredAC",
-                    "title": _requirement_title(acs[idx] if idx < len(acs) else ""),
+                    "title": acs[idx]["text"][:160],
                     "summary": (
                         f"spec: {spec.title} · status: {status_value}"
                         f" · AC #{idx}"
@@ -1655,18 +1578,14 @@ async def _exec_uncovered_requirements(db: Any, board_id: str) -> dict:
                 }
             )
 
-        # TRs: iterate only structured dicts (same as the validation gate —
-        # legacy string-form TRs are outside the gate's coverage count).
         for i, tr in enumerate(spec.technical_requirements or []):
-            if not isinstance(tr, dict):
-                continue
             if _has_active_task_link(tr, cancelled_card_ids):
                 continue
-            child_id, child_index = _child_identity_for_item(tr, fallback_index=i)
+            child_id, child_index = tr["id"], i
             child_ref = f"spec:{spec.id}:{SPEC_CHILD_TYPE_TECHNICAL_REQUIREMENT}:{child_id}"
             rows.append(
                 {
-                    "id": tr.get("id") or f"{spec.id}:tr:{i}",
+                    "id": tr["id"],
                     "type": "UncoveredTR",
                     "title": (tr.get("text") or "")[:160],
                     "summary": (

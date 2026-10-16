@@ -1,0 +1,39 @@
+{
+  "scope": "All eight installed internal recovery tests on immutable installed15 pair",
+  "pair": {
+    "core": "61545b9a0b0962ab6b2f9e836a5029cc260ac929",
+    "community": "21f5e6a585c37582194d620eefb1f2e0068979ed"
+  },
+  "counts": {
+    "tests": 8,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "duration_seconds": 3054.45,
+  "cases": [
+    "test_installed_runtime_paths_override_parent_campaign",
+    "test_final_wheel_mode_reuses_pair_and_authenticates_grafx_before_install",
+    "test_installed_grafx_candidate_materializes_board_and_global_routes",
+    "test_installed_wheels_serve_exact_frozen_resource_manifest_over_real_http",
+    "test_installed_internal_recovery_and_public_dlq_retirement",
+    "test_installed_z2_unusable_worker_inputs_terminalize_failed[missing-recovery_worker_inputs_missing]",
+    "test_installed_z2_unusable_worker_inputs_terminalize_failed[corrupt-recovery_worker_inputs_invalid]",
+    "test_installed_hard_kill_at_building_is_adopted_charged_and_completes"
+  ],
+  "limits": [
+    "Does not qualify subsequent KG-12, frozen 0.6.0 recovery or 0.7.0 schema changes.",
+    "System-site-packages validation environment is not a hermetic release build.",
+    "Disposable databases only; no user runtime or real-data migration."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/installed-internal-recovery15.xml": "3173aca75a9602d1c24d502fd632f0d5596c8e06980b47b81dc9381502f78c8f",
+    "PULSE_REFACTOR/.validation-v040/installed-internal-recovery15.log": "c665677947dcd9f0577ca2a22a5712bc2ce5045b77fa566f41dfb7f2b8991cca",
+    "PULSE_REFACTOR/.validation-v040/installed-internal-recovery15-events.jsonl": "64d2181133a7834ac491636602c7ace3eba81a00375f05a2e3dd2ca6c8e474c9",
+    "PULSE_REFACTOR/.validation-v040/installed15/provenance-final.json": "fad03d23a9a85d2265d95e7d174c4b5792c9bd5bcdb0c844b373f8d77a91aca2",
+    "PULSE_REFACTOR/.validation-v040/run_internal_recovery_installed15.py": "17a0327e6cc3dec5541b02ba78986b9825b17b9856a2207fb91f248afc8fe3c7",
+    "PULSE_REFACTOR/.validation-v040/run_internal_recovery_installed.py": "ec7ca8d629b3bedd2ccce37ac1b09f741cc9fde0b1c645f2111e04af67ed3ce7",
+    "PULSE_REFACTOR/.validation-v040/installed15/dist/okto_pulse-0.3.4-py3-none-any.whl": "c6b87b424b08d7938d48c98e6a3dbf45ae4146d8b371eed03832326d62687fbf",
+    "PULSE_REFACTOR/.validation-v040/installed15/dist/okto_pulse_core-0.3.4-py3-none-any.whl": "37fd8052e7f91544aa42eb2a0c4ce4c921124ee6c15373347adf14909837ae85"
+  }
+}

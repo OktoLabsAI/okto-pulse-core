@@ -1,0 +1,90 @@
+{
+  "scope": "DEI-T01–T06 native actor configurations, permissions and untrusted payloads",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criteria": {
+    "DEI:DEI-T01": [
+      "test_one_agent_preserves_assessments_and_evidence_through_spec_done: broad-agent variants"
+    ],
+    "DEI:DEI-T02": [
+      "test_one_agent_preserves_assessments_and_evidence_through_spec_done: separate-reviewer variants",
+      "test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries"
+    ],
+    "DEI:DEI-T03": [
+      "test_planner_cannot_gain_execution_authority_through_envelopes"
+    ],
+    "DEI:DEI-T04": [
+      "test_executor_without_target_create_only_binds_existing_target"
+    ],
+    "DEI:DEI-T05": [
+      "test_tester_can_bind_signed_test_without_implementation_write"
+    ],
+    "DEI:DEI-T06": [
+      "test_client_cannot_mint_identity_or_trusted_facts"
+    ]
+  },
+  "evidence": [
+    "Full Spec flow records progress, implementation report, authenticated test evidence and concludes under broad-agent/off or separate-reviewer/enforce policies; late-link variants also pass.",
+    "Separate MCP sessions use real SQL Agent/AgentBoard grants and authenticator. Executor cannot self-review even with submit permission under enforce; independent review preserves original actor/history.",
+    "Native-schema REST and MCP handlers reject planner implementation attempts through single, batch, inline capture, local alias and compound report envelopes; committing after refusal leaves all observed SQL rows unchanged.",
+    "Executor with only execution_submit binds an existing receipt without creating or mutating Target, execution record or Card.",
+    "Tester with only spec.tests.execute appends signed Test Card evidence, preserves implementation row and Card/Target/execution state, and cannot append implementation.",
+    "Both transports reject forged actor_id, verified, current and gate_passed at envelope and entry level; no rows or versions change."
+  ],
+  "tests": {
+    "new_native_authority_cases": 30,
+    "full_mcp_and_handoff_cases": 8,
+    "current_distinct_backend_passed": 38,
+    "campaigns": [
+      {
+        "name": "native-delivery-authority1",
+        "terminal_session": 97704,
+        "passed": 2,
+        "failed": 12,
+        "seconds": 21.21
+      },
+      {
+        "name": "native-delivery-authority2",
+        "terminal_session": 20868,
+        "passed": 14,
+        "failed": 0,
+        "seconds": 22.66
+      },
+      {
+        "name": "native-delivery-authority3",
+        "terminal_session": 90625,
+        "passed": 30,
+        "failed": 0,
+        "seconds": 50.33
+      },
+      {
+        "name": "native-delivery-agent-flows1",
+        "terminal_session": 41240,
+        "passed": 8,
+        "failed": 0,
+        "seconds": 43.59
+      }
+    ],
+    "frontend_reused": "44 delivery UI +4 review API cases; hashes checked and relevant source diff361647f5..HEAD empty. No rerun or added execution count."
+  },
+  "diagnostics": [
+    "First authority test expected private permission details in a safe public refusal. Actual contract intentionally returns forbidden without those details; MCP errors use outcome.code rather than payload.",
+    "Compound report fixture initially used prohibited expected_card_status=done. Corrected native input/state to in_progress. No product authorization changed."
+  ],
+  "limits": [
+    "New REST/MCP matrix supplies authenticated principal/claims as fixture inputs and uses real authorization, handlers and SQL store; it is not installed credential extraction.",
+    "Full MCP/handoff uses real grants/authenticator with in-process credential extraction. Initial attestation/source context and selected governance settings are controlled fixtures.",
+    "Graph/cognitive skip, impact off and resource N/A in the existing lifecycle fixture are explicit; this does not claim every independent gate in that one flow.",
+    "No product or frontend source changed; main88 closure remains green, eight budgets zero. No migration, real data, release or promotion."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-authority1.json": "f0f72e18336579d4b256dcc280b4eec923462a247084a1fd77a77c8287b65b4a",
+    "native-delivery-authority1.xml": "5a4d07b9f10116c73d40fea7a7affbcc167a0414d0ab155a929704009b076847",
+    "native-delivery-authority2.xml": "a70b2203a23f002cca8e667e42ceef7d85a521835fdc0000f3d50c906aa2eebb",
+    "native-delivery-authority3.xml": "141eb03f593d23e15a0e2e3051a4e11033113a9974215eeb39e5ef0a7bd860df",
+    "native-delivery-agent-flows1.xml": "83aa03ffdf6ebc8cf599821301b8ee9885aec86c0d0465c10f62a3c3e112e1ef",
+    "native-delivery-envelope-frontend1.json": "a751880c26e35030dc6efc27dfb79d81a4f937cd3ffa9d2bf7f490e31f2d146d",
+    "native-review-authority-frontend1.json": "6583f68caa4626ec2ef1871cba70a473ecaa57c4bb4bb684135c45c377813dc2",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

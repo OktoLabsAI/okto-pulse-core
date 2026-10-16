@@ -82,6 +82,7 @@ from okto_pulse.core.application.use_cases.permission_presets import (
     CreatePermissionPresetUseCase,
 )
 from okto_pulse.core.domain.realm import RealmScope
+from okto_pulse.core.models.schemas import BoardUpdate
 
 
 class _ServiceSpy:
@@ -166,7 +167,7 @@ def _board_case() -> tuple[_Uow, _ServiceSpy]:
 
 async def _invoke_board(uow: _Uow, actor: ActorContext) -> Any:
     return await UpdateBoardUseCase().execute(
-        UpdateBoardCommand("board-1", SimpleNamespace()),
+        UpdateBoardCommand("board-1", BoardUpdate(name="Updated authorization board")),
         actor=actor,
         uow=uow,
     )
@@ -470,7 +471,7 @@ _WRITE_CASES = (
     _WRITE_CASES,
     ids=lambda case: f"{case.operation}-{case.invoke.__name__}",
 )
-async def test_namespace_write_denial_precedes_writer_and_commit_and_legacy_allows(
+async def test_namespace_write_denial_precedes_writer_and_commit_and_exact_operation_allows(
     case: _WriteCase,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -498,7 +499,12 @@ async def test_namespace_write_denial_precedes_writer_and_commit_and_legacy_allo
     assert denied_uow.commit_calls == 0
 
     allowed_uow, allowed_service = case.build()
-    await case.invoke(allowed_uow, _actor([case.legacy]))
+    if case.legacy != case.operation:
+        with pytest.raises(PermissionDeniedError):
+            await case.invoke(denied_uow, _actor([case.legacy]))
+        assert case.writer not in denied_service.calls
+        assert denied_uow.commit_calls == 0
+    await case.invoke(allowed_uow, _actor([case.operation]))
     assert allowed_service.calls.count(case.writer) == 1
     assert allowed_uow.commit_calls == 1
 
@@ -593,15 +599,16 @@ async def test_mcp_admin_reads_require_exact_core_namespace_before_services(
         ("design_system.board_link.delete", "spec.architecture.edit"),
     ),
 )
-def test_each_namespace_write_declares_explicit_legacy_compatibility(
+def test_each_namespace_write_rejects_substitute_authority(
     operation: str,
     legacy: str,
 ) -> None:
     decision = decide_authorization(
         _actor([legacy]),
-        PermissionRequirement(operation, legacy_operation=legacy),
+        PermissionRequirement(operation),
     )
-    assert decision.allowed is True
+    assert decision.allowed is False
+    assert decide_authorization(_actor([operation]), PermissionRequirement(operation)).allowed
 
 
 @pytest.mark.asyncio

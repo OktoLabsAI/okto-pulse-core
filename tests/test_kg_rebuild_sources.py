@@ -6,7 +6,6 @@ OR or_2d295e26 + or_f9b83da6.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 from datetime import datetime, timezone
@@ -32,7 +31,6 @@ from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     REBUILD_AUDIT_GLOBAL_BOARD_ID,
     RebuildAuditKey,
 )
-from okto_pulse.core.kg.rebuild_audit import require_rebuild_audit_artifact_store
 from okto_pulse.core.kg.rebuild_sources import (
     CANONICAL_ARTIFACT_TYPES,
     EnumerationOutcome,
@@ -56,48 +54,6 @@ BoardSourceStore = _board_source_reader.BoardSourceStore
 # ---------------------------------------------------------------------------
 # IMPL-2 compatibility helper — see test_kg_rebuild_service.py for details.
 # ---------------------------------------------------------------------------
-
-
-def _make_rebuild_test_app(board_id: str = "b-test"):
-    """Return a FastAPI app with the UoW overridden for FR10/FR9 gates."""
-    from types import SimpleNamespace
-
-    from fastapi import FastAPI
-
-    from okto_pulse.community.api.deps import get_unit_of_work
-    from okto_pulse.community.api.router import api_router
-
-    _fake_board = SimpleNamespace(id=board_id, owner_id="user-lifecycle-test")
-
-    class _Boards:
-        async def get(self, candidate_board_id):
-            return _fake_board if candidate_board_id == board_id else None
-
-    class _Shares:
-        async def get_user_permission(self, candidate_board_id, _user_id):
-            return "editor" if candidate_board_id == board_id else None
-
-    async def _resolve_user_permissions(user_id, candidate_board_id):
-        if user_id != "user-lifecycle-test" or candidate_board_id != board_id:
-            return []
-        return [
-            "kg.operations.rebuild.preflight",
-            "kg.operations.rebuild.confirm",
-        ]
-
-    async def _fake_uow():
-        yield SimpleNamespace(
-            boards=_Boards(),
-            services=SimpleNamespace(
-                shares=_Shares(),
-                resolve_user_permissions=_resolve_user_permissions,
-            ),
-        )
-
-    app = FastAPI()
-    app.include_router(api_router)
-    app.dependency_overrides[get_unit_of_work] = _fake_uow
-    return app
 
 
 @pytest.fixture(autouse=True)
@@ -214,7 +170,7 @@ def test_enumerate_orders_by_artifact_type_then_created_at_then_id_then_version(
     assert [r.id for r in result.legacy_unknown] == ["s-1:d-1"]
 
 
-def test_closed_sprint_is_working_not_canonical():
+def test_retired_sprint_is_unknown_and_cannot_be_rebuilt():
     rows = [
         _row(artifact_type="sprint", id_="sp-1", status="closed"),
         _row(artifact_type="spec", id_="s-1", status="done"),
@@ -223,8 +179,9 @@ def test_closed_sprint_is_working_not_canonical():
     result = enum.enumerate(board_id="b1")
 
     assert [r.id for r in result.sources] == ["s-1"]
-    assert [r.id for r in result.skipped_by_maturity] == ["sp-1"]
-    assert result.skipped_by_maturity[0].reason_code == "sprint_not_canonical"
+    assert result.skipped_by_maturity == ()
+    assert [r.id for r in result.legacy_unknown] == ["sp-1"]
+    assert result.legacy_unknown[0].reason_code == "unknown_artifact_type"
 
 
 def test_ideation_and_intermediate_statuses_stay_out_of_canonical():
@@ -773,330 +730,6 @@ def test_manifest_load_verified_round_trip_and_typed_missing(tmp_path: Path):
         )
 
 
-def _legacy_predigest_v3_fixture(tmp_path: Path):
-    from okto_pulse.core.kg.rebuild_sources import (
-        RebuildSourceRow,
-        RebuildSourceSet,
-        _compose_source_set_hash,
-    )
-
-    board_id = "15877207-c147-4805-96d7-d53a625571df"
-    manifest_ref = "rebuild_manifest_fGjaboUTQf9nPdfjb-f3dQ"
-    preflight_hash = "5a4931caab0f43b2b451b297fb8385b4730606e4e753fee170ed539c54dd48f4"
-    created_at = "2026-08-15T02:32:44.964484+00:00"
-    cognitive_digest = {
-        "count": 219,
-        "digest": "1f037b917a05d01e9c38ee152d4fe60e6ac08cb569637103a5c7f4052debe04d",
-    }
-    canonical = RebuildSourceRow(
-        artifact_type="spec",
-        source_ref="spec:14b7ee81-1a40-5957-bbda-0f5a223bdf6a",
-        source_version="74",
-        content_hash="1" * 64,
-        created_at="2026-08-14T23:20:00+00:00",
-        id="14b7ee81-1a40-5957-bbda-0f5a223bdf6a",
-        source_artifact_status="done",
-    )
-    legacy = RebuildSourceRow(
-        artifact_type="refinement",
-        source_ref="refinement:legacy",
-        source_version="1",
-        content_hash="",
-        created_at="2026-08-14T23:21:00+00:00",
-        id="legacy-refinement",
-        source_artifact_status="unknown",
-        graph_layer="none",
-        maturity_status="legacy_unknown",
-        disposition="legacy_unknown",
-        reason_code="legacy_status_unknown",
-    )
-    source_set = RebuildSourceSet(
-        board_id=board_id,
-        sources=(canonical,),
-        skipped_cancelled_count=3,
-        has_non_deterministic_inputs=True,
-        generated_at=created_at,
-        legacy_unknown=(legacy,),
-        cognitive_durable_digest=cognitive_digest,
-    )
-    payload = {
-        "manifest_ref": manifest_ref,
-        "board_id": board_id,
-        "source_set_hash": _compose_source_set_hash(source_set),
-        "preflight_hash": preflight_hash,
-        "sources": [canonical.to_dict()],
-        "working_sources": [],
-        "skipped_by_maturity": [],
-        "skipped_expired_working": [],
-        "legacy_unknown": [legacy.to_dict()],
-        "skipped_cancelled_count": 3,
-        "has_non_deterministic_inputs": True,
-        "created_at": created_at,
-        "manifest_schema_version": 3,
-        "canonical_source_count": 1,
-        "working_source_count": 0,
-        "skipped_by_maturity_count": 0,
-        "skipped_expired_working_count": 0,
-        "legacy_unknown_count": 1,
-    }
-    canonical_payload = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode("utf-8")
-    canonical_sha256 = hashlib.sha256(canonical_payload).hexdigest()
-    store = KGRebuildSourceManifest(base_dir=tmp_path)
-    store.artifact_store.write_json_atomic(store._manifest_key(manifest_ref), payload)
-    return (
-        store,
-        manifest_ref,
-        board_id,
-        preflight_hash,
-        payload,
-        cognitive_digest,
-        canonical_sha256,
-    )
-
-
-def test_load_verified_legacy_predigest_v3_accepts_real_like_fixture(
-    tmp_path: Path,
-) -> None:
-    (
-        store,
-        manifest_ref,
-        board_id,
-        preflight_hash,
-        _payload,
-        cognitive_digest,
-        canonical_sha256,
-    ) = _legacy_predigest_v3_fixture(tmp_path)
-
-    manifest = store.load_verified_legacy_predigest_v3(
-        manifest_ref,
-        expected_board_id=board_id,
-        expected_preflight_hash=preflight_hash,
-        expected_canonical_payload_sha256=canonical_sha256,
-        cognitive_digest=cognitive_digest,
-    )
-
-    assert manifest.manifest_schema_version == 3
-    assert manifest.payload_digest == ""
-    with pytest.raises(
-        RebuildSourceManifestIntegrityError,
-        match="rebuild_source_manifest_integrity_invalid",
-    ):
-        store.load_verified(
-            manifest_ref,
-            expected_board_id=board_id,
-            expected_preflight_hash=preflight_hash,
-            cognitive_digest=cognitive_digest,
-        )
-
-
-@pytest.mark.parametrize(
-    ("cognitive_digest", "code"),
-    (
-        (None, "legacy_predigest_cognitive_digest_invalid"),
-        ({"count": 219}, "legacy_predigest_cognitive_digest_invalid"),
-        (
-            {"count": 219, "digest": "0" * 64},
-            "legacy_predigest_source_hash_mismatch",
-        ),
-    ),
-)
-def test_load_verified_legacy_predigest_v3_requires_exact_cognitive_digest(
-    tmp_path: Path,
-    cognitive_digest: object,
-    code: str,
-) -> None:
-    (
-        store,
-        manifest_ref,
-        board_id,
-        preflight_hash,
-        _payload,
-        _expected_cognitive_digest,
-        canonical_sha256,
-    ) = _legacy_predigest_v3_fixture(tmp_path)
-
-    with pytest.raises(RebuildSourceManifestIntegrityError, match=code):
-        store.load_verified_legacy_predigest_v3(
-            manifest_ref,
-            expected_board_id=board_id,
-            expected_preflight_hash=preflight_hash,
-            expected_canonical_payload_sha256=canonical_sha256,
-            cognitive_digest=cognitive_digest,  # type: ignore[arg-type]
-        )
-
-
-@pytest.mark.parametrize(
-    ("mutate", "code"),
-    (
-        (
-            lambda payload: payload["sources"][0].__setitem__("content_hash", "3" * 64),
-            "legacy_predigest_source_hash_mismatch",
-        ),
-        (
-            lambda payload: payload.__setitem__("unexpected", True),
-            "legacy_predigest_shape_invalid",
-        ),
-        (
-            lambda payload: payload.__setitem__("canonical_source_count", True),
-            "legacy_predigest_count_invalid",
-        ),
-        (
-            lambda payload: payload["sources"][0].__setitem__("source_version", 74),
-            "legacy_predigest_row_type_invalid",
-        ),
-    ),
-    ids=("row-hash", "extra-key", "bool-count", "row-type"),
-)
-def test_load_verified_legacy_predigest_v3_rejects_tamper_and_noncanonical_shape(
-    tmp_path: Path,
-    mutate,
-    code: str,
-) -> None:
-    (
-        store,
-        manifest_ref,
-        board_id,
-        preflight_hash,
-        payload,
-        cognitive_digest,
-        _canonical_sha256,
-    ) = _legacy_predigest_v3_fixture(tmp_path)
-    mutated = json.loads(json.dumps(payload))
-    mutate(mutated)
-    canonical_sha256 = hashlib.sha256(
-        json.dumps(
-            mutated,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
-    ).hexdigest()
-    store.artifact_store.write_json_atomic(store._manifest_key(manifest_ref), mutated)
-
-    with pytest.raises(RebuildSourceManifestIntegrityError, match=code):
-        store.load_verified_legacy_predigest_v3(
-            manifest_ref,
-            expected_board_id=board_id,
-            expected_preflight_hash=preflight_hash,
-            expected_canonical_payload_sha256=canonical_sha256,
-            cognitive_digest=cognitive_digest,
-        )
-
-
-def test_load_verified_legacy_predigest_v3_rejects_wrong_canonical_binding(
-    tmp_path: Path,
-) -> None:
-    (
-        store,
-        manifest_ref,
-        board_id,
-        preflight_hash,
-        _payload,
-        cognitive_digest,
-        _canonical_sha256,
-    ) = _legacy_predigest_v3_fixture(tmp_path)
-
-    with pytest.raises(
-        RebuildSourceManifestIntegrityError,
-        match="legacy_predigest_canonical_digest_mismatch",
-    ):
-        store.load_verified_legacy_predigest_v3(
-            manifest_ref,
-            expected_board_id=board_id,
-            expected_preflight_hash=preflight_hash,
-            expected_canonical_payload_sha256="0" * 64,
-            cognitive_digest=cognitive_digest,
-        )
-
-
-def test_load_verified_legacy_predigest_v3_has_typed_missing_error(
-    tmp_path: Path,
-) -> None:
-    store = KGRebuildSourceManifest(base_dir=tmp_path)
-
-    with pytest.raises(
-        RebuildSourceManifestNotFoundError,
-        match="legacy_predigest_not_found",
-    ):
-        store.load_verified_legacy_predigest_v3(
-            "rebuild_manifest_missing",
-            expected_board_id="b1",
-            expected_preflight_hash="b" * 64,
-            expected_canonical_payload_sha256="c" * 64,
-            cognitive_digest={},
-        )
-
-
-@pytest.mark.parametrize(
-    ("board_id", "preflight_hash"),
-    (("other-board", None), (None, "0" * 64)),
-    ids=("board", "preflight"),
-)
-def test_load_verified_legacy_predigest_v3_rejects_wrong_identity(
-    tmp_path: Path,
-    board_id: str | None,
-    preflight_hash: str | None,
-) -> None:
-    (
-        store,
-        manifest_ref,
-        expected_board_id,
-        expected_preflight_hash,
-        _payload,
-        cognitive_digest,
-        canonical_sha256,
-    ) = _legacy_predigest_v3_fixture(tmp_path)
-
-    with pytest.raises(
-        RebuildSourceManifestIntegrityError,
-        match="legacy_predigest_identity_invalid",
-    ):
-        store.load_verified_legacy_predigest_v3(
-            manifest_ref,
-            expected_board_id=board_id or expected_board_id,
-            expected_preflight_hash=preflight_hash or expected_preflight_hash,
-            expected_canonical_payload_sha256=canonical_sha256,
-            cognitive_digest=cognitive_digest,
-        )
-
-
-def test_load_verified_legacy_predigest_v3_rejects_current_manifest(
-    tmp_path: Path,
-) -> None:
-    source_set = RebuildSourceEnumerator(source_store=lambda _b: [_row()]).enumerate(
-        board_id="b1"
-    )
-    store = KGRebuildSourceManifest(base_dir=tmp_path)
-    manifest = store.build(source_set=source_set, preflight_hash="b" * 64)
-    payload = store.artifact_store.read_json(store._manifest_key(manifest.manifest_ref))
-    assert payload is not None
-    canonical_sha256 = hashlib.sha256(
-        json.dumps(
-            payload,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
-    ).hexdigest()
-
-    with pytest.raises(
-        RebuildSourceManifestIntegrityError,
-        match="legacy_predigest_shape_invalid",
-    ):
-        store.load_verified_legacy_predigest_v3(
-            manifest.manifest_ref,
-            expected_board_id="b1",
-            expected_preflight_hash="b" * 64,
-            expected_canonical_payload_sha256=canonical_sha256,
-            cognitive_digest={},
-        )
-
-
 @pytest.mark.parametrize(
     ("field", "tampered"),
     (
@@ -1170,7 +803,7 @@ def test_manifest_load_verified_recomputes_partition_hash_after_valid_digest(
 
 
 def test_manifest_revalidate_detects_drift(tmp_path: Path):
-    # revalidate is typed (card 5ec8c75c): EQUIVALENT / REBASELINE / MANIFEST_DRIFT.
+    # Pure discovery and instrumented revalidation share the current contract.
     from okto_pulse.core.kg.rebuild_sources import SourceSetRevalidation
 
     enum_a = RebuildSourceEnumerator(source_store=lambda _b: [_row(id_="a")])
@@ -1182,12 +815,19 @@ def test_manifest_revalidate_detects_drift(tmp_path: Path):
     store = KGRebuildSourceManifest(base_dir=tmp_path)
     manifest = store.build(source_set=source_a, preflight_hash="c" * 64)
     assert (
-        store.revalidate(manifest=manifest, current_source_set=source_a).outcome
+        store.classify_revalidation(
+            manifest=manifest, current_source_set=source_a
+        ).outcome
         is SourceSetRevalidation.EQUIVALENT
     )
-    drift = store.revalidate(manifest=manifest, current_source_set=source_b)
+    drift = store.classify_revalidation(manifest=manifest, current_source_set=source_b)
     assert drift.is_drift
     assert drift.outcome is SourceSetRevalidation.MANIFEST_DRIFT
+    assert (
+        get_enumeration_count("b1", EnumerationOutcome.SOURCE_SET_HASH_MISMATCH.value)
+        == 0
+    )
+    assert store.revalidate(manifest=manifest, current_source_set=source_b) == drift
     assert (
         get_enumeration_count("b1", EnumerationOutcome.SOURCE_SET_HASH_MISMATCH.value)
         >= 1
@@ -1612,180 +1252,6 @@ def test_canonical_operations_includes_rebuild_and_reset():
 # --- POST endpoints lifecycle integration (val_d0da4a75 rework) -------------
 
 
-def _client_with_router(board_id: str = "b-life"):
-    """Helper: live api_router app with auth + FR10/FR9 overrides.
-
-    IMPL-2 added board scope (FR10) + real health probe (FR9).
-    Both gates need a UoW.  We override it with a board-access and canonical-
-    permission fixture and also patch get_kg_health
-    to return a healthy state so the admission gate never blocks.
-    """
-    import okto_pulse.community.api.kg_rebuild as kg_rebuild_mod
-    from fastapi.testclient import TestClient
-
-    from okto_pulse.community.api.auth_deps import require_user
-    from okto_pulse.core.ports.relational_runtime import resolve_database_runtime
-
-    async def _fake_health(_board_id, _db, scheduler_control=None):
-        return {
-            "graph_state": "healthy",
-            "metric_status": "available",
-            "current_kg_generation_id": None,
-        }
-
-    # Monkeypatch at module level (safe: tests run in same process, sequential).
-    _original_health = kg_rebuild_mod.get_kg_health
-    kg_rebuild_mod.get_kg_health = _fake_health  # type: ignore[assignment]
-
-    source_db_path = resolve_database_runtime().local_database_path()
-    assert source_db_path is not None
-    with sqlite3.connect(str(source_db_path)) as source_connection:
-        create_complete_source_catalog(source_connection)
-        source_board_inserted = insert_source_board(source_connection, board_id)
-        source_connection.commit()
-
-    app = _make_rebuild_test_app(board_id=board_id)
-
-    async def _fake_user():
-        return "user-lifecycle-test"
-
-    app.dependency_overrides[require_user] = _fake_user
-    client = TestClient(app)
-
-    # Restore after context exit.
-    class _CtxClient:
-        def __enter__(self):
-            return client.__enter__()
-
-        def __exit__(self, *args):
-            try:
-                return client.__exit__(*args)
-            finally:
-                kg_rebuild_mod.get_kg_health = _original_health  # type: ignore[assignment]
-                if source_board_inserted:
-                    with sqlite3.connect(str(source_db_path)) as source_connection:
-                        source_connection.execute(
-                            "DELETE FROM boards WHERE id = ?",
-                            (board_id,),
-                        )
-                        source_connection.commit()
-
-    return _CtxClient()
-
-
-def test_online_preflight_is_diagnostic_and_does_not_persist_manifest():
-    """Online preflight returns diagnostics but no reusable execution refs."""
-    artifact_store = require_rebuild_audit_artifact_store()
-    prefix = RebuildAuditKey(
-        namespace="source_manifest",
-        board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
-    )
-    before = list(artifact_store.list_json(prefix))
-    with _client_with_router(board_id="b-life") as client:
-        resp = client.post(
-            "/api/v1/kg/rebuild/preflight",
-            params={"board_id": "b-life"},
-        )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["outcome"] == "diagnostic_complete"
-    assert body["preflight_outcome"]
-    assert body["manifest_ref"] is None
-    assert body["source_set_hash"] is None
-    assert len(body["preflight_hash"]) == 64
-    assert list(artifact_store.list_json(prefix)) == before
-
-
-def test_online_confirm_denies_without_creating_manifest_or_confirmation():
-    """Online confirm is terminally denied and emits no execution artifact."""
-    artifact_store = require_rebuild_audit_artifact_store()
-    manifest_prefix = RebuildAuditKey(
-        namespace="source_manifest",
-        board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
-    )
-    confirmation_prefix = RebuildAuditKey(
-        namespace="confirmation_token",
-        board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
-    )
-    before_manifests = list(artifact_store.list_json(manifest_prefix))
-    before_confirmations = list(artifact_store.list_json(confirmation_prefix))
-    with _client_with_router(board_id="b-confirm-isolated") as client:
-        pre = client.post(
-            "/api/v1/kg/rebuild/preflight",
-            params={"board_id": "b-confirm-isolated"},
-        )
-        assert pre.status_code == 200
-        preflight_hash = pre.json()["preflight_hash"]
-
-        conf = client.post(
-            "/api/v1/kg/rebuild/confirm",
-            json={
-                "board_id": "b-confirm-isolated",
-                "operation": "rebuild",
-                "preflight_hash": preflight_hash,
-                "manifest_ref": "diagnostic-only",
-            },
-        )
-    assert conf.status_code == 409, conf.text
-    assert conf.json()["detail"]["error"] == "recovery_execution_required"
-    assert list(artifact_store.list_json(manifest_prefix)) == before_manifests
-    assert list(artifact_store.list_json(confirmation_prefix)) == before_confirmations
-
-
-def test_online_confirm_does_not_load_unknown_manifest_ref():
-    """A syntactically valid legacy ref is not loaded by online confirm."""
-    with _client_with_router(board_id="b1") as client:
-        resp = client.post(
-            "/api/v1/kg/rebuild/confirm",
-            json={
-                "board_id": "b1",
-                "operation": "rebuild",
-                "preflight_hash": "a" * 64,
-                "manifest_ref": "rebuild_manifest_does_not_exist",
-            },
-        )
-    assert resp.status_code == 409
-    detail = resp.json()["detail"]
-    assert detail["error"] == "recovery_execution_required"
-
-
-def test_online_confirm_does_not_bind_diagnostic_preflight_hash():
-    """A canonical hash is syntax-only and still receives the typed denial."""
-    with _client_with_router(board_id="b-mismatch") as client:
-        client.post(
-            "/api/v1/kg/rebuild/preflight",
-            params={"board_id": "b-mismatch"},
-        )
-        resp = client.post(
-            "/api/v1/kg/rebuild/confirm",
-            json={
-                "board_id": "b-mismatch",
-                "operation": "rebuild",
-                "preflight_hash": "0" * 64,  # not the real one
-                "manifest_ref": "diagnostic-only",
-            },
-        )
-    assert resp.status_code == 409
-    detail = resp.json()["detail"]
-    assert detail["error"] == "recovery_execution_required"
-
-
-def test_confirm_rejects_invalid_preflight_hash_shape():
-    """val_d0da4a75 #3: short or non-hex preflight_hash rejected."""
-    with _client_with_router(board_id="b1") as client:
-        resp = client.post(
-            "/api/v1/kg/rebuild/confirm",
-            json={
-                "board_id": "b1",
-                "operation": "rebuild",
-                "preflight_hash": "short",
-                "manifest_ref": "rebuild_manifest_anything",
-            },
-        )
-    # Pydantic length validator catches it first → 422.
-    assert resp.status_code in (400, 422)
-
-
 def test_manifest_load_rejects_path_traversal_and_alias(tmp_path: Path):
     """val_d0da4a75 #2: malformed manifest_ref values must be rejected
     by the load path before any filesystem access."""
@@ -1862,28 +1328,80 @@ def test_validate_manifest_ref_rejects_traversal_and_alias():
             validate_manifest_ref(bad)
 
 
-def test_post_rebuild_confirm_rejects_unsupported_operation():
-    from fastapi.testclient import TestClient
-
-    from okto_pulse.community.api.auth_deps import require_user
-
-    app = _make_rebuild_test_app(board_id="b1")
-
-    async def _fake_user():
-        return "user-lifecycle-test"
-
-    app.dependency_overrides[require_user] = _fake_user
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/v1/kg/rebuild/confirm",
-            json={
-                "board_id": "b1",
-                "operation": "drop_database",
-                "preflight_hash": "deadbeef" * 8,
-                "manifest_ref": "rebuild_manifest_anything",
-            },
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "v1",
+        "v2",
+        "missing_digest",
+        "missing_partition",
+        "missing_counter",
+        "row_default",
+        "boolean_count",
+        "extra_field",
+        "counter_mismatch",
+    ],
+)
+def test_current_manifest_refuses_incompatible_shape_without_rewrite(tmp_path, damage):
+    source_set = RebuildSourceEnumerator(source_store=lambda _b: [_row()]).enumerate(
+        board_id="b1"
+    )
+    store = KGRebuildSourceManifest(base_dir=tmp_path)
+    current = store.build(source_set=source_set, preflight_hash="a" * 64)
+    path = tmp_path / "rebuild/manifests" / f"{current.manifest_ref}.json"
+    payload = json.loads(path.read_bytes())
+    if damage in {"v1", "v2"}:
+        payload["manifest_schema_version"] = int(damage[1:])
+    elif damage == "missing_digest":
+        payload.pop("payload_digest")
+    elif damage == "missing_partition":
+        payload.pop("working_sources")
+    elif damage == "missing_counter":
+        payload.pop("skipped_cancelled_count")
+    elif damage == "row_default":
+        payload["sources"][0].pop("graph_layer")
+    elif damage == "boolean_count":
+        payload["skipped_cancelled_count"] = False
+    elif damage == "extra_field":
+        payload["upgrade"] = {"from_version": 1}
+    else:
+        payload["canonical_source_count"] += 1
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    before = path.read_bytes()
+    with pytest.raises(RebuildSourceManifestIntegrityError):
+        store.load_verified(
+            current.manifest_ref,
+            expected_board_id="b1",
+            expected_preflight_hash="a" * 64,
+            cognitive_digest=source_set.cognitive_durable_digest,
         )
-    assert response.status_code == 400
-    detail = response.json()["detail"]
-    assert detail["error"] == "unsupported_operation"
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("old_version", [1, 2])
+def test_old_manifest_cannot_rebaseline_even_with_identical_current_hash(
+    tmp_path, old_version
+):
+    from dataclasses import replace
+    from okto_pulse.core.kg.rebuild_sources import SourceSetRevalidation
+
+    source_set = RebuildSourceEnumerator(source_store=lambda _b: [_row()]).enumerate(
+        board_id="b1"
+    )
+    store = KGRebuildSourceManifest(base_dir=tmp_path)
+    current = store.build(source_set=source_set, preflight_hash="b" * 64)
+    before = {
+        path.relative_to(tmp_path): path.read_bytes()
+        for path in tmp_path.rglob("*.json")
+    }
+    incompatible = replace(current, manifest_schema_version=old_version)
+    assert (
+        store.classify_revalidation(
+            manifest=incompatible, current_source_set=source_set
+        ).outcome
+        is SourceSetRevalidation.MANIFEST_DRIFT
+    )
+    assert {
+        path.relative_to(tmp_path): path.read_bytes()
+        for path in tmp_path.rglob("*.json")
+    } == before

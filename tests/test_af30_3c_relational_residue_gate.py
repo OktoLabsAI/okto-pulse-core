@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from okto_pulse.core.application.boundary.relational_residue_gate import (
+    COMMUNITY_TARGET_FILES,
     run_relational_residue_gate,
 )
 from repository_checkout_testing import community_source_for
@@ -19,7 +22,10 @@ def _write(root: Path, rel: str, source: str) -> None:
     path.write_text(source, encoding="utf-8")
 
 
-def test_af30_3c_synthetic_final_relational_residues_fail_closed(tmp_path: Path) -> None:
+@pytest.mark.parametrize("community_file", COMMUNITY_TARGET_FILES)
+def test_af30_3c_synthetic_final_relational_residues_fail_closed(
+    tmp_path: Path, community_file: str,
+) -> None:
     core_root = tmp_path / "core"
     community_root = tmp_path / "community"
     _write(
@@ -49,7 +55,7 @@ def test_af30_3c_synthetic_final_relational_residues_fail_closed(tmp_path: Path)
     )
     _write(
         community_root,
-        "adapters/relational_schema_migrator.py",
+        community_file,
         "from okto_pulse.core.infra import database as _database\n"
         "def run(step):\n"
         "    return getattr(_database, step.step_id)\n",
@@ -72,6 +78,9 @@ def test_af30_3c_synthetic_final_relational_residues_fail_closed(tmp_path: Path)
 
 
 def test_af30_3c_real_core_and_community_are_green_state() -> None:
+    assert COMMUNITY_TARGET_FILES, "Community lifecycle scan must remain active"
+    if COMMUNITY_ROOT.exists():
+        assert all((COMMUNITY_ROOT / rel).is_file() for rel in COMMUNITY_TARGET_FILES)
     report = run_relational_residue_gate(
         core_root=CORE_ROOT,
         community_root=COMMUNITY_ROOT if COMMUNITY_ROOT.exists() else None,

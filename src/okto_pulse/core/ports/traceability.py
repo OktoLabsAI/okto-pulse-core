@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal, Protocol, TypedDict, cast
+from okto_pulse.core.ports.lineage_query import LineageReadPort
 
 
 LineageGraphView = Literal["lineage", "dependency"]
@@ -65,7 +66,7 @@ def validate_lineage_graph_dependency_scope(
     return cast(LineageGraphDependencyScope, scope)
 
 
-class TraceabilityReadPort(Protocol):
+class TraceabilityReadPort(LineageReadPort, Protocol):
     async def build_traceability_report(
         self,
         context: object,

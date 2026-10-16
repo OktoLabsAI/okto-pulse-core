@@ -218,7 +218,7 @@ async def test_drilldown_separates_sources_and_excludes_terminal(db_factory):
     assert ob["classification"] == "transient"
     # overall worst-wins = stuck.
     assert dd["classification"] == "stuck"
-    assert dd["drill_down_tool"] == "okto_pulse_kg_queue_drilldown"
+    assert dd["drill_down_tool"] is None
 
 
 @pytest.mark.asyncio
@@ -355,7 +355,7 @@ async def test_kg_health_surfaces_active_queue_issue_and_counts(db_factory):
     assert len(issues) == 1, health["health_issues"]
     issue = issues[0]
     assert issue["code"] == "active_queue_stuck"
-    assert issue["drill_down_tool"] == "okto_pulse_kg_queue_drilldown"
+    assert issue["drill_down_tool"] is None
     assert issue["counts"]["consolidation_queue"] == 1
     assert issue["counts"]["global_update_outbox"] == 1
     # stuck/backpressure may become primary when nothing else is the cause.
@@ -366,20 +366,3 @@ async def test_kg_health_surfaces_active_queue_issue_and_counts(db_factory):
 # ===========================================================================
 # MCP tool — read-only boundary
 # ===========================================================================
-
-
-@pytest.mark.asyncio
-async def test_mcp_queue_drilldown_tool(db_factory):
-    board = _id(BOARD_PREFIX)
-    async with db_factory() as db:
-        db.add(Board(id=board, name="r6 imp2", owner_id=USER_ID))
-        await db.flush()
-        db.add(_cq(board, artifact_type="card", status="pending", age_s=20))
-        await db.commit()
-
-    out = await _call("okto_pulse_kg_queue_drilldown", board_id=board)
-    assert out["board_id"] == board
-    assert out["total_active_depth"] == 1
-    assert {s["source"] for s in out["sources"]} == {"consolidation_queue", "global_update_outbox"}
-    assert out["classification"] in ("transient", "stuck", "backpressure", "idle")
-    assert "worker_mode" in out

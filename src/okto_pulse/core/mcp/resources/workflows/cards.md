@@ -1,5 +1,5 @@
 ---
-version: "1.2"
+version: "1.3"
 ---
 
 # Cards Workflow — Implementation, Bug & Test Execution
@@ -7,12 +7,18 @@ version: "1.2"
 ### Mandatory delivery handoff
 
 Tasks/bugs record implementation, **not test results**. After an accepted Target
-execution receipt and card completion, use `okto_pulse_record_delivery_evidence`
-(`implementation`) to bind delivered code to the Spec obligations. Test cards must
-execute their linked scenarios, record authenticated passing evidence and complete;
-then record `test` with the implementation association IDs actually tested.
+execution receipt, use `okto_pulse_record_delivery_evidence` (`implementation`)
+to bind delivered code to the Spec obligations while work is in progress.
+Test cards execute their linked scenarios and record authenticated outcomes;
+record `test` with the implementation association IDs actually tested. Native
+completion remains a separate operation with its existing gates.
 One record may cover multiple obligations. Read the current inventory first with
 `okto_pulse_get_delivery_evidence`; never invent IDs, hashes or verification flags.
+Read `view="readiness", card_id=...` for independent implementation/verification
+metrics, scoped causes and the next minimal actions. Test Cards use scenario
+verification and implementation N/A. Proof may be complete before Done; 100/100
+is not transition approval. Reuse existing proof when only association is missing.
+Do not convert deprecated `delivery_completeness` stages into the new metrics.
 Details and human-only not-applicable handling:
 `okto-pulse://reference/code-traceability`, section **Delivery evidence**.
 
@@ -37,12 +43,12 @@ Architecture Design is the first-class place for system structure. See the full 
 | Source of the artifact | Tool | When to use |
 |---|---|---|
 | Mockup / Architecture Design already exists on the parent spec | `okto_pulse_copy_mockups_to_card` / `okto_pulse_copy_architecture_to_card` | Blocking path when applicable. Pass `screen_ids` / `design_ids` to scope a subset; omit to copy all. |
-| Relevant KB already exists on the parent spec | `okto_pulse_copy_knowledge_to_card` | Advisory path. Pass `knowledge_ids` to select only context that materially helps the card; omission never blocks completion. |
+| Relevant KB already exists on the parent spec | `okto_pulse_replace_card_knowledge_assignments` | Advisory path. Pass `knowledge_ids` to select only context that materially helps the card; omission never blocks completion. |
 
 Card resources are read-only governed snapshots. Do not create, edit, annotate,
 import, or delete Knowledge Base, Mockup, or Architecture resources directly on a
 card; update the source ideation/refinement/spec resource and then run the
-matching copy tool to refresh the card snapshot while preserving the source
+matching copy tool for Mockup/Architecture, or the Knowledge assignment tools, to refresh the card snapshot while preserving the source
 identity used by the Resource Gate.
 
 **Copy versus reference:** a governed copy made by the official copy tool is
@@ -63,38 +69,35 @@ source cannot be selected by the tool, report the exact IDs as a lineage/copy
 problem rather than claiming that copying is forbidden.
 
 Read `okto-pulse://reference/knowledge-governance` before deciding that content
-belongs in a KB. When `knowledge_propagation` is absent from
-`okto_pulse_create_card`, the legacy v1 behavior remains unchanged:
-`auto_derive_spec_resources_enabled` and the existing copy path may attach all
-eligible spec Knowledge. Supplying the envelope opts that create into selective
-propagation v2 and bypasses the legacy Knowledge fan-out for that card.
+belongs in a KB. Creating a Card uses one Knowledge selection contract.
+Omitting `knowledge_propagation` creates an `omitted` selection with no inherited
+Knowledge and a fresh operation key.
 
-### Selective Knowledge propagation v2
+### Selective Knowledge propagation
 
-The envelope itself is the version switch. Do not infer intent from a missing
-field or an empty list:
+Select the intended state explicitly when providing an envelope:
 
 | Input on `okto_pulse_create_card` | Meaning |
 |---|---|
-| `knowledge_propagation` absent | Preserve the complete v1 create/copy behavior. |
-| `selection_state="omitted"`, no `mode`, no `knowledge_ids` | Authoritative v2 omission. This is NOT the legacy path merely because the selector is empty. |
+| `knowledge_propagation` absent | Create with no inherited Knowledge selection. Supply an envelope with a stable key when retry identity is needed. |
+| `selection_state="omitted"`, no `mode`, no `knowledge_ids` | Record no inherited Knowledge selection. |
 | `selection_state="explicit_empty"`, `mode="drop"`, empty `knowledge_ids` | Authoritative empty selection/drop-all. A non-empty `justification` is required. |
 | `selection_state="explicit_ids"`, non-empty `knowledge_ids`, `mode="reference"`, `"snapshot"`, or `"drop"` | Propagate only those stable roots, or explicitly drop the named roots. A non-empty `justification` is required. |
 
-Every v2 envelope has `contract_version=2` and a non-empty,
+Every envelope has `contract_version=2` and a non-empty,
 caller-stable `idempotency_key`. A create accepts `expected_revision` omitted
 or `0`; it rejects another value. Repeating the semantically identical request
 with the same key returns the original durable result with `replayed=true`.
 Never reuse that key for a different card payload, selection, actor, or parent.
 
-For cards, optional `relevance_links` (also accepted as the input alias
-`linkage`) explain why the selected Knowledge matters. Each item is
+For card creation, optional `relevance_links` explain why the selected Knowledge matters. Each item is
 `{entity_type, entity_id}` and `entity_type` is exactly one of
 `functional_requirement`, `acceptance_criterion`, or `test_scenario`. The
 referenced FR, AC, or scenario must belong to the card's linked spec; the whole
 operation fails before creation when any source or linkage is invalid.
 
-After creation, use the v2 assignment tools instead of the legacy copy tool:
+After creation, use the assignment tools. Replace accepts relevance links in
+its `linkage` field:
 
 - `okto_pulse_replace_card_knowledge_assignments` atomically replaces the
   selection with `reference` or `snapshot` assignments.
@@ -103,7 +106,7 @@ After creation, use the v2 assignment tools instead of the legacy copy tool:
 - `okto_pulse_refresh_card_knowledge_assignments` refreshes snapshot content by
   stable **root Knowledge ID**, never by assignment-row ID.
 - `okto_pulse_get_card_knowledge_propagation` reads the technical selection,
-  revision, assignments, stale state, legacy visibility, and history.
+  revision, assignments, stale state, and native assignment history.
 
 Replace/drop/refresh require the current `expected_revision`. Read the
 technical projection immediately before a mutation when the revision is not
@@ -152,29 +155,29 @@ The parent Spec's opt-in PageEnvelope may expose only lean
 receipt or page findings through the dedicated Quality tools and inspect
 currentness; never treat a parent summary or newest head as a complete body.
 The card executes linked test scenarios and implementation work—it does not
-author a separate assessment or checklist template. A legacy
-`manual_checklist_ref` may be reported as historical context but cannot satisfy
-the curated A3 receipt gate. See
+author a separate assessment or checklist template. A Test Scenario's
+`manual_checklist_ref` belongs to its test-evidence method; it is not a curated
+A3 result. Checklist accepts only its complete native result. See
 `okto-pulse://reference/quality-assessments`.
 
 ### When Creating Cards from a Spec (MANDATORY ORDER)
 
 1. **Get full spec context**: `okto_pulse_get_spec_context(board_id, spec_id, profile="full")` — returns the spec with all requirements, TRs, BRs, test scenarios, API contracts, KBs, and mockups. (`okto_pulse_get_task_context` needs an existing `card_id` — it belongs to the execution pre-flight in §2.8, not here.)
-2. **Read test scenarios**: `okto_pulse_list_test_scenarios(board_id, spec_id)`.
-3. **Read business rules and API contracts**: `okto_pulse_list_business_rules(board_id, spec_id)` and `okto_pulse_list_api_contracts(board_id, spec_id)`.
+2. **Review all test scenarios**. Reuse them from that full context only when current, complete and untruncated; otherwise read `okto_pulse_list_test_scenarios(board_id, spec_id)` and follow pagination.
+3. **Review business rules and API contracts** under the same completeness/currentness rule; use `okto_pulse_list_business_rules(board_id, spec_id)` and `okto_pulse_list_api_contracts(board_id, spec_id)` for missing/truncated collections. This reuse does not replace mandatory gate-context reads.
 4. **Review conclusions of dependencies**: for every card this one will depend on, call `okto_pulse_get_task_conclusions(board_id, dep_card_id)`.
 5. **Create test cards FIRST** — one per test scenario or per small group within `max_scenarios_per_card`, with `card_type="test"`, `test_scenario_ids`, and `spec_id`.
-6. **IMMEDIATELY link each test card to its scenario(s)** via `okto_pulse_link_task(target_type="scenario", board_id, spec_id, target_id=<scenario_id>, card_id)`.
+6. **Creation links the selected scenarios atomically.** Do not repeat those links. Use `okto_pulse_link_task(target_type="scenario", board_id, spec_id, target_id=<scenario_id>, card_id)` only when adding another association after creation.
 7. **Verify full linkage**: run `okto_pulse_list_test_scenarios` — every scenario must show at least one linked task.
 8. **THEN create implementation cards** (`card_type="normal"`) — always pass `spec_id`.
 9. **MANDATORY — Resolve blocking artifacts and review advisory Knowledge for
    every card.** Use `okto_pulse_copy_mockups_to_card`,
    `okto_pulse_copy_architecture_to_card`, and `okto_pulse_copy_qa_to_card`
    where applicable. For materially relevant Knowledge, either supply the
-   `knowledge_propagation` v2 envelope during card creation or, on the v1 path,
-   use `okto_pulse_copy_knowledge_to_card`. A KB omission is advisory and does
-   not block the card. Do not combine the v2 create envelope with a legacy
-   Knowledge copy for the same intent.
+   `knowledge_propagation` envelope during card creation or use
+   `okto_pulse_replace_card_knowledge_assignments` with mode, justification,
+   expected revision and idempotency key. A KB omission is advisory and does
+   not block the card.
 10. **Write detailed card descriptions** including: what specifically needs to be built, which FRs/TRs/BRs this card addresses, which test scenarios this card should satisfy, which API contracts define the interfaces, and relevant technical constraints.
 
 **Test card naming convention:** Prefix test cards with `[TEST]` to distinguish them.
@@ -185,10 +188,10 @@ Example: `[TEST] E2E — Valid OAuth2 token grants access`
 | Anti-pattern | Why it's bad | What to do instead |
 |---|---|---|
 | One big test card for all scenarios | No granular traceability | Create one test card per scenario or per small group of closely related scenarios |
-| Test card without `okto_pulse_link_task(target_type="scenario", ...)` | Scenario shows "no tasks" — no way to know which card validates it | Always call `okto_pulse_link_task(target_type="scenario", ...)` after creating a test card |
+| Test card missing a scenario association | Missing traceability prevents scenario coverage | Creation with `test_scenario_ids` links atomically: verify the result without repeating the write. Use `okto_pulse_link_task(target_type="scenario", ...)` only for an additional association. |
 | Starting work without `okto_pulse_get_task_context` | Implementing blind = guaranteed drift | ALWAYS call `okto_pulse_get_task_context` with `profile="full", context_scope="gate"` and all include flags BEFORE any work; use bounded detail/drilldowns for bodies |
 | Card still `not_started` while writing code | Board is inaccurate | Query `okto_pulse_get_allowed_transitions`; move normal cards to `started` and then `in_progress` (or use a directly advertised test/bug edge) BEFORE first line of code |
-| Treating an absent v2 envelope as `selection_state="omitted"` | Absence deliberately preserves v1, while an in-envelope omission is authoritative v2 state | Choose the version explicitly: omit the envelope for v1, or send a coherent v2 tri-state envelope |
+| Expecting an omitted selection to copy every KB | Omission selects no inherited Knowledge | Send the stable Knowledge IDs and intended mode explicitly |
 | Refreshing by assignment ID | Assignment rows are temporal and may be superseded | Pass stable root Knowledge IDs to `okto_pulse_refresh_card_knowledge_assignments` |
 | Reusing an idempotency key after changing payload or selection | Replay identity no longer represents the same semantic request | Reuse a key only for an exact retry; generate a new key for new intent |
 
@@ -223,15 +226,62 @@ okto_pulse_create_card(
      3. **Register re-executable evidence** — the regression test card's scenario is `passed`/`automated` with a direct test pointer (`test_file_path`+`test_function`) or an explicit replayable `evidence_class` such as `mcp_replay_manifest` plus `expected_output_snapshot`.
      4. **Validator confirms coverage** — the validator calls `okto_pulse_confirm_amendment_coverage`, the ONLY writer of the non-forgeable `coverage_confirmed` signal (re-executable evidence is necessary but NOT sufficient — a real validator attestation bound to this amendment + artifact is required). BEFORE persisting, the tool runs a gate-consumability preflight: it applies the SAME eligibility predicate the bug regression gate uses, so a successful confirmation implies the attestation is consumable for this `(amendment_id, regression_test_task_id, regression_scenario_id)`. **Anti-pattern (fails closed):** reusing a same-spec happy-path/AC scenario that is NOT linked to the bug's origin/affected task and then calling confirm — the scenario routes through Path A and is `unrelated_scenario`, so the writer rejects it with `coverage_not_gate_consumable` and persists nothing. An amendment declaration does NOT convert an `unrelated_scenario` into valid Path B coverage; use a same-spec scenario tied to the bug lineage (Path A) or a genuinely cross-spec Path B artifact.
      5. **Gate allows the bug** — only after step 4. Until then the bug is `coverage_pending`: lineage may be eligible but the bug is NOT closure-ready. Inspect at any time with `okto_pulse_list_amendment_revisions` / `okto_pulse_get_amendment_revision`.
-   - **Path C — hotfix lane (execution only):** if the spec is `done` or the origin sprint is closed, assign the bug and its regression test card to an active `lane_type="hotfix"` sprint. A normal card must belong to the lane's spec. The one cross-spec exception is the exact Path B test task on the amendment revision spec: assignment accepts it only after a non-blocking, complete amendment and its persisted validator coverage attestation bind that bug + test task + scenario + revision spec. An unrelated, merely linked, or still `coverage_pending` cross-spec test remains blocked. Path C is an execution lane only — it does **NOT** replace Path B amendment lineage. Keep the original closed delivery sprint unchanged.
-3. Create test task & link to bug (still started) — create a new post-bug `card_type="test"` card with the eligible `test_scenario_ids`, then link: `okto_pulse_update_card(card_id=bug_id, linked_test_task_ids="<test_task_id>")`.
+3. Create test task & link to bug (still started) — create a new post-bug `card_type="test"` card with the eligible `test_scenario_ids`, then link: `okto_pulse_update_card(card_id=bug_id, linked_test_task_ids=["<test_task_id>"])`.
 4. Move to in_progress (BLOCKED until step 3 is done) — system validates linked test tasks, scenario existence, same-spec ownership, eligibility by origin/affected-task lineage, and that the test TASK (card) was created after the bug. The "after the bug" temporal applies to the test TASK, not the scenario — a pre-existing eligible scenario is valid regression coverage.
 5. Fix the bug (in_progress) — implement the fix, run tests, update scenario statuses. On a `validated`/`done` spec, `okto_pulse_update_test_scenario_status` is still allowed for a scenario already linked to an executable test card, because this records operational evidence instead of editing semantic spec content.
 6. Complete (done) — provide conclusion with what was fixed
 
-> **Canonical sources (forward pointers):** eligible-scenario reuse and the Path B amendment-revision tools are defined in `reference/tool-docs/card.md`; content lock behavior is covered by **SpecLockedError** and the Path B error codes (`missing_amendment_revision`, `coverage_pending`, `gate_bypass_not_allowed`, …) in `reference/errors.md`. The steps above intentionally separate Path A (same-spec traceability reuse), Path B (amendment lineage + re-executable evidence + validator coverage confirmation), and Path C (hotfix execution lane — never a substitute for Path B lineage).
+> **Canonical sources (forward pointers):** eligible-scenario reuse and the Path B amendment-revision tools are defined in `reference/tool-docs/card.md`; content lock behavior is covered by **SpecLockedError** and the Path B error codes (`missing_amendment_revision`, `coverage_pending`, `gate_bypass_not_allowed`, …) in `reference/errors.md`. The steps above intentionally separate Path A (same-spec traceability reuse), Path B (amendment lineage + re-executable evidence + validator coverage confirmation).
 
 **If you get an error moving a bug card:** see the "Common Errors and How to Fix Them" section in the error reference.
+
+### Authored Learnings for a Bug
+
+`board.settings.bug_learning_closeout` is human-controlled in Board Settings and
+default Board configuration. Omission resolves to `advisory`: no Learning is
+required for completion. In `blocking`, submit a valid durable capture with the
+report or select one for task validation. Empty queues, historical presence and
+provider failures are not proof. This policy does not replace cognitive
+holds or other completion gates, and `skip_cognitive_consolidation` cannot waive
+it. Transition previews expose `valid_durable_learning_capture` as request input;
+they do not materialize the graph or approve a capture.
+
+The execution-report dialog can save a new Learning together with the report,
+including an optional final Delivery batch. For MCP `okto_pulse_move_card`, use
+`learning_submission` with a stable `capture_id`, the initial context's
+`expected_source_digest`/`expected_source_version`, authored `content`, `context`,
+`applicability`, and authenticated `scenario_ids`. All capture permissions and
+`card.conclusion.write` are required in addition to the transition authority.
+The server admits the exact new report into the capture basis and persists the
+compound operation atomically. Keep the complete request unchanged for a retry;
+changed content is a new intent. Retrying after a later reopen does not close
+the Bug again or make the old lesson applicable to its new correction.
+
+Record a useful lesson with its context, applicability and authenticated scenario
+evidence. In the Bug modal, open **Validation → Execution report → Learnings**.
+For MCP, read `okto_pulse_kg_get_learning_capture_context`, then submit the authored
+content with `okto_pulse_kg_create_learning_capture`, using the returned source
+digest/version and explicit scenario IDs. Keep the capture ID for an exact retry.
+If the basis changes, preserve the text, refresh the evidence and review applicability
+before submitting a new intent. Do not invent evidence or copy a previous lesson as
+automatically applicable to a reopened correction.
+
+Use `okto_pulse_kg_list_learning_captures` or **Saved Learnings** to resume from
+durable authored history. Reading history requires the existing Learning-query
+permission in addition to source access; creating content requires the KG creation
+permissions. Historical presence is not execution approval, current applicability
+or canonical graph materialization. A successful capture is acknowledged as pending
+materialization and does not itself close the Bug or replace its existing completion
+gates. No manual graph session is required for capture authorship.
+
+When submitting the Bug's task validation, optionally select a current capture
+with `learning_capture={learning_id, generation, fingerprint}`. The validation
+writer rechecks its source and authenticated evidence and records the linkage
+only if the existing completion gates allow Done. Source reads and the existing
+Learning-query permission are required. This does not approve implementation or
+materialize the graph. A changed execution report requires a capture on its new
+basis; a Card without its executor report cannot attach an older capture
+to a conclusion inferred from the review.
 
 ### Historical bug closure via Path B — operational checklist
 
@@ -243,11 +293,11 @@ end; it is re-executable by an agent and proven by `tests/test_path_b_e2e.py`.
 The historical case adds only the differences below:
 
 - **Pre-condition — authoritative lineage:** you have the bug's authoritative `origin_task_id` (and any real `affected_task_ids`). Membership is authoritative from the bug, never invented by the amendment. (The content-lock rule for the spec is in Path B step 1; an `in_progress` spec that is still editable needs no amendment — edit it directly.)
-- **Pre-condition — clean KG:** BEFORE you start, `okto_pulse_kg_health` reports no related canonical debt and no related dead-letter (DLQ) entries (cross-check `okto_pulse_kg_canonical_debt_list` and `okto_pulse_kg_dead_letter_list`). Resolve any related debt/DLQ first.
+- **Integrity:** affected mutations remain subject to their existing KG integrity and evidence gates. Health reports component availability; it is not a mandatory inspection/repair ceremony before every product action.
 - **FRESH evidence:** the re-executable evidence in Path B step 3 must come from a GREEN run and include a replayable `test_file_path` + `test_function` (or an explicitly supported replay manifest). Stale or reused evidence does not count.
 - **Post-closure verification:** only after the validator calls `okto_pulse_confirm_amendment_coverage` for the formal `AmendmentHotfixRevision` and the attestation reports `coverage_confirmed` may you move the bug forward (`move_card`) and close it with a conclusion. Confirm it travelled `coverage_pending` → `path_b_ready` (`okto_pulse_list_amendment_revisions` / `okto_pulse_get_amendment_revision`).
-- **KG checkpoints (not optional):** the amendment materializes in the WORKING partition while `draft`/incomplete and becomes canonical ONLY at `done` + complete lineage — verify there is no premature canonical leak. Re-run `okto_pulse_kg_health` after closure: no NEW canonical debt and no NEW DLQ entry attributable to this bug/amendment; if a rebuild ran, the amendment partition must reconcile (no `MATERIALIZED_LAYER_MISMATCH`).
-- **Fail-closed — do NOT close while any of these hold:** the bug is `coverage_pending`; the amendment is `draft`/`review`/`cancelled`/`superseded` or its lineage incomplete (`blocked_amendment_status` / `incomplete_amendment_lineage`); the evidence is stale, reused, or missing a replayable class/pointer with the required `expected_output_snapshot`; the scenario is cross-spec/unrelated with no formal amendment backing it (`missing_amendment_revision` / `unrelated_scenario` / `cross_spec_scenario`); `okto_pulse_confirm_amendment_coverage` returned `coverage_not_gate_consumable` (fix the cause — never retry with a bypass); a hotfix lane (Path C) is being treated as a substitute for lineage; or KG health still shows unresolved related debt/DLQ.
+- **Projection invariants:** the amendment materializes in the WORKING partition while `draft`/incomplete and becomes canonical ONLY at `done` + complete lineage — verify there is no premature canonical leak. The runtime preserves partition consistency and surfaces failures; the amendment must not introduce canonical debt or DLQ entries. An additional health call or maintenance step is not required to complete the product action.
+- **Fail-closed — do NOT close while any of these hold:** the bug is `coverage_pending`; the amendment is `draft`/`review`/`cancelled`/`superseded` or its lineage incomplete (`blocked_amendment_status` / `incomplete_amendment_lineage`); the evidence is stale, reused, or missing a replayable class/pointer with the required `expected_output_snapshot`; the scenario is cross-spec/unrelated with no formal amendment backing it (`missing_amendment_revision` / `unrelated_scenario` / `cross_spec_scenario`); `okto_pulse_confirm_amendment_coverage` returned `coverage_not_gate_consumable` (fix the cause — never retry with a bypass); or KG health still shows unresolved related debt/DLQ.
 
 There is no way to close a historical bug without validator-confirmed coverage and a clean KG. The error codes are in `reference/errors.md`, the amendment tools in `reference/tool-docs/card.md`, and the KG health contract in `reference/kg-health.md`.
 
@@ -283,7 +333,7 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 
 ### Reviewer Separation Modes
 
-`board.settings.reviewer_separation_mode` governs both task validation and sprint evaluation:
+`board.settings.reviewer_separation_mode` governs task validation:
 
 | Mode | Task-validation behavior |
 |------|--------------------------|
@@ -291,7 +341,7 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 | `warn` | Submission continues; `reviewer_separation.warning=true`, conflicts, and source are persisted in the validation and returned to the caller. |
 | `off` | Submission continues transparently, while the complete decision (including conflicts) is still persisted and returned. |
 
-New boards (including the no-active-template fallback) and new default-board template versions materialize `enforce` unless `warn`/`off` is explicitly selected. A persisted legacy board with no setting is **not** backfilled: it resolves to `off` with `source="legacy_absent_compat"`, so historical self-validation remains operable and auditable.
+New boards (including the no-active-template fallback) and new default-board template versions materialize `enforce` unless `warn`/`off` is explicitly selected. An omitted setting uses `enforce` with `source="board_default"`. Invalid policy values are refused. Community bootstrap Boards explicitly select `off`.
 
 ### Deterministic Thresholds
 
@@ -308,8 +358,7 @@ When Code Traceability is enabled, use this order before implementation:
 1. Read `okto_pulse_get_task_context(profile="full", context_scope="gate")`.
 2. Review the inherited `delivery_context`, effective `source_context`,
    relevant Code Evidence, and dispositions. Counts describe the complete
-   effective set even when item drilldowns are bounded; never infer a legacy
-   item's meaning.
+   effective set even when item drilldowns are bounded; read each item's explicit authored context.
 3. Start the initial Card preflight request. The authenticated external agent
    checks real access and capabilities and investigates the source in its own
    environment; Pulse Core and Pulse Community never open or search it.
@@ -339,11 +388,8 @@ selector scope predates that Target.
 For Greenfield/Hybrid work, an existing starter/base can be Evidence only as
 `existing_scaffold` with an explicit `interpretation_limit`; source consulted
 only as a pattern is `reference_pattern`. Neither proves the requested behavior
-already exists. `unclassified_legacy` remains visible until an authorized actor
-appends classification: agents use `okto_pulse_classify_legacy_code_evidence`
-with `code_traceability.evidence.classify_legacy`; humans may use UI/REST.
-Use defensible provenance and fresh CAS inputs, never guessed source meaning.
-Classification does not upgrade a V1 receipt or rewrite a frozen Spec snapshot.
+already exists. Every Evidence item requires authored context and defensible
+baseline provenance. Earlier formats are rejected without conversion.
 
 Run a new external preflight, re-evaluate the Targets, and submit a new receipt
 when a dependency finishes, the observed workspace fingerprint changes, a

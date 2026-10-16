@@ -1,0 +1,136 @@
+{
+  "scope": "F6 semantic capture payload and explicit pending materialization in recovery consumers",
+  "suites": {
+    "learning-capture-core": {
+      "tests": 111,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-capture-community": {
+      "tests": 49,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-capture-final-core": {
+      "tests": 22,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Closed create/reuse/supersede intent, scoped Bug version/digest and exact evidence binding.",
+    "Malformed historical captures and altered sealed applicability are refused.",
+    "SQL CAS roundtrip retains the complete semantic payload and its source fingerprint.",
+    "Restoration planner records pending capture and selects no literal graph node.",
+    "Legacy replay performs no graph probe/write for capture and reports materialization required.",
+    "An existing canonical technical node cannot qualify a capture as canonical replay."
+  ],
+  "limits": [
+    "Structural representation is not evidence admission, signature, authorization or semantic approval.",
+    "Public capture writer, source admission, closure binding, policy and deterministic materializer remain pending.",
+    "The final 22-case suite overlaps 20 earlier Core cases; these are not 182 distinct tests.",
+    "No frontend change, installed recovery campaign or whole-plan acceptance is claimed.",
+    "Initial F16 failed only generated README matrices; final report qualifies regenerated pair."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-capture-core.xml": "c95e4659a69158726a60c7a56a151abdb1359ba919f2d47e91407f09b01e9737",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-test-core.log": "7f75c4d661404fccf05d11254c030adf6f6307ac9b1bd57fddee41a2f3f436ff",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-community.xml": "a0dfb3c47cef39238f2e9a605654311d5c928db83ae6563172357f3b33db85e9",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-test-community.log": "5c253ad79f5f0f3fc66756d60c76b81fb3762db049a8026565883d3ba756c37c",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-final-core.xml": "6425b4c6d6faecb1b83f9078ca81f2c0199ec7dca99dd2f78513978ca4c0852c",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-final-test-core.log": "95928500990134710edc4b8eec9981d30e98d6c41ed1271911c279eb89aeca7b",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-capture.json": "d7f2aa72bc80847c33e0972e3b459f926dd455a0535d2574fc002c76d7d57a54",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-capture-final.json": "9c0d2fa7c15cb322027949686e14fc5705366488f016ebde7edf9cce59fad863",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-capture.json": "3a5e46a9f8cb5eea4f93a5d7080fe3b4db973aaead4d5ec80be6c146d5893543",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-capture-final.json": "e95462a0a5b5bbfcbcad77e971561cae011c778629870f1913a901520cfdbf3b",
+    "PULSE_REFACTOR/.validation-v040/run_learning_capture.py": "a73965539236d8f2142747667905fe3b2869cb94435e91c38644a4c108072b96",
+    "PULSE_REFACTOR/.validation-v040/run_learning_capture_final.py": "a69a820bab88e45c10a28ca6530f21554645fca76be82e0c0e412cdd41d2b7c5",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/learning_capture.py": "88d7ce9ec099b5362697f3d463d4f1d3965442a6d26d4c3b95bb636efa502f32",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/cognitive_projection.py": "d8b310e7b9d4d3a59fc6d9bc54139a47fe8704baea85928a02bcfea04743e7e9",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/kg_cognitive_source.py": "a1f8d2aa8636e4599a3f1cddaea3a52203097a95c75cf3b5c3fe966321d48703",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/cognitive_projection.py": "f14d941f51a3cde3389cead0610875d6e4553acf0f53467f05fc821c52b312c9",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/cognitive_restoration.py": "9afee009a6946eedbeb6532e4440079c1669baaa12fb35c7616ce8dda15d8e3d",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/cognitive_replay_qualification.py": "e806dc29b5bdb4bbf67a69363dd2bf917a6253ad64ebca5970df45aea0ec5b3f",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/canonical_cognitive_preservation.py": "0f6e2d82516a7ef3f652b5f1d539b5c6a142d568ceeb4eb04b064ae4bded89fc",
+    "okto_labs_pulse_core/tests/test_learning_capture_projection.py": "7e220c8e1b47b4aac5df244254db715f2a5cd1931244df01fcf9aa07d7ef2168",
+    "okto_labs_pulse_core/docs/pulse-simplification/LEARNING_CAPTURE_SOURCE.md": "a3dfe6dda318d773d3659f9dea269d22fb1ae2eddb5808b1f4078fe255cb252c",
+    "okto_labs_pulse_community/tests/test_kg_cognitive_source_adapter.py": "aaebb0d68d0d1186a9c46063bdfb2d07c0f5522f8ecc13d836e21899db0de096"
+  }
+}

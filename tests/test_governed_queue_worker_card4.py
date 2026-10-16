@@ -516,8 +516,7 @@ class _MemoryConsolidationStore:
             self.current_reservation_source = self.reservation_sources.pop(0)
         return self.current_reservation_source
 
-    async def list_stale_claims(self, _context, *, now, legacy_cutoff):
-        del legacy_cutoff
+    async def list_stale_claims(self, _context, *, now):
         return tuple(
             entry
             for entry in self.entries.values()
@@ -1059,7 +1058,7 @@ async def test_stale_reconcile_claim_cas_runs_after_graph_writer(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_delete_between_extraction_and_publish_blocks_legacy_commit(monkeypatch):
+async def test_delete_between_extraction_and_publish_blocks_commit(monkeypatch):
     """AC6/TS3: a tombstone winning at the final re-check publishes nothing."""
 
     entry = _entry(status="claimed", claim_token="claim-before-delete")
@@ -1070,19 +1069,22 @@ async def test_delete_between_extraction_and_publish_blocks_legacy_commit(monkey
         nodes=[object()],
         edges=[],
         missing_link_candidates=[],
-        raw_content="legacy spec body",
+        raw_content="native spec body",
+        reference_findings=(),
         relational_projection_candidate_ids=(),
-        relational_projection_active_set_intent=None,
+        relational_projection_active_set_intents=(),
     )
 
     def _extract(*_args, **_kwargs):
         observed.append("extract")
         return worker_result
 
-    async def _passthrough(_db, _entry, _artifact, result):
+    async def _passthrough(_db, _entry, _artifact, result, *, persistence=None):
+        assert persistence is store
         return result
 
-    async def _resolve(_db, _board_id, result):
+    async def _resolve(_db, _board_id, result, *, persistence=None):
+        assert persistence is store
         return result
 
     async def _begin(*_args, **_kwargs):
@@ -1113,11 +1115,12 @@ async def test_delete_between_extraction_and_publish_blocks_legacy_commit(monkey
     monkeypatch.setattr(
         consolidation,
         "_worker_node_to_candidate",
-        lambda _node: {
-            "candidate_id": "candidate-before-delete",
-            "node_type": "Requirement",
-            "title": "Candidate before governed delete",
-        },
+        lambda _node: consolidation.NodeCandidate(
+            candidate_id="candidate-before-delete",
+            node_type="Requirement",
+            title="Candidate before governed delete",
+            source_artifact_ref=f"spec:{entry.artifact_id}",
+        ),
     )
     monkeypatch.setattr(consolidation, "begin_consolidation", _begin)
     monkeypatch.setattr(consolidation, "propose_reconciliation", _propose)

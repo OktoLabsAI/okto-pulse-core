@@ -49,7 +49,7 @@ server gate, and a green Resource Gate does not prove all protocol obligations.
 
 ### Entity context pre-flight — before moving or validating anything
 
-Call the matching `okto_pulse_get_{ideation,refinement,spec,sprint}_context`
+Call the matching `okto_pulse_get_{ideation,refinement,spec}_context`
 with `profile="full"` before any move/validation. For cards, call
 `okto_pulse_get_task_context(profile="full", context_scope="gate")`: it is the
 bounded full gate/readiness slice and includes a content manifest plus
@@ -61,7 +61,7 @@ status-changing work (see
 
 ```
 1. okto_pulse_get_task_context(board_id, card_id, profile="full", context_scope="gate", include_knowledge=true, include_mockups=true, include_architecture=true, include_qa=true, include_comments=true)
-2. Attach applicable artifacts — follow the Card-Level Artifact Attachment path in §2.8 of okto-pulse://workflows/cards (the single source: copy tools per artifact, decide per KE/mockup/Architecture Design, and any skip requires a one-line justifying comment)
+2. Review applicable artifacts — follow the Card-Level Artifact Review path in §2.8 of okto-pulse://workflows/cards. Resolve blocking Architecture/Mockup coverage through official copies or a justified N/A. Select useful Knowledge explicitly; advisory KB omission needs neither filler nor a per-item skip comment. Supplied Knowledge-selection envelopes retain their required justification and replay fields.
 3. Read okto_pulse_get_allowed_transitions; enter in_progress only through an allowed edge for the current type, status, permissions and gates (use started first when required). If already in_progress, do not repeat a move merely to satisfy this checklist.
 4. Verify the move succeeded and re-read the card state, then BEGIN WORK. A refusal is a blocker, not permission to start anyway.
 ```
@@ -98,9 +98,11 @@ evidence. For an ambiguity write:
    current.
 
 Before executing the Spec checklist, read the full Spec context and
-`okto_pulse_get_checklist_binding`; freeze the current Spec version and binding
-identity when starting the execution. Submit every immutable item exactly once.
-`manual_checklist_ref` is legacy evidence only and never satisfies A3.
+`okto_pulse_get_checklist_binding(board_id, spec_id)`; use its frozen binding
+version and the current Spec edition/version when starting the execution.
+Submit every immutable item exactly once.
+Only a complete native Checklist result satisfies A3; imported manual references
+are not accepted by the Checklist contract.
 
 ### Resource Gate pre-flight — mandatory before completion
 
@@ -205,17 +207,9 @@ references may still be recorded as AS-IS Evidence under
 Scaffold/reference items require `interpretation_limit`.
 
 Never submit TO-BE files or structures as Evidence. Put them in the Spec,
-Architecture Design, mockup, or Implementation Target. V1 remains readable but
-contextually unclassified and cannot be inferred into V2 authority. If the
-live inbound surface exposes only V1, stop and report the missing V2
-capability.
+Architecture Design, mockup, or Implementation Target. Only the native contextual
+contract is accepted; earlier formats are rejected without conversion.
 
-If `source_context_items` reports `unclassified_legacy`, inspect the exact IDs.
-An authorized agent may append classification with
-`okto_pulse_classify_legacy_code_evidence`; an authorized human may use UI/REST.
-Both require `code_traceability.evidence.classify_legacy`, defensible provenance
-and current CAS inputs. Without authority or evidence, report the blocker.
-The original Evidence remains immutable; classification does not upgrade V1.
 Read the effective `source_context` summary even when item collections are
 bounded. Treat a derived Spec's source-context manifest as frozen until an
 explicit, preview-fenced rebase.

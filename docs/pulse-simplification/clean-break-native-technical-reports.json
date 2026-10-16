@@ -1,0 +1,38 @@
+{
+  "scope": "Technical requirement delivery through signed static analysis and inspection",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "ARQVER:AC-VER-14": [
+      "test_signed_specialized_report_delivers_technical_requirement_and_failure_removes_credit[static_analysis]",
+      "test_signed_specialized_report_delivers_technical_requirement_and_failure_removes_credit[inspection]",
+      "test_incomplete_static_report_cannot_mint_receipt_or_change_history",
+      "test_report_denials_happen_before_receipt_and_preserve_scope"
+    ]
+  },
+  "evidence": [
+    "New SQL witnesses declare a native TR for public-port dependencies, a technical criterion, and a manual scenario with static_analysis or inspection. A normal Card records implementation and the existing Test Card records the authenticated proof.",
+    "Implementation alone leaves the real Spec delivery gate blocked. A valid report signed by the real Community issuer and checked by the real verifier satisfies the TR and its criterion through one test record; require_spec_delivery then permits delivery.",
+    "A subsequent signed failed observation removes current credit and blocks the same gate, while both original implementation/test payloads remain unchanged.",
+    "Reused unchanged main86 REST evidence rejects missing sources/rules/configuration with no receipt/history changes, rejects unauthorized inspection before signing, and preserves scoped identity/non-enumerable denials.",
+    "Reused frontend method/report witnesses preserve external authorship, forward unchanged server-issued evidence, keep final policy denial separate from admission, and never claim independent approval or internal execution."
+  ],
+  "tests": {
+    "new_community_passed": 2,
+    "seconds": 12.52,
+    "reused_campaign": "native-verification-methods*: previously 88 Core,19 Community,24 frontend distinct; no rerun or new-count claim"
+  },
+  "limits": [
+    "Implementation receipt/execution facts and scenario result persistence are seeded in this delivery witness; actual report-admission/status REST and controlled MCP routing are proved by the reused campaign. No single installed end-to-end authentication claim.",
+    "External report observations are authored data authenticated by the issuer, not an internal LLM verdict or a claim that Pulse itself executed static analysis/inspection.",
+    "No product/SPA change, conversion, promotion or real-data operation. Main86 closure remains applicable with eight zero budgets."
+  ],
+  "artifacts": {
+    "provenance-native-technical-reports1.json": "3b2c14d6bb1cb1d784ae7f7c9c311374a380ae99de0abe6593e74da3fec8a052",
+    "native-technical-reports1.xml": "f61c5745752cd5e5a7074daed6ce294efc6fa758e06840eedda313a1163c288d",
+    "native-verification-methods-core1.xml": "9e098bafaa4fe562ca2bb0cee8cfe6cdcde547a6fc68d2299be41cc788e66e77",
+    "native-verification-methods1.xml": "38446ce517fd4b12ca641a9dc3a103eadb626462f6916c4b3114425890fb6a2a",
+    "native-verification-methods2.xml": "e3fb5d868c39fde1567f7efa433212cb97d4deebe320192572ee3cb0eba603d6",
+    "native-verification-methods-frontend1.json": "0b15cc2276b31f5f0688b6f3bdb4adc4f93da5b7b2fc45ea75a7ebbf2798858e",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

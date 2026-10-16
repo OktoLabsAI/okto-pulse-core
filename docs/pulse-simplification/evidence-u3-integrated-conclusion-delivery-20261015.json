@@ -1,0 +1,450 @@
+{
+  "date": "2026-10-15",
+  "scope": "U3 native composed conclusion, preserved history and delivery synchronization",
+  "core_product_commit": "537eea67",
+  "community_product_commit": "ccc76dfc",
+  "documentation_base": "3f69cd4e",
+  "runtime": {
+    "kind": "isolated checkouts",
+    "pid": 13996,
+    "api_port": 8200,
+    "mcp_port": 8201,
+    "vite_port": 5274,
+    "health": "healthy/0.4.0 observed this execution",
+    "installed_pair_qualified": false
+  },
+  "identity": {
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2",
+    "task_id": "462da79f-33b8-57d5-94ad-351345d35eb8",
+    "test_id": "ba5cf224-0da8-50fb-be37-4cc572d11e2c",
+    "scenario_ids": [
+      "ts_f63f0e1e",
+      "ts_fd4df39d"
+    ]
+  },
+  "observed": {
+    "planning": "Cards authored Not Started in Draft; missing business rule detected by native gate, content corrected in edition 2; inventory 4 obligations assigned with no pending item.",
+    "policy": "Checklist Blocking configured through authorized browser in isolated Board. No skip/default relaxation. Architecture/mockup N/A justified by pure function scope. Policy Compliance has no applicable policy in this fixture.",
+    "composed_ui_submission": {
+      "validation_id": "val_3f879f04",
+      "decomposition_id": "eval_4c6503ab",
+      "promoted_to": "validated",
+      "edition": 2
+    },
+    "mcp_successor": {
+      "validation_id": "val_690922ca",
+      "reused_decomposition_id": "eval_4c6503ab",
+      "decomposition_author": "local-user/Owner",
+      "previous_validation_count": 1,
+      "pinpoint": "opportunity/low/assertiveness with exact context excerpt and optional Unicode example"
+    },
+    "history_ui": "Previous attempt exposes all five score graphics, original author and full justifications; keyboard focus and Enter expansion observed.",
+    "start": "UI moved Validated to In Progress; current validation and single decomposition remain unchanged after start and delivery observation.",
+    "delivery": {
+      "before_implementation_percent": 0,
+      "after_implementation_percent": 100,
+      "verification_percent": 0,
+      "implementation_satisfied": 4,
+      "implementation_applicable": 4,
+      "spec_version_before": 20,
+      "spec_version_after": 20,
+      "open_card_ui_updated_without_refresh": true,
+      "source_commit": "627bf29",
+      "baseline_commit": "32600a9",
+      "source": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\label-mock",
+      "observation": "Committed source inspected and matched byte-for-byte with Git blobs; AST/function, paths, secrets and manifest checked; native receipt/resolution/execution/binding accepted."
+    },
+    "offline": "Existing local screenshots/snapshots reread: draft preserved, Add disabled offline and enabled on recovery. No new offline run in this checkpoint."
+  },
+  "inspected_screenshots": [
+    "u3-integrated-validation-blocked.png",
+    "u3-integrated-composed-ready.png",
+    "u3-integrated-decomposition-expanded.png",
+    "u3-integrated-pinpoint.png",
+    "u3-integrated-previous-full.png",
+    "u3-integrated-delivery-after-proof.png"
+  ],
+  "limits": [
+    "U3 remains partial: native permission revocation/identity cases and remaining UV18-UV21 reconciliation are not closed here.",
+    "Delivery mutation proved the open Card panel, not simultaneous visible Kanban cover and open Spec Coverage; those surfaces need matching evidence.",
+    "No authenticated external test execution yet; Test Card remains Not Started and verification is correctly zero. No Cards/Spec Done or KG canonical claimed.",
+    "No new product change or automated regression/build/closure run in this checkpoint; prior qualified source tests are not recounted as new passes.",
+    "Native checkout/Vite proof does not qualify the installed wheels/frontend; U4 remains required.",
+    "Browser console retained 31 errors and 2 warnings from previous fixture work; this checkpoint observed no increase and does not claim zero console errors.",
+    "Several stale Playwright refs failed before clicking; fresh snapshots resolved them. No mutation was repeated on uncertainty.",
+    "The content correction required one authorized new Draft edition for missing BR; U4 must author that invariant before admission to prove the planned uninterrupted flow."
+  ],
+  "next_action": "Complete native authority and consumer reconciliation for U3, then build/install exact pair and run U4; reuse this fixture and recorded receipts without replaying creates.",
+  "artifact_count": 92,
+  "artifacts": [
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-before-delivery.yml",
+      "sha256": "090dbe667ae32f409305dab90573492fcce3f2923db6cf9fdc9e685233c7c07b"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-before-second-opinion.yml",
+      "sha256": "b6dcf493527a39ff69c7a85113b2cdadf9d016739cf1e1422d8298e5f9b3f5f2"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-br-authored.yml",
+      "sha256": "edcbad00c99486a51002ef22b7d65f28b231bf259451d33d1537f2c8696baee4"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-composed-form.yml",
+      "sha256": "533c04624f3c7af026e56be66da8729d5747fe265308abad8695e879d029d438"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-composed-ready.png",
+      "sha256": "101a65ec6f6d14b4c376b1dd70bcff0162998e0204b11b85ad21efbbd0f0637b"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-composed-ready.yml",
+      "sha256": "cf36a365215d9cca29212a56525fc6ea03cf8b5ad7a98d124f8184bb66b14137"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-decomposition-expanded.png",
+      "sha256": "c88ccf4182b939d2b9eba2373e91b616700b73e7771bf5341a15b0849cea6170"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-decomposition.png",
+      "sha256": "ab9f1982634df1624f8b548c8cdbb3d9755f785d2813e0389a2329b84cf2dc72"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-delivery-after-proof.png",
+      "sha256": "fff16cd273fa461fbb3650610fea1d1789d954f9b9ef928d417f6175e50479a3"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-delivery-after-proof.yml",
+      "sha256": "3cd808b957a89c5bd2c23decf7ec74039905d42b8e0a2eaefef40fea2c17cb3f"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-delivery-before-proof.yml",
+      "sha256": "7ce9a69fd803e6b0a11abaf8e036091ffad21603698a0922e08b664ab0d0aa64"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-lint-checklist.yml",
+      "sha256": "3cf8beaa6fc26a65d62bc28bf9051587733465885ae5592fccb1399c7b6ee95e"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-mcp-second-opinion.yml",
+      "sha256": "dc6adab94fec881a610e3bf5c8c97e4fdb6c18506f9e9141ebc4a751a4b9b9df"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-pinpoint.png",
+      "sha256": "289edb8deb72a4816e2e049d453255b52bc88f2533418ae578c5b1f81edb3bba"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-planned.yml",
+      "sha256": "e5eff88ba00150d81fe1dc1cb9bce6e75cd18d170ce32f52d6fb15757ba12dd5"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-prerequisites-passed.yml",
+      "sha256": "eda63c7788fd1f1fd80e5599e64e266d3a3aca8fe8d3680b6b1d86cb3e615fae"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-previous-full.png",
+      "sha256": "6760ac5bcc8d99a12cad619e0255d52c88e299e41b00841b6fe618abb7495e9a"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-previous-full.yml",
+      "sha256": "278bf4c2a9edc3cd54afd9fe9a9ad877850fe94bcdf213531b5a268478f72636"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-ready-review.yml",
+      "sha256": "d51f254f965afb5fc0c2dcb3df3ab75cf3fedab2072d92d10cf5add776f85adf"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-references-before-proof.yml",
+      "sha256": "a525a91c12c3cf0aceb1e0ac4d1c63c8b45070cca31b28cb4a121f928d80f541"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-review2.yml",
+      "sha256": "3ee04a06187eff27d2058731f738a9a01bf4886566595a03dd770a513da26a58"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-spec-discovered.yml",
+      "sha256": "08bd378038d87b7489470cf1654bf2bb78959f67f2d2d24608633e58f10cd8e2"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integrated-validation-blocked.png",
+      "sha256": "469f61e48dc27e37d91a4fd5c066c890c887e4cdb40d74f1d4939662ce3993c2"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integration-offline.yml",
+      "sha256": "9c4d0dc040c013271336be29a040c07e80c00f85cea01de5f10aa8c4bfc45e44"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-integration-online.yml",
+      "sha256": "91c234274aa578d076bb3d7443811c849302a2c53444daf096949623890c285d"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\context-after-composed.response.json",
+      "sha256": "8a805bb9adbc4f4c7cc0557b48eab0ae4cc3b2af1ebc5e691b558a82102c94ff"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\context-after-start.response.json",
+      "sha256": "81ac0ccbb3ff099d43fcaf8c0207cf09abe1ee8c24f18b3bef7f0eae3c818591"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\cycle-after-composed.response.json",
+      "sha256": "154d72575e82a753539099b8dbbc33a36dd9b6e4fdc9ff084c87dcd7e866d434"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\cycle-after-delivery.response.json",
+      "sha256": "87afa0be357ec11a79db2bf71b363cbb8a18194fdc6f6da36c2890a34e5dca1a"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\cycle-before.response.json",
+      "sha256": "f4320b9cdb840fd857cda254a0f61b08674f00f5d56f92db046fc9655c1b7495"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-absence.json",
+      "sha256": "d1e696d3cd9e7f1ff185904364201651927633e0bbb20ef099cbfcce6dee1ee0"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-allowed-in_progress.json",
+      "sha256": "244bc9bfcfd4bdf0a2880c7c0cb6e300cbf1a3d67bc999d47fad635bb3226abf"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-allowed-started.json",
+      "sha256": "d5d6931002e2884d66d66e0718ce157e69d5bc64c66f7af74eb0755e29441303"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-baseline-context.json",
+      "sha256": "2e6003cd0aa95e4deab8ea662bf4b580440edf3afae6f0dda90e27d8702e3cfd"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-baseline-receipt.json",
+      "sha256": "cef354a02c49144eabdeed3980b18d2a8f91328ef00cbea6bcf7703b08db44b9"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-baseline-request.json",
+      "sha256": "65cbbcc52af39e8e14213dfb6ac3ce1d613868c359ee193d09fa720447d47342"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-before-in_progress.json",
+      "sha256": "b098c06e79e6fe5729b12396e7a577e997f5253268dd3a115a59c9b8f8146bba"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-before-started.json",
+      "sha256": "26aa4eb0e79600a99c03ec8ede1204d01848bd663aa9c8f51f767ed66cf758f0"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-executed.json",
+      "sha256": "fe568b9494524bc5cd8d19d93220725a9bf1816749f989d9ebbb6ee66e622bbd"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-implementation.json",
+      "sha256": "fcf96ffc256761d10fbe4d8f81ccb5a4e44287808a819848edf192bb87ef5b62"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-implemented-context.json",
+      "sha256": "37a1c8a26014a46d7e137a5ceedcb9bb2745be5e2cea9957e3ff573e536d467b"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-implemented-receipt.json",
+      "sha256": "3b36f5cf671d8857b5774aafb1444ea1047bcefc8a88ab3cb6fbc7d34ede31b9"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-implemented-request.json",
+      "sha256": "a10ca69643ddb28bc0b48f39419fb1830767cc417eb559af973f458fac6cd349"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-move-in_progress.json",
+      "sha256": "fc654b3bb46ae701166af1f0a2e39e7a2a4f1c296ca7fe3be760ce74b53f5d8e"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-move-started.json",
+      "sha256": "38b7bcade482a26c84b76a26d0518cede1ea4b97627649577d82515354253ec9"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-observation-baseline.json",
+      "sha256": "139bcdf6c50ae25c187ad6dcfcf615718d6cfc8163db679cc0616f29e6f33557"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-observation-implemented.json",
+      "sha256": "8f61213ed59ca4829f5bfb5108c6d33389aa0d5fd22f166a8974bcc1a5ee3404"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-observation-planned.json",
+      "sha256": "a610c8d1a931e8170b8be7a8b8c2bbee60f045f6900cda2bb11c68832e8876a2"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-planned-context.json",
+      "sha256": "5a5f7c87116b48e7f9155911552530435168e46245a5358d933050f678d78541"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-planned-receipt.json",
+      "sha256": "8df9ba617bf059c9aaba45e420e650e4521282ee2071a34d725c5cfbd87e8f00"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-planned-request.json",
+      "sha256": "ee538b87156943fd570eeabbb5623b6e23d8eef21b959362baafcdd72955a17a"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-readiness-after-implementation.json",
+      "sha256": "8660f75784f3d5745fa6625fe02fb19a4c9b83a6b0fe6bf015089adcf1ea19a2"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-readiness-before.json",
+      "sha256": "874658c3107597490f3af766e84d500324bbc2a18d7008a8d888307d4ebeface"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-resolved.json",
+      "sha256": "64be4fcb014da5ee96068db958d70e0aaa9088fd8b397f2d22d5d53a84f51b4f"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-rollup-before-binding.json",
+      "sha256": "6926cf6a654cc23f20e6e938d41fda5d7caa0e0293c278630505bb8372afb66f"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-spec-after-delivery.json",
+      "sha256": "6b5dab2f72c2974319fa01799c6c090bcb850101ca45ff5e790fc601dc5faed5"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-spec-before-delivery.json",
+      "sha256": "e9efe165aacf2905172cd73ff873f1f6439f6744193c91950e31c11f641ca5fc"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-spec-before-target.json",
+      "sha256": "ab8d5ca1b6185d2221d9d94aebde0b0bee0279fb4c9d4a87e2dbd48b805ca158"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-state.json",
+      "sha256": "6135f3df60a215eefe8d4e6a33c83cb40d4aab14e66f48426d925210b0a9db42"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\delivery-target.json",
+      "sha256": "fb4027930ca4f0d95a1131f831a8fce94f6901fdb9daf13a48e6da8364d11070"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\identity.json",
+      "sha256": "fcaccad01f32941a5f271af07eb5615aea422ba1ca8e51e6c993832cee9b00f0"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\planning-ac-empty.json",
+      "sha256": "74b03913c3c0dfb1ee82d4643a68208acadd7ea21df4dc8856a0dbbdf3faa4b3"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\planning-ac-normal.json",
+      "sha256": "e78d2ea3021ccf965cda82ec6de98f04fff48b9a7a570c5d9bdcc3eecd6e4552"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\planning-after.json",
+      "sha256": "84ee4e3adbd51314a591b892624adf266d11ecc0da122358a96169660bf3d85c"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\planning-before-link-impl.json",
+      "sha256": "a552fc9542e8822389102fe20b8bcbebfa84d3e192567a7984a91c737b9dda9c"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\planning-before-link-test.json",
+      "sha256": "7d8d13fce464e5fdeeb4d8cd57ac0d6b7325c0dcd64fb9d1af8313d0e57050fb"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\planning-before.json",
+      "sha256": "4aa1f3f12cbaa8aef146959300ee08e50658dbb302274955acaa22c213dcd059"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\planning-inventory.json",
+      "sha256": "9f381f97bef6808dd58e4311aefadb1f21f00a1456e9ec121b6e2b6af24c430e"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\planning-link-impl.json",
+      "sha256": "09bb1671e174f0736638fbb1f10048a3d29a7564f181ebfcbe7e76044b058bcc"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\planning-link-test.json",
+      "sha256": "38f434bd12106dcefebe6af897359a4ea61787ba82bcfa6cbf9b1a5a192e20c1"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\planning-na-architecture.json",
+      "sha256": "710516d86345c7c2bcbcb0ab927bbe96226defcb501ab709d8cd7d16b8abcd1c"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\planning-na-mockup.json",
+      "sha256": "5265f598fb7e7096a861c106baf1e22ea236d1e90e6f0ee1945bc3faee543023"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\planning-transitions.json",
+      "sha256": "5e317c83850ea51e3679402d3d14f4fda6a85a45517aba0b0d3af7ec0dc2a9c3"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\planning-tree.json",
+      "sha256": "9aadfec719df7e66beddc6c5dda160e86b39b300f96feba7833b749adaad423a"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\preconditions-binding.json",
+      "sha256": "5f6cd796c3a4dbf11e1222446e2d70d4384eac5052e75c51c91bd42989055acc"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\preconditions-checklist.json",
+      "sha256": "74b4b60dcb93da2edd75c2e4282d940d29493c2fe1630f9863d10adc0b133dbf"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\preconditions-context.json",
+      "sha256": "b97855a8408750a409340dde92d19b5aa932dffd3132cf9c084deb87a98ff809"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\preconditions-cycle.json",
+      "sha256": "2676b152461bcd288da96de9a71415564c17f9e2bb2711cba5db76a10fd26e6b"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\preconditions-execution.json",
+      "sha256": "4a8a4f0d43c87961018fddad66a5cb301ab1fb420edd97ce3c5d743683640812"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\preconditions-lint-preflight.json",
+      "sha256": "5d6a82c67d9dc3aaf75958456c5651595caf399276edb78aa1207ec81197a687"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\preconditions-lint.json",
+      "sha256": "25d5e8278fd8c231b3b415dd3262a36d0675edd567712a6b74acd0795af363e9"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\qualify-br-after.json",
+      "sha256": "3f8a69ed79a9940d1084bed930435abf51f70e4f54a6271381a29d61c72dfb41"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\qualify-br-before-ac.json",
+      "sha256": "ed411b38c6fdc8d993a7eee1ac3f78092376b5971dffb1c89ff455b6799283dc"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\qualify-br-before.json",
+      "sha256": "3b0d114825ab68edb6ad25df3f2a8c029f9aaf0325def9aaa88a3efc66e3ac9d"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\qualify-br-criterion.json",
+      "sha256": "4ec1761c91beb2642727c242df65cd5304ba593a47b487c72e79060587e20553"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\qualify-br-inventory.json",
+      "sha256": "53fd957a61597e0b11e8b01a68460cb78498198985edd5b7855c1a08cecaa91d"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\qualify-br-profile.json",
+      "sha256": "fc8804ab9b2cdeab98c4ac52d1c80c7c4cff9369d9f195850c82fce713404443"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\second-opinion-after-cycle.json",
+      "sha256": "07f0b316e58f17f327293ac7f7b1f7b4a3a3a33e85f4bbe9684767c6f59308a6"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\second-opinion-after.json",
+      "sha256": "47d341b1c9bd21cc548b42ec9517a2d665c6cad50cbcbf87d7870ce17768bb13"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\second-opinion-context.json",
+      "sha256": "0e39e73e9bbf6382a31cd41c46a1401a43344f7e3bfc036cc35cacebbe3f4e7a"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\second-opinion-cycle.json",
+      "sha256": "a901c03642fbc346e57bbdd09a0a2b4b86ee834744279607dc1ab2e263856c71"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-integrated-validation\\second-opinion-submit.json",
+      "sha256": "96eb0f1a2d59f366d305c773c03a8b0fdbb8149093c61ffefe1f76862a6f55f6"
+    }
+  ]
+}

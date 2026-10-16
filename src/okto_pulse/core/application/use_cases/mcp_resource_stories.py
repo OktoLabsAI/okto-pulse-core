@@ -156,7 +156,7 @@ class McpClearResourceNotApplicableUseCase:
 
 
 def _mcp_story_state_perm(
-    permissions: Any, granular: str | None, legacy: str | None, story: Any
+    permissions: Any, granular: str | None, story: Any
 ) -> str | None:
     from okto_pulse.core.services.permission_policy import check_story_state_permission
     from okto_pulse.core.services.story_permissions import story_state
@@ -164,7 +164,6 @@ def _mcp_story_state_perm(
     return check_story_state_permission(
         permissions,
         granular or "",
-        legacy,
         story,
         story_state=story_state(
             story.status, archived=bool(getattr(story, "archived", False))
@@ -239,7 +238,6 @@ class McpUpdateStoryUseCase:
     async def execute(
         self, command: McpUpdateStoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpStoryMutationResult:
-        from okto_pulse.core.services.permission_policy import Permissions
         from okto_pulse.core.services.story_permissions import story_update_permissions
 
         service = uow.services.stories
@@ -250,7 +248,6 @@ class McpUpdateStoryUseCase:
             perm_err = _mcp_story_state_perm(
                 actor.permissions,
                 required_permission,
-                Permissions.SPECS_UPDATE,
                 existing,
             )
             if perm_err:
@@ -288,7 +285,6 @@ class McpMoveStoryUseCase:
                 "story",
                 existing.status,
                 command.target_status,
-                legacy_operation="specs:move",
             ),
             uow=uow,
             board_id=existing.board_id,
@@ -304,7 +300,6 @@ class McpArchiveStoryUseCase:
     async def execute(
         self, command: McpArchiveStoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpStoryMutationResult:
-        from okto_pulse.core.services.permission_policy import Permissions
 
         service = uow.services.stories
         existing = await service.get_story(command.story_id)
@@ -314,7 +309,6 @@ class McpArchiveStoryUseCase:
         perm_err = _mcp_story_state_perm(
             actor.permissions,
             granular,
-            Permissions.SPECS_UPDATE,
             existing,
         )
         if perm_err:

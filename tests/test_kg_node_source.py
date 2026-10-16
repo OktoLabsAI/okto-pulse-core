@@ -41,7 +41,7 @@ async def resolve(scope, ref, actor=None):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind", ["spec", "refinement", "ideation", "sprint", "story", "card", "task", "test", "bug"])
+@pytest.mark.parametrize("kind", ["spec", "refinement", "ideation", "story", "card", "task", "test", "bug"])
 async def test_direct_owners(scope, kind):
     result = await resolve(scope, f"{kind}:owner")
     assert result.status == "resolved"
@@ -49,6 +49,27 @@ async def test_direct_owners(scope, kind):
     assert result.target.board_id == "board-a"
     assert result.target.entity_type == ("card" if kind in {"card", "task", "test", "bug"} else kind)
     scope.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('ref', ['sprint:retired', 'sprint:retired:decision:old'], ids=['direct', 'concept'])
+async def test_retired_sprint_source_preserves_opaque_reference_without_live_lookup(scope, ref):
+    del scope.services.sprints
+    result = await resolve(scope, ref)
+    assert result.status == 'unsupported'
+    assert result.source_artifact_ref == ref
+    assert result.target is None
+    scope.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_indirect_evidence_with_retired_sprint_owner_does_not_resolve_live_target(scope):
+    del scope.services.sprints
+    scope.services.code_traceability.get_evidence.return_value.parent_type = 'sprint'
+    result = await resolve(scope, 'code_evidence:e1')
+    assert result.status == 'unsupported'
+    assert result.source_artifact_ref == 'code_evidence:e1'
+    assert result.target is None
 
 
 @pytest.mark.asyncio

@@ -30,9 +30,8 @@ KnowledgeWorkspaceProfile = Literal["summary", "detail", "full"]
 
 CONTRACT_VERSION = 2
 SUPPORTED_PROFILES: tuple[str, ...] = ("summary", "detail", "full")
-LEGACY_VERSION_TOKEN = "legacy"
-_WORKSPACE_RESOURCE_TYPE = "knowledge_base"
-_DETAIL_CURSOR_VERSION = 2
+_RESOURCE_TYPES = frozenset({"knowledge_base", "architecture", "mockup"})
+_CURSOR_VERSION = 2
 _DETAIL_CURSOR_KIND = "detail"
 
 
@@ -40,7 +39,7 @@ _DETAIL_CURSOR_KIND = "detail"
 class _ProfilePolicy:
     default_limit: int
     max_limit: int
-    response_budget_bytes: int
+    response_budget_bytes: int | None
     body_budget_bytes: int | None
 
 
@@ -108,6 +107,15 @@ class KnowledgeWorkspaceProjectionError(ValueError):
         }
 
 
+def _resource_type(projection: Mapping[str, Any]) -> str:
+    value = projection.get("resource_type", "knowledge_base")
+    if not isinstance(value, str) or value not in _RESOURCE_TYPES:
+        raise KnowledgeWorkspaceProjectionError(
+            "knowledge_workspace_invalid_resource_type", "Unknown resource type.",
+        )
+    return value
+
+
 def _json_bytes(value: Any) -> int:
     return len(
         json.dumps(
@@ -121,10 +129,10 @@ def _json_bytes(value: Any) -> int:
 
 
 def _encode_cursor(offset: int) -> str:
-    """Encode the stable v1 page-cursor contract."""
+    """Encode the current typed page cursor."""
 
     raw = json.dumps(
-        {"v": 1, "offset": offset},
+        {"v": _CURSOR_VERSION, "kind": "page", "offset": offset},
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
@@ -142,6 +150,7 @@ def _detail_cursor_fingerprint(
         "contract_version": CONTRACT_VERSION,
         "entity_id": str(projection.get("entity_id") or ""),
         "entity_type": str(projection.get("entity_type") or ""),
+        "resource_type": _resource_type(projection),
         "versioned_projection_id": versioned_projection_id,
     }
     raw = json.dumps(
@@ -164,7 +173,7 @@ def _encode_detail_cursor(
                 versioned_projection_id,
             ),
             "kind": _DETAIL_CURSOR_KIND,
-            "v": _DETAIL_CURSOR_VERSION,
+            "v": _CURSOR_VERSION,
             "versioned_projection_id": versioned_projection_id,
         },
         separators=(",", ":"),
@@ -181,13 +190,17 @@ def _decode_cursor(cursor: str | None) -> _DecodedCursor | None:
         payload = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
         if not isinstance(payload, Mapping):
             raise ValueError("unsupported cursor envelope")
-        if payload.get("v") == 1 and set(payload) == {"v", "offset"}:
+        if (
+            payload.get("v") == _CURSOR_VERSION
+            and payload.get("kind") == "page"
+            and set(payload) == {"v", "kind", "offset"}
+        ):
             offset = payload["offset"]
             if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
                 raise ValueError("invalid cursor offset")
             return _PageCursor(offset=offset)
         if (
-            payload.get("v") == _DETAIL_CURSOR_VERSION
+            payload.get("v") == _CURSOR_VERSION
             and payload.get("kind") == _DETAIL_CURSOR_KIND
             and set(payload)
             == {
@@ -482,6 +495,10 @@ class KnowledgeWorkspaceProjector:
                     "supported_profiles": list(SUPPORTED_PROFILES),
                 },
             )
+        if _resource_type(projection) != "knowledge_base" and normalized_profile != "summary":
+            # Dedicated architecture/mockup readers already expose complete bodies.
+            # Preserve that contract one resource at a time; KB byte budgets remain.
+            policy = _ProfilePolicy(1, 1, None, None)
         resolved_limit = cls._resolve_limit(
             profile=normalized_profile,
             policy=policy,
@@ -538,6 +555,8 @@ class KnowledgeWorkspaceProjector:
                     "supported_profiles": list(SUPPORTED_PROFILES),
                 },
             )
+        if _resource_type(projection) != "knowledge_base" and normalized_profile != "summary":
+            policy = _ProfilePolicy(1, 1, None, None)
         resolved_limit = cls._resolve_limit(
             profile=normalized_profile,
             policy=policy,
@@ -575,7 +594,7 @@ class KnowledgeWorkspaceProjector:
                 end_offset=index + 1,
             )
             candidate_size = _fixed_response_bytes(candidate)
-            if candidate_size <= policy.response_budget_bytes:
+            if policy.response_budget_bytes is None or candidate_size <= policy.response_budget_bytes:
                 page = proposed
                 continue
 
@@ -596,7 +615,7 @@ class KnowledgeWorkspaceProjector:
                     end_offset=index + 1,
                 )
                 candidate_size = _fixed_response_bytes(candidate)
-                if candidate_size <= policy.response_budget_bytes:
+                if policy.response_budget_bytes is None or candidate_size <= policy.response_budget_bytes:
                     page = proposed
                     continue
 
@@ -620,7 +639,7 @@ class KnowledgeWorkspaceProjector:
             end_offset=offset + len(page),
         )
         response_size = _fixed_response_bytes(response)
-        if response_size > policy.response_budget_bytes:
+        if policy.response_budget_bytes is not None and response_size > policy.response_budget_bytes:
             raise KnowledgeWorkspaceProjectionError(
                 "knowledge_workspace_response_exceeds_budget",
                 "Knowledge Workspace metadata exceeds the profile response budget.",
@@ -760,11 +779,9 @@ class KnowledgeWorkspaceProjector:
                     "knowledge_workspace_lineage_identity_missing",
                     "A ResourceLineage attachment has no resource type.",
                 )
-            # Knowledge Workspace is intentionally a KB-only projection.
-            # Architecture and mockup lineage remain available through their
-            # dedicated experiences and must not consume a workspace cursor,
-            # page slot, response budget, or count.
-            if resource_type != _WORKSPACE_RESOURCE_TYPE:
+            # Each dedicated experience pages one resource kind. Other kinds
+            # must not consume its cursor, response budget, or count.
+            if resource_type != _resource_type(projection):
                 continue
             canonical_id = _optional_text(
                 attachment.get("canonical_unique_resource_id")
@@ -792,7 +809,6 @@ class KnowledgeWorkspaceProjector:
             representative_id = _optional_text(
                 representative.get("resource_id") or representative.get("id")
             )
-            version_token = version or LEGACY_VERSION_TOKEN
             revision_stamp = representative.get("revision_stamp")
             stamp = revision_stamp if isinstance(revision_stamp, Mapping) else {}
             physical = [
@@ -803,7 +819,12 @@ class KnowledgeWorkspaceProjector:
                 {
                     "resource_type": resource_type,
                     "canonical_unique_resource_id": canonical_id,
-                    "versioned_projection_id": f"{canonical_id}@{version_token}",
+                    # Optional revision evidence is not a legacy exemption. An
+                    # unstamped current resource keeps its canonical identity;
+                    # never invent a revision for it.
+                    "versioned_projection_id": (
+                        f"{canonical_id}@{version}" if version is not None else canonical_id
+                    ),
                     "root_id": root_id,
                     "resource_version": version,
                     "representative_resource_id": representative_id,
@@ -812,7 +833,6 @@ class KnowledgeWorkspaceProjector:
                         representative.get("attachment_kind")
                     ),
                     "inherited": bool(representative.get("inherited")),
-                    "grandfathered": version is None,
                     "provenance": {
                         "source_entity_type": _optional_text(
                             representative.get("source_entity_type")
@@ -934,7 +954,7 @@ class KnowledgeWorkspaceProjector:
                 1
                 for value in attachments
                 if _optional_text(_mapping(value).get("resource_type"))
-                == _WORKSPACE_RESOURCE_TYPE
+                == _resource_type(projection)
             )
             if isinstance(attachments, Sequence)
             and not isinstance(attachments, (str, bytes))
@@ -943,6 +963,7 @@ class KnowledgeWorkspaceProjector:
         truncated = end_offset < total_count
         return {
             "contract_version": CONTRACT_VERSION,
+            "resource_type": _resource_type(projection),
             "board_id": projection.get("board_id"),
             "entity_type": projection.get("entity_type"),
             "entity_id": projection.get("entity_id"),
@@ -965,6 +986,5 @@ __all__ = [
     "KnowledgeWorkspaceProfile",
     "KnowledgeWorkspaceProjectionError",
     "KnowledgeWorkspaceProjector",
-    "LEGACY_VERSION_TOKEN",
     "SUPPORTED_PROFILES",
 ]

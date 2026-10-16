@@ -1,0 +1,116 @@
+{
+  "scope": "F6/KG7.6 prerequisite: exact selected revision across Learning capture history",
+  "suites": {
+    "core": {
+      "passed": 57,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 29,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Public FingerprintCognitiveSourceReader selects the requested scoped fingerprint rather than assuming revision zero.",
+    "The Community SQL implementation audits the complete scoped history before selecting; foreign scope and corruption remain closed.",
+    "Historical selection leaves the current head and all revisions unchanged; absent fingerprint/identity is explicit.",
+    "Worker and materializer consume the public capability; existing authored create, revalidation and compensation regressions pass."
+  ],
+  "limits": [
+    "This is a prerequisite for multiple capture intents on one Learning, not implementation or acceptance of reuse/supersede.",
+    "No new intent or target write is admitted; create-only authority remains unchanged.",
+    "Integration uses disposable SQL/Grafx with explicit unrelated completion-gate and graph-health fixtures.",
+    "No source changes followed the campaign; F16 passed without README regeneration.",
+    "No real data or frontend changed; candidate promotion, K3/K4 and full-plan completion remain pending."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-fingerprint-selection-r1.json": "6d6187948151c3876141c024d91af8348653592fd86c492f1af0b8528536abf2",
+    "PULSE_REFACTOR/.validation-v040/learning-fingerprint-selection-r1-core.xml": "e800a2e0cbfeff4dd6c92115813dda940c1d49913a40020482611bbfc28abd12",
+    "PULSE_REFACTOR/.validation-v040/learning-fingerprint-selection-r1-community.xml": "a2f935908b3b3ee264448887f19694d2af8d0a197e1e5a4d613c24cacdf936b0",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-fingerprint-selection-r1.json": "e50ea9b5347e636b4ef91030b108512bf97ce91930c985ccac66002b8ce2fe29",
+    "PULSE_REFACTOR/.validation-v040/run_learning_fingerprint_selection.py": "f4cde023cd2bf59384d3cd75c8960c441a0f6e554ee192d211870fe1f19fa25c",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/kg_cognitive_source.py": "f28ade89c9cd33830966dc3e47a3ae36cce217d0177f925467d9da33303b4f6b",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "e78f2bc8b1544f0238828bd717e61b5d41d2341a4263997b9f4a1391851e2133",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_materialization_worker.py": "5900d1080d2ede87e08e26388fd021f5396f03a4d18e8473d91c5e2cdc56f1b3",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_kg_cognitive_source.py": "08ede3fcf000f7cd9e61284e512a725c48031385beaf9331294b96d4a74c0ee1",
+    "okto_labs_pulse_community/tests/test_cognitive_fingerprint_reader.py": "1859415036fc8586165f246eb90913761a7246a190a4e30db967927355b90fa9"
+  }
+}

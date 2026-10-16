@@ -3,7 +3,7 @@
 Covers contracts api_bb4ff8ae + api_8721ddb7, FR8/FR9, TR10/TR11/TR15/TR16,
 and ORs or_bb640ee1, or_6daf13ec, or_ee5a98e4.
 
-No real LadybugDB writes — chaos modes are simulated via injected
+No real graph-database writes — chaos modes are simulated via injected
 executors that return deterministic ChaosOutcomes.
 """
 

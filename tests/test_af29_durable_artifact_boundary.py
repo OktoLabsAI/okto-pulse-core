@@ -60,6 +60,7 @@ def test_af29_closeout_scan_keeps_policy_in_core_and_discovery_in_port() -> None
     class _Item:
         def __init__(self, status: str) -> None:
             self.status = status
+            self.updated_by_agent_id = None
 
     class _Store:
         def __init__(self) -> None:

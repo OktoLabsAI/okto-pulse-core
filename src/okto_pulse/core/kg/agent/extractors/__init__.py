@@ -1,25 +1,11 @@
-"""Cognitive-layer extractors producing Alternative + Learning nodes
-(cards 14cd6bd9 + b4df0783, spec f565115d).
-
-These extractors are pure parsers — no LLM required when the pattern is
-deterministic (Alternative regex over "## Analysis"), LLM injected for
-Learning summarisation of bug action plans.
-"""
+"""Deterministic Alternative and Assumption candidate parsers."""
 
 from .alternatives import AlternativeExtraction, extract_alternatives
 from .assumptions import AssumptionExtraction, extract_assumptions
-from .learnings import (
-    LEARNING_MIN_ACTION_PLAN_CHARS,
-    LearningExtraction,
-    extract_learning_from_bug,
-)
 
 __all__ = [
     "AlternativeExtraction",
     "extract_alternatives",
     "AssumptionExtraction",
     "extract_assumptions",
-    "LEARNING_MIN_ACTION_PLAN_CHARS",
-    "LearningExtraction",
-    "extract_learning_from_bug",
 ]

@@ -7,6 +7,7 @@ from typing import Any
 
 from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
+from okto_pulse.core.ports.permission_policy import board_membership_allows_read
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 
@@ -40,9 +41,8 @@ async def load_accessible_board(
     # repository, so repeating the REST owner/share lookup would reject every
     # legitimate MCP call.  The binding remains fail-closed above and a missing
     # board still has the same non-enumerable outcome.
-    if actor.source == "mcp" and actor.board_id == board_id:
-        return board
-    if getattr(board, "owner_id", None) == actor.actor_id:
+    if board_membership_allows_read(owner_id=getattr(board, "owner_id", None), actor_id=actor.actor_id,
+            verified_agent_board_access=actor.source == "mcp" and actor.board_id == board_id):
         return board
 
     shares = uow.services.shares
@@ -52,12 +52,8 @@ async def load_accessible_board(
         if callable(share_only)
         else await shares.get_user_permission(board_id, actor.actor_id)
     )
-    if permission is None:
-        return None
-    if (
-        allowed_share_permissions is not None
-        and permission not in allowed_share_permissions
-    ):
+    if not board_membership_allows_read(owner_id=getattr(board, "owner_id", None), actor_id=actor.actor_id,
+            share_permission=permission, allowed_share_permissions=allowed_share_permissions):
         return None
     return board
 

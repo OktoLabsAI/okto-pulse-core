@@ -11,7 +11,6 @@ from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.application.kg_rebuild import build_source_store
 from okto_pulse.core.application.rebuild_ports import BoardSourceSnapshot
 from okto_pulse.core.kg import canonical_debt_replay
-from okto_pulse.core.kg import provenance_drift
 from okto_pulse.core.kg.interfaces import SourceUnavailableError
 from okto_pulse.core.services import kg_health_service
 from sqlalchemy_test_models import Board
@@ -21,7 +20,7 @@ class _IncompleteBoardSourceReader:
     def __init__(self) -> None:
         self.fetch_calls: list[str] = []
 
-    def fetch(self, board_id: str) -> BoardSourceSnapshot:
+    def fetch(self, board_id: str, *, observation_budget=None) -> BoardSourceSnapshot:
         self.fetch_calls.append(board_id)
         return BoardSourceSnapshot(complete=False, cause="table_missing")
 
@@ -86,25 +85,6 @@ async def test_canonical_debt_replay_rejects_incomplete_snapshot_before_commit(
     assert incomplete_reader.fetch_calls == ["board-debt"]
 
 
-@pytest.mark.asyncio
-async def test_provenance_drift_rejects_incomplete_snapshot_before_graph_access(
-    incomplete_reader: _IncompleteBoardSourceReader,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def _must_not_read_graph(*_args, **_kwargs):
-        raise AssertionError("incomplete source census reached graph access")
-
-    monkeypatch.setattr(
-        provenance_drift,
-        "_fetch_provenance_nodes",
-        _must_not_read_graph,
-    )
-
-    with pytest.raises(SourceUnavailableError) as raised:
-        await provenance_drift.provenance_drift_report("board-drift")
-
-    assert raised.value.cause_type == "table_missing"
-    assert incomplete_reader.fetch_calls == ["board-drift"]
 
 
 def test_kg_health_source_diagnostic_reports_enumeration_failure_not_zero(
@@ -118,8 +98,7 @@ def test_kg_health_source_diagnostic_reports_enumeration_failure_not_zero(
     assert diagnostic["source_count"] is None
     assert diagnostic["canonical_source_count"] is None
     assert diagnostic["working_source_count"] is None
-    assert "SourceUnavailableError" in diagnostic["error"]
-    assert "table_missing" in diagnostic["error"]
+    assert diagnostic["error"] == "source_enumeration_unavailable"
     assert incomplete_reader.fetch_calls == ["board-health-diagnostic"]
 
 

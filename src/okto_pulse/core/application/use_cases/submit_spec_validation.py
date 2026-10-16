@@ -31,9 +31,17 @@ from okto_pulse.core.application.use_cases.spec_crud import (
 )
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 from okto_pulse.core.domain.spec_validation import (
-    SpecValidationMetric,
     SpecValidationPinpoint,
-    SpecValidationPinpointAnchorType,
+)
+from okto_pulse.core.domain.spec_evaluation import SpecEvaluationInput
+from okto_pulse.core.domain.spec_planning import SpecPlanningManifest
+from okto_pulse.core.ports.spec_planning_manifest import SpecPlanningManifestConflict
+from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
+from okto_pulse.core.models.schemas import SpecValidationConclusionResponse
+from okto_pulse.core.ports.spec_validation_receipts import (
+    SpecValidationIdempotencyConflict,
+    SpecValidationOperationReceipt,
+    SpecValidationReceiptScope,
 )
 from okto_pulse.core.domain.guideline_policy import PolicyEntityType, PolicySubjectRef
 from okto_pulse.core.domain.quality_assessment import (
@@ -67,49 +75,33 @@ _CANONICAL_SCORE_DIMENSIONS = (
     "ambiguity",
 )
 _CANONICAL_ALLOWED_FIELDS = {
+    "idempotency_key",
+    "expected_planning_manifest",
     "expected_validation_edition",
     "expected_spec_version",
     "expected_head_revision",
     *_CANONICAL_REQUIRED_FIELDS,
     "pinpoints",
+    "decomposition",
 }
 
 
-def _canonical_pinpoints(value: object) -> list[dict[str, str]]:
+def _canonical_pinpoints(value: object) -> list[dict[str, Any]]:
     if value is None:
         return []
     if not isinstance(value, list):
         raise CommandValidationError("pinpoints must be a list")
-    normalized: list[dict[str, str]] = []
-    identities: set[tuple[str | None, ...]] = set()
-    required_fields = {"metric", "anchor_type", "detail"}
-    allowed_fields = {*required_fields, "anchor_ref"}
+    normalized = []
+    identities = set()
+    from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
     for raw in value:
-        if (
-            not isinstance(raw, Mapping)
-            or not required_fields.issubset(raw)
-            or not set(raw).issubset(allowed_fields)
-        ):
-            raise CommandValidationError(
-                "each pinpoint must contain metric, anchor_type and detail; "
-                "anchor_ref is optional"
-            )
         try:
-            pinpoint = SpecValidationPinpoint(
-                metric=SpecValidationMetric(raw.get("metric")),
-                anchor_type=SpecValidationPinpointAnchorType(raw.get("anchor_type")),
-                anchor_ref=raw.get("anchor_ref"),
-                detail=raw.get("detail"),
-            )
+            if isinstance(raw, Mapping) and "anchor_snapshot" in raw:
+                raise ValueError("spec_validation_anchor_snapshot_server_owned")
+            projected = SpecValidationPinpoint.from_dict(raw).to_dict()
         except (TypeError, ValueError) as exc:
             raise CommandValidationError(str(exc)) from exc
-        projected = pinpoint.to_dict()
-        identity = (
-            projected["metric"],
-            projected["anchor_type"],
-            projected.get("anchor_ref"),
-            projected["detail"],
-        )
+        identity = canonical_sha256(projected)
         if identity in identities:
             raise CommandValidationError("pinpoints must not contain duplicates")
         identities.add(identity)
@@ -137,6 +129,9 @@ class SubmitSpecValidationCommand:
             raise CommandValidationError(
                 "Unknown spec validation fields: " + ", ".join(unknown)
             )
+        key = self.data.get("idempotency_key")
+        if not isinstance(key, str) or not 1 <= len(key) <= 128 or key != key.strip():
+            raise CommandValidationError("idempotency_key must contain 1..128 characters without surrounding whitespace")
         for field_name in (
             "expected_validation_edition",
             "expected_spec_version",
@@ -146,6 +141,18 @@ class SubmitSpecValidationCommand:
             minimum = 0 if field_name == "expected_head_revision" else 1
             if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
                 raise CommandValidationError(f"{field_name} is invalid")
+
+        try:
+            manifest = SpecPlanningManifest.model_validate(self.data.get("expected_planning_manifest"))
+        except ValueError as exc:
+            raise CommandValidationError("expected_planning_manifest is required and must be valid") from exc
+        if (
+            manifest.spec_id != self.spec_id
+            or manifest.edition != self.data["expected_validation_edition"]
+            or manifest.spec_version != self.data["expected_spec_version"]
+        ):
+            raise CommandValidationError("expected_planning_manifest scope does not match submission")
+        self.data["expected_planning_manifest"] = manifest.model_dump(mode="json")
 
         missing = [
             field
@@ -172,6 +179,13 @@ class SubmitSpecValidationCommand:
                     f"{dimension}_justification must be at least 10 characters"
                 )
         self.data["pinpoints"] = _canonical_pinpoints(self.data.get("pinpoints"))
+        if self.data.get("decomposition") is not None:
+            try:
+                self.data["decomposition"] = SpecEvaluationInput.model_validate(
+                    self.data["decomposition"]
+                ).model_dump()
+            except ValueError as exc:
+                raise CommandValidationError(str(exc)) from exc
 
 
 class SubmitSpecValidationResult:
@@ -248,21 +262,65 @@ class SubmitSpecValidationUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> SubmitSpecValidationResult:
-        service = uow.services.specs
-        spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
         command.validate()
+        await uow.begin_write()
+        service = uow.services.specs
+        spec = await _require_actor_board_spec(uow, command.spec_id, actor)
+        scope = SpecValidationReceiptScope(
+            board_id=spec.board_id, spec_id=command.spec_id,
+            actor_id=actor.actor_id, actor_kind=actor.actor_kind,
+            idempotency_key=command.data["idempotency_key"],
+        )
+        authored_data = {key: value for key, value in command.data.items() if key != "idempotency_key"}
+        if authored_data.get("decomposition") is None:
+            authored_data.pop("decomposition", None)
+        request_digest = canonical_sha256(authored_data)
+        receipt = await uow.spec_validation_receipts.get(scope)
+        if receipt is not None:
+            # A replay reads an old operation, not a new evaluation or transition.
+            # Reauthorize its contents using this request's current identity.
+            for permission in (
+                "spec.entity.read", "spec.validation.read",
+                *(("spec.evaluations.read",) if receipt.result.decomposition_ids else ()),
+            ):
+                await require_authorization(
+                    actor, PermissionRequirement(permission), uow=uow, board_id=spec.board_id,
+                )
+            if receipt.request_digest != request_digest:
+                raise SpecValidationIdempotencyConflict("Idempotency key already used with different input.")
+            return SubmitSpecValidationResult(payload=receipt.result.model_dump(mode="json"))
+
+        spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
         state = entity_state(spec)
         await require_authorization(
             actor,
             PermissionRequirement(
                 "spec.validation.submit",
-                legacy_operation="specs:evaluate",
                 entity="spec" if state is not None else None,
                 state=state,
             ),
             uow=uow,
             board_id=spec.board_id,
         )
+        if command.data.get("decomposition") is not None:
+            await require_authorization(
+                actor,
+                PermissionRequirement(
+                    "spec.evaluations.submit",
+                    entity="spec" if state is not None else None,
+                    state=state,
+                ),
+                uow=uow,
+                board_id=spec.board_id,
+            )
+        manifest = SpecPlanningManifest.model_validate(command.data["expected_planning_manifest"])
+        if manifest.board_id != spec.board_id:
+            raise SpecPlanningManifestConflict("Planning manifest belongs to a different Board.")
+        # begin_write precedes all authoritative reads. The edition must retain
+        # that write fence until the single commit below. Check before our own
+        # native appends advance the source revisions; replay above reads its
+        # original receipt and must never be rejected just for an older basis.
+        await uow.spec_planning_manifest.require_current(manifest)
         # MCP supplies the resolved agent name (actor.actor_name); REST leaves it
         # None and we resolve it here — preserving each surface's reviewer_name.
         reviewer_name = actor.actor_name or await _resolve_reviewer_name(
@@ -282,13 +340,18 @@ class SubmitSpecValidationUseCase:
             spec_id=command.spec_id,
             reviewer_id=actor.actor_id,
             reviewer_name=reviewer_name,
-            # Pydantic compatibility models may materialize absent optional
-            # fields as ``None``.  The service consumes a discriminated
-            # formal-or-legacy mapping, so omit those transport placeholders.
             data={
-                key: value for key, value in command.data.items() if value is not None
-            }
-            | {"pinpoints": sealed_pinpoints},
+                **{key: value for key, value in authored_data.items() if key != "expected_planning_manifest"},
+                "pinpoints": sealed_pinpoints,
+            },
+            actor_type="agent" if actor.actor_kind == "agent" else "user",
+            surface=actor.source,
         )
+        conclusion = SpecValidationConclusionResponse.model_validate({
+            key: result[key] for key in SpecValidationConclusionResponse.model_fields
+        })
+        await uow.spec_validation_receipts.save(SpecValidationOperationReceipt(
+            scope=scope, request_digest=request_digest, result=conclusion,
+        ))
         await commit(uow)
-        return SubmitSpecValidationResult(payload=result)
+        return SubmitSpecValidationResult(payload=conclusion.model_dump(mode="json"))

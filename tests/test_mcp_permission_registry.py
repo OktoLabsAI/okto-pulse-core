@@ -28,6 +28,22 @@ from okto_pulse.core.mcp.catalog import (
 LIVE_TOOL_NAMES = tuple(tool.name for tool in server.mcp.resolve().iter_tools())
 
 
+def test_learning_capture_manifest_preserves_complete_use_case_authority():
+    from okto_pulse.core.application.use_cases.learning_capture import (
+        LEARNING_CAPTURE_READ_PERMISSIONS, LEARNING_CAPTURE_CREATE_PERMISSIONS,
+        LEARNING_CAPTURE_HISTORY_PERMISSIONS,
+    )
+    from okto_pulse.core.domain.mcp_permission_registry import McpAdmissionClass
+    policies = {row.tool_name: row for row in MCP_TOOL_PERMISSION_POLICIES}
+    for name, flags, admission in (
+        ('okto_pulse_kg_get_learning_capture_context', LEARNING_CAPTURE_READ_PERMISSIONS, McpAdmissionClass.READER),
+        ('okto_pulse_kg_create_learning_capture', LEARNING_CAPTURE_CREATE_PERMISSIONS, McpAdmissionClass.WRITER),
+        ('okto_pulse_kg_list_learning_captures', LEARNING_CAPTURE_HISTORY_PERMISSIONS, McpAdmissionClass.READER),
+    ):
+        assert set(policies[name].permission_flags) == set(flags)
+        assert policies[name].admission_class == admission
+
+
 # Reviewed semantic allowlist for tools whose required leaf depends on an input,
 # current lifecycle state, or an opt-in projection.  Keep this independent from
 # the production manifest so replacing a conditional policy with a broad CRUD
@@ -113,18 +129,6 @@ EXPECTED_TRANSITION_SUFFIXES = {
         "done_to_draft",
         "cancelled_to_draft",
     ),
-    "sprint": (
-        "draft_to_active",
-        "draft_to_cancelled",
-        "active_to_draft",
-        "active_to_review",
-        "active_to_cancelled",
-        "review_to_active",
-        "review_to_closed",
-        "review_to_cancelled",
-        "closed_to_draft",
-        "cancelled_to_draft",
-    ),
     "test_scenario": (
         "draft_to_ready",
         "draft_to_automated",
@@ -150,6 +154,7 @@ def _reviewed_transition_flags(entity: str) -> tuple[str, ...]:
 
 
 EXPECTED_CONDITIONAL_PERMISSION_POLICIES = {
+    "okto_pulse_admit_test_verification_report": ("spec.tests.execute",),
     "okto_pulse_archive_tree": (
         "ideation.entity.archive",
         "refinement.entity.archive",
@@ -205,12 +210,11 @@ EXPECTED_CONDITIONAL_PERMISSION_POLICIES = {
         "spec.architecture.render",
         "card.architecture.render",
     ),
-    "okto_pulse_list_architecture_propagation_legacy": ("spec.architecture.read",),
+    "okto_pulse_list_architecture_propagation_report": ("spec.architecture.read",),
     "okto_pulse_move_card": _reviewed_transition_flags("card"),
     "okto_pulse_move_ideation": _reviewed_transition_flags("ideation"),
     "okto_pulse_move_refinement": _reviewed_transition_flags("refinement"),
     "okto_pulse_move_spec": _reviewed_transition_flags("spec"),
-    "okto_pulse_move_sprint": _reviewed_transition_flags("sprint"),
     "okto_pulse_move_story": _reviewed_transition_flags("story"),
     "okto_pulse_remove_spec_entity": (
         "spec.rules.delete",
@@ -247,8 +251,11 @@ def test_live_catalog_has_one_exact_policy_or_audited_human_only_exemption() -> 
     report = registry_vs_tools_report(list(LIVE_TOOL_NAMES))
 
     assert report.is_valid
-    assert len(report.live_tools) == 340
-    assert len(MCP_TOOL_PERMISSION_POLICIES) == 337
+    assert len(report.live_tools) == 284
+    assert {'okto_pulse_get_decision_reviews', 'okto_pulse_record_decision_reviews'} <= set(report.live_tools)
+    assert "okto_pulse_get_historical_context" not in report.live_tools
+    assert "okto_pulse_record_semantic_guideline_assessment" not in report.live_tools
+    assert len(MCP_TOOL_PERMISSION_POLICIES) == 281
     assert len(HUMAN_ONLY_MCP_TOOL_EXEMPTIONS) == 3
     assert tuple(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES) == tuple(
         sorted(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES)

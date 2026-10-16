@@ -1,0 +1,348 @@
+# Learning capture source — F6 integration
+
+`learning-capture/v1` is a closed semantic payload stored in the existing
+`kg_cognitive_sources` revision ledger. It is not a graph property map. The
+existing v3 source fingerprint covers every field and the evidence references;
+the enclosing record retains node identity and generation. No second memory
+store or graph schema expansion is introduced.
+
+The payload contains `capture_format`, `capture_id`, `author_id`, `captured_at`,
+`content`, `context`, `applicability`, `source`, and `intent`. Unknown fields and
+formats are rejected. `source` binds Board, Bug, positive policy version, the
+relational source digest and a nonempty list of unique evidence references.
+Those references must exactly match the enclosing source record. Timestamp
+requires a timezone. Text sections have a 65,536-character ceiling; the entire
+payload has a 256 KiB UTF-8 ceiling. Up to 128 evidence references are accepted.
+These are representation limits, not proof of adequate evidence.
+
+`intent` is closed to create, reuse and supersede. Create carries no target.
+Reuse explicitly names the same Learning identity and generation; supersede
+names a different identity. Both carry the expected target fingerprint and the
+author's reason. Validation never performs similarity matching, merges content,
+inherits associations or changes a source head. The authorized writer must
+resolve the target and perform the appropriate CAS in its transaction.
+
+## Authority and recovery
+
+Structural validity and a matching fingerprint do not establish authenticated
+authorship, current source facts, evidence admission, applicability, permission,
+independent review or Bug completion. A caller-supplied `admitted` flag is not
+part of the format. Metadata outside the fingerprint cannot supply that proof.
+REST/MCP and UI creation/preview are described below; the governed transition
+binding is still pending.
+
+The projection inventory validates every revision, including older captures,
+before selecting heads. Captures are reported as
+`capture_pending_materialization`, even if a graph node with the identity exists.
+Literal node decoding refuses them. Restoration planners preserve the pending
+observation and select no literal node. Replay qualification does not promote
+them; legacy replay reports `learning_capture_materialization_required` without
+probing or writing the graph. This explicit pending outcome does not satisfy a
+canonical replay acceptance gate.
+
+Legacy payloads without `capture_format` retain literal replay semantics. A
+capture must not overwrite historical payloads or erase prior associations.
+Actual materialization must follow source/evidence/transition reconciliation,
+record its governed binding and preserve the existing substantive holds.
+
+## Transaction boundary for the capture writer
+
+The optional public `BugSemanticWriteSnapshotReader` capability serializes the
+relational sources before reading them. The application must authorize first,
+then retain the same UOW through source qualification, evidence admission,
+conditional append and commit. The ordinary semantic reader does not offer
+that serialization guarantee.
+
+Community implements this boundary with the SQLite writer slot, covering
+related Test Cards, Spec scenarios, comments and lineage as well as the Bug.
+It refreshes ORM entities inside the SQL snapshot and leaves commit/rollback
+to the caller. Unsupported database mechanisms and failed snapshot upgrades
+are refused without falling back to an unguarded read. This is a concurrency
+guarantee, not evidence approval or permission to write.
+
+## Remaining integrated work
+
+The creation use case now stages an authored capture through the same UOW. It
+requires Board/source read authority together with the existing KG begin,
+add-node, add-edge and commit permissions, and checks Card/Board/realm access
+before the serialized read. No new permission or read-to-write fallback exists.
+Author comes from the authenticated actor; timestamp comes from the application
+clock. The source digest and policy version must match freshly qualified facts.
+
+This first creation path accepts explicit IDs of scenarios already linked to
+the Bug's context. Each must have a receipt authenticated by the existing
+scenario evidence consumer. It does not equate a narrative or structural legacy
+test reference to an authenticated receipt, require the author to be the receipt
+issuer, or turn an authenticated observation into passing implementation credit.
+Reference grammar follows the existing `spec:<id>:test_scenario:<id>` convention.
+
+The identity is deterministic per Board, author and capture ID. A transactional
+source reader sees staged records as well as committed history. Repeating the
+same content and still-current basis returns the original record and timestamp;
+reusing the ID with different content fails. A changed basis requires a new
+evaluation and does not silently refresh the prior capture. The caller owns
+commit/rollback; successful staging does not mean the transaction committed.
+
+Complete other evidence-reference paths, explicit reuse/supersedence operations,
+policy and preview, Done binding/outbox, deterministic materializer, reopen
+currentness. Qualify those paths with concurrency,
+upgrade/replay/rollback and installed-pair tests. Neither this format nor the
+staging use case completes F6 or changes a gate.
+
+## REST source preview and standalone submission
+
+`GET /api/v1/bugs/{bug_id}/learning-capture-context?board_id=...` returns the
+current semantic source digest/version and linked scenarios with authenticated
+receipt availability. It requires the shared source read permissions and
+Card/Board/realm access. The preview does not lock or approve a capture.
+
+`POST /api/v1/bugs/{bug_id}/learning-captures` accepts the closed
+`LearningCaptureCreateRequest`: Board, capture identity, expected digest/version,
+authored content/context/applicability and selected scenario identities. The
+application requires all creation permissions, independently rereads the source
+under serialization, stages the capture and commits the caller UOW. Author and
+timestamp are server-derived; caller approval/author fields are rejected.
+Exact retries preserve one record while its source basis remains current.
+
+The response `captured_pending_materialization` acknowledges durable capture,
+not Bug completion or canonical graph materialization. REST returns 403 for
+permission denial, 404 for unavailable Bug access, 409 for stale/conflicting
+bases, 422 for invalid input/evidence and 503 for unavailable capabilities.
+Unexpected runtime details are not exposed. Completion integration remains
+outstanding work in the integrated F6 delivery.
+
+## MCP authorship
+
+`okto_pulse_kg_get_learning_capture_context` and
+`okto_pulse_kg_create_learning_capture` share the REST use cases and closed
+creation model. MCP resolves Board agent access before constructing the actor;
+the use case checks every required permission and Card/Board/realm access.
+Create uses the authenticated agent identity and commits its UOW; preview does
+not commit. The registry catalog and exact tool documentation describe the
+arguments, current-basis retry and pending-materialization result. Neither tool
+exposes graph maintenance or changes the existing closeout policy.
+
+## Persistent capture history
+
+`GET /api/v1/bugs/{bug_id}/learning-captures?board_id=...` and
+`okto_pulse_kg_list_learning_captures` share the authorized history use case.
+They require the nine source read permissions plus the existing
+`kg.query.learning_from_bugs` authority. Source access and authorship alone do
+not grant reading other authors' cognitive content.
+
+`LearningCaptureHistoryReader` selects source identities with a capture of the
+requested Bug in either the immutable base or a later revision. It audits all
+revisions of each selected identity before returning its matching captures.
+Older authored captures survive later literal heads. Only the scoped Board/Bug
+captures are returned; no graph lookup, mutation, repair or commit occurs.
+
+`limit` bounds source identities to 1..50 (default20); the whole selected history
+is limited to 200 records and returned payload to 8 MiB. Overflow fails rather
+than returning a truncated history. This is not a native SQL execution deadline
+or a bound on deserializing arbitrary legacy payloads. Cursor order is stable
+but paging is not a frozen snapshot; refresh to observe concurrent insertions.
+
+The response `learning-capture-history/v1` contains authored `capture`, Learning
+identity/generation/revision, fingerprint and `next_cursor`. Presence in history
+does not attest applicability, approval, completion or materialization. Source
+preview and authored applicability must be reviewed independently. Missing or
+corrupt history is unavailable, never a successful empty response.
+
+## Frontend authorship and resumption
+
+The Bug modal exposes Learnings under Validation / Execution report, loading
+on first activation and retaining the draft across tab navigation. Authenticated
+API requests use the existing client. Source, creation and history permissions
+are separate; history denial does not disable authorized independent creation.
+Auth loading/errors initiate no requests. Board/Card changes reset the draft
+and abort old requests, preventing cross-selection content from arriving late.
+
+The editor offers authored content, context, applicability and authenticated
+scenario choices. An exact retry retains its capture ID; changed content or a
+reviewed new source basis uses another ID. Conflicts preserve the draft and
+require evidence refresh before another submission. Saved content is explicitly
+pending materialization, with no completion/approval claim. Paginated history
+renders authored text inertly and distinguishes unavailable history from empty
+history. A digest mismatch is shown as an earlier basis, not as inferred rejection.
+
+The execution-report interface supports independent creation/history. The Bug
+task-validation form separately offers an optional saved-capture selection.
+The execution-report dialog also supports the joint authorship path below.
+Reuse/supersedence and policy preview remain outstanding.
+
+## Closeout revalidation primitive
+
+`revalidate_learning_capture_for_closeout` is an internal application operation
+for a caller that has already authorized the lifecycle action. It acquires the
+existing semantic write fence, reads the selected current source head in the
+same UOW, verifies its fingerprint and closed capture envelope, checks exact
+Board/Bug/digest/policy version, and authenticates the referenced scenarios
+again. It does not scan for a convenient historical match. A replaced head,
+changed conclusion/status/related evidence, unavailable source or rejected
+receipt fails explicitly without rewriting the capture. Only the implemented
+create intent is admitted; reuse/supersede syntax does not admit an operation.
+
+The return value is the existing capture record, not a durable closeout receipt.
+There is no commit, state transition, outbox write, graph materialization or
+policy waiver. Callers must keep the UOW and source fence through final checks
+and the actual transition; subsequent conclusion/status changes do not make an
+old digest current. Task validation calls this primitive when a capture is
+explicitly selected; policy preview is not yet integrated.
+
+The characterization suite exercises actual Bug `move_card` and both cognitive
+gates with a healthy-graph observation and independent Delivery fixture. The
+existing `cognitive_readiness_policy` permits empty-queue completion even with
+the global blocking switch on. It also governs legacy debt/skip semantics;
+there is no implemented `bug_learning_closeout` setting. Preserve that finding
+when defining the typed human-authored policy and migration: do not silently
+reinterpret the existing switch, erase skips or claim the target gate exists.
+
+## Binding a capture to one closeout
+
+`domain.learning_closeout` defines `learning-closeout-binding/v1`, containing
+only the selected capture identity/revision/fingerprint, Board/Bug, transition
+identity, actor/time, operation and before/closed semantic digests and versions.
+It does not duplicate authored content. Its integrity hash is not a signature
+or permission grant. Lifecycle authorization and authenticated revalidation
+remain prerequisites supplied by the application writer.
+
+The builder compares the complete qualified before/closed contexts. It allows
+status/version changes and, for task validation, exactly one server-constructed
+review append. Conclusions and all other related facts must remain identical.
+A new conclusion must be included in the admitted capture basis first; changing
+it during closeout cannot silently requalify an existing capture. Reopen or any
+later semantic-source change makes this historical binding non-current without
+deleting it. Exact transition retries preserve history; changed bindings using
+the same transition identity and corrupt older entries are rejected.
+
+Community owns the nullable `cards.learning_closeout_bindings` JSON storage.
+The additive pre-create-all migration creates no bindings for old Done cards,
+does not change conclusions, and refuses incompatible existing column shape.
+These references are operational metadata, excluded from guideline semantic
+intent changes.
+
+## Task-validation writer and optional selection
+
+REST and MCP accept an optional typed `learning_capture` reference with
+`learning_id`, `generation` and `fingerprint`. With no selection the legacy
+payload and request digest remain unchanged. With a selection, the use case
+requires all ten source/history read authorities in addition to task-validation
+authority. No capture creation or policy-edit authority is inferred.
+
+The service acquires the source write fence, refreshes the Card, checks the
+current capture and authenticates its evidence again before completion. An
+existing executor report must already be in the captured basis; the legacy
+fallback that generates a new conclusion cannot reuse an older capture.
+Independent completion gates remain in force. Only actual Done appends the
+binding, in the same transaction as the review, status and outbox event. A
+late failure rolls the composed operation back even if an outer caller catches
+the exception and later commits. Exact retries return the recorded result.
+
+The Bug validation form loads saved captures on demand with the authenticated
+client. It displays context/applicability as inert text, disables mismatching
+bases and clears selection on refresh, pagination or context change. Selection
+is explicit and included in the request identity. Matching displayed digests
+are not proof of admission: the server still checks the current head and
+receipts. Unavailable history is never displayed as an empty result.
+
+This optional selection path does not implement a required-Learning policy,
+reuse/supersedence or graph materialization. Joint authorship is described below.
+
+## Public explicit intent contract
+
+Standalone REST/MCP capture and compound `learning_submission` accept the same
+closed optional intent. Absence preserves the original create behavior and the
+legacy compound request digest. Explicit create carries only `kind=create`.
+Reuse requires the target node ID, generation, expected fingerprint and authored
+reason. Supersede additionally requires an explicit `scope=source_bug`; global
+or absent replacement scope is rejected for new public requests.
+
+Both target operations require the existing Learning-read authority in addition
+to capture/conclusion/lifecycle authorities. The compound path checks this before
+replay or mutation. Reuse preserves literal content; target admission and CAS
+remain server-owned. A stale target returns its observed identity, revision and
+fingerprint through a typed conflict after authorization, without rebasing or
+inventing an association. Compound failures roll back the report, capture,
+binding and outbox together. Public client types preserve the selected intent;
+interactive candidate selection uses the optional context lookup below.
+
+## Optional candidate lookup and explicit selection
+
+The existing context read accepts `candidate_query` (1–4096 characters) after
+the additional Learning-read permission. An omitted query preserves the old
+source-only read and performs no graph search. The query uses the existing
+ranked graph port's vector mode, with native cosine scores, a 20-hit window,
+canonical/non-superseded visibility, a 10,000-row filter bound and a 15-second
+native graph deadline. It does not use BM25 or fusion scores as cosine values.
+
+The Community adapter qualifies the vector space and applies visibility before
+native search in one snapshot, without creating a lexical index. The Core
+compares offered graph content/context/source reference with the exact durable
+Learning head. Source history has a shared 200-record budget. Missing,
+ineligible, oversized or stale sources are omitted with explicit limitations.
+At most three candidates at or above 0.60 are offered. Unavailable search is
+distinct from an empty successful window; all responses are non-exhaustive and
+leave current applicability unassessed. These bounds do not claim completion
+of the separate Board query-configuration or global deadline acceptance.
+
+Both existing editors expose the optional lookup. A score never selects reuse
+or replacement. Choosing reuse copies and preserves the selected literal;
+replacement retains the new authored text and explicitly covers this Bug only.
+Both require an authored reason and the observed fingerprint. Refreshing source
+evidence invalidates a prior target choice. Candidate-read permission loss blocks
+the selected intent and allows an explicit switch to create. No search is required
+for new authorship, and unavailable suggestions do not invent a waiver or block
+an otherwise valid create request.
+
+## Scoped historical linkage on capture pages
+
+The existing capture-history response preserves authored v1/v2 intents. A
+v2 `supersede` intent with `scope=source_bug` can additionally return
+`learning-scope-history/v1` metadata. `recorded` means the exact capture,
+immutable target claim and successor birth were qualified together from source
+history. It does not mean current applicability, semantic approval or an
+available graph projection; both currentness fields explicitly say
+`not_assessed`. Legacy unscoped requests do not acquire scope retrospectively.
+
+One page shares a 200-record history budget and a request-local cache. The
+public bounded-history port must return complete verified history or an
+explicit limit failure; the Community SQL adapter applies the bound to the
+revision query, including an overflow probe. Missing capability, missing target
+history, pending materialization and exhausted history budget remain
+`unverified` with a specific limitation. Inconsistent partial claims fail
+closed. Reading does not materialize, reconcile, change policy or clear debt.
+
+The Bug panel renders the declared target and reason as inert text and labels
+historical linkage separately from current applicability. This presentation is
+not a global supersedence chain. KG-35/KG-36 are qualified by the integrated
+candidate-to-capture-to-materialization-to-history tests recorded in
+`acceptance-learning-fanin.json`. General bounded graph-lineage acceptance
+remains part of the KG query criteria; these two fan-in criteria do not introduce
+an additional Learning-specific endpoint.
+
+## Joint execution-report authorship (KG §7.3)
+
+`CardMove.learning_submission` carries new authored content and the source
+digest/version observed before the report. It requires the existing thirteen
+capture permissions plus `card.conclusion.write` and the lifecycle authority.
+REST, MCP and the compound Delivery report writer share this authorization.
+
+The writer locks and checks the initial source, admits the execution report
+through its normal gates, and compares the exact report append with the captured
+basis. Every other semantic fact must remain unchanged. Validation captures the
+post-transition source for later independent review; direct Done captures the
+report before the terminal transition and appends its closeout binding afterward.
+Both paths persist source, report, lifecycle and outbox in the same UOW.
+
+The conclusion contains a server-owned `learning-submission/v1` receipt with
+capture ID, request digest and original edge. It seals the complete request and
+actor for idempotency; it is not a proof of applicability or implementation.
+Retries preserve one report/capture and return current Card state. A later
+reopen is not repeated or undone by replay. A changed request cannot reuse the
+same capture ID. The independent capture endpoint remains available.
+
+The execution-report UI keeps authorship optional, loads authenticated evidence
+on demand, and keeps text after failure. It refuses incomplete selected drafts
+and uses a stable capture ID only while the report and selected content remain
+identical. Refreshing evidence requires explicit reselection. This adds no
+required-Learning policy, semantic evaluator or graph materialization.

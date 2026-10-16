@@ -1,7 +1,8 @@
 """KG-01 — Health state classifier + memory-pressure correlator (FR1, FR2, FR3, TR3, TR4).
 
 Pure unit tests against the deterministic logic. No DB, no Kùzu, no
-LadybugDB — these classes are intentionally side-effect free so the rules
+the Community graph runtime (Grafx) — these classes are intentionally
+side-effect free so the rules
 encoded by the spec can be audited line-by-line.
 """
 

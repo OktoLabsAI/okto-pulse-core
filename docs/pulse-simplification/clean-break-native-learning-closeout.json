@@ -1,0 +1,126 @@
+{
+  "criteria": [
+    "KG:KG-33"
+  ],
+  "partial_criteria": [
+    "KG:KG-32",
+    "KG:KG-34"
+  ],
+  "base_pair": {
+    "core": "e7043897",
+    "community": "b3d3ee1c"
+  },
+  "product_build": "dist-native-main64",
+  "product_changed": false,
+  "provenance": {
+    "checked_at": "2026-10-07T22:56:38.457656+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 837,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "e7043897b96b445d038799de31b5fe2fb8e4930b",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse-core",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main64\\okto_pulse_core-0.4.0-py3-none-any.whl",
+          "sha256": "cced1bc708720c219d35b3b6143c944c60103433ded5b8efd4a2904ecab905d4",
+          "size": 3591258
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 898,
+        "byte_identical": true,
+        "aggregate_sha256": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3",
+        "chain_hashes": {
+          "source": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3",
+          "wheel": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3",
+          "site_packages": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "4f6360d46eab0f9c8931d3fb5e8a50e0c04b0e6f3b164619a55ac381917ba34d",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "3d3ecc80ab6b699b2021eddcf02b72bf48eddd06bf34dcf245f2b00fcc69b433"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 317,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "b3d3ee1ced2b7adcf1b10b36ada91c4b60d0a822",
+        "dirty": true,
+        "dirty_entry_count": 2,
+        "distribution": "okto-pulse",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main64\\okto_pulse-0.4.0-py3-none-any.whl",
+          "sha256": "699d577f656357f70f175c5393832ae62a03aafa40dac62613208eb2295ebac3",
+          "size": 4072770
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 403,
+        "byte_identical": true,
+        "aggregate_sha256": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+        "chain_hashes": {
+          "source": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+          "wheel": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+          "site_packages": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "campaign": {
+    "name": "acceptance-native-learning-closeout9",
+    "sha256": "405c3065a179add54f340b507607c70f8e7ea59dcb36c980d2ef9c80cdfe9520",
+    "passed": [
+      "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[advisory-complete-False-native_bug]",
+      "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[advisory-complete-True-native_bug]",
+      "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[advisory-missing-False-native_bug]",
+      "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[advisory-missing-True-native_bug]",
+      "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[blocking-complete-False-native_bug]",
+      "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[blocking-complete-True-native_bug]",
+      "tests.test_native_learning_closeout::test_blocking_capture_and_delivery_close_atomically_before_graph_materialization[None-native_bug]",
+      "tests.test_native_learning_closeout::test_blocking_capture_and_delivery_close_atomically_before_graph_materialization[delivery-native_bug]",
+      "tests.test_native_learning_closeout::test_blocking_capture_and_delivery_close_atomically_before_graph_materialization[permission-native_bug]",
+      "tests.test_native_learning_closeout::test_blocking_capture_and_delivery_close_atomically_before_graph_materialization[evidence-native_bug]"
+    ],
+    "passed_count": 10
+  },
+  "regression": {
+    "campaign": "acceptance-native-learning-closeout4",
+    "passed": 10,
+    "scope": "Unmodified ordinary-card adopted delivery report cases; six native cases in this campaign failed explicit foreign_keys assertion and were rerun successfully after correct listener composition."
+  },
+  "evidence": [
+    "Official current schema including triggers, Community engine and per-connection PRAGMAs; foreign_keys=1 asserted before lifecycle.",
+    "Native receipt request begins OPEN with current time, then real Community investigation adapter consumes it and appends receipt/head atomically.",
+    "Actual CardService, delivery store, governance and cognitive gates; no independent_gates mocks.",
+    "Advisory absent Learning permits Done only with complete selected implementation proof; missing Delivery blocks with rollback.",
+    "Blocking absent capture refuses Done regardless of skip_cognitive_consolidation, tested false and true.",
+    "Fresh session verifies persisted status, conclusion and exact selected delivery record; no invented Learning closeout binding.",
+    "Compound blocking capture+complete delivery succeeds with cognitive consolidation enabled; absent delivery, denied cognitive permission and unrelated scenario leave no partial mutation after explicit outer commit."
+  ],
+  "limits": [
+    "Implementation observation/execution facts are controlled fixture inputs, not a claim of external repository execution.",
+    "Board configuration has impact_evidence_mode=off and require_task_validation=false. It does not establish behavior under a different configured policy.",
+    "Authenticated test evidence uses the existing signed evidence producer; authorizes fixture scenarios, not production work.",
+    "KG32 remains pending: this case verifies atomic relational closeout with pending capture, not subsequent canonical Bug/Learning worker materialization in this same flow.",
+    "KG34 remains pending: cognitive write denial proved; validation/evaluator permission coverage still to review.",
+    "No frontend or product source changed; previous frontend and closure main64 evidence remains unchanged, not rerun.",
+    "Application UOW facade and actor are fixture-owned; agent Board membership is admitted by the existing setup stub. Permission-flag denials and lifecycle/delivery gates execute real code. No REST/MCP authentication acceptance claim."
+  ],
+  "prior_failures": [
+    "closeout1:3 setup errors; old direct SQL receipt insertion violated open/unexpired request trigger. Native branch now uses actual adapter.",
+    "closeout4:6 foreign_keys assertion failures; build_community_engine alone does not install PRAGMA listener. Native fixture now composes install_community_sqlite_pragmas before first connection.",
+    "closeout6:ActorContext is not a dataclass; test now constructs authenticated fixture principal through its constructor.",
+    "closeout7:delivery_version_conflict correctly refused proof predating edited Bug. Native fixture now creates Bug content before code proof; no version reset or guard relaxation."
+  ]
+}

@@ -384,7 +384,7 @@ async def _count_validates_bug(board_id: str, learning_ref: str) -> int:
 
 
 @pytest.mark.asyncio
-async def test_worker_drains_bug_pending_to_learning_validates_canonical_bug(
+async def test_worker_preserves_legacy_bug_debt_without_inference(
     board_id, agent_id, db_factory, board_handle, tmp_path
 ):
     bug_uuid = str(uuid.uuid4())
@@ -401,32 +401,22 @@ async def test_worker_drains_bug_pending_to_learning_validates_canonical_bug(
         store=store, board_id=board_id, kg_generation_id=gen,
         source_ref=bug_ref, artifact_type="bug")
 
-    class _Summ:
-        def summarise(self, *, bug_title, action_plan, context=None):
-            return "Guard encoding before regex", "Normalise NFC first."
-
+    before = store.list_items(board_id, gen)
     async def _loader(_bid, _item):
-        return {
-            "bug_card_id": bug_uuid, "bug_title": "Regex misfires",
-            "bug_action_plan": "Repro; root cause missing NFC; fixed + added a regression test.",
-            "llm_config": {"provider": "openai"}, "summariser": _Summ(),
-            "bug_probe": (lambda u: u == bug_uuid),
-        }
+        pytest.fail("Legacy Bug work must not invoke the inference loader")
 
     persister = ccp.ConsolidationPipelinePersister(db_factory, agent_id=agent_id)
     results = await ccp.drain_cognitive_closeout_pending(
         db_factory, board_id, input_loader=_loader, store=store,
         persister=persister, agent_id=agent_id, kg_generation_id=gen)
 
-    assert results and results[0].outcome == "persisted", results
+    assert results == []
     learning_ref = f"bug:{bug_uuid}"
     assert await _count_nodes_by_source_ref(
         board_id, "Learning", learning_ref
-    ) == 1
-    # validates -> canonical Bug queryable (AC2).
-    assert await _count_validates_bug(board_id, learning_ref) == 1
-    bug_item = next(i for i in store.list_items(board_id, gen) if i.artifact_type == "bug")
-    assert bug_item.status == "consolidated"
+    ) == 0
+    assert await _count_validates_bug(board_id, learning_ref) == 0
+    assert store.list_items(board_id, gen) == before
 
 
 # ---------------------------------------------------------------------------

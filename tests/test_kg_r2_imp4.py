@@ -46,7 +46,7 @@ from okto_pulse.core.application.processors.consolidation import (
 )
 from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
 from sqlalchemy_test_models import Board, Spec
-from okto_pulse.core.services.kg_health_service import get_kg_health
+from r2_scenario_helpers import health_with_completed_probes
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
     RealBoardGraphTransactionForTests,
@@ -89,8 +89,8 @@ def _spec_dict(spec_id, board_id, status):
         "id": spec_id, "title": "stale parity spec",
         "description": "spec producing deterministic canonical children",
         "status": status, "board_id": board_id,
-        "functional_requirements": ["FR alpha parity", "FR beta parity"],
-        "acceptance_criteria": ["AC alpha parity"],
+        "functional_requirements": [{"id": "fr_fixture_0", "text": "FR alpha parity"}, {"id": "fr_fixture_1", "text": "FR beta parity"}],
+        "acceptance_criteria": [{"id": "ac_alpha", "text": "AC alpha parity"}],
     }
 
 
@@ -99,8 +99,8 @@ async def _insert_spec(db_factory, board_id, spec_id, *, status):
         db.add(Spec(
             id=spec_id, board_id=board_id, title="stale parity spec",
             status=status, created_by=USER_ID,
-            functional_requirements=["FR alpha parity", "FR beta parity"],
-            acceptance_criteria=["AC alpha parity"],
+            functional_requirements=[{"id": "fr_fixture_0", "text": "FR alpha parity"}, {"id": "fr_fixture_1", "text": "FR beta parity"}],
+            acceptance_criteria=[{"id": "ac_alpha", "text": "AC alpha parity"}],
         ))
         await db.commit()
 
@@ -207,18 +207,14 @@ async def test_health_surfaces_stale_canonical_parity_with_fields(db_factory):
     board_id = await _new_board(db_factory)
     await _make_stale_spec(db_factory, board_id)
 
-    async with db_factory() as db:
-        health = await get_kg_health(board_id, db)
+    health = await health_with_completed_probes(db_factory, board_id)
     issues = _issues(health, SCP_CODE)
     assert len(issues) == 1, issues
     issue = issues[0]
-    assert issue["drill_down_tool"] == "okto_pulse_kg_stale_canonical_parity_list"
-    sample = issue["sample"]
-    for field in (
-        "board_graph_stale", "global_discovery_stale_digest", "expected_graph_layer",
-        "expected_maturity_status", "current_source_status", "recommended_action",
-    ):
-        assert field in sample, field
+    assert "drill_down_tool" not in issue
+    assert "sample" not in issue
+    assert issue["operator_action"] == "inspect_kg_health"
+    assert issue["count"] >= 1
 
 
 # ===========================================================================
@@ -241,7 +237,7 @@ async def test_stale_parity_distinct_and_does_not_mask_canonical_debt(db_factory
             canonical_state="pending", failure_reason="some_reason",
         )
         await db.commit()
-        health = await get_kg_health(board_id, db)
+    health = await health_with_completed_probes(db_factory, board_id)
 
     # Both are present as DISTINCT categories ...
     assert len(_issues(health, SCP_CODE)) == 1

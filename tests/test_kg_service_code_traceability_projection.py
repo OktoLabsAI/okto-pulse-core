@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from okto_pulse.core.kg import cypher_templates as tpl
 from okto_pulse.core.kg.cursor_codec import encode_cursor
 from okto_pulse.core.kg.kg_service import KGService
@@ -145,19 +147,20 @@ def test_get_node_detail_projects_same_metadata(monkeypatch):
     )
 
 
-def test_legacy_shaped_rows_remain_readable_with_null_additive_fields(monkeypatch):
+def test_current_rows_preserve_nullable_traceability_columns(monkeypatch):
     executor = _Executor(
         [[
-            "legacy-01",
+            "current-01",
             "Entity",
-            "Legacy entity",
+            "Current entity",
             "",
             "2026-08-09T10:00:00+00:00",
             0.7,
             0.5,
-            "spec:legacy",
+            "spec:current",
             "canonical",
             "canonical_eligible",
+            *([None] * len(CODE_TRACEABILITY_READ_PROPERTIES)),
         ]]
     )
     monkeypatch.setattr(
@@ -166,9 +169,26 @@ def test_legacy_shaped_rows_remain_readable_with_null_additive_fields(monkeypatc
     )
 
     node = KGService().get_all_nodes(
-        "board-projection-legacy",
+        "board-projection-nullable",
         min_confidence=0.0,
         min_relevance=0.0,
     )[0]
 
     assert all(node[name] is None for name in CODE_TRACEABILITY_READ_PROPERTIES)
+
+
+@pytest.mark.parametrize("method", ("get_all_nodes", "get_node_detail"))
+def test_incomplete_projection_does_not_return_a_node(monkeypatch, method):
+    executor = _Executor([[
+        "old-node", "Entity", "Incomplete row", "", None,
+        0.7, 0.5, "spec:old", "canonical", "canonical_eligible", None,
+    ]])
+    monkeypatch.setattr(
+        "okto_pulse.core.kg.kg_service._get_cypher_executor", lambda: executor,
+    )
+    service = KGService()
+    if method == "get_all_nodes":
+        with pytest.raises(ValueError, match="kg_node_projection_incomplete"):
+            service.get_all_nodes("board-incomplete-projection", min_confidence=0.0, min_relevance=0.0)
+    else:
+        assert service.get_node_detail("board-incomplete-detail", "old-node") is None

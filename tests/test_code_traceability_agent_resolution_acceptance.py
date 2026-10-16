@@ -14,7 +14,8 @@ from okto_pulse.core.domain.code_traceability import (
     CodeInvestigationCapability,
     CodeInvestigationHead,
     CodeInvestigationHeadState,
-    CodeInvestigationOutcome,
+    ContextualInvestigationOutcomeV2,
+    DeliveryContext,
     CodeInvestigationReceipt,
     CodeInvestigationReceiptCurrentness,
     CodeInvestigationTooling,
@@ -29,7 +30,7 @@ from okto_pulse.core.domain.code_traceability import (
     ImplementationTargetSelectorKind,
     ObservedWorkspaceStateRef,
     WorkspaceReproducibilityClaim,
-    code_investigation_observation_sha256,
+    code_investigation_observation_sha256_v2,
     code_investigation_omission_digest,
     code_investigation_receipt_currentness,
 )
@@ -184,10 +185,11 @@ def current_receipt(
         card_version=4,
         targets=((selected_target.id, selected_target.revision),),
     )
-    observation_sha256 = code_investigation_observation_sha256(
+    observation_sha256 = code_investigation_observation_sha256_v2(
         source_ref=selected_target.source_ref,
         selector_scope_digest=selector_scope_digest,
-        outcome=CodeInvestigationOutcome.ACCESSIBLE,
+        delivery_context=DeliveryContext.BROWNFIELD,
+        outcome=ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE,
         capabilities=capabilities,
         source_identity_digest=SHA_A,
         declared_revision=workspace.declared_revision,
@@ -206,7 +208,9 @@ def current_receipt(
         predecessor_receipt_id="receipt-before-agent-check",
         trust_level=CodeInvestigationTrustLevel.SINGLE_ATTESTATION,
         acceptance_status=CodeInvestigationAcceptanceStatus.ACCEPTED,
-        outcome=CodeInvestigationOutcome.ACCESSIBLE,
+        delivery_context=DeliveryContext.BROWNFIELD,
+        context_contract_version=2,
+        contextual_outcome=ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE,
         capabilities=capabilities,
         source_ref=selected_target.source_ref,
         source_identity_digest=SHA_A,

@@ -1,24 +1,23 @@
 """Leaf module for deterministic Spec requirement canonicalization.
 
-Self-contained (stdlib only) so it can be imported by BOTH ``services.main``
+Depends only on domain contracts so it can be imported by BOTH ``services.main``
 (``SpecService.create_spec``/``update_spec``) AND
 ``services.spec_structured_entities`` without creating an import cycle — the
 latter already imports ``SpecService`` from ``main``, so the canonicalization
 helpers must live in a module that depends on neither.
 
-The original contract covered FR/AC. SK-A extends the exact same algorithm to
-TR and exposes a collection-level helper so every semantic writer produces
-the same IDs, order, shape and duplicate checks. Canonicalization ONLY
-adds/normalizes id + shape and PRESERVES the text, so text-based
-``linked_requirements``/``linked_criteria`` keep resolving (no breaking change).
+Allocates identities only for new authored objects, preserving current stored
+identity and rejecting incompatible persisted collections.
 """
 
 from __future__ import annotations
 
 import hashlib
-from collections import defaultdict, deque
 from collections.abc import Mapping
 from typing import Any
+
+from okto_pulse.core.domain.criterion_verification import criterion_verification_fields
+from okto_pulse.core.domain.requirement_verification import requirement_verification_fields
 
 # Prefixes mirror the structured ids already used elsewhere.
 _ID_PREFIX_BY_ENTITY = {
@@ -61,11 +60,20 @@ def spec_child_id(item: Any) -> str | None:
     return None
 
 
+def spec_child_title_fields(item: Mapping[str, Any]) -> dict[str, Any]:
+    """An optional display title is independent from the requirement content."""
+    if "title" not in item:
+        return {}
+    title = item["title"]
+    if title is not None and not isinstance(title, str):
+        raise ValueError("spec_requirement_title_invalid: expected text or null")
+    return {"title": title.strip() or None if title is not None else None}
+
+
 def _stable_child_id(entity_type: str, text: str, used_ids: set[str]) -> str:
     """Deterministic, UNIQUE id for a child that has no id yet.
 
-    Base is ``<prefix><md5(entity_type:text)[:8]>`` (deterministic -> idempotent
-    migrator). If the base is already taken — a hash collision with a different
+    Base is ``<prefix><md5(entity_type:text)[:8]>``. If the base is already taken — a hash collision with a different
     text, OR a duplicate text without an id — a deterministic integer suffix
     ``_N`` (N = 1, 2, ...) is appended until a free id is found. NEVER returns an
     id already present in ``used_ids``.
@@ -86,25 +94,35 @@ def _stable_child_id(entity_type: str, text: str, used_ids: set[str]) -> str:
     return f"{base}_{n}"
 
 
+def validate_stored_spec_children(items: list | None) -> None:
+    """Refuse incompatible persisted requirements without assigning identity."""
+    if items is None:
+        return
+    if not isinstance(items, list):
+        raise ValueError("incompatible_spec_requirement: expected a collection")
+    for item in items:
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("id"), str)
+            or not item["id"].strip()
+            or not isinstance(item.get("text"), str)
+            or not item["text"].strip()
+        ):
+            raise ValueError(
+                "incompatible_spec_requirement: stored children require id and text"
+            )
+
+
 def canonicalize_spec_children(
     entity_type: str,
     items: list | None,
     existing_items: list | None = None,
 ) -> list[dict] | None:
-    """Canonicalize one FR/TR/AC list with unique, stable IDs.
+    """Allocate IDs for newly authored objects and preserve explicit identities.
 
-    String or dict inputs become ``{"id", "text", "status", **extra}`` dicts
-    while PRESERVING the text. Id-preservation across a whole-list update: a dict
-    carrying an id keeps it; an item without an id reuses the next existing id
-    for the same text (ordered queue); otherwise a stable hash id is generated.
-    ``None`` in -> ``None`` out (no change).
-
-    Shape: every emitted item has ``id``, ``text`` and ``status`` (default
-    ``"active"``, preserved when present), plus any extra fields from a dict
-    input — compatible with ``StructuredSpecEntityService``.
-
-    Raises :class:`DuplicateSpecChildIdError` if the input already contains two
-    items with the same explicit id (fail-closed; ids never renamed).
+    Stored collections must already be current. An omitted ID creates a new
+    identity; matching text never imports an existing identity. Explicit ID
+    collisions fail closed, and metadata is preserved and domain-validated.
     """
     if entity_type not in _ID_PREFIX_BY_ENTITY:
         raise UnsupportedSpecChildTypeError(
@@ -113,17 +131,18 @@ def canonicalize_spec_children(
     if items is None:
         return None
 
-    # text -> ordered queue of existing ids (only items that already carry one).
-    existing_ids_by_text: dict[str, deque] = defaultdict(deque)
-    for ex in existing_items or []:
-        ex_id = spec_child_id(ex)
-        if ex_id:
-            existing_ids_by_text[spec_child_text(ex)].append(ex_id)
+    validate_stored_spec_children(existing_items)
+
+    reserved_ids = {spec_child_id(item) for item in existing_items or []}
 
     used_ids: set[str] = set()
     out: list[dict] = []
     for item in items:
-        text = spec_child_text(item)
+        if not isinstance(item, dict) or not isinstance(item.get("text"), str) or not item["text"].strip():
+            raise ValueError("spec_requirement_object_required: expected an object with text")
+        if "id" in item and (not isinstance(item["id"], str) or not item["id"].strip()):
+            raise ValueError("spec_requirement_id_invalid")
+        text = item["text"]
         explicit_id = spec_child_id(item)
 
         if explicit_id is not None:
@@ -134,25 +153,19 @@ def canonicalize_spec_children(
                 )
             child_id = explicit_id
         else:
-            child_id = None
-            queue = existing_ids_by_text.get(text)
-            if queue:
-                # Skip existing ids already consumed earlier in this output.
-                while queue and queue[0] in used_ids:
-                    queue.popleft()
-                if queue:
-                    child_id = queue.popleft()
-            if child_id is None:
-                child_id = _stable_child_id(entity_type, text, used_ids)
+            # Missing ID means new authorship, never a lookup by matching text.
+            child_id = _stable_child_id(entity_type, text, used_ids | reserved_ids)
 
         used_ids.add(child_id)
-        if isinstance(item, dict):
-            child = dict(item)
-            child["id"] = child_id
-            child["text"] = text
-            child.setdefault("status", "active")
+        child = dict(item)
+        child["id"] = child_id
+        child["text"] = text
+        child.update(spec_child_title_fields(child))
+        child.setdefault("status", "active")
+        if entity_type == "acceptance_criterion":
+            child.update(criterion_verification_fields(child))
         else:
-            child = {"id": child_id, "text": text, "status": "active"}
+            child.update(requirement_verification_fields(child))
         out.append(child)
     return out
 
@@ -202,27 +215,13 @@ def canonicalize_spec_requirement_fields(
     return canonical
 
 
-def canonicalize_fr_ac(
-    entity_type: str,
-    items: list | None,
-    existing_items: list | None = None,
-) -> list[dict] | None:
-    """Compatibility wrapper for the former FR/AC-only public helper."""
-
-    return canonicalize_spec_children(
-        entity_type,
-        items,
-        existing_items=existing_items,
-    )
-
-
 __all__ = [
     "DuplicateSpecChildIdError",
     "SPEC_REQUIREMENT_FIELDS",
     "UnsupportedSpecChildTypeError",
-    "canonicalize_fr_ac",
     "canonicalize_spec_children",
     "canonicalize_spec_requirement_fields",
     "spec_child_id",
     "spec_child_text",
+    "validate_stored_spec_children",
 ]

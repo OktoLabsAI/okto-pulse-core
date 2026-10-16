@@ -2,8 +2,8 @@
 
 Started in ``core/app.py`` alongside the deterministic consolidation worker, it
 periodically drains PENDING cognitive-closeout work from the ledger
-(opened by the CognitiveExtractionHandler) and persists Alternative/Assumption/
-Learning to board graph OUTSIDE the event drain, advancing the SAME ledger
+(opened by the Spec and authored-capture event handlers) and persists Alternative/Assumption/
+authored Learning to board graph OUTSIDE the event drain, advancing the SAME ledger
 pending→consolidated/skipped/failed.
 
 The worker NEVER writes the graph inside the event drain and uses a cognitive
@@ -19,6 +19,7 @@ import logging
 
 from okto_pulse.core.kg.cognitive_closeout_production import (
     drain_cognitive_closeout_pending,
+    recoverable_capture_projection,
 )
 from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.interfaces.cognitive_pending_work import (
@@ -77,14 +78,9 @@ def _lookup_spec_decision_node(board_id: str, spec_id: str) -> str | None:
 
 def build_closeout_input_loader(relational_scope_factory):
     """The production input loader: derives the closeout inputs for a pending
-    ledger item from SQL (Card/Spec/Board settings) + the live graph (bug probe,
-    related Decision)."""
-    from okto_pulse.core.events.handlers.cognitive_extraction import _summariser_factory
+    ledger item from the current Spec and its related Decision in the graph."""
     from okto_pulse.core.ports.domain_event_delivery import (
         get_domain_event_fact_reader,
-    )
-    from okto_pulse.core.ports.bug_cognitive_context import (
-        resolve_bug_cognitive_context_assembler,
     )
 
     async def _loader(board_id: str, item) -> dict:
@@ -92,30 +88,7 @@ def build_closeout_input_loader(relational_scope_factory):
         ident = item.source_ref.split(":", 1)[-1]
         reader = get_domain_event_fact_reader()
         if item.artifact_type == "bug" or kind == "bug":
-            assembler = resolve_bug_cognitive_context_assembler()
-            if assembler is None:
-                raise RuntimeError("bug_cognitive_context_assembler_not_configured")
-            async with relational_scope_factory() as db:
-                bug_context = await assembler.assemble(
-                    db,
-                    board_id=board_id,
-                    bug_id=ident,
-                )
-                settings = await reader.load_board_settings(db, board_id=board_id)
-            settings = settings or {}
-            llm_config = settings.get("cognitive_llm_config")
-            summariser = _summariser_factory(llm_config) if llm_config else None
-            return {
-                "bug_card_id": ident,
-                "bug_title": bug_context.title or "",
-                "bug_action_plan": bug_context.action_plan or "",
-                "bug_context": bug_context,
-                "llm_config": llm_config,
-                "summariser": summariser,
-                "bug_probe": lambda uuid: (
-                    uuid == ident and bug_context.canonical_bug_present is True
-                ),
-            }
+            raise ValueError('bug_closeout_requires_authored_capture')
         if item.artifact_type == "spec" or kind == "spec":
             async with relational_scope_factory() as db:
                 spec = await reader.load_cognitive_spec_facts(db, spec_id=ident)
@@ -133,7 +106,14 @@ class CognitiveCloseoutWorker:
 
     def __init__(self, relational_scope_factory=None, *, interval_s: float = _DEFAULT_INTERVAL_S,
                  store: CognitiveConsolidationItemStore | None = None,
-                 pending_work_provider: CognitivePendingWorkProvider | None = None) -> None:
+                 pending_work_provider: CognitivePendingWorkProvider | None = None,
+                 recovery_batch_size: int = 32) -> None:
+        if type(recovery_batch_size) is not int or not 1 <= recovery_batch_size <= 256:
+            raise ValueError('learning_recovery_batch_size_invalid')
+        self._recovery_batch_size = recovery_batch_size
+        self._recovery_cursor = 0
+        self._recovery_candidates = []
+        self._pending_records = set()
         if relational_scope_factory is None:
             from okto_pulse.core.ports.relational_runtime import get_db_session
 
@@ -172,6 +152,9 @@ class CognitiveCloseoutWorker:
         editions own the durable-storage enumeration mechanics."""
         records: list[tuple[str, str]] = []
         seen: set[tuple[str, str]] = set()
+        recovery = {}
+        self._pending_records = set()
+        self._recovery_candidates = []
         for ref in self._pending_work_provider.list_records():
             board_id = str(ref.board_id)
             gen = str(ref.kg_generation_id)
@@ -184,20 +167,43 @@ class CognitiveCloseoutWorker:
             except Exception:
                 continue
             if any(i.status in _DRAINABLE_STATUSES for i in items):
+                self._pending_records.add(key)
+            recoverable = False
+            for item in items:
+                if recoverable_capture_projection(item, AGENT_ID):
+                    recoverable = True
+                    identity = board_id, item.source_ref, item.content_hash
+                    value = item.updated_at or item.recorded_at, board_id, gen, item.item_id
+                    if identity not in recovery or value > recovery[identity]:
+                        recovery[identity] = value
+            if key in self._pending_records or recoverable:
                 records.append(key)
+        self._recovery_candidates = sorted(value[1:] for value in recovery.values())
         return records
 
     async def drain_once(self) -> int:
         """Drain every ledger record with drainable items once; returns the
         number of items processed."""
         processed = 0
-        for board_id, gen in self._scan_ledger_records():
+        records = self._scan_ledger_records()
+        candidates = self._recovery_candidates
+        selected = set()
+        if candidates:
+            selected = {candidates[(self._recovery_cursor + index) % len(candidates)]
+                        for index in range(min(self._recovery_batch_size, len(candidates)))}
+            self._recovery_cursor = (self._recovery_cursor + len(selected)) % len(candidates)
+        for board_id, gen in records:
+            recovery_ids = frozenset(item_id for board, generation, item_id in selected
+                                     if board == board_id and generation == gen)
+            if (board_id, gen) not in self._pending_records and not recovery_ids:
+                continue
             try:
                 results = await drain_cognitive_closeout_pending(
                     self._relational_scope_factory,
                     board_id,
                     input_loader=self._loader,
                     store=self._store, agent_id=AGENT_ID, kg_generation_id=gen,
+                    recovery_item_ids=recovery_ids,
                 )
                 processed += len(results)
             except Exception as exc:

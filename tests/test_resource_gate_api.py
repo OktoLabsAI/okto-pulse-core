@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import uuid
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
 import pytest_asyncio
 from fastapi.testclient import TestClient
 
@@ -41,6 +43,10 @@ async def _client_and_entities():
                 id=spec_id,
                 board_id=board_id,
                 title="API resource gate spec",
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=USER_ID, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 created_by=USER_ID,
                 screen_mockups=[{"id": "mock-api-1", "title": "API flow"}],
             )
@@ -151,7 +157,7 @@ def test_resource_gate_spec_coverage_respects_board_setting(_client_and_entities
         f"/api/v1/resource-gate/specs/{spec_id}/task-coverage",
         params={"board_id": board_id},
     )
-    assert coverage.status_code == 200
+    assert coverage.status_code == 200, coverage.text
     coverage_body = coverage.json()
     assert coverage_body["enabled"] is True
     assert coverage_body["allowed"] is False

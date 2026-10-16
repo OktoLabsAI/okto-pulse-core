@@ -1,0 +1,44 @@
+{
+  "scope": "AC-INT-06: scoped reads, old selectors, safe denial and inert contracts",
+  "proof_pair": "dist-native-main87",
+  "criteria": {
+    "ARQVER:AC-INT-06": [
+      "test_restricted_actor_cannot_reuse_read_selectors_or_cached_scope",
+      "test_other_board_spec_is_filtered_before_reading_any_requirement_body",
+      "test_public_review_cannot_expose_ir_bindings_to_architecture_only_reader",
+      "test_public_denial_does_not_expose_profiles_or_default_proposals",
+      "test_http_reads_only_authorized_spec_and_never_writes"
+    ]
+  },
+  "evidence": [
+    "Eight new REST cases obtain an authorized detail selector then request summary, old page, exact detail or requirement reverse view as a restricted/health-only principal. Every request returns403 without protected candidate IDs, digests, IR ID or counts; SQL capture proves body tables/columns are never read.",
+    "Existing real REST/UOW scope checks return identical404 for foreign, missing and inaccessible Specs; no architecture body read. Classification/verification suites also check permission denial before history and requirement bodies, safe decoding errors and REST/MCP parity.",
+    "Native pagination uses scoped offsets/detail digests, not transferable authority. Existing frontend witnesses discard late cached details after permission, scope, edition/version or page changes and require fresh reads after access returns.",
+    "Authorized detail returns an embedded instruction to ignore permissions/fetch/approve as literal schema data. Socket resolution trap is never invoked and SQL contains only SELECT/BEGIN; foreign/unauthorized attempts never obtain that contract."
+  ],
+  "tests": {
+    "backend_distinct_passed": 35,
+    "read_passed": 31,
+    "read_seconds": 60.52,
+    "candidates_passed": 4,
+    "candidates_seconds": 13.58,
+    "repeated_cases": 4,
+    "first_candidates_seconds": 13.65,
+    "frontend": "Existing 52-case classification and29-case verification campaigns reused with hashes verified; no new frontend execution/count"
+  },
+  "limits": [
+    "Principals/authentication are controlled fixtures. Public routing, UOW, permission checks and relational reads are real; no installed auth E2E claim.",
+    "The inert-instruction test proves this application read path neither fetches the referenced schema nor mutates storage. It does not claim guarantees about arbitrary external agents consuming the text.",
+    "An existing F811 fixture-import warning was fixed by module alias plus fixture assignment; the four affected cases were rerun.",
+    "No product or SPA changes. Main87 closure remains applicable, eight budgets zero. No compatibility cursor, migration, promotion or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-restricted-read1.json": "ecd9c901cd05df289de179d6d6b72000562c2388880be2fed10f2190e16f6f0c",
+    "native-restricted-read1.xml": "e6cacc252c38d5eb1ee5889cdecde66e40e05f90799399d0a39d541b6248e3a5",
+    "native-restricted-candidates1.xml": "7356cb1bf245438c57bb4a41b03d2f1d356e17fd955cf9b1dd81b1c03dc74f9d",
+    "native-restricted-candidates2.xml": "2c189b0f75acc8d0260cc6fa35daab270c669797a9690f85565d4bf44fca479c",
+    "native-classification-batch-frontend1.json": "ce07b583c7a65fb7beab3fbdf1b450e7fda5249b3536ee2cf7b3c43f8014f114",
+    "native-verification-start-frontend1.json": "c0b045da14b876273f918bb6fedd26f7ad61580f4af5a5053e20d5d82075eb04",
+    "closure-native-main87.json": "0b9b185c7e16892769af431ffa471141244468db74ccd447dbcf6af474acbfd4"
+  }
+}

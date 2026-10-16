@@ -58,7 +58,9 @@ plug in exactly the same way — one decorator, one `handle()` method.
 
 | Event | Publisher | Key payload fields |
 |-------|-----------|--------------------|
-| `card.created` | `CardService.create_card` | `card_id`, `spec_id`, `sprint_id`, `card_type`, `priority` |
+| `learning.capture_admitted.v1` | authored Learning admission, in the source UOW | `bug_id`, `capture_author_id`, exact capture identity/generation/fingerprint; no narrative or approval |
+| `card.created` | `CardService.create_card` | `card_id`, `spec_id`, `card_type`, `priority` |
+| `card.scenario_projection_changed.v1` | `CardService.update_card` | `card_id`, previous/current Spec IDs, changed scenario-link fields; bounded invalidation metadata |
 | `card.moved` | `CardService.move_card` | `card_id`, `from_status`, `to_status` |
 | `card.cancelled` | `CardService.move_card` (→ cancelled) | `card_id`, `previous_status` |
 | `card.restored` | `CardService.move_card` (from cancelled) | `card_id`, `to_status` |
@@ -66,9 +68,6 @@ plug in exactly the same way — one decorator, one `handle()` method.
 | `spec.moved` | `SpecService.move_spec` | `spec_id`, `from_status`, `to_status` |
 | `spec.version_bumped` | `SpecService.update_spec` | `spec_id`, `old_version`, `new_version`, `changed_fields` |
 | `checklist.binding_changed.v1` | `CreateBoardUseCase` / `UpdateChecklistBindingUseCase` | mode, template, immutable binding version/digest, previous version, source |
-| `sprint.created` | `SprintService.create_sprint` | `sprint_id`, `spec_id` |
-| `sprint.moved` | `SprintService.move_sprint` | `sprint_id`, `from_status`, `to_status` |
-| `sprint.closed` | `SprintService.move_sprint` (→ closed) | `sprint_id` |
 | `ideation.derived_to_spec` | `IdeationService.derive_spec` | `ideation_id`, `spec_id` |
 | `refinement.derived_to_spec` | `RefinementService.derive_spec` | `refinement_id`, `spec_id` |
 | `kg.tick.daily` | scheduled/manual tick publisher | `tick_id`, `scheduled_at`; old payloads default `force_full_rebuild=false` |
@@ -78,6 +77,33 @@ Every event also carries the common base fields: `event_id` (UUID),
 `board_id`, `actor_id`, `actor_type`, `occurred_at` (UTC). These live in
 dedicated columns on `domain_events` and are NOT duplicated inside
 `payload_json`.
+
+Historical Sprint events and old Card payloads containing `sprint_id` are
+classified from their original stored payload by the offline retirement flow.
+Their raw audit evidence remains unchanged. A mixed Card event keeps its Card
+work; the current `CardCreated` contract emits no operational Sprint link.
+Sprint publishers, operational event DTOs and lifecycle registrations have been
+removed. The deterministic worker and relational projection reader no longer
+materialize Sprint. Historical queue work and archive lifecycle replay fail
+closed until the fenced offline retirement resolves them; they are not reported
+as delivered. Historical fixtures must supply the old payload explicitly instead
+of constructing it from current event DTOs.
+
+Scenario mutations retain `projection_card_ids` from both the previous and
+current references in Spec/structured events. Consolidation checks their Board
+scope and also reads Cards attached to that Spec, so one-sided Card references
+are invalidated after a scenario removal. These are targeted public-port reads,
+not Board scans. Card relinks enqueue both parents and the Card; the worker
+always rereads current authority. The metadata does not grant coverage or graph
+write authority, and old stored event payloads remain unchanged.
+
+Learning admission emits one work notification with the durable capture in the
+same transaction. Exact retries emit no duplicate. Its handler opens one item
+per capture in the existing cognitive ledger; the dedicated worker revalidates
+source, evidence and canonical eligibility outside the event drain. Pending
+projection is not approval. Bug Done no longer starts internal Learning
+inference or creates an obligation for every advisory Bug. Old inference
+configuration and old debt/hold records remain intact for scoped reconciliation.
 
 ### Rolling deployment for forced rebuild ticks
 

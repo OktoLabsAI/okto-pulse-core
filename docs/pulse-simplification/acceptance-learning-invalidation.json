@@ -1,0 +1,168 @@
+{
+  "scope": "KG4.5 source-qualified invalidation of authored Learning associations",
+  "suites": {
+    "r10-regression-core": {
+      "passed": 60,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "r5-regression-community": {
+      "passed": 55,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "r5": {
+      "passed": 12,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "r11": {
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Semantic source changes and reopening invalidate the exact Learning/Bug pair while preserving immutable authored history.",
+    "The current verified authored chain protects support from a more recent capture for the same origin.",
+    "Pair-scoped graph capability preserves other origins and node content, with exact parallel-edge before-images.",
+    "Concurrent substantive work-ledger changes cause restoration instead of being overwritten.",
+    "Failures after graph commit or durability restore the pair and remain pending for retry.",
+    "Projection-outage retries still invalidate known stale associations; a newer authenticated capture can restore supported pending work.",
+    "The source ref emitted by the deterministic Bug processor is recognized; foreign and ambiguous source identities remain refused by the canonical resolver.",
+    "Mechanics remain in the Community adapter; the Core consumes the public Protocol."
+  ],
+  "limits": [
+    "Unrelated completion gates and health are explicit fixture controls; this is not full lifecycle or release acceptance.",
+    "An unauthenticated evidence response can indicate unavailable verification and is not automatically treated as prune authority.",
+    "Historical upgrade, rebuild parity, source-event coverage and final release qualification remain pending.",
+    "Global inventory remains 78 verified / 33 partial / 135 unaudited; this focused campaign does not promote broader criteria.",
+    "No frontend changes, real-data migration or active runtime restart occurred.",
+    "The r11 identity/recovery suite covers shared canonical confirmation/inspection; its recovery cases overlap earlier Community suites.",
+    "The initial identity fixture used a non-UUID and did not prove materialization. R9 establishes actual committed associations before demonstrating false confirmation; the qualified regression preserves the domain parser."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-invalidation-final2.json": "1bf32b489cb21ab9165e8360ac82e27c7424f842fef751f37d1d38c2b328825c",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-repro.xml": "9c8d2ee375076240c6e4c99987d2e054922cb852bcd44102c29e3fb59b66867b",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-repro.log": "947cdda1ab626bab35b9ed2d9588ea6757135eaf1e4a50fe4f1faecfe34d10aa",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-r10-regression-core.xml": "3283e8cbdb9797db1e73e895a4985d413454fedd3845d5365d11aae30cb03e3e",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-r5-regression-community.xml": "8fc17f4e527ff8d1540ba796bac77daa9f8ac2f70e820e70257311a12b0c784a",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-r5.xml": "e0055b8161063ed521f2fba69e051dee87f76a78eba5f3dfa4d5cbe09c32292c",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-r11.xml": "8e272e129db9f7efef30bbe343ac5ed1ed41adcb5e16dff488c75c00233130e3",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-invalidation-port.json": "00de1012f3faff0108c7e2b129c787124127d718c4cfff8ac9e52b39b07cf228",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-invalidation-r1.json": "14760347df043e8bde5a5bd932e0e0bd7d731764535e168c3ae3be1292ef60bd",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-invalidation-r2.json": "f6aa13109a3ed0501b7e31684027db0fbe6770318213633093749a4513af92c5",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-invalidation-r3.json": "1ebcd956d1c35f72c50f787e6f43cb095cd4282cd5073a4b19590eed3436efce",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-invalidation-final.json": "21c39ccca065406f38bb1118816659f4c805bae91bfc52068f063dbf5acbbe34",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-invalidation-final2.json": "d7d24679056585d5ab317c222bf36229c4a03a247cc3331359cc485757fe6d2d",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-invalidation-r4.json": "c15b2a5ee1a2f797ff1bb1f7e6eae82ba2724f25b409915706fbc788b6a795df",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-invalidation-r5.json": "5512edbf57a0d286c41f47e855bf478f33434cda7f6d8c9bcb2098611001bf91",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-invalidation-r1.json": "4d66b7781fe6c3275d0cc76a08d575374cfe28ee7e6b4a3048b47dcebf998945",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-invalidation-r3.json": "5603291d62698ec2b159032ac51339e94b514f3769838a444443bac9be8e9b08",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-r2.xml": "9c1cd6bfb11bbf69d0db466b22ff28222ca42830f124b133685b4c9b41cafed4",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-r3.xml": "9b1d33c5fd7c54b3d986dc4a76d6be926e1e2fda774aceedf97071530a05d752",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-pending-repro.xml": "85e2634f034a230a4934040b2b43124e1e900c53dbcde649ee4e97d2f6a1de87",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-final-regression-community.xml": "f7bc2ff42b54acf5b86a8d35ce4dfeaa733c075ff20d26476b7012906201f5ab",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-identity-repro.xml": "7b340ccfc12c61a3b32d54ae812b916e33e1f9ef42f23909429272540abf800c",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-identity-repro-test.log": "453974e5007fb8dc662cefa3078c26c892e1e6e0e7d4e69e486d52efd6bfa823",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-r6.xml": "8f29c19bea196a6fc1d81c08571b7ca9c38e6f86b7b2453311c3141fbee9d9d0",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-r7.xml": "aefe562b7d3571e3e4eddf3e43765ab2df3966b70a0a894df902745f6fdc1e4b",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-r8.xml": "85cebc1bee12a1c263bca15aa7921df21c85dc20cfd649a0d74a0ee08f398950",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-r9.xml": "6a03b63a36a4db307141cc5314164acebb5dbde37cca974dcd24dc25effd1a05",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-r10.xml": "cdef502292e4df8053a73a2eb317ddd376e142b3c638840d0ddb5c82da985c38",
+    "PULSE_REFACTOR/.validation-v040/learning-invalidation-r9-test.log": "380f6bf451baef1f557c95e4dbfd31b435e3dbd8572cbd64ad9d1b9a45149a3c",
+    "PULSE_REFACTOR/.validation-v040/run_learning_invalidation.py": "7a877dd31fc4216c693ff1944a6efef10fa98a9ab8056f90b68d292a26faadb2",
+    "PULSE_REFACTOR/.validation-v040/run_learning_invalidation_probe.py": "3197f53352df4342d4d6ae8ce716d673b8fbad1b1674b0530ae1e83cfee9f462",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_invalidation.py": "2eff7702c36ec5e32c46e4ec76de6d66a5488dde22d44ba28d01599f4142d170",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "8b7a9367e9685fa01c7b565b9c3a9814380072506eeb9213ec86511e48654f73",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/learning_materialization.py": "09d7988408ddb2f3696236885fb17304e79a0dc0149e54cf2bc84594d1e8fa82",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/learning_invalidation.py": "8bdca12beb8a71c870697863bd1d2d1ea3d9a1ff32951ff6ae52bcd6ec895232",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/cognitive_closeout_production.py": "0ff46f77e383f783cf69e2fd4cb9d3a25d6730e228c1fb75f24715bfcfdabc87",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/interfaces/graph_transaction.py": "71ee6e097fa02059969b76a72fd6dc693c41168f0e7403dee65bdc46d1656e88",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/grafx_graph_transaction.py": "0300bf541692512f033e73c1902df3ac80e1b508b4589ed398fe323754810df2",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/graph_rollout_capture.py": "5d8f4d43943790beee282a4cd557878358a75e62d4355d39cd16fb136360a5fe",
+    "okto_labs_pulse_community/tests/test_learning_source_invalidation.py": "8613abe8a49e46b60e7e5af26bb2c6bca26fdf224379fdf4ae514085b5a39c09",
+    "okto_labs_pulse_community/tests/test_learning_invalidation_fanin.py": "0c6484dda92967d3de4fa90f723c7f800364b9ff19bbd63db5da4ceb31a4bef2",
+    "okto_labs_pulse_community/tests/test_learning_invalidation_transaction.py": "fdbfcaadf624beddd6051eb315a0b2203f875c61b80aa29832cebbfa6a8ce46a",
+    "okto_labs_pulse_community/tests/test_learning_invalidation_pending.py": "13e0895892eed03ca166454a3d3469ea7951c02ee3e45f608eb126d7e135db7a",
+    "okto_labs_pulse_community/tests/test_learning_projection_identity.py": "b5161413b213bf129037ea9f6ea4b65cc461318c76796a2011907674d164a78e"
+  }
+}

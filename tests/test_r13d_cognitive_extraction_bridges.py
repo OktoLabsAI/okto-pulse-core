@@ -1,17 +1,4 @@
-"""R13-D — Bridges LLMProvider -> grounding / heuristics / cognitive-extraction.
-
-Covers the 4 test scenarios 1:1 with a real in-memory ``FakeLLMProvider``
-(no vendor SDK):
-
-  ts_1f20c2e3 (grounding)        -> test_ts_1f20c2e3_*
-  ts_6836948d (heuristic)        -> test_ts_6836948d_*
-  ts_45fe110f (opt-in/skips)     -> test_ts_45fe110f_*
-  ts_6c2adf69 (closeout ledger)  -> test_ts_6c2adf69_*
-
-Plus a contract guard for the 4 canonical purposes (grounding_extract /
-grounding_score / heuristic_polarity / learning_summarise), the fail-closed
-wiring, and secret-safe observability (tr_r13d_secret_safe_observability).
-"""
+"""Active grounding/heuristic bridges and native closeout event boundaries."""
 
 from __future__ import annotations
 
@@ -22,12 +9,6 @@ import pytest
 
 from okto_pulse.core.events.handlers.cognitive_extraction import (
     CognitiveExtractionHandler,
-    _summariser_factory,
-)
-from okto_pulse.core.events.handlers.llm_provider_bridges import (
-    make_learning_summariser,
-    reset_bridge_cache as reset_summariser_bridge_cache,
-    summariser_from_config,
 )
 from okto_pulse.core.events.types import CardMoved, SpecMoved
 from okto_pulse.core.kg.agent.extractors import (
@@ -126,11 +107,9 @@ class FakeLLMProvider:
 def _reset_caches():
     reset_grounding_bridge_cache()
     reset_heuristic_bridge_cache()
-    reset_summariser_bridge_cache()
     yield
     reset_grounding_bridge_cache()
     reset_heuristic_bridge_cache()
-    reset_summariser_bridge_cache()
 
 
 # ===========================================================================
@@ -354,47 +333,14 @@ def test_ts_6836948d_integration_with_real_heuristic_emits_and_gates():
 # ts_45fe110f (opt-in / skips) — no_llm_config / unknown_provider / openai stub
 # + Alternative/Assumption regex run WITHOUT any LLM.
 # ===========================================================================
-def test_ts_45fe110f_no_llm_config_skip():
-    # Falsy config -> None (caller logs no_llm_config + skips Learning).
-    assert summariser_from_config(None) is None
-    assert summariser_from_config({}) is None
 
 
-def test_ts_45fe110f_unknown_provider_skip():
-    # No provider supplied + unknown provider in config -> None (skip).
-    assert summariser_from_config({"provider": "anthropic"}) is None
-    # The legacy factory the handler uses preserves the same skip.
-    assert _summariser_factory({"provider": "anthropic"}) is None
 
 
-def test_ts_45fe110f_openai_stub_is_deterministic():
-    summ = summariser_from_config({"provider": "openai"})
-    assert summ is not None
-    title, body = summ.summarise(
-        bug_title="Regex misfires on accents",
-        action_plan="Repro; root cause missing NFC; fixed + regression test.",
-    )
-    # Deterministic stub shape (unchanged): title prefix + truncated body.
-    assert title == "Lesson from: Regex misfires on accents"
-    assert body == "Repro; root cause missing NFC; fixed + regression test."
 
 
-def test_ts_45fe110f_provider_path_produces_summary():
-    provider = FakeLLMProvider(
-        summary={"title": "Always normalise NFC", "body": "Guard encoding first."}
-    )
-    summ = summariser_from_config({"provider": "x"}, provider=provider)
-    assert summ is not None
-    title, body = summ.summarise(bug_title="t", action_plan="p" * 60)
-    assert title == "Always normalise NFC"
-    assert body == "Guard encoding first."
-    assert provider.calls[-1].purpose == "learning_summarise"
 
 
-def test_ts_45fe110f_provider_failure_yields_no_learning():
-    # Provider failure -> ("","") -> extract_learning_from_bug creates nothing.
-    summ = make_learning_summariser(FakeLLMProvider(fail=LLM_PROVIDER_ERROR))
-    assert summ.summarise(bug_title="t", action_plan="p" * 60) == ("", "")
 
 
 def test_ts_45fe110f_alternative_and_assumption_regex_need_no_llm():
@@ -484,12 +430,6 @@ def _ledger_boundary_spies(monkeypatch):
         _guard_worker,
         raising=False,
     )
-    # Avoid any real graph read in the bug branch idempotency probe.
-    monkeypatch.setattr(
-        "okto_pulse.core.events.handlers.cognitive_extraction."
-        "_learning_already_exists",
-        lambda *_a, **_k: False,
-    )
     return opened
 
 
@@ -506,7 +446,7 @@ async def test_ts_6c2adf69_spec_done_opens_ledger_only_no_kg_write(
 
 
 @pytest.mark.asyncio
-async def test_ts_6c2adf69_bug_done_opens_ledger_only_no_kg_write(
+async def test_bug_done_without_capture_opens_no_learning_work(
     _ledger_boundary_spies,
 ):
     opened = _ledger_boundary_spies
@@ -516,7 +456,7 @@ async def test_ts_6c2adf69_bug_done_opens_ledger_only_no_kg_write(
         board=_board(llm_config={"provider": "openai", "model": "gpt-4o-mini"}),
     )
     await handler.handle(_bug_moved(card_id="card-7"), sess)
-    assert ("board-1", "bug:card-7", "bug") in opened
+    assert opened == []  # KG7.4/7.7: authored admission is the Learning trigger.
 
 
 @pytest.mark.asyncio
@@ -532,7 +472,7 @@ async def test_ts_6c2adf69_non_done_transition_opens_nothing(
 
 
 @pytest.mark.asyncio
-async def test_terminal_transitions_forward_source_hash_to_closeout_ledger(
+async def test_spec_transition_forwards_hash_without_inventing_bug_capture(
     monkeypatch,
 ):
     from okto_pulse.core.ports.domain_event_delivery import (
@@ -581,7 +521,6 @@ async def test_terminal_transitions_forward_source_hash_to_closeout_ledger(
 
     assert [call["content_hash"] for call in opened] == [
         "spec-hash",
-        "bug-hash",
     ]
 
 
@@ -641,7 +580,7 @@ async def test_tr_r13d_secret_safe_closeout_truncates_and_hides_creds(
 # Contract: canonical purposes (api_r13d_cognitive_extraction_bridge_contract).
 # Regression guard — fails if a bridge drifts off the canonical purpose names.
 # ===========================================================================
-def test_contract_canonical_purposes_for_four_flows():
+def test_contract_canonical_purposes_for_active_flows():
     p_ex = FakeLLMProvider(extract=[])
     make_extractor_fn(p_ex, board_id="b1", actor_id="a1")("answer text")
     req = p_ex.calls[-1]
@@ -662,11 +601,6 @@ def test_contract_canonical_purposes_for_four_flows():
     assert req.telemetry_labels == {"flow": "heuristic_polarity"}
     assert req.prompt_id == "contradiction_v1"
 
-    p_ls = FakeLLMProvider(summary={"title": "t", "body": "b"})
-    make_learning_summariser(p_ls).summarise(bug_title="bt", action_plan="p" * 60)
-    req = p_ls.calls[-1]
-    assert req.purpose == "learning_summarise"
-    assert req.telemetry_labels == {"flow": "learning_summarise"}
 
 
 def test_contract_fail_closed_wiring_requires_provider():
@@ -676,8 +610,6 @@ def test_contract_fail_closed_wiring_requires_provider():
         make_grounder_fn(None)
     with pytest.raises(ValueError):
         make_heuristic_llm(None)
-    with pytest.raises(ValueError):
-        make_learning_summariser(None)
 
 
 def test_contract_provider_absent_status_grounding_fail_closed():

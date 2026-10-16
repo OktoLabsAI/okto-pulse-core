@@ -1,0 +1,365 @@
+{
+  "format": "pulse-cold-inventory-comparison/v1",
+  "scope": "Component characterization only; DEI 17.2 session benchmark remains incomplete.",
+  "limits": [
+    "One sample per pair; latency is descriptive, not a performance conclusion.",
+    "Real HTTP entity bodies over in-process ASGI, no socket/network/TLS measurement.",
+    "No grants, workflow, retries, backend SQL or external agent work exercised.",
+    "cl100k_base token counts are a reproducible proxy, not model billing.",
+    "Baseline announces stale 0.3.3; both installed baseline distributions are 0.3.4."
+  ],
+  "runs": {
+    "baseline": {
+      "schema": "pulse-cold-mcp-http/v1",
+      "scope": "inventory_only_no_grants_or_workflow_exercised",
+      "transport": "real_streamable_http_json_over_in_process_asgi_no_network",
+      "byte_scope": "exact_HTTP_entity_bodies_excludes_headers_TLS_and_network",
+      "tokens": {
+        "library": "tiktoken",
+        "version": "0.12.0",
+        "encoding": "cl100k_base",
+        "billing_measurement": false
+      },
+      "runtime": {
+        "okto-pulse-core": "0.3.4",
+        "okto-pulse": "0.3.4",
+        "fastmcp": "2.14.7",
+        "mcp": "1.29.0",
+        "httpx": "0.28.1"
+      },
+      "python": "3.13.1 (tags/v3.13.1:0671451, Dec  3 2024, 19:06:28) [MSC v.1942 64 bit (AMD64)]",
+      "executable": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\baseline-venv\\Scripts\\python.exe",
+      "server": {
+        "name": "okto-pulse",
+        "version": "0.3.3"
+      },
+      "instructions_bytes": 10844,
+      "instructions_tokens": 2493,
+      "tool_count": 340,
+      "resource_count": 56,
+      "resources_consumed": [
+        "okto-pulse://workflows/preflight"
+      ],
+      "materialization_ms": 986.2830999991274,
+      "totals": {
+        "request_bytes": 442,
+        "response_bytes": 279613,
+        "request_tokens": 136,
+        "response_tokens": 66150,
+        "elapsed_ms": 34.38529999402817
+      },
+      "provenance_sha256": "b99b5a9f0a239742b0c621636b898dad5f15f596fbafd9450a7533d6bcf460ba",
+      "runner_sha256": "b4af6f02e92ef99cd5c32fe0b88afad97170c899bd86bef9dfa73806db749463",
+      "raw_file": "cold-mcp-baseline.json",
+      "raw_sha256": "a0ad34bafac720f1f896da55ff2beb6efc1e54a3080ea9b225c262132535f912",
+      "provenance": {
+        "core": {
+          "python_files": 769,
+          "source": "D:\\Projetos\\Techridy\\.worktrees\\pulse-core-v0.3.4-kg-gaps-20260916",
+          "repository_root": "D:\\Projetos\\Techridy\\.worktrees\\pulse-core-v0.3.4-kg-gaps-20260916",
+          "commit": "207072509a282e8adec1481d05aee2d54c382bde",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\wheels-baseline-reproduction\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "0e88432f27a721c254046342e7d44db228828347e433acf41c2ae2fb428b56d9",
+            "size": 3646452
+          },
+          "source_root": "D:\\Projetos\\Techridy\\.worktrees\\pulse-core-v0.3.4-kg-gaps-20260916\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\baseline-venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 834,
+          "byte_identical": true,
+          "aggregate_sha256": "20e722193fa588d980ff5aeac50d3134fe859148079017aaf27780416b959202",
+          "chain_hashes": {
+            "source": "20e722193fa588d980ff5aeac50d3134fe859148079017aaf27780416b959202",
+            "wheel": "20e722193fa588d980ff5aeac50d3134fe859148079017aaf27780416b959202",
+            "site_packages": "20e722193fa588d980ff5aeac50d3134fe859148079017aaf27780416b959202"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "477b3aca6a062b4195b2e86d71e05db041fc3bedd06fe2c9b545ccdfa519c7cd",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "118a198dc0cb031a9ce2be18f2bd91df02a3b3209670f7badcf6d37a9af606e5"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 311,
+          "source": "D:\\Projetos\\Techridy\\.worktrees\\pulse-v0.3.4-kg-gaps-20260916",
+          "repository_root": "D:\\Projetos\\Techridy\\.worktrees\\pulse-v0.3.4-kg-gaps-20260916",
+          "commit": "b6dda64f512920fa4aaaf9d50c331b1796b87e27",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\wheels-baseline-reproduction\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "6925e90a36054ae954d516f3fc4f5ed1513812bfdb915d145eb9a9bd5afa1d27",
+            "size": 4448252
+          },
+          "source_root": "D:\\Projetos\\Techridy\\.worktrees\\pulse-v0.3.4-kg-gaps-20260916\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\baseline-venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 395,
+          "byte_identical": true,
+          "aggregate_sha256": "8523fa985c6a6e17ea65c5ecb17ac36b99a139950a37e9f53d3c51908eceed2c",
+          "chain_hashes": {
+            "source": "8523fa985c6a6e17ea65c5ecb17ac36b99a139950a37e9f53d3c51908eceed2c",
+            "wheel": "8523fa985c6a6e17ea65c5ecb17ac36b99a139950a37e9f53d3c51908eceed2c",
+            "site_packages": "8523fa985c6a6e17ea65c5ecb17ac36b99a139950a37e9f53d3c51908eceed2c"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      },
+      "pages": [
+        {
+          "method": "initialize",
+          "params": {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {
+              "name": "pulse-inventory-probe",
+              "version": "1"
+            }
+          },
+          "status": 200,
+          "request_bytes": 166,
+          "response_bytes": 11404,
+          "request_tokens": 48,
+          "response_tokens": 2757,
+          "elapsed_ms": 2.6875999974436127,
+          "response_sha256": "6487c5a05d6f117b585db84ab69f97f6908bfb21e23fd90eaa5e22de5943a1f7"
+        },
+        {
+          "method": "notifications/initialized",
+          "params": null,
+          "status": 202,
+          "request_bytes": 54,
+          "response_bytes": 0,
+          "request_tokens": 14,
+          "response_tokens": 0,
+          "elapsed_ms": 2.575700003944803,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "method": "tools/list",
+          "params": {},
+          "status": 200,
+          "request_bytes": 58,
+          "response_bytes": 238588,
+          "request_tokens": 21,
+          "response_tokens": 56487,
+          "elapsed_ms": 22.81119999679504,
+          "response_sha256": "4b064998072c7d1d12a3ee97ae6d4b88b80b40e6f5735c2d67d7a84001edd84f"
+        },
+        {
+          "method": "resources/list",
+          "params": {},
+          "status": 200,
+          "request_bytes": 62,
+          "response_bytes": 12579,
+          "request_tokens": 21,
+          "response_tokens": 3180,
+          "elapsed_ms": 4.178399998636451,
+          "response_sha256": "64f0e6d74069195541e91d4f4740208df4d97ba98d4dddeb909915d015bc3f5e"
+        },
+        {
+          "method": "resources/read",
+          "params": {
+            "uri": "okto-pulse://workflows/preflight"
+          },
+          "status": 200,
+          "request_bytes": 102,
+          "response_bytes": 17042,
+          "request_tokens": 32,
+          "response_tokens": 3726,
+          "elapsed_ms": 2.1323999972082675,
+          "response_sha256": "2c0f2becfc2cdfda542c53c8641386a76b04286e9a2f152fdee5c12ca4d06d98"
+        }
+      ]
+    },
+    "candidate": {
+      "schema": "pulse-cold-mcp-http/v1",
+      "scope": "inventory_only_no_grants_or_workflow_exercised",
+      "transport": "real_streamable_http_json_over_in_process_asgi_no_network",
+      "byte_scope": "exact_HTTP_entity_bodies_excludes_headers_TLS_and_network",
+      "tokens": {
+        "library": "tiktoken",
+        "version": "0.12.0",
+        "encoding": "cl100k_base",
+        "billing_measurement": false
+      },
+      "runtime": {
+        "okto-pulse-core": "0.3.4",
+        "okto-pulse": "0.3.4",
+        "fastmcp": "2.14.7",
+        "mcp": "1.29.0",
+        "httpx": "0.28.1"
+      },
+      "python": "3.13.1 (tags/v3.13.1:0671451, Dec  3 2024, 19:06:28) [MSC v.1942 64 bit (AMD64)]",
+      "executable": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "server": {
+        "name": "okto-pulse",
+        "version": "0.3.4"
+      },
+      "instructions_bytes": 10579,
+      "instructions_tokens": 2420,
+      "tool_count": 312,
+      "resource_count": 54,
+      "resources_consumed": [
+        "okto-pulse://workflows/preflight"
+      ],
+      "materialization_ms": 908.9108999978635,
+      "totals": {
+        "request_bytes": 442,
+        "response_bytes": 295078,
+        "request_tokens": 136,
+        "response_tokens": 69344,
+        "elapsed_ms": 31.302599993068725
+      },
+      "provenance_sha256": "d0ce3e07ebf11edf4526b474a62888f4e3a7206846d46c937de7b933f903003a",
+      "runner_sha256": "b4af6f02e92ef99cd5c32fe0b88afad97170c899bd86bef9dfa73806db749463",
+      "raw_file": "cold-mcp-candidate.json",
+      "raw_sha256": "974cdbc0e1a60fddd60b981153b7005b82be46f8c02ea8cf63ca0ba2f07f492a",
+      "provenance": {
+        "checked_at": "2026-09-23T19:55:37.673994+00:00",
+        "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+        "packages": {
+          "core": {
+            "python_files": 830,
+            "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+            "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+            "commit": "a6af65c4f8e25f1dff7693162f9da8c2f19d872f",
+            "dirty": true,
+            "dirty_entry_count": 13,
+            "distribution": "okto-pulse-core",
+            "version": "0.3.4",
+            "wheel": {
+              "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-package-identity-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+              "sha256": "508e334c016b5ee158486940cf03adffc4fbfb8139f48b673e2095b2e5a45c38",
+              "size": 3735663
+            },
+            "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+            "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+            "package_prefix": "okto_pulse/core/",
+            "byte_identical_member_count": 893,
+            "byte_identical": true,
+            "aggregate_sha256": "85ed087d3c852a8bce60cd21ff2bf1c8fd0921de44330b973b79c812005ecc68",
+            "chain_hashes": {
+              "source": "85ed087d3c852a8bce60cd21ff2bf1c8fd0921de44330b973b79c812005ecc68",
+              "wheel": "85ed087d3c852a8bce60cd21ff2bf1c8fd0921de44330b973b79c812005ecc68",
+              "site_packages": "85ed087d3c852a8bce60cd21ff2bf1c8fd0921de44330b973b79c812005ecc68"
+            },
+            "critical_resource_sha256": {
+              "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "32102e1e4ca2e107189c028f29202b16c5e2879de8b21495de8fd6f88e9fff13",
+              "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+            },
+            "mismatches": []
+          },
+          "community": {
+            "python_files": 363,
+            "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+            "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+            "commit": "760b185e95399e20162189d41e8952b27d670add",
+            "dirty": true,
+            "dirty_entry_count": 7,
+            "distribution": "okto-pulse",
+            "version": "0.3.4",
+            "wheel": {
+              "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-package-identity-final\\okto_pulse-0.3.4-py3-none-any.whl",
+              "sha256": "dd43a3e4a50bfb96fc788baa769417d0a414faaf4c09d8841a7f8d3f380d2ffb",
+              "size": 4509277
+            },
+            "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+            "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+            "package_prefix": "okto_pulse/community/",
+            "byte_identical_member_count": 447,
+            "byte_identical": true,
+            "aggregate_sha256": "19610ee459179601531c6fe646f9c67797002669a3296e850e5e78c30b3989b6",
+            "chain_hashes": {
+              "source": "19610ee459179601531c6fe646f9c67797002669a3296e850e5e78c30b3989b6",
+              "wheel": "19610ee459179601531c6fe646f9c67797002669a3296e850e5e78c30b3989b6",
+              "site_packages": "19610ee459179601531c6fe646f9c67797002669a3296e850e5e78c30b3989b6"
+            },
+            "critical_resource_sha256": {},
+            "mismatches": []
+          }
+        }
+      },
+      "pages": [
+        {
+          "method": "initialize",
+          "params": {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {
+              "name": "pulse-inventory-probe",
+              "version": "1"
+            }
+          },
+          "status": 200,
+          "request_bytes": 166,
+          "response_bytes": 11136,
+          "request_tokens": 48,
+          "response_tokens": 2681,
+          "elapsed_ms": 3.2338999953935854,
+          "response_sha256": "2f348e2fe2f70ef1a4cf6d425c3995a0144b76fae76302d7e02042df5bba2bbc"
+        },
+        {
+          "method": "notifications/initialized",
+          "params": null,
+          "status": 202,
+          "request_bytes": 54,
+          "response_bytes": 0,
+          "request_tokens": 14,
+          "response_tokens": 0,
+          "elapsed_ms": 2.419299999019131,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "method": "tools/list",
+          "params": {},
+          "status": 200,
+          "request_bytes": 58,
+          "response_bytes": 254747,
+          "request_tokens": 21,
+          "response_tokens": 59871,
+          "elapsed_ms": 19.434100002399646,
+          "response_sha256": "00219b86477830d858e1d2940a1bacb7c6d3790473dff4701e05cadfc082ae97"
+        },
+        {
+          "method": "resources/list",
+          "params": {},
+          "status": 200,
+          "request_bytes": 62,
+          "response_bytes": 12160,
+          "request_tokens": 21,
+          "response_tokens": 3068,
+          "elapsed_ms": 4.259499997715466,
+          "response_sha256": "89573c4a97160f3d033e697e2bb1f5ca1534148970ef63c79682a62e09975511"
+        },
+        {
+          "method": "resources/read",
+          "params": {
+            "uri": "okto-pulse://workflows/preflight"
+          },
+          "status": 200,
+          "request_bytes": 102,
+          "response_bytes": 17035,
+          "request_tokens": 32,
+          "response_tokens": 3724,
+          "elapsed_ms": 1.955799998540897,
+          "response_sha256": "2ed4f945e023c001e72ea02b1303ad52824eed1d8e70af7ccb6a5250afbd13df"
+        }
+      ]
+    }
+  },
+  "candidate_minus_baseline": {
+    "request_bytes": 0,
+    "response_bytes": 15465,
+    "request_tokens": 0,
+    "response_tokens": 3194
+  }
+}

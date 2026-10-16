@@ -12,9 +12,7 @@ from okto_pulse.core.infra.config import CoreSettings
 from okto_pulse.core.telemetry.schema import CURRENT_SCHEMA_VERSION
 from okto_pulse.core.telemetry.service import TelemetryService
 from okto_pulse.core.telemetry.settings import (
-    LOCAL_ONLY_MIGRATION_NOTICE,
     load_state,
-    mark_migration_notice_seen,
     record_consent,
     resolve_telemetry_config,
     save_state,
@@ -57,7 +55,7 @@ def test_state_registry_is_fail_closed_without_carrier(tmp_path: Path) -> None:
     }
 
 
-def test_consent_and_migration_notice_preserve_full_dict_carrier(
+def test_native_consent_preserves_full_dict_carrier(
     tmp_path: Path,
 ) -> None:
     settings = _settings(tmp_path)
@@ -66,8 +64,8 @@ def test_consent_and_migration_notice_preserve_full_dict_carrier(
         "mode": "disabled",
         "source": "settings_ui",
         "history": [{"mode": "disabled", "changed_at": f"t{i}"} for i in range(55)],
-        "migration_notices": {LOCAL_ONLY_MIGRATION_NOTICE: {"seen": False}},
-        "watermark": {"cursor": "abc"},
+        "watermark": "2026-06-01T10:01:00Z",
+        "watermark_event_id": "evt-1",
         "failure_state": {"status": "degraded", "retry_count": 2},
         "install_token": "SECRET-TOKEN",
         "install_token_expires_at": "2026-07-01T00:00:00Z",
@@ -87,13 +85,11 @@ def test_consent_and_migration_notice_preserve_full_dict_carrier(
         schema_version=CURRENT_SCHEMA_VERSION,
         acknowledged_items=["privacy", "schema"],
     )
-    mark_migration_notice_seen(settings, notice_key=LOCAL_ONLY_MIGRATION_NOTICE)
     reloaded = load_state(metrics_dir)
 
     assert reloaded["mode"] == "anonymous_beacon"
     assert len(reloaded["history"]) == 50
     assert reloaded["history"][-1]["acknowledged_items"] == ["privacy", "schema"]
-    assert reloaded["migration_notices"][LOCAL_ONLY_MIGRATION_NOTICE]["seen"] is True
     for key in (
         "watermark",
         "failure_state",
@@ -117,16 +113,12 @@ def test_resolve_telemetry_config_accepts_injected_state_snapshot(
     cfg = resolve_telemetry_config(
         settings,
         state_snapshot={
-            "mode": "local_only",
-            "migration_notices": {LOCAL_ONLY_MIGRATION_NOTICE: {"seen": False}},
+            "mode": "disabled",
         },
     )
 
     assert cfg.source == "persisted_consent"
     assert cfg.mode == "disabled"
-    assert cfg.normalized_from == "local_only"
-    assert cfg.migration_notice is not None
-    assert cfg.migration_notice["pending"] is True
 
 
 def test_record_event_schema_reject_writes_through_carrier_and_preserves_state(
@@ -142,7 +134,8 @@ def test_record_event_schema_reject_writes_through_carrier_and_preserves_state(
             "schema_version": CURRENT_SCHEMA_VERSION,
             "install_token": "SECRET-TOKEN",
             "token_hash": "SECRET-HASH",
-            "watermark": {"cursor": "w1"},
+            "watermark": "2026-06-01T10:01:00Z",
+            "watermark_event_id": "evt-1",
             "failure_state": {"status": "healthy"},
             "last_handshake_at": "2026-06-01T10:00:00Z",
             "last_send_at": "2026-06-01T10:01:00Z",
@@ -160,7 +153,7 @@ def test_record_event_schema_reject_writes_through_carrier_and_preserves_state(
     assert reloaded["schema_reject_count"] == 1
     assert reloaded["install_token"] == "SECRET-TOKEN"
     assert reloaded["token_hash"] == "SECRET-HASH"
-    assert reloaded["watermark"] == {"cursor": "w1"}
+    assert reloaded["watermark"] == "2026-06-01T10:01:00Z"
     assert reloaded["failure_state"] == {"status": "healthy"}
     assert reloaded["last_handshake_at"] == "2026-06-01T10:00:00Z"
     assert reloaded["last_send_at"] == "2026-06-01T10:01:00Z"
@@ -233,6 +226,9 @@ def test_public_surfaces_do_not_emit_install_token_or_hash(tmp_path: Path) -> No
                 "install_token": "SECRET-TOKEN",
                 "token_hash": "SECRET-HASH",
                 "install_token_expires_at": "2026-07-01T00:00:00Z",
+                "watermark": None,
+                "watermark_event_id": None,
+                "failure_state": {"status": "ok"},
                 "last_handshake_at": "2026-06-01T10:00:00Z",
                 "last_send_at": "2026-06-01T10:01:00Z",
                 "circuit_open_until": "2026-06-01T10:15:00Z",

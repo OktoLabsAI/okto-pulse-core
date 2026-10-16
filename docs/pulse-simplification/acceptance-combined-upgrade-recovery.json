@@ -1,0 +1,379 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": [
+    "ARQVER:ADV-20",
+    "KG:KG-53"
+  ],
+  "status": "verified",
+  "coverage": "Retained executed migration evidence covers interruption after context, Card-policy and work steps, transactional checkpoint failure, physical DDL failure, runtime refusal of incomplete cutover, cold resume without recapturing transformed history, and joint SQL/storage/native-Grafx restoration. An actual installed frozen predecessor seeds and reopens the restored copy after current retirement bootstrap, reproducing its policy/history/provenance exactly. Supplemental current tests explicitly refuse a mismatched Core revision at restore and a mismatched Core wheel at resume before destination publication or SQL transformation. Source pair and migration pair stay distinct; an old binary is used only with its restored original snapshot.",
+  "prior_reviewed_executions": [
+    {
+      "artifact": "acceptance-retirement-migration-review.json",
+      "sha256": "dac19f127df8f7f2b0d6b8e38b6f5d77cbd45e1197b7ab6b3459f35d593b74e9",
+      "criterion": "BASE:T30",
+      "reviewed_coverage": "Interruption after committed data steps resumes from retained proof, checkpoint/data writes rollback together, physical DDL failure restores rows, and fresh-process runtime admission rejects incomplete/lost/forged cutover evidence. Joint relational/storage restoration is exercised.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_data_journal.py",
+          "source_sha256": "268ccfab973aca12c98cd5a4a4be73bf28904def3268c1accc05474b837e9cff",
+          "executions": [
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_restart_after_committed_step_never_recaptures_transformed_sources[context-False]",
+              "time": "17.567"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_restart_after_committed_step_never_recaptures_transformed_sources[cards-True]",
+              "time": "17.339"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_restart_after_committed_step_never_recaptures_transformed_sources[work-False]",
+              "time": "17.081"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_checkpoint_trigger_failure_rolls_back_its_data_step_before_resume[1]",
+              "time": "19.524"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_checkpoint_trigger_failure_rolls_back_its_data_step_before_resume[2]",
+              "time": "19.234"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_checkpoint_trigger_failure_rolls_back_its_data_step_before_resume[3]",
+              "time": "14.958"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_changed_input_and_skipped_dependency_fail_before_effects",
+              "time": "5.091"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[middle]",
+              "time": "14.585"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[last]",
+              "time": "14.227"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[all]",
+              "time": "14.369"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[forged-receipt]",
+              "time": "15.640"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_journal_is_immutable_and_missing_component_evidence_is_not_repaired",
+              "time": "15.325"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_preexisting_uncoordinated_effects_cannot_be_adopted_as_a_fresh_run",
+              "time": "8.231"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_runtime_admission.py",
+          "source_sha256": "16edda5f97642c9cd917c8e17c47fd7a78959a2e90f14337a441783f819bafb6",
+          "executions": [
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_absent_or_empty_journal_is_admitted_without_writing[False]",
+              "time": "0.039"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_absent_or_empty_journal_is_admitted_without_writing[True]",
+              "time": "0.056"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_activation_artifact_without_journal_cannot_become_a_fresh_install[False]",
+              "time": "0.034"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_activation_artifact_without_journal_cannot_become_a_fresh_install[True]",
+              "time": "0.062"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_invalid_journal_structure_cannot_appear_as_an_empty_ready_database[view]",
+              "time": "0.044"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_invalid_journal_structure_cannot_appear_as_an_empty_ready_database[wrong_columns]",
+              "time": "0.045"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_invalid_journal_structure_cannot_appear_as_an_empty_ready_database[extra_column]",
+              "time": "0.047"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.context_dispositions_committed-False]",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.context_dispositions_committed-True]",
+              "time": "0.056"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[historical_context.bound-False]",
+              "time": "0.049"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[historical_context.bound-True]",
+              "time": "0.076"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.card_validation_preserved-False]",
+              "time": "0.052"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.card_validation_preserved-True]",
+              "time": "0.060"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.work_superseded-False]",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.work_superseded-True]",
+              "time": "0.062"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.work_retirement_completed-False]",
+              "time": "0.047"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.work_retirement_completed-True]",
+              "time": "0.048"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_original_archive_and_unrelated_history_do_not_imply_a_started_cutover",
+              "time": "0.062"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_all_retained_prefixes_block_every_lifecycle_path_before_plan_or_seeds[0]",
+              "time": "0.077"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_all_retained_prefixes_block_every_lifecycle_path_before_plan_or_seeds[1]",
+              "time": "0.088"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_all_retained_prefixes_block_every_lifecycle_path_before_plan_or_seeds[2]",
+              "time": "0.076"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_all_retained_prefixes_block_every_lifecycle_path_before_plan_or_seeds[3]",
+              "time": "0.092"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_completed_data_preservation_blocks_runtime_and_joint_restore_recovers_original_source",
+              "time": "30.906"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_committed_journal_survives_abrupt_process_exit_and_refuses_startup",
+              "time": "7.342"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_schema_storage.py",
+          "source_sha256": "a6125fdcedcda3de65d8d561b2763d9d54f2d7ecc9c5878804ecbf066073a0f4",
+          "executions": [
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_cut_preserves_children_raw_data_views_checks_collation_and_trigger",
+              "time": "0.069"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[UPDATE sprints SET opaque=X'00']",
+              "time": "0.049"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[UPDATE cards SET sprint_id='origin']",
+              "time": "0.046"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE TABLE extension(id TEXT, origin TEXT REFERENCES sprints(id))]",
+              "time": "0.051"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE VIEW extension AS SELECT id FROM 'sprints']",
+              "time": "0.066"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE INDEX extension ON cards(sprint_id,payload)]",
+              "time": "0.056"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE TRIGGER extension AFTER UPDATE ON cards BEGIN UPDATE sprints SET opaque=X'00'; END]",
+              "time": "0.057"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_failure_after_drop_rolls_back_ddl_and_all_rows",
+              "time": "0.076"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_trigger_sharing_cards_name_keeps_its_guard",
+              "time": "0.066"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_trigger_sharing_cards_name_cannot_hide_retired_dependency",
+              "time": "0.056"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_v034_coordinator.py",
+          "source_sha256": "61e004d488b536de95d310bce6132a6ae88415278b9078652cde18f8e5ece6f7",
+          "executions": [
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[False-False]",
+              "time": "30.009"
+            },
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[False-True]",
+              "time": "31.145"
+            },
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[True-False]",
+              "time": "33.981"
+            },
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[True-True]",
+              "time": "34.983"
+            }
+          ]
+        }
+      ],
+      "retained_limits": [
+        "All migration data is disposable; no real database, runtime process or release changed.",
+        "Frozen source schema comes from verified v0.3.4 pair. Coordinator integration uses synthetic candidate build IDs and is intentionally not runtime-admitted before graph completion.",
+        "Population2 failed an overly broad byte-equality assertion after bootstrap: only card-a.position changed 0 to 1. Existing pagination migration resolves colliding positions by archived/position/id DESC; final oracle preserves canonical order and every other original cell. Physical-cut oracle still compares positions exactly. Original failed log retained.",
+        "No product/frontend change, no new F16 run. Last validated architectural budgets remain zero; no claim of full plan completion."
+      ]
+    },
+    {
+      "artifact": "acceptance-retirement-final-replay-rollback.json",
+      "sha256": "4542dbcf56bd84945530c3b697d1f4919c5eb63ab2a0a0dc90c223ab2452839e",
+      "criterion": "BASE:T30",
+      "reviewed_coverage": "Prior reviewed campaign covers failures after snapshot and during cut, restart refusal and retained-proof resume. Installed frozen predecessor creates native Grafx history and policies 90/60; current candidate performs retirement bootstrap; incomplete candidate remains refused. Joint snapshot restores into a disposable root and a fresh predecessor process reproduces exact original policy, native history, audit cursor and source provenance.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_predecessor_rollback.py",
+          "source_sha256": "a223c65a395aa7f2d62720296b81c7b01319d2356fee94c5fb3beb7105bc3c94"
+        },
+        {
+          "repository": "community",
+          "file": "tests/retirement_predecessor_probe.py",
+          "source_sha256": "80dc24edfa2a4001940486e652f3e010a02d336f83415757ad6eb7db17b2548c"
+        }
+      ],
+      "retained_limits": [
+        "Disposable data only; no live runtime, real migration, release or publication.",
+        "Rollback uses actual frozen/current build identities. Final graph activation fixture uses synthetic RecoveryBuildPair identifiers; actual installed packages are byte-identical to reviewed source and bootstrap is executed with -I and checked site-packages origins. This is not a release-pair compatibility certificate.",
+        "Rollback is after retirement bootstrap, as required by T30 before/during cut. No new requirement of rollback after final production activation is introduced.",
+        "Validation interpreter inherits external third-party dependencies; not a hermetic environment.",
+        "Existing tests executed without product/frontend edits; no new F16 execution or full-plan completion claimed."
+      ]
+    }
+  ],
+  "supplemental_execution": {
+    "terminal_session": 73026,
+    "exit_code": 0,
+    "suites": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "2",
+        "time": "37.529",
+        "timestamp": "2026-10-01T00:32:37.406725-03:00",
+        "hostname": "Alienware_m15"
+      }
+    ],
+    "cases": [
+      "tests.test_joint_recovery_snapshot::test_restore_requires_the_recorded_build_pair",
+      "tests.test_retirement_offline_run::test_broken_anchors_or_runtime_binding_fail_before_transform[build]"
+    ],
+    "artifacts": [
+      {
+        "file": "learning-reconciliation-recovery-pair-audit1-community.xml",
+        "sha256": "8e345be7a37f5b5134d207f532d0c5a676ee9a83e7da734b1ba561a938046a3d"
+      },
+      {
+        "file": "learning-reconciliation-recovery-pair-audit1-community.log",
+        "sha256": "0841cfec23f55319d022aa99d8a9018e9182147dbd50bc695523abf37c17d0cb"
+      }
+    ]
+  },
+  "current_test_sources": [
+    {
+      "file": "tests/test_joint_recovery_snapshot.py",
+      "sha256": "eb3db81110a837dfdc0cacb130ef36f642b4268dec1d7ffaca7df9b7c4e867ab"
+    },
+    {
+      "file": "tests/test_retirement_offline_run.py",
+      "sha256": "19bc458fe1439c5e4c061282558b96ecc402b80520bd3e32b124bc51438abbf8"
+    }
+  ],
+  "limits": [
+    "This maps existing evidence to two original criteria; retained campaign counts are not new executions. Their XML/log hashes and unchanged test source hashes were checked. Community adapters have no changes since the retained installed rollback pair (69d4b431).",
+    "Current supplemental tests use synthetic build identities to verify refusal; actual frozen/current installed identities and fresh-process reopening are proven by the retained rollback campaign.",
+    "Disposable copies only. No production rollback, deployment or publication. No new requirement of post-activation production rollback, automatic downgrade or whole-release compatibility is claimed.",
+    "No productive code or frontend changed. Current source/site/wheel parity was established by provenance-late-link1.json before supplemental execution. Eight architectural budgets remain ZERO in prior F16 session90981."
+  ]
+}

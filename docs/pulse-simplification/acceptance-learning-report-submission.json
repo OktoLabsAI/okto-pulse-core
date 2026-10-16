@@ -1,0 +1,176 @@
+{
+  "scope": "F6/KG 7.3: authored Learning with execution report and optional final Delivery batch",
+  "suites": {
+    "learning-report-submission-core": {
+      "tests": 164,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-report-submission-community": {
+      "tests": 86,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-report-submission-r2-core": {
+      "tests": 185,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-report-submission-r2-community": {
+      "tests": 37,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-report-submission-ui": {
+      "tests": 101,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-report-submission-ui-core": {
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-report-submission-ui-community": {
+      "tests": 71,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "frontend_tree_sha256": "76b8b1b8b0852686719b6c25778a94c89442bbdfe5d5b285da3db2c2c56ebbc9",
+  "verified": [
+    "Typed optional authored capture; initial semantic source fenced before report admission.",
+    "All thirteen capture authorities plus report and original transition authority required in REST/MCP/Delivery writers.",
+    "Only exact report append/status delta becomes captured basis; related changes cannot silently rebase content.",
+    "Validation captures the post-transition basis; direct Done binds its pre-terminal report capture.",
+    "Report/capture/status/outbox and optional Delivery batch share the UOW; late failures roll back all.",
+    "Concurrent exact retries preserve one authored record; replay after later reopen does not close again.",
+    "REST permission denial maps to HTTP403; live MCP registry preserves authored content and authority.",
+    "UI opt-in, authenticated evidence, incomplete draft blocking, context cancellation and stable retry tested.",
+    "SPA build/sync/verify, package distribution and paired source/wheel/site proof are recorded."
+  ],
+  "limits": [
+    "Independent completion gates are fixtures in new SQL compound-writer tests; no full implementation-gate E2E claim.",
+    "Transport fixtures inject authenticated identities/UOW; deployed authentication is not certified here.",
+    "Frontend tests are JSDOM, not browser pixel inspection or deployed E2E.",
+    "Required-Learning policy/preview, materialization, substantive holds/recovery and whole-plan acceptance remain pending.",
+    "Reuse/supersedence and additional evidence paths remain under the existing integrated plan.",
+    "Earlier failed campaigns remain unchanged. Suite counts overlap and are not a distinct grand total.",
+    "No real data migration, release/tag or deployment performed; global acceptance inventory unchanged."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-report-submission-core.xml": "189fe134521a20c87a02bc8a42fbaec041cc6bc43a32bb8a5e46f2043f945b22",
+    "PULSE_REFACTOR/.validation-v040/learning-report-submission-community.xml": "e833966341d950ef06c4f9b5ab4aeeff3d08640f5e8892e4a8a1bdb39c15e067",
+    "PULSE_REFACTOR/.validation-v040/learning-report-submission-r2-core.xml": "9a6b7681ad10271b364baf0f73a8b73d2300276bd98d32c09fb123a7d628f0ec",
+    "PULSE_REFACTOR/.validation-v040/learning-report-submission-r2-community.xml": "d874c00e00ad444e129b6680878da01003924253bb9268b5d3296717ba8fbe59",
+    "PULSE_REFACTOR/.validation-v040/learning-report-submission-ui.xml": "c7e8c2d6bd9da243bca058f1995a0520578ee350eae3f9e1b11371b4fdaa8edc",
+    "PULSE_REFACTOR/.validation-v040/learning-report-submission-ui-core.xml": "88b4db56d9a8af77a79720629bb84487986d95c7e6caa9caa5cc3496bccd1043",
+    "PULSE_REFACTOR/.validation-v040/learning-report-submission-ui-community.xml": "1444832b55f206bc68a2ce8ef3a239ce0b8ea38dc7f1661857a369155993b285",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-report-submission-final.json": "2c6f8f185969f215bde662d1c163b5e0b7cd2e77650aa55fef810f46a09bcbd8",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-report-submission-final.json": "c6562eb5421e629d0a7e78d6acacb64913fe13dcf9b48a0deca97fe12619707a",
+    "PULSE_REFACTOR/.validation-v040/learning-report-submission-ui.log": "26b4a10a0a2f103187831ac58345804b59cc058e2f4b579be15c987c29947d08",
+    "PULSE_REFACTOR/.validation-v040/learning-report-submission-ui-build.log": "05f6be22e209bccdbdf1fce8643e7d89a66cbd32d33d1877219ba2888ec9c7dd",
+    "PULSE_REFACTOR/.validation-v040/learning-report-submission-ui-lint.log": "60c013c5cdb55810fc3705a7ccab5e2075260d4f4092c9ef00b88139232c1365",
+    "PULSE_REFACTOR/.validation-v040/learning-report-submission-ui-test-community.log": "c12ebe793f0aacc040682d80d31b319cedbce302c12632cb8670e5cc7d12435c",
+    "PULSE_REFACTOR/.validation-v040/run_learning_report_submission_ui.py": "be747c9313ba90c1344415252adb571871b9a75b1f439415fb379580363711f2",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/learning_submission.py": "8e52b1402d636810bd033b5c660f5485820dff5109c75baf382de997ad3d87e8",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "73b387ff99ef1bd9ef13633730c854c8a0011a35e59b35ee61d56037eb58929b",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/learning_capture.py": "e47ba04b61468eb7d97e3812b3ea90b48d0fd961a7f185fb0576cca93373ae61",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/card_crud.py": "2bfa3a5e6cfcc2be148ec574aac9d7e54c49998281dd8eb8e7bb66a678e1716b",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/mcp_card_crud.py": "bacb6291533fa28ff83bff446444801f64c33988d7d12b3d9ddb7bc840d591b5",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/delivery_evidence.py": "5329aa34c603fff44c2350fce76cbc6c4e4abc3364eff97786755e66f47b62ed",
+    "okto_labs_pulse_core/src/okto_pulse/core/services/main.py": "d953387cd3572f67fdba713bd1cda3165a47cdfad5eeec8d67b8436e025eb29e",
+    "okto_labs_pulse_core/src/okto_pulse/core/models/schemas.py": "4ca501dceeb1c28148c086e60068dcd58ea14832dfce71cadec04fc893a3ab00",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/server.py": "be3c39deda4ee493e722de2a68a53fc35e4026d1c7858a48c402011941a435dc",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/resources/workflows/cards.md": "88220f6c58bc5ddf23d4ab464d2fa27c7ef719b86b50d15cd98c60592bb63497",
+    "okto_labs_pulse_core/tests/test_learning_submission.py": "5c23daf3e0ec72095867180669baf7f6d7c11deee5acde5c7c655ecaf1891aa8",
+    "okto_labs_pulse_community/tests/test_learning_submission_writer.py": "e648988b70188ffb5b281b48e9d51ad60f096ad5bbfac8f5a0b4e92345a835f2",
+    "okto_labs_pulse_community/src/okto_pulse/community/api/cards.py": "8bf58a7b5bdd01ed48ee492a20e55cc117acde0844fe102e1cd153b727b6eab1",
+    "okto_labs_pulse_community/frontend/src/components/kanban/LearningSubmissionEditor.tsx": "ab73ef2cfeb5041a851bf475b1c63133fbf4b152c8a9e5e3dcde1b34f2bd0a33",
+    "okto_labs_pulse_community/frontend/src/components/kanban/CardModal.tsx": "84ce48a108f716b627281f6c53dcc3e9bf4be0a6b6d776d9df63cea215495d1c",
+    "okto_labs_pulse_community/frontend/src/components/kanban/__tests__/LearningSubmissionEditor.test.tsx": "82ca6c75b3fc6d6ded49c77b2f68198070705b26173b77105add26111582e504",
+    "okto_labs_pulse_community/frontend/src/components/kanban/__tests__/CardModal.test.tsx": "492be9191e960facb2d8a9bbace5ec8b6b9a08c8212867ede6238448aa746884",
+    "okto_labs_pulse_community/src/okto_pulse/community/frontend_dist/pulse-frontend-contract.json": "b5b26557cb32786b0f7a2d9130dd466ef79fdeaac4c845806ec86703ecb4d8f7"
+  }
+}

@@ -102,6 +102,10 @@ class _UnsupportedSemanticAssessmentPort:
         )
 
 
+
+
+
+
 class FakeSaaSUnitOfWork:
     """Copy-on-write UnitOfWork with no native persistence handle."""
 

@@ -1,0 +1,41 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_keys": [
+    "KG:KG-13",
+    "KG:KG-14"
+  ],
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main36",
+  "provenance_sha256": "27d034ae2b18d6d840aa519c7bdaa5aa7880aeed979e6300d8e07339068a2e8d",
+  "runs": [
+    {
+      "name": "acceptance-native-chronology1",
+      "xml_sha256": "27a3c5315f19b2e8fa6ec1d1c9d8bed6acab833cda55cf005e33c712ee729f95",
+      "passed": 3,
+      "cases": [
+        "tests.test_card_resolution_history::test_history_is_bounded_scoped_and_preserves_unknown",
+        "tests.test_card_resolution_history::test_native_graph_resolution_is_replaced_and_cleared",
+        "tests.test_native_projection_chronology::test_native_bug_queue_reopen_and_replay_preserve_source_chronology"
+      ]
+    },
+    {
+      "name": "acceptance-native-chronology2",
+      "xml_sha256": "d543dd36e2245dc9ca8d95d6dd823d0cf7203cf2429bd75e2aa0ef50c0f3f9d7",
+      "passed": 1,
+      "cases": [
+        "tests.test_native_projection_chronology::test_native_bug_queue_reopen_and_replay_preserve_source_chronology"
+      ]
+    }
+  ],
+  "additional_current_evidence": "acceptance-native-child-mapping1.xml: test_kg_source_projection_metadata (12 cases), reviewed in clean-break-acceptance-native-spec-lineage-chronology.json",
+  "review": {
+    "KG:KG-13": "Native source fixture records 2001 creation before initial reconstruction. Grafx source_created_at remains 2001 while its projection created_at is later. Real queue transitions and replay preserve source_created_at/source_updated_at, raw lifecycle status and critical severity; neither becomes kind_of. Forged client source metadata remains refused in the current Core evidence.",
+    "KG:KG-14": "Real SQL lookup is bounded and Board/Card scoped, including ambiguous/incomplete history. Real queue performs done→in_progress→done and repeated replay. Grafx resolved_at clears on reopen and uses the last exact source done event after completion. Earlier SQL events remain byte-equivalent in their stored payloads/times; graph creation time does not reset."
+  },
+  "failure_disposition": "Initial chronology1 passed. Chronology2 strengthens the same native test by setting source dates before initial reconstruction, closing the rebuild-specific evidence gap; do not add it as a fourth distinct case.",
+  "limits": [
+    "Lifecycle rows are explicit fixtures. These tests verify projection/history and do not claim new lifecycle-admission coverage.",
+    "Three distinct Community cases plus previously reviewed Core metadata cases. No frontend or product source changed.",
+    "KG-11 chain validation is separate and still running."
+  ]
+}

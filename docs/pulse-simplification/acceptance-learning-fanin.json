@@ -1,0 +1,107 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "recorded_at": "2026-09-30T03:03:30.954457+00:00",
+  "pair": {
+    "core": "6b8542a6",
+    "community": "39a82bca"
+  },
+  "scope": "KG-35/KG-36 cross-stage fan-in acceptance; tests and review only",
+  "suite": {
+    "passed": 2,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "criteria": {
+    "KG:KG-35": {
+      "status": "verified_by_reviewed_execution",
+      "test": "test_candidate_requires_authorized_evidence_and_preserves_other_origins[reuse]",
+      "findings": [
+        "Native cosine candidate at 1.0 leaves source history and graph associations unchanged.",
+        "Missing mutation authority and unrelated evidence reject before source or graph mutation.",
+        "Explicit authorized reuse with an authenticated scenario preserves the old Bug and adds only the selected Bug.",
+        "Capture history preserves authored intent; replay changes neither durable history nor associations.",
+        "Frontend candidate/selection and transport authority evidence is recorded in acceptance-learning-candidates.json."
+      ]
+    },
+    "KG:KG-36": {
+      "status": "verified_by_reviewed_execution",
+      "test": "test_candidate_requires_authorized_evidence_and_preserves_other_origins[supersede]",
+      "findings": [
+        "Explicit source_bug replacement moves only the selected Bug association to the new Learning.",
+        "The original Learning remains associated with the unaffected Bug and is not globally superseded.",
+        "All previous cognitive records remain; authorized history qualifies the exact target fingerprint and successor birth.",
+        "Replay preserves the exact post-commit source history and both valid associations."
+      ]
+    }
+  },
+  "evidence": [
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/learning-fanin-r1.xml",
+      "sha256": "23c19e8fd902958aaa63225110a0b20625ac1360f9c8bf5bfca8226537d3fe14"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/learning-fanin-r1.log",
+      "sha256": "135df1e197bd8d493a888c3b0ccbc382fb6c8658f736e6bc282595adaa18fcef"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/provenance-learning-fanin.json",
+      "sha256": "813244c202fd7957aee266ce8732ccf4810da40e632b5591a0ad646e5d20a969"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/run_learning_fanin.py",
+      "sha256": "552b73064074268e1ac61babd425f148f514629b3ba77188f6a948e6f23ac389"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/closure-learning-candidates-final.json",
+      "sha256": "da85545634ec4fadd773e8d848c719027a250e0d2e05a5df492d79feb4451332"
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_learning_fanin_acceptance.py",
+      "sha256": "668bb8a495de3187b0f82b0b9b02a0d3bb8c8a996efeb25d3be9c01b0fb444c0"
+    },
+    {
+      "path": "okto_labs_pulse_core/src/okto_pulse/core/application/learning_supersedence.py",
+      "sha256": "a3e2ee894d9a0fcda1f110cc90acb99e9ae19cfe222ba9a28f7065d81460f670"
+    },
+    {
+      "path": "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py",
+      "sha256": "661402701e965dc8206ef194b0352bb0f0de9b1f324794946316cabddf6adbe2"
+    },
+    {
+      "path": "okto_labs_pulse_core/src/okto_pulse/core/application/learning_candidates.py",
+      "sha256": "9f9927d1d0cdb491ba6464a59d41e19fefc16377e3121152c9b76b5eb8fca2ba"
+    },
+    {
+      "path": "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/learning_capture.py",
+      "sha256": "ee202c61777219049df0491b3660077e773b11f0b52d550ac0f72529f2ee8be5"
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_learning_capture_writer.py",
+      "sha256": "2553ef07eeaa0e88938fd629fbaeac86243599ccf6edda28f3711e54a05906e6"
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_learning_materialization_writer.py",
+      "sha256": "a8e5f4fcd644e24b4d1943f2deaa55b49c6a81a2b88befc4a0f72f712a0a289f"
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_learning_submission_writer.py",
+      "sha256": "be2f8f5534765f2b1414856e17ccdf2fc69a1e2410b8c25181527b4b01f5fa7b"
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_learning_reuse_materialization.py",
+      "sha256": "647c158df4423a448d3021a0c3a5e688b9d518c2f649573fec83071330b11285"
+    },
+    {
+      "path": "okto_labs_pulse_core/docs/pulse-simplification/acceptance-learning-candidates.json",
+      "sha256": "7363f11adce415deb01993375f75e727b0414c1640c362a7d17f91cff75a3b56"
+    }
+  ],
+  "limitations": [
+    "Controlled embedding tests governance, not model quality or calibration on historical data.",
+    "Fixture mocks independent completion gates and health; this is not full lifecycle/release acceptance.",
+    "No new packaged code since the candidate pair; its completed F16 audit remains applicable.",
+    "General bounded graph lineage, K3/K4, historical upgrade and remaining inventory criteria retain their separate acceptance obligations.",
+    "No requirement for an additional Learning-specific graph endpoint is inferred from KG-35/KG-36."
+  ]
+}

@@ -114,7 +114,7 @@ def test_sanitizer_keeps_short_numeric_lists():
 def test_default_rows_use_agent_safe_limit():
     effective, err = resolve_cypher_max_rows(0)
     assert err is None
-    assert effective == CYPHER_DEFAULT_ROWS == 50
+    assert effective == CYPHER_DEFAULT_ROWS == 200
 
 
 def test_explicit_bounded_request_is_honored():
@@ -286,9 +286,9 @@ def test_health_full_profile_returns_everything_untouched():
     assert "health_issues" in out and "diagnostics" in out
 
 
-def test_health_legacy_profile_is_also_full():
+def test_health_rejects_retired_profile():
     out = KGHealthMCPProjection().project(_full_health_payload(), profile="legacy")
-    assert "diagnostics" in out and "health_issues" in out
+    assert out["error_code"] == "unsupported_projection"
 
 
 def test_health_projection_rejects_unknown_profile_consistently():
@@ -297,7 +297,7 @@ def test_health_projection_rejects_unknown_profile_consistently():
         "outcome": "error",
         "error": "Unsupported projection profile: 'verbose'",
         "error_code": "unsupported_projection",
-        "supported_profiles": ["summary", "detail", "full", "legacy"],
+        "supported_profiles": ["summary", "detail", "full"],
     }
 
 
@@ -330,6 +330,19 @@ def _fresh_mcp(name: str):
     return CoreMcpCatalog(name=name, version="test")
 
 
+@pytest.fixture(autouse=True)
+def query_policy_for_response_boundary_tests(monkeypatch):
+    # These tests isolate payload/auth boundaries. Actual repository policy
+    # resolution and endpoint clamps have their own persistence tests.
+    from okto_pulse.core.ports.kg_query_policy import KGQueryPolicy
+    from okto_pulse.core.mcp import kg_power_tools
+
+    async def read(board_id, board_agent):
+        return KGQueryPolicy()
+
+    monkeypatch.setattr(kg_power_tools, "_read_query_policy", read)
+
+
 @pytest.mark.asyncio
 async def test_natural_handler_rejects_oversize_before_executor():
     """FR0 wired: an oversize query is rejected and the executor (which resolves
@@ -345,7 +358,6 @@ async def test_natural_handler_rejects_oversize_before_executor():
     mcp = _fresh_mcp("test-kg-safety-natural-reject")
     with (
         patch.object(kpt, "execute_natural_query", _spy_execute),
-        patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
         kpt.register_kg_power_tools(
             mcp,
@@ -377,7 +389,6 @@ async def test_natural_handler_runs_executor_for_normal_query():
     mcp = _fresh_mcp("test-kg-safety-natural-ok")
     with (
         patch.object(kpt, "execute_natural_query", _spy_execute),
-        patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
         kpt.register_kg_power_tools(
             mcp,
@@ -419,7 +430,6 @@ async def test_cypher_handler_sanitizes_bounds_and_rounds():
     mcp = _fresh_mcp("test-kg-safety-cypher")
     with (
         patch.object(kpt, "execute_cypher_read_only", _spy_cypher),
-        patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
         kpt.register_kg_power_tools(
             mcp,
@@ -430,11 +440,40 @@ async def test_cypher_handler_sanitizes_bounds_and_rounds():
         raw = await tool.fn(board_id="b1", cypher="MATCH (n) RETURN n.embedding")
 
     payload = _json.loads(raw)
-    assert seen["max_rows"] == CYPHER_DEFAULT_ROWS == 50  # FR2 default reached executor
+    assert seen["max_rows"] == CYPHER_DEFAULT_ROWS == 200  # KG6.5 default reached executor
     assert payload["rows"][0][0] == "dec_1"  # scalar preserved
     assert payload["rows"][0][1] is None  # FR1 bare vector stripped
     assert payload["sanitization"]["stripped_count"] == 1
-    assert payload["row_bounds"]["effective_limit"] == 50  # FR2 metadata
+    assert payload["row_bounds"]["effective_limit"] == 200
+
+
+@pytest.mark.asyncio
+async def test_cypher_handler_reports_native_deadline_after_executor_ends():
+    import okto_pulse.core.mcp.kg_power_tools as kpt
+    from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout
+
+    finished = []
+
+    def execute(*args, **kwargs):
+        try:
+            raise GraphQueryTimeout("native deadline")
+        finally:
+            finished.append(True)
+
+    async def abandoned_wait(*args, **kwargs):
+        raise AssertionError("Cypher must wait for native resource release")
+
+    mcp = _fresh_mcp("test-native-deadline")
+    with (
+        patch.object(kpt, "execute_cypher_read_only", execute),
+        patch.object(kpt.asyncio, "wait_for", abandoned_wait),
+    ):
+        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent,
+                                    get_board_agent=_stub_get_board_agent)
+        tool = await mcp.get_tool("okto_pulse_kg_query_cypher")
+        payload = _json.loads(await tool.fn(board_id="b1", cypher="MATCH (n) RETURN n"))
+    assert finished == [True]
+    assert payload["error"]["code"] == "timeout"
 
 
 @pytest.mark.asyncio
@@ -451,7 +490,6 @@ async def test_cypher_handler_rejects_above_hard_cap():
     mcp = _fresh_mcp("test-kg-safety-cypher-cap")
     with (
         patch.object(kpt, "execute_cypher_read_only", _spy_cypher),
-        patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
         kpt.register_kg_power_tools(
             mcp,

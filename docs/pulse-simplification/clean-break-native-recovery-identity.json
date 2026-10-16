@@ -1,0 +1,120 @@
+{
+  "scope": "Remove direct recovery compatibility for old attempt labels; name native bootstrap anchor accurately",
+  "proof_pair": "dist-native-main83",
+  "investigation": [
+    "Fresh main81/main82 installed Health emitted global_discovery_legacy_primary_present even though data was freshly initialized.",
+    "Routed composition supplies snapshot.anchor_path; bootstrap creates the current Grafx catalog there. Recovery activates a new native generation; rollback removes the active pointer when the pre-cutover state had no pointer.",
+    "Found _record_completed_attempt swallowing identity errors to preserve direct adapter calls with legacy non-worker attempt labels; this skipped durable attempt recording."
+  ],
+  "changes": [
+    "Unified and rebuild entry points validate the worker's canonical run/epoch/attempt identity before source ordering, fences, path resolution or graph IO.",
+    "Removed the catch-and-return compatibility branch from completed-attempt recording.",
+    "Renamed local layout variables and restore_legacy_generation to anchor terminology with no alias; native pointer cutover and rollback behavior preserved.",
+    "Fresh native runtime reason is global_discovery_anchor_primary_present.",
+    "Updated direct adapter fixtures to native identities; added four rejection cases with graph/filesystem/fence callbacks forbidden."
+  ],
+  "tests": {
+    "community_passed": 69,
+    "community_seconds": 283.41,
+    "frontend_passed": 55,
+    "total_distinct_passed": 124
+  },
+  "evidence": [
+    "Real Grafx provider recovery/retry/adoption, interrupted batches, routed fencing, current-schema refusal, global Health observations and worker extensions passed.",
+    "Existing bootstrap test now asserts the native anchor reason.",
+    "Old identifiers refused for both entry points before any path/database/fence callback.",
+    "Source/wheel/install835Core.py+317Community.py and896+403payload files byte-identical before behavior tests."
+  ],
+  "closure": {
+    "ok": true,
+    "findings": [],
+    "documentation_findings": [],
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ]
+  },
+  "limits": [
+    "Native bootstrap and recovery generations are not two product/schema versions. Native recovery and rollback remain required.",
+    "No policy/permission exception, converter, old reader or runtime backend added.",
+    "No frontend source/build change; existing Health/diagnostics tests exercised frontend behavior.",
+    "Acceptance counts unchanged:99 verified/136 pending/11 superseded.",
+    "No real data/runtime touched; no promotion."
+  ],
+  "artifacts": {
+    "provenance-native-main83.json": "044061b08631d5687812da3bce2a006cd5d07349e00dcc3f84dae466ab538899",
+    "native-recovery-identity1.xml": "dbc7925e03b149f0748379584295e82524725e90989d86a71ba3532867d5a7e1",
+    "native-recovery-identity-frontend1.json": "0e1406f548630a2f81d43040eaf125868546aad48e7ddcd701d6ad9c8cb4838b",
+    "closure-native-main83.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

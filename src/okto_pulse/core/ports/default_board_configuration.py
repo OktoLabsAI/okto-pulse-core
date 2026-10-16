@@ -25,21 +25,6 @@ DEFAULT_GUIDELINE_REF_NATIVE_FIELDS = frozenset(
 )
 """Closed native payload written by current default-template mutations."""
 
-DEFAULT_GUIDELINE_REF_COMPATIBILITY_FIELDS = frozenset(
-    {
-        "guideline_version",
-        "legacy_version",
-        "legacy_version_unresolvable",
-    }
-)
-"""Read/migration aliases accepted without widening the native contract."""
-
-DEFAULT_GUIDELINE_REF_ALLOWED_FIELDS = (
-    DEFAULT_GUIDELINE_REF_NATIVE_FIELDS
-    | DEFAULT_GUIDELINE_REF_COMPATIBILITY_FIELDS
-)
-
-
 @dataclass(frozen=True, slots=True)
 class DefaultGuidelineRevisionRef:
     """Canonical immutable revision pin stored by a default template.
@@ -202,8 +187,6 @@ def reset_default_board_configuration_store_for_tests() -> None:
 
 
 __all__ = [
-    "DEFAULT_GUIDELINE_REF_ALLOWED_FIELDS",
-    "DEFAULT_GUIDELINE_REF_COMPATIBILITY_FIELDS",
     "DEFAULT_GUIDELINE_REF_NATIVE_FIELDS",
     "DefaultBoardConfigurationStore",
     "DefaultBoardTemplateAudit",

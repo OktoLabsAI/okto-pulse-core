@@ -1,10 +1,6 @@
-"""Tests for daily velocity + spec/sprint event overlays (spec 630ce8fd)."""
+"""Tests for daily velocity + Spec event overlays (spec 630ce8fd)."""
 
-import os
-import sys
 from datetime import datetime, timedelta, timezone
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from fastapi.routing import APIRoute
 
@@ -70,13 +66,13 @@ class TestBuildBuckets:
         result = _build_velocity_buckets(
             done_cards=[], all_cards=[],
             periods=7, granularity="day",
-            spec_moves=[], sprint_moves=[],
+            spec_moves=[],
         )
         assert len(result) == 7
         for bucket in result:
             assert bucket["impl"] == 0
             assert bucket["spec_done"] == 0
-            assert bucket["sprint_done"] == 0
+            assert "sprint_done" not in bucket
 
     def test_spec_done_only_counts_done_status(self):
         now = datetime.now(timezone.utc)
@@ -89,25 +85,10 @@ class TestBuildBuckets:
         result = _build_velocity_buckets(
             done_cards=[], all_cards=[],
             periods=7, granularity="day",
-            spec_moves=spec_moves, sprint_moves=[],
+            spec_moves=spec_moves,
         )
         today_bucket = [b for b in result if b["day"] == today.strftime("%Y-%m-%d")][0]
         assert today_bucket["spec_done"] == 2
-
-    def test_sprint_done_only_counts_closed_status(self):
-        now = datetime.now(timezone.utc)
-        today = now.replace(hour=12, minute=0, second=0, microsecond=0)
-        sprint_moves = [
-            (today, "closed"),
-            (today, "active"),  # should NOT count
-        ]
-        result = _build_velocity_buckets(
-            done_cards=[], all_cards=[],
-            periods=7, granularity="day",
-            spec_moves=[], sprint_moves=sprint_moves,
-        )
-        today_bucket = [b for b in result if b["day"] == today.strftime("%Y-%m-%d")][0]
-        assert today_bucket["sprint_done"] == 1
 
     def test_old_events_outside_period_dropped(self):
         # Event 100 days ago — outside a 7-day window
@@ -115,7 +96,7 @@ class TestBuildBuckets:
         result = _build_velocity_buckets(
             done_cards=[], all_cards=[],
             periods=7, granularity="day",
-            spec_moves=[(old, "done")], sprint_moves=[],
+            spec_moves=[(old, "done")],
         )
         assert sum(b["spec_done"] for b in result) == 0
 
@@ -123,12 +104,12 @@ class TestBuildBuckets:
         day_result = _build_velocity_buckets(
             done_cards=[], all_cards=[],
             periods=14, granularity="day",
-            spec_moves=[], sprint_moves=[],
+            spec_moves=[],
         )
         week_result = _build_velocity_buckets(
             done_cards=[], all_cards=[],
             periods=14, granularity="week",
-            spec_moves=[], sprint_moves=[],
+            spec_moves=[],
         )
         assert "day" in day_result[0]
         assert "week" in week_result[0]

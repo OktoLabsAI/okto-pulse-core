@@ -1,0 +1,124 @@
+{
+  "scope": "KG6.5 finite native foreground work through the public query execution port",
+  "campaigns": {
+    "query-work1-core": 41,
+    "query-work-fixture2-community": 112
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Native intermediate rows, traversal expansions, paths and query memory refuse excess work even for one-row aggregates.",
+    "The real composed query scope selects bounded readonly readers; the same operation outside the scope retains the internal scan policy.",
+    "Configured lower native limits cannot be widened; MCP and REST Cypher enter the scope after authorization and Board policy resolution.",
+    "Lifecycle, shutdown and private candidate cleanup include all foreground reader pools.",
+    "No query-count quota, authority, historical semantics or frontend flow was introduced."
+  ],
+  "investigation": [
+    "Initial Community campaign: 37 passed, one failure. Immutable predecessor draft Spec expired on September 28; current September 30 census correctly omitted it.",
+    "Candidate execution tests now fix only the projection capture clock to September 22. Source bytes, chronology, TTL policy, three-ACK oracle and reconciliation checks remain intact."
+  ],
+  "limits": [
+    "Native ceilings are per statement; the shared deadline bounds the compound query. Arbitrary external provider and OS I/O preemption is not claimed.",
+    "Each opened Board/lane adds at most 16 MiB configured page cache, separately from query memory and runtime overhead.",
+    "Full-plan acceptance inventory remains 78 verified / 33 partial / 135 unaudited; this report is not full delivery."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/record_query_work.py": "bb97d8e161f2d4fe6bbf16469579bfeab292c0cc1351dfd78b56dcaa1709ece6",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-work-final-closure.log": "1402d006d6883f94589b81306c7452ff92bcc163fc1cb08b5212d16ad284249a",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-work1-core.xml": "26502ecad074d881ec4035deaa4da6b0b615bae9731d1df3a101f70c0404bf47",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-work1-core.log": "236f82aaa86215c355fa9fda9f75fc46a536108847b69b153a9e133904a4f1bd",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-work-fixture2-community.xml": "0b1fa8446c5cba90e5a806e69528a0b4bcb248a52259e0d2b7f5d0c83a493ff6",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-work-fixture2-community.log": "7573ec361493e8fd855d3a5bdcd5a983c397a7b1eea88beb37aeece23983057b",
+    "PULSE_REFACTOR/.validation-v040/provenance-query-work1.json": "20e314ccdd0a04d88efba814626d8c8240b1a8d7569acbe5030aa5e1a1c93a51",
+    "PULSE_REFACTOR/.validation-v040/provenance-query-work-final.json": "72aa090ef1c54cf228010655a6d409f3a1df5569aa238b01ddcb30a99a926cc7",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-work1-community.log": "301756fc7b0f11efff36c878e15f2ddb4c95944bb74cbefa52b7940079263fd0",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-work1-community.xml": "a5b3a49b2827219f619d285386e649f0251e37ce425f82122f6365a653a9ba11",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/kg_runtime_access.py": "82fb5bd1833b40d927db53d9bf1b57de18ec7ae5a40d749095f7b753c7751573",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/interfaces/graph_query_execution.py": "316b5b53bdbff3537303ecfe53af3b629aa442f9d16e85d06c8c02df8b489272",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/kg_power_tools.py": "909b431f302fe34616754e7451ee0198a9e5048e7adcb0cb33b841537962a7dd",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/grafx_foreground_query_limits.py": "5537750637bf51562beb65f8d800ee638b7c39b4e24c5f9e1b853dbd06098676",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/routed_board_graph_composition.py": "70f08dae0adc6146f20a157ff952e04f5fa244bef930d1b0b658b87cb8ffb6ef",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/kg_shutdown.py": "402b3751d7bb1ca91a0616f8c11703126377bbc66b163bc3dfcae6d40bd5cc6f",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_execution.py": "de92ccdf1ee04527b8b6cdee847824839c6d88cdd2a39eb282c4512b6c7cf8c4",
+    "okto_labs_pulse_community/src/okto_pulse/community/api/kg_routes.py": "9b48877df91c4b0118fecc747371c3a904154ac196cd27223d88d43983cf904a",
+    "okto_labs_pulse_community/tests/test_grafx_foreground_work_limits.py": "dd8e0c73e05c9380314ee9d656b4f4a7002af31e0039d4279c20247a4c6358c7",
+    "okto_labs_pulse_community/tests/test_retirement_candidate_execution.py": "3dfa36431997e931c9f5aec70e5f3db429f932f3faf72c3bcaad281391bc8917",
+    "okto_labs_pulse_community/tests/test_kg_query_policy_transports.py": "0de74459f7f872438aceece413e715c0871127a39468242e5661641356cc2032",
+    "okto_labs_pulse_community/tests/test_kg_read_dispatch.py": "30031095460073ac3654a392923d4cf549a8b5faba2f2bbc7d68edb7207e4787",
+    "okto_labs_pulse_community/tests/test_code_traceability_kg_rest_authorization.py": "6ddd8a9ecb7c9f41c621f054fb4f791890d8a51ebc321bbede6bb424cb17e42f",
+    "okto_labs_pulse_community/tests/test_routed_graph_shutdown.py": "853bc1063ab803914a495c507eb38ed79951e0212faf0fff90952ae1337dd4e8",
+    "okto_labs_pulse_community/docs/GRAFX_ONLY_COMMUNITY.md": "ef21f826f6f91c063725a21f8064950f9bdccb4be091db23093571f60e1161fa"
+  }
+}

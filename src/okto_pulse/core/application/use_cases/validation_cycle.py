@@ -12,7 +12,8 @@ from okto_pulse.core.domain.validation_cycle import (
     ValidationCycleSubjectRef,
     ValidationTechnicalAudit,
 )
-from okto_pulse.core.ports.validation_cycle import ValidationCycleReadPort
+from okto_pulse.core.ports.validation_cycle import ValidationCycleReadPort, ValidationCycleReadAccessDenied
+from okto_pulse.core.domain.workspace_revisions import WorkspaceRevisions, WorkspaceRevisionsQuery
 
 
 def _required_id(value: object, code: str) -> str:
@@ -28,6 +29,7 @@ class GetValidationCycleCommand:
     include_previous: bool = False
     offset: int = 0
     limit: int = 25
+    include_planning: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.subject_type, AssessmentSubjectType):
@@ -39,6 +41,10 @@ class GetValidationCycleCommand:
         )
         if not isinstance(self.include_previous, bool):
             raise ValueError("validation_cycle_include_previous_invalid")
+        if not isinstance(self.include_planning, bool) or (
+            self.include_planning and self.subject_type is not AssessmentSubjectType.SPEC
+        ):
+            raise ValueError("validation_cycle_include_planning_invalid")
         if (
             not isinstance(self.offset, int)
             or isinstance(self.offset, bool)
@@ -97,6 +103,22 @@ class ValidationCycleReadUseCases:
     def __init__(self, *, reader: ValidationCycleReadPort) -> None:
         self._reader = reader
 
+    async def get_workspace_revisions(
+        self, query: WorkspaceRevisionsQuery, *, actor: ActorContext,
+    ) -> WorkspaceRevisions:
+        if actor.board_id is not None and actor.board_id != query.board_id:
+            raise ValidationCycleReadAccessDenied()
+        result = await self._reader.get_workspace_revisions(
+            query, actor_id=actor.actor_id, realm_scope=actor.require_realm_scope(),
+        )
+        if not isinstance(result, WorkspaceRevisions):
+            raise RuntimeError("workspace_revision_reader_result_invalid")
+        if result.board_id != query.board_id or [
+            (item.subject_type, item.subject_id) for item in result.subjects
+        ] != [(item.subject_type, item.subject_id) for item in query.subjects]:
+            raise RuntimeError("workspace_revision_reader_scope_mismatch")
+        return result
+
     async def get_cycle(
         self,
         command: GetValidationCycleCommand,
@@ -111,6 +133,8 @@ class ValidationCycleReadUseCases:
             limit=command.limit,
             actor_id=actor.actor_id,
             realm_scope=actor.require_realm_scope(),
+            board_id=actor.board_id,
+            include_planning=command.include_planning,
         )
         if not isinstance(result, ValidationCycleSummary):
             raise RuntimeError("validation_cycle_reader_result_invalid")
@@ -119,6 +143,7 @@ class ValidationCycleReadUseCases:
             or result.subject_id != command.subject_id
             or (not command.include_previous and result.previous_results)
             or len(result.previous_results) > command.limit
+            or (result.planning_readiness is not None) != command.include_planning
         ):
             raise RuntimeError("validation_cycle_reader_scope_mismatch")
         return result
@@ -134,6 +159,7 @@ class ValidationCycleReadUseCases:
                 subjects=command.subjects,
                 actor_id=actor.actor_id,
                 realm_scope=actor.require_realm_scope(),
+                board_id=actor.board_id,
             )
         )
         if any(not isinstance(item, ValidationCycleSummary) for item in results):

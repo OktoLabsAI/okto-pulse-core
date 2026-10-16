@@ -1,0 +1,85 @@
+{
+  "scope": "U3/2e.3: Card resource readers, targeted UI/MCP and component qualification",
+  "date": "2026-10-14",
+  "core_baseline": "4125bd0a",
+  "community_commit": "a8704e96",
+  "runtime": {
+    "ui": "http://127.0.0.1:5274/",
+    "api": "http://127.0.0.1:8200",
+    "mcp": "http://127.0.0.1:8201/mcp",
+    "backend_pid": 27316,
+    "vite_pid": 26272,
+    "vite_working_directory": "D:/Projetos/Techridy/okto_labs_pulse_community/frontend",
+    "note": "The first restored Vite process used the wrong working directory and failed Tailwind configuration resolution. Only that helper was stopped and restarted with the frontend working directory. No product CSS change or user runtime restart."
+  },
+  "architecture": {
+    "spec_id": "2baa5f88-eb1a-4aac-9aeb-453707cef290",
+    "card_id": "c8a1a9b4-691c-5175-84be-1d512b6bdda4",
+    "source_id": "29ad503e-69f9-4146-9c5d-c69e13146c69",
+    "snapshot_id": "08dd60bb-9b7b-45ea-87e7-43ed2af8c678",
+    "before": {"title": "U3 mock architecture reader", "version": 1},
+    "after": {"title": "U3 mock architecture reader — live revision 2", "version": 2},
+    "steps": [
+      "Opened the existing read-only Card snapshot in the browser and observed v1.",
+      "Validated the source title update through MCP: valid=true, no issues or warnings.",
+      "Updated the source and invoked the native copy operation, preserving snapshot identity with deduplication.",
+      "The open Architecture reader showed the new title and v2 without Refresh; screenshot inspected."
+    ],
+    "screenshot": "Community/output/playwright/u3-resource-architecture-live.png"
+  },
+  "knowledge": {
+    "root_id": "fa8b2353-cd6c-4edc-a616-3e773c5a9a86",
+    "draft": "Draft retained while a disposable selected source is removed; no authoritative requirement or delivery evidence asserted.",
+    "steps": [
+      "Created a disposable Knowledge root using MCP; it appeared in the open Card picker.",
+      "Selected Reference and the root by its visible label; snapshot confirmed checked selection and enabled Save.",
+      "Deleted the root through the native MCP operation while the draft remained open.",
+      "The UI removed the candidate, preserved mode/justification, displayed Selected Knowledge is no longer available and disabled Save.",
+      "MCP read confirmed unchanged governed revision 3, explicit_empty, assignments=[]; no automatic write occurred."
+    ],
+    "setup_limit": "The earlier root was deleted after an unsuccessful click on its hidden input. That attempt proved inventory removal and text retention only; the selected-root case above used a new root and verified selection before deletion.",
+    "found_and_fixed": "The shared picker still said Explicit decision ready to save for a removed selection. It now requests review of unavailable resources; the existing regression asserts absence of the success message.",
+    "screenshot": "Community/output/playwright/u3-resource-knowledge-removed.png",
+    "screenshot_limit": "Captured and inspected before the small success-message correction. The correction is covered by the regression; final installed visual qualification remains U4."
+  },
+  "remaining_reader_changes": {
+    "project_structure": "Uses the current Spec inventory to expose the tab, reads only while visible and authorized, refreshes on the workspace revision even if the Card object is unchanged, and discards older/inactive/unauthorized responses.",
+    "dependencies": "Existing generation-guarded summary refresh verified with a new test: additions/removals appear without a Card timestamp change. No dependency behavior changed.",
+    "activity": "Preserved the previously qualified visible-only revision reader."
+  },
+  "tests": {
+    "local_root": "D:/Projetos/Techridy/PULSE_REFACTOR/.validation-v040/spec-unified-20261014",
+    "initial_filtered": {
+      "artifact": "u3-final-readers-before.xml",
+      "executed": 5, "failed": 4, "skipped": 110,
+      "interpretation": "Three failures exposed missing behavior (hidden structure read, unchanged-object refresh, contradictory Knowledge message). The dependency failure was an exact text matcher overlooking the status glyph, corrected without changing product behavior. The permission test already passed."
+    },
+    "final": {
+      "artifact": "u3-final-readers-r1.xml", "passed": 129, "failed": 0, "skipped": 0,
+      "duration_seconds": 99.2679053,
+      "suites": {"CardKnowledgeTab": 24, "CardModal": 91, "KnowledgePropagationSelector": 6, "ProjectStructureTab": 8}
+    },
+    "typecheck": {"session": 21841, "exit_code": 0},
+    "eslint": {"session": 91666, "exit_code": 0, "existing_warnings": 16},
+    "diff_check_exit_code": 0
+  },
+  "artifact_sha256": {
+    "u3-final-readers-before.xml": "3ccc7317c046d461d068855b60e1aa8ecb6f57872c1e7c2908a0b2189561141c",
+    "u3-final-readers-r1.xml": "d370714fc29ecb5e8bed1b49e7fa087b12c8c0db857f1e9ad973906f78639445",
+    "u3-targets-reader-validate-update.json": "dbc3bc317300edd4aee685e1ab28a93f4bc3278dc48ae2dfba6b2d21d3bde1f4",
+    "u3-targets-reader-update.json": "ee131f10a83407c2734896e700042a232bee0f6561d3663e03b77c18151cab0f",
+    "u3-targets-reader-copy.json": "26fcc286f22c286d6d6996bcbdcec07caf18ec9fc014d739ef7266346b6d5c79",
+    "u3-knowledge-add-removal-probe.json": "6858a3decdef08850ab5686374a67a975e48a969c701742f724b1081fa2c5ea7",
+    "u3-knowledge-delete-removal-probe.json": "8bd6139acfe7d936e22b7f6e7d7c64075568bcc95254d26f8ce77bb8096a3e17",
+    "u3-knowledge-read.json": "2b5e0f8669294da2a53c2610c93ffae252a6de9f03be4c5c7bd6310180925d24",
+    "u3-targets-structure-context.json": "b7de44e68b206b5a7d06be25c6aa13b2509828988ba7b575959703eb3dcd62b2",
+    "u3-resource-architecture-live.png": "450394084c858bd6f5b7c6b6d188a25fa072cfeab03a282a6378607f1bd1d498",
+    "u3-resource-knowledge-removed.png": "8640573b0391acc772b040dcd1a3c3335688616a86f169f97e15d5d9e3161823"
+  },
+  "limits": [
+    "Full Spec context via the old isolated MCP process returned checklist_validation_binding_snapshot_missing. No Project Structure authoring was attempted after that refusal; no policy was relaxed to obtain a tree.",
+    "Project Structure refresh/races/visibility are qualified by frontend integration tests, not a new native tree authoring journey.",
+    "The frontend source proof does not qualify newly built/installed wheels or the newer U2 backend. U4 remains mandatory.",
+    "U3 Spec editor protection and global refresh remain pending; the full objective is not complete."
+  ]
+}

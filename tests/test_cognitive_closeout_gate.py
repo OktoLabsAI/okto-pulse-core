@@ -36,6 +36,10 @@ class FakeStore:
         self.items = list(items or [])
         self.list_calls = 0
 
+    def read_completion_snapshot(self, board_id, kg_generation_id=None):
+        gen = kg_generation_id or self.latest_generation(board_id)
+        return gen, self.list_items(board_id, gen)
+
     def latest_generation(self, board_id: str) -> str | None:
         assert board_id == "board-1"
         return "kg-1"
@@ -56,6 +60,9 @@ class FakeStore:
 
 
 class RaisingStore:
+    def read_completion_snapshot(self, board_id, kg_generation_id=None):
+        raise RuntimeError("ledger offline")
+
     def latest_generation(self, board_id: str) -> str | None:
         raise RuntimeError("ledger offline")
 

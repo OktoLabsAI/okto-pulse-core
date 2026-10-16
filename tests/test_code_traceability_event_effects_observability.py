@@ -277,7 +277,7 @@ def test_metric_duration_requires_finite_non_negative_value():
         )
 
 
-def test_created_event_factory_accepts_only_ids_states_counts_and_hashes():
+def test_created_event_factory_accepts_closed_native_context_metadata():
     event = make_code_traceability_event(
         CodeEvidenceCreated,
         board_id="board-1",
@@ -290,6 +290,13 @@ def test_created_event_factory_accepts_only_ids_states_counts_and_hashes():
         lifecycle_status="active",
         attestation_state="agent_attested",
         payload_sha256="a" * 64,
+        context_contract_version=2,
+        source_role="current_implementation",
+        baseline_presence="committed_snapshot",
+        relevance_summary="Current implementation behavior.",
+        scope_relation="same delivery scope",
+        source_origin="repository baseline",
+        baseline_workspace_state_id="workspace-1",
     )
     assert set(event.payload_for_storage()) == {
         "evidence_id",
@@ -299,4 +306,11 @@ def test_created_event_factory_accepts_only_ids_states_counts_and_hashes():
         "lifecycle_status",
         "attestation_state",
         "payload_sha256",
+        "context_contract_version",
+        "source_role",
+        "baseline_presence",
+        "relevance_summary",
+        "scope_relation",
+        "source_origin",
+        "baseline_workspace_state_id",
     }

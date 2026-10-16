@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
@@ -47,10 +48,10 @@ def _full_spec(status: str) -> dict:
         "status": status,
         "board_id": "board-canon",
         "context": "## Decisions\n- Use PostgreSQL\n",
-        "functional_requirements": ["FR alpha", "FR beta"],
-        "technical_requirements": [{"text": "TR alpha"}],
-        "acceptance_criteria": ["AC alpha"],
-        "business_rules": ["BR alpha"],
+        "functional_requirements": [{"id": "fr_fixture_0", "text": "FR alpha"}, {"id": "fr_fixture_1", "text": "FR beta"}],
+        "technical_requirements": [{"id": "tr_fixture_0", "text": "TR alpha"}],
+        "acceptance_criteria": [{"id": "ac_alpha", "text": "AC alpha"}],
+        "business_rules": [{"id": "br_fixture_0", "rule": "BR alpha"}],
         "test_scenarios": [
             {
                 "id": "ts_x",
@@ -58,10 +59,10 @@ def _full_spec(status: str) -> dict:
                 "given": "g",
                 "when": "w",
                 "then": "t",
-                "linked_criteria": ["AC alpha"],
+                "linked_criteria": ["ac_alpha"],
             }
         ],
-        "api_contracts": [{"name": "GET /x", "description": "an api"}],
+        "api_contracts": [{"id": "api_fixture_0", "name": "GET /x", "description": "an api"}],
         "integration_requirements": [
             {"id": "ir_x", "title": "IR alpha", "description": "integ"}
         ],
@@ -155,72 +156,253 @@ def test_spec_predone_children_are_working_only():
 async def test_commit_materializes_api_contract_implements_tr_constraint(
     board_id, db_factory, board_handle,
 ):
-    await _ensure_relational_board(db_factory, board_id, "system:layer1_worker")
+    await _ensure_relational_board(db_factory, board_id, "system:historical_consolidation")
     spec_id = f"spec-{uuid.uuid4().hex[:8]}"
     spec = {
+        **_full_spec("done"),
         "id": spec_id,
         "title": "TR linked API contract",
         "status": "done",
         "board_id": board_id,
+        "created_at": "2001-01-02T00:00:00+00:00",
+        "updated_at": "2002-03-04T00:00:00+00:00",
+        "acceptance_criteria": [
+            {"id": "ac-login", "text": "Login succeeds"},
+            {"id": "ac-audit", "text": "Event is written"},
+            {"id": "ac-duplicate-a", "text": "Repeated condition"},
+            {"id": "ac-duplicate-b", "text": "Repeated condition"},
+        ],
+        "test_scenarios": [
+            {"id": "ts-login", "title": "Login scenario", "given": "an account",
+             "when": "login", "then": "a session", "linked_criteria": ["ac-login"]},
+            {"id": "ts-audit", "title": "Audit scenario", "given": "an account",
+             "when": "login", "then": "an event", "linked_criteria": ["ac-audit"]},
+            {"id": "ts-ambiguous", "title": "Legacy ambiguous scenario", "given": "an account",
+             "when": "login", "then": "an observation", "linked_criteria": ["Repeated condition"]},
+        ],
         "functional_requirements": [
             {"id": "fr-login", "text": "User can log in"},
+            {"id": "fr-logout", "text": "User can log out"},
         ],
         "technical_requirements": [
             {"id": "tr-audit-events", "text": "Login API emits audit events"},
         ],
+        "decisions": [{"id": "dec_explicit", "title": "Require login audit", "status": "active",
+            "linked_requirements": ["fr-login", "tr-audit-events"]}],
+        "business_rules": [{"id": "br_one", "title": "Audit rule", "rule": "Keep audit", "linked_requirements": ["fr-login"]}],
+        "integration_requirements": [{"id": "ir_one", "title": "Audit interface", "linked_requirements": ["fr-login", "tr-audit-events"]}],
+        "observability_requirements": [{"id": "or_one", "title": "Observe audit", "linked_integration_requirements": ["ir_one"], "linked_requirements": ["fr-login", "tr-audit-events"]}],
         "api_contracts": [
             {
                 "id": "api-login",
                 "method": "POST",
                 "path": "/login",
                 "linked_requirements": ["tr-audit-events"],
+                "linked_rules": ["br_one"],
             },
         ],
     }
-    worker_result = DeterministicWorker().process_spec(spec)
+    async def project_current_spec():
+        worker_result = DeterministicWorker().process_spec(spec)
+        from okto_pulse.core.kg.source_projection_metadata import prepare_root_metadata
 
-    async with db_factory() as db:
-        begin = await begin_consolidation(
-            BeginConsolidationRequest(
-                board_id=board_id,
-                artifact_type="spec",
-                artifact_id=spec_id,
-                raw_content=worker_result.raw_content or "tr linked api contract",
-                deterministic_candidates=[
-                    _worker_node_to_candidate(node) for node in worker_result.nodes
-                ],
-            ),
-            agent_id="system:layer1_worker",
-            db=db,
+        node_candidates = [_worker_node_to_candidate(node) for node in worker_result.nodes]
+        metadata = await prepare_root_metadata(
+            None, SimpleNamespace(artifact_type="spec", artifact_id=spec_id),
+            spec, node_candidates, None,
         )
+        for node in node_candidates:
+            node._source_projection_metadata = metadata.get(node.candidate_id)
 
-    for edge in worker_result.edges:
-        await add_edge_candidate(
-            AddEdgeCandidateRequest(
-                session_id=begin.session_id,
-                candidate=_worker_edge_to_candidate(edge),
-            ),
-            agent_id="system:layer1_worker",
-        )
-    await propose_reconciliation(
-        ProposeReconciliationRequest(session_id=begin.session_id),
-        agent_id="system:layer1_worker",
-        db=None,
-        force_reprocess=True,
-    )
-    async with db_factory() as db:
-        commit = await commit_consolidation(
-            CommitConsolidationRequest(session_id=begin.session_id),
-            agent_id="system:layer1_worker",
-            db=db,
-        )
+        async with db_factory() as db:
+            begin = await begin_consolidation(
+                BeginConsolidationRequest(
+                    board_id=board_id,
+                    artifact_type="spec",
+                    artifact_id=spec_id,
+                    raw_content=worker_result.raw_content or "tr linked api contract",
+                    deterministic_candidates=node_candidates,
+                ),
+                agent_id="system:historical_consolidation",
+                db=db,
+                force_reprocess=True,
+                relational_projection_active_set_intents=worker_result.relational_projection_active_set_intents,
+            )
 
-    assert commit.connectivity["passed"] is True
+        for edge in worker_result.edges:
+            await add_edge_candidate(
+                AddEdgeCandidateRequest(
+                    session_id=begin.session_id,
+                    candidate=_worker_edge_to_candidate(edge),
+                ),
+                agent_id="system:historical_consolidation",
+            )
+        await propose_reconciliation(
+            ProposeReconciliationRequest(session_id=begin.session_id),
+            agent_id="system:historical_consolidation",
+            db=None,
+            force_reprocess=True,
+        )
+        async with db_factory() as db:
+            commit = await commit_consolidation(
+                CommitConsolidationRequest(session_id=begin.session_id),
+                agent_id="system:historical_consolidation",
+                db=db,
+            )
+
+        assert commit.connectivity["passed"] is True
+        return node_candidates
+
+    node_candidates = await project_current_spec()
     assert await _count_api_implements_constraint_async(
         board_id,
         api_title="POST /login",
         tr_title="Login API emits audit events",
     ) == 1
+
+    lineage_shapes = [
+        ('Constraint', 'Requirement', 'derives_from', 'br_requirement', 'business_rule:br_one', 'fr:fr-login'),
+        ('Requirement', 'Requirement', 'derives_from', 'ir_requirement', 'integration_requirement:ir_one', 'fr:fr-login'),
+        ('Requirement', 'Constraint', 'derives_from', 'ir_requirement', 'integration_requirement:ir_one', 'tr:tr-audit-events'),
+        ('Constraint', 'Requirement', 'derives_from', 'or_requirement', 'observability_requirement:or_one', 'fr:fr-login'),
+        ('Constraint', 'Constraint', 'derives_from', 'or_requirement', 'observability_requirement:or_one', 'tr:tr-audit-events'),
+        ('Constraint', 'Requirement', 'derives_from', 'or_integration', 'observability_requirement:or_one', 'integration_requirement:ir_one'),
+        ('APIContract', 'Constraint', 'implements', 'api_business_rule', 'api_contract:api-login', 'business_rule:br_one'),
+    ]
+    def lineage_pairs(graph):
+        actual = set()
+        for source_type, target_type, edge_type, rule, _source, _target in lineage_shapes:
+            rows = graph.execute(f'MATCH (a:{source_type})-[r:{edge_type}]->(b:{target_type}) '
+                'WHERE r.rule_id=$rule AND a.source_artifact_ref STARTS WITH $prefix '
+                'RETURN a.source_artifact_ref,b.source_artifact_ref,r.rule_id,r.confidence,r.layer,r.created_by',
+                {'rule': f'{edge_type}/{rule}@v2.1', 'prefix': f'spec:{spec_id}:'})
+            try:
+                while rows.has_next():
+                    row = tuple(rows.get_next())
+                    assert row not in actual
+                    actual.add(row)
+            finally:
+                rows.close()
+        return actual
+
+    def assert_chronology():
+        with open_board_connection(board_id) as (_db, graph):
+            checked = {}
+            for node in node_candidates:
+                label = str(getattr(node.node_type, "value", node.node_type))
+                result = graph.execute(
+                    f"MATCH (n:{label}) WHERE n.source_artifact_ref=$ref "
+                    "RETURN n.id, n.source_created_at, n.source_updated_at",
+                    {"ref": node.source_artifact_ref},
+                )
+                try:
+                    assert result.has_next(), node.source_artifact_ref
+                    identity, created, updated = result.get_next()
+                    assert not result.has_next(), node.source_artifact_ref
+                    if node.source_artifact_ref == f"spec:{spec_id}":
+                        assert created is not None and updated is not None
+                    else:
+                        assert created is None and updated is None, node.source_artifact_ref
+                    checked[node.source_artifact_ref] = identity
+                finally:
+                    result.close()
+            assert {f"spec:{spec_id}:fr:fr-login", f"spec:{spec_id}:tr:tr-audit-events"} <= checked.keys()
+            links = graph.execute(
+                "MATCH (s:TestScenario)-[r:tests]->(c:Criterion) "
+                "WHERE s.source_artifact_ref STARTS WITH $prefix "
+                "RETURN s.source_artifact_ref, c.source_artifact_ref, r.confidence, r.rule_id",
+                {"prefix": f"spec:{spec_id}:"},
+            )
+            try:
+                actual = set()
+                row_count = 0
+                while links.has_next():
+                    actual.add(tuple(links.get_next()))
+                    row_count += 1
+                assert row_count == len(actual)
+                assert actual == {
+                    (f"spec:{spec_id}:test_scenario:ts-{suffix}",
+                     f"spec:{spec_id}:ac:ac-{suffix}", 1.0, "tests/ac_match@v2.1")
+                    for suffix in ("login", "audit")
+                }
+            finally:
+                links.close()
+            decisions = set()
+            for kind in ('Requirement', 'Constraint'):
+                links = graph.execute(
+                    f'MATCH (d:Decision)-[r:derives_from]->(t:{kind}) '
+                    'WHERE d.source_artifact_ref STARTS WITH $prefix '
+                    'RETURN d.source_artifact_ref,t.source_artifact_ref,r.rule_id,r.confidence',
+                    {'prefix': f'spec:{spec_id}:'})
+                try:
+                    while links.has_next():
+                        row = tuple(links.get_next())
+                        assert row not in decisions
+                        decisions.add(row)
+                finally:
+                    links.close()
+            assert decisions == {
+                (f'spec:{spec_id}:decision:dec_explicit', f'spec:{spec_id}:{section}:{identity}',
+                 'derives_from/explicit_link@v2.1', 1.0)
+                for section, identity in [('fr', 'fr-login'), ('tr', 'tr-audit-events')]
+            }
+            assert lineage_pairs(graph) == {
+                (f'spec:{spec_id}:{source}', f'spec:{spec_id}:{target}', f'{edge_type}/{rule}@v2.1',
+                 1.0, 'deterministic', 'worker_layer1')
+                for _source_type, _target_type, edge_type, rule, source, target in lineage_shapes
+            }
+            return checked
+
+    original_ids = await run_blocking_graph_io(
+        assert_chronology, task_name="tests.spec_children.source_chronology",
+    )
+
+    for field in ("acceptance_criteria", "functional_requirements", "test_scenarios"):
+        spec[field] = list(reversed(spec[field]))
+    node_candidates = await project_current_spec()
+    reordered_ids = await run_blocking_graph_io(
+        assert_chronology, task_name="tests.spec_children.reordered_identity",
+    )
+    assert reordered_ids == original_ids
+
+    original_links = {scenario["id"]: list(scenario.get("linked_criteria") or []) for scenario in spec["test_scenarios"]}
+    for scenario in spec["test_scenarios"]:
+        scenario["linked_criteria"] = []
+    decision_links = spec['decisions'][0]['linked_requirements']
+    spec['decisions'][0]['linked_requirements'] = []
+    lineage_fields = [('observability_requirements', 'linked_requirements'), ('business_rules', 'linked_requirements'), ('integration_requirements', 'linked_requirements'),
+        ('observability_requirements', 'linked_integration_requirements'), ('api_contracts', 'linked_rules')]
+    lineage_links = {(collection, field): spec[collection][0][field] for collection, field in lineage_fields}
+    for collection, field in lineage_fields:
+        spec[collection][0][field] = []
+    await project_current_spec()
+
+    def assert_removed():
+        with open_board_connection(board_id) as (_db, graph):
+            assert lineage_pairs(graph) == set()
+            links = graph.execute("MATCH (s:TestScenario)-[r:tests]->(c:Criterion) "
+                "WHERE s.source_artifact_ref STARTS WITH $prefix RETURN r.rule_id",
+                {"prefix": f"spec:{spec_id}:"})
+            try:
+                assert not links.has_next()
+            finally:
+                links.close()
+            for kind in ('Requirement', 'Constraint'):
+                links = graph.execute(f'MATCH (d:Decision)-[r:derives_from]->(t:{kind}) '
+                    'WHERE d.source_artifact_ref STARTS WITH $prefix RETURN r.rule_id',
+                    {'prefix': f'spec:{spec_id}:'})
+                try:
+                    assert not links.has_next()
+                finally:
+                    links.close()
+    await run_blocking_graph_io(assert_removed, task_name="tests.spec_children.removed_links")
+    for scenario in spec["test_scenarios"]:
+        scenario["linked_criteria"] = original_links[scenario["id"]]
+    spec['decisions'][0]['linked_requirements'] = decision_links
+    for (collection, field), links in lineage_links.items():
+        spec[collection][0][field] = links
+    node_candidates = await project_current_spec()
+    assert await run_blocking_graph_io(assert_chronology, task_name="tests.spec_children.restored_links") == original_ids
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +425,7 @@ def _seed_decision(board_id, *, title, human_curated):
 
     def _attrs(title_, content, ref, curated, layer):
         return {
+            "generation": 0,
             "title": title_,
             "content": content,
             "context": "ORIGINAL CONTEXT",

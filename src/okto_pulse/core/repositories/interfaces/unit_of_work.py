@@ -28,6 +28,8 @@ if TYPE_CHECKING:
         SemanticSubjectProjectionPort,
     )
     from okto_pulse.core.ports.entity_export import EntityExportReadPort
+    from okto_pulse.core.ports.spec_validation_receipts import SpecValidationReceiptStore
+    from okto_pulse.core.ports.spec_planning_manifest import SpecPlanningManifestPort
 
 
 class ConsistentReadContractError(RuntimeError):
@@ -54,6 +56,8 @@ class PulseUnitOfWork(RepositoryCatalog, Protocol):
     semantic_assessment_v2_reader: "SemanticAssessmentV2ReadPort"
     semantic_assessment_v2_capability: "SemanticAssessmentV2CapabilityPort"
     entity_exports: "EntityExportReadPort"
+    spec_validation_receipts: "SpecValidationReceiptStore"
+    spec_planning_manifest: "SpecPlanningManifestPort"
 
     async def __aenter__(self) -> "PulseUnitOfWork": ...
 
@@ -64,6 +68,16 @@ class PulseUnitOfWork(RepositoryCatalog, Protocol):
     async def commit(self) -> None: ...
 
     async def rollback(self) -> None: ...
+
+    async def begin_write(self) -> None:
+        """Establish the edition's write transaction before mutation reads.
+
+        Idempotent within this unit of work. Concrete locking/isolation belongs
+        to the edition; callers still supply semantic version and head fences.
+        This is write intent, not a replacement for those conflict checks.
+        """
+
+        ...
 
     async def begin_consistent_read(self) -> None:
         """Start (or reuse) one transaction-wide consistent read snapshot.

@@ -1,0 +1,42 @@
+{
+  "scope": "DEI:DEI-T64 native REST/MCP/browser read parity",
+  "status": "partial",
+  "proof_pair": "dist-native-main91",
+  "base_commits": {
+    "core": "23f98cce",
+    "community": "0714d574"
+  },
+  "evidence": [
+    "Same native SQLite fixture supplies real REST/MCP handlers and the browser; route.fetch forwards requests to a disposable loopback backend without fabricated responses.",
+    "Authenticated proof covers FR/BR/AC; two promoted IRs and their two criteria remain unproven. Browser shows six accepted marks, eight pending marks and seven obligations.",
+    "Refresh makes exactly two rollup reads total; no writes or obsolete Spec-level association form.",
+    "Board route is absent in the scoped test app; UI explicitly displays Gate Unknown, without inventing policy."
+  ],
+  "results": {
+    "backend_and_browser": {
+      "passed": 1,
+      "seconds": 24.98
+    },
+    "nested_browser": {
+      "passed": 1,
+      "seconds": 9.8
+    },
+    "initial_failed_campaign": {
+      "failed": 1,
+      "reason": "Test expected raw fr:fr instead of rendered FR (fr); product was correct."
+    }
+  },
+  "artifacts_sha256": {
+    "provenance-native-browser-main91.json": "37c33b0e6164a2c991cf85ee986830d2aa953a5ab51955975b9be52fb20f0a6f",
+    "native-browser-main91-20261008.xml": "8449d6c1872b92cf7a71d8dffccfb8ebb35fcc2bcad8133cd359e4af48579f3d",
+    "native-browser-main91-20261008-r2.xml": "e9db942cf1ce8bc697bb6cabab0cd57e0ab69bdf93a7b8a72fb41c42d007de29",
+    "native-browser-main91-20261008-r2-tmp\\test_inherited_br_promoted_ir_0\\browser.log": "7db146a10f101823dcd8527e603e111e521ff957efe4f2b9d60b93caee50a3ec",
+    "native-browser-main91-20261008-r2-tmp\\test_inherited_br_promoted_ir_0\\browser\\delivery-evidence-native-p-509ee-n-the-read-only-Spec-rollup\\native-delivery.png": "2069e8afd5a4a92d251a4d366f85cc262af5f06c3e9a63957e6638fba39ca73e"
+  },
+  "limits": [
+    "Browser mounts the production component through a Vite fixture, not the installed complete SPA.",
+    "Identity/authentication setup is controlled; real authorization and UOW/persistence are exercised.",
+    "This is read parity. It does not prove browser Card submission, full application navigation or login.",
+    "DEI-T64 remains pending; do not repeat this read-only slice as a substitute for its remaining integrated scope."
+  ]
+}

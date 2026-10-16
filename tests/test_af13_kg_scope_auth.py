@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import ast
-import json
 import inspect
 import uuid
-from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -107,9 +105,7 @@ def test_rest_kg_board_routes_require_board_actor_dependency() -> None:
             or kg_routes.require_kg_stream_board_actor in deps
         ), path
 
-    migrate_deps = route_dependencies["post_migrate_schema"]
-    assert kg_routes.require_kg_board_writer_actor in migrate_deps
-    assert kg_routes.get_unit_of_work in migrate_deps
+    assert "post_migrate_schema" not in route_dependencies
     cypher_deps = route_dependencies["cypher_query"]
     assert kg_routes.require_kg_board_actor in cypher_deps
     assert kg_routes.require_kg_board_writer_actor not in cypher_deps
@@ -339,139 +335,15 @@ async def test_global_search_exact_denial_precedes_board_resolution() -> None:
         )
 
 
-@pytest.mark.asyncio
-async def test_kg_boost_audit_uses_non_default_actor(monkeypatch) -> None:
-    from datetime import datetime, timezone
-
-    from sqlalchemy import select
-
-    from okto_pulse.core.application.use_cases.kg_routes_crud import (
-        BoostNodeCommand,
-        BoostNodeUseCase,
-    )
-    from okto_pulse.core.infra.database import get_session_factory
-    from sqlalchemy_test_models import Board, ConsolidationAudit
-    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
-    import okto_pulse.core.kg.guarded_write as guarded
-    from okto_pulse.core.services import application_kg
-
-    actor_id = f"agent-af13-real-{uuid.uuid4().hex[:8]}"
-    board_id = f"board-af13-audit-{uuid.uuid4().hex[:8]}"
-    node_id = f"node-af13-audit-{uuid.uuid4().hex[:8]}"
-
-    async def _fake_mutate_boost_node_graph(
-        board_id: str,
-        node_id: str,
-        *,
-        actor_id: str,
-    ):
-        now = datetime.now(timezone.utc)
-        return SimpleNamespace(
-            board_id=board_id,
-            node_id=node_id,
-            actor_id=actor_id,
-            now=now,
-        )
-
-    def _fake_stage_boost_node_audit(db, mutation):
-        db.add(
-            ConsolidationAudit(
-                session_id=f"boost-{uuid.uuid4().hex[:30]}",
-                board_id=mutation.board_id,
-                artifact_id=mutation.node_id,
-                artifact_type="boost",
-                agent_id=mutation.actor_id,
-                started_at=mutation.now,
-                committed_at=mutation.now,
-                nodes_added=0,
-                edges_added=0,
-            )
-        )
-        return {
-            "node_id": mutation.node_id,
-            "node_type": "Entity",
-            "score_before": 0.4,
-            "score_after": 0.7,
-            "boosted_at": mutation.now.isoformat(),
-            "boosted_by": mutation.actor_id,
-        }
-
-    monkeypatch.setattr(
-        application_kg,
-        "mutate_boost_node_graph",
-        _fake_mutate_boost_node_graph,
-    )
-    monkeypatch.setattr(
-        application_kg,
-        "stage_boost_node_audit",
-        _fake_stage_boost_node_audit,
-    )
-
-    class _Lease:
-        def ensure_durable(self) -> None:
-            return None
-
-        def ensure_owned(self, *, failure_phase: str) -> None:
-            assert failure_phase == "after_boost_audit_finalize"
-
-    @contextmanager
-    def _guard(*_args, **_kwargs):
-        yield _Lease()
-
-    monkeypatch.setattr(guarded, "guarded_board_write", _guard)
-
-    async with get_session_factory()() as db:
-        db.add(
-            Board(
-                id=board_id,
-                name="AF13 audit",
-                owner_id=actor_id,
-                realm_id=LOCAL_REALM_ID,
-            )
-        )
-        await db.commit()
-
-    actor = ActorContext(
-        actor_id,
-        "mcp",
-        board_id=board_id,
-        realm_id=LOCAL_REALM_ID,
-        permissions=["kg.admin.settings_write"],
-    )
-    async with SQLAlchemyUnitOfWorkFactory(get_session_factory())(actor=actor) as uow:
-        result = await BoostNodeUseCase().execute(
-            BoostNodeCommand(board_id, node_id),
-            actor=actor,
-            uow=uow,
-        )
-
-    assert result.payload["boosted_by"] == actor_id
-
-    async with get_session_factory()() as db:
-        row = (
-            await db.execute(
-                select(ConsolidationAudit).where(
-                    ConsolidationAudit.board_id == board_id,
-                    ConsolidationAudit.artifact_id == node_id,
-                    ConsolidationAudit.artifact_type == "boost",
-                )
-            )
-        ).scalar_one()
-
-    assert row.agent_id == actor_id
 
 
 def test_mcp_kg_inventory_uses_scope_and_admin_gates() -> None:
     server_source = _source("mcp/server.py")
     query_tools_source = _source("mcp/kg_query_tools.py")
 
-    migrate_fn = _function_source(server_source, "okto_pulse_kg_migrate_schema")
     query_global_fn = _function_source(query_tools_source, "okto_pulse_kg_query_global")
 
-    assert "ActorScope.from_context" in migrate_fn
-    assert "kg.operations.schema.migrate" in migrate_fn
-    assert "kg.admin.settings_write" in migrate_fn
-    assert "allowed_board_ids=" in migrate_fn
+    assert "async def okto_pulse_kg_migrate_schema" not in server_source
     assert "svc.check_board_access(boards, board_id)" in query_global_fn
     assert _kg_tool_policy_violations(query_tools_source) == []
 
@@ -488,32 +360,6 @@ async def okto_pulse_kg_query_new(board_id: str) -> str:
     ]
 
 
-@pytest.mark.asyncio
-async def test_mcp_migrate_all_boards_denies_non_admin_before_listing(monkeypatch) -> None:
-    from okto_pulse.core.mcp import server as mcp_server
-
-    class _Ctx:
-        agent_id = "agent-af13"
-        agent_name = "AF13"
-        permissions: list[str] = []
-
-    async def _ctx():
-        return _Ctx()
-
-    def _uow_forbidden():
-        raise AssertionError("all_boards must not list boards before admin gate")
-
-    monkeypatch.setattr(mcp_server, "_get_global_agent_ctx", _ctx)
-    monkeypatch.setattr(
-        mcp_server, "get_unit_of_work_factory_for_mcp", _uow_forbidden
-    )
-
-    payload = json.loads(
-        await mcp_server.okto_pulse_kg_migrate_schema.fn(all_boards=True)
-    )
-
-    assert payload["error"] == "permission_denied"
-    assert payload["required_permission"] == "kg.operations.schema.migrate"
 
 
 def _function_source(source: str, name: str) -> str:

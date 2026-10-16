@@ -1,0 +1,301 @@
+{
+  "scope": "Card reference findings through productive worker, audit and exact ACK/source-plan qualification",
+  "production_hook": true,
+  "domain_gate_changed": false,
+  "acceptance_promotions": [],
+  "native_unique_passed": 40,
+  "campaigns": [
+    {
+      "round_id": "k2-findings-worker1",
+      "edition": "core",
+      "counts": {
+        "tests": 94,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "xml_sha256": "db046ea4b307a322f622f771928b4b473f8c212e38ae54e00f7b115e2848bab3"
+    },
+    {
+      "round_id": "k2-findings-worker1",
+      "edition": "community",
+      "counts": {
+        "tests": 9,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "xml_sha256": "0d65065b26b14df40fde49ceed4cb6c3deb6ddf612aae0918aa01b7954aaec09"
+    },
+    {
+      "round_id": "k2-findings-worker-recovery1",
+      "edition": "community",
+      "counts": {
+        "tests": 17,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "xml_sha256": "995f1dca0df07d5133aaef1adff75bf53e4cf254491a269bfea33245a9e23db4"
+    },
+    {
+      "round_id": "k2-findings-worker-absence1",
+      "edition": "community",
+      "counts": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "xml_sha256": "cebc83e33b106df7b55e104ecf89a87da47c02da2dc83244e8af7a819418e23b"
+    },
+    {
+      "round_id": "k2-findings-worker-absence2",
+      "edition": "community",
+      "counts": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "xml_sha256": "aecdd7d154418f3f8322bcbc10aa71d651c699c33ca2d22cdfcc2921b316d4ac"
+    },
+    {
+      "round_id": "k2-findings-worker-parent1",
+      "edition": "core",
+      "counts": {
+        "tests": 94,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "xml_sha256": "87bf6af86d317a9e9763abff654a4c8ab3d12556ef046b0045480e00b24a4f0e"
+    },
+    {
+      "round_id": "k2-findings-worker-parent-final",
+      "edition": "community",
+      "counts": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 1,
+        "skipped": 0
+      },
+      "xml_sha256": "77eacb77381f275f39b92871a4555e75eb1c145f289f0947794292d39da6985e"
+    },
+    {
+      "round_id": "k2-findings-worker-parent-final2",
+      "edition": "community",
+      "counts": {
+        "tests": 18,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "xml_sha256": "4fe2ea17fb088945d78c21148e25ae64a7c1179bc2b9840ce93664453e0074d3"
+    },
+    {
+      "round_id": "k2-findings-worker-parent-final3",
+      "edition": "community",
+      "counts": {
+        "tests": 2,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "xml_sha256": "ac88ff6f1dad5c6e13bbb8dddf24aaebe4ecdfd0211c55680a9955cf6f033531"
+    },
+    {
+      "round_id": "k2-findings-worker-parent-unlinked",
+      "edition": "community",
+      "counts": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "xml_sha256": "3744efe7d97eb7b343d82ee5c6b6932ddc2527a4bc004496654817080d7153f9"
+    },
+    {
+      "round_id": "k2-findings-worker-parent-recovery",
+      "edition": "community",
+      "counts": {
+        "tests": 21,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "xml_sha256": "1769ff4e7f3f90f27e36ad3b3b44ec32ddf3ae8cdb0a758976a7c91326a35ecf"
+    }
+  ],
+  "provenance": {
+    "checked_at": "2026-09-30T18:37:55.561960+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 856,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "541dbe7d28ef42c2b5f476bb289685041cda4efe",
+        "dirty": true,
+        "dirty_entry_count": 10,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-findings-worker-parent-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "1d207249c4788f522b630e49549176c17e6baf8610f30bb126816f4e7c1ca268",
+          "size": 3784903
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 919,
+        "byte_identical": true,
+        "aggregate_sha256": "c383eaa8b45d4cf9a5471a89e043a340204f1bb9c419929db10dabe6638879a3",
+        "chain_hashes": {
+          "source": "c383eaa8b45d4cf9a5471a89e043a340204f1bb9c419929db10dabe6638879a3",
+          "wheel": "c383eaa8b45d4cf9a5471a89e043a340204f1bb9c419929db10dabe6638879a3",
+          "site_packages": "c383eaa8b45d4cf9a5471a89e043a340204f1bb9c419929db10dabe6638879a3"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 373,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "b37ad0dc9ce8d9cccfa28c676eb10a1647126add",
+        "dirty": true,
+        "dirty_entry_count": 11,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-findings-worker-parent-final\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "d9b761ccb344af970ef1853dee06d540df127b51dfadbcf1f64736b1dc491431",
+          "size": 4533756
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 458,
+        "byte_identical": true,
+        "aggregate_sha256": "27e128d9e1ee8fa3c6717a611669ea0d5d4fc2984d8e0acb6e3d06bf34f961be",
+        "chain_hashes": {
+          "source": "27e128d9e1ee8fa3c6717a611669ea0d5d4fc2984d8e0acb6e3d06bf34f961be",
+          "wheel": "27e128d9e1ee8fa3c6717a611669ea0d5d4fc2984d8e0acb6e3d06bf34f961be",
+          "site_packages": "27e128d9e1ee8fa3c6717a611669ea0d5d4fc2984d8e0acb6e3d06bf34f961be"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "frontend": {
+    "xml_sha256": "d94be1de607b9241fd0d5b84c7e57f268e0f530f23cc3a644a450ee8c071d01a",
+    "counts": {
+      "tests": 31,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "scope": "GraphCanvas selection after parent removal and CardKnowledgeTab regression; jsdom, not visual WebGL"
+  },
+  "closure": {
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "sha256": "22957a5b3ecd4ac74b427b3fcf9371b6240e68e3d52035087e33bcba42c9d263"
+  },
+  "historical_wire": "No-snapshot ACK v1/v2 unchanged; snapshot uses v3; old retained Card plans are never rewritten on read.",
+  "initial_failure": "Native recovery retry refused by materialization health probe deadline before ACK. Gate/deadline unchanged; isolated rerun required.",
+  "limits": [
+    "Source absence differs from provider error, foreign scope and ambiguous duplicate identity.",
+    "Known absent Card scenario references persist diagnostics and retract owned edges without placeholder targets.",
+    "Tests use disposable SQL and Grafx storage and synthetic offline build bindings; not published-pair release E2E.",
+    "Frontend selection regression tested; no new diagnostics surface claimed.",
+    "Absence1 also emptied Spec semantic links and failed fresh-rebuild connectivity: separate G3/G5 gap remains.",
+    "Absence2 isolated Card unlink and proved stale owned parent edge; card_parent active set addresses this without reducing the Counter oracle.",
+    "First parent native campaign stopped on a fixture missing required source_session_id; test corrected, product unchanged.",
+    "Parent-final2 passed 17 tests, then Bug refused before mutation on materialization probe deadline.",
+    "Parent-final3 passed Bug, then unlinked rebuild refused before mutation on the same probe deadline. Isolated unlinked/recovery campaigns retain unchanged deadlines and gates; runtime timing instability remains a qualification limit."
+  ],
+  "remaining": [
+    "Permission-scoped current source/context/coverage diagnostics and frontend tests",
+    "Known-removal independence when another valid graph endpoint remains pending",
+    "Spec with empty semantic references: incremental/fresh connectivity parity",
+    "Full KG G2/G12 and consolidated acceptance audit; inventory remains partial"
+  ]
+}

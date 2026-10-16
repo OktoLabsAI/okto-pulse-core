@@ -1,0 +1,180 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE T29/T30 final supplemental replay and installed predecessor rollback",
+  "prior_evidence": "acceptance-retirement-migration-review.json",
+  "provenance": {
+    "file": "provenance-retirement-installed-rollback1.json",
+    "sha256": "05caee8f547e4fbe8cd72ae4bacdc2cbe31a71767f1b3ecf3fb7052da4e5f0ff",
+    "identity": {
+      "checked_at": "2026-09-30T22:18:08.464515+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 859,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "5c456a77c6f0a559e7b9b2e397d1a78e857cdbfe",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "a6f77fab8288ae5a91690a7d2796ea8d19db5b10c8a7c7263629553ebeff0312",
+            "size": 3793229
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 922,
+          "byte_identical": true,
+          "aggregate_sha256": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+          "chain_hashes": {
+            "source": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "wheel": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "site_packages": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 373,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "69d4b431d3906ef385d6220771fc9bd8be9b6da5",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "3d1eb7b80776aa6ba91a8e0e24d194c6d09769d70a4637a6423e0f57872ecd55",
+            "size": 4535175
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 458,
+          "byte_identical": true,
+          "aggregate_sha256": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+          "chain_hashes": {
+            "source": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "wheel": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "site_packages": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "predecessor": {
+    "file": "provenance-retained-predecessor1.json",
+    "sha256": "b0bc0c1a05b7b17f77110581fd4acedb1915b4433cf3269bd30ca3d963fcd286",
+    "identity": {
+      "core": {
+        "commit": "207072509a282e8adec1481d05aee2d54c382bde",
+        "wheel_sha256": "0e88432f27a721c254046342e7d44db228828347e433acf41c2ae2fb428b56d9",
+        "python_files": 769,
+        "payload_files": 834
+      },
+      "community": {
+        "commit": "b6dda64f512920fa4aaaf9d50c331b1796b87e27",
+        "wheel_sha256": "6925e90a36054ae954d516f3fc4f5ed1513812bfdb915d145eb9a9bd5afa1d27",
+        "python_files": 311,
+        "payload_files": 395
+      }
+    }
+  },
+  "runs": [
+    {
+      "xml": "learning-reconciliation-retirement-installed-rollback1-community.xml",
+      "xml_sha256": "d86811fcea6aaa751fd353492d0c48bc9bf295f464689668e194909c0ef86ad6",
+      "log": "learning-reconciliation-retirement-installed-rollback1-community.log",
+      "log_sha256": "5364c64909a67b5a28095ed78feb4628ba7c75bd71059ba618234a8be8baefc3",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "1",
+          "time": "131.249",
+          "timestamp": "2026-09-30T19:18:20.928957-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_retirement_predecessor_rollback",
+          "name": "test_real_predecessor_reopens_original_policy_and_native_history_after_bootstrap",
+          "time": "127.796"
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-retirement-final-replay1-community.xml",
+      "xml_sha256": "14a2a1a86e172c2ceb543a2c5564256a04bc32b4afc5b451770ec95a99b6b1f2",
+      "log": "learning-reconciliation-retirement-final-replay1-community.log",
+      "log_sha256": "7873e5bd19e471cd8d06b8ff1db0057d1378cb92cb271ae5e4be19e4e27cdd9f",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "1",
+          "time": "220.119",
+          "timestamp": "2026-09-30T19:22:39.214320-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_retirement_reused_history",
+          "name": "test_authenticated_effects_on_reused_root_preserve_identity_and_require_complete_evidence[durable-technical-report]",
+          "time": "213.486"
+        }
+      ]
+    }
+  ],
+  "criteria": {
+    "BASE:T29": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Prior reviewed campaign establishes archive, overrides, permissions, journal and schema-cut idempotency. Final replay exercises real graph projection/reconciliation, identical candidate receipt on replay, interrupted activation publication with no published installation, successful retry, installed-wheel isolated bootstrap, and activation replay retaining subsequent user data. Authenticated technical evidence verifies in both original and activated roots.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_reused_history.py",
+          "source_sha256": "9df54aa54cde9f702cdae072639104439515b21bba0d235b4f9728d4810b9344"
+        }
+      ]
+    },
+    "BASE:T30": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Prior reviewed campaign covers failures after snapshot and during cut, restart refusal and retained-proof resume. Installed frozen predecessor creates native Grafx history and policies 90/60; current candidate performs retirement bootstrap; incomplete candidate remains refused. Joint snapshot restores into a disposable root and a fresh predecessor process reproduces exact original policy, native history, audit cursor and source provenance.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_predecessor_rollback.py",
+          "source_sha256": "a223c65a395aa7f2d62720296b81c7b01319d2356fee94c5fb3beb7105bc3c94"
+        },
+        {
+          "repository": "community",
+          "file": "tests/retirement_predecessor_probe.py",
+          "source_sha256": "80dc24edfa2a4001940486e652f3e010a02d336f83415757ad6eb7db17b2548c"
+        }
+      ]
+    }
+  },
+  "limits": [
+    "Disposable data only; no live runtime, real migration, release or publication.",
+    "Rollback uses actual frozen/current build identities. Final graph activation fixture uses synthetic RecoveryBuildPair identifiers; actual installed packages are byte-identical to reviewed source and bootstrap is executed with -I and checked site-packages origins. This is not a release-pair compatibility certificate.",
+    "Rollback is after retirement bootstrap, as required by T30 before/during cut. No new requirement of rollback after final production activation is introduced.",
+    "Validation interpreter inherits external third-party dependencies; not a hermetic environment.",
+    "Existing tests executed without product/frontend edits; no new F16 execution or full-plan completion claimed."
+  ]
+}

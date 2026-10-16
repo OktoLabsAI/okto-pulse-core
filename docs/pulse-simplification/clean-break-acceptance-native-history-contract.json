@@ -1,0 +1,283 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "scope": "C1: decision history accepts only the native eight-column store result",
+  "proof_pair": "dist-native-main36",
+  "provenance": {
+    "checked_at": "2026-10-07T16:10:41.870024+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 843,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "2057351b986bcb519f32066018e53eb494551891",
+        "dirty": true,
+        "dirty_entry_count": 4,
+        "distribution": "okto-pulse-core",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main36\\okto_pulse_core-0.4.0-py3-none-any.whl",
+          "sha256": "88551cd7a83acbd813dfabdde8f2d9041cdc9473c843e7aa041de3e4410be1e2",
+          "size": 3604417
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 905,
+        "byte_identical": true,
+        "aggregate_sha256": "b6e62b64588d7d4826a877487777be1cf7d5d29bde32502b6c65e1c58e87e90c",
+        "chain_hashes": {
+          "source": "b6e62b64588d7d4826a877487777be1cf7d5d29bde32502b6c65e1c58e87e90c",
+          "wheel": "b6e62b64588d7d4826a877487777be1cf7d5d29bde32502b6c65e1c58e87e90c",
+          "site_packages": "b6e62b64588d7d4826a877487777be1cf7d5d29bde32502b6c65e1c58e87e90c"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "4f6360d46eab0f9c8931d3fb5e8a50e0c04b0e6f3b164619a55ac381917ba34d",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "3d3ecc80ab6b699b2021eddcf02b72bf48eddd06bf34dcf245f2b00fcc69b433"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 316,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "2e6b2f1d8cfbe27ef37de74f4e2680d99078b4e7",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main36\\okto_pulse-0.4.0-py3-none-any.whl",
+          "sha256": "ed4e0eb94e0b43f27f6b502968f488b07d82e28fcc41afcfffd4d5c52a462a19",
+          "size": 4071353
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 402,
+        "byte_identical": true,
+        "aggregate_sha256": "a0ea3ba032d86f6c1cb37091156b869852be097cfa80a640294858b13d0612cf",
+        "chain_hashes": {
+          "source": "a0ea3ba032d86f6c1cb37091156b869852be097cfa80a640294858b13d0612cf",
+          "wheel": "a0ea3ba032d86f6c1cb37091156b869852be097cfa80a640294858b13d0612cf",
+          "site_packages": "a0ea3ba032d86f6c1cb37091156b869852be097cfa80a640294858b13d0612cf"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "runs": [
+    {
+      "name": "acceptance-native-history-refusal1",
+      "xml_sha256": "020c780ec9f21f1281415d6b315f15702aaaa92b22ec8b2a7b5d2f313c280d74",
+      "passed": 3,
+      "failures": [
+        "tests.test_kg_decision_history_provenance::test_decision_history_service_rejects_seven_column_store"
+      ],
+      "cases": [
+        "tests.test_kg_decision_history_provenance::test_decision_history_cypher_projects_source_artifact_ref",
+        "tests.test_kg_decision_history_provenance::test_memory_store_decision_history_row_includes_source_artifact_ref",
+        "tests.test_kg_decision_history_provenance::test_decision_history_service_projects_source_artifact_ref",
+        "tests.test_kg_decision_history_provenance::test_decision_history_service_rejects_seven_column_store"
+      ]
+    },
+    {
+      "name": "acceptance-native-history-contract2",
+      "xml_sha256": "a39e943a86f91e6b199fb3fe818b72601f627b682d0d1ac0664c61d61ace8ed4",
+      "passed": 62,
+      "failures": [],
+      "cases": [
+        "tests.test_kg_decision_history_provenance::test_decision_history_cypher_projects_source_artifact_ref",
+        "tests.test_kg_decision_history_provenance::test_memory_store_decision_history_row_includes_source_artifact_ref",
+        "tests.test_kg_decision_history_provenance::test_decision_history_service_projects_source_artifact_ref",
+        "tests.test_kg_decision_history_provenance::test_decision_history_service_rejects_seven_column_store",
+        "tests.test_kg_decision_history_provenance::test_decision_history_rejects_a_mixed_result_before_returning_partial_history",
+        "tests.test_kg_decision_history_semantic.TestSignatureContract::test_get_decision_history_accepts_use_semantic",
+        "tests.test_kg_decision_history_semantic.TestSignatureContract::test_get_decision_history_accepts_min_similarity",
+        "tests.test_kg_decision_history_semantic.TestStoreFindByTopicSemantic::test_memory_store_exposes_method",
+        "tests.test_kg_decision_history_semantic.TestMergePreservesTextOrderWhenSemanticFails::test_merge_returns_text_rows_when_semantic_empty",
+        "tests.test_kg_decision_history_semantic.TestMergePreservesTextOrderWhenSemanticFails::test_merge_dedups_by_id",
+        "tests.test_kg_decision_history_semantic.TestUseSemanticFalseDisablesPath::test_semantic_not_called_when_flag_off",
+        "tests.test_kg_decision_history_semantic.TestUseSemanticFalseDisablesPath::test_text_path_normalizes_backend_datetime",
+        "tests.test_kg_decision_history_semantic.TestSemanticSkippedWhenMaxRowsReached::test_no_semantic_when_text_fills_budget",
+        "tests.test_kg_embedded_providers.TestProtocolCompliance::test_memory_graph_store_satisfies_protocol",
+        "tests.test_kg_embedded_providers.TestProtocolCompliance::test_memory_cypher_executor_satisfies_protocol",
+        "tests.test_kg_embedded_providers.TestProtocolCompliance::test_sqlite_outbox_event_bus_satisfies_protocol",
+        "tests.test_kg_embedded_providers.TestInMemoryGraphStoreRelationshipResolution::test_create_edge_ambiguous_relationship_requires_endpoint_hints",
+        "tests.test_kg_embedded_providers.TestInMemoryGraphStoreRelationshipResolution::test_create_edge_implements_constraint_honors_endpoint_hints",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_defaults_include_graph_store",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_defaults_include_cypher_executor",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_test_composition_supplies_event_bus_fake",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_test_composition_supplies_audit_repo_fake",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_configure_with_session_factory_does_not_auto_wire_data_ports",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_override_takes_precedence",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_all_onda1_fields_populated",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_all_onda2_fields_populated",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_full_registry_with_session_factory",
+        "tests.test_kg_embedded_providers.TestInMemoryCypherExecutor::test_is_supported",
+        "tests.test_kg_embedded_providers.TestInMemoryCypherExecutor::test_execute_read_only_records_query",
+        "tests.test_kg_embedded_providers.TestInMemoryEventBusLifecycle::test_start_stop",
+        "tests.test_kg_embedded_providers.TestInMemoryEventBusLifecycle::test_subscribe_and_handle",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_service_uses_graph_store_for_schema_version",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_service_decision_history_via_graph_store",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_service_find_contradictions_via_graph_store",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_service_explain_constraint_via_graph_store",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_service_explain_constraint_not_found",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_service_list_alternatives_via_graph_store",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_service_find_similar_via_graph_store",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_find_similar_is_canonical_while_diagnostic_all_preserves_working",
+        "tests.test_kg_tier_primary.TestDefaultFiltersCache::test_default_filters_exclude_unvalidated",
+        "tests.test_kg_tier_primary.TestDefaultFiltersCache::test_default_min_confidence",
+        "tests.test_kg_tier_primary.TestDefaultFiltersCache::test_cache_hit_on_repeated_query",
+        "tests.test_kg_tier_primary.TestDefaultFiltersCache::test_invalidation_clears_board_cache",
+        "tests.test_kg_tier_primary.TestACLDecisionHistory::test_acl_denies_unauthorized_board",
+        "tests.test_kg_tier_primary.TestACLDecisionHistory::test_acl_allows_authorized_board",
+        "tests.test_kg_tier_primary.TestACLDecisionHistory::test_decision_history_returns_matching",
+        "tests.test_kg_tier_primary.TestACLDecisionHistory::test_decision_history_empty_topic",
+        "tests.test_kg_tier_primary.TestACLDecisionHistory::test_supersedence_chain_no_chain",
+        "tests.test_kg_tier_primary.TestRankingContradictions::test_9_response_models_importable",
+        "tests.test_kg_tier_primary.TestRankingContradictions::test_find_contradictions_all",
+        "tests.test_kg_tier_primary.TestRankingContradictions::test_find_contradictions_by_node",
+        "tests.test_kg_tier_primary.TestRankingContradictions::test_ranking_weights_customizable",
+        "tests.test_kg_tier_primary.TestRankingContradictions::test_find_similar_decisions_no_crash",
+        "tests.test_kg_tier_primary.TestContextToolsErrors::test_explain_constraint",
+        "tests.test_kg_tier_primary.TestContextToolsErrors::test_explain_constraint_not_found",
+        "tests.test_kg_tier_primary.TestContextToolsErrors::test_list_alternatives",
+        "tests.test_kg_tier_primary.TestContextToolsErrors::test_get_related_context",
+        "tests.test_kg_tier_primary.TestContextToolsErrors::test_query_global_empty_boards",
+        "tests.test_kg_tier_primary.TestContextToolsErrors::test_query_global_with_board",
+        "tests.test_kg_tier_primary.TestContextToolsErrors::test_schema_drift_detection",
+        "tests.test_kg_decision_reconciliation_history::test_commit_boundary_converts_semantic_decision_update_to_supersede",
+        "tests.test_kg_decision_reconciliation_history::test_commit_boundary_keeps_identical_decision_reattestation_as_update"
+      ]
+    },
+    {
+      "name": "acceptance-native-history-store1",
+      "xml_sha256": "29d03760c4510b2d5cfcea281671f1b8e9c95ddeb1b1c62c772629b654704f52",
+      "passed": 34,
+      "failures": [],
+      "cases": [
+        "tests.test_grafx_graph_store::test_snapshot_reads_retry_on_an_independent_reader_resolver",
+        "tests.test_grafx_graph_store::test_grafx_timestamps_match_the_current_legacy_boundary_shape",
+        "tests.test_grafx_graph_store::test_the_provider_implements_the_exact_24_method_core_surface",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[bootstrap]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[capabilities]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[create_edge]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[create_node]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[delete_edges_by_session]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[delete_nodes_by_session]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[edge_exists]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[find_active_by_source_ref]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[find_by_artifact]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[find_by_topic]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[find_contradictions]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[find_node_types]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[get_alternatives]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[get_constraint_detail]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[get_learnings_for_area]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[get_schema_info]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[get_schema_version]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[increment_attestation]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[list_node_properties]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[list_schema_objects]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[mark_superseded]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[traverse_supersedence]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[update_node]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[vector_search]",
+        "tests.test_grafx_graph_store::test_a_write_resolves_once_and_fences_immediately_before_effect_and_commit",
+        "tests.test_grafx_graph_store::test_every_port_method_roundtrips_over_one_real_grafx_board",
+        "tests.test_grafx_graph_store::test_a_lost_fence_discards_or_prevents_the_real_write[create_node]",
+        "tests.test_grafx_graph_store::test_a_lost_fence_discards_or_prevents_the_real_write[commit]",
+        "tests.test_grafx_graph_store::test_a_post_durable_commit_failure_is_explicit_and_not_retryable",
+        "tests.test_grafx_graph_store::test_backend_failure_is_mapped_without_leaking_a_grafx_exception",
+        "tests.test_grafx_graph_store::test_catalog_failure_during_vector_coercion_is_also_normalized"
+      ]
+    }
+  ],
+  "passed_distinct_cases": 96,
+  "closure": {
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": []
+  },
+  "review": "The real Grafx store and memory store already return the provenance column. Removed the seven-column fallback; incompatible or mixed responses fail explicitly before returning partial history. Preserved native nullable provenance, optional semantic enrichment, ordering, deduplication and current history semantics.",
+  "limits": [
+    "No frontend change and no new frontend campaign. Main35 packaged assets are unchanged.",
+    "No authority change or KG-11 completion claim; supersedence/reopen/replay chain still needs its own review."
+  ]
+}

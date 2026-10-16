@@ -1,0 +1,47 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_key": "BASE:T10",
+  "disposition": "mantido",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-next24",
+  "provenance_sha256": "440df69045ebcf2207c0363c9f8260c90d5b1b5fb6635dc4e6087058f478eeef",
+  "runs": [
+    {
+      "name": "acceptance-native-reopen-current1",
+      "xml_sha256": "dbb5ad17bababbe3805dc23d9c106c677e3c8b35d8d9295f64782f21820af5e7",
+      "passed": 6,
+      "cases": [
+        "tests.test_spec_evaluation_reopen_characterization::test_reopen_requires_new_review_and_preserves_original_verdict[approve]",
+        "tests.test_spec_evaluation_reopen_characterization::test_reopen_requires_new_review_and_preserves_original_verdict[reject]",
+        "tests.test_spec_evaluation_reopen_characterization::test_new_approval_does_not_supersede_same_edition_rejection",
+        "tests.test_spec_evaluation_reopen_characterization::test_failed_reopen_rolls_back_edition_and_evaluation_currentness",
+        "tests.test_spec_evaluation_reopen_characterization::test_unscoped_review_is_refused_without_repair_or_lifecycle_change",
+        "tests.test_spec_evaluation_reopen_characterization::test_concurrent_reviews_do_not_overwrite_an_accepted_verdict"
+      ]
+    },
+    {
+      "name": "acceptance-native-rework-current1",
+      "xml_sha256": "384ef986ad2c94806e84309e07aca5ad00991d3c82b920ceb70350aa5bd0e30b",
+      "passed": 4,
+      "cases": [
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[grant-denied-approve]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[grant-denied-reject]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-approve]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-reject]"
+      ]
+    }
+  ],
+  "reviewed_coverage": [
+    "Actual Spec reopen/edit/evaluation/start routes increment one edition, retain original scores/author/content as Previous, require a new edition review, and keep same-edition rejection effective.",
+    "Injected reopen-history failure rolls back edition/currentness. Concurrent accepted reviews are not overwritten; unscoped stored review is refused without repair.",
+    "Authenticated MCP rejected Card can be reopened only by the executor with its explicit rework grant; denied reviewer attempt has no writes.",
+    "Executor publishes a new report selecting the existing native evidence, then independent reviewer approves with new subject version/key.",
+    "The final Done state contains both original rejection and new approval, unchanged rejection history and evidence records; original conclusion prefix is intact and current rejection clears on authorized rework."
+  ],
+  "limits": [
+    "Spec validated entry and REST identity are fixture inputs; no substituted lifecycle gate.",
+    "MCP credential extraction injected but grants/authenticator/host/UOW/SQL real.",
+    "Card rework updates the report over retained evidence; this is lifecycle/currentness proof, not proof of a new code implementation or external workspace recovery.",
+    "No production/frontend changes in this increment."
+  ]
+}

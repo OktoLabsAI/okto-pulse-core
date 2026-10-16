@@ -268,7 +268,8 @@ class GetSpecUseCase:
                     spec_id=str(spec.id),
                 )
             )
-        return GetSpecResult(projected)
+        from okto_pulse.core.application.use_cases.missing_link_context import attach_missing_link_context
+        return GetSpecResult(await attach_missing_link_context(projected, entity_type="spec", actor=actor, uow=uow))
 
 
 # --- move (status transition) -----------------------------------------------
@@ -308,7 +309,6 @@ class MoveSpecUseCase:
                 "spec",
                 existing.status,
                 command.data.status,
-                legacy_operation="specs:move",
             ),
             uow=uow,
             board_id=existing.board_id,
@@ -325,7 +325,8 @@ class MoveSpecUseCase:
             refreshed,
             target_type="spec",
         )
-        return MoveSpecResult(projected)
+        from okto_pulse.core.application.use_cases.missing_link_context import attach_missing_link_context
+        return MoveSpecResult(await attach_missing_link_context(projected, entity_type="spec", actor=actor, uow=uow))
 
 
 # --- delete -----------------------------------------------------------------
@@ -500,6 +501,7 @@ def _requirement_change_permissions(
     next_keys = set(next_by_key)
 
     required: set[str] = set()
+
     if next_keys - current_keys:
         required.add(f"{prefix}.create")
         if any(_linked_task_ids(next_by_key[key]) for key in next_keys - current_keys):
@@ -551,6 +553,7 @@ def _spec_update_permission_requirements(spec, data: SpecUpdate) -> set[str]:
         "skip_ir_coverage",
         "skip_or_coverage",
         "skip_code_evidence_coverage",
+        "skip_delivery_evidence",
     } & fields_set:
         required.add("spec.entity.edit_coverage_flags")
 
@@ -616,7 +619,8 @@ class UpdateSpecUseCase:
             refreshed,
             target_type="spec",
         )
-        return UpdateSpecResult(projected)
+        from okto_pulse.core.application.use_cases.missing_link_context import attach_missing_link_context
+        return UpdateSpecResult(await attach_missing_link_context(projected, entity_type="spec", actor=actor, uow=uow))
 
 
 # --- structured spec entities (REST-FU3b-S1) --------------------------------
@@ -1124,7 +1128,6 @@ class SetTestScenarioStatusUseCase:
         requirement = (
             PermissionRequirement(
                 "spec.tests.execute",
-                legacy_operation="specs:update",
                 entity="spec",
                 state=entity_state(spec),
             )
@@ -1133,7 +1136,6 @@ class SetTestScenarioStatusUseCase:
                 "test_scenario",
                 current_status,
                 command.status,
-                legacy_operation="specs:update",
             )
         )
         await require_authorization(
@@ -1221,7 +1223,6 @@ class ExecuteTestScenarioEvidenceUseCase:
             actor,
             PermissionRequirement(
                 "spec.tests.execute",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=spec.board_id,
@@ -1251,6 +1252,8 @@ class ExecuteTestScenarioEvidenceUseCase:
         )
         if scenario is None:
             raise EntityNotFoundError("scenario", command.scenario_id)
+        if scenario.get("verification_method") not in (None, "automated_test"):
+            raise ValueError("verification_report_required_for_specialized_method")
         scenario_sha256 = compute_test_scenario_semantic_sha256(
             board_id=spec.board_id,
             spec_id=command.spec_id,
@@ -1260,6 +1263,8 @@ class ExecuteTestScenarioEvidenceUseCase:
 
         issuer = resolve_test_evidence_execution_issuer()
         verifier = resolve_test_evidence_write_verifier()
+        from okto_pulse.core.ports.test_evidence import require_supported_test_verification_method
+        require_supported_test_verification_method(scenario.get("verification_method"))
         if issuer is None or verifier is None:
             raise ValueError("evidence_v2.trusted_runtime_not_configured")
         issued = await issuer.execute(
@@ -1288,6 +1293,66 @@ class ExecuteTestScenarioEvidenceUseCase:
             raise ValueError(
                 "evidence_unverified: " + ", ".join(verification.reason_codes)
             )
+        return ExecuteTestScenarioEvidenceResult(evidence)
+
+
+class AdmitTestVerificationReportCommand:
+    def __init__(self, spec_id: str, scenario_id: str, report: object) -> None:
+        self.spec_id = spec_id
+        self.scenario_id = scenario_id
+        self.report = report
+
+
+class AdmitTestVerificationReportUseCase:
+    """Authenticate an authorized observation without approving or changing state.
+
+    Submission uses the existing test-execution permission, including manual
+    observations. Test Card/result publication, independent review and evaluation
+    remain separate, unchanged gates. The returned evidence must pass the normal
+    scoped status writer; a receipt alone grants no completion or delivery credit.
+    """
+
+    async def execute(self, command: AdmitTestVerificationReportCommand, *, actor: ActorContext,
+                      uow: PulseUnitOfWork) -> ExecuteTestScenarioEvidenceResult:
+        from okto_pulse.core.domain.verification_report import parse_verification_report, require_verification_report_context, verification_report_scenario_status
+        from okto_pulse.core.ports.test_evidence import (
+            TestVerificationReportRequest, resolve_test_verification_report_issuer,
+            resolve_test_evidence_write_verifier, require_supported_test_verification_method,
+        )
+        from okto_pulse.core.services.test_scenario_lifecycle import compute_test_scenario_semantic_sha256
+
+        spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
+        await require_authorization(actor, PermissionRequirement("spec.tests.execute"),
+                                    uow=uow, board_id=spec.board_id)
+        scenario = next((item for item in (spec.test_scenarios or [])
+                         if isinstance(item, dict) and item.get("id") == command.scenario_id), None)
+        if scenario is None:
+            raise EntityNotFoundError("scenario", command.scenario_id)
+        report = parse_verification_report(command.report)
+        linked = scenario.get("linked_criteria")
+        criteria = list(getattr(spec, "acceptance_criteria", None) or [])
+        current_ids = {item.get("id") for item in criteria if isinstance(item, dict)}
+        if not isinstance(linked, (list, tuple)) or any(key not in current_ids for key in linked):
+            raise ValueError("verification_report_criterion_scope_mismatch")
+        report_status = verification_report_scenario_status(report)
+        require_verification_report_context(report, method=scenario.get("verification_method"),
+                                            status=report_status, criterion_ids=tuple(linked))
+        require_supported_test_verification_method(scenario.get("verification_method"))
+        issuer = resolve_test_verification_report_issuer()
+        verifier = resolve_test_evidence_write_verifier()
+        if issuer is None or verifier is None:
+            raise ValueError("verification_report_trusted_issuer_not_configured")
+        digest = compute_test_scenario_semantic_sha256(board_id=spec.board_id, spec_id=command.spec_id,
+                                                      scenario=scenario, acceptance_criteria=criteria)
+        issued = await issuer.admit(TestVerificationReportRequest(
+            board_id=spec.board_id, spec_id=command.spec_id, scenario_id=command.scenario_id,
+            scenario_sha256=digest, actor_id=actor.actor_id, report=report.model_dump(mode="json")))
+        evidence = dict(issued.evidence)
+        verification = verifier.verify(board_id=spec.board_id, spec_id=command.spec_id,
+            scenario_id=command.scenario_id, scenario_sha256=digest, status=report_status,
+            actor_id=actor.actor_id, evidence=evidence)
+        if not verification.verified:
+            raise ValueError("evidence_unverified: " + ", ".join(verification.reason_codes))
         return ExecuteTestScenarioEvidenceResult(evidence)
 
 
@@ -1852,7 +1917,6 @@ class DeleteSpecQuestionUseCase:
             actor,
             PermissionRequirement(
                 "spec.qa.delete",
-                legacy_operation="qa:delete",
             ),
             uow=uow,
             board_id=spec.board_id,
@@ -1883,7 +1947,7 @@ class SubmitSpecEvaluationResult:
 
 
 class SubmitSpecEvaluationUseCase:
-    """Submit a qualitative evaluation for a spec in 'validated' status (write).
+    """Submit a decomposition evaluation in Approved or Validated (write).
     ``EntityNotFoundError("spec")`` when the spec is missing (adapter → 404);
     resolves the evaluator display name best-effort (any failure falls back to the
     actor id, exactly as the legacy endpoint); ``submit_spec_evaluation``'s
@@ -1905,6 +1969,17 @@ class SubmitSpecEvaluationUseCase:
 
         service = uow.services.specs
         spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
+
+        # Board membership/content authority does not grant review authority.
+        # Match the existing MCP evaluation permission before any writer/audit.
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "spec.evaluations.submit",
+            ),
+            uow=uow,
+            board_id=spec.board_id,
+        )
 
         try:
             evaluator_name = await uow.services.resolve_actor_name(
@@ -1940,10 +2015,15 @@ class SubmitSpecEvaluationUseCase:
 
 
 class ListSpecEvaluationsCommand:
-    __slots__ = ("spec_id",)
+    __slots__ = ("spec_id", "view", "offset", "limit")
 
-    def __init__(self, spec_id: str) -> None:
+    def __init__(self, spec_id: str, *, view: str = "all", offset: int = 0, limit: int = 25) -> None:
+        if view not in {"all", "current", "previous"}:
+            raise ValueError("spec_evaluation_view_invalid")
+        if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("spec_evaluation_pagination_invalid")
         self.spec_id = spec_id
+        self.view, self.offset, self.limit = view, offset, limit
 
 
 class ListSpecEvaluationsResult:
@@ -1966,8 +2046,13 @@ class ListSpecEvaluationsUseCase:
         uow: PulseUnitOfWork,
     ) -> ListSpecEvaluationsResult:
         try:
-            await _require_actor_board_spec(uow, command.spec_id, actor)
+            spec = await _require_actor_board_spec(uow, command.spec_id, actor)
         except EntityNotFoundError as exc:
             raise ValueError("Spec not found") from exc
-        result = await uow.services.specs.list_spec_evaluations(command.spec_id)
+        from okto_pulse.core.application.use_cases.authorization import PermissionRequirement, require_authorization
+        for permission in ("spec.entity.read", "spec.evaluations.read"):
+            await require_authorization(actor, PermissionRequirement(permission), uow=uow, board_id=spec.board_id)
+        result = await uow.services.specs.list_spec_evaluations(
+            command.spec_id, view=command.view, offset=command.offset, limit=command.limit,
+        )
         return ListSpecEvaluationsResult(result)

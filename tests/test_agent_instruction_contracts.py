@@ -32,10 +32,10 @@ def bodies():
     "reference/tool-docs/spec", "reference/tool-docs/refinement",
     "reference/code-traceability", "reference/tool-docs/code-traceability",
 ])
-def test_each_legacy_guidance_route_names_authorized_tool_without_old_ban(bodies, uri):
+def test_each_guidance_route_omits_removed_legacy_classification(bodies, uri):
     text = " ".join(bodies[f"okto-pulse://{uri}"].split())
-    assert "okto_pulse_classify_legacy_code_evidence" in text
-    assert "code_traceability.evidence.classify_legacy" in text
+    assert "okto_pulse_classify_legacy_code_evidence" not in text
+    assert "code_traceability.evidence.classify_legacy" not in text
     for stale in ("there is no MCP mutation", "agents have no MCP mutation",
                   "agents never classify it through MCP", "there is no MCP classification"):
         assert stale not in text

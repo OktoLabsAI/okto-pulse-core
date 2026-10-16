@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
 from okto_pulse.core.ports.canonical_debt import (
     CanonicalDebtRecord,
+    ConditionalCanonicalDebtWriter,
     get_canonical_debt_store,
 )
 from okto_pulse.core.kg.source_maturity import CANONICAL_ARTIFACT_TYPES
@@ -97,7 +99,7 @@ def _canonical_debt_next_action(
         return "resolve_blocker_then_retry"
     if state in RETRYABLE_STATES:
         return (
-            "reprocess_via_okto_pulse_kg_dead_letter_reprocess"
+            "none"
             if dlq_ref
             else "retry_eligible_inspect_failure_reason"
         )
@@ -228,6 +230,7 @@ async def upsert_canonical_debt(
     queue_ref: str | None = None,
     dlq_ref: str | None = None,
     evidence_ref: str | None = None,
+    eligible_existing: Callable[[CanonicalDebtRecord], bool] | None = None,
 ) -> CanonicalDebtRecord:
     if not content_hash:
         raise ValueError("content_hash is required for CanonicalDebt")
@@ -241,6 +244,7 @@ async def upsert_canonical_debt(
         content_hash=content_hash,
     )
     now = datetime.now(timezone.utc)
+    expected = None
     if row is None:
         row = CanonicalDebtRecord(
             board_id=board_id,
@@ -264,6 +268,10 @@ async def upsert_canonical_debt(
             updated_at=now,
         )
     else:
+        if eligible_existing is not None:
+            if not isinstance(store, ConditionalCanonicalDebtWriter) or not eligible_existing(row):
+                return row
+            expected = replace(row)
         row.source_ref = source_ref
         row.source_version = source_version
         row.canonical_state = canonical_state
@@ -277,70 +285,39 @@ async def upsert_canonical_debt(
         row.dlq_ref = dlq_ref
         row.evidence_ref = evidence_ref
         row.updated_at = now
+    if expected is not None:
+        if await store.replace_if_current(db, expected=expected, replacement=row):
+            return row
+        current = await store.get(db, debt_id=row.id)
+        if current is None:
+            raise ValueError('canonical_debt_changed_during_reconciliation')
+        return current
     return await store.save(db, row)
 
 
-async def schedule_canonical_debt_retry(
-    db: object,
-    *,
-    board_id: str,
-    debt_id: str,
-    actor_id: str,
-    kg_health_state: str,
-) -> dict[str, Any]:
-    store = get_canonical_debt_store()
-    # Canonical-debt retry is a generic operational recovery path. Code
-    # Traceability projections are recovered only by the deterministic rebuild
-    # worker, so an opaque debt id can never cause this path to load or mutate a
-    # CT record.
-    row = await store.get(
-        db,
-        debt_id=debt_id,
-        include_code_traceability=False,
-    )
-    if row is None or row.board_id != board_id:
-        return {
-            "ok": False,
-            "error": "canonical_debt_not_found",
-            "attempt_consumed": False,
-        }
-    if row.canonical_state not in RETRYABLE_STATES:
-        return {
-            "ok": False,
-            "error": "canonical_debt_not_retryable",
-            "attempt_consumed": False,
-            "debt": canonical_debt_to_dict(row),
-        }
-    now = datetime.now(timezone.utc)
-    if kg_health_state in {
-        "quarantined",
-        "recovery_needed",
-        "backpressure",
-        "at_risk",
-    }:
-        row.canonical_state = "blocked"
-        row.failure_reason = f"kg_health_{kg_health_state}"
-        row.owner_agent_id = actor_id
-        row.updated_at = now
-        row = await store.save(db, row, commit=True)
-        return {
-            "ok": False,
-            "error": "kg_health_blocks_retry",
-            "kg_health_state": kg_health_state,
-            "attempt_consumed": False,
-            "debt": canonical_debt_to_dict(row),
-        }
-    row.canonical_state = "retry_scheduled"
-    row.next_retry_at = now
-    row.owner_agent_id = actor_id
-    row.updated_at = now
-    row = await store.save(db, row, commit=True)
-    return {
-        "ok": True,
-        "attempt_consumed": False,
-        "kg_health_state": kg_health_state,
-        "debt": canonical_debt_to_dict(row),
-    }
+
+
+def canonical_debt_evidence_replacement(
+    row: CanonicalDebtRecord, *, evidence: dict[str, Any], actor_id: str,
+    now: datetime, report_ref: str | None = None,
+    eligible_debt: Callable[[CanonicalDebtRecord], bool] | None = None,
+) -> CanonicalDebtRecord | None:
+    """The same pure transition for the writer and private recovery verification.
+
+    Store capability/CAS and authoritative evidence remain caller obligations.
+    Computing a replacement never authorizes an evidence assertion or a write.
+    """
+    if eligible_debt is not None and not eligible_debt(row):
+        return None
+    evidence_version = evidence.get('source_version')
+    if eligible_debt is not None and row.source_version is not None and (
+            evidence_version is None or str(evidence_version) != str(row.source_version)):
+        return None
+    if evidence_version and row.source_version and str(evidence_version) != str(row.source_version):
+        return None
+    return replace(row, canonical_state='committed',
+        evidence_ref=str(evidence.get('evidence_ref') or evidence.get('node_ref') or '') or report_ref,
+        owner_agent_id=actor_id, updated_at=now)
 
 
 async def reconcile_canonical_debt_with_evidence(
@@ -350,6 +327,7 @@ async def reconcile_canonical_debt_with_evidence(
     canonical_evidence: list[dict[str, Any]],
     actor_id: str,
     report_ref: str | None = None,
+    eligible_debt: Callable[[CanonicalDebtRecord], bool] | None = None,
 ) -> dict[str, Any]:
     store = get_canonical_debt_store()
     now = datetime.now(timezone.utc)
@@ -367,22 +345,18 @@ async def reconcile_canonical_debt_with_evidence(
             open_states=tuple(OPEN_STATES),
         )
         for row in rows:
-            evidence_version = evidence.get("source_version")
-            if (
-                evidence_version
-                and row.source_version
-                and str(evidence_version) != str(row.source_version)
-            ):
+            if eligible_debt is not None and not isinstance(store, ConditionalCanonicalDebtWriter):
                 continue
-            row.canonical_state = "committed"
-            row.evidence_ref = (
-                str(evidence.get("evidence_ref") or evidence.get("node_ref") or "")
-                or report_ref
-            )
-            row.owner_agent_id = actor_id
-            row.updated_at = now
-            await store.save(db, row)
-            committed.append(canonical_debt_to_dict(row))
+            replacement = canonical_debt_evidence_replacement(row, evidence=evidence,
+                actor_id=actor_id, now=now, report_ref=report_ref, eligible_debt=eligible_debt)
+            if replacement is None:
+                continue
+            if eligible_debt is not None:
+                if not await store.replace_if_current(db, expected=row, replacement=replacement):
+                    continue
+            else:
+                await store.save(db, replacement)
+            committed.append(canonical_debt_to_dict(replacement))
     summary = await summarize_canonical_debt(db, board_id)
     return {
         "committed_count": len(committed),
@@ -438,7 +412,6 @@ __all__ = [
     "list_canonical_debt",
     "mark_canonical_debt_committed_for_artifact",
     "reconcile_canonical_debt_with_evidence",
-    "schedule_canonical_debt_retry",
     "summarize_canonical_debt",
     "upsert_canonical_debt",
     "validate_canonical_debt_filters",

@@ -1,0 +1,42 @@
+{
+  "scope": "DEI-T63: bounded native history, pagination, redaction and explicit unknown currentness",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "DEI:DEI-T63": [
+      "test_older_checkpoint_and_full_detail_remain_reachable_without_credit",
+      "test_mixed_ledger_pages_and_original_proof_detail_retain_author_and_revocation",
+      "test_history_pages_and_resume_have_no_per_progress_query_growth",
+      "CardLedgerPanel.test.tsx",
+      "CardProgressHistory.test.tsx"
+    ]
+  },
+  "evidence": [
+    "History pages contain at most 20 records by default; 25 checkpoints remain reachable as 20+5 with unique IDs, exact total, truncated summaries and explicit full-detail retrieval.",
+    "Mixed ledger retains original actor, revocation and prior native editions. Detail omits internal underscore-prefixed payload fields; currentness is not_evaluated and recovery_verified is false.",
+    "Cursor binding includes actor, Board, Spec, Card, edition, view, limit and generation; actor/limit/view/edition/append/revoke changes and malformed cursors are rejected. Each page is reauthorized in the Core use case.",
+    "Relational populations of 1, 25 and 200 records preserve bounded page size and constant query count per view. No whole-Spec projection or graph read is required for history.",
+    "Frontend replaces pages, fetches detail explicitly, clears denied/foreign-scope data, cancels stale edition requests and distinguishes historical records from current proof.",
+    "Prior main86 resume review additionally verified the 128KiB multibyte response budget, explicit truncation/totals and complete 20+1 progress pagination."
+  ],
+  "tests": {
+    "core_passed": 14,
+    "community_passed": 15,
+    "frontend_passed": 7,
+    "total_distinct_passed": 36,
+    "core_seconds": 3.35,
+    "community_seconds": 27.43
+  },
+  "limits": [
+    "Transport parity uses controlled principals and authorization doubles; this receipt does not claim installed authentication E2E or all cross-Board write/cache criteria.",
+    "Constant SQL query count is not constant rows read: resume evaluates the full relevant record population for currentness.",
+    "No product, test or SPA change in this campaign. Existing main86 closure remains applicable with eight zero budgets.",
+    "No migration, imported history, promotion or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-history1.json": "e680142c3616d8bc9be9cba3709611f402cf7852ceffa92780066bb05e0e6df2",
+    "native-delivery-history-core1.xml": "4d195a79d8fa5ac4076ea705856271b945c10f87e220df826d6696f1e9ffb74c",
+    "native-delivery-history-community1.xml": "0c7e7821eaeceba9502be7ab4d5c1b2a38fe44ba2b6b850b45e9c6960f80926e",
+    "native-delivery-history-frontend1.json": "246ae7238ba3e3ee0870a86f75cbb7f30cf65a73af1bad4a47c9819cf2b68e61",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

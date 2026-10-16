@@ -33,30 +33,20 @@ Args:
     board_id: Board ID
     refinement_id: Refinement ID
     question: The question text
-    options: Option labels — multi-value; formats:
-        okto-pulse://reference/multivalue.
-    options_json: Preferred structured options. Pass a native array such as
-        [{"label":"Safer path","recommended":true,"tradeoff":"More setup"}].
-        A JSON-array string is accepted for compatibility. Each item requires
-        label; recommended defaults to false and tradeoff to null. A non-empty
-        options_json takes precedence over options.
+    options: Required native array of objects, e.g.
+        [{"label":"A","recommended":true,"tradeoff":"Costs more"}].
+        label is a non-empty string; recommended defaults to false;
+        tradeoff defaults to null. Strings and unknown fields are rejected.
     question_type: "choice" for single-select (default) or "multi_choice" for multi-select
-    allow_free_text: "true" to also allow a free-text response alongside selections
+    allow_free_text: true to also allow a free-text response alongside selections
 
 Returns:
     JSON with Q&A item including choices
 
-## `okto_pulse_ask_refinement_question`
+## `okto_pulse_ask` (`target_type="refinement"`)
 
-Ask a question on a refinement's Q&A board. Use @Name to direct the question.
-
-Args:
-    board_id: Board ID
-    refinement_id: Refinement ID
-    question: Question text (use @Name to mention someone)
-
-Returns:
-    JSON with Q&A item details
+Use `okto_pulse_ask` with `target_type="refinement"` and `parent_id` naming the target.
+See `okto-pulse://reference/tool-families/qa_ask` for parameters, authorization and results.
 
 ## `okto_pulse_create_refinement`
 
@@ -78,14 +68,14 @@ Args:
     ideation_id: Ideation ID (must be in 'done' status)
     title: Refinement title
     description: Description of this refinement aspect (optional; parent ideation context is appended)
-    in_scope: Pipe-separated list of what IS in scope (e.g. "Auth flow|Token refresh|Session management")
-    out_of_scope: Pipe-separated list of what is NOT in scope (e.g. "UI changes|Email notifications")
+    in_scope: Native string array of what IS in scope
+    out_of_scope: Native string array of what is NOT in scope
     analysis: Detailed analysis text (optional)
-    decisions: Pipe-separated list of decisions made (e.g. "Use REST API|Cache with Redis") (optional)
+    decisions: Native string array of decisions made (optional)
     assignee_id: User/agent ID to assign (optional)
     labels: Multi-value labels — formats: okto-pulse://reference/multivalue. (optional)
-    mockup_ids: Pipe-separated mockup IDs to propagate from ideation (optional, empty = all)
-    kb_ids: Pipe-separated KB IDs to propagate from ideation (optional, empty = all)
+    mockup_ids: Native string array of mockup IDs to propagate from ideation (optional, empty = all)
+    kb_ids: Native string array of KB IDs to propagate from ideation (optional, empty = all)
     architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
     architecture_propagation_mode: one of copy, derive, reference_only, none.
         "snapshot" is not accepted; copy/derive are the snapshot-copy modes,
@@ -106,7 +96,7 @@ Args:
 
 Returns:
     JSON with success status and a governed `takedown` receipt. Cascaded
-    spec/sprint receipts are exposed recursively under
+    spec receipts are exposed recursively under
     `takedown.descendant_deletions`.
 
 ## `okto_pulse_delete_refinement_question`
@@ -143,10 +133,10 @@ to review, derive specs, or evaluate this refinement.
 Args:
     board_id: Board ID
     refinement_id: Refinement ID
-    include_knowledge: Include knowledge base entries (default "true")
-    include_mockups: Include screen mockups (default "true")
-    include_qa: Include Q&A items (default "true")
-    include_architecture: Include Architecture Designs (default "true")
+    include_knowledge: Include knowledge base entries (default true)
+    include_mockups: Include screen mockups (default true)
+    include_qa: Include Q&A items (default true)
+    include_architecture: Include Architecture Designs (default true)
 
 Returns:
     JSON with complete refinement context: details + parent ideation + scope + Q&A + mockups + KBs + derived specs
@@ -170,7 +160,7 @@ Get the full immutable snapshot of a refinement at a specific version.
 Includes all fields as they were when the refinement was marked 'done',
 plus a snapshot of all Q&A at that point. For contextual Code Evidence, the
 snapshot also freezes delivery-context provenance, receipt context versions,
-and the effective Evidence context origin/classification revision and digest.
+and the effective Evidence authored context and digest.
 
 Args:
     board_id: Board ID
@@ -258,10 +248,10 @@ Args:
     refinement_id: Refinement ID
     title: New title (optional, empty = no change)
     description: New description (optional, empty = no change)
-    in_scope: Pipe-separated list of in-scope items (optional, empty = no change)
-    out_of_scope: Pipe-separated list of out-of-scope items (optional, empty = no change)
+    in_scope: Native string array of in-scope items (optional, empty = no change)
+    out_of_scope: Native string array of out-of-scope items (optional, empty = no change)
     analysis: New analysis (optional, empty = no change)
-    decisions: Pipe-separated list of decisions (optional, empty = no change)
+    decisions: Native string array of decisions (optional, empty = no change)
     assignee_id: New assignee (optional, empty = no change)
     labels: Multi-value labels — formats: okto-pulse://reference/multivalue. (optional, empty = no change)
 
@@ -286,12 +276,9 @@ tests are TO-BE and belong in the Refinement/Spec, Architecture Design, or Card
 Implementation Target, never Evidence.
 
 Correct authored historical Evidence only through
-`okto_pulse_supersede_code_evidence`; never replace a snapshot in place. V1
-items project fail-closed as `uncategorized_legacy`. Authorized agents may use
-`okto_pulse_classify_legacy_code_evidence` with
-`code_traceability.evidence.classify_legacy`; authorized humans may use UI/REST.
-Classification is append-only and does not upgrade the V1 receipt. Read effective
-`source_context` rather than inferring meaning from raw or bounded item lists.
+`okto_pulse_supersede_code_evidence`; never replace a snapshot in place.
+Only the native contextual contract is accepted. Read effective `source_context`
+rather than inferring meaning from raw or bounded item lists.
 
 Pulse and Community do not open, clone, search, or resolve the repository.
 Full procedure and typed outcomes:

@@ -1,0 +1,481 @@
+{
+  "format": "pulse-040-final-engineering-qualification/v1",
+  "status": "complete_with_explicit_package_limit",
+  "scope_authority": [
+    "consolidated v1.3 package",
+    "CLEAN_BREAK_040_REASSESSMENT.md",
+    "recorded user authority decisions"
+  ],
+  "product_commits": {
+    "core": "38d897c8fd58ad6a353c105266b6138bd1dafbf2",
+    "community": "51d85093694d814e94b3520c1d89c7a2d6cd7ada"
+  },
+  "branch": "feature/v0.4.0",
+  "acceptance_counts": {
+    "verified_current_pair_review": 234,
+    "not_applicable": 11,
+    "limited_by_explicit_package_permission": 1
+  },
+  "total_criteria": 246,
+  "pending_authority": [],
+  "scope_limit": {
+    "criterion": "KG:KG-30",
+    "authority": "KG §5.4",
+    "delivery": "Normative correction and read-only suggestions. Durable interpretive fallback/navigation/replay is not implemented and is not claimed implemented."
+  },
+  "final_campaigns": {
+    "installed_distribution": {
+      "passed": 25,
+      "seconds": 233.18
+    },
+    "installed_browser": {
+      "pytest_passed": 1,
+      "pytest_seconds": 66.35,
+      "playwright_passed": 1,
+      "playwright_seconds": 7.8
+    },
+    "continuous_native_flow": {
+      "passed": 4,
+      "seconds": 57.11
+    },
+    "fallback_boundary": {
+      "passed": 33,
+      "seconds": 8.44
+    },
+    "kg28_core_distinct": 209,
+    "kg28_native_adapter": 1,
+    "kg28_frontend": 132
+  },
+  "engineering_evidence": [
+    "Paired current wheels installed into an isolated Python 3.11.14 environment; 903 Core and 403 Community payload members match source/wheel/site byte-for-byte, including SPA. Origin probes precede product behavior.",
+    "Current native SQLite initialization, rerun, crash-resume and two-worker concurrency pass. Incompatible storage and sidecars remain byte-identical when refused.",
+    "Installed MCP streamable HTTP exposes 282 canonical tools, zero aliases and 54 resources; generated manifests match.",
+    "Installed deterministic projection parity covers five artifact families; the oracle is not a productive Grafx purge/materialization. Native graph regression receipts are retained in the acceptance index.",
+    "Installed SPA navigation and authenticated write preserve four previous records byte-for-byte, add one local-user/human record and retain blocked delivery for unproven IR obligations.",
+    "Browser screenshot inspected; no server error/traceback, ordered shutdown of both listeners. Processes were newly launched after installation provenance, not reused from an earlier install.",
+    "Eight closure budgets are zero; no findings or documentation drift. Read-only/currentness, governance and permissions are preserved.",
+    "The fixed acceptance index resolves 234 criteria through reviewed execution, records 11 legacy/migration criteria superseded by the approved cut, and explicitly limits KG30 under the package.",
+    "No release/tag/merge/deploy, real-data conversion/deletion, active user runtime replacement or Nexus change was performed."
+  ],
+  "limitations": [
+    "This is final engineering qualification, not a claim that every historical test was rerun on main98. Existing reviewed receipts are retained; affected flows and the current package were requalified.",
+    "First installed-browser attempt selected the obsolete incomplete test snapshot; preserved failure. R2 used the complete native fixture already identified in the ledger, without changing product or converting storage.",
+    "The final cost capture compares current equivalent within-policy fixtures only; no historical runtime or global cost-gain claim."
+  ],
+  "supporting_receipts": [
+    "clean-break-native-missing-link-policy-main98-20261008.json",
+    "clean-break-fallback-delivery-limit-main98-20261008.json",
+    "clean-break-final-continuous-cost-main98-20261008.json",
+    "clean-break-acceptance-evidence-index.json"
+  ],
+  "installed_audit": {
+    "core_artifact_audit": {
+      "dependency_ledger": "F14.1",
+      "forbidden_wheel_paths": [],
+      "missing_required_resources": [],
+      "record_file_count": 908,
+      "required_resources": {
+        "src/okto_pulse/core/application/processors/tech_entities.yml": "okto_pulse/core/application/processors/tech_entities.yml",
+        "src/okto_pulse/core/mcp/agent_instructions.md": "okto_pulse/core/mcp/agent_instructions.md",
+        "src/okto_pulse/core/mcp/resources/reference/card_types.md": "okto_pulse/core/mcp/resources/reference/card_types.md",
+        "src/okto_pulse/core/mcp/resources/reference/destructive_ops.md": "okto_pulse/core/mcp/resources/reference/destructive_ops.md",
+        "src/okto_pulse/core/mcp/resources/reference/errors.md": "okto_pulse/core/mcp/resources/reference/errors.md",
+        "src/okto_pulse/core/mcp/resources/reference/examples/semantic-guideline-assessment-v2.json": "okto_pulse/core/mcp/resources/reference/examples/semantic-guideline-assessment-v2.json",
+        "src/okto_pulse/core/mcp/resources/reference/multivalue.md": "okto_pulse/core/mcp/resources/reference/multivalue.md",
+        "src/okto_pulse/core/mcp/resources/reference/policy-compliance.md": "okto_pulse/core/mcp/resources/reference/policy-compliance.md",
+        "src/okto_pulse/core/mcp/resources/reference/project_structure.md": "okto_pulse/core/mcp/resources/reference/project_structure.md",
+        "src/okto_pulse/core/mcp/resources/reference/spec_gates.md": "okto_pulse/core/mcp/resources/reference/spec_gates.md",
+        "src/okto_pulse/core/mcp/resources/ska_resource_manifest.json": "okto_pulse/core/mcp/resources/ska_resource_manifest.json",
+        "src/okto_pulse/core/mcp/resources/ska_tool_manifest.json": "okto_pulse/core/mcp/resources/ska_tool_manifest.json",
+        "src/okto_pulse/core/mcp/resources/workflows/cards.md": "okto_pulse/core/mcp/resources/workflows/cards.md",
+        "src/okto_pulse/core/mcp/resources/workflows/ideations.md": "okto_pulse/core/mcp/resources/workflows/ideations.md",
+        "src/okto_pulse/core/mcp/resources/workflows/kg.md": "okto_pulse/core/mcp/resources/workflows/kg.md",
+        "src/okto_pulse/core/mcp/resources/workflows/refinements.md": "okto_pulse/core/mcp/resources/workflows/refinements.md",
+        "src/okto_pulse/core/mcp/resources/workflows/specs.md": "okto_pulse/core/mcp/resources/workflows/specs.md",
+        "src/okto_pulse/core/mcp/resources/workflows/stories.md": "okto_pulse/core/mcp/resources/workflows/stories.md"
+      },
+      "wheel_import_roots": [
+        "pydantic",
+        "pydantic_core",
+        "typing_extensions",
+        "yaml"
+      ]
+    },
+    "expected_version": "0.4.0",
+    "installed": {
+      "cli_version": "okto-pulse 0.4.0 (okto-pulse-core 0.4.0)",
+      "forbidden_checkout_roots": [
+        "D:\\Projetos\\Techridy\\okto-pulse",
+        "D:\\Projetos\\Techridy\\okto-pulse-core",
+        "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "D:\\Projetos\\okto-pulse",
+        "D:\\Projetos\\okto-pulse-core",
+        "D:\\Projetos\\okto_labs_pulse_community",
+        "D:\\Projetos\\okto_labs_pulse_core"
+      ],
+      "isolated_venv": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-release-audit-main98-20261008-tmp\\test_fresh_wheels_install_and_0\\release-artifact-gate\\venv",
+      "mcp_http": {
+        "canonical_tool_count": 282,
+        "inventory_sha256": "56f558d610f1e7acc3794d0734ad850e1db6e2a652b83f06d89b5f8fcfb11c32",
+        "resource_count": 54,
+        "server_version": "0.4.0",
+        "ska_tool_count": 13,
+        "tool_alias_count": 0,
+        "tool_count": 282,
+        "transport": "streamable-http-loopback"
+      },
+      "offline_install": false,
+      "origin_probe": {
+        "about_version": "0.4.0",
+        "distribution_file_counts": {
+          "community": 414,
+          "core": 913,
+          "grafx": 262
+        },
+        "grafx_direct_url": {
+          "archive_info": {},
+          "url": "file:///D:/Projetos/Techridy/PULSE_REFACTOR/.validation-v040/native-release-audit-main98-20261008-tmp/test_fresh_wheels_install_and_0/release-artifact-gate/wheels/okto_grafx-0.0.7-py3-none-any.whl"
+        },
+        "grafx_wheel_sha256": "8df4ecfa2b115412b122499eba176769621413760c7fc8e218e7058a3f1134c6",
+        "origins": {
+          "okto_grafx": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-release-audit-main98-20261008-tmp\\test_fresh_wheels_install_and_0\\release-artifact-gate\\venv\\Lib\\site-packages\\okto_grafx\\__init__.py",
+          "okto_pulse.community": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-release-audit-main98-20261008-tmp\\test_fresh_wheels_install_and_0\\release-artifact-gate\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "okto_pulse.community.adapters.mcp_host": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-release-audit-main98-20261008-tmp\\test_fresh_wheels_install_and_0\\release-artifact-gate\\venv\\Lib\\site-packages\\okto_pulse\\community\\adapters\\mcp_host.py",
+          "okto_pulse.core": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-release-audit-main98-20261008-tmp\\test_fresh_wheels_install_and_0\\release-artifact-gate\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "okto_pulse.core.mcp.server": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-release-audit-main98-20261008-tmp\\test_fresh_wheels_install_and_0\\release-artifact-gate\\venv\\Lib\\site-packages\\okto_pulse\\core\\mcp\\server.py"
+        },
+        "required_core_resources": [
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json"
+        ],
+        "semantic_v2_reader_contract": {
+          "compatible": true,
+          "signature": "(self, *, board_id: 'str', entity_type: 'str', subject_id: 'str', binding_id: 'str', subject_edition: 'int | None' = None) -> 'SemanticAssessmentReceiptProjectionV2 | None'"
+        },
+        "ska_contract_manifests": {
+          "resource_count": 22,
+          "resource_manifest_sha256": "5a9db32a58b1b7a5398109074917a92468e50db225aef2fc2e82dd031edc41d9",
+          "tool_count": 13,
+          "tool_manifest_sha256": "96c838e5f34d58cfcd00f6ac244d40d95ee242844136d73a40884bba4e07ce75"
+        },
+        "versions": {
+          "community": "0.4.0",
+          "core": "0.4.0",
+          "grafx": "0.0.7"
+        }
+      },
+      "payload_provenance": {
+        "community": {
+          "aggregate_sha256": "5d8435a31c924fafe6cdbae83026bb876991740e026ba567e967d675384ff0b7",
+          "byte_identical": true,
+          "byte_identical_member_count": 403,
+          "chain_hashes": {
+            "site_packages": "5d8435a31c924fafe6cdbae83026bb876991740e026ba567e967d675384ff0b7",
+            "source": "5d8435a31c924fafe6cdbae83026bb876991740e026ba567e967d675384ff0b7",
+            "wheel": "5d8435a31c924fafe6cdbae83026bb876991740e026ba567e967d675384ff0b7"
+          },
+          "commit": "51d85093694d814e94b3520c1d89c7a2d6cd7ada",
+          "critical_resource_sha256": {},
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse",
+          "mismatches": [],
+          "package_prefix": "okto_pulse/community/",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-release-audit-main98-20261008-tmp\\test_fresh_wheels_install_and_0\\release-artifact-gate\\venv\\Lib\\site-packages",
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "version": "0.4.0",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-release-audit-main98-20261008-tmp\\test_fresh_wheels_install_and_0\\release-artifact-gate\\wheels\\okto_pulse-0.4.0-py3-none-any.whl",
+            "sha256": "f63a6aacd2f4a3ea072084fa5bde6904670e301dee2b5cb8f754be8f022e3377",
+            "size": 4079385
+          }
+        },
+        "core": {
+          "aggregate_sha256": "7376ed9bb10cba88aa89b88f2a989592f2ee6ca7fdd71114cfd1af02f376809d",
+          "byte_identical": true,
+          "byte_identical_member_count": 903,
+          "chain_hashes": {
+            "site_packages": "7376ed9bb10cba88aa89b88f2a989592f2ee6ca7fdd71114cfd1af02f376809d",
+            "source": "7376ed9bb10cba88aa89b88f2a989592f2ee6ca7fdd71114cfd1af02f376809d",
+            "wheel": "7376ed9bb10cba88aa89b88f2a989592f2ee6ca7fdd71114cfd1af02f376809d"
+          },
+          "commit": "38d897c8fd58ad6a353c105266b6138bd1dafbf2",
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "cb8bec90a1b3844fe7f3d1c2a7b37df60b33cdb6ad0788839f97a428cb682e4d",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "3d3ecc80ab6b699b2021eddcf02b72bf48eddd06bf34dcf245f2b00fcc69b433"
+          },
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse-core",
+          "mismatches": [],
+          "package_prefix": "okto_pulse/core/",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-release-audit-main98-20261008-tmp\\test_fresh_wheels_install_and_0\\release-artifact-gate\\venv\\Lib\\site-packages",
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "version": "0.4.0",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-release-audit-main98-20261008-tmp\\test_fresh_wheels_install_and_0\\release-artifact-gate\\wheels\\okto_pulse_core-0.4.0-py3-none-any.whl",
+            "sha256": "083c77163bea5e49c5358c34066dfef6a7f4965afaab242d663f1da2c072c62d",
+            "size": 3582285
+          }
+        }
+      },
+      "runtime_matrix": {
+        "elapsed_seconds": 56.86,
+        "kg_parity": {
+          "artifact_families": [
+            "story",
+            "ideation",
+            "refinement",
+            "spec",
+            "card"
+          ],
+          "artifact_family_count": 5,
+          "coverage": "TS24-C11 covered",
+          "fail_closed": true,
+          "family_projection_hashes": {
+            "card": {
+              "incremental_sha256": "ca979d03efdb59f421e4e6ee86a31ab22be4e942568c5147a991048c5ab34ce5",
+              "match": true,
+              "rebuild_sha256": "ca979d03efdb59f421e4e6ee86a31ab22be4e942568c5147a991048c5ab34ce5"
+            },
+            "ideation": {
+              "incremental_sha256": "f46cb61a1a2b55548d62689645869d0dda466cd3e8187c90702f86daa00ad114",
+              "match": true,
+              "rebuild_sha256": "f46cb61a1a2b55548d62689645869d0dda466cd3e8187c90702f86daa00ad114"
+            },
+            "refinement": {
+              "incremental_sha256": "bd788bc12e3e30aec41d4f1c616ebba1553a7676c0c07417b2d97b7a57950632",
+              "match": true,
+              "rebuild_sha256": "bd788bc12e3e30aec41d4f1c616ebba1553a7676c0c07417b2d97b7a57950632"
+            },
+            "spec": {
+              "incremental_sha256": "d51cc14c533ee209ccbec27b622dd026ff816178cca65477d31a06e98ba36147",
+              "match": true,
+              "rebuild_sha256": "d51cc14c533ee209ccbec27b622dd026ff816178cca65477d31a06e98ba36147"
+            },
+            "story": {
+              "incremental_sha256": "5811817b94dfcb27f40e430e504d603e55f6f7da34d2f7d9a33367af235a7558",
+              "match": true,
+              "rebuild_sha256": "5811817b94dfcb27f40e430e504d603e55f6f7da34d2f7d9a33367af235a7558"
+            }
+          },
+          "fingerprint_parity_regression_refs": [
+            {
+              "coverage": "incremental current RDL fingerprint equals rebuild reader",
+              "path": "tests/test_sqlalchemy_research_decision_ledger.py",
+              "test": "test_consolidation_projection_loads_current_rdl_heads_with_two_queries"
+            },
+            {
+              "coverage": "incremental current quality fingerprint equals rebuild reader",
+              "path": "tests/test_sqlalchemy_quality_assessment.py",
+              "test": "test_consolidation_projection_loads_only_current_quality_head_in_one_query"
+            },
+            {
+              "coverage": "incremental cognitive content hash equals rebuild source rows",
+              "path": "tests/test_f05_domain_event_delivery_adapter.py",
+              "test": "test_cognitive_facts_match_rebuild_source_hashes"
+            }
+          ],
+          "incremental_projection_sha256": "7edaa9acf34d26e61e4b4db20a359dc93f10b927f1181cdcdfced666c4d798a2",
+          "mismatches": [],
+          "oracle": {
+            "boundary": "compara projecao deterministica; NAO materializa/purga Grafx produtivo",
+            "comparison": "incremental churn final projection versus clean rebuild final projection",
+            "productive_grafx_materialized": false,
+            "productive_grafx_purged": false
+          },
+          "real_grafx_regression_refs": [
+            {
+              "coverage": "real-Grafx incremental churn and active-set reconciliation",
+              "path": "tests/test_grafx_projection_active_set.py",
+              "task": "[TEST] TS21",
+              "test": "test_compensation_restores_the_payload_and_every_incident_edge"
+            },
+            {
+              "coverage": "clean deterministic rebuild and structural graph hash diff",
+              "path": "../okto_labs_pulse_core/tests/test_kg_rebuild_deterministic.py",
+              "task": "[TEST] TS24",
+              "test": "test_rebuilder_returns_deterministic_result_for_repeated_runs"
+            }
+          ],
+          "rebuild_projection_sha256": "7edaa9acf34d26e61e4b4db20a359dc93f10b927f1181cdcdfced666c4d798a2",
+          "retired_sprint_rejected": true,
+          "scope": "installed deterministic projection parity",
+          "ska": {
+            "checklist": "relational_governance_only_not_in_deterministic_kg_contract",
+            "quality": "covered",
+            "research_decision_ledger": "covered"
+          }
+        },
+        "module_origins": {
+          "okto_pulse.community": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-release-audit-main98-20261008-tmp\\test_fresh_wheels_install_and_0\\release-artifact-gate\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "okto_pulse.community.adapters.sqlalchemy_database": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-release-audit-main98-20261008-tmp\\test_fresh_wheels_install_and_0\\release-artifact-gate\\venv\\Lib\\site-packages\\okto_pulse\\community\\adapters\\sqlalchemy_database.py",
+          "okto_pulse.core": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-release-audit-main98-20261008-tmp\\test_fresh_wheels_install_and_0\\release-artifact-gate\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py"
+        },
+        "sqlite": {
+          "concurrency": {
+            "both_workers_succeeded": true,
+            "hash_identical_to_single": true,
+            "returncodes": [
+              0,
+              0
+            ],
+            "single_start_baseline": {
+              "logical_sha256": "f1ef227452a40466d24169ed419c66d489db804f6cbb6f93cabbeb73a5376a67",
+              "schema_sha256": "bb9a8d065d75a1c99e9cd9e6dd2336cf8fc9b9d4406b926a3f98deeea29eb6d0"
+            },
+            "third_rerun_snapshot": {
+              "foreign_key_errors": [],
+              "logical_sha256": "f1ef227452a40466d24169ed419c66d489db804f6cbb6f93cabbeb73a5376a67",
+              "schema_object_count": 750,
+              "schema_sha256": "bb9a8d065d75a1c99e9cd9e6dd2336cf8fc9b9d4406b926a3f98deeea29eb6d0",
+              "seed_counts": {
+                "checklist_template_versions": 0,
+                "discovery_intents": 14,
+                "permission_presets": 6
+              },
+              "table_count": 151
+            },
+            "two_workers_snapshot": {
+              "foreign_key_errors": [],
+              "logical_sha256": "f1ef227452a40466d24169ed419c66d489db804f6cbb6f93cabbeb73a5376a67",
+              "schema_object_count": 750,
+              "schema_sha256": "bb9a8d065d75a1c99e9cd9e6dd2336cf8fc9b9d4406b926a3f98deeea29eb6d0",
+              "seed_counts": {
+                "checklist_template_versions": 0,
+                "discovery_intents": 14,
+                "permission_presets": 6
+              },
+              "table_count": 151
+            },
+            "workers": 2
+          },
+          "crash_resume": {
+            "crash_exit_code": 91,
+            "foreign_key_errors": [],
+            "injected_step": "after_current_permission_presets",
+            "logical_sha256": "f1ef227452a40466d24169ed419c66d489db804f6cbb6f93cabbeb73a5376a67",
+            "schema_object_count": 750,
+            "schema_sha256": "bb9a8d065d75a1c99e9cd9e6dd2336cf8fc9b9d4406b926a3f98deeea29eb6d0",
+            "seed_counts": {
+              "checklist_template_versions": 0,
+              "discovery_intents": 14,
+              "permission_presets": 6
+            },
+            "table_count": 151
+          },
+          "fresh": {
+            "foreign_key_errors": [],
+            "logical_sha256": "f1ef227452a40466d24169ed419c66d489db804f6cbb6f93cabbeb73a5376a67",
+            "schema_object_count": 750,
+            "schema_sha256": "bb9a8d065d75a1c99e9cd9e6dd2336cf8fc9b9d4406b926a3f98deeea29eb6d0",
+            "seed_counts": {
+              "checklist_template_versions": 0,
+              "discovery_intents": 14,
+              "permission_presets": 6
+            },
+            "table_count": 151
+          },
+          "incompatible_storage": {
+            "byte_identical": true,
+            "rejected": true,
+            "sha256": "15ed2e88461538e11d20f87a3f0ccda2c071adf6dba46b2e4b90d2abef803e32",
+            "sidecars_unchanged": true
+          },
+          "non_sqlite": {
+            "before_bootstrap": true,
+            "error": "community_database_requires_sqlite",
+            "rejected": true,
+            "runtime_configured_after": false,
+            "runtime_configured_before": false
+          },
+          "rerun": {
+            "foreign_key_errors": [],
+            "logical_sha256": "f1ef227452a40466d24169ed419c66d489db804f6cbb6f93cabbeb73a5376a67",
+            "schema_object_count": 750,
+            "schema_sha256": "bb9a8d065d75a1c99e9cd9e6dd2336cf8fc9b9d4406b926a3f98deeea29eb6d0",
+            "seed_counts": {
+              "checklist_template_versions": 0,
+              "discovery_intents": 14,
+              "permission_presets": 6
+            },
+            "table_count": 151
+          }
+        },
+        "status": "passed"
+      },
+      "runtime_version": {
+        "implementation": "CPython",
+        "okto_grafx": "0.0.7",
+        "okto_pulse": "0.4.0",
+        "okto_pulse_core": "0.4.0",
+        "pydantic": "2.13.5",
+        "python": "3.11.14",
+        "python_major_minor": [
+          3,
+          11
+        ],
+        "required_major_minor": [
+          3,
+          11
+        ]
+      },
+      "server_stderr_tail": ""
+    },
+    "status": "passed",
+    "wheels": {
+      "community": {
+        "name": "okto_pulse-0.4.0-py3-none-any.whl",
+        "sha256": "f63a6aacd2f4a3ea072084fa5bde6904670e301dee2b5cb8f754be8f022e3377",
+        "size": 4079385
+      },
+      "core": {
+        "name": "okto_pulse_core-0.4.0-py3-none-any.whl",
+        "sha256": "083c77163bea5e49c5358c34066dfef6a7f4965afaab242d663f1da2c072c62d",
+        "size": 3582285
+      },
+      "grafx": {
+        "name": "okto_grafx-0.0.7-py3-none-any.whl",
+        "sha256": "8df4ecfa2b115412b122499eba176769621413760c7fc8e218e7058a3f1134c6",
+        "size": 1774821
+      }
+    }
+  },
+  "installed_browser": {
+    "installed_python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-release-audit-main98-20261008-tmp\\test_fresh_wheels_install_and_0\\release-artifact-gate\\venv\\Scripts\\python.exe",
+    "api_port": 50130,
+    "database": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-installed-browser-main98-20261008-r2-tmp\\test_installed_spa_preserves_n0\\runtime\\data\\pulse.db",
+    "browser_returncode": 0,
+    "prior_records_preserved": 4,
+    "new_records": 1,
+    "recorded_id": "card_delivery_009bd058bf654a57b96df398ca5159d8",
+    "recorded_actor": "local-user",
+    "embedding": "deterministic stub; graph semantics not under test"
+  },
+  "architecture_budgets": {
+    "import_boundary_baseline": 0,
+    "singleton_baseline": 0,
+    "dependency_temporary_exceptions": 0,
+    "graph_runtime_compatibility": 0,
+    "rebuild_artifact_compatibility": 0,
+    "community_private_reach_ins": 0,
+    "community_adapter_bridges": 0,
+    "af35_relational_residue": 0
+  },
+  "artifacts": {
+    "native-release-audit-main98-20261008-tmp\\test_fresh_wheels_install_and_0\\release-artifact-gate\\release-artifact-evidence.json": "d2009e1987d2d767a2e406bc6b063e675ea2e15e72dd8b9d15a6d0cd2a59d0f5",
+    "native-installed-browser-main98-20261008-r2-tmp\\test_installed_spa_preserves_n0\\installed-pair-provenance.json": "21b3ac8f0d1b35ee3bc2d224401f14f4b4f0931c560678bcd124b35f9949b8c2",
+    "native-installed-browser-main98-20261008-r2-tmp\\test_installed_spa_preserves_n0\\installed-browser-result.json": "fcc65ad3285cf5f8275004d03b3bb5d35b884175c0722dc1d3a44abb6a82ab7c",
+    "native-installed-browser-main98-20261008-r2-tmp\\test_installed_spa_preserves_n0\\browser.log": "65bf6ef6f9379cce5a434ecc3b9e83d683f80c8bc3392683c7c3934b5efc8090",
+    "native-installed-browser-main98-20261008-r2-tmp\\test_installed_spa_preserves_n0\\server.log": "7886d73842f660fcf7fee5dafea013c527129c71cda984ac6180403f7e136c9a",
+    "native-installed-browser-main98-20261008-r2-tmp\\test_installed_spa_preserves_n0\\browser\\installed-delivery-install-76b6a-ranting-missing-IR-coverage\\installed-delivery.png": "bb607568ce8c82828e8ff66baef0ddfe52654c6ecf17c6004ca9491d556cc718",
+    "native-release-audit-main98-20261008.xml": "ab2e8befff618005516d6521dbbf167a9544f2a4bc3a52546e8b5b9a78443747",
+    "native-release-audit-main98-20261008.log": "f3ba840561bb274ff622c9c444d9e9edd2bb9f910ec6d836da95b78e517352d9",
+    "native-installed-browser-main98-20261008.xml": "6c2e12be583cdf1a5b3f0723a568de450c97d3d34c8f4ec283eb78b29d479c36",
+    "native-installed-browser-main98-20261008-r2.xml": "a33b9f4c1916bce49f3812b8a1066248fb38a50fd80e0521afd1761dcb6315af",
+    "closure-native-missing-link-main98-final-20261008.json": "150378f7a2e1c29a02e8095e805ddf9ca8fb3b601517f2f1556771889471f825"
+  }
+}

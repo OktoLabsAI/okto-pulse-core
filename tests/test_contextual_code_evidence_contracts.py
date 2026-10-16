@@ -12,7 +12,7 @@ from okto_pulse.core.domain.code_traceability import (
     CodeEvidenceBaselinePresence,
     CodeEvidenceBaselineProvenance,
     CodeEvidenceBaselineProvenanceInvalid,
-    CodeEvidenceLegacyRoleWriteForbidden,
+    CodeEvidenceSourceRoleRequired,
     CodeEvidencePostBaselineSourceForbidden,
     CodeEvidenceSourceRole,
     CodeTraceabilityContractError,
@@ -21,7 +21,6 @@ from okto_pulse.core.domain.code_traceability import (
     DeliveryContext,
     DirectSpecDeliveryContextProvenance,
     ObservedWorkspaceStateRef,
-    SourceContextClassificationStateV2,
     SourceContextRoleCountsV2,
     SourceContextSummaryV2,
     RefinementDeliveryContextProvenance,
@@ -30,7 +29,6 @@ from okto_pulse.core.domain.code_traceability import (
     WorkspaceReproducibilityClaim,
     authored_code_evidence_source_role,
     parse_refinement_source_context_manifest_v2,
-    source_context_classification_input_v2,
 )
 from okto_pulse.core.events.types import (
     CodeEvidenceCreated,
@@ -38,8 +36,7 @@ from okto_pulse.core.events.types import (
 )
 from okto_pulse.core.models.code_traceability import (
     CodeEvidenceSubmission,
-    CodeEvidenceSubmissionV2,
-    CodeEvidenceSupersessionSubmissionV2,
+    CodeEvidenceSupersessionSubmission,
     CodeEvidenceView,
 )
 from okto_pulse.core.models.schemas import RefinementCreate
@@ -72,6 +69,7 @@ def _workspace(*, dirty: bool = False, workspace_state_id: str = "ws-1"):
 
 def _submission_payload() -> dict[str, object]:
     return {
+        "contract_version": 2,
         "board_id": "board-1",
         "investigation_receipt_id": "receipt-1",
         "parent_type": "spec",
@@ -95,7 +93,7 @@ def _contextual_submission(
     ),
     workspace_state_id: str = "ws-1",
     interpretation_limit: str | None = None,
-) -> CodeEvidenceSubmissionV2:
+) -> CodeEvidenceSubmission:
     payload = {
         **_submission_payload(),
         "source_role": role,
@@ -113,7 +111,7 @@ def _contextual_submission(
             ),
         },
     }
-    return CodeEvidenceSubmissionV2.model_validate(payload)
+    return CodeEvidenceSubmission.model_validate(payload)
 
 
 def _accepted(workspace: ObservedWorkspaceStateRef) -> SimpleNamespace:
@@ -197,10 +195,6 @@ def test_refinement_source_context_manifest_digest_seals_exact_version() -> None
             delivery_context_provenance=provenance,
             investigation_outcome=None,
             role_counts=SourceContextRoleCountsV2(),
-            classification_state=SourceContextClassificationStateV2(
-                classified_count=0,
-                uncategorized_legacy_count=0,
-            ),
             evidence_applicable=None,
             interpretation_rule=SOURCE_CONTEXT_INTERPRETATION_RULE_V2,
             items_not_current_implementation_count=0,
@@ -221,7 +215,7 @@ def test_refinement_source_context_manifest_digest_seals_exact_version() -> None
         parse_refinement_source_context_manifest_v2(noncanonical)
 
 
-def test_contextual_enums_are_closed_and_legacy_role_is_projection_only() -> None:
+def test_contextual_enums_are_closed_and_legacy_role_is_rejected() -> None:
     assert {item.value for item in DeliveryContext} == {
         "brownfield",
         "greenfield",
@@ -233,7 +227,7 @@ def test_contextual_enums_are_closed_and_legacy_role_is_projection_only() -> Non
         "partial",
         "unavailable",
     }
-    with pytest.raises(CodeEvidenceLegacyRoleWriteForbidden):
+    with pytest.raises(CodeEvidenceSourceRoleRequired):
         authored_code_evidence_source_role("uncategorized_legacy")
 
 
@@ -257,30 +251,22 @@ def test_source_context_summary_is_closed_coherent_and_human_oriented() -> None:
         existing_scaffold_count=1,
         existing_constraint_count=1,
         reference_pattern_count=1,
-        uncategorized_legacy_count=1,
-    )
-    classification = SourceContextClassificationStateV2(
-        classified_count=5,
-        uncategorized_legacy_count=1,
     )
     summary = SourceContextSummaryV2(
         delivery_context=DeliveryContext.HYBRID,
         delivery_context_provenance=provenance,
         investigation_outcome=(ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE),
         role_counts=counts,
-        classification_state=classification,
         evidence_applicable=True,
         interpretation_rule=(
             "  Treat only current implementation as delivered behavior.  "
         ),
-        items_not_current_implementation_count=4,
+        items_not_current_implementation_count=3,
         technical_details_available=True,
     )
 
-    assert counts.total_count == 6
+    assert counts.total_count == 5
     assert counts.count_for(CodeEvidenceSourceRole.REFERENCE_PATTERN) == 1
-    assert classification.has_unclassified_legacy
-    assert not classification.fully_classified
     assert summary.interpretation_rule == (
         "Treat only current implementation as delivered behavior."
     )
@@ -297,10 +283,9 @@ def test_source_context_summary_is_closed_coherent_and_human_oriented() -> None:
                 ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE
             ),
             role_counts=counts,
-            classification_state=classification,
             evidence_applicable=True,
             interpretation_rule="Use role-aware interpretation.",
-            items_not_current_implementation_count=3,
+            items_not_current_implementation_count=2,
             technical_details_available=True,
         )
 
@@ -321,10 +306,6 @@ def test_no_relevant_outcome_rejects_current_implementation_count() -> None:
             ),
             role_counts=SourceContextRoleCountsV2(
                 current_implementation_count=1,
-            ),
-            classification_state=SourceContextClassificationStateV2(
-                classified_count=1,
-                uncategorized_legacy_count=0,
             ),
             evidence_applicable=False,
             interpretation_rule="Use role-aware interpretation.",
@@ -364,7 +345,7 @@ def test_v2_submission_requires_authored_role_and_interpretation_boundary() -> N
         ValidationError,
         match="code_evidence_source_role_required",
     ):
-        CodeEvidenceSubmissionV2.model_validate(
+        CodeEvidenceSubmission.model_validate(
             {
                 key: value
                 for key, value in scaffold_payload.items()
@@ -375,13 +356,13 @@ def test_v2_submission_requires_authored_role_and_interpretation_boundary() -> N
         ValidationError,
         match="code_evidence_interpretation_limit_required",
     ):
-        CodeEvidenceSubmissionV2.model_validate(scaffold_payload)
+        CodeEvidenceSubmission.model_validate(scaffold_payload)
 
     with pytest.raises(
         ValidationError,
-        match="code_evidence_legacy_role_write_forbidden",
+        match="code_evidence_source_role_required",
     ):
-        CodeEvidenceSubmissionV2.model_validate(
+        CodeEvidenceSubmission.model_validate(
             {**scaffold_payload, "source_role": "uncategorized_legacy"}
         )
 
@@ -403,7 +384,7 @@ def test_v2_submission_requires_authored_role_and_interpretation_boundary() -> N
 
 def test_v2_supersession_carries_the_complete_context_instead_of_a_patch() -> None:
     payload = _contextual_submission().model_dump(mode="python")
-    command = CodeEvidenceSupersessionSubmissionV2.model_validate(
+    command = CodeEvidenceSupersessionSubmission.model_validate(
         {
             **payload,
             "supersedes_evidence_id": "evidence-old",
@@ -421,14 +402,14 @@ def test_sanitization_preserves_the_v2_context_contract() -> None:
     )
     sanitized = sanitize_code_evidence_submission(submission)
 
-    assert isinstance(sanitized, CodeEvidenceSubmissionV2)
+    assert isinstance(sanitized, CodeEvidenceSubmission)
     assert sanitized.source_role is CodeEvidenceSourceRole.REFERENCE_PATTERN
     assert sanitized.baseline_provenance == submission.baseline_provenance
 
 
 def test_materialization_preserves_context_and_hashes_it_canonically() -> None:
     contextual = _contextual_submission()
-    legacy = CodeEvidenceSubmission.model_validate(_submission_payload())
+    changed = contextual.model_copy(update={"relevance_summary": "Changed meaning."})
     service = CodeEvidenceService()
     contextual_hash = service._payload_sha256(
         contextual,
@@ -437,8 +418,8 @@ def test_materialization_preserves_context_and_hashes_it_canonically() -> None:
         parent_version=3,
         supersedes_evidence_id=None,
     )
-    legacy_hash = service._payload_sha256(
-        legacy,
+    changed_hash = service._payload_sha256(
+        changed,
         actor_id="agent-1",
         source_ref="source-1",
         parent_version=3,
@@ -450,7 +431,7 @@ def test_materialization_preserves_context_and_hashes_it_canonically() -> None:
         profile=CodeTraceabilityProjectionProfile.SUMMARY,
     )
 
-    assert contextual_hash != legacy_hash
+    assert contextual_hash != changed_hash
     assert record.source_role is CodeEvidenceSourceRole.CURRENT_IMPLEMENTATION
     assert record.relevance_summary == contextual.relevance_summary
     assert view.source_role is CodeEvidenceSourceRole.CURRENT_IMPLEMENTATION
@@ -460,43 +441,8 @@ def test_materialization_preserves_context_and_hashes_it_canonically() -> None:
     )
 
 
-def test_legacy_submission_remains_readable_but_explicitly_unclassified() -> None:
-    record = _materialize(CodeEvidenceSubmission.model_validate(_submission_payload()))
-    view = CodeEvidenceView.project(
-        record,
-        profile=CodeTraceabilityProjectionProfile.SUMMARY,
-    )
-
-    assert record.source_role is CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY
-    assert record.baseline_provenance is None
-    assert view.source_role is CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY
 
 
-def test_legacy_classification_input_derives_clean_and_dirty_baselines() -> None:
-    clean = source_context_classification_input_v2(
-        _materialize(CodeEvidenceSubmission.model_validate(_submission_payload()))
-    )
-    dirty_workspace = _workspace(dirty=True, workspace_state_id="ws-dirty")
-    dirty = source_context_classification_input_v2(
-        _materialize(
-            CodeEvidenceSubmission.model_validate(_submission_payload()),
-            workspace=dirty_workspace,
-        )
-    )
-
-    assert clean.expected_classification_revision == 0
-    assert clean.expected_evidence_payload_sha256 == SHA
-    assert clean.baseline_provenance.presence is (
-        CodeEvidenceBaselinePresence.COMMITTED_SNAPSHOT
-    )
-    assert clean.baseline_provenance.provenance_note_required is False
-    assert clean.baseline_provenance.provenance_note is None
-    assert dirty.baseline_provenance.presence is (
-        CodeEvidenceBaselinePresence.PREEXISTING_WORKTREE
-    )
-    assert dirty.baseline_provenance.workspace_state_id == "ws-dirty"
-    assert dirty.baseline_provenance.provenance_note_required is True
-    assert dirty.baseline_provenance.provenance_note is None
 
 
 def test_baseline_must_match_receipt_workspace_identity_and_presence() -> None:
@@ -519,7 +465,7 @@ def test_baseline_must_match_receipt_workspace_identity_and_presence() -> None:
     )
 
 
-def test_contextual_event_metadata_is_bounded_and_legacy_payload_is_stable() -> None:
+def test_contextual_event_metadata_is_required_and_bounded() -> None:
     base = {
         "board_id": "board-1",
         "actor_id": "agent-1",
@@ -532,9 +478,11 @@ def test_contextual_event_metadata_is_bounded_and_legacy_payload_is_stable() -> 
         "attestation_state": "agent_attested",
         "payload_sha256": SHA,
     }
-    legacy_payload = CodeEvidenceCreated(**base).payload_for_storage()
+    with pytest.raises(ValidationError):
+        CodeEvidenceCreated(**base)
     contextual_payload = CodeEvidenceCreated(
         **base,
+        context_contract_version=2,
         source_role="existing_scaffold",
         baseline_presence="committed_snapshot",
         relevance_summary="The scaffold defines the package boundary.",
@@ -551,6 +499,7 @@ def test_contextual_event_metadata_is_bounded_and_legacy_payload_is_stable() -> 
         superseding_evidence_id="evidence-2",
         investigation_receipt_id="receipt-2",
         payload_sha256=SHA,
+        context_contract_version=2,
         source_role="reference_pattern",
         baseline_presence="preexisting_worktree",
         relevance_summary="The pattern constrains integration shape.",
@@ -561,8 +510,6 @@ def test_contextual_event_metadata_is_bounded_and_legacy_payload_is_stable() -> 
         baseline_provenance_note="Observed before implementation began.",
     ).payload_for_storage()
 
-    assert "source_role" not in legacy_payload
-    assert "baseline_presence" not in legacy_payload
     assert contextual_payload["source_role"] == "existing_scaffold"
     assert contextual_payload["baseline_presence"] == "committed_snapshot"
     assert contextual_payload["baseline_workspace_state_id"] == "ws-1"

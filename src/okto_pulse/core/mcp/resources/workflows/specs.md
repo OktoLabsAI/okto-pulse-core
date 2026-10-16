@@ -1,5 +1,5 @@
 ---
-version: "1.3"
+version: "1.4"
 ---
 
 Knowledge Base placement, authority, and safe promotion are governed by
@@ -12,7 +12,7 @@ Semantic guideline assessment follows
 
 ## Mandatory delivery closeout
 
-Before moving to Done, call `okto_pulse_get_delivery_evidence`. Every active
+Before moving to Done, call `okto_pulse_get_delivery_evidence`. Every executable
 obligation needs committed implementation proof from a task/bug and authenticated
 passing verification from a **test card**, or separately audited human exemptions.
 Use `okto_pulse_record_delivery_evidence` to register the many-to-many associations.
@@ -20,6 +20,24 @@ Planning Code Evidence links and Skip settings cannot satisfy this gate. Tests m
 cover the current implementation records, not a previous delivery. Do not reopen
 old done Specs merely to repair their evidence; retrospective associations are
 permitted. Follow `okto-pulse://reference/code-traceability` (Delivery evidence).
+
+Use `view="readiness"` for the current global obligation metrics, unresolved
+causes, current lifecycle assessment and bounded next actions. A Spec's values
+are not Card averages. Known proof at 100/100 can coexist with open required
+Cards or pending lifecycle gates. Waivers permit only their explicit gate scope
+and never increase proof percentages. Unknown and N/A both have null percentages
+but different meanings. Follow diagnostic/detail pagination before claiming a
+complete audit; no read closes Cards, executes tests or changes historical Done.
+
+Active Decisions need an explicit verification plan before validation/start:
+exact same-Spec obligation_refs and/or an observable inspection condition and
+scope. Both parts are mandatory when declared. They never require an artificial
+implementation task or scenario. Read `okto_pulse_get_decision_reviews` and record
+actual inspections with `okto_pulse_record_decision_reviews`; selected obligations
+reuse their current proofs. In semantic evaluation, reject a Decision that hides
+executable behavior instead of formalizing it as a requirement. Also check that
+selected obligations actually demonstrate the choice: an unrelated passing test
+does not establish adherence. Preserve supersedence and history.
 
 ## 2.3 Specs — CRITICAL: Analysis Before Populating
 
@@ -125,7 +143,7 @@ the summary above is not sufficient to choose a number.
    - Add BRs to capture invariants you've been assuming implicitly
    - Add TRs for architectural constraints you derived from codebase analysis
    - Add API contracts with concrete request/response shapes
-6. **Ask, don't assume.** When you hit a genuine ambiguity, **use `okto_pulse_ask_spec_question` to ask the user**.
+6. **Ask, don't assume.** When you hit a genuine ambiguity, **use `okto_pulse_ask` (`target_type="spec"`) to ask the user**.
 7. **Re-read and re-score.** Repeat until all five dimensions clear the
    configured bar and no blocker remains.
 8. **On a retry after failed validation**, first read the Current result and
@@ -188,19 +206,23 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
 
 **The order that actually works:**
 
-1. Populate the spec in `draft` → move through `review` → `approved`.
-2. **With the spec in `approved`, create the test cards** (`okto_pulse_create_card(card_type="test", test_scenario_ids=...)` — the server rejects test card creation before `approved`) and **link each scenario** to a test card via `okto_pulse_link_task(target_type="scenario", ...)` until `scenario_task_linkage_pct = 100`. The validation gate fails on any scenario without a linked `card_type="test"` card.
+1. Populate the spec in `draft`, including its implementation plan and Task/Test Cards. Cards created in Draft must remain `not_started`; authoring does not permit execution.
+2. Create Test Cards with `okto_pulse_create_card(card_type="test", test_scenario_ids=...)`. Creation links the selected scenarios atomically; do not repeat those links. Use `okto_pulse_link_task(target_type="scenario", ...)` only for additional associations. Reach `scenario_task_linkage_pct = 100`, then move through `review` → `approved`. The validation gate fails on any scenario without a linked `card_type="test"` card.
 3. Iterate until ALL deterministic gates are green — the complete gate enumeration is the one in `okto-pulse://reference/spec_gates` (single source; it includes more gates than just AC/FR coverage).
 4. Read the configured binding with
-   `okto_pulse_get_checklist_binding(board_id)`. When mode is `advisory` or
-   `blocking`, combine its identity with the current Spec version from the
+   `okto_pulse_get_checklist_binding(board_id, spec_id)`. When mode is `advisory` or
+   `blocking`, pass its `version` as `binding_version` with the current Spec edition and version from the
    required full Spec context, then call `okto_pulse_start_checklist_execution`.
    Submit all ten ordered `/specify/v1` results with concrete anchors via
    `okto_pulse_submit_checklist_execution`, and read the submitted result with
-   `okto_pulse_get_checklist_receipt` (the compatibility API name). Re-run the full Spec context or
+   `okto_pulse_get_checklist_receipt`. Re-run the full Spec context or
    `okto_pulse_get_allowed_transitions` before validation; that canonical
    readiness check detects a missing or failing Current result.
-5. Only then call `okto_pulse_submit_spec_validation` with the current fences,
+5. Read `okto_pulse_get_spec_validation_cycle(board_id, spec_id)` after preparing
+   the applicable inputs. Pass its `planning_manifest` unchanged as the required
+   `expected_planning_manifest`, together with the corresponding submission
+   fences, to `okto_pulse_submit_spec_validation`. Use
+   a new `idempotency_key` for this authored conclusion,
    the five externally evaluated scores (confidence, clarity, assertiveness,
    decidability and ambiguity), a justification for each, optional
    metric-tagged pinpoints, and an approve/reject recommendation. Pulse records
@@ -208,9 +230,21 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
    pinpoint Pulse resolves the authorized anchor and seals its human label,
    text/excerpt, source version and digest into validation history. Clients
    submit only the anchor selector and explanation; they cannot supply the
-   sealed snapshot. Records created before this contract explicitly report the
-   snapshot as `legacy_unavailable` and are never re-resolved from current
+   sealed snapshot. Each pinpoint requires its native sealed snapshot; an absent
+   or incompatible snapshot is refused and is never reconstructed from current
    mutable Spec content.
+
+   Supply the optional typed `decomposition` review only when authorized to
+   submit both kinds of evaluation. Otherwise prepare it independently in
+   Approved with `okto_pulse_submit_spec_evaluation`; the conclusion consumes
+   Current reviews under their original authorship. Check `planning_result`,
+   `planning_blockers` and `spec_status`: quality `outcome=success` alone does
+   not promote. A valid negative opinion is retained in history. Every applicable
+   gate must pass before Validated, including decomposition when quality is off
+   and a direct transition is used. No cross-evaluation score is computed.
+   After a transport interruption, retry the exact request with the same key.
+   The original receipt is returned without new facts or promotion; a changed
+   request with that key conflicts. A new opinion uses a new key and current fences.
 
 Checklist mode/template governance is human-owned in Board Config. Agents may
 read the binding and validation results and execute the configured immutable
@@ -234,11 +268,11 @@ computation, content lock, and the reopen path (`okto_pulse_move_spec` back to
 Investigation/Evidence/waiver events preserve Current; they do not open a new
 human validation edition.
 
-## 2.3b Spec Evaluation — Quality Gate for Execution
+## 2.3b Spec Evaluation — Decomposition in Unified Planning Validation
 
-After a spec reaches `validated`, it must undergo **qualitative evaluation** via `okto_pulse_submit_spec_evaluation` before moving to `in_progress`: 4 dimensions + `overall_score`, each 0-100 with mandatory justification, and a `recommendation` of `approve` | `request_changes` | `reject`.
+Record **qualitative evaluation** via `okto_pulse_submit_spec_evaluation` in `approved` or `validated`: 4 dimensions + `overall_score`, each 0-100 with mandatory justification, and a `recommendation` of `approve` | `request_changes` | `reject`. Recording a review does not promote the Spec. The existing Current judgment is reused at execution admission; do not repeat an evaluation merely because the Spec advanced from Approved to Validated in the same edition.
 
-**Single source for the evaluation gate** — signature, dimension definitions, the full recommendation semantics (including `request_changes` and the `skip_qualitative_validation` escape), and enforcement of validated → in_progress: `okto-pulse://reference/spec_gates`.
+**Single source for the evaluation gate** — signature, dimension definitions, the full recommendation semantics (including `request_changes` and the `skip_qualitative_validation` escape), and enforcement at validation and execution admission: `okto-pulse://reference/spec_gates`.
 
 ## 2.3c Coverage Progress — Zero-Friction Gate Tracking
 
@@ -261,6 +295,13 @@ Every tool that feeds into a coverage gate **automatically returns a `coverage` 
 - either `skip_code_evidence_coverage_global = true` or `skip_code_evidence_coverage = true` → coverage stays visible but this matrix obligation is not enforced; these are human UI/REST controls, not agent remediation tools
 
 **FR coverage source:** `fr_coverage_pct` is computed from `business_rules[].linked_requirements`. Direct links on `functional_requirements[].linked_task_ids` are useful task traceability, but they do not satisfy the FR→BR coverage gate.
+
+BR task coverage also recognizes complete qualified inheritance from the FR's
+authored contribution scope and selected ACs. A bare BR→FR link is insufficient.
+The same responsibility resolver drives validation and coverage; missing,
+ambiguous, cancelled, archived or foreign-scope owners do not earn inherited
+credit. Do not create a redundant direct BR→Task link when this path is complete.
+Planning coverage never substitutes for current implementation/test evidence.
 
 ## 2.3d Agent-mediated Code Traceability
 
@@ -300,27 +341,20 @@ repository to establish these facts. An authenticated external agent first
 performs the capability/access preflight and deterministic investigation in its
 own environment, then submits the bounded receipt and Evidence.
 
-Every effective item states its origin explicitly:
-`authored`, `human_legacy_classification`, or `unclassified_legacy`. Never
-infer legacy meaning from a path, evidence type, or claim. Legacy
-classification is an append-only batch guarded by
-`code_traceability.evidence.classify_legacy`: authorized agents use
-`okto_pulse_classify_legacy_code_evidence`, humans may use UI/REST. A V1
-receipt remains V1 after classification and may still require a fresh V2
-investigation for current gate authority.
+Every effective Evidence item has authored context. Read its explicit role and
+baseline provenance; do not infer source meaning from paths or claims.
 
 A derived Spec is intentionally frozen to the exact Refinement snapshot's
 delivery-context and source-context manifest, including receipt context
-versions and per-Evidence classification revision/digest. Later live
-Evidence, receipt, or human-classification changes do not silently rewrite the
+versions and per-Evidence contextual digest. Later live
+Evidence or receipt changes do not silently rewrite the
 Spec. To adopt a newer Refinement snapshot, use the governed rebase preview,
-review the context/classification/link/disposition delta, and apply that exact
+review the context/link/disposition delta, and apply that exact
 `preview_sha256`. Never simulate a rebase by copying Evidence, editing links,
 or rewriting the manifest. If preview/apply is not available over MCP, surface
 the required authorized UI/REST action.
 
-New writes are contextual V2. If the live inbound schema exposes only V1
-`accessible`/unclassified Evidence, stop and report the missing capability;
-do not create ambiguous compatibility history to advance the Spec.
+Only contextual writes with `contract_version=2` are accepted. Earlier formats
+are rejected without conversion.
 
 Canonical protocol: `okto-pulse://reference/code-traceability`.

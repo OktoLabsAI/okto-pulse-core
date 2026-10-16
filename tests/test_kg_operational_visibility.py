@@ -106,7 +106,7 @@ async def _insert_dlq_row(db, board_id: str, artifact_id: str) -> str:
 def _register_pending_tool():
     class _Agent:
         id = "agent-test-001"
-        permissions = ["board.read", "kg.admin.settings_read"]
+        permissions = ["board.read", "kg.admin.settings_read", "kg.operations.cognitive.read"]
 
     class _NullDb:
         async def __aenter__(self):
@@ -257,8 +257,8 @@ async def test_kg_health_points_each_signal_at_its_drill_down_tool(
         issue["code"]: issue.get("drill_down_tool")
         for issue in health["health_issues"]
     }
-    assert tools_by_code.get("dead_letter_backlog") == "okto_pulse_kg_dead_letter_list"
-    assert tools_by_code.get("canonical_debt_open") == "okto_pulse_kg_canonical_debt_list"
+    assert tools_by_code.get("dead_letter_backlog") is None
+    assert tools_by_code.get("canonical_debt_open") is None
     assert (
         tools_by_code.get("cognitive_consolidation_pending")
         == "okto_pulse_kg_list_cognitive_pending_items"

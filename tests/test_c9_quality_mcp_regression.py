@@ -112,6 +112,7 @@ def _receipt(
     return AssessmentReceipt(
         id=receipt_id,
         subject=AssessmentSubjectRef(
+            subject_edition=1,
             board_id="board-1",
             subject_type=AssessmentSubjectType.REFINEMENT,
             subject_id="refinement-1",
@@ -180,7 +181,9 @@ async def test_quality_mcp_inventory_remains_seven_tools() -> None:
     # recording and retains four bounded read surfaces (list, get, current and
     # findings).  Those reads are part of the public projection/pagination
     # contract; Code Traceability adds 20 reviewed, typed commands.
-    assert len(tools) == 340
+    # Native Decision read/review pair plus the unified validation-cycle read.
+    assert len(tools) == 285  # No compatibility aliases.
+    assert "okto_pulse_get_spec_validation_cycle" in tools
     assert {
         "okto_pulse_list_semantic_guideline_assessments",
         "okto_pulse_get_semantic_guideline_assessment",
@@ -270,13 +273,13 @@ def test_shared_current_and_receipt_projectors_are_flat_closed_envelopes() -> No
 
     stale = AssessmentCurrentness(
         current=False,
-        stale_reasons=(AssessmentStaleReason.CONTENT_CHANGED,),
+        stale_reasons=(AssessmentStaleReason.SUBJECT_EDITION_CHANGED,),
     )
     receipt = project_quality_receipt_currentness(view.receipt, stale)
     assert set(receipt) == {"receipt", "currentness", "stale_reasons"}
     assert receipt["receipt"]["id"] == "qar-1"
     assert receipt["currentness"] == "previous"
-    assert receipt["stale_reasons"] == ["content_changed"]
+    assert receipt["stale_reasons"] == ["subject_edition_changed"]
 
 
 @pytest.mark.asyncio
@@ -369,7 +372,7 @@ def test_keyset_projection_preserves_page_envelope_and_real_boundary() -> None:
             state=(
                 AssessmentReceiptState.CURRENT
                 if index == 0
-                else AssessmentReceiptState.SUPERSEDED
+                else AssessmentReceiptState.PREVIOUS
             ),
         )
         for index, receipt in enumerate(receipts)
@@ -434,7 +437,6 @@ async def test_receipt_findings_command_derives_scope_with_one_preflight() -> No
     calls: list[tuple[str, object]] = []
     context = QualityAssessmentReadContext(
         subject=_receipt().subject,
-        currentness_inputs=(),
     )
 
     class _Reader:

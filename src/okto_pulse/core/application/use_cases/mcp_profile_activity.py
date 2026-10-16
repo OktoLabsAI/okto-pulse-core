@@ -227,7 +227,6 @@ class McpListAgentsUseCase:
             actor,
             PermissionRequirement(
                 "agent.entity.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,

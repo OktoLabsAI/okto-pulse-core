@@ -19,6 +19,7 @@ from datetime import timedelta as _td
 from datetime import timezone as _tz
 from statistics import median
 from typing import Any
+from okto_pulse.core.domain.spec_evaluation import spec_evaluation_is_current
 
 from okto_pulse.core.domain.enums import (
     CardStatus,
@@ -26,8 +27,6 @@ from okto_pulse.core.domain.enums import (
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
-    SprintLaneType,
-    SprintStatus,
     StoryStatus,
 )
 from okto_pulse.core.ports.analytics_read import (
@@ -148,7 +147,7 @@ def _structured_ref_text(item) -> str:
 def _structured_ref_id(item) -> str | None:
     if isinstance(item, dict):
         raw = item.get("id")
-        return str(raw) if raw not in (None, "") else None
+        return raw if isinstance(raw, str) and raw.strip() else None
     return None
 
 
@@ -175,170 +174,43 @@ def _hours_between(start, end) -> float | None:
     return (end_dt - start_dt).total_seconds() / 3600.0
 
 
-def resolve_linked_criteria_to_indices(
-    linked_list: list | None, ac_list: list
-) -> set[int]:
-    """Normalize heterogeneous `linked_criteria` entries into a deduplicated set
-    of 0-based AC indices.
-
-    Scenarios in the wild store entries in three shapes: `int`, numeric `str`
-    (e.g. ``"3"``), or full AC text. Without normalization, a set over raw
-    values double-counts the same AC when multiple shapes coexist.
-
-    Out-of-range indices and unmatched texts are dropped silently so the
-    invariant `covered_ac <= total_ac` holds even for degenerate inputs.
-    """
-    if not linked_list or not ac_list:
-        return set()
-    valid_range = range(len(ac_list))
-    resolved: set[int] = set()
-    for entry in linked_list:
-        if isinstance(entry, bool):
-            continue
-        if isinstance(entry, int):
-            if entry in valid_range:
-                resolved.add(entry)
-            continue
-        if isinstance(entry, str):
-            stripped = entry.strip()
-            if not stripped:
-                continue
-            try:
-                idx = int(stripped)
-            except ValueError:
-                pass
-            else:
-                if idx in valid_range:
-                    resolved.add(idx)
-                continue
-            for i, ac in enumerate(ac_list):
-                ac_text = _structured_ref_text(ac)
-                ac_id = _structured_ref_id(ac)
-                if (
-                    stripped == ac_id
-                    or stripped == ac_text
-                    or (ac_text and ac_text.startswith(stripped))
-                    or (ac_text and stripped.startswith(ac_text))
-                ):
-                    resolved.add(i)
-                    break
-    return resolved
-
-
-def _resolve_one_linked_criterion_to_id(entry, ac_list: list) -> str | None:
-    """Resolve ONE ``linked_criteria`` token to a canonical ac_id (write-path, STRICT).
-
-    Accepts a 0-based index (``int`` or numeric ``str``), an exact ``ac_id``, or
-    the exact AC text. Unlike :func:`resolve_linked_criteria_to_indices`
-    (read-path), this does NO prefix matching — write resolution must be
-    deterministic. Returns the ac_id (or the AC text when the AC is legacy and
-    has no id), else ``None``.
-    """
-    # bool is a subclass of int — reject explicitly so True/False never index.
-    if isinstance(entry, bool):
-        return None
-
-    idx: int | None = None
-    if isinstance(entry, int):
-        idx = entry
-    elif isinstance(entry, str):
-        stripped = entry.strip()
-        if stripped.lstrip("-").isdigit():
-            idx = int(stripped)
-    if idx is not None:
-        if 0 <= idx < len(ac_list):
-            ac = ac_list[idx]
-            return _structured_ref_id(ac) or _structured_ref_text(ac)
-        return None
-
-    token = str(entry).strip()
-    if not token:
-        return None
-    for ac in ac_list:
-        ac_id = _structured_ref_id(ac)
-        ac_text = _structured_ref_text(ac)
-        if token == ac_id or token == ac_text:
-            return ac_id or ac_text
-    return None
-
-
-def resolve_linked_criteria_to_ids(
-    linked_list: list | None, ac_list: list
-) -> tuple[list[str], list[str]]:
-    """Write-path resolver for ``linked_criteria``. Mirrors the read resolver but
-    projects to canonical ids instead of indices.
-
-    Returns ``(resolved_ids, unresolved_tokens)``:
-
-    * ``resolved_ids`` — canonical ``ac_id`` values (or the AC text for legacy
-      ACs without an id), deduplicated while preserving first-seen order.
-    * ``unresolved_tokens`` — tokens that did not resolve. These are NEVER
-      dropped silently, so the caller can fail closed.
-
-    Never emits a dict. The tolerant read resolver
-    :func:`resolve_linked_criteria_to_indices` is intentionally left untouched —
-    its prefix/index leniency must not leak into write persistence.
-    """
+def _resolve_linked_child_ids(linked: list | None, children: list) -> tuple[list[str], list[str]]:
+    """Resolve exact, unambiguous stored IDs; never infer identity from content."""
+    counts: dict[str, int] = {}
+    for child in children:
+        identity = _structured_ref_id(child)
+        if identity is not None:
+            counts[identity] = counts.get(identity, 0) + 1
     resolved: list[str] = []
     unresolved: list[str] = []
-    seen: set[str] = set()
-    for entry in linked_list or []:
-        rid = _resolve_one_linked_criterion_to_id(entry, ac_list)
-        if rid is None:
-            unresolved.append(str(entry))
-        elif rid not in seen:
-            seen.add(rid)
-            resolved.append(rid)
+    for ref in linked or []:
+        if not isinstance(ref, str) or counts.get(ref) != 1:
+            unresolved.append(str(ref))
+        elif ref not in resolved:
+            resolved.append(ref)
     return resolved, unresolved
 
 
-def resolve_linked_requirements_to_ids(
-    linked_list: list | None, fr_list: list
-) -> tuple[list[str], list[str]]:
-    """Write-path resolver for ``linked_requirements`` — the FR analog of
-    :func:`resolve_linked_criteria_to_ids` (spec 9d66847f).
+def resolve_linked_criteria_to_indices(linked_list: list | None, ac_list: list) -> set[int]:
+    """Return display positions for exact AC IDs; positions are never input refs."""
+    resolved, _ = _resolve_linked_child_ids(linked_list, ac_list)
+    identities = set(resolved)
+    return {index for index, item in enumerate(ac_list) if _structured_ref_id(item) in identities}
 
-    Returns ``(resolved_ids, unresolved_tokens)``: canonical ``fr_id`` values
-    (or the FR text for legacy FRs without an id), deduplicated in first-seen
-    order, plus the tokens that did not resolve (never dropped silently). Token
-    resolution is identical to the AC write-path — strict, exact match, no
-    prefix leniency. The tolerant read resolver
-    :func:`resolve_linked_fr_indices` is intentionally left untouched.
-    """
-    resolved: list[str] = []
-    unresolved: list[str] = []
-    seen: set[str] = set()
-    for entry in linked_list or []:
-        rid = _resolve_one_linked_criterion_to_id(entry, fr_list)
-        if rid is None:
-            unresolved.append(str(entry))
-        elif rid not in seen:
-            seen.add(rid)
-            resolved.append(rid)
-    return resolved, unresolved
+
+def resolve_linked_criteria_to_ids(linked_list: list | None, ac_list: list) -> tuple[list[str], list[str]]:
+    """Return current IDs and unresolved tokens so writers can refuse invalid links."""
+    return _resolve_linked_child_ids(linked_list, ac_list)
+
+
+def resolve_linked_requirements_to_ids(linked_list: list | None, fr_list: list) -> tuple[list[str], list[str]]:
+    """Resolve FR identity under the same contract used for ACs."""
+    return _resolve_linked_child_ids(linked_list, fr_list)
 
 
 def resolve_linked_fr_indices(linked_refs: list, frs: list) -> set[int]:
-    """Resolve linked_requirements (indices or FR text) to FR indices."""
-    indices: set[int] = set()
-    for ref in linked_refs:
-        ref_str = str(ref)
-        try:
-            idx = int(ref_str)
-            if 0 <= idx < len(frs):
-                indices.add(idx)
-                continue
-        except (ValueError, TypeError):
-            pass
-        for i, fr in enumerate(frs):
-            fr_text = _structured_ref_text(fr)
-            fr_id = _structured_ref_id(fr)
-            if ref_str == fr_id or (
-                fr_text and (ref_str in fr_text or fr_text in ref_str)
-            ):
-                indices.add(i)
-                break
-    return indices
+    """Return display positions of FRs selected by exact current IDs."""
+    return resolve_linked_criteria_to_indices(linked_refs, frs)
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +224,7 @@ def _coverage_row_for_spec(spec: Any, cards: list | None = None) -> dict:
     Output shape matches REST /analytics/coverage exactly. MCP converges to
     this shape (previously omitted BR/contract counts + FR coverage %).
 
-    Spec 233eaad3: extends shape with 4 fields (decisions_coverage_pct,
+    Spec 233eaad3: extends shape with 4 fields (decisions_planning_pct,
     decisions_total, tr_task_linkage_pct, trs_total) sourced from
     ``spec_coverage_summary``. Backward compatible — pre-existing fields
     preserved bit-for-bit; ``cards`` defaults to None.
@@ -419,11 +291,11 @@ def _coverage_row_for_spec(spec: Any, cards: list | None = None) -> dict:
         # covered_ac/total_ac e fr_with_rules_pct, com labels confusos no UI).
         "ac_coverage_pct": cov["ac_coverage_pct"],
         "fr_coverage_pct": cov["fr_coverage_pct"],
-        "decisions_coverage_pct": cov["decisions_coverage_pct"],
+        "decisions_planning_pct": cov["decisions_planning_pct"],
         "decisions_total": cov["decisions_total"],
         # Bug 42e78332: decisions parity with IR/OR (linked + uncovered_ids + skip).
-        "decisions_linked": cov["decisions_linked"],
-        "decisions_uncovered_ids": cov["decisions_uncovered_ids"],
+        "decisions_planned": cov["decisions_planned"],
+        "decisions_pending_ids": cov["decisions_pending_ids"],
         "skip_decisions_coverage": cov["skip_decisions_coverage"],
         "tr_task_linkage_pct": cov["tr_task_linkage_pct"],
         "trs_total": cov["trs_total"],
@@ -454,7 +326,7 @@ async def compute_coverage(
       - spec_id, title, total_ac, covered_ac, total_scenarios,
         scenario_status_counts, business_rules_count, api_contracts_count,
         fr_with_rules_pct, fr_with_contracts_pct,
-      - decisions_coverage_pct, decisions_total, tr_task_linkage_pct, trs_total
+      - decisions_planning_pct, decisions_total, tr_task_linkage_pct, trs_total
         (spec 233eaad3 — sourced from ``spec_coverage_summary`` so cancelled
         cards are excluded from linkage counts).
 
@@ -530,16 +402,15 @@ async def compute_funnel(
     """Compute the full funnel for a board.
 
     Returns the same rich shape as REST `/boards/{id}/analytics/funnel`:
-      - Per-level counts: stories, ideations, refinements, specs, sprints, cards.
+      - Per-level counts: stories, ideations, refinements, specs, cards.
       - Done counts: done, ideations_done, specs_done, refinements_done.
       - Card type breakdown: cards_impl, cards_test, cards_bug.
       - BR/Contract aggregation: rules_count, contracts_count,
         specs_with_rules, specs_with_contracts.
-      - Status breakdowns: spec_status_breakdown, card_status_breakdown,
-        sprint_status_breakdown.
+      - Status breakdowns: spec_status_breakdown, card_status_breakdown.
       - Bug metrics: bugs_total, bugs_open, bugs_by_severity.
       - Cycle time: avg_cycle_hours + cycle_time_by_phase{ideation, refinement,
-        spec, sprint, card}.
+        spec, card}.
 
     MCP previously returned only 6 keys (ideations/refinements/specs/cards/done)
     — migration unifies to the full shape.
@@ -560,7 +431,6 @@ async def compute_funnel(
         filters=artifact_filters,
     )
     spec_objs = await _analytics_list(db, "spec", filters=artifact_filters)
-    sprint_objs = await _analytics_list(db, "sprint", filters=artifact_filters)
     all_cards = await _analytics_list(db, "card", filters=artifact_filters)
     counts.update(
         {
@@ -568,7 +438,6 @@ async def compute_funnel(
             "ideations": len(board_ideations),
             "refinements": len(board_refinements),
             "specs": len(spec_objs),
-            "sprints": len(sprint_objs),
             "cards": len(all_cards),
         }
     )
@@ -620,9 +489,6 @@ async def compute_funnel(
     counts["spec_status_breakdown"] = _status_breakdown(spec_objs, SpecStatus)
     counts["card_status_breakdown"] = _status_breakdown(all_cards, CardStatus)
 
-    # Sprints
-    counts["sprint_status_breakdown"] = _status_breakdown(sprint_objs, SprintStatus)
-
     # Bug metrics
     bug_cards = card_partitions["bug"]
     counts["bugs_total"] = len(bug_cards)
@@ -664,7 +530,6 @@ async def compute_funnel(
         "ideation": _phase_ct(board_ideations, str(IdeationStatus.DONE)),
         "refinement": _phase_ct(board_refinements, str(RefinementStatus.DONE)),
         "spec": _phase_ct(spec_objs, str(SpecStatus.DONE)),
-        "sprint": _phase_ct(sprint_objs, str(SprintStatus.CLOSED)),
         "card": counts["avg_cycle_hours"],
     }
     counts["refinements_done"] = sum(
@@ -717,7 +582,6 @@ async def compute_velocity(
       - impl / test / bug — cards done in the bucket (by card_type)
       - validation_bounce — failed task validations in the bucket
       - spec_done — spec_moved events where new_status == 'done'
-      - sprint_done — sprint_moved events where new_status == 'closed'
 
     MCP previously hardcoded weekly 12 buckets and only returned impl/test.
     Service delega para os builders existentes em api/analytics.py.
@@ -738,7 +602,6 @@ async def compute_velocity(
     done_cards = [c for c in all_cards if c.status == CardStatus.DONE]
 
     spec_moves = await _load_lifecycle_moves(db, board_id, "spec_moved")
-    sprint_moves = await _load_lifecycle_moves(db, board_id, "sprint_moved")
 
     periods = days if granularity == "day" else weeks
     return _build_velocity_buckets(
@@ -747,7 +610,6 @@ async def compute_velocity(
         periods=periods,
         granularity=granularity,
         spec_moves=spec_moves,
-        sprint_moves=sprint_moves,
     )
 
 
@@ -812,7 +674,7 @@ def spec_coverage_summary(
     Override args (scenarios/rules/contracts/trs/decisions) suportam chamadas
     in-flight onde o spec ainda não foi persistido com a nova coleção.
 
-    Ideação #10 Fase 1: adiciona decisions_coverage_pct + decisions_uncovered_ids
+    Ideação #10 Fase 1: adiciona decisions_planning_pct + decisions_pending_ids
     paralelo ao TR/BR/Contract linkage, paridade first-class.
 
     Spec 233eaad3 (Analytics cancelled-card filter): aceita ``cards`` opcional
@@ -885,8 +747,19 @@ def spec_coverage_summary(
     )
 
     br_total = len(_brs)
+    from okto_pulse.core.services.business_rule_coverage import inherited_business_rule_task_ids
+    inherited_br_links = inherited_business_rule_task_ids(
+        spec, cards, collections={
+            "functional_requirements": frs, "business_rules": _brs,
+            "technical_requirements": _trs, "acceptance_criteria": acs,
+            "integration_requirements": _irs, "observability_requirements": _ors,
+        },
+    )
     br_linked = sum(
-        1 for br in _brs if (set(br.get("linked_task_ids") or []) - cancelled_card_ids)
+        1 for br in _brs if (
+            (set(br.get("linked_task_ids") or []) - cancelled_card_ids)
+            or inherited_br_links.get(br.get("id"))
+        )
     )
 
     # F13: exclude not_applicable (and superseded/revoked) contracts from coverage,
@@ -917,17 +790,17 @@ def spec_coverage_summary(
         if isinstance(d, dict) and d.get("status", "active") == "active"
     ]
     d_total = len(active_decisions)
-    d_linked = sum(
-        1
-        for d in active_decisions
-        if (set(d.get("linked_task_ids") or []) - cancelled_card_ids)
-    )
-    d_uncovered_ids = [
-        d.get("id")
-        for d in active_decisions
-        if not (set(d.get("linked_task_ids") or []) - cancelled_card_ids)
-        and d.get("id")
-    ]
+    from okto_pulse.core.domain.decision_verification import resolve_decision_verification
+    try:
+        decision_plans = resolve_decision_verification(spec_id=str(getattr(spec, 'id', '')),
+            decisions=_decisions, collections={'functional_requirements': frs, 'technical_requirements': _trs,
+                'business_rules': _brs, 'integration_requirements': _irs, 'observability_requirements': _ors,
+                'acceptance_criteria': acs, 'api_contracts': _contracts})
+    except ValueError:
+        decision_plans = ()  # Unresolved source never gains planning credit.
+    planned_ids = {plan.decision_id for plan in decision_plans if plan.complete}
+    d_planned = sum(d.get("id") in planned_ids for d in active_decisions)
+    d_pending_ids = [d["id"] for d in active_decisions if d.get("id") and d["id"] not in planned_ids]
     active_irs = [
         ir
         for ir in _irs
@@ -988,10 +861,10 @@ def spec_coverage_summary(
         "tr_task_linkage_pct": _pct(tr_linked, tr_total),
         "trs_linked": tr_linked,
         "trs_total": tr_total,
-        "decisions_coverage_pct": _pct(d_linked, d_total),
-        "decisions_linked": d_linked,
+        "decisions_planning_pct": _pct(d_planned, d_total),
+        "decisions_planned": d_planned,
         "decisions_total": d_total,
-        "decisions_uncovered_ids": d_uncovered_ids,
+        "decisions_pending_ids": d_pending_ids,
         "ir_task_linkage_pct": _pct(ir_linked, ir_total),
         "irs_linked": ir_linked,
         "irs_total": ir_total,
@@ -1007,7 +880,7 @@ def spec_coverage_summary(
         **card_counts,
         "skip_test_coverage": getattr(spec, "skip_test_coverage", False),
         "skip_rules_coverage": getattr(spec, "skip_rules_coverage", False),
-        "skip_decisions_coverage": getattr(spec, "skip_decisions_coverage", False),
+        "skip_decisions_coverage": False,
         "skip_ir_coverage": getattr(spec, "skip_ir_coverage", False),
         "skip_or_coverage": getattr(spec, "skip_or_coverage", False),
     }
@@ -1220,6 +1093,7 @@ async def compute_blockers(
                 e
                 for e in evals
                 if isinstance(e, dict) and e.get("recommendation") == "approve"
+                and spec_evaluation_is_current(e, int(getattr(s, "edition", 1) or 1))
             ]
             if not approved:
                 blockers.append(
@@ -1375,7 +1249,6 @@ async def compute_mcp_board_analytics(
         ideations = await _analytics_list(db, "ideation", filters=filters)
         refinements = await _analytics_list(db, "refinement", filters=filters)
         specs = await _analytics_list(db, "spec", filters=filters)
-        sprints = await _analytics_list(db, "sprint", filters=filters)
         cards = await _analytics_list(db, "card", filters=filters)
 
         card_partitions = partition_analytics_cards(cards)
@@ -1429,24 +1302,10 @@ async def compute_mcp_board_analytics(
                         times.append(round(hours, 1))
             return round(sum(times) / len(times), 1) if times else None
 
-        sprint_evals_total = 0
-        sprint_eval_scores = []
-        for sprint in sprints:
-            evaluations = getattr(sprint, "evaluations", None) or []
-            if isinstance(evaluations, list):
-                sprint_evals_total += len(evaluations)
-                for evaluation in evaluations:
-                    if (
-                        isinstance(evaluation, dict)
-                        and evaluation.get("overall_score") is not None
-                    ):
-                        sprint_eval_scores.append(int(evaluation["overall_score"]))
-
         funnel = {
             "ideations": len(ideations),
             "refinements": len(refinements),
             "specs": len(specs),
-            "sprints": len(sprints),
             "cards": len(cards),
             "done": len(done_cards),
         }
@@ -1461,7 +1320,6 @@ async def compute_mcp_board_analytics(
             "ideation_count": len(ideations),
             "refinement_count": len(refinements),
             "spec_count": len(specs),
-            "sprint_count": len(sprints),
             "task_count": {
                 "total": len(cards),
                 "impl": len(impl_cards),
@@ -1475,19 +1333,10 @@ async def compute_mcp_board_analytics(
                 "ideation": _lifecycle_cycle_time(ideations, "done"),
                 "refinement": _lifecycle_cycle_time(refinements, "done"),
                 "spec": _lifecycle_cycle_time(specs, "done"),
-                "sprint": _lifecycle_cycle_time(sprints, "closed"),
                 "card": avg_cycle_hours,
             },
             "task_validation_gate": task_validation_gate,
             "spec_validation_gate": spec_validation_gate,
-            "sprint_evaluation": {
-                "total_submitted": sprint_evals_total,
-                "avg_overall_score": (
-                    round(sum(sprint_eval_scores) / len(sprint_eval_scores), 1)
-                    if sprint_eval_scores
-                    else None
-                ),
-            },
             "funnel": funnel,
             "bugs": {
                 "total": len(bug_cards),
@@ -1631,7 +1480,7 @@ def _avg(values: list[float]) -> float | None:
 
 def classify_spec_violation(violations: list[str], recommendation: str) -> list[str]:
     """Map a spec validation's threshold_violations + recommendation to reason
-    buckets for the canonical five metrics plus legacy completeness. A record
+    buckets for the canonical five metrics. A record
     may hit multiple reasons (D3 multi-count).
     """
     reasons: list[str] = []
@@ -1641,8 +1490,6 @@ def classify_spec_violation(violations: list[str], recommendation: str) -> list[
             reasons.append("confidence_below")
         elif "clarity" in v_lower:
             reasons.append("clarity_below")
-        elif "completeness" in v_lower:
-            reasons.append("completeness_below")
         elif "assertiveness" in v_lower:
             reasons.append("assertiveness_below")
         elif "decidability" in v_lower:
@@ -1673,6 +1520,24 @@ def classify_task_violation(violations: list[str], recommendation: str) -> list[
     return reasons
 
 
+def _native_spec_validations(spec: object) -> list[dict]:
+    """Validate stored records without rewriting history or inventing scores."""
+    from okto_pulse.core.domain.spec_validation import require_spec_validation_edition
+    from okto_pulse.core.models.schemas import SpecValidationResponse
+
+    records = getattr(spec, "validations", None)
+    if records is None:
+        return []
+    if not isinstance(records, list):
+        raise ValueError("spec_validation_history_invalid")
+    for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("spec_validation_history_invalid")
+        require_spec_validation_edition(record)
+        SpecValidationResponse.model_validate(record)
+    return records
+
+
 def aggregate_spec_validation_gate(specs: list) -> dict:
     """Aggregate Spec Validation Gate metrics across a collection of specs.
 
@@ -1685,12 +1550,11 @@ def aggregate_spec_validation_gate(specs: list) -> dict:
           total_submitted, total_success, total_failed,
           success_rate, avg_attempts_per_spec,
           avg_scores: {
-            confidence, clarity, assertiveness, decidability, ambiguity,
-            completeness (legacy)
+            confidence, clarity, assertiveness, decidability, ambiguity
           },
           rejection_reasons: {
             confidence_below, clarity_below, assertiveness_below,
-            decidability_below, ambiguity_above, completeness_below (legacy),
+            decidability_below, ambiguity_above,
             reject_recommendation,
           },
           specs_with_validation,
@@ -1701,14 +1565,12 @@ def aggregate_spec_validation_gate(specs: list) -> dict:
     total_failed = 0
     confidence_vals: list[float] = []
     clarity_vals: list[float] = []
-    completeness_vals: list[float] = []
     assertiveness_vals: list[float] = []
     decidability_vals: list[float] = []
     ambiguity_vals: list[float] = []
     reasons: dict[str, int] = {
         "confidence_below": 0,
         "clarity_below": 0,
-        "completeness_below": 0,
         "assertiveness_below": 0,
         "decidability_below": 0,
         "ambiguity_above": 0,
@@ -1718,14 +1580,12 @@ def aggregate_spec_validation_gate(specs: list) -> dict:
     attempts_per_spec: list[int] = []
 
     for s in specs:
-        vals = getattr(s, "validations", None) or []
-        if not isinstance(vals, list) or len(vals) == 0:
+        vals = _native_spec_validations(s)
+        if not vals:
             continue
         specs_with_validation += 1
         attempts_per_spec.append(len(vals))
         for v in vals:
-            if not isinstance(v, dict):
-                continue
             total_submitted += 1
             outcome = v.get("outcome")
             if outcome == "success":
@@ -1740,13 +1600,11 @@ def aggregate_spec_validation_gate(specs: list) -> dict:
             for field_name, values in (
                 ("confidence", confidence_vals),
                 ("clarity", clarity_vals),
-                ("completeness", completeness_vals),
                 ("assertiveness", assertiveness_vals),
                 ("decidability", decidability_vals),
                 ("ambiguity", ambiguity_vals),
             ):
-                if v.get(field_name) is not None:
-                    values.append(_safe_int(v.get(field_name)))
+                values.append(v[field_name])
 
     return {
         "total_submitted": total_submitted,
@@ -1763,7 +1621,6 @@ def aggregate_spec_validation_gate(specs: list) -> dict:
         "avg_scores": {
             "confidence": _avg(confidence_vals),
             "clarity": _avg(clarity_vals),
-            "completeness": _avg(completeness_vals),
             "assertiveness": _avg(assertiveness_vals),
             "decidability": _avg(decidability_vals),
             "ambiguity": _avg(ambiguity_vals),
@@ -1776,9 +1633,7 @@ def aggregate_spec_validation_gate(specs: list) -> dict:
 def aggregate_task_validation_gate(cards: list) -> dict:
     """Aggregate Task Validation Gate metrics across a collection of cards.
 
-    Walks ALL card.validations records. Supports both legacy naming
-    (``estimated_completeness``/``estimated_drift``) and new naming
-    (``completeness``/``drift``).
+    Walks current card.validations records using their canonical score fields.
 
     Returns shape mirrors :func:`aggregate_spec_validation_gate` but for
     confidence/completeness/drift dimensions, plus ``first_pass_rate`` and
@@ -1813,9 +1668,8 @@ def aggregate_task_validation_gate(cards: list) -> dict:
                 continue
             total_submitted += 1
             outcome = v.get("outcome")
-            verdict = v.get("verdict")
-            is_success = outcome == "success" or verdict == "pass"
-            is_failed = outcome == "failed" or verdict == "fail"
+            is_success = outcome == "success"
+            is_failed = outcome == "failed"
             if is_success:
                 total_success += 1
             elif is_failed:
@@ -1828,16 +1682,12 @@ def aggregate_task_validation_gate(cards: list) -> dict:
             confidence_vals.append(_safe_int(v.get("confidence")))
             completeness_vals.append(
                 _safe_int(
-                    v.get("completeness")
-                    if v.get("completeness") is not None
-                    else v.get("estimated_completeness")
+                    v.get("estimated_completeness")
                 )
             )
             drift_vals.append(
                 _safe_int(
-                    v.get("drift")
-                    if v.get("drift") is not None
-                    else v.get("estimated_drift")
+                    v.get("estimated_drift")
                 )
             )
 
@@ -1918,6 +1768,18 @@ def render_decisions_markdown(
             lines.append(f"- **Rationale**: {rationale}")
         if context := d.get("context"):
             lines.append(f"- **Context**: {context}")
+        from okto_pulse.core.domain.decision_verification import DecisionVerification
+        try:
+            verification = DecisionVerification.model_validate(d.get('verification'))
+        except ValueError:
+            lines.append('- **Verification**: Plan pending; author exact obligations and/or an inspection condition.')
+        else:
+            lines.append(f'- **Verification method**: {verification.method}; read current adherence with okto_pulse_get_decision_reviews.')
+            if verification.obligation_refs:
+                lines.append('- **Verification obligations**: ' + ', '.join(verification.obligation_refs))
+            if verification.inspection:
+                lines.append('- **Inspection condition**: ' + verification.inspection.condition)
+                lines.append('- **Inspection scope**: ' + ', '.join(f'{r.kind}:{r.id}' for r in verification.inspection.scope_refs))
 
         alternatives = d.get("alternatives_considered") or []
         if alternatives:
@@ -2031,53 +1893,6 @@ def _aggregate_spec_evaluation(specs: list) -> dict:
     }
 
 
-def _aggregate_sprint_evaluation(sprints: list) -> dict:
-    """Aggregate Sprint Evaluation gate across sprints.
-
-    Shape harmonizado com _aggregate_spec_evaluation — inclui
-    avg_dimension_scores (vazio quando não há dimensões) para que
-    consumers possam processar ambos os evaluation types com o mesmo
-    código.
-    """
-    total = 0
-    total_approve = 0
-    total_reject = 0
-    overall_vals: list[float] = []
-    dimension_avgs: dict[str, list[float]] = {}
-    sprints_with_eval = 0
-
-    for sp in sprints:
-        evals = getattr(sp, "evaluations", None) or []
-        if not isinstance(evals, list) or len(evals) == 0:
-            continue
-        sprints_with_eval += 1
-        for e in evals:
-            if not isinstance(e, dict):
-                continue
-            total += 1
-            rec = e.get("recommendation", "")
-            if rec == "approve":
-                total_approve += 1
-            elif rec == "reject":
-                total_reject += 1
-            if e.get("overall_score") is not None:
-                overall_vals.append(_safe_int(e.get("overall_score")))
-            dims = e.get("dimensions", {})
-            if isinstance(dims, dict):
-                for k, v in dims.items():
-                    score = v.get("score") if isinstance(v, dict) else v
-                    if score is not None:
-                        dimension_avgs.setdefault(k, []).append(_safe_int(score))
-
-    return {
-        "total_submitted": total,
-        "total_approve": total_approve,
-        "total_reject": total_reject,
-        "approve_rate": round(total_approve / total * 100, 1) if total else None,
-        "avg_overall_score": _avg(overall_vals),
-        "avg_dimension_scores": {k: _avg(v) for k, v in dimension_avgs.items()},
-        "sprints_with_evaluation": sprints_with_eval,
-    }
 
 
 def _spec_status_breakdown(specs: list) -> dict[str, int]:
@@ -2097,19 +1912,13 @@ def _card_status_breakdown(cards: list) -> dict[str, int]:
     return out
 
 
-def _sprint_status_breakdown(sprints: list) -> dict[str, int]:
-    out = {s.value: 0 for s in SprintStatus}
-    for sp in sprints:
-        st = sp.status.value if hasattr(sp.status, "value") else str(sp.status)
-        out[st] = out.get(st, 0) + 1
-    return out
 
 
 def _compute_velocity(
     done_cards: list, weeks: int, all_cards: list | None = None
 ) -> list[dict]:
     """Weekly velocity — backward-compat shim for callers that don't need
-    spec/sprint overlays. Delegates to the bucket builder with spec/sprint
+    Spec overlays. Delegates to the bucket builder with Spec
     event dicts empty."""
     return _build_velocity_buckets(
         done_cards=done_cards,
@@ -2117,7 +1926,6 @@ def _compute_velocity(
         periods=weeks,
         granularity="week",
         spec_moves=[],
-        sprint_moves=[],
     )
 
 
@@ -2137,7 +1945,6 @@ def _build_velocity_buckets(
     periods: int,
     granularity: str,
     spec_moves: list[tuple[datetime, str]],
-    sprint_moves: list[tuple[datetime, str]],
 ) -> list[dict]:
     """Shared bucket builder for week and day granularities.
 
@@ -2145,7 +1952,6 @@ def _build_velocity_buckets(
     - ``impl`` / ``test`` / ``bug`` — cards of that type moved to done in the bucket.
     - ``validation_bounce`` — task validations that failed in the bucket.
     - ``spec_done`` — spec_moved events where details.new_status == 'done'.
-    - ``sprint_done`` — sprint_moved events where details.new_status == 'closed'.
     """
     now = datetime.now(timezone.utc)
     buckets: dict[str, dict[str, int]] = {}
@@ -2162,7 +1968,6 @@ def _build_velocity_buckets(
             "bug": 0,
             "validation_bounce": 0,
             "spec_done": 0,
-            "sprint_done": 0,
         }
 
     for c in done_cards:
@@ -2189,7 +1994,7 @@ def _build_velocity_buckets(
         for v in vals:
             if not isinstance(v, dict):
                 continue
-            if v.get("outcome") == "failed" or v.get("verdict") == "fail":
+            if v.get("outcome") == "failed":
                 created_at = v.get("created_at")
                 if not created_at:
                     continue
@@ -2212,15 +2017,6 @@ def _build_velocity_buckets(
         if key in buckets:
             buckets[key]["spec_done"] += 1
 
-    for dt, status_val in sprint_moves:
-        if status_val != "closed":
-            continue
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        key = _bucket_key(dt, granularity)
-        if key in buckets:
-            buckets[key]["sprint_done"] += 1
-
     period_label = "day" if granularity == "day" else "week"
     return [
         {
@@ -2230,7 +2026,6 @@ def _build_velocity_buckets(
             "bug": v["bug"],
             "validation_bounce": v["validation_bounce"],
             "spec_done": v["spec_done"],
-            "sprint_done": v["sprint_done"],
         }
         for k, v in sorted(buckets.items())
     ]
@@ -2259,12 +2054,10 @@ async def compute_overview(
         return {
             "total_ideations": 0,
             "total_specs": 0,
-            "total_sprints": 0,
             "total_cards_impl": 0,
             "total_cards_test": 0,
             "total_cards_bug": 0,
             "spec_status_breakdown": {},
-            "sprint_status_breakdown": {},
             "card_status_breakdown": {},
             "total_business_rules": 0,
             "total_api_contracts": 0,
@@ -2273,12 +2066,10 @@ async def compute_overview(
             "spec_validation_gate": aggregate_spec_validation_gate([]),
             "task_validation_gate": aggregate_task_validation_gate([]),
             "spec_evaluation": _aggregate_spec_evaluation([]),
-            "sprint_evaluation": _aggregate_sprint_evaluation([]),
             "funnel": {
                 "ideations": 0,
                 "refinements": 0,
                 "specs": 0,
-                "sprints": 0,
                 "cards": 0,
                 "tests": 0,
                 "bugs": 0,
@@ -2314,8 +2105,6 @@ async def compute_overview(
     test_cards = card_partitions["test"]
     bug_cards_all = card_partitions["bug"]
 
-    sprints = await _analytics_list(db, "sprint", filters=artifact_filters)
-
     # Self-reported scores (from card.conclusions — the implementer's report)
     concl_completeness: list[float] = []
     concl_drift: list[float] = []
@@ -2336,7 +2125,6 @@ async def compute_overview(
         "ideations": len(ideations),
         "refinements": len(refinements),
         "specs": len(specs),
-        "sprints": len(sprints),
         "cards": len(cards),
         "tests": len(test_cards),
         "bugs": len(bug_cards_all),
@@ -2352,7 +2140,6 @@ async def compute_overview(
         b_cards = [c for c in cards if c.board_id == b.id]
         b_done = [c for c in b_cards if c.status == CardStatus.DONE]
         b_bugs = [c for c in b_cards if classify_analytics_card(c) == "bug"]
-        b_sprints = [sp for sp in sprints if sp.board_id == b.id]
         board_stats.append(
             {
                 "board_id": b.id,
@@ -2360,7 +2147,6 @@ async def compute_overview(
                 "ideations": sum(1 for i in ideations if i.board_id == b.id),
                 "refinements": sum(1 for r in refinements if r.board_id == b.id),
                 "specs": sum(1 for s in specs if s.board_id == b.id),
-                "sprints": len(b_sprints),
                 "cards": len(b_cards),
                 "cards_done": len(b_done),
                 "bugs": len(b_bugs),
@@ -2370,7 +2156,6 @@ async def compute_overview(
     # Status breakdowns (full)
     ideations_done = sum(1 for i in ideations if i.status == IdeationStatus.DONE)
     spec_status_breakdown = _spec_status_breakdown(specs)
-    sprint_status_breakdown = _sprint_status_breakdown(sprints)
     card_status_breakdown = _card_status_breakdown(cards)
     specs_done = spec_status_breakdown.get("done", 0)
     specs_with_tests = sum(
@@ -2408,7 +2193,6 @@ async def compute_overview(
         [c for c in cards if classify_analytics_card(c) != "test"]
     )
     spec_evaluation = _aggregate_spec_evaluation(specs)
-    sprint_evaluation = _aggregate_sprint_evaluation(sprints)
 
     # Bugs per spec
     bugs_per_spec: dict[str, int] = {}
@@ -2492,7 +2276,6 @@ async def compute_overview(
         "ideation": _lifecycle_ct(ideations, str(IdeationStatus.DONE)),
         "refinement": _lifecycle_ct(refinements, str(RefinementStatus.DONE)),
         "spec": _lifecycle_ct(specs, str(SpecStatus.DONE)),
-        "sprint": _lifecycle_ct(sprints, str(SprintStatus.CLOSED)),
         "card": avg_cycle_hours,
     }
 
@@ -2502,9 +2285,7 @@ async def compute_overview(
         "total_specs": len(specs),
         "specs_done": specs_done,
         "specs_with_tests": specs_with_tests,
-        "total_sprints": len(sprints),
         "spec_status_breakdown": spec_status_breakdown,
-        "sprint_status_breakdown": sprint_status_breakdown,
         "card_status_breakdown": card_status_breakdown,
         "total_business_rules": total_brs,
         "total_api_contracts": total_contracts,
@@ -2523,7 +2304,6 @@ async def compute_overview(
         "spec_validation_gate": spec_validation_gate,
         "task_validation_gate": task_validation_gate,
         "spec_evaluation": spec_evaluation,
-        "sprint_evaluation": sprint_evaluation,
         "funnel": funnel,
         "velocity": velocity,
         "boards": board_stats,
@@ -2544,7 +2324,7 @@ async def _load_lifecycle_moves(
     board_id: str,
     action: str,
 ) -> list[tuple[datetime, str]]:
-    """Read ActivityLog rows for a lifecycle action (spec_moved / sprint_moved)
+    """Read ActivityLog rows for a lifecycle action
     and return (created_at, new_status) tuples for the aggregator."""
     rows = await _analytics_list(
         db,
@@ -2606,7 +2386,7 @@ async def compute_quality(db, board_id: str, *, dt_from=None, dt_to=None) -> dic
                 v
                 for v in vals
                 if isinstance(v, dict)
-                and (v.get("outcome") == "success" or v.get("verdict") == "pass")
+                and (v.get("outcome") == "success")
             ]
             v = (
                 success_vals[-1]
@@ -2623,16 +2403,12 @@ async def compute_quality(db, board_id: str, *, dt_from=None, dt_to=None) -> dic
                         .lower(),
                         "confidence": _safe_int(v.get("confidence")),
                         "completeness": _safe_int(
-                            v.get("completeness")
-                            if v.get("completeness") is not None
-                            else v.get("estimated_completeness")
+                            v.get("estimated_completeness")
                         ),
                         "drift": _safe_int(
-                            v.get("drift")
-                            if v.get("drift") is not None
-                            else v.get("estimated_drift")
+                            v.get("estimated_drift")
                         ),
-                        "outcome": v.get("outcome") or v.get("verdict"),
+                        "outcome": v.get("outcome"),
                     }
                 )
     return {
@@ -2643,7 +2419,7 @@ async def compute_quality(db, board_id: str, *, dt_from=None, dt_to=None) -> dic
 
 async def compute_validations(db, board_id: str, *, dt_from=None, dt_to=None) -> dict:
     """Validation-gate panel reader (spec R01A REST-FU2c) — spec/task validation
-    gates + spec/sprint evaluations with per-spec/per-card breakdown. Transport-free
+    gates + Spec evaluations with per-spec/per-card breakdown. Transport-free
     body of the legacy board_validations endpoint."""
     filters = _artifact_filters(
         board_id,
@@ -2653,13 +2429,12 @@ async def compute_validations(db, board_id: str, *, dt_from=None, dt_to=None) ->
     )
     specs = await _analytics_list(db, "spec", filters=filters)
     cards = await _analytics_list(db, "card", filters=filters)
-    sprints = await _analytics_list(db, "sprint", filters=filters)
 
     # Per-spec breakdown for Spec Validation Gate — walks full history (D4)
     per_spec: list[dict] = []
     for s in specs:
-        vals = getattr(s, "validations", None) or []
-        if not isinstance(vals, list) or len(vals) == 0:
+        vals = _native_spec_validations(s)
+        if not vals:
             continue
         agg = aggregate_spec_validation_gate([s])
         last = vals[-1] if isinstance(vals[-1], dict) else None
@@ -2672,9 +2447,9 @@ async def compute_validations(db, board_id: str, *, dt_from=None, dt_to=None) ->
                 else str(s.status),
                 "attempts": len(vals),
                 "last_outcome": last.get("outcome") if last else None,
-                "last_completeness": _safe_int(last.get("completeness"))
-                if last
-                else None,
+                "last_confidence": last["confidence"],
+                "last_clarity": last["clarity"],
+                "last_decidability": last["decidability"],
                 "last_assertiveness": _safe_int(last.get("assertiveness"))
                 if last
                 else None,
@@ -2703,26 +2478,21 @@ async def compute_validations(db, board_id: str, *, dt_from=None, dt_to=None) ->
                 .replace("CardType.", "")
                 .lower(),
                 "spec_id": c.spec_id,
-                "sprint_id": c.sprint_id,
                 "status": c.status.value
                 if hasattr(c.status, "value")
                 else str(c.status),
                 "attempts": len(vals),
-                "last_outcome": (last.get("outcome") or last.get("verdict"))
+                "last_outcome": (last.get("outcome"))
                 if last
                 else None,
                 "last_confidence": _safe_int(last.get("confidence")) if last else None,
                 "last_completeness": _safe_int(
-                    last.get("completeness")
-                    if last and last.get("completeness") is not None
-                    else (last.get("estimated_completeness") if last else None)
+                    (last.get("estimated_completeness") if last else None)
                 )
                 if last
                 else None,
                 "last_drift": _safe_int(
-                    last.get("drift")
-                    if last and last.get("drift") is not None
-                    else (last.get("estimated_drift") if last else None)
+                    (last.get("estimated_drift") if last else None)
                 )
                 if last
                 else None,
@@ -2743,7 +2513,6 @@ async def compute_validations(db, board_id: str, *, dt_from=None, dt_to=None) ->
             "per_card": per_card,
         },
         "spec_evaluation": _aggregate_spec_evaluation(specs),
-        "sprint_evaluation": _aggregate_sprint_evaluation(sprints),
     }
 
 
@@ -2781,15 +2550,15 @@ async def compute_spec_analytics(db, board_id: str, spec_id: str) -> dict | None
 
     # Validation timeline: all submissions (D4), oldest first
     validation_timeline: list[dict] = []
-    for v in spec.validations or []:
-        if not isinstance(v, dict):
-            continue
+    for v in _native_spec_validations(spec):
         validation_timeline.append(
             {
                 "id": v.get("id"),
                 "reviewer_id": v.get("reviewer_id"),
                 "reviewer_name": v.get("reviewer_name"),
-                "completeness": _safe_int(v.get("completeness")),
+                "confidence": v["confidence"],
+                "clarity": v["clarity"],
+                "decidability": v["decidability"],
                 "assertiveness": _safe_int(v.get("assertiveness")),
                 "ambiguity": _safe_int(v.get("ambiguity")),
                 "recommendation": v.get("recommendation"),
@@ -2830,11 +2599,11 @@ async def compute_spec_analytics(db, board_id: str, spec_id: str) -> dict | None
         or [],
         # Bug 42e78332: surface decisions for the entity-detail drilldown (parity with
         # _spec_detail + the IR/OR pattern). EntityDetail.tsx reads data.decisions /
-        # data.decisions_coverage / data.decisions_uncovered_ids; sourced from the
+        # data.decisions_planning / data.decisions_pending_ids; sourced from the
         # already-computed coverage_summary (SSOT spec_coverage_summary).
         "decisions": getattr(spec, "decisions", None) or [],
-        "decisions_coverage": coverage_summary["decisions_coverage_pct"],
-        "decisions_uncovered_ids": coverage_summary["decisions_uncovered_ids"],
+        "decisions_planning": coverage_summary["decisions_planning_pct"],
+        "decisions_pending_ids": coverage_summary["decisions_pending_ids"],
         "cards_summary": {
             "total": len(cards),
             "by_status": _card_status_breakdown(cards),
@@ -2847,314 +2616,8 @@ async def compute_spec_analytics(db, board_id: str, spec_id: str) -> dict | None
     }
 
 
-async def compute_sprint_analytics(db, board_id: str, sprint_id: str) -> dict | None:
-    """Per-sprint analytics reader (spec R01A REST-FU2c) — transport-free
-    body of the legacy board_sprint_analytics endpoint; returns None when the sprint is not found."""
-    sprints = await _analytics_list(
-        db,
-        "sprint",
-        filters=(
-            _af("id", "eq", sprint_id),
-            _af("board_id", "eq", board_id),
-        ),
-        limit=1,
-    )
-    sprint = sprints[0] if sprints else None
-    if not sprint:
-        return None
-
-    cards = await _analytics_list(
-        db,
-        "card",
-        filters=(
-            _af("sprint_id", "eq", sprint_id),
-            _af("archived", "is_false"),
-        ),
-    )
-    done_cards = [c for c in cards if c.status == CardStatus.DONE]
-
-    # Evaluation timeline (append-only) — oldest first
-    eval_timeline: list[dict] = []
-    for e in sprint.evaluations or []:
-        if not isinstance(e, dict):
-            continue
-        eval_timeline.append(
-            {
-                "id": e.get("id"),
-                "evaluator_id": e.get("evaluator_id"),
-                "evaluator_name": e.get("evaluator_name"),
-                "dimensions": e.get("dimensions"),
-                "overall_score": e.get("overall_score"),
-                "recommendation": e.get("recommendation"),
-                "stale": e.get("stale", False),
-                "created_at": e.get("created_at"),
-            }
-        )
-
-    # Weekly velocity during the sprint window (or last 4 weeks if window missing)
-    velocity = _compute_velocity(done_cards, 4, all_cards=cards)
-
-    card_partitions = partition_analytics_cards(cards)
-    return {
-        "sprint_id": sprint_id,
-        "title": sprint.title,
-        "status": sprint.status.value
-        if hasattr(sprint.status, "value")
-        else str(sprint.status),
-        "spec_id": sprint.spec_id,
-        "kanban_distribution": _card_status_breakdown(cards),
-        "cards_summary": {
-            "total": len(cards),
-            "done": len(done_cards),
-            "completion_rate": round(len(done_cards) / len(cards) * 100, 1)
-            if cards
-            else 0.0,
-            "by_type": {
-                "normal": len(card_partitions["implementation"]),
-                "test": len(card_partitions["test"]),
-                "bug": len(card_partitions["bug"]),
-            },
-        },
-        "task_validation_gate": aggregate_task_validation_gate(cards),
-        "evaluation_timeline": eval_timeline,
-        "velocity": velocity,
-    }
 
 
-async def compute_sprints_analytics(
-    db, board_id: str, *, dt_from=None, dt_to=None
-) -> dict:
-    """Board-level analytics reader (spec R01A REST-FU2d) — transport-free body of
-    the legacy board_sprints_analytics endpoint."""
-    # Sprint membership is a lifecycle relationship, not a creation-time
-    # relationship.  Applying the requested window to cards/specs used to
-    # silently remove members of an otherwise selected Sprint (and applying it
-    # to Sprints hid an active Sprint created before the window altogether).
-    # Load the board-scoped population first, then use the window only to
-    # select historical Sprints; every active Sprint remains in scope.
-    board_filters = _artifact_filters(
-        board_id,
-        include_archived=False,
-        dt_from=None,
-        dt_to=None,
-    )
-    all_sprints = await _analytics_list(db, "sprint", filters=board_filters)
-
-    def _sprint_selected(sprint: Any) -> bool:
-        if sprint.status == SprintStatus.ACTIVE:
-            return True
-        created_at = getattr(sprint, "created_at", None)
-        if not isinstance(created_at, datetime):
-            return dt_from is None and dt_to is None
-        if dt_from is not None and created_at < dt_from:
-            return False
-        if dt_to is not None and created_at >= dt_to:
-            return False
-        return True
-
-    sprints = [sprint for sprint in all_sprints if _sprint_selected(sprint)]
-    all_cards = await _analytics_list(db, "card", filters=board_filters)
-    board_done_card_ids = {
-        str(card.id) for card in all_cards if card.status == CardStatus.DONE
-    }
-    specs = await _analytics_list(db, "spec", filters=board_filters)
-    specs_by_id = {spec.id: spec for spec in specs}
-    from okto_pulse.core.services.sprint_scope import SprintScopeResolver
-    from okto_pulse.core.ports.sprint_activation_baseline import (
-        SprintActivationMember,
-        get_sprint_activation_baseline_store,
-    )
-    from okto_pulse.core.services.delivery_commitment import (
-        DeliveryCommitmentService,
-    )
-
-    per_sprint: list[dict] = []
-    normal_sprints_total = 0
-    hotfix_lanes_total = 0
-    active_hotfix_lanes = 0
-    for sp in sprints:
-        lane_type = (
-            sp.lane_type.value
-            if getattr(sp.lane_type, "value", None)
-            else str(sp.lane_type or SprintLaneType.NORMAL.value)
-        )
-        if lane_type == SprintLaneType.HOTFIX.value:
-            hotfix_lanes_total += 1
-            if sp.status == SprintStatus.ACTIVE:
-                active_hotfix_lanes += 1
-        else:
-            normal_sprints_total += 1
-        sp_cards = [c for c in all_cards if c.sprint_id == sp.id]
-        done_cards = [c for c in sp_cards if c.status == CardStatus.DONE]
-        total = len(sp_cards)
-        done = len(done_cards)
-        completion_rate = round(done / total * 100, 1) if total else 0.0
-        evals = getattr(sp, "evaluations", None) or []
-        last_eval = None
-        if isinstance(evals, list) and evals and isinstance(evals[-1], dict):
-            last_eval = {
-                "overall_score": evals[-1].get("overall_score"),
-                "recommendation": evals[-1].get("recommendation"),
-                "evaluator_name": evals[-1].get("evaluator_name"),
-                "created_at": evals[-1].get("created_at"),
-            }
-        task_gate = aggregate_task_validation_gate(sp_cards)
-        spec = specs_by_id.get(sp.spec_id)
-        scope = (
-            SprintScopeResolver.resolve(sprint=sp, spec=spec, cards=sp_cards)
-            if spec is not None
-            else None
-        )
-        activation_baseline = await get_sprint_activation_baseline_store().get(
-            db,
-            board_id=board_id,
-            sprint_id=sp.id,
-        )
-        current_commitment_members = tuple(
-            sorted(
-                SprintActivationMember(
-                    card_id=card.id,
-                    card_type=getattr(
-                        card.card_type,
-                        "value",
-                        str(card.card_type),
-                    ),
-                    card_version=int(getattr(card, "policy_version", 1)),
-                )
-                for card in sp_cards
-            )
-        )
-        commitment = DeliveryCommitmentService.commitment_slice(
-            sprint_id=sp.id,
-            baseline=activation_baseline,
-            current_members=current_commitment_members,
-        )
-        baseline_member_ids = {
-            str(member.get("card_id"))
-            for member in (
-                getattr(activation_baseline, "members", ())
-                if activation_baseline is not None
-                else ()
-            )
-            if isinstance(member, dict) and member.get("card_id")
-        }
-        # The domain baseline object uses SprintActivationMember values while
-        # the Community persistence model stores canonical dictionaries.
-        if activation_baseline is not None and not baseline_member_ids:
-            baseline_member_ids = {
-                str(getattr(member, "card_id"))
-                for member in getattr(activation_baseline, "members", ())
-                if getattr(member, "card_id", None)
-            }
-        completed_committed_count = (
-            # Commitment is sealed at activation. A baseline member that was
-            # later removed from (or moved out of) this Sprint still counts as
-            # completed commitment when its board-scoped card reaches Done.
-            len(baseline_member_ids & board_done_card_ids)
-            if activation_baseline is not None
-            else None
-        )
-        sprint_velocity = _compute_velocity(done_cards, 4, all_cards=sp_cards)
-
-        # Self-reported quality from card.conclusions on this sprint's cards.
-        # Falls back to the validation gate's reviewer-reported avg_scores when
-        # no implementer conclusions exist (e.g. validation-gate-only flow).
-        sp_completeness: list[float] = []
-        sp_drift: list[float] = []
-        for c in sp_cards:
-            concl = _extract_conclusion(c)
-            if concl:
-                if concl.get("completeness") is not None:
-                    sp_completeness.append(concl["completeness"])
-                if concl.get("drift") is not None:
-                    sp_drift.append(concl["drift"])
-        avg_completeness = _avg(sp_completeness)
-        avg_drift = _avg(sp_drift)
-        if avg_completeness is None:
-            avg_completeness = task_gate["avg_scores"].get("completeness")
-        if avg_drift is None:
-            avg_drift = task_gate["avg_scores"].get("drift")
-
-        per_sprint.append(
-            {
-                "sprint_id": sp.id,
-                "title": sp.title,
-                "status": sp.status.value
-                if hasattr(sp.status, "value")
-                else str(sp.status),
-                "spec_id": sp.spec_id,
-                "lane_type": lane_type,
-                "origin_sprint_id": getattr(sp, "origin_sprint_id", None),
-                "origin_bug_id": getattr(sp, "origin_bug_id", None),
-                "normal_sprint_created": getattr(
-                    sp, "normal_sprint_created", lane_type == "normal"
-                ),
-                "total_cards": total,
-                "done_cards": done,
-                "completion_rate": completion_rate,
-                "avg_completeness": avg_completeness,
-                "avg_drift": avg_drift,
-                "card_status_breakdown": _card_status_breakdown(sp_cards),
-                "evaluations_count": len(evals),
-                "last_evaluation": last_eval,
-                "task_validation_gate": {
-                    "total_submitted": task_gate["total_submitted"],
-                    "total_success": task_gate["total_success"],
-                    "total_failed": task_gate["total_failed"],
-                    "rejection_reasons": task_gate["rejection_reasons"],
-                    "first_pass_rate": task_gate["first_pass_rate"],
-                },
-                "scope": (
-                    {
-                        "sprint_version": scope.sprint_version,
-                        "spec_version": scope.spec_version,
-                        "counts": {
-                            name: len(items) for name, items in scope.items.items()
-                        },
-                    }
-                    if scope is not None
-                    else None
-                ),
-                "commitment": commitment.canonical_dict(),
-                "completed_committed_count": completed_committed_count,
-                "committed_effort": {
-                    "state": "unavailable",
-                    "value": None,
-                    "unit": None,
-                    "reason": "effort_not_captured_at_activation",
-                },
-                "carryover": {
-                    "state": "unavailable",
-                    "count": None,
-                    "reason": "carryover_lineage_not_persisted",
-                },
-                "velocity": {
-                    "state": "available" if sprint_velocity else "empty",
-                    "period": "week",
-                    "sample_size": len(sprint_velocity),
-                    "series": sprint_velocity,
-                    "reason": None if sprint_velocity else "no_temporal_observations",
-                },
-            }
-        )
-    per_sprint.sort(key=lambda x: x["total_cards"], reverse=True)
-
-    return {
-        "summary": {
-            "total_sprints": len(sprints),
-            "normal_sprints_total": normal_sprints_total,
-            "hotfix_lanes_total": hotfix_lanes_total,
-            "active_hotfix_lanes": active_hotfix_lanes,
-            "status_breakdown": _sprint_status_breakdown(sprints),
-            "avg_completion_rate": round(
-                sum(p["completion_rate"] for p in per_sprint) / len(per_sprint), 1
-            )
-            if per_sprint
-            else None,
-            "sprint_evaluation": _aggregate_sprint_evaluation(sprints),
-        },
-        "sprints": per_sprint,
-    }
 
 
 async def compute_agents(db, board_id: str, *, dt_from=None, dt_to=None) -> dict:
@@ -3188,7 +2651,7 @@ async def compute_agents(db, board_id: str, *, dt_from=None, dt_to=None) -> dict
     for c in cards:
         for v in getattr(c, "validations", None) or []:
             if isinstance(v, dict):
-                rid = v.get("reviewer_id") or v.get("evaluator_id")
+                rid = v.get("reviewer_id")
                 if rid:
                     actors.add(rid)
     for s in specs:
@@ -3219,9 +2682,9 @@ async def compute_agents(db, board_id: str, *, dt_from=None, dt_to=None) -> dict
             for v in getattr(c, "validations", None) or []:
                 if not isinstance(v, dict):
                     continue
-                if (v.get("reviewer_id") or v.get("evaluator_id")) == actor_id:
+                if (v.get("reviewer_id")) == actor_id:
                     task_sub += 1
-                    if v.get("outcome") == "success" or v.get("verdict") == "pass":
+                    if v.get("outcome") == "success":
                         task_sub_success += 1
 
         # Spec validations submitted BY this actor
@@ -3246,7 +2709,6 @@ async def compute_agents(db, board_id: str, *, dt_from=None, dt_to=None) -> dict
                 and isinstance(vals[0], dict)
                 and (
                     vals[0].get("outcome") == "success"
-                    or vals[0].get("verdict") == "pass"
                 )
             ):
                 first_pass += 1
@@ -3307,10 +2769,9 @@ async def compute_delivery_intelligence(
 ) -> dict[str, Any]:
     """Build the canonical read-only Delivery Intelligence projection.
 
-    The projection deliberately reuses the immutable Sprint activation authority
-    and the shared Analytics temporal contract.  Missing evidence is represented
-    as an explicit state; it is never coerced to zero or reconstructed from the
-    mutable current Sprint membership.
+    Contribution arithmetic and visibility are preserved over the existing Board
+    agent-analytics cohort: non-archived Cards created in the UTC window.
+    Current Card state is observed now; this is not a historical state replay.
     """
 
     from okto_pulse.core.ports.analytics_foundation import (
@@ -3351,27 +2812,11 @@ async def compute_delivery_intelligence(
         return tuple(clause for clause in query.filters if clause.field == field)
 
     def _matches_filter(field: str, actual: object) -> bool:
-        candidate = str(actual)
-        if field != "sprint_id":
-            candidate = candidate.strip().casefold()
+        candidate = str(actual).strip().casefold()
         for clause in _field_clauses(field):
-            raw_values = (
-                clause.value if isinstance(clause.value, tuple) else (clause.value,)
-            )
-            values = tuple(
-                str(value)
-                if field == "sprint_id"
-                else str(value).strip().casefold()
-                for value in raw_values
-            )
-            # ``all`` remains the wildcard for positive lane/role filters:
-            # ``lane=all`` / ``role=all`` never narrow the projection. Negative
-            # operators keep their literal semantics.
-            if (
-                field != "sprint_id"
-                and clause.operator in ("eq", "in")
-                and "all" in values
-            ):
+            raw_values = clause.value if isinstance(clause.value, tuple) else (clause.value,)
+            values = tuple(str(value).strip().casefold() for value in raw_values)
+            if clause.operator in ("eq", "in") and "all" in values:
                 continue
             if clause.operator == "eq" and candidate != values[0]:
                 return False
@@ -3385,120 +2830,11 @@ async def compute_delivery_intelligence(
 
     dt_from = query.window.from_inclusive
     dt_to = query.window.to_exclusive
-    sprint_payload = await compute_sprints_analytics(
-        db,
-        query.board_id,
-        dt_from=dt_from,
-        dt_to=dt_to,
+    scoped_cards = await _analytics_list(
+        db, "card", filters=_artifact_filters(
+            query.board_id, include_archived=False, dt_from=dt_from, dt_to=dt_to,
+        ),
     )
-    raw_sprints = list(sprint_payload["sprints"])
-    raw_sprints = [
-        item
-        for item in raw_sprints
-        if _matches_filter("sprint_id", item["sprint_id"])
-        and _matches_filter("lane", item["lane_type"])
-    ]
-    raw_sprints.sort(
-        key=lambda item: (str(item["title"]).casefold(), item["sprint_id"])
-    )
-
-    available_commitments = [
-        item for item in raw_sprints if item["commitment"]["state"] == "available"
-    ]
-    committed = sum(
-        int(item["commitment"].get("original_member_count") or 0)
-        for item in available_commitments
-    )
-    completed_committed = sum(
-        int(item.get("completed_committed_count") or 0)
-        for item in available_commitments
-    )
-    added = sum(
-        int(item["commitment"].get("added_count") or 0)
-        for item in available_commitments
-    )
-    removed = sum(
-        int(item["commitment"].get("removed_count") or 0)
-        for item in available_commitments
-    )
-    throughput = sum(int(item["done_cards"]) for item in raw_sprints)
-    hotfix_throughput = sum(
-        int(item["done_cards"])
-        for item in raw_sprints
-        if item["lane_type"] == SprintLaneType.HOTFIX.value
-    )
-    normal_throughput = throughput - hotfix_throughput
-    unavailable_commitments = len(raw_sprints) - len(available_commitments)
-
-    if committed:
-        reliability = _metric(
-            state="available" if unavailable_commitments == 0 else "partial",
-            value=round(completed_committed / committed * 100, 1),
-            numerator=completed_committed,
-            denominator=committed,
-            sample_size=len(available_commitments),
-            reason=(
-                None
-                if unavailable_commitments == 0
-                else "legacy_activation_baseline_unavailable"
-            ),
-            unit="percent",
-        )
-    else:
-        reliability = _metric(
-            state="unavailable" if raw_sprints else "empty",
-            value=None,
-            sample_size=0,
-            reason=(
-                "activation_baseline_not_available"
-                if raw_sprints
-                else "no_sprints_in_effective_window"
-            ),
-            unit="percent",
-        )
-
-    hotfix_share = (
-        _metric(
-            state="available",
-            value=round(hotfix_throughput / throughput * 100, 1),
-            numerator=hotfix_throughput,
-            denominator=throughput,
-            sample_size=throughput,
-            unit="percent",
-        )
-        if throughput
-        else _metric(
-            state="empty",
-            value=None,
-            sample_size=0,
-            reason="no_completed_cards_in_effective_window",
-            unit="percent",
-        )
-    )
-
-    selected_sprint_ids = {item["sprint_id"] for item in raw_sprints}
-    all_cards = (
-        await _analytics_list(
-            db,
-            "card",
-            filters=_artifact_filters(
-                query.board_id,
-                include_archived=False,
-                dt_from=None,
-                dt_to=None,
-                extra=(
-                    _af("sprint_id", "in", tuple(sorted(selected_sprint_ids))),
-                ),
-            ),
-        )
-        if selected_sprint_ids
-        else []
-    )
-    scoped_cards = [
-        card
-        for card in all_cards
-        if getattr(card, "sprint_id", None) in selected_sprint_ids
-    ]
 
     actor_facts: dict[str, dict[str, Any]] = {}
     for card in scoped_cards:
@@ -3538,21 +2874,19 @@ async def compute_delivery_intelligence(
             ]
             if validations:
                 fact["own_with_validation"] += 1
-                first_outcome = validations[0].get("outcome") or validations[0].get(
-                    "verdict"
-                )
-                if first_outcome in {"success", "pass"}:
+                first_outcome = validations[0].get("outcome")
+                if first_outcome == "success":
                     fact["own_first_pass"] += 1
                 failed = sum(
                     1
                     for value in validations
-                    if (value.get("outcome") or value.get("verdict"))
-                    not in {"success", "pass"}
+                    if (value.get("outcome"))
+                    != "success"
                 )
                 fact["rework_introduced"] += failed
                 if failed and any(
-                    (value.get("outcome") or value.get("verdict"))
-                    in {"success", "pass"}
+                    (value.get("outcome"))
+                    == "success"
                     for value in validations[1:]
                 ):
                     fact["rework_resolved"] += 1
@@ -3560,7 +2894,7 @@ async def compute_delivery_intelligence(
         for validation in getattr(card, "validations", None) or []:
             if not isinstance(validation, dict):
                 continue
-            reviewer = validation.get("reviewer_id") or validation.get("evaluator_id")
+            reviewer = validation.get("reviewer_id")
             if not reviewer:
                 continue
             reviewer_fact = actor_facts.setdefault(
@@ -3577,8 +2911,8 @@ async def compute_delivery_intelligence(
                 },
             )
             reviewer_fact["validation_total"] += 1
-            outcome = validation.get("outcome") or validation.get("verdict")
-            if outcome in {"success", "pass"}:
+            outcome = validation.get("outcome")
+            if outcome == "success":
                 reviewer_fact["validation_success"] += 1
 
     contribution_clause = next(iter(_field_clauses("contribution_view")), None)
@@ -3801,21 +3135,21 @@ async def compute_delivery_intelligence(
 
     restricted_count = sum(1 for row in contributions if _has_restricted_metric(row))
 
-    page = raw_sprints[cursor_offset : cursor_offset + limit]
+    page = contributions[cursor_offset : cursor_offset + limit]
     next_offset = cursor_offset + len(page)
-    next_cursor = f"offset:{next_offset}" if next_offset < len(raw_sprints) else None
+    next_cursor = f"contributions-v2:offset:{next_offset}" if next_offset < len(contributions) else None
     observed_at = query.as_of or datetime.now(timezone.utc)
     result_state = (
         "empty"
-        if not raw_sprints and not contributions
+        if not contributions
         else (
             "partial"
-            if unavailable_commitments or restricted_count
+            if restricted_count
             else "available"
         )
     )
     return {
-        "contract_version": "1",
+        "contract_version": "2",
         "foundation_version": ANALYTICS_FOUNDATION_CONTRACT_VERSION,
         "query_fingerprint": query.fingerprint,
         "filters": [item.canonical_dict() for item in query.filters],
@@ -3825,16 +3159,12 @@ async def compute_delivery_intelligence(
         "provenance": {
             "observed_at": _utc_text(observed_at),
             "currentness": "current",
-            "reason": (
-                "legacy_activation_baseline_unavailable"
-                if unavailable_commitments
-                else None
-            ),
+            "reason": None,
             "sources": [
                 {
-                    "authority": "sprint_activation_baselines",
-                    "reference": f"board:{query.board_id}:delivery-intelligence:v1",
-                    "timestamp_field": "sprints.updated_at",
+                    "authority": "board_cards_created_in_window",
+                    "reference": f"board:{query.board_id}:delivery-intelligence:v2",
+                    "timestamp_field": "cards.created_at",
                 },
                 {
                     "authority": "task_validation_ledger",
@@ -3845,7 +3175,7 @@ async def compute_delivery_intelligence(
         },
         "population_scope": {
             "scope_ref": query.actor_scope_ref,
-            "accessible_count": len(raw_sprints),
+            "accessible_count": len(scoped_cards),
             "excluded_count": 0,
         },
         "exclusions": {
@@ -3863,39 +3193,7 @@ async def compute_delivery_intelligence(
             ),
         },
         "minimum_sample_size": minimum_sample_size,
-        "summary": {
-            "commitment_reliability": reliability,
-            "throughput": {
-                "state": "available" if raw_sprints else "empty",
-                "total": throughput,
-                "normal": normal_throughput,
-                "hotfix": hotfix_throughput,
-                "sample_size": len(raw_sprints),
-                "reason": None if raw_sprints else "no_sprints_in_effective_window",
-            },
-            "carryover": _metric(
-                state="unavailable" if raw_sprints else "empty",
-                value=None,
-                sample_size=0,
-                reason=(
-                    "carryover_lineage_not_persisted"
-                    if raw_sprints
-                    else "no_sprints_in_effective_window"
-                ),
-            ),
-            "hotfix_share": hotfix_share,
-            "scope": {
-                "state": reliability["state"],
-                "committed_at_activation": committed if committed else None,
-                "completed_from_commitment": completed_committed if committed else None,
-                "added_after_activation": added if available_commitments else None,
-                "removed_after_activation": removed if available_commitments else None,
-                "sample_size": len(available_commitments),
-                "reason": reliability["reason"],
-            },
-        },
-        "sprints": page,
-        "contributions": contributions,
+        "contributions": page,
         "next_cursor": next_cursor,
     }
 
@@ -4265,56 +3563,6 @@ async def _spec_detail(db: Any, board_id: str, spec_id: str) -> dict:
     # Bug stats for this spec
     bug_cards = [c for c in cards if classify_analytics_card(c) == "bug"]
 
-    # Sprint breakdown
-    sprints = await _analytics_list(
-        db,
-        "sprint",
-        filters=(
-            _af("spec_id", "eq", spec_id),
-            _af("archived", "is_false"),
-        ),
-    )
-    sprint_summaries = []
-    for sp in sprints:
-        sp_cards = [c for c in cards if getattr(c, "sprint_id", None) == sp.id]
-        sp_done = [c for c in sp_cards if c.status == CardStatus.DONE]
-        sp_concls = [_extract_conclusion(c) for c in sp_done if _extract_conclusion(c)]
-        sp_completeness = [
-            cn.get("completeness")
-            for cn in sp_concls
-            if cn.get("completeness") is not None
-        ]
-        sp_drift = [cn.get("drift") for cn in sp_concls if cn.get("drift") is not None]
-        sp_cycle = []
-        for c in sp_done:
-            delta = _hours_between(c.created_at, c.updated_at)
-            if delta is not None:
-                sp_cycle.append(round(delta, 1))
-        sprint_summaries.append(
-            {
-                "sprint_id": sp.id,
-                "title": sp.title,
-                "status": sp.status.value,
-                "tasks_total": len(sp_cards),
-                "tasks_done": len(sp_done),
-                "progress": round(len(sp_done) / len(sp_cards) * 100, 1)
-                if sp_cards
-                else 0,
-                "avg_completeness": round(
-                    sum(sp_completeness) / len(sp_completeness), 1
-                )
-                if sp_completeness
-                else None,
-                "avg_drift": round(sum(sp_drift) / len(sp_drift), 1)
-                if sp_drift
-                else None,
-                "avg_cycle_hours": round(sum(sp_cycle) / len(sp_cycle), 1)
-                if sp_cycle
-                else None,
-                "evaluations_count": len(sp.evaluations or []),
-            }
-        )
-
     return {
         "spec_id": spec.id,
         "title": spec.title,
@@ -4338,14 +3586,13 @@ async def _spec_detail(db: Any, board_id: str, spec_id: str) -> dict:
         "observability_requirements": getattr(spec, "observability_requirements", None)
         or [],
         # Bug 42e78332: surface decisions for the entity-detail drilldown. EntityDetail.tsx
-        # reads top-level data.decisions / data.decisions_coverage / data.decisions_uncovered_ids
+        # reads top-level data.decisions / data.decisions_planning / data.decisions_pending_ids
         # (KPI + "Decisions Coverage" panel). Sourced from spec.decisions + the already-computed
         # coverage_summary (SSOT spec_coverage_summary) — additive, mirrors IR/OR (spec 233eaad3).
         "decisions": getattr(spec, "decisions", None) or [],
-        "decisions_coverage": coverage_summary["decisions_coverage_pct"],
-        "decisions_uncovered_ids": coverage_summary["decisions_uncovered_ids"],
+        "decisions_planning": coverage_summary["decisions_planning_pct"],
+        "decisions_pending_ids": coverage_summary["decisions_pending_ids"],
         "bugs_count": len(bug_cards),
-        "sprints": sprint_summaries,
     }
 
 
@@ -4425,7 +3672,6 @@ async def _card_detail(db: Any, board_id: str, card_id: str) -> dict:
         "is_test": classify_analytics_card(card) == "test",
         "card_type": card_type,
         "spec_id": card.spec_id,
-        "sprint_id": card.sprint_id,
         "completeness": concl.get("completeness") if concl else None,
         "drift": concl.get("drift") if concl else None,
         "conclusions": card.conclusions,
@@ -4502,202 +3748,6 @@ async def _refinement_detail(db: Any, board_id: str, refinement_id: str) -> dict
     }
 
 
-async def _sprint_detail(db: Any, board_id: str, sprint_id: str) -> dict:
-    """Sprint detail: tasks done/total, completeness avg, drift avg, cycle time, evaluations, comparison."""
-    sprints = await _analytics_list(
-        db,
-        "sprint",
-        filters=(
-            _af("id", "eq", sprint_id),
-            _af("board_id", "eq", board_id),
-        ),
-        limit=1,
-    )
-    sprint = sprints[0] if sprints else None
-    if not sprint:
-        return None
-
-    # Cards in this sprint (skip archived to keep counts honest)
-    cards = await _analytics_list(
-        db,
-        "card",
-        filters=(
-            _af("sprint_id", "eq", sprint_id),
-            _af("archived", "is_false"),
-        ),
-    )
-
-    done_cards = [c for c in cards if c.status == CardStatus.DONE]
-    cancelled = [c for c in cards if c.status == CardStatus.CANCELLED]
-    in_progress = [
-        c for c in cards if c.status not in (CardStatus.DONE, CardStatus.CANCELLED)
-    ]
-
-    # Completeness and drift: prefer self-reported conclusions, fall back to
-    # the validation gate's reviewer score when no conclusion exists. This
-    # ensures sprints that use the task validation gate flow still surface
-    # quality metrics instead of showing "--".
-    completeness_vals: list[float] = []
-    drift_vals: list[float] = []
-    cycle_times: list[float] = []
-    card_metrics = []
-    for c in cards:
-        concl = _extract_conclusion(c)
-        comp = concl.get("completeness") if concl else None
-        dr = concl.get("drift") if concl else None
-        if comp is None or dr is None:
-            vals = getattr(c, "validations", None) or []
-            last_val = next(
-                (v for v in reversed(vals) if isinstance(v, dict)),
-                None,
-            )
-            if last_val:
-                if comp is None:
-                    comp = last_val.get("completeness") or last_val.get(
-                        "estimated_completeness"
-                    )
-                if dr is None:
-                    dr = last_val.get("drift") or last_val.get("estimated_drift")
-        ct_hours = None
-        if c.status == CardStatus.DONE and c.created_at and c.updated_at:
-            delta = _hours_between(c.created_at, c.updated_at)
-            if delta is not None:
-                ct_hours = round(delta, 1)
-                cycle_times.append(ct_hours)
-        if comp is not None:
-            completeness_vals.append(comp)
-        if dr is not None:
-            drift_vals.append(dr)
-        card_metrics.append(
-            {
-                "id": c.id,
-                "title": c.title,
-                "status": c.status.value if c.status else None,
-                "card_type": getattr(c, "card_type", "normal"),
-                "completeness": comp,
-                "drift": dr,
-                "cycle_hours": ct_hours,
-            }
-        )
-
-    # Evaluations summary
-    evaluations = sprint.evaluations or []
-    non_stale = [e for e in evaluations if not e.get("stale")]
-    approvals = [e for e in non_stale if e.get("recommendation") == "approve"]
-
-    # Scoped test scenario coverage
-    spec_rows = (
-        await _analytics_list(
-            db,
-            "spec",
-            filters=(_af("id", "eq", sprint.spec_id),),
-            limit=1,
-        )
-        if sprint.spec_id
-        else []
-    )
-    spec = spec_rows[0] if spec_rows else None
-    scoped_scenarios = []
-    if spec and sprint.test_scenario_ids:
-        all_scenarios = {s.get("id"): s for s in (spec.test_scenarios or [])}
-        for ts_id in sprint.test_scenario_ids:
-            sc = all_scenarios.get(ts_id)
-            if sc:
-                scoped_scenarios.append(
-                    {
-                        "id": sc.get("id"),
-                        "title": sc.get("title"),
-                        "status": sc.get("status", "unknown"),
-                    }
-                )
-    passed = [s for s in scoped_scenarios if s["status"] == "passed"]
-
-    # Sibling sprints for comparison
-    comparison = []
-    if sprint.spec_id:
-        siblings = await _analytics_list(
-            db,
-            "sprint",
-            filters=(
-                _af("spec_id", "eq", sprint.spec_id),
-                _af("archived", "is_false"),
-            ),
-        )
-        for sib in siblings:
-            sib_cards = await _analytics_list(
-                db,
-                "card",
-                filters=(
-                    _af("sprint_id", "eq", sib.id),
-                    _af("archived", "is_false"),
-                ),
-            )
-            sib_done = [c for c in sib_cards if c.status == CardStatus.DONE]
-            sib_concls = [
-                _extract_conclusion(c) for c in sib_done if _extract_conclusion(c)
-            ]
-            sib_comp = [
-                cn.get("completeness")
-                for cn in sib_concls
-                if cn.get("completeness") is not None
-            ]
-            sib_dr = [
-                cn.get("drift") for cn in sib_concls if cn.get("drift") is not None
-            ]
-            comparison.append(
-                {
-                    "sprint_id": sib.id,
-                    "title": sib.title,
-                    "status": sib.status.value,
-                    "tasks_total": len(sib_cards),
-                    "tasks_done": len(sib_done),
-                    "avg_completeness": round(sum(sib_comp) / len(sib_comp), 1)
-                    if sib_comp
-                    else None,
-                    "avg_drift": round(sum(sib_dr) / len(sib_dr), 1)
-                    if sib_dr
-                    else None,
-                    "is_current": sib.id == sprint_id,
-                }
-            )
-
-    return {
-        "sprint_id": sprint.id,
-        "title": sprint.title,
-        "status": sprint.status.value,
-        "spec_id": sprint.spec_id,
-        "spec_version": sprint.spec_version,
-        "tasks_total": len(cards),
-        "tasks_done": len(done_cards),
-        "tasks_cancelled": len(cancelled),
-        "tasks_in_progress": len(in_progress),
-        "progress": round(len(done_cards) / len(cards) * 100, 1) if cards else 0,
-        "avg_completeness": round(sum(completeness_vals) / len(completeness_vals), 1)
-        if completeness_vals
-        else None,
-        "avg_drift": round(sum(drift_vals) / len(drift_vals), 1)
-        if drift_vals
-        else None,
-        "avg_cycle_hours": round(sum(cycle_times) / len(cycle_times), 1)
-        if cycle_times
-        else None,
-        "cards": card_metrics,
-        "evaluations_total": len(evaluations),
-        "evaluations_non_stale": len(non_stale),
-        "approvals": len(approvals),
-        "avg_eval_score": round(
-            sum(e.get("overall_score", 0) for e in approvals) / len(approvals), 1
-        )
-        if approvals
-        else None,
-        "scoped_scenarios": scoped_scenarios,
-        "scenario_coverage": round(len(passed) / len(scoped_scenarios) * 100, 1)
-        if scoped_scenarios
-        else 0,
-        "comparison": comparison,
-        "created_at": sprint.created_at.isoformat() if sprint.created_at else None,
-        "updated_at": sprint.updated_at.isoformat() if sprint.updated_at else None,
-    }
 
 
 def resolve_linked_requirement_tokens_to_fr_or_tr_ids(
@@ -4705,35 +3755,8 @@ def resolve_linked_requirement_tokens_to_fr_or_tr_ids(
     frs: list,
     trs: list,
 ) -> tuple[list[str], list[str]]:
-    """Resolve requirement refs against FRs first, then TRs (MCP-FU6: moved here
-    from the MCP server so MCP-scoped use cases can resolve without importing the
-    transport package).
-
-    ``linked_requirements`` is used by agents as a generic requirement-link
-    surface on API contracts, integration requirements, observability
-    requirements, and decisions. Keep FR behavior unchanged and add strict TR
-    support for structured technical requirements.
-    """
-    resolved: list[str] = []
-    unresolved: list[str] = []
-    seen: set[str] = set()
-
-    fr_ids, fr_unresolved = resolve_linked_requirements_to_ids(linked_tokens, frs)
-    for rid in fr_ids:
-        if rid not in seen:
-            seen.add(rid)
-            resolved.append(rid)
-
-    if not fr_unresolved:
-        return resolved, unresolved
-
-    tr_ids, tr_unresolved = resolve_linked_requirements_to_ids(fr_unresolved, trs)
-    for rid in tr_ids:
-        if rid not in seen:
-            seen.add(rid)
-            resolved.append(rid)
-    unresolved.extend(tr_unresolved)
-    return resolved, unresolved
+    """Resolve exact IDs across the complete FR/TR namespace without coercion."""
+    return _resolve_linked_child_ids(linked_tokens, [*frs, *trs])
 
 
 def available_structured_ids(items: list) -> list[str]:

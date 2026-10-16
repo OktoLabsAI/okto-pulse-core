@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import replace
 from typing import Mapping
 
 import pytest
@@ -20,6 +21,7 @@ from okto_pulse.core.application.use_cases.validation_cycle import (
 )
 from okto_pulse.core.domain.quality_assessment import AssessmentSubjectType
 from okto_pulse.core.domain.realm import RealmScope
+from okto_pulse.core.domain.spec_planning import SpecPlanningManifest
 from okto_pulse.core.domain.validation_cycle import (
     RequirementLintAnchor,
     RequirementLintPreflight,
@@ -58,6 +60,42 @@ from okto_pulse.core.domain.human_validation_cycle import (
 _DIGEST = "a" * 64
 
 
+def _planning_manifest(**overrides):
+    return SpecPlanningManifest.model_validate({
+        "board_id": "board-1", "spec_id": "spec-1", "edition": 3, "spec_version": 17,
+        "subject_incarnation": "a" * 32, "subject_revision": 7,
+        "authority_incarnation": "b" * 32, "authority_revision": 2,
+        **overrides,
+    })
+
+
+@pytest.mark.parametrize("overrides", [
+    {"subject_revision": True}, {"authority_revision": 0}, {"edition": "3"},
+    {"subject_incarnation": "missing"}, {"approved": True},
+])
+def test_planning_manifest_is_closed_and_not_a_client_approval(overrides):
+    with pytest.raises(ValueError):
+        _planning_manifest(**overrides)
+
+
+def test_planning_manifest_is_scoped_and_technical_only():
+    manifest = _planning_manifest()
+    cycle = ValidationCycleSummary(
+        subject_type=AssessmentSubjectType.SPEC, subject_id="spec-1", edition=3,
+        status="approved", cycle_state=ValidationCycleState.IN_PROGRESS,
+        current_result=None, previous_result_count=0, submission_fence=_fence(),
+        checks=_checks(), visible_sections=_spec_sections(), planning_manifest=manifest,
+    )
+    assert project_validation_cycle(cycle)["planning_manifest"] == manifest.model_dump()
+    assert cycle.current_result is None
+    for changed in ({"spec_id": "other"}, {"edition": 4}, {"spec_version": 18}):
+        with pytest.raises(ValidationCycleContractError, match="planning_manifest_scope_mismatch"):
+            replace(cycle, planning_manifest=_planning_manifest(**changed))
+    with pytest.raises(ValidationCycleContractError, match="planning_manifest_scope_mismatch"):
+        replace(cycle, visible_sections=(ValidationCycleResultType.REQUIREMENT_LINT,),
+                cycle_state=None, previous_result_count=None, submission_fence=None)
+
+
 def test_spec_validation_submit_rejects_historical_write_shapes() -> None:
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         SpecValidationSubmit.model_validate(
@@ -87,6 +125,8 @@ def test_spec_validation_submit_rejects_historical_write_shapes() -> None:
 
 def _canonical_spec_validation_payload() -> dict[str, object]:
     return {
+        "idempotency_key": "cycle-review",
+        "expected_planning_manifest": _planning_manifest().model_dump(mode="json"),
         "expected_validation_edition": 3,
         "expected_spec_version": 17,
         "expected_head_revision": 0,
@@ -103,13 +143,15 @@ def _canonical_spec_validation_payload() -> dict[str, object]:
         "recommendation": "approve",
         "pinpoints": [
             {
-                "metric": "decidability",
+                "metrics": ["decidability"], "kind": "problem", "severity": "medium",
+                "excerpt": "Original requirement", "recommendation": "Specify the expected measurable bounds.",
                 "anchor_type": "field",
                 "anchor_ref": "technical_requirements.tr_availability",
                 "detail": "Specify the minimum and maximum instance count.",
             },
             {
-                "metric": "clarity",
+                "metrics": ["clarity"], "kind": "problem", "severity": "medium",
+                "excerpt": "Original requirement", "recommendation": "Specify the expected measurable bounds.",
                 "anchor_type": "whole_artifact",
                 "detail": "State the solution boundary explicitly.",
             },
@@ -121,7 +163,7 @@ def test_spec_validation_canonical_five_metric_contract_is_closed() -> None:
     payload = _canonical_spec_validation_payload()
     model = SpecValidationSubmit.model_validate(payload)
     projected = model.model_dump(exclude_none=True)["pinpoints"]
-    assert [item["metric"] for item in projected] == ["decidability", "clarity"]
+    assert [item["metrics"] for item in projected] == [["decidability"], ["clarity"]]
     assert projected[1].get("anchor_ref") is None
     command = SubmitSpecValidationCommand("spec-1", payload)
     command.validate()
@@ -138,7 +180,8 @@ def test_spec_validation_canonical_five_metric_contract_is_closed() -> None:
     invalid_pinpoint = dict(payload)
     invalid_pinpoint["pinpoints"] = [
         {
-            "metric": "decidability",
+            "metrics": ["decidability"], "kind": "problem", "severity": "medium",
+                "excerpt": "Original requirement", "recommendation": "Specify the expected measurable bounds.",
             "anchor_type": "whole_artifact",
             "anchor_ref": "description",
             "detail": "This reference is forbidden for a whole-artifact anchor.",
@@ -150,11 +193,12 @@ def test_spec_validation_canonical_five_metric_contract_is_closed() -> None:
     unknown_field = dict(payload)
     unknown_field["pinpoints"] = [
         {
-            "metric": "clarity",
+            "metrics": ["clarity"], "kind": "problem", "severity": "medium",
+                "excerpt": "Original requirement", "recommendation": "Specify the expected measurable bounds.",
             "anchor_type": "field",
             "anchor_ref": "description",
             "detail": "Clarify the affected behavior.",
-            "severity": "high",
+            "unsupported": "high",
         }
     ]
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
@@ -180,28 +224,12 @@ def test_spec_validation_threshold_defaults_cover_five_canonical_metrics() -> No
         BoardSettings(min_spec_decidability=101)
 
 
-def test_spec_validation_history_response_preserves_legacy_null_edition() -> None:
-    legacy = SpecValidationResponse.model_validate(
-        {
-            "id": "legacy-validation",
-            "validation_edition": None,
-            "is_current": False,
-            "score": 88,
-            "summary": "Historical score and summary remain readable.",
+def test_spec_validation_history_response_refuses_null_edition() -> None:
+    with pytest.raises(ValueError):
+        SpecValidationResponse.model_validate({
+            "id": "incompatible", "edition": None, "validation_edition": None,
             "lifecycle_state": "history_only",
-        }
-    )
-    assert legacy.validation_edition is None
-    assert legacy.lifecycle_state == "history_only"
-
-    with pytest.raises(ValueError, match="current_edition_required"):
-        SpecValidationResponse.model_validate(
-            {
-                "id": "invalid-current",
-                "validation_edition": None,
-                "lifecycle_state": "current",
-            }
-        )
+        })
 
 
 def _fence(*, edition: int = 3) -> ValidationSubmissionFence:

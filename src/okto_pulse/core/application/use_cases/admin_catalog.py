@@ -242,7 +242,6 @@ class CreateAmendmentRevisionUseCase:
             actor,
             PermissionRequirement(
                 "amendment.revision.create",
-                legacy_operation="card.entity.edit_bug_fields",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -272,7 +271,6 @@ class ListAmendmentRevisionsUseCase:
             actor,
             PermissionRequirement(
                 "amendment.revision.read",
-                legacy_operation="card.entity.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -299,7 +297,6 @@ class GetAmendmentRevisionUseCase:
             actor,
             PermissionRequirement(
                 "amendment.revision.read",
-                legacy_operation="card.entity.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -338,7 +335,6 @@ class AssociateAmendmentRevisionUseCase:
             actor,
             PermissionRequirement(
                 "amendment.revision.associate",
-                legacy_operation="card.entity.edit_bug_fields",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -379,7 +375,6 @@ class TransitionAmendmentRevisionUseCase:
             actor,
             PermissionRequirement(
                 "amendment.revision.transition",
-                legacy_operation="card.entity.edit_bug_fields",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -414,7 +409,6 @@ class GetActiveDefaultBoardConfigUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id or None,
@@ -430,7 +424,6 @@ class ListDefaultBoardConfigVersionsUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id or None,
@@ -446,7 +439,6 @@ class CreateDefaultBoardConfigVersionUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.create",
-                legacy_operation="spec.entity.edit_fields",
             ),
             roles=("admin", "operator"),
             uow=uow,
@@ -461,12 +453,12 @@ class CreateDefaultBoardConfigVersionUseCase:
                 actor,
                 PermissionRequirement(
                     "default_board_config.guidelines.edit",
-                    legacy_operation="guidelines.adoption.manage",
                 ),
                 uow=uow,
             )
         data = await uow.services.default_board_config.create_version(
             actor=actor.actor_id,
+            actor_kind=actor.actor_kind,
             query_scope=_query_scope_for_actor(actor),
             **payload,
         )
@@ -482,7 +474,6 @@ class ActivateDefaultBoardConfigVersionUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.activate",
-                legacy_operation="spec.entity.edit_fields",
             ),
             roles=("admin", "operator"),
             uow=uow,
@@ -495,13 +486,13 @@ class ActivateDefaultBoardConfigVersionUseCase:
                 actor,
                 PermissionRequirement(
                     "default_board_config.guidelines.edit",
-                    legacy_operation="guidelines.adoption.manage",
                 ),
                 uow=uow,
             )
         data = await uow.services.default_board_config.activate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
+            actor_kind=actor.actor_kind,
             query_scope=_query_scope_for_actor(actor),
         )
         await commit(uow)
@@ -516,7 +507,6 @@ class DeactivateDefaultBoardConfigVersionUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.deactivate",
-                legacy_operation="spec.entity.edit_fields",
             ),
             roles=("admin", "operator"),
             uow=uow,
@@ -529,13 +519,13 @@ class DeactivateDefaultBoardConfigVersionUseCase:
                 actor,
                 PermissionRequirement(
                     "default_board_config.guidelines.edit",
-                    legacy_operation="guidelines.adoption.manage",
                 ),
                 uow=uow,
             )
         data = await uow.services.default_board_config.deactivate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
+            actor_kind=actor.actor_kind,
         )
         await commit(uow)
         return DataResult(data)
@@ -564,7 +554,6 @@ class GetBoardDefaultConfigDiffUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.diff_read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -584,7 +573,6 @@ class ListDefaultGuidelineCandidatesUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.candidates_read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id or None,
@@ -606,7 +594,6 @@ class UpdateDefaultGuidelineRefsUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.guidelines.edit",
-                legacy_operation="guidelines.adoption.manage",
             ),
             uow=uow,
         )
@@ -628,7 +615,6 @@ class SetDefaultDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.set_design_system",
-                legacy_operation="spec.entity.edit_fields",
             ),
             roles=("admin", "operator"),
             uow=uow,
@@ -733,7 +719,6 @@ class CreateDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.entity.create",
-                legacy_operation="spec.architecture.create",
             ),
             uow=uow,
             board_id=board_id or None,
@@ -771,7 +756,6 @@ class ListDesignSystemsUseCase:
                 actor,
                 PermissionRequirement(
                     "design_system.entity.read",
-                    legacy_operation="board.read",
                 ),
                 uow=uow,
                 board_id=command.board_id or None,
@@ -801,7 +785,6 @@ class ListDesignSystemsUseCase:
             actor,
             PermissionRequirement(
                 "design_system.entity.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id or None,
@@ -844,7 +827,6 @@ class GetDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.entity.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id or None,
@@ -881,7 +863,6 @@ class UpdateDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.entity.edit",
-                legacy_operation="spec.architecture.edit",
             ),
             uow=uow,
             board_id=command.board_id or None,
@@ -921,7 +902,6 @@ class DeleteDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.entity.delete",
-                legacy_operation="spec.architecture.delete",
             ),
             uow=uow,
             board_id=command.board_id or None,
@@ -955,7 +935,6 @@ class LinkBoardDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.board_link.create",
-                legacy_operation="spec.architecture.edit",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -985,7 +964,6 @@ class UnlinkBoardDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.board_link.delete",
-                legacy_operation="spec.architecture.edit",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -1013,7 +991,6 @@ class GetBoardDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.board_link.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,

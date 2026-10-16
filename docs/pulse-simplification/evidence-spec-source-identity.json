@@ -1,0 +1,227 @@
+{
+  "scope": "KG Spec relationship ownership: repeated normative content must not merge distinct source identities",
+  "acceptance_promotions": [],
+  "domain_gate_changed": false,
+  "campaigns": [
+    {
+      "file": "learning-reconciliation-k2-spec-owner-characterization1-community.xml",
+      "counts": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "bd648aba2cffd6be5681fa6a45b60ae7baa439492630f150ac54ad63bda4cfe5"
+    },
+    {
+      "file": "learning-reconciliation-k2-spec-owner1-core.xml",
+      "counts": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "d7cec4fdc1e8f4563b1cd9238dbb3196edad2d6656a581ea0613983d18e241b8"
+    },
+    {
+      "file": "learning-reconciliation-k2-spec-owner-compensation1-core.xml",
+      "counts": {
+        "tests": 22,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "73335704e23cdc66d7a66e2a68e95a7702d1c9c639fac81f678a1614d4901e12"
+    },
+    {
+      "file": "learning-reconciliation-k2-spec-owner-final-core.xml",
+      "counts": {
+        "tests": 40,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "9b3c25e9fad68c04ade4723a9b63122c0c75cdef29ee68d8db1fd01c4e7ac6a0"
+    },
+    {
+      "file": "learning-reconciliation-k2-spec-owner-final-community.xml",
+      "counts": {
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "ef04d8add5caf0f69c3509cf871a3d2f339c6e542d817e447d052d07b51de1b5"
+    },
+    {
+      "file": "learning-reconciliation-k2-spec-owner-compensation-final-core.xml",
+      "counts": {
+        "tests": 31,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "cc2fb9c1f88707ae087a54147df26516130aa14490f5d0d4b13556ad2388e237"
+    }
+  ],
+  "provenance": {
+    "checked_at": "2026-09-30T20:40:42.953225+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 859,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "4d14ad9ed57234f79f00e6c88ae00938b1e9b2cd",
+        "dirty": true,
+        "dirty_entry_count": 8,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "a6f77fab8288ae5a91690a7d2796ea8d19db5b10c8a7c7263629553ebeff0312",
+          "size": 3793229
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 922,
+        "byte_identical": true,
+        "aggregate_sha256": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+        "chain_hashes": {
+          "source": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+          "wheel": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+          "site_packages": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 373,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "aed9dc697b78f621878b1b5679299a56ef1878ee",
+        "dirty": true,
+        "dirty_entry_count": 2,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "3d1eb7b80776aa6ba91a8e0e24d194c6d09769d70a4637a6423e0f57872ecd55",
+          "size": 4535175
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 458,
+        "byte_identical": true,
+        "aggregate_sha256": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+        "chain_hashes": {
+          "source": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+          "wheel": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+          "site_packages": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "closure": {
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "sha256": "3051cf610fe67446024a152dcce3c77dbc46d41d80cf82a000f980283117b079"
+  },
+  "contracts": [
+    "The closed Spec section/type vocabulary defines source-owned nodes; similarity cannot select a different source identity.",
+    "A typed pre-write property lookup refuses stale or forced cross-source mutation hints without new Core graph dialect.",
+    "Exact same-source Decision semantic changes retain existing SUPERSEDE history; generic cognitive similarity is unchanged.",
+    "Property before-images preceding CREATE remain compensable. Post-CREATE properties belong to a node removed by rollback/session cleanup.",
+    "Native tests preserve the first Spec relationships while materializing equal content for the second; injected failure rolls back and retries.",
+    "The in-memory test provider now implements the already-declared bounded exact-reference lookup; Protocol assertions remain strict."
+  ],
+  "failures_preserved": [
+    "Characterization: business_rule_requirements owner second resolved both endpoints from spec:spec and the adapter refused cross-source ownership.",
+    "Initial new Core test used enum object identity despite serialized string values; test comparison corrected.",
+    "Before-image regression discovered the test provider lacked find_active_node_ids_by_source_refs and failed GraphTransactionScope conformance before behavior."
+  ],
+  "limits": [
+    "No migration or rewrite of existing history, gate, permission or frontend change.",
+    "Spec without semantic links and consolidated whole-plan acceptance remain open.",
+    "Validation inherits site dependencies; no active-server restart or real-data mutation."
+  ]
+}

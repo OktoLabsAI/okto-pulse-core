@@ -52,7 +52,7 @@ Ideations are the starting point for solution definition. Stories may exist befo
    - Any score ≥ 2 → **Medium** (consider refinements)
    - All < 2 → **Small** (can go directly to spec)
 
-2. **Q&A to clarify**: Use `okto_pulse_ask_ideation_question` or `okto_pulse_ask_ideation_choice_question` to get clarification before proceeding
+2. **Q&A to clarify**: Use `okto_pulse_ask` (`target_type="ideation"`) or `okto_pulse_ask_ideation_choice_question` to get clarification before proceeding
 3. **Status flow**: draft → review → approved → evaluating → done
    - **Draft**: Editable — write and iterate freely
    - **Review**: Read-only — awaits approval from reviewer (human or agent)
@@ -84,8 +84,10 @@ Use this sequence:
    whether a Current result exists for the edition and obtain its head
    revision. Use revision 0 when none exists.
 3. In `evaluating`, call `okto_pulse_record_ambiguity_assessment` with the
-   current Ideation version, lifecycle edition, and head revision. Score 1–5,
-   lower is better.
+   current Ideation version, lifecycle edition, and head revision. Score 0–5,
+   lower is better; 0 means no identified residual ambiguity. A nonzero score
+   requires findings explaining the residual issues. This is distinct from
+   the scope evaluation's 1–5 ambiguity dimension.
    Pinpoint each issue with a stable field, structured-child, Q&A, or
    whole-artifact anchor; never use an array position.
 4. Proposed questions are immutable evidence in the result; they never create
@@ -129,7 +131,7 @@ not try to set it. Full tool contracts:
 **Operational protocol:**
 
 1. After receiving the user's request and BEFORE writing `problem_statement` / `proposed_approach`, do an honest ambiguity scan against the table above.
-2. For every gap you find, post a question on the ideation. **One question per Q&A item.** Prefer `okto_pulse_ask_ideation_choice_question` whenever the answer can be picked from a known set. Use 2-5 mutually exclusive option objects, set `recommended: true` on the safest or most likely option when you can justify it, keep the label free of presentation suffixes, put concise rationale in `tradeoff` or the question body, and set `allow_free_text=true` so the user has an additional comment field for overrides, combinations, missing options, or constraints. Use `okto_pulse_ask_ideation_question` only when the answer is genuinely open-ended and a finite option set would be misleading.
+2. For every gap you find, post a question on the ideation. **One question per Q&A item.** Prefer `okto_pulse_ask_ideation_choice_question` whenever the answer can be picked from a known set. Use 2-5 mutually exclusive option objects, set `recommended: true` on the safest or most likely option when you can justify it, keep the label free of presentation suffixes, put concise rationale in `tradeoff` or the question body, and set `allow_free_text=true` so the user has an additional comment field for overrides, combinations, missing options, or constraints. Use `okto_pulse_ask` (`target_type="ideation"`) only when the answer is genuinely open-ended and a finite option set would be misleading.
 3. Use Q&A before creating or finalizing mockups when the visual surface is ambiguous. Use Q&A before creating or finalizing architecture designs when entities, interfaces, contracts, boundaries, or diagrams are ambiguous.
 4. Wait for answers. Do NOT fill the gap with a guess and proceed silently.
 5. After answers come in, re-read the full ideation context (`okto_pulse_get_ideation_context`) and confirm your understanding by either:

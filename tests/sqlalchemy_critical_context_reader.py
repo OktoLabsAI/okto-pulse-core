@@ -13,7 +13,6 @@ from sqlalchemy_test_models import (
     Ideation,
     Refinement,
     Spec,
-    Sprint,
 )
 
 
@@ -46,7 +45,6 @@ class TestSqlAlchemyCriticalContextReader:
         model = {
             "card": Card,
             "spec": Spec,
-            "sprint": Sprint,
             "ideation": Ideation,
             "refinement": Refinement,
         }.get(entity_type)
@@ -89,6 +87,7 @@ class TestSqlAlchemyCriticalContextReader:
             name: _json_safe(getattr(model, name, None))
             for name in names
             if hasattr(model, name)
+            and not (isinstance(model, Card) and name == "sprint_id")
         }
 
     async def _relations(
@@ -96,7 +95,6 @@ class TestSqlAlchemyCriticalContextReader:
     ) -> dict[str, Any]:
         if entity_type == "card":
             spec = await context.get(Spec, entity.spec_id) if entity.spec_id else None
-            sprint = await context.get(Sprint, entity.sprint_id) if entity.sprint_id else None
             dependencies = (
                 await context.execute(
                     select(CardDependency.depends_on_id)
@@ -106,7 +104,6 @@ class TestSqlAlchemyCriticalContextReader:
             ).scalars().all()
             return {
                 "spec": await self._snapshot(context, spec),
-                "sprint": await self._snapshot(context, sprint),
                 "depends_on_ids": list(dependencies),
                 "resolved_dependency_count": len(dependencies),
                 "linked_test_task_ids": list(entity.linked_test_task_ids or []),
@@ -118,11 +115,6 @@ class TestSqlAlchemyCriticalContextReader:
                     Card.spec_id == entity.id, Card.archived.is_(False)
                 )
             )
-            sprint_count = await context.scalar(
-                select(func.count()).select_from(Sprint).where(
-                    Sprint.spec_id == entity.id, Sprint.archived.is_(False)
-                )
-            )
             cards = (
                 await context.execute(
                     select(Card.id, Card.title, Card.status, Card.card_type)
@@ -132,7 +124,6 @@ class TestSqlAlchemyCriticalContextReader:
             ).all()
             return {
                 "card_count": int(card_count or 0),
-                "sprint_count": int(sprint_count or 0),
                 "cards": [
                     {
                         "id": row.id,
@@ -142,18 +133,6 @@ class TestSqlAlchemyCriticalContextReader:
                     }
                     for row in cards
                 ],
-            }
-        if entity_type == "sprint":
-            spec = await context.get(Spec, entity.spec_id) if entity.spec_id else None
-            card_count = await context.scalar(
-                select(func.count()).select_from(Card).where(
-                    Card.sprint_id == entity.id, Card.archived.is_(False)
-                )
-            )
-            return {
-                "spec": await self._snapshot(context, spec),
-                "card_count": int(card_count or 0),
-                "test_scenario_ids": list(entity.test_scenario_ids or []),
             }
         if entity_type == "ideation":
             refinement_count = await context.scalar(

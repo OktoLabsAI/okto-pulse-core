@@ -1,0 +1,42 @@
+{
+  "scope": "AC-VER-16 governed criterion edits and selective proof applicability",
+  "proof_pair": "dist-native-main87",
+  "criteria": {
+    "ARQVER:AC-VER-16": [
+      "test_governed_criterion_edits_keep_independent_proof_and_assessment_history",
+      "test_unchanged_criterion_preserves_credit_when_notes_or_other_condition_change",
+      "test_native_digest_limits_applicability_to_exact_selected_criteria"
+    ]
+  },
+  "evidence": [
+    "The production StructuredSpecEntityService and full Community relational-effect composition apply versioned criterion edits with the Spec permission preset. No writer/gate is mocked.",
+    "After native canonicalization and real signed observations, an editorial notes correction preserves complete coverage. Changing the technical condition200ms→100ms preserves the independent UI proof but removes the affected criterion credit and blocks aggregate delivery.",
+    "Prior assessment contents remain identical; all implementation/test payloads remain identical; SpecHistory retains old entries and appends new ones. The Spec stays Draft.",
+    "Complementary main87 unit/SQL tests reject newly linked/missing/ambiguous criteria and preserve signature/method/material-change boundaries. Main87 frontend45 tests already cover evidence, method and report consumers."
+  ],
+  "tests": {
+    "community_distinct_passed": 3,
+    "new_case_passed": 1,
+    "new_case_seconds": 11.22,
+    "campaign1": "2pass/1fail15.13s: structured store absent in fixture",
+    "campaign2": "1fail13.63s: sparse ledger fixture omitted project_structure_revision",
+    "campaign3": "1fail12.50s: application persistence absent",
+    "campaign4": "1pass11.22s after full real composition and native project revision",
+    "reused": "main87 selective-applicability unit/producer/consumer/frontend evidence; not recounted"
+  },
+  "limits": [
+    "The new test calls the actual governed service/store, not REST or installed authentication. Initial Draft state and assessment content are seeded; no authorized reopen/edition-crossing claim.",
+    "Controlled signed results test binding applicability, not a benchmark of actual endpoint latency. External semantic adequacy remains a separate evaluation.",
+    "No additional product/SPA changes since main87. Closure remains green with eight zero budgets; no migration, promotion or real-data mutation."
+  ],
+  "artifacts": {
+    "provenance-native-governed-applicability1.json": "49f3a813618dc511fd786150ab522d5fc8c356fc253a035ee42fd2c42518a9f3",
+    "native-governed-applicability1.xml": "8b565de37713442878996dd79fa287a366d5a5b00e84050d0f12a10a44df2445",
+    "native-governed-applicability2.xml": "d3514a80dd4d331e396cdc3d3c534546d8365b335a7b030afb0b9e74f984b563",
+    "native-governed-applicability3.xml": "6437462f004b36b2ad839b1f1a815fe1f5c6e28ebfd757005b9052bb92f8f0a0",
+    "native-governed-applicability4.xml": "849989c3cdd1815ac2c1082d22e36a62497c536fab5debbb992dfe1fc2eec4e6",
+    "native-criterion-applicability-core2.xml": "49426d879c84994b867e2e338f6103196725ca3b1a33729276e60078961ba93f",
+    "native-criterion-applicability-frontend1.json": "21948bc23ecdf5d39e25cc9f2cbca45450f79e1b39dec9b290431d7b6a59499d",
+    "closure-native-main87.json": "0b9b185c7e16892769af431ffa471141244468db74ccd447dbcf6af474acbfd4"
+  }
+}

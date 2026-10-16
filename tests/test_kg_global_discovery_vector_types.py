@@ -88,6 +88,25 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
 @pytest.fixture(scope="module", autouse=True)
 def _bootstrap_global():
     reset_global_discovery_runtime_for_tests()
+    # The routed Global graph is fail-closed until its backend binding exists;
+    # the composition's explicit initialization door publishes it (inside the
+    # durable writer fence, like any Global mutation) before the runtime
+    # bootstrap can inspect the route.
+    from coordination_fakes import FakeWriteLockPort
+    from global_graph_testing import global_discovery_writer_scope
+    from kg_schema_testing import graph_composition
+    from okto_pulse.core.ports.coordination import (
+        CoordinationProviderMissing,
+        get_write_lock_port,
+        register_coordination_providers,
+    )
+
+    try:
+        get_write_lock_port()
+    except CoordinationProviderMissing:
+        register_coordination_providers(write_lock_port=FakeWriteLockPort())
+    with global_discovery_writer_scope(operation="test_global_route_init"):
+        graph_composition().initialize_global_route()
     bootstrap_global_discovery()
     yield
     reset_global_discovery_runtime_for_tests()
@@ -377,12 +396,12 @@ def _full_done_spec() -> dict:
         "description": "spec producing vector-type children",
         "status": "done",
         "board_id": "ignored",
-        "functional_requirements": ["FR alpha", "FR beta"],
-        "acceptance_criteria": ["AC alpha"],
-        "api_contracts": [{"name": "GET /x", "description": "an api"}],
+        "functional_requirements": [{"id": "fr_fixture_0", "text": "FR alpha"}, {"id": "fr_fixture_1", "text": "FR beta"}],
+        "acceptance_criteria": [{"id": "ac_alpha", "text": "AC alpha"}],
+        "api_contracts": [{"id": "api_fixture_0", "name": "GET /x", "description": "an api"}],
         "test_scenarios": [
             {"id": "ts_x", "title": "Scenario", "given": "g", "when": "w",
-             "then": "t", "linked_criteria": ["AC alpha"]},
+             "then": "t", "linked_criteria": ["ac_alpha"]},
         ],
     }
 

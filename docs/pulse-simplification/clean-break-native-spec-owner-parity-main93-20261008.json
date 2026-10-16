@@ -1,0 +1,125 @@
+{
+  "format": "pulse-040-reviewed-increment/v1",
+  "status": "verified_current_pair_review",
+  "criterion_keys": [
+    "KG:KG-10",
+    "KG:KG-16",
+    "KG:KG-24"
+  ],
+  "proof_pair": "dist-native-main93",
+  "tested_source": {
+    "core_base": "faac6fa6",
+    "community_base": "fd9084b6",
+    "qualification": "Source plus exact KG guard/test diff; wheel and installed payload identity proved before behavior."
+  },
+  "authorization": "Explicit user approval for bounded authentic Spec Decision provenance-only projection; generic cognitive judgement unchanged.",
+  "results": {
+    "core_distinct_cases": 90,
+    "core_runs": [
+      {
+        "passed": 89,
+        "seconds": 54.08
+      },
+      {
+        "passed": 21,
+        "seconds": 6.79,
+        "overlap_with_first": 20
+      }
+    ],
+    "native_sql_grafx_cases": 3,
+    "native_seconds": 299.49,
+    "frontend_cases": 34,
+    "architecture_budgets": "all eight zero",
+    "closure_ok": true
+  },
+  "verified": [
+    "Internal Decision grant requires exact worker/session/owner/active-set/root/current provenance; rejects 16 forged shapes, generic writers and mutable grants. Provenance remains mandatory.",
+    "No invented judgement or cooccurrence; old graph links cannot supply grant authority.",
+    "Seven Spec owned relationship families with all FR/TR endpoint pairs: full removal, subset restoration, empty replay and clean native rebuild now pass.",
+    "Native source snapshots and full relationship multisets, including provenance and maturity, equal; cardinality one per relation.",
+    "Together with reviewed unchanged family receipts, removal and same-snapshot parity cover Card children, dependencies, Bug proxies, Code Evidence, Target associations/overlaps and native immutable evidence/amendment/Decision history."
+  ],
+  "family_evidence": [
+    {
+      "family": "Spec: scenario criteria, Decision FR/TR, BR→FR, IR→FR/TR, OR→FR/TR/IR, API→BR",
+      "artifact": "clean-break-native-scenario-rule-removal.json",
+      "artifact_sha256": "df661e477aa55b85cc98048f83403e8486660c112d92e5bc150a891f19c3d275",
+      "review": "Current closed rule and seven-family active-set tests; historical K2 receipt is not an independent current acceptance."
+    },
+    {
+      "family": "Card: eight child collections and scenario; normal/test/bug",
+      "artifact": "clean-break-native-card-evidence-parity.json",
+      "artifact_sha256": "db9950fc8b4b864521553094eaf8deb08ded9d24be7cd6f39101940763517100",
+      "review": "Removal, subset restoration and replay; exact full native source and relationship multiset."
+    },
+    {
+      "family": "Card and Spec dependencies; Bug origin proxies",
+      "artifact": "clean-break-native-dependencies-parity.json",
+      "artifact_sha256": "ce460b433e512eb526589fa411b7383b241e1e677ef816d234ff921994b625d9",
+      "review": "Typed pairs, tombstone/replacement and six inferred proxy families; exact native parity."
+    },
+    {
+      "family": "Code Evidence links and Target receipt associations",
+      "artifact": "clean-break-native-target-evidence-retraction.json",
+      "artifact_sha256": "69b39d951b29a4c7a292431bba9e2bd279c4bc8c8f2cbe746ed9802a0006ace5",
+      "review": "Owned removal and compensation; native traceability snapshot parity."
+    },
+    {
+      "family": "Target overlaps",
+      "artifact": "clean-break-native-overlap-retraction.json",
+      "artifact_sha256": "9f3e7f145de8e6045bc6ee4c39eb73b792d7abab651fb8233a92365a8a4b9426",
+      "review": "Old/new owner invalidation, real rollback and native snapshot parity."
+    },
+    {
+      "family": "Evidence supersedence",
+      "artifact": "clean-break-native-card-evidence-parity.json",
+      "artifact_sha256": "db9950fc8b4b864521553094eaf8deb08ded9d24be7cd6f39101940763517100",
+      "review": "Immutable lineage; no unlink operation invented."
+    },
+    {
+      "family": "Amendment lineage",
+      "artifact": "clean-break-native-amendment-parity.json",
+      "artifact_sha256": "6650d9db4c54e97710046f0f599051aa87ddd8579ad25e0770c94b016238dbfb",
+      "review": "Append-only associations and maturity; no unlink or whole-Spec supersedence invented."
+    },
+    {
+      "family": "Decision generations within one source reference",
+      "artifact": "clean-break-native-decision-history-parity.json",
+      "artifact_sha256": "b731bb0716e53796938d265d4b7bb91def950f2fb614cd53b9441edff6a9ee0b",
+      "review": "Exact native history and provenance parity; does not implement explicit replacement across Decision IDs."
+    }
+  ],
+  "supporting_receipts": [
+    {
+      "artifact": "clean-break-native-relationship-family-review.json",
+      "sha256": "950ff1a3b962e544686b703b667031500de223d565f146c67f26e33cfb1ce64a"
+    },
+    {
+      "artifact": "clean-break-native-explicit-decision-parity.json",
+      "sha256": "6aee751e01b8db72c568efeae29755df6dc10257c9298ac286364be4651e0aa6"
+    },
+    {
+      "artifact": "clean-break-native-spec-family-review.json",
+      "sha256": "b409cdf6a25036bd4a162e70c75494fd90e2d8e1687a5d262f8c1d0f7a91eead"
+    },
+    {
+      "artifact": "clean-break-native-kg10-guard-characterization.json",
+      "sha256": "444384ddbed057c0befb85893c2b5bd26947418e690de2a162e2ef66e38f7739"
+    }
+  ],
+  "artifacts": {
+    "provenance-native-main93.json": "d629cdaf42c44fe98e6b0dc6e3bc0b1ce249f2d8677fe851ffcb01d0cb267cea",
+    "native-spec-owner-main93-20261008.xml": "589ed06b045d4c242e60f2fcb0f115204c6077861753a668e998242d657b62be",
+    "native-spec-owner-grant-main93-20261008.xml": "ff081f70b94260af4fe1c77f6976b4a986884b50c34e5a8c309540e32ffb9691",
+    "native-spec-parity-main93-20261008.xml": "7ca773f732c567c2ab373af5b081e3183fd7997d28ea9fab20c12a5c99319333",
+    "native-spec-owner-ui-main93-20261008.json": "f057a2b562c787400db330344c632ea14ce317aa154354c698c61f62349f6ff2",
+    "closure-native-main93.json": "1c6ab636bb153aa1a74a0626d5e2d84023aa51275e12d6fc3d3e4be2abe09871",
+    "closure-native-main93-final.json": "86d9bddf247cbbc949d47a8fce34dec99ae12a31994ead88d10b7a933e8c1cd2"
+  },
+  "limits": [
+    "Prior receipts were reviewed, not rerun or relabeled as main93.",
+    "Initial closure failure was generated README matrix drift only; official regeneration then closure passed.",
+    "No frontend product change; 34 relevant component regressions passed. No deployment or release.",
+    "Full initiative remains pending T23, KG28 and bounded KG30 disposition."
+  ]
+}

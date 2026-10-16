@@ -45,7 +45,7 @@ from okto_pulse.core.kg.global_discovery_writer import (
 from okto_pulse.core.kg.global_discovery_recovery_control import (
     DEFAULT_RECOVERY_ATTEMPT_BUDGET_MS,
     GLOBAL_RECOVERY_SLOT_ID,
-    GLOBAL_RECOVERY_STATUS_TOOL,
+    INTERNAL_RECOVERY_STATUS_OPERATION,
     MAX_RECOVERY_CUMULATIVE_BUDGET_MS,
     RECOVERY_HEARTBEAT_INTERVAL_MS,
     RECOVERY_PREPARED_TTL_SECONDS,
@@ -142,7 +142,7 @@ class GlobalDiscoveryRecoveryBoardSeedInputService:
         """Capture every relational overlay required by the graph-only phase."""
 
         from okto_pulse.core.kg.canonical_partition_integrity import (
-            canonical_debt_exclusions,
+            capture_canonical_debt_exclusions,
         )
         from okto_pulse.core.kg.connectivity_guard import (
             CANONICAL_LEARNING_WORKING_ONLY_REASON,
@@ -161,7 +161,7 @@ class GlobalDiscoveryRecoveryBoardSeedInputService:
 
         # Debt outranks a captured cognitive hold for the same artifact.  This
         # is the final relational read; no session/context escapes in the DTO.
-        overlay.update(await canonical_debt_exclusions(db, board_id=board_id))
+        overlay.update(await capture_canonical_debt_exclusions(db, board_id=board_id))
         return GlobalDiscoveryRecoveryBoardSeedInput(
             board_id=str(board_id),
             board_name=str(board_name),
@@ -247,6 +247,47 @@ class GlobalDiscoveryRecoveryPreparationService:
         )
 
 
+class GlobalDiscoveryRecoveryAdmissionService:
+    """Internal edition seam for preparation and confirmed durable admission.
+
+    This facade never executes physical recovery or exposes the legacy direct
+    preflight/run paths. The caller must submit the resulting command through
+    RecoveryControlPlane, which owns the durable slot and epoch checks. It is
+    not a public transport or a grant of authority to an authenticated agent.
+    """
+
+    def __init__(
+        self, *, recovery: GlobalDiscoveryRecovery,
+        artifact_store: RebuildAuditArtifactStore,
+    ) -> None:
+        self.__service = _GlobalDiscoveryRecoveryService(
+            recovery=recovery, artifact_store=artifact_store,
+        )
+
+    def new_preparation_command(
+        self, *, actor_id: str,
+    ) -> RecoveryPreparationCommand:
+        return self.__service.new_preparation_command(actor_id=actor_id)
+
+    def confirm(
+        self, *, actor_id: str, run_id: str, manifest_ref: str,
+        preflight_hash: str,
+    ) -> dict[str, object]:
+        return self.__service.confirm(
+            actor_id=actor_id, run_id=run_id, manifest_ref=manifest_ref,
+            preflight_hash=preflight_hash,
+        )
+
+    def prepare_durable_start(
+        self, *, actor_id: str, confirmation_id: str, manifest_ref: str,
+        preflight_hash: str, reason: str,
+    ) -> RecoveryStartCommand:
+        return self.__service.prepare_durable_start(
+            actor_id=actor_id, confirmation_id=confirmation_id,
+            manifest_ref=manifest_ref, preflight_hash=preflight_hash, reason=reason,
+        )
+
+
 class GlobalDiscoveryPreparedRevocationService:
     """Narrow create-only revocation boundary for edition coordination."""
 
@@ -329,7 +370,7 @@ def resolve_global_discovery_recovery_runtime_dependencies() -> tuple[
 __all__ = [
     "DEFAULT_RECOVERY_ATTEMPT_BUDGET_MS",
     "GLOBAL_RECOVERY_SLOT_ID",
-    "GLOBAL_RECOVERY_STATUS_TOOL",
+    "INTERNAL_RECOVERY_STATUS_OPERATION",
     "MAX_RECOVERY_CUMULATIVE_BUDGET_MS",
     "RECOVERY_HEARTBEAT_INTERVAL_MS",
     "RECOVERY_PREPARED_TTL_SECONDS",
@@ -338,6 +379,7 @@ __all__ = [
     "GlobalDiscoveryRecoveryBoardSeedInput",
     "GlobalDiscoveryRecoveryBoardSeedInputService",
     "GlobalDiscoveryRecoveryBoardSeedService",
+    "GlobalDiscoveryRecoveryAdmissionService",
     "GlobalDiscoveryRecoveryWorkerInputStore",
     "GlobalDiscoveryRecoveryWorkerInputs",
     "GlobalDiscoveryWriterLease",

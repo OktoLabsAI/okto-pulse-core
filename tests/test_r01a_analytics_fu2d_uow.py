@@ -1,9 +1,9 @@
-"""Spec R01A REST-FU2d — analytics sprints/agents + board export on the UoW path.
+"""Spec R01A REST-FU2d — analytics agents + board export on the UoW path.
 
-The three remaining analytics endpoints (board_sprints_analytics, board_agents,
+The three remaining analytics endpoints (board_agents,
 board_analytics_export) now route through transport-free use cases +
 ``get_unit_of_work``. The two heavy inline-SQL ones became readers
-(compute_sprints_analytics / compute_agents) reusing the FU2b helpers; the CSV
+(compute_agents) reusing the FU2b helpers; the CSV
 export now gets its data from the SAME funnel/quality/velocity use cases (it
 called the migrated endpoints with a raw ``db=`` before — a latent break this
 card fixes). Oracles: payload + board 404 + CSV shape + golden parity + AST.
@@ -27,7 +27,7 @@ from okto_pulse.core.infra.database import get_db, get_session_factory
 USER = "r01a-fu2d-user"
 OTHER = "r01a-fu2d-other"
 PREFIX = "/api/v1"
-_ENDPOINTS = ("board_sprints_analytics", "board_agents", "board_analytics_export")
+_ENDPOINTS = ("board_agents", "board_analytics_export")
 
 
 def _client(user: str = USER) -> TestClient:
@@ -54,14 +54,6 @@ async def _seed_board(owner: str = USER) -> str:
     return bid
 
 
-@pytest.mark.asyncio
-async def test_sprints_analytics_200_and_board_404() -> None:
-    board_id = await _seed_board()
-    ok = _client().get(f"{PREFIX}/boards/{board_id}/analytics/sprints")
-    assert ok.status_code == 200, ok.text
-    assert isinstance(ok.json(), dict)
-    miss = _client(OTHER).get(f"{PREFIX}/boards/{board_id}/analytics/sprints")
-    assert miss.status_code == 404 and miss.json()["detail"] == "Board not found"
 
 
 @pytest.mark.asyncio
@@ -87,27 +79,6 @@ async def test_board_export_csv_and_404() -> None:
     assert miss.status_code == 404
 
 
-@pytest.mark.asyncio
-async def test_sprints_use_case_matches_reader() -> None:
-    from okto_pulse.core.application.use_cases import (
-        BoardSprintsAnalyticsCommand,
-        BoardSprintsAnalyticsUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import ActorContext
-    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
-    from okto_pulse.core.services.analytics_service import compute_sprints_analytics
-
-    board_id = await _seed_board()
-    async with get_session_factory()() as db:
-        baseline = await compute_sprints_analytics(db, board_id, dt_from=None, dt_to=None)
-
-    uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
-    actor = ActorContext(USER, "rest")
-    async with uowf(actor=actor) as uow:
-        result = await BoardSprintsAnalyticsUseCase().execute(
-            BoardSprintsAnalyticsCommand(board_id), actor=actor, uow=uow
-        )
-    assert result.data == baseline
 
 
 def test_fu2d_endpoints_take_uow_not_raw_session() -> None:

@@ -1,7 +1,7 @@
 """KG-01.3 — KGSingleWriterLock + KGSafeWriteLifecycle (FR5, FR6).
 
 Deterministic tests against the cross-process lock primitive and the
-safe write lifecycle wrapper. No real LadybugDB — adapter callables
+safe write lifecycle wrapper. No real graph database — adapter callables
 are fakes that exercise success, blocked and failed paths.
 """
 

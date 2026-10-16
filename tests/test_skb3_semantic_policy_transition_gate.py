@@ -20,16 +20,11 @@ from okto_pulse.core.domain.guideline_policy import (
     PolicySubjectSnapshot,
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
-    SemanticAssessmentAssessor,
     SemanticAssessmentInadmissibilityCause,
-    SemanticGuidelineAssessmentContext,
-    SemanticGuidelineAssessmentSubmission,
-    SemanticMetricAssessment,
-    record_semantic_guideline_assessment,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
     SemanticAssessmentCurrentnessReason,
-    semantic_assessment_current_snapshot_from_context,
+    native_semantic_assessment_snapshot,
 )
 from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticExceptionActorKind,
@@ -40,8 +35,8 @@ from okto_pulse.core.domain.guideline_semantic_exceptions import (
     request_semantic_metric_waiver,
     transition_semantic_metric_waiver,
 )
-from okto_pulse.core.domain.guideline_semantic_findings import (
-    project_semantic_metric_findings,
+from okto_pulse.core.domain.guideline_semantic_findings_v2 import (
+    project_semantic_metric_findings_v2,
 )
 from okto_pulse.core.domain.guideline_semantic_transition import (
     POLICY_TRANSITION_CONTRACT_VERSION,
@@ -56,16 +51,12 @@ from okto_pulse.core.domain.guideline_semantic_transition import (
 )
 from okto_pulse.core.domain.quality_assessment import (
     EvidenceRef,
-    FindingAnchorType,
-    UnboundFindingAnchor,
 )
 from okto_pulse.core.domain.sdlc_registry import SDLC_REGISTRY
 
 
 NOW = datetime(2026, 7, 30, 22, tzinfo=timezone.utc)
 DIGEST_A = "a" * 64
-DIGEST_B = "b" * 64
-DIGEST_C = "c" * 64
 DIGEST_D = "d" * 64
 
 
@@ -121,53 +112,23 @@ def _assessment(
         last_semantic_editor_id="editor-1",
         captured_at=NOW,
     )
-    context = SemanticGuidelineAssessmentContext(
-        subject_snapshot=subject,
-        binding=binding,
-        revision=revision,
-        policy_set_digest=DIGEST_B,
-        binding_head_digest=DIGEST_C,
-    )
+    context = native_semantic_assessment_snapshot(subject=subject, binding=binding, revision=revision)
     evidence = EvidenceRef(
         source_type="spec",
         source_id="spec-1",
         source_version=7,
         content_hash=DIGEST_A,
     )
-    receipt = record_semantic_guideline_assessment(
-        SemanticGuidelineAssessmentSubmission(
-            subject=subject.subject,
-            binding_id=binding.binding_id,
-            expected_binding_revision=binding.binding_revision,
-            guideline_revision_id=revision.revision_id,
-            idempotency_key=f"assessment:spec-1:{score}",
-            confidence=95,
-            assessor=SemanticAssessmentAssessor(
-                agent_id="reviewer-1",
-                model_id="model-a",
-            ),
-            metric_results=(
-                SemanticMetricAssessment(
-                    metric_id=metric.metric_id,
-                    score=score,
-                    rationale=f"Evidence supports a score of {score}.",
-                    evidence_refs=(evidence,),
-                    pinpoints=(
-                        UnboundFindingAnchor(
-                            anchor_type=(
-                                FindingAnchorType.STRUCTURED_CHILD
-                            ),
-                            anchor_ref="technical_requirements.tr_hexagonal",
-                            excerpt_hash=DIGEST_D,
-                        ),
-                    ),
-                ),
-            ),
-        ),
-        context,
-        receipt_id=f"receipt-{score}",
-        recorded_at=NOW,
-    ).receipt
+    from test_skb31_semantic_guideline_v2_findings import _receipt, _result, _pinpoint
+    from okto_pulse.core.domain.guideline_semantic_assessment import SemanticMetricOutcome
+    result = replace(_result(metric.metric_id,
+        outcome=SemanticMetricOutcome.PASS if score >= 80 else SemanticMetricOutcome.FAIL,
+        pinpoints=(_pinpoint("boundary"),), subject=subject.subject,
+        receipt_id=f"receipt-{score}"), score=score, evidence_refs=(evidence,))
+    receipt = replace(_receipt(result, subject=subject.subject, receipt_id=f"receipt-{score}"),
+        recorded_at=NOW, assessment_assessor_id="reviewer-1",
+        binding_configuration_digest=binding.configuration_digest,
+        guideline_revision_digest=revision.revision_digest)
     return context, receipt, evidence
 
 
@@ -184,16 +145,16 @@ def _binding_snapshot(
         enforcement=enforcement,
     )
     values: dict[str, object] = {
-        "binding_id": context.binding.binding_id,
-        "guideline_id": context.revision.guideline_id,
+        "binding_id": context.binding_id,
+        "guideline_id": context.guideline_id,
         "enforcement": enforcement,
         "applicable_metric_count": 1,
         "current_snapshot": (
-            semantic_assessment_current_snapshot_from_context(context)
+            context
         ),
         "receipt": receipt if include_receipt else None,
         "findings": (
-            project_semantic_metric_findings(receipt)
+            project_semantic_metric_findings_v2(receipt)
             if include_receipt and include_findings
             else ()
         ),
@@ -221,15 +182,15 @@ def _transition_snapshot(
 def _approved_waiver(binding: SemanticBindingComplianceSnapshot):
     assert binding.findings
     context, receipt, evidence = _assessment(score=60)
-    assert context.binding.binding_id == binding.binding_id
+    assert context.binding_id == binding.binding_id
     requested = request_semantic_metric_waiver(
         waiver_id="waiver-1",
         event_id="waiver-event-1",
         anchor=SemanticMetricWaiverAnchor.from_finding(
             binding.findings[0],
-            assessment_assessor_id=receipt.assessor.agent_id,
+            assessment_assessor_id=receipt.assessment_assessor_id,
         ),
-        justification="A bounded migration needs a temporary exception.",
+        justification="A bounded policy deviation needs a temporary exception.",
         evidence_refs=(evidence,),
         requested_by="requester-1",
         requested_at=NOW,
@@ -273,7 +234,7 @@ def _human_skip(binding: SemanticBindingComplianceSnapshot):
     ).skip
 
 
-def test_registry_keeps_exactly_the_frozen_fourteen_native_gate_edges() -> None:
+def test_registry_preserves_thirteen_live_gate_edges_after_sprint_retirement() -> None:
     edges = {
         (entity_type, from_status, edge.to_status)
         for entity_type, lifecycle in SDLC_REGISTRY.items()
@@ -282,14 +243,14 @@ def test_registry_keeps_exactly_the_frozen_fourteen_native_gate_edges() -> None:
         if edge.policy_compliance
     }
 
-    assert len(edges) == 14
+    assert "sprint" not in SDLC_REGISTRY
+    assert len(edges) == 13
     assert edges == {
         ("ideation", "evaluating", "done"),
         ("refinement", "approved", "done"),
         ("spec", "approved", "validated"),
         ("card", "in_progress", "done"),
         ("card", "validation", "done"),
-        ("sprint", "review", "closed"),
         ("test_scenario", "draft", "automated"),
         ("test_scenario", "draft", "passed"),
         ("test_scenario", "draft", "failed"),
@@ -446,7 +407,6 @@ def test_enforcement_change_is_stale_not_a_scope_error(
         binding.current_snapshot,
         binding_revision=binding.current_snapshot.binding_revision + 1,
         binding_configuration_digest="f" * 64,
-        input_digest="e" * 64,
     )
     changed = replace(
         binding,
@@ -524,6 +484,19 @@ def test_threshold_failure_blocks_but_exact_current_waiver_unblocks() -> None:
     )
     assert ready.waived_metric_count == 1
     assert ready.blocking_metric_count == 0
+
+
+def test_observation_identity_excludes_clock_but_preserves_expiration_and_native_fence() -> None:
+    failed = _binding_snapshot(score=60)
+    waived = replace(failed, waivers=(_approved_waiver(failed),))
+    before = _transition_snapshot((waived,))
+    later = replace(before, evaluated_at=before.evaluated_at + timedelta(seconds=1))
+    expired = replace(before, evaluated_at=NOW + timedelta(days=2))
+    assert before.fence_digest != later.fence_digest
+    assert before.observation_digest == later.observation_digest
+    assert before.observation_digest != expired.observation_digest
+    assert evaluate_policy_transition(before, 'validated').allowed
+    assert not evaluate_policy_transition(expired, 'validated').allowed
 
 
 def test_human_skip_unblocks_only_its_exact_current_binding() -> None:
@@ -699,3 +672,21 @@ def test_subject_required_and_preview_mutation_digest_match_are_fail_closed() ->
         match="policy_transition_decision_changed",
     ):
         require_policy_transition_decision_match(DIGEST_A, passing)
+
+
+def test_native_gate_preserves_current_edition_and_requires_new_evidence_after_reopen():
+    original = _binding_snapshot()
+    reference = replace(original.receipt.subject, subject_edition=1)
+    receipt = replace(original.receipt, subject=reference,
+        metric_results=tuple(replace(metric, subject=reference)
+                             for metric in original.receipt.metric_results))
+    edition = replace(original, receipt=receipt,
+        current_snapshot=replace(original.current_snapshot, subject=reference))
+    edited = replace(edition, current_snapshot=replace(edition.current_snapshot,
+        subject=replace(reference, subject_version=8), subject_content_digest="f" * 64))
+    assert evaluate_policy_transition(_transition_snapshot((edited,)), "validated").allowed
+    reopened = replace(edited, current_snapshot=replace(edited.current_snapshot,
+        subject=replace(reference, subject_version=8, subject_edition=2)))
+    decision = evaluate_policy_transition(_transition_snapshot((reopened,)), "validated")
+    assert not decision.allowed
+    assert decision.currentness_reasons == (SemanticAssessmentCurrentnessReason.SUBJECT_EDITION_CHANGED,)

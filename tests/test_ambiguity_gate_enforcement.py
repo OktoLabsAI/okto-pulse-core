@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import uuid
 
 import pytest
+from native_subject_testing import record_native_subject_authority
 
 from okto_pulse.core.domain.code_traceability import DeliveryContext
 from sqlalchemy_test_models import (
@@ -96,7 +97,7 @@ async def _seed(
             skip_ambiguity_gate_edition=1 if skip else None,
         )
     )
-    await db.flush()
+    await record_native_subject_authority(db)
     return board_id, ideation_id
 
 
@@ -403,7 +404,7 @@ async def test_gate_does_not_fire_on_non_done_transitions(db_factory):
 
 
 # ---------------------------------------------------------------------------
-# Disabled gate + legacy defaults are no-ops (FR7, FR13, BR1, BR6, AC5)
+# Disabled gate + creation defaults are no-ops (FR7, FR13, BR1, BR6, AC5)
 # ---------------------------------------------------------------------------
 
 
@@ -426,14 +427,13 @@ def test_ambiguity_gate_error_is_valueerror_for_mcp_surfacing():
 
 
 @pytest.mark.asyncio
-async def test_legacy_board_without_settings_defaults_gate_off(db_factory):
+async def test_new_board_without_settings_defaults_gate_off(db_factory):
     # No gate settings at all defaults to disabled; assessment storage is not
     # required and only ResourceGate governs.
     async with db_factory() as db:
         board_id, ideation_id = await _seed(
             db,
             gate_enabled=False,
-            legacy_ambiguity=5,
             settings_override={},
         )
         await _satisfy_resource_gate(db, board_id, ideation_id)
@@ -487,7 +487,7 @@ async def _seed_refinement(db) -> tuple[str, str]:
             created_by=ACTOR,
         )
     )
-    await db.flush()
+    await record_native_subject_authority(db)
     return board_id, refinement_id
 
 

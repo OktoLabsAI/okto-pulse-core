@@ -26,8 +26,8 @@ def test_requirement_collection_is_stable_and_idempotent_for_every_closed_type(
 ) -> None:
     authored = {
         field_name: [
-            "Repeated authored text",
-            "Repeated authored text",
+            {"text": "Repeated authored text"},
+            {"text": "Repeated authored text"},
             {"text": "Structured child", "locale": "pt"},
         ]
     }
@@ -60,16 +60,16 @@ def test_requirement_collection_is_stable_and_idempotent_for_every_closed_type(
 def test_whole_spec_reorder_reuses_existing_ids_across_fr_tr_and_ac() -> None:
     original = canonicalize_spec_requirement_fields(
         {
-            "functional_requirements": ["FR A", "FR B"],
-            "technical_requirements": ["TR A", "TR B"],
-            "acceptance_criteria": ["AC A", "AC B"],
+            "functional_requirements": [{"text": "FR A"}, {"text": "FR B"}],
+            "technical_requirements": [{"text": "TR A"}, {"text": "TR B"}],
+            "acceptance_criteria": [{"text": "AC A"}, {"text": "AC B"}],
         }
     )
     reordered = canonicalize_spec_requirement_fields(
         {
-            "functional_requirements": ["FR B", "FR A"],
-            "technical_requirements": ["TR B", "TR A"],
-            "acceptance_criteria": ["AC B", "AC A"],
+            "functional_requirements": list(reversed(original["functional_requirements"])),
+            "technical_requirements": list(reversed(original["technical_requirements"])),
+            "acceptance_criteria": list(reversed(original["acceptance_criteria"])),
         },
         existing_fields=original,
     )
@@ -129,7 +129,7 @@ def test_duplicate_explicit_ids_fail_closed_within_or_across_collections(
 
 def test_generated_id_cannot_silently_collide_with_a_later_explicit_id() -> None:
     generated = canonicalize_spec_requirement_fields(
-        {"functional_requirements": ["Collision candidate"]}
+        {"functional_requirements": [{"text": "Collision candidate"}]}
     )
     generated_id = generated["functional_requirements"][0]["id"]  # type: ignore[index]
 
@@ -140,7 +140,7 @@ def test_generated_id_cannot_silently_collide_with_a_later_explicit_id() -> None
         canonicalize_spec_requirement_fields(
             {
                 "functional_requirements": [
-                    "Collision candidate",
+                    {"text": "Collision candidate"},
                     {"id": generated_id, "text": "Explicit collision"},
                 ]
             }

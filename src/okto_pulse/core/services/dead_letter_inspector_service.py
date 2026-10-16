@@ -65,35 +65,13 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         # SPEC4 (card 2e913ac3, AC ac_26acf1db): bounded suggested next action so
         # the DLQ row is actionable from the drill-down alone. Every DLQ row is a
         # terminal consolidation failure → inspect the error then reprocess.
-        "next_action": "inspect_last_error_then_reprocess_via_okto_pulse_kg_dead_letter_reprocess",
+        "next_action": "none",
         "dead_lettered_at": (
             row.dead_lettered_at.isoformat() if row.dead_lettered_at else None
         ),
     }
 
 
-async def list_cognitive_dlq_rows(
-    db: object,
-    board_id: str,
-    *,
-    limit: int,
-    offset: int,
-    include_code_traceability: bool = False,
-) -> tuple[int, list[Any]]:
-    """Read the board's technical-DLQ rows for the cognitive DLQ surface
-    (spec R01A MCP-FU3B): the total count + a page of ``ConsolidationDeadLetter``
-    rows ordered by id. Extracted verbatim from the inline query in the
-    ``okto_pulse_kg_list_cognitive_dlq`` MCP tool so that tool no longer issues SQL
-    directly; the row projection (normalized artifact id, technical_dlq framing)
-    stays in the adapter."""
-    total, rows = await get_kg_worker_queue_port().list_dead_letter_page(
-        db,
-        board_id=board_id,
-        limit=limit,
-        offset=offset,
-        include_code_traceability=include_code_traceability,
-    )
-    return total, list(rows)
 
 
 async def list_dead_letter_rows(

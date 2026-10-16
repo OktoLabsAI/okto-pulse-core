@@ -1,0 +1,41 @@
+{
+  "scope": "DEI-T44 successor resumes durable context in a compatible shared checkout",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "DEI:DEI-T44",
+  "result": {
+    "passed": 1,
+    "failed": 0,
+    "seconds": 9.06,
+    "terminal_session": 18171
+  },
+  "evidence": [
+    "Disposable real Git checkout has a committed baseline and durable uncommitted file change. Native progress records its source/base, affected Target, work summary and remaining work.",
+    "A later short context-only note does not erase prior work. Writer SQL session closes; successor uses fresh session/store and real GetDeliveryEvidenceUseCase with only evidence.read permission.",
+    "One resume response supplies the latest note, earlier durable checkpoint, Target path/source, declared base, remaining work, obligations and verification plan. Whole-Spec rollup is forbidden.",
+    "The external successor resolves the file path from the returned Target, verifies actual shared checkout HEAD against declared baseline and reads the persisted work. No full-history/detail call is required.",
+    "Prior implementation becomes stale after material progress, but retains original author and execution submitter. Recovery/access remain unverified/unknown, receipt ownership does not transfer, read-only successor gains no progress-write authority."
+  ],
+  "attempts": [
+    {
+      "campaign": "native-shared-resume-20261008",
+      "passed": 0,
+      "failed": 1,
+      "seconds": 10.15,
+      "reason": "Test expected detail-only nested progress; resume manifest exposes remaining/target_ids/source_state directly. Corrected assertion to actual closed manifest contract, without fetching detail."
+    }
+  ],
+  "limits": [
+    "Shared checkout/source mapping and read principal are controlled fixture inputs. Filesystem/Git access is performed by external actor test mechanics, never by Pulse domain code.",
+    "Tests a bounded compatible handoff, not arbitrary inaccessible or incompatible workspaces, all-history performance, installed transport authentication or UI rendering.",
+    "No product/frontend change. Prior frontend44 hash verified; not rerun or recounted. Main88 installed parity and closure remain applicable with eight zero budgets.",
+    "No real-data operation or promotion."
+  ],
+  "artifacts": {
+    "provenance-native-shared-resume-20261008.json": "68bb34065726f5bec1f72705c8e2d4a64d16225cb304184db16288d96016a0f8",
+    "native-shared-resume-20261008.xml": "f5c1bbad85ad6a5ad48b54fdd788e32a2e3dcb14402d01b448cfa511830505b3",
+    "native-shared-resume-20261008-2.xml": "8e51f23566cf4de87423cf9751c07ae4d988fcd772ee5f07f2e498cc9de71ca6",
+    "native-delivery-envelope-frontend1.json": "a751880c26e35030dc6efc27dfb79d81a4f937cd3ffa9d2bf7f490e31f2d146d",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

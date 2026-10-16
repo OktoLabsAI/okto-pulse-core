@@ -1,0 +1,145 @@
+{
+  "scope": "F6 internal transaction-fenced capture revalidation and legacy closeout characterization",
+  "suites": {
+    "learning-closeout-characterization": {
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-closeout-admission-core": {
+      "tests": 131,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-closeout-admission-community": {
+      "tests": 147,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-closeout-admission-final-core": {
+      "tests": 131,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-closeout-admission-final-community": {
+      "tests": 147,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Actual Bug move_card with real legacy/readiness gates accepts an empty queue in all four existing policy/global combinations.",
+    "Selected capture head, fingerprint, exact Board/Bug/digest/version and evidence are revalidated under the semantic source write fence.",
+    "Staged and committed captures are read without implicit commit or added revision; rollback preserves absence.",
+    "Changed conclusion/status/policy version/scenario/related Test Card, wrong selection, changed head and currently rejected receipt are refused.",
+    "No core infrastructure adapter, Community private reach-in, generated catalog drift or nonzero F16 budget is introduced."
+  ],
+  "limits": [
+    "Revalidation is an internal primitive, not yet called by lifecycle, preview or public transports.",
+    "Return value is a capture record, not a durable closeout receipt; no Done/outbox/materialization is implemented by this increment.",
+    "Characterization uses healthy graph observation and accepted independent Delivery fixtures, not integrated graph or implementation admission.",
+    "Legacy readiness policy is not silently converted into a Learning requirement; typed human policy and migration remain to define.",
+    "Initial campaigns were launched before the provenance session terminal was collected; final campaigns began after confirmed successful provenance.",
+    "SQLite and signed evidence adapters are exercised; no PostgreSQL, full installed recovery, browser E2E or full-plan acceptance is claimed.",
+    "Frontend did not change; no new frontend campaign. Repeated suite counts are not distinct test totals."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-characterization.xml": "d37ae63558b615467e3850fa85bebf085219f8c801f4835eb2093320d9e69b7d",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-characterization.log": "55af11602ac6572afa83ae7225a5ac3fd96c7eb4e1b2abfe6a96678b22f3d4f9",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-admission-core.xml": "15c39ce4ef92d5f624f61a626891b2b21f21d084c29a02c4d92cdb995d1f88ff",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-admission-test-core.log": "69e47061576b2184980827147f7b3f9addb0d799dfff6163a2cd26f43f3f888c",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-admission-community.xml": "ff27b7b6d4e8fadcf4141cfa862a6fd0d7e28ba48a14883d6b3e9c503b1f5a9f",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-admission-test-community.log": "116bfb41170d7edf7953e829fd13eda70b15737076964a6a09f00922d6ccb38c",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-admission-final-core.xml": "4727564a7aa773c6f143e5e94f1c8636f802f218b987101d6583b7ded5e442d7",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-admission-final-test-core.log": "f3967e765b9c4522965b3e83172cbd31124f495be881357af03ceb4846606d04",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-admission-final-community.xml": "e1918e9f8e5904d0bc008d712f33e6acf3c9a475138aef5c75496c440ea56961",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-admission-final-test-community.log": "f109ac1430ae2cbfae18a67c2af033a5fdd3fdaf3f413b0a80a90c66683d4679",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-closeout-admission.json": "34b909abf87595a12c05836f7ecb257b7b9128f40340b0df0b25b1d433763220",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-closeout-investigation.json": "c5041eacc98be21c051ea024165feda86ed211162e208a498f5f7a3264717741",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-closeout-admission.json": "84bd59ec117dac63ca513cc2b0716afb254d486d111fd90878d407b1c41df7b4",
+    "PULSE_REFACTOR/.validation-v040/run_learning_closeout_admission.py": "7d8c724acdd336506a7de585bf2ef7dc681a35be2ef4567af7d4136ae655b844",
+    "PULSE_REFACTOR/.validation-v040/run_learning_closeout_admission_final.py": "06970df791630857ae0cf7819f4e210cfd0cbf7fa7b53643dc73bdeddc0f0d5a",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "134e40b6d3fafb872deebd236d4427efdfd1ec2e5601f65c1cc6d01bd6ce1ba1",
+    "okto_labs_pulse_core/tests/test_learning_closeout_characterization.py": "689ec1ca507e11794b26b675d6cc590619aa94abb9134aa5c03a25e739a14851",
+    "okto_labs_pulse_community/tests/test_learning_capture_closeout_admission.py": "a21bd29b0d86f06db32a506c25a3be78b6488082b9b2da6932d3ed1cdd8a542d"
+  }
+}

@@ -1,0 +1,157 @@
+{
+  "date": "2026-10-15",
+  "scope": "U3/3c/5a — architecture classification authoring and Integration watcher",
+  "base": {
+    "core": "5d3d1366",
+    "community": "6fe9129f"
+  },
+  "community_commit": "81af8c41",
+  "tests": [
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-classification-before.xml",
+      "sha256": "6788ac7d7b127fa5cc82f2a79b5904736625595441a1216f15388da8ecd1f809",
+      "name": "vitest tests",
+      "tests": "58",
+      "failures": "2",
+      "errors": "0",
+      "time": "32.3727257"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-classification-first.xml",
+      "sha256": "83f0ecbfc0f9a8f62f251c16ba6c9c58d1abd6568b5de7822a9991b4cba2b5da",
+      "name": "vitest tests",
+      "tests": "58",
+      "failures": "1",
+      "errors": "0",
+      "time": "35.394131"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-classification-second.xml",
+      "sha256": "a0546c6cfcf8a1067821773205a5408d77ecf27c40d4ac55cb5dcfe0181b1d0b",
+      "name": "vitest tests",
+      "tests": "66",
+      "failures": "2",
+      "errors": "0",
+      "time": "47.7134591"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-classification-integrated.xml",
+      "sha256": "5628d4c70e2a9b97ed71fb6fde021d8f7790953bd81c4c42071405bfcda6196c",
+      "name": "vitest tests",
+      "tests": "140",
+      "failures": "0",
+      "errors": "0",
+      "time": "169.4546267"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-classification-final.xml",
+      "sha256": "3f12f4869b287a8260dba1a88bc6714a443e8c56c45e7c6bda8f6363d669b9ba",
+      "name": "vitest tests",
+      "tests": "67",
+      "failures": "0",
+      "errors": "0",
+      "time": "31.6232027"
+    }
+  ],
+  "final_unique_cases": 141,
+  "counting": "Final 67 classification tests replace the 66 from the integrated run; retain its 74 SpecModal tests. Do not add reruns.",
+  "intermediate_limits": [
+    "The file named before is an intermediate run during source edits, not a pristine baseline characterization. It recorded two assertions failing: Apply enabled on changed base and inline draft unmounted.",
+    "Panel hook timeout was reproduced in isolation and traced to beforeEach returning the mock function, interpreted as cleanup; braces now prevent returning it. No product timeout was increased.",
+    "A review test exposed that inline authoring still compared unrelated items; corrected to use the inline source.",
+    "Browser success revealed confirmation disappearing during the post-write read. Final 67-case suite adds the parent receipt-retention regression. The native promotion was not repeated after this final receipt-display correction."
+  ],
+  "checks": {
+    "types": {
+      "session": 63516,
+      "exit_code": 0
+    },
+    "classification_lint": {
+      "session": 92222,
+      "exit_code": 0,
+      "warnings": 0
+    },
+    "integrated_lint": {
+      "session": 90155,
+      "exit_code": 0,
+      "errors": 0,
+      "existing_spec_modal_warnings": 12
+    },
+    "diff_check": "passed"
+  },
+  "ui_mcp": {
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "2baa5f88-eb1a-4aac-9aeb-453707cef290",
+    "edition": 1,
+    "initial_spec_version": 20,
+    "final_spec_version": 22,
+    "architecture_id": "29ad503e-69f9-4146-9c5d-c69e13146c69",
+    "architecture_versions": [
+      2,
+      3
+    ],
+    "candidate_id": "arqc_670be8d62f2f90bdf113d9ca5b557961ecca319a464aa0388a0a695c057406b6",
+    "ir_id": "ir_cec384b8",
+    "classification_id": "eef551c1-6acb-4b05-be57-d36917e43119",
+    "source_digest": "00bebd03f99f4b1f4e128cafb92ec9d2b47f54675b4c3827c384cd7b51bdce3c",
+    "observed": [
+      "Open Create IR and author title, type and description.",
+      "MCP adds receipt_id to the architecture response schema.",
+      "Without manual Refresh, original fields remain and Apply is disabled.",
+      "Review classification base loads current contract; expanded contract includes receipt_id.",
+      "Explicitly adopt reviewed base, update authored description, apply through UI.",
+      "MCP confirms exactly one IR and one Current promote_to_ir decision with adopted revision 3.",
+      "Inspect screenshots of review and expanded saved IR; task coverage remains 0/1 and no execution credit is claimed."
+    ],
+    "artifacts": [
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-classification-read.json",
+        "sha256": "0008953e41d2fd7dbe013e79e682424bdd4f39b70623868dd1a6643da0466cd0"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-classification-designs.json",
+        "sha256": "33d8bf53be5418bdd4ee6dcad5ca6b101e283f2233cfbe79d0174f7f818109de"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-classification-remote-source.json",
+        "sha256": "1d771efeda65b30b25339ab0a57fff28be1cfd264629712ad2f844a2226916dd"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-classification-saved-spec.json",
+        "sha256": "56de361d42de2ab5f17c5886571036cee1974b739d44abd2ada618c4f314b38c"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-classification-saved-review.json",
+        "sha256": "854ab7fd28fb592d4f40aea8ed6d0e991c9342ea61985d17c3c3b6852eb9aae2"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-classification-saved-detail.json",
+        "sha256": "2323d5bc0f121e52c1da0587470e1a471d7ef327966657455b7afed9622d1682"
+      }
+    ],
+    "screenshots": [
+      {
+        "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-classification-review.png",
+        "sha256": "82a8fb906eaa22b9ce7f205503b6c59ae4e60fd0b1833d3827fc16a5e6e065b7"
+      },
+      {
+        "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-classification-saved.png",
+        "sha256": "5f1fb06c609c212430447dad787dc4da3610cf87f2540906bad116af8bc27c88"
+      }
+    ],
+    "runtime": {
+      "frontend": "http://127.0.0.1:5274",
+      "api": "http://127.0.0.1:8200",
+      "mcp": "http://127.0.0.1:8201/mcp",
+      "limit": "Existing isolated backend; not an exact newly installed pair or U4 qualification. User runtime untouched."
+    }
+  },
+  "remaining": [
+    "U3/3c/5b Decision inspection",
+    "U3/3c/5c scenarios parent integration",
+    "U3/3c/5d Project Structure",
+    "U3/3d and UV18–21 integrated",
+    "U4 installed pair and UV01–24 E2E/closure"
+  ],
+  "no_backend_policy_schema_or_gate_changes": true
+}

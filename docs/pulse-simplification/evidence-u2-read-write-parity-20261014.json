@@ -1,0 +1,60 @@
+{
+  "scope": "Partial U2: native coverage read/write parity and malformed quality-head projection",
+  "baseline": {"core": "49520a4b", "community": "93769ff1"},
+  "imports_verified": [
+    "okto_labs_pulse_core/src/okto_pulse/core/services/spec_planning_readiness.py",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_models.py"
+  ],
+  "coverage_parity": {
+    "cases": 32,
+    "components": ["acceptance_coverage", "test_card_coverage", "business_coverage", "technical_coverage", "contract_coverage", "integration_coverage", "observability_coverage", "decision_verification"],
+    "quality_enabled": [true, false],
+    "writers": ["REST route through TestClient", "registered MCP tool function"],
+    "assertions": [
+      "The native readiness component and promotion writer observe the same persisted gap and diagnosis.",
+      "REST allowed-transitions preserves the same coverage refusal; when quality is enabled its direct-move AC case points to the required validation command.",
+      "Applicable gap leaves status, version, edition and both native review histories unchanged, with no operation receipt.",
+      "AC coverage is off on the existing quality-disabled path; direct promotion remains allowed when other prerequisites pass."
+    ],
+    "limits": [
+      "External lint acceptance is isolated by the existing composition fixture.",
+      "MCP authentication is explicitly supplied; this is not a wire/authentication E2E.",
+      "Other prerequisite families still require their integrated parity evidence."
+    ]
+  },
+  "quality_authority": {
+    "before": "Four reproduced failures: missing/unknown outcome and dangling head appeared blocked; duplicate current ID appeared ready.",
+    "after": "Unavailable with no native result, result ID or authoring action. Valid native opinions retain their existing effect.",
+    "reproduction": "u2-invalid-head-before.xml"
+  },
+  "verification": {
+    "backend": {"passed": 114, "failed": 0, "skipped": 0, "artifact": "u2-read-write-parity.xml"},
+    "coverage_with_allowed_transitions_rerun": {"passed": 32, "failed": 0, "unselected": 30, "artifact": "u2-native-coverage-parity.xml", "overlap": "These 32 cases already belong to the suite of 114; this rerun adds preview assertions, not another 32 distinct cases."},
+    "frontend": {"suite": "SpecValidationPanel.test.tsx", "passed": 15, "failed": 0},
+    "typescript": "tsc -b passed",
+    "ruff": "F checks passed on the three changed Python files",
+    "source_closure": {
+      "artifact": "closure-u2-read-write-parity.json", "ok": true,
+      "findings": 0, "documentation_findings": 0, "zero_budgets": 8,
+      "ownership_rows": 9029, "wheels": "Not rebuilt or audited in this increment"
+    },
+    "initial_fixture_corrections": [
+      "Reseal explicitly changed seed authority; do not bypass native Policy Compliance.",
+      "Compare decoded transport messages; REST and MCP use different native envelope fields."
+    ]
+  },
+  "browser": {
+    "url": "http://127.0.0.1:5274/",
+    "api_process": 13040,
+    "spec_id": "216a3d13-be16-4c0b-949f-e50b76ae903d",
+    "observed": "Expanded planning summary distinguishes Required, Advisory, Off and Not applicable; Spec remains Approved.",
+    "screenshot": "okto_labs_pulse_community/output/playwright/u2-planning-native-checks.png",
+    "limit": "Existing process was not restarted; this visual check does not prove the new malformed-head backend correction in a running install.",
+    "console": "Five preexisting errors remained unchanged: two 502, one 409 and two 422 from earlier admission/configuration attempts. No new console error during this inspection."
+  },
+  "remaining": [
+    "Complete U2 parity for other prerequisite families and allowed transitions.",
+    "Finish U3 consumers and integrated conflict/access/offline scenarios.",
+    "Run U4 with paired wheels, byte parity, fresh process and new UI/MCP SDLC through Done/canonical KG."
+  ]
+}

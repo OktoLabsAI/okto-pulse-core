@@ -1,0 +1,59 @@
+{
+  "format": "pulse-040-reviewed-increment/v1",
+  "status": "criterion_verified_not_full_delivery",
+  "criterion_keys": [
+    "KG:KG-11"
+  ],
+  "partial_scope": [
+    "KG:KG-16 G6 family removal",
+    "KG:KG-24 G6 same-snapshot rebuild parity"
+  ],
+  "proof_pair": "dist-native-main57",
+  "provenance": {
+    "name": "provenance-native-explicit-decision-parity1.json",
+    "sha256": "ca47dc45e72af85f0893cb9aad7d00fbbc00d50ee1954bf23ecb7aa0f69ffe40"
+  },
+  "runs": [
+    {
+      "name": "acceptance-native-explicit-decision-parity1",
+      "sha256": "d7818142a7447abf7593fee7ad4376800b4fb96637837be36dbfaa5d28c88c4e",
+      "passed": 2,
+      "cases": [
+        "tests.test_native_explicit_decision_supersedence::test_explicit_decision_successor_projects_normative_history[linked]",
+        "tests.test_native_explicit_decision_supersedence::test_explicit_decision_successor_projects_normative_history[removed]"
+      ]
+    },
+    {
+      "name": "acceptance-native-explicit-decision-compensation1",
+      "sha256": "0bc00dea8be57fa12f2f45c08b40a3949ebd2b9020c2cbdc06a061843260f0c1",
+      "passed": 2,
+      "cases": [
+        "tests.test_grafx_explicit_decision_compensation::test_owned_decision_retraction_preserves_foreign_edges_and_exact_before_images[False]",
+        "tests.test_grafx_explicit_decision_compensation::test_owned_decision_retraction_preserves_foreign_edges_and_exact_before_images[True]"
+      ]
+    }
+  ],
+  "prior_evidence": [
+    {
+      "artifact": "clean-break-native-explicit-decision-projection.json",
+      "sha256": "d1be22ab23eb4ac519f6ecf09909a4f854717d484d385591a2821c867db2fef7"
+    },
+    {
+      "artifact": "clean-break-native-decision-history-parity.json",
+      "sha256": "b731bb0716e53796938d265d4b7bb91def950f2fb614cd53b9441edff6a9ee0b"
+    }
+  ],
+  "verified": [
+    "Native complete Board source and complete cognitive ledger remain exactly equal after reserved rebuild and replay.",
+    "Every Decision preserves identity, source reference, content, generation, generation successor, normative source status and maturity.",
+    "Full relationship multiset equals its incremental counterpart with explicit normative link present and after removal; restore is idempotent.",
+    "Native owner cleanup preserves foreign owner/writer facts and restores exact before-images after two real deletions; repeated compensation remains exact.",
+    "Combined evidence covers same-reference revision/reopen plus explicit replacement across Decision IDs, distinct current/history reads, removal and replay."
+  ],
+  "limits": [
+    "Full KG-16/24 family qualification remains a separate fixed matrix review; no blanket promotion.",
+    "No product, frontend or wheel payload changed since main57; prior 27 frontend cases and green closure57 still apply, not rerun.",
+    "Rebuild test uses actual source enumeration, reservation, ingestion, graph snapshot and restore on disposable storage; no physical deployment/promotion claim.",
+    "No conversion, real data mutation, new policy or compatibility path."
+  ]
+}

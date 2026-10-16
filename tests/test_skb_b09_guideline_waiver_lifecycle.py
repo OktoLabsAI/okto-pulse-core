@@ -3,17 +3,14 @@
 SK-B3 replaces executable-rule waivers with semantic metric waivers.  The
 complete lifecycle contract lives in ``test_skb3_semantic_guideline_exceptions``;
 these checks keep the old B09 surface from silently becoming authoritative
-again during the migration.
+again.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from okto_pulse.core.domain.guideline_lifecycle import (
-    GuidelineLifecycleError,
-    guideline_revision_content_digest_v1,
-)
+import okto_pulse.core.domain.guideline_lifecycle as guideline_lifecycle
 from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticMetricWaiverEventType,
     SemanticMetricWaiverExpireReason,
@@ -21,16 +18,9 @@ from okto_pulse.core.domain.guideline_semantic_exceptions import (
 )
 
 
-def test_b09_legacy_executable_rule_digest_fails_closed() -> None:
-    with pytest.raises(
-        GuidelineLifecycleError,
-        match="legacy_executable_rules_unsupported",
-    ):
-        guideline_revision_content_digest_v1(
-            title="Retired executable guideline",
-            content="Legacy policy/v1 payload.",
-            rules=(object(),),
-        )
+def test_b09_executable_rule_digest_is_absent() -> None:
+    assert not hasattr(guideline_lifecycle, "guideline_revision_content_digest_v1")
+    assert not hasattr(guideline_lifecycle, "guideline_revision_content_digest")
 
 
 @pytest.mark.parametrize(

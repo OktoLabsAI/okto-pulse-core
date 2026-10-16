@@ -30,30 +30,20 @@ Args:
     board_id: Board ID
     ideation_id: Ideation ID
     question: The question text
-    options: Option labels — multi-value; formats:
-        okto-pulse://reference/multivalue.
-    options_json: Preferred structured options. Pass a native array such as
-        [{"label":"Safer path","recommended":true,"tradeoff":"More setup"}].
-        A JSON-array string is accepted for compatibility. Each item requires
-        label; recommended defaults to false and tradeoff to null. A non-empty
-        options_json takes precedence over options.
+    options: Required native array of objects, e.g.
+        [{"label":"A","recommended":true,"tradeoff":"Costs more"}].
+        label is a non-empty string; recommended defaults to false;
+        tradeoff defaults to null. Strings and unknown fields are rejected.
     question_type: "choice" for single-select (default) or "multi_choice" for multi-select
-    allow_free_text: "true" to also allow a free-text response alongside selections
+    allow_free_text: true to also allow a free-text response alongside selections
 
 Returns:
     JSON with Q&A item including choices
 
-## `okto_pulse_ask_ideation_question`
+## `okto_pulse_ask` (`target_type="ideation"`)
 
-Ask a question on an ideation's Q&A board. Use @Name to direct the question.
-
-Args:
-    board_id: Board ID
-    ideation_id: Ideation ID
-    question: Question text (use @Name to mention someone)
-
-Returns:
-    JSON with Q&A item details
+Use `okto_pulse_ask` with `target_type="ideation"` and `parent_id` naming the target.
+See `okto-pulse://reference/tool-families/qa_ask` for parameters, authorization and results.
 
 ## `okto_pulse_convert_stories_to_ideation`
 
@@ -86,7 +76,7 @@ Args:
 
 Returns:
     JSON with success status and a governed `takedown` receipt. Cascaded
-    refinement/spec/sprint receipts are exposed recursively under
+    refinement/spec receipts are exposed recursively under
     `takedown.descendant_deletions`.
 
 ## `okto_pulse_delete_ideation_question`
@@ -155,10 +145,10 @@ to evaluate, review, or derive refinements/specs from this ideation.
 Args:
     board_id: Board ID
     ideation_id: Ideation ID
-    include_knowledge: Include knowledge base entries (default "true")
-    include_mockups: Include screen mockups (default "true")
-    include_qa: Include Q&A items (default "true")
-    include_architecture: Include Architecture Designs (default "true")
+    include_knowledge: Include knowledge base entries (default true)
+    include_mockups: Include screen mockups (default true)
+    include_qa: Include Q&A items (default true)
+    include_architecture: Include Architecture Designs (default true)
 
 Returns:
     JSON with complete ideation context: details + Q&A + mockups + KBs + refinements + specs + evaluation

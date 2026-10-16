@@ -30,11 +30,6 @@ from okto_pulse.core.models.schemas import (
     SpecMove,
     SpecUpdate,
 )
-from okto_pulse.core.ports.knowledge_propagation import (
-    KnowledgePropagationScope,
-    register_knowledge_propagation_port,
-    reset_knowledge_propagation_port_for_tests,
-)
 from okto_pulse.core.services.architecture import ArchitectureDesignRepository
 from okto_pulse.core.services.main import (
     BoardService,
@@ -45,23 +40,8 @@ from okto_pulse.core.services.main import (
 from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
 
 
-class _LegacyKnowledgeScopePort:
-    async def load_scope(self, _context, request):
-        return KnowledgePropagationScope(
-            target=request.target,
-            scope_revision=0,
-            v2_active=False,
-            selection_state=None,
-        )
-
-
-@pytest.fixture(autouse=True)
-def _register_legacy_knowledge_scope_port():
-    register_knowledge_propagation_port(_LegacyKnowledgeScopePort())
-    try:
-        yield
-    finally:
-        reset_knowledge_propagation_port_for_tests()
+# The shared Core test fixture supplies an explicitly empty native Knowledge scope.
+# Governed assignment persistence has its own adapter/service integration suites.
 
 
 def _id(prefix: str) -> str:
@@ -228,8 +208,7 @@ async def test_create_card_auto_propagates_selected_spec_resources_idempotently(
         )
         assert card is not None
 
-        assert [item["id"] for item in card.knowledge_bases or []] == [f"cardkb_{ids['knowledge_id']}"]
-        assert "governance_metadata" not in card.knowledge_bases[0]
+        assert card.knowledge_bases in (None, [])
         assert [item["id"] for item in card.screen_mockups or []] == [ids["mockup_id"]]
 
         arch_count = (
@@ -247,14 +226,15 @@ async def test_create_card_auto_propagates_selected_spec_resources_idempotently(
             trigger="test_retry",
         )
         assert retry["results"]["knowledge_base"]["copied_count"] == 0
-        assert retry["results"]["knowledge_base"]["ignored_count"] == 1
+        assert retry["results"]["knowledge_base"]["ignored_count"] == 0
+        assert retry["results"]["knowledge_base"]["reason"] == "native_assignments"
         assert retry["results"]["mockup"]["copied_count"] == 0
         assert retry["results"]["mockup"]["ignored_count"] == 1
         assert retry["results"]["architecture"]["copied_count"] == 0
         assert retry["results"]["architecture"]["ignored_count"] == 1
 
         refreshed = await db.get(Card, card.id)
-        assert len(refreshed.knowledge_bases or []) == 1
+        assert refreshed.knowledge_bases in (None, [])
         assert len(refreshed.screen_mockups or []) == 1
         arch_after_retry = (
             await db.execute(
@@ -274,14 +254,13 @@ async def test_create_card_auto_propagates_selected_spec_resources_idempotently(
         ).scalars().all()
         assert audits
         assert audits[0].details["resource_types"] == [
-            "knowledge_base",
             "mockup",
             "architecture",
         ]
 
 
 @pytest.mark.asyncio
-async def test_enabling_board_setting_backfills_existing_linked_cards(db_factory):
+async def test_enabling_board_setting_propagates_visual_resources_without_kb_copies(db_factory):
     board_id = _id("board-backfill-resources")
     actor_id = _id("agent-backfill-resources")
 
@@ -315,9 +294,7 @@ async def test_enabling_board_setting_backfills_existing_linked_cards(db_factory
         )
 
         refreshed = await db.get(Card, card.id)
-        assert [item["id"] for item in refreshed.knowledge_bases or []] == [
-            f"cardkb_{ids['knowledge_id']}"
-        ]
+        assert refreshed.knowledge_bases in (None, [])
         assert [item["id"] for item in refreshed.screen_mockups or []] == [
             ids["mockup_id"]
         ]
@@ -330,7 +307,7 @@ async def test_enabling_board_setting_backfills_existing_linked_cards(db_factory
 
 
 @pytest.mark.asyncio
-async def test_create_spec_persists_mockups_for_later_auto_backfill(db_factory):
+async def test_create_spec_persists_mockups_for_later_auto_propagation(db_factory):
     board_id = _id("board-create-spec-resources")
     actor_id = _id("agent-create-spec-resources")
 
@@ -401,7 +378,7 @@ async def test_create_spec_persists_mockups_for_later_auto_backfill(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_spec_resource_changes_backfill_existing_linked_cards(db_factory):
+async def test_spec_resource_changes_propagate_mockups_without_kb_copies(db_factory):
     board_id = _id("board-resource-change")
     actor_id = _id("agent-resource-change")
     spec_id = _id("spec-resource-change")
@@ -470,15 +447,14 @@ async def test_spec_resource_changes_backfill_existing_linked_cards(db_factory):
         )
 
         refreshed = await db.get(Card, card.id)
-        assert len(refreshed.knowledge_bases or []) == 1
-        assert refreshed.knowledge_bases[0]["title"] == "Late KB"
+        assert refreshed.knowledge_bases in (None, [])
         assert [item["id"] for item in refreshed.screen_mockups or []] == [
             "late-mockup"
         ]
 
 
 @pytest.mark.asyncio
-async def test_governance_metadata_refreshes_once_without_changing_card_identity(
+async def test_governance_metadata_updates_source_without_physical_card_fanout(
     db_factory,
 ):
     board_id = _id("board-governance-refresh")
@@ -535,34 +511,21 @@ async def test_governance_metadata_refreshes_once_without_changing_card_identity
         assert kb is not None
 
         loaded = await db.get(Card, card.id)
-        first_snapshot = loaded.knowledge_bases[0]
-        original_id = first_snapshot["id"]
-        original_source = first_snapshot["source"]
-        assert first_snapshot["governance_metadata"]["purpose"] == (
-            "Explain the source contract"
-        )
-
+        assert loaded.knowledge_bases in (None, [])
+        source = await db.get(SpecKnowledgeBase, kb.id)
+        assert source.governance_metadata["purpose"] == "Explain the source contract"
         changed = _governance_metadata(purpose="Explain the revised contract")
-        await service.update_knowledge(
-            kb.id,
-            SpecKnowledgeUpdate(governance_metadata=changed),
-        )
+        await service.update_knowledge(kb.id, SpecKnowledgeUpdate(governance_metadata=changed))
+        await db.refresh(source)
         await db.refresh(loaded)
-        refreshed = loaded.knowledge_bases[0]
-        assert len(loaded.knowledge_bases) == 1
-        assert refreshed["id"] == original_id
-        assert refreshed["source"] == original_source
-        assert refreshed["governance_metadata"]["purpose"] == (
-            "Explain the revised contract"
-        )
-
+        assert source.governance_metadata == changed
+        assert loaded.knowledge_bases in (None, [])
         reordered = {key: changed[key] for key in reversed(tuple(changed))}
-        await service.update_knowledge(
-            kb.id,
-            SpecKnowledgeUpdate(governance_metadata=reordered),
-        )
+        await service.update_knowledge(kb.id, SpecKnowledgeUpdate(governance_metadata=reordered))
+        await db.refresh(source)
         await db.refresh(loaded)
-        assert loaded.knowledge_bases == [refreshed]
+        assert source.governance_metadata == changed
+        assert loaded.knowledge_bases in (None, [])
 
 
 @pytest.mark.asyncio
@@ -614,7 +577,7 @@ async def test_auto_propagation_allows_selected_resource_types_absent_on_spec(db
                 )
             )
         ).scalars().all()
-        assert audits[0].details["results"]["knowledge_base"]["source_count"] == 0
+        assert "knowledge_base" not in audits[0].details["results"]
         assert audits[0].details["results"]["mockup"]["source_count"] == 0
         assert audits[0].details["results"]["architecture"]["source_count"] == 0
 
@@ -654,7 +617,7 @@ async def test_link_card_to_spec_runs_auto_propagation(db_factory):
 
         card = await db.get(Card, card_id)
         assert card.spec_id == spec_id
-        assert [item["id"] for item in card.knowledge_bases or []] == [f"cardkb_{ids['knowledge_id']}"]
+        assert card.knowledge_bases in (None, [])
 
 
 # ---------------------------------------------------------------------------
@@ -867,7 +830,7 @@ async def test_architecture_delete_via_repository_cleans_linked_cards(db_factory
 
 
 @pytest.mark.asyncio
-async def test_spec_knowledge_update_propagates_content_to_linked_cards(db_factory):
+async def test_spec_knowledge_update_keeps_content_in_source_without_card_copies(db_factory):
     """Spec 9af2cf05 — AC4 / ts_b0835218."""
     async with db_factory() as db:
         ctx = await _seed_board_spec_card(db, resource_types=("knowledge_base",))
@@ -885,9 +848,10 @@ async def test_spec_knowledge_update_propagates_content_to_linked_cards(db_facto
         )
 
         card = await db.get(Card, ctx["card_id"])
-        entry = next(item for item in (card.knowledge_bases or []) if item.get("id") == f"cardkb_{kb.id}")
-        assert entry["title"] == "NEW TITLE"
-        assert entry["content"] == "NEW CONTENT"
+        assert card.knowledge_bases in (None, [])
+        source = await db.get(SpecKnowledgeBase, kb.id)
+        assert source.title == "NEW TITLE"
+        assert source.content == "NEW CONTENT"
 
         update_audits = [
             audit for audit in (
@@ -901,11 +865,12 @@ async def test_spec_knowledge_update_propagates_content_to_linked_cards(db_facto
             if audit.details.get("trigger") == "spec_knowledge_updated"
         ]
         assert update_audits
-        assert update_audits[-1].details["results"]["knowledge_base"]["copied_count"] >= 1
+        assert update_audits[-1].details["results"]["knowledge_base"]["copied_count"] == 0
+        assert update_audits[-1].details["results"]["knowledge_base"]["reason"] == "native_assignments"
 
 
 @pytest.mark.asyncio
-async def test_spec_knowledge_delete_removes_cardkb_from_linked_cards(db_factory):
+async def test_spec_knowledge_delete_does_not_fabricate_card_copy_removal(db_factory):
     """Spec 9af2cf05 — AC5 / ts_37bba06b."""
     async with db_factory() as db:
         ctx = await _seed_board_spec_card(db, resource_types=("knowledge_base",))
@@ -937,7 +902,9 @@ async def test_spec_knowledge_delete_removes_cardkb_from_linked_cards(db_factory
             if audit.details.get("trigger") == "spec_knowledge_deleted"
         ]
         assert delete_audits
-        assert delete_audits[-1].details["results"]["knowledge_base"]["removed_count"] >= 1
+        assert delete_audits[-1].details["results"]["knowledge_base"]["removed_count"] == 0
+        assert delete_audits[-1].details["results"]["knowledge_base"]["reason"] == "native_assignments"
+        assert await db.get(SpecKnowledgeBase, kb_id) is None
 
 
 @pytest.mark.asyncio

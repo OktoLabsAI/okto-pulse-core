@@ -11,7 +11,7 @@ that blocks any future removal lacking the required evidence.
 
 PURE (tr_4e074dcf): the DTOs + builders import ONLY stdlib (``ast`` /
 ``dataclasses`` / ``pathlib`` / ``typing``). They reference every concrete
-adapter by STRING (module path / package), and NEVER import Kuzu / Ladybug /
+adapter by STRING (module path / package), and NEVER import the Grafx graph runtime /
 sentence-transformers / SQLAlchemy / ``okto_pulse.community`` / any concrete
 provider. The reconciliation gate lazy-imports the (pure) composition gate only
 when CALLED, so importing this module in isolation stays clean (tr_f… / ts_9dbe515a).
@@ -147,12 +147,12 @@ REQUIRED_ADAPTER_KEYS: frozenset[str] = frozenset(
         "inmemory_token_bucket_rate_limiter",
         "inmemory_session_store",
         "mcp_auth_context",
-        "kuzu_graph_store",
-        "kuzu_cypher_executor",
-        "kuzu_graph_schema_manager",
-        "kuzu_graph_lifecycle",
-        "kuzu_graph_path_resolver",
-        "kuzu_graph_transaction",
+        "grafx_graph_store",
+        "grafx_cypher_executor",
+        "grafx_graph_schema_manager",
+        "grafx_graph_lifecycle",
+        "graph_storage_ref_resolver",
+        "grafx_graph_transaction",
         "global_discovery_db",
         "settings_kg_config",
         "singleton_scheduler_control",
@@ -327,19 +327,19 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             ),
             status="blocked",
         ),
-        # --- KG / Kuzu / Ladybug adapters (#06, deferred_to_05 subjects) ---
+        # --- KG / Grafx graph-runtime adapters (#06, deferred_to_05 subjects) ---
         _entry(
-            adapter_key="kuzu_graph_store",
+            adapter_key="grafx_graph_store",
             owner="okto-pulse-community/kg",
-            current_module="okto_pulse/community/adapters/kuzu_graph_store.py",
+            current_module="okto_pulse/community/adapters/grafx_graph_store.py",
             port_ref="SemanticGraphStore",
             wave="R05-KG",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="community/adapters (kuzu graph store, moved by R-P2-05)",
+            target_destination="community/adapters (Grafx graph store, moved by R-P2-05)",
             packages=("ladybug(embedded)",),
             oracles_required=("graph_store_conformance", "vector_search_parity"),
             removal_criterion=(
-                "R-P2-05 done: Community registers CommunityKuzuGraphStore behind "
+                "R-P2-05 done: Community registers CommunityGrafxGraphStore behind "
                 "SemanticGraphStore and the core embedded provider has been removed."
             ),
             status="ready",
@@ -347,17 +347,17 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             metadata=(("moved_by", "R-P2-05"),),
         ),
         _entry(
-            adapter_key="kuzu_cypher_executor",
+            adapter_key="grafx_cypher_executor",
             owner="okto-pulse-community/kg",
-            current_module="okto_pulse/community/adapters/kuzu_cypher_executor.py",
+            current_module="okto_pulse/community/adapters/grafx_cypher_executor.py",
             port_ref="CypherExecutor",
             wave="R05-KG",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="community/adapters (kuzu cypher executor, moved by R-P2-05)",
+            target_destination="community/adapters (Grafx cypher executor, moved by R-P2-05)",
             packages=("ladybug(embedded)",),
             oracles_required=("cypher_executor_conformance",),
             removal_criterion=(
-                "R-P2-05 done: Community registers CommunityKuzuCypherExecutor "
+                "R-P2-05 done: Community registers CommunityGrafxCypherExecutor "
                 "behind CypherExecutor and the core embedded provider has been removed."
             ),
             status="ready",
@@ -365,17 +365,17 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             metadata=(("moved_by", "R-P2-05"),),
         ),
         _entry(
-            adapter_key="kuzu_graph_schema_manager",
+            adapter_key="grafx_graph_schema_manager",
             owner="okto-pulse-community/kg",
-            current_module="okto_pulse/community/adapters/kuzu_graph_schema_manager.py",
+            current_module="okto_pulse/community/adapters/grafx_graph_schema_manager.py",
             port_ref="GraphSchemaManager",
             wave="R05-KG",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="community/adapters (kuzu schema manager, moved by R-P2-05)",
+            target_destination="community/adapters (Grafx schema manager, moved by R-P2-05)",
             packages=("ladybug(embedded)",),
             oracles_required=("schema_bootstrap_idempotent",),
             removal_criterion=(
-                "R-P2-05 done: Community registers CommunityKuzuGraphSchemaManager "
+                "R-P2-05 done: Community registers CommunityGrafxGraphSchemaManager "
                 "behind GraphSchemaManager and the core embedded provider has been removed."
             ),
             status="ready",
@@ -383,17 +383,17 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             metadata=(("moved_by", "R-P2-05"),),
         ),
         _entry(
-            adapter_key="kuzu_graph_lifecycle",
+            adapter_key="grafx_graph_lifecycle",
             owner="okto-pulse-community/kg",
-            current_module="okto_pulse/community/adapters/kuzu_graph_lifecycle.py",
+            current_module="okto_pulse/community/adapters/grafx_graph_lifecycle.py",
             port_ref="GraphLifecycle",
             wave="R05-KG",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="community/adapters (kuzu lifecycle, moved by R-P2-05)",
+            target_destination="community/adapters (Grafx lifecycle, moved by R-P2-05)",
             packages=("ladybug(embedded)",),
             oracles_required=("lifecycle_close_releases_handles",),
             removal_criterion=(
-                "R-P2-05 done: Community registers CommunityKuzuGraphLifecycle "
+                "R-P2-05 done: Community registers CommunityGrafxGraphLifecycle "
                 "behind GraphLifecycle and the core embedded provider has been removed."
             ),
             status="ready",
@@ -401,35 +401,35 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             metadata=(("moved_by", "R-P2-05"),),
         ),
         _entry(
-            adapter_key="kuzu_graph_path_resolver",
+            adapter_key="graph_storage_ref_resolver",
             owner="okto-pulse-community/kg",
-            current_module="okto_pulse/community/adapters/kuzu_graph_path_resolver.py",
-            port_ref="GraphPathResolver",
+            current_module="okto_pulse/community/adapters/local_storage_ref.py",
+            port_ref="StorageRef",
             wave="R05-KG",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="community/adapters (kuzu path resolver, moved by R-P2-05)",
+            target_destination="community/adapters (Grafx storage-ref codec, moved by R-P2-05)",
             packages=("stdlib",),
-            oracles_required=("path_resolver_exists_parity",),
+            oracles_required=("storage_ref_roundtrip_parity",),
             removal_criterion=(
-                "R-P2-05 done: Community registers CommunityKuzuGraphPathResolver "
-                "behind GraphPathResolver and the core embedded provider has been removed."
+                "R-P2-05 done: Community registers CommunityLocalStorageRefCodec "
+                "behind StorageRef and the core embedded provider has been removed."
             ),
             status="ready",
             deferred_provider_key="kg_registry",
             metadata=(("moved_by", "R-P2-05"),),
         ),
         _entry(
-            adapter_key="kuzu_graph_transaction",
+            adapter_key="grafx_graph_transaction",
             owner="okto-pulse-community/kg",
-            current_module="okto_pulse/community/adapters/kuzu_graph_transaction.py",
+            current_module="okto_pulse/community/adapters/grafx_graph_transaction.py",
             port_ref="GraphTransaction",
             wave="R05-KG",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="community/adapters (kuzu transaction, moved by R-P2-05)",
+            target_destination="community/adapters (Grafx transaction, moved by R-P2-05)",
             packages=("ladybug(embedded)",),
             oracles_required=("transaction_open_board_connection",),
             removal_criterion=(
-                "R-P2-05 done: Community registers CommunityKuzuGraphTransaction "
+                "R-P2-05 done: Community registers CommunityGrafxGraphTransaction "
                 "behind GraphTransaction and the core embedded provider has been removed."
             ),
             status="ready",
@@ -439,7 +439,7 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
         _entry(
             adapter_key="global_discovery_db",
             owner="okto-pulse-community/kg",
-            current_module="okto_pulse/community/adapters/global_discovery_runtime.py",
+            current_module="okto_pulse/community/adapters/grafx_global_discovery_runtime.py",
             port_ref="GlobalDiscoveryRuntime",
             wave="R05-KG",
             predecessor_refs=("#06_kg_ports",),

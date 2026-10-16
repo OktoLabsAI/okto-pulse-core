@@ -1,0 +1,49 @@
+{
+  "format": "pulse-040-current-acceptance-review/v1",
+  "proof_pair": "dist-native-privacy-refusal1",
+  "provenance": "provenance-native-privacy-refusal1.json",
+  "campaign": "native-mcp-flow-measurement1",
+  "xml_sha256": "f0fef3de0f2b8076eea2927954c723335010c4d23afc37a8656b02f58ad22a51",
+  "test_file": "okto_labs_pulse_community/tests/test_single_agent_spec_execution.py",
+  "test_sha256": "8187b15653f062b591c19d18b6666da854abcc887bbf2295ac07bc75fc15c9e3",
+  "cases": [
+    {
+      "classname": "tests.test_single_agent_spec_execution",
+      "name": "test_one_agent_preserves_assessments_and_evidence_through_spec_done[False]",
+      "time": "8.447"
+    },
+    {
+      "classname": "tests.test_single_agent_spec_execution",
+      "name": "test_one_agent_preserves_assessments_and_evidence_through_spec_done[True]",
+      "time": "6.595"
+    }
+  ],
+  "criteria": {
+    "BASE:T01": {
+      "status": "verified_current_pair_review",
+      "assertions": [
+        "One real authenticated agent solo with required grants and reviewer separation off.",
+        "MCP Spec Draft->Review->Approved->Validated->In Progress->Done, explicit lint, validation, plan evaluation, task report and review, signed scenario execution and canonical delivery evidence.",
+        "Persisted Spec validations/evaluations/current_validation_id and progress/implementation payloads preserved; all evidence and reviews attributed to solo; no second agent."
+      ],
+      "limits": [
+        "Initial entities and external technical execution receipt are seeded; this proves the specified governed lifecycle, not public creation of an initiative or external implementation execution."
+      ]
+    },
+    "BASE:T07": {
+      "status": "verified_current_pair_review",
+      "assertions": [
+        "After task report and approval reach Done, premature MCP Spec Done fails with delivery_test_result_missing.",
+        "Spec remains In Progress and evaluations/validation pointers/evidence records unchanged.",
+        "Authenticated integrated test and linked canonical test evidence subsequently permit Done."
+      ],
+      "limits": [
+        "Covers explicit fixture obligations FR/BR/AC/Decision; no claim of exhaustive every-profile matrix."
+      ]
+    }
+  },
+  "limits": [
+    "Review reuses terminal current-pair execution; no new tests or behavior changes.",
+    "Does not establish comparative benchmark targets or whole-product acceptance."
+  ]
+}

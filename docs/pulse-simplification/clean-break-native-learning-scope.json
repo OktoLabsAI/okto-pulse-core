@@ -1,0 +1,340 @@
+{
+  "criteria": [
+    "KG:KG-35"
+  ],
+  "scope": "Remove compatibility-only reconciliation argument and unscoped Learning replacement acceptance.",
+  "base_pair": {
+    "core": "8fc08d56",
+    "community": "b66c1624"
+  },
+  "final_build": "dist-native-main64",
+  "provenance": {
+    "checked_at": "2026-10-07T22:49:38.354817+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 837,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "8fc08d56ac2d5420cc05aca5a1ce3b74332eba14",
+        "dirty": true,
+        "dirty_entry_count": 10,
+        "distribution": "okto-pulse-core",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main64\\okto_pulse_core-0.4.0-py3-none-any.whl",
+          "sha256": "cced1bc708720c219d35b3b6143c944c60103433ded5b8efd4a2904ecab905d4",
+          "size": 3591258
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 898,
+        "byte_identical": true,
+        "aggregate_sha256": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3",
+        "chain_hashes": {
+          "source": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3",
+          "wheel": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3",
+          "site_packages": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "4f6360d46eab0f9c8931d3fb5e8a50e0c04b0e6f3b164619a55ac381917ba34d",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "3d3ecc80ab6b699b2021eddcf02b72bf48eddd06bf34dcf245f2b00fcc69b433"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 317,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "b66c1624cb5c937e2b8558b67edad910c9b67e8c",
+        "dirty": true,
+        "dirty_entry_count": 65,
+        "distribution": "okto-pulse",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main64\\okto_pulse-0.4.0-py3-none-any.whl",
+          "sha256": "699d577f656357f70f175c5393832ae62a03aafa40dac62613208eb2295ebac3",
+          "size": 4072770
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 403,
+        "byte_identical": true,
+        "aggregate_sha256": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+        "chain_hashes": {
+          "source": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+          "wheel": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+          "site_packages": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "campaigns": [
+    {
+      "name": "acceptance-native-learning-scope-core2",
+      "sha256": "073d0beca45e47a52cddd70e80d3b2187a98c823511088de9b7ae75b00c3f54f",
+      "passed": [
+        "tests.test_learning_capture_intent_contract::test_typed_capture_intent_preserves_explicit_target_and_cas[create]",
+        "tests.test_learning_capture_intent_contract::test_typed_capture_intent_preserves_explicit_target_and_cas[reuse]",
+        "tests.test_learning_capture_intent_contract::test_typed_capture_intent_preserves_explicit_target_and_cas[supersede]",
+        "tests.test_learning_capture_intent_contract::test_intent_refuses_implicit_or_malformed_target[changes0]",
+        "tests.test_learning_capture_intent_contract::test_intent_refuses_implicit_or_malformed_target[changes1]",
+        "tests.test_learning_capture_intent_contract::test_intent_refuses_implicit_or_malformed_target[changes2]",
+        "tests.test_learning_capture_intent_contract::test_intent_refuses_implicit_or_malformed_target[changes3]",
+        "tests.test_learning_capture_intent_contract::test_intent_refuses_implicit_or_malformed_target[changes4]",
+        "tests.test_learning_capture_intent_contract::test_intent_refuses_implicit_or_malformed_target[changes5]",
+        "tests.test_learning_capture_intent_contract::test_intent_refuses_implicit_or_malformed_target[changes6]",
+        "tests.test_learning_capture_intent_contract::test_replacement_requires_current_explicit_scope[None]",
+        "tests.test_learning_capture_intent_contract::test_replacement_requires_current_explicit_scope[]",
+        "tests.test_learning_capture_intent_contract::test_replacement_requires_current_explicit_scope[global]",
+        "tests.test_learning_capture_projection::test_capture_is_preserved_without_projection_or_implicit_admission",
+        "tests.test_learning_capture_projection::test_restoration_reports_pending_capture_without_a_literal_candidate",
+        "tests.test_learning_capture_projection::test_existing_canonical_technical_node_does_not_qualify_a_capture_as_replayed",
+        "tests.test_learning_capture_projection::test_capture_fingerprint_detects_changed_applicability",
+        "tests.test_learning_capture_projection::test_malformed_capture_is_not_hidden_by_a_later_valid_revision[unknown_format]",
+        "tests.test_learning_capture_projection::test_malformed_capture_is_not_hidden_by_a_later_valid_revision[extra]",
+        "tests.test_learning_capture_projection::test_malformed_capture_is_not_hidden_by_a_later_valid_revision[untrusted_admitted]",
+        "tests.test_learning_capture_projection::test_malformed_capture_is_not_hidden_by_a_later_valid_revision[wrong_board]",
+        "tests.test_learning_capture_projection::test_malformed_capture_is_not_hidden_by_a_later_valid_revision[bool_version]",
+        "tests.test_learning_capture_projection::test_malformed_capture_is_not_hidden_by_a_later_valid_revision[digest]",
+        "tests.test_learning_capture_projection::test_malformed_capture_is_not_hidden_by_a_later_valid_revision[naive_time]",
+        "tests.test_learning_capture_projection::test_malformed_capture_is_not_hidden_by_a_later_valid_revision[empty_content]",
+        "tests.test_learning_capture_projection::test_malformed_capture_is_not_hidden_by_a_later_valid_revision[evidence_mismatch]",
+        "tests.test_learning_capture_projection::test_malformed_capture_is_not_hidden_by_a_later_valid_revision[duplicate_evidence]",
+        "tests.test_learning_capture_projection::test_malformed_capture_is_not_hidden_by_a_later_valid_revision[create_target]",
+        "tests.test_learning_capture_projection::test_malformed_capture_is_not_hidden_by_a_later_valid_revision[unknown_intent]",
+        "tests.test_learning_capture_projection::test_malformed_capture_is_not_hidden_by_a_later_valid_revision[reuse_without_cas]",
+        "tests.test_learning_capture_projection::test_malformed_capture_is_not_hidden_by_a_later_valid_revision[supersede_self]",
+        "tests.test_learning_capture_projection::test_explicit_intent_preserves_target_cas_and_applicability_without_auto_linking[reuse-old]",
+        "tests.test_learning_capture_projection::test_explicit_intent_preserves_target_cas_and_applicability_without_auto_linking[supersede-previous]",
+        "tests.test_learning_capture_projection::test_utf8_aggregate_limit_is_not_character_count",
+        "tests.test_learning_capture_projection::test_legacy_replay_reports_capture_and_never_touches_graph",
+        "tests.test_learning_capture_projection::test_legacy_replay_keeps_malformed_capture_as_failure",
+        "tests.test_learning_scoped_supersedence_contract::test_current_request_always_serializes_explicit_scope[create]",
+        "tests.test_learning_scoped_supersedence_contract::test_current_request_always_serializes_explicit_scope[reuse]",
+        "tests.test_learning_scoped_supersedence_contract::test_current_request_always_serializes_explicit_scope[supersede]",
+        "tests.test_learning_scoped_supersedence_contract::test_current_create_refuses_incompatible_payload_without_conversion[old_format]",
+        "tests.test_learning_scoped_supersedence_contract::test_current_create_refuses_incompatible_payload_without_conversion[missing_scope]",
+        "tests.test_learning_scoped_supersedence_contract::test_v2_explicit_source_bug_scope_is_durable_but_not_a_literal_projection",
+        "tests.test_learning_scoped_supersedence_contract::test_scope_cannot_be_inferred_broadened_or_added_to_old_format[v1_scope]",
+        "tests.test_learning_scoped_supersedence_contract::test_scope_cannot_be_inferred_broadened_or_added_to_old_format[missing_scope]",
+        "tests.test_learning_scoped_supersedence_contract::test_scope_cannot_be_inferred_broadened_or_added_to_old_format[global]",
+        "tests.test_learning_scoped_supersedence_contract::test_scope_cannot_be_inferred_broadened_or_added_to_old_format[unknown_bug]",
+        "tests.test_learning_scoped_supersedence_contract::test_scope_cannot_be_inferred_broadened_or_added_to_old_format[reuse]",
+        "tests.test_learning_scoped_supersedence_contract::test_scope_cannot_be_inferred_broadened_or_added_to_old_format[extra]",
+        "tests.test_learning_scoped_supersedence_contract::test_other_intents_do_not_acquire_replacement_scope[create]",
+        "tests.test_learning_scoped_supersedence_contract::test_other_intents_do_not_acquire_replacement_scope[reuse]",
+        "tests.test_learning_scoped_supersedence_contract::test_capture_source_reference_round_trip_is_exact[node-0]",
+        "tests.test_learning_scoped_supersedence_contract::test_capture_source_reference_round_trip_is_exact[node:opaque/% \\xe7-7]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[node:01:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[node:-1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[node:true:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[node:0:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[%ZZ:0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[:0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[node:0:short]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[node:0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:extra]",
+        "tests.test_learning_scoped_supersedence_contract::test_unknown_reference_version_is_not_reinterpreted_as_legacy_evidence",
+        "tests.test_learning_scoped_supersedence_contract::test_scoped_syntax_without_qualified_target_cannot_enter_commit",
+        "tests.test_learning_scoped_supersedence_contract::test_unscoped_supersede_is_refused_without_conversion",
+        "tests.test_learning_public_intents::test_public_intents_preserve_the_exact_target_and_scope_in_both_writers[create]",
+        "tests.test_learning_public_intents::test_public_intents_preserve_the_exact_target_and_scope_in_both_writers[reuse]",
+        "tests.test_learning_public_intents::test_public_intents_preserve_the_exact_target_and_scope_in_both_writers[supersede]",
+        "tests.test_learning_public_intents::test_public_schema_rejects_implicit_scope_or_client_authority[missing_scope]",
+        "tests.test_learning_public_intents::test_public_schema_rejects_implicit_scope_or_client_authority[global]",
+        "tests.test_learning_public_intents::test_public_schema_rejects_implicit_scope_or_client_authority[reuse_scope]",
+        "tests.test_learning_public_intents::test_public_schema_rejects_implicit_scope_or_client_authority[create_target]",
+        "tests.test_learning_public_intents::test_public_schema_rejects_implicit_scope_or_client_authority[missing_reason]",
+        "tests.test_learning_public_intents::test_public_schema_rejects_implicit_scope_or_client_authority[blank_reason]",
+        "tests.test_learning_public_intents::test_public_schema_rejects_implicit_scope_or_client_authority[generation_bool]",
+        "tests.test_learning_public_intents::test_public_schema_rejects_implicit_scope_or_client_authority[fingerprint]",
+        "tests.test_learning_public_intents::test_public_schema_rejects_implicit_scope_or_client_authority[implicit_kind]",
+        "tests.test_learning_public_intents::test_public_schema_rejects_implicit_scope_or_client_authority[approved]",
+        "tests.test_learning_public_intents::test_absent_intent_preserves_create_and_the_existing_compound_digest",
+        "tests.test_learning_candidates::test_ranked_suggestions_are_explicit_bounded_and_source_qualified",
+        "tests.test_learning_candidates::test_stale_projection_and_pending_heads_are_omitted_with_limits",
+        "tests.test_learning_candidates::test_budget_exhaustion_is_not_empty_complete_history",
+        "tests.test_learning_candidates::test_invalid_provider_evidence_is_not_a_suggestion[rank]",
+        "tests.test_learning_candidates::test_invalid_provider_evidence_is_not_a_suggestion[scope]",
+        "tests.test_learning_candidates::test_invalid_provider_evidence_is_not_a_suggestion[duplicate]",
+        "tests.test_learning_candidates::test_invalid_provider_evidence_is_not_a_suggestion[score]",
+        "tests.test_learning_candidates::test_invalid_provider_evidence_is_not_a_suggestion[generation]",
+        "tests.test_learning_candidates::test_invalid_provider_evidence_is_not_a_suggestion[head_scope]",
+        "tests.test_learning_candidates::test_invalid_provider_evidence_is_not_a_suggestion[count]",
+        "tests.test_learning_candidates::test_unavailable_search_does_not_mean_no_similar_learning[search]",
+        "tests.test_learning_candidates::test_unavailable_search_does_not_mean_no_similar_learning[embedder]",
+        "tests.test_learning_candidates::test_unavailable_search_does_not_mean_no_similar_learning[history]",
+        "tests.test_learning_candidates::test_unavailable_search_does_not_mean_no_similar_learning[failure]",
+        "tests.test_kg_r7_imp3::test_rebuild_wrapper_holds_working_only_like_normal_commit",
+        "tests.test_kg_r7_imp3::test_rebuild_wrapper_accepts_mixed_like_normal_commit",
+        "tests.test_kg_r7_imp3::test_deterministic_worker_emits_no_learning_for_bug_card",
+        "tests.test_kg_r7_imp3::test_rebuild_entry_triggers_canonical_partition_maintenance",
+        "tests.test_kg_r7_imp3::test_rebuild_maintenance_does_not_close_debt_with_working_evidence"
+      ],
+      "failed": []
+    },
+    {
+      "name": "acceptance-native-learning-scope-community2",
+      "sha256": "b8e6b888d4a0f218b1bf978289694aa355114c6033de10f3ab0b5f8a620d3170",
+      "passed": [
+        "tests.test_learning_fanin_acceptance::test_candidate_requires_authorized_evidence_and_preserves_other_origins[reuse]",
+        "tests.test_learning_fanin_acceptance::test_candidate_requires_authorized_evidence_and_preserves_other_origins[supersede]",
+        "tests.test_learning_candidate_query::test_query_is_optional_and_read_denial_precedes_search[rest]",
+        "tests.test_learning_candidate_query::test_query_is_optional_and_read_denial_precedes_search[mcp]",
+        "tests.test_learning_candidate_query::test_routed_native_candidates_match_durable_heads_without_writes",
+        "tests.test_learning_capture_intents::test_explicit_intent_preserves_target_history_and_retries_exactly[reuse]",
+        "tests.test_learning_capture_intents::test_intent_rollback_preserves_target_and_has_no_outbox[reuse]",
+        "tests.test_learning_capture_intents::test_same_capture_id_cannot_silently_change_target",
+        "tests.test_learning_capture_intents::test_concurrent_intents_have_one_winner[False]",
+        "tests.test_learning_capture_intents::test_concurrent_intents_have_one_winner[True]",
+        "tests.test_learning_capture_intents::test_target_or_reuse_content_must_be_eligible[working]",
+        "tests.test_learning_capture_intents::test_target_or_reuse_content_must_be_eligible[revoked]",
+        "tests.test_learning_capture_intents::test_target_or_reuse_content_must_be_eligible[superseded]",
+        "tests.test_learning_capture_intents::test_target_or_reuse_content_must_be_eligible[author]",
+        "tests.test_learning_capture_intents::test_target_or_reuse_content_must_be_eligible[content]",
+        "tests.test_learning_capture_intents::test_stale_target_reports_current_identity_without_rebasing",
+        "tests.test_learning_capture_intents::test_target_read_permission_is_required_before_admission",
+        "tests.test_learning_capture_intents::test_late_target_cas_conflict_reports_observed_head_without_capture[reuse]",
+        "tests.test_learning_supersedence_scope::test_generic_supersedence_hides_all_origins_and_is_not_a_scoped_replacement"
+      ],
+      "failed": [
+        "tests.test_learning_capture_intents::test_explicit_intent_preserves_target_history_and_retries_exactly[supersede]",
+        "tests.test_learning_capture_intents::test_intent_rollback_preserves_target_and_has_no_outbox[supersede]",
+        "tests.test_learning_capture_intents::test_late_target_cas_conflict_reports_observed_head_without_capture[supersede]",
+        "tests.test_learning_supersedence_scope::test_scoped_capture_preserves_native_history_and_does_not_mutate_target"
+      ]
+    },
+    {
+      "name": "acceptance-native-learning-scope-community3",
+      "sha256": "c1bd2132845615855d0c8b66885decf704a932075181f430e542f103083757a4",
+      "passed": [
+        "tests.test_learning_capture_intents::test_explicit_intent_preserves_target_history_and_retries_exactly[reuse]",
+        "tests.test_learning_capture_intents::test_explicit_intent_preserves_target_history_and_retries_exactly[supersede]",
+        "tests.test_learning_capture_intents::test_intent_rollback_preserves_target_and_has_no_outbox[reuse]",
+        "tests.test_learning_capture_intents::test_intent_rollback_preserves_target_and_has_no_outbox[supersede]",
+        "tests.test_learning_capture_intents::test_same_capture_id_cannot_silently_change_target",
+        "tests.test_learning_capture_intents::test_concurrent_intents_have_one_winner[False]",
+        "tests.test_learning_capture_intents::test_concurrent_intents_have_one_winner[True]",
+        "tests.test_learning_capture_intents::test_target_or_reuse_content_must_be_eligible[working]",
+        "tests.test_learning_capture_intents::test_target_or_reuse_content_must_be_eligible[revoked]",
+        "tests.test_learning_capture_intents::test_target_or_reuse_content_must_be_eligible[superseded]",
+        "tests.test_learning_capture_intents::test_target_or_reuse_content_must_be_eligible[author]",
+        "tests.test_learning_capture_intents::test_target_or_reuse_content_must_be_eligible[content]",
+        "tests.test_learning_capture_intents::test_stale_target_reports_current_identity_without_rebasing",
+        "tests.test_learning_capture_intents::test_target_read_permission_is_required_before_admission",
+        "tests.test_learning_capture_intents::test_late_target_cas_conflict_reports_observed_head_without_capture[reuse]",
+        "tests.test_learning_capture_intents::test_late_target_cas_conflict_reports_observed_head_without_capture[supersede]",
+        "tests.test_learning_supersedence_scope::test_scoped_capture_preserves_native_history_and_does_not_mutate_target"
+      ],
+      "failed": []
+    }
+  ],
+  "distinct_passed": 119,
+  "unresolved_failures": [],
+  "frontend": {
+    "report": "acceptance-native-learning-scope-ui2.json",
+    "sha256": "102399c0783cba926c763c96954dea5b1447707013dd137dadedbabfd43dc4fd",
+    "passed": 63,
+    "build_and_sync": "79 files / 78 assets; npm run build and verify:frontend-dist terminal0",
+    "tree_sha256": "391fc8e29503fa2a8195fcf2bcd064a8dec534dc198a8f2d61840f9cdce86d00"
+  },
+  "closure": {
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": []
+  },
+  "criterion_evidence": [
+    "Native official SQLite schema and real Grafx; similarity=1 produces reuse suggestion without changing durable records or associations.",
+    "Capture lacking cognitive authority or authenticated scenario evidence is refused before staging; authorized explicit intent stages source without graph mutation.",
+    "Governed materialization changes only selected association, preserves other origin and original Learning, keeps history and replays idempotently.",
+    "Frontend requires explicit selection and reason; suggestions do not choose or save; incompatible unscoped history is refused without rewriting input."
+  ],
+  "prior_failures": [
+    "main63 core1: 39 passed / 3 failed. Rebuild fixtures lacked deferred finalization and one committed after session exit. Corrected fixtures use real finalizer after in-scope commit; all 5 rebuild tests pass in main64 core2.",
+    "main64 community2: 19 passed / 4 failed from helper constructing supersede without scope. Helper now supplies native source_bug; all 17 affected fixture tests pass in community3."
+  ],
+  "limits": [
+    "Embeddings controlled; no model-calibration claim.",
+    "Independent Done gates and health mocked in fan-in fixture. KG32/33 full admission remains pending.",
+    "Frontend is jsdom component/service coverage, not browser E2E.",
+    "KG30 durable interpretive fallback remains pending; KG10/KG28/T23 authority unanswered."
+  ]
+}

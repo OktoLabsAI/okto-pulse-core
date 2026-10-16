@@ -1,0 +1,94 @@
+{
+  "date": "2026-10-14",
+  "scope": "U2/UV17 native dependency planning versus execution",
+  "base": {
+    "core": "182b6d1d",
+    "community": "769d74f9"
+  },
+  "artifacts": [
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-dependency-parity-r9.xml",
+      "sha256": "ed92e7141129651c1bcda19fa0a906d95ffcc4515f6df23140f2be5f333aaede",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "2",
+          "time": "25.987",
+          "timestamp": "2026-10-14T21:44:42.294117-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-dependency-regression.xml",
+      "sha256": "a3323c52869113f54d51620d9e16c0d78bee75cb32c0c0d0fc627e13d8bf4786",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "84",
+          "time": "15.313",
+          "timestamp": "2026-10-14T21:44:47.549000-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\closure-u2-dependency.json",
+      "sha256": "52727604c07eeb4ace123e05b7cb166ea39b5baa97bb49d621cd5aa5b0287e63"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\closure-u2-dependency-final.json",
+      "sha256": "f46ed55cefc4ad96317c1143bf5b0dcdde69785185c1e08d4dbc2b5b95f10ceb"
+    }
+  ],
+  "results": {
+    "native_rest_mcp": "2 passes; complete FR/BR/AC/scenario/implementation Card/Test Card plan with native verification capability and authority",
+    "regression": "84 passes: Spec dependencies, shared dependency error projector and generated MCP catalog drift"
+  },
+  "proof": [
+    "Add a dependency through the native service/UoW before independent decomposition and accepted lint.",
+    "The public composed validation promotes to Validated while the predecessor remains In Progress.",
+    "Allowed transitions and actual start deny pending prerequisite, preserving Spec status/version/edition/head/reviews/activity/events/history.",
+    "REST and MCP expose the native spec_dependencies_incomplete code and predecessor facts.",
+    "After a separately committed fixture predecessor Done state, public start succeeds with unchanged current validation and decomposition in the same edition.",
+    "No delivery report, test outcome or implementation proof is manufactured for this planning test."
+  ],
+  "fix": "okto_pulse_move_spec now passes SpecDependencyOperationError through the existing canonical projector instead of reducing it to a plain ValueError string. Domain predicates and permissions unchanged.",
+  "initial_attempts": [
+    "u2-dependency-parity.xml: empty plan correctly stopped at execution-contract gate; completed the fixture rather than bypassing it.",
+    "r2/r3: linked Test Card reverse association, BR coverage and plan fixture incomplete.",
+    "r4/r5/r6: isolated native method capability and diagnosed invalid scenario_type=functional; used the existing admitted e2e kind.",
+    "u2-dependency-parity-final.xml is an unsuccessful intermediate artifact: fixture had no native structured-spec store. Its filename does not imply success.",
+    "r8: real MCP native code/facts loss reproduced; REST seed also omitted required BR when/then. Product projector and fixture corrected separately.",
+    "r9 is the authoritative final passing native artifact."
+  ],
+  "closure": {
+    "ok": true,
+    "ownership_rows": 9035,
+    "findings": 0,
+    "documentation_findings": 0,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    },
+    "method": "Official source audit; README projection rendered and verified canonically from that completed report."
+  },
+  "limits": [
+    "REST/MCP inject test identities, not an installed wire/authentication rehearsal.",
+    "Predecessor completion is a committed test input. Its own closeout gates are not exercised here; U4 remains required.",
+    "No frontend product change in this increment; no installation/restart or user data changed.",
+    "U2 remains partial until remaining public architecture/resource/Code Evidence comparisons are reconciled; U3 and U4 remain open."
+  ]
+}

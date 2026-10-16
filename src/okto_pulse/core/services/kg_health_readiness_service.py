@@ -3,7 +3,7 @@
 The single source the health/readiness/MCP/UI/report surfaces share
 (tr_1e460a5d). The technical KG signals (technical_dlq, dead_letter_backlog,
 canonical_debt_open, persistence_error) are exposed CONSISTENTLY — scalar counters
-in ``technical_signals`` + per-item drill-down in ``non_maskable_items`` — in BOTH
+in ``technical_signals`` + bounded domain aggregates in ``non_maskable_items`` — in BOTH
 the summary and full profiles (fr_3fbb564c / OR or_36e0cd85). active_queue,
 dead_letter and canonical_debt stay SEPARATE domains; one count is never inferred
 from another (tr_22d4434d). ``readiness`` keeps ``blocking`` (a technical problem
@@ -21,10 +21,6 @@ from typing import Any
 from okto_pulse.core.kg.rebuild_audit import emit_cognitive_technical_signal_sample
 from okto_pulse.core.ports.scheduler import SchedulerControl
 
-_DLQ_TOOL = "okto_pulse_kg_dead_letter_list"
-_GLOBAL_OUTBOX_DLQ_TOOL = "okto_pulse_kg_global_outbox_dead_letter_list"
-_DEBT_TOOL = "okto_pulse_kg_canonical_debt_list"
-_HEALTH_TOOL = "okto_pulse_kg_health"
 _POLICY_PROJECTION_DLQ_SIGNAL = "policy_constraint_projection_dlq"
 
 VALID_PROFILES = ("summary", "full", "legacy")
@@ -35,7 +31,7 @@ class InvalidProfileError(ValueError):
 
 
 def _is_full(profile: str) -> bool:
-    return profile in ("full", "legacy")
+    return profile == "full"
 
 
 def _persistence_present(health: dict) -> tuple[bool, str | None]:
@@ -49,7 +45,15 @@ def _persistence_present(health: dict) -> tuple[bool, str | None]:
     return present, (wal.get("error") or drain.get("error"))
 
 
-def build_technical_signal_counters(health: dict) -> dict[str, int]:
+def _canonical_debt_count(health: dict) -> int | None:
+    summary = health.get("canonical_debt")
+    if not isinstance(summary, dict) or summary.get("status") not in (None, "available", "ok"):
+        return None
+    value = summary.get("open_count")
+    return value if type(value) is int and value >= 0 else None
+
+
+def build_technical_signal_counters(health: dict) -> dict[str, int | None]:
     """Scalar counters with terminal queue domains kept explicitly separate.
 
     ``active_queue_count`` is NOT inferred from ``dead_letter_count``."""
@@ -63,7 +67,7 @@ def build_technical_signal_counters(health: dict) -> dict[str, int]:
         or health.get("global_outbox_dead_letter_count")
         or 0
     )
-    cdebt_open = int((health.get("canonical_debt") or {}).get("open_count") or 0)
+    cdebt_open = _canonical_debt_count(health)
     active_queue = int((domains.get("active_queue") or {}).get("count") or 0)
     policy_projection = domains.get("policy_constraint_projection") or {}
     return {
@@ -93,152 +97,53 @@ def build_technical_signal_counters(health: dict) -> dict[str, int]:
     }
 
 
-async def _non_maskable_items(
-    db: object, board_id: str, health: dict, *, artifact_ref: str | None,
-) -> list[dict[str, Any]]:
-    """Per-item drill-down for every OPEN technical signal — derived from the DLQ,
-    the open canonical debt and the persistence root-cause (never from a cognitive
-    verdict, so skip/no_action cannot drop them)."""
-    from okto_pulse.core.services.canonical_debt_service import (
-        OPEN_STATES,
-        list_canonical_debt,
+def _non_maskable_items(board_id: str, health: dict) -> list[dict[str, Any]]:
+    """At most one aggregate per technical domain, from the same health snapshot.
+
+    Never enumerate DLQ/debt records or expose their payloads, errors or IDs.
+    Board-scoped signals cannot be hidden by an artifact filter or a cognitive
+    verdict. The counters and enforcement policy remain the source of readiness.
+    """
+    counters = build_technical_signal_counters(health)
+    domains = (
+        ("technical_dlq", "dead_letter_count", "Affected graph delivery is unavailable; technical gates remain enforced."),
+        ("global_outbox_dead_letter", "global_outbox_dead_letter_count", "Affected global discovery delivery is unavailable; technical gates remain enforced."),
+        ("canonical_debt_open", "canonical_debt_open_count", "Canonical projection is pending automatic recovery."),
+        (_POLICY_PROJECTION_DLQ_SIGNAL, "policy_constraint_projection_dlq_count", "Policy constraint projection delivery is unavailable."),
     )
-    from okto_pulse.core.services.dead_letter_inspector_service import (
-        list_dead_letter_rows,
-    )
-
-    items: list[dict[str, Any]] = []
-
-    dlq = await list_dead_letter_rows(db, board_id, limit=200)
-    for row in dlq.get("rows", []):
-        ref = f"{row.get('artifact_type')}:{row.get('artifact_id')}"
-        items.append({
-            "artifact_ref": ref,
-            "source_ref": ref,
-            "signal": "technical_dlq",
-            "last_error": row.get("last_error"),
-            "error_text": row.get("error_text"),
-            "next_action": row.get("next_action"),
-            "remediation": "diagnose then reprocess via "
-                           "okto_pulse_kg_connectivity_dlq_reprocess / "
-                           "okto_pulse_kg_dead_letter_reprocess after the root cause is fixed",
-            "drill_down_tool": _DLQ_TOOL,
-        })
-
-    global_outbox_count = int(
-        (
-            (health.get("operational_domains") or {}).get(
-                "global_outbox_dead_letter"
-            )
-            or {}
-        ).get("count")
-        or health.get("global_outbox_dead_letter_count")
-        or 0
-    )
-    if global_outbox_count > 0:
-        from okto_pulse.core.services.queue_health_service import (
-            get_global_outbox_dead_letter_drilldown,
-        )
-
-        global_outbox = await get_global_outbox_dead_letter_drilldown(
-            db,
-            board_id,
-            limit=200,
-        )
-        for row in global_outbox["items"]:
-            ref = f"global_update_outbox:{row['event_id']}"
-            items.append({
-                "artifact_ref": ref,
-                "source_ref": f"board:{row['board_id']}",
-                "signal": "global_outbox_dead_letter",
-                "last_error": row.get("last_error"),
-                "error_text": row.get("last_error"),
-                "classification": row.get("classification"),
-                "retry_count": row.get("retry_count"),
-                "next_action": row.get("next_action"),
-                "remediation": (
-                    "diagnose the terminal global-discovery delivery failure; "
-                    "do not requeue until its classified root cause is fixed"
-                ),
-                "drill_down_tool": _GLOBAL_OUTBOX_DLQ_TOOL,
-            })
-
-    debt = await list_canonical_debt(db, board_id=board_id, limit=200)
-    for row in getattr(debt, "items", []):
-        if (row.get("canonical_state") or "") not in OPEN_STATES:
-            continue
-        ref = row.get("source_ref") or f"{row.get('artifact_type')}:{row.get('artifact_id')}"
-        items.append({
-            "artifact_ref": ref,
-            "source_ref": row.get("source_ref") or ref,
-            "signal": "canonical_debt_open",
-            "last_error": row.get("last_error") or row.get("failure_reason"),
-            "error_text": row.get("last_error") or row.get("failure_reason"),
-            "next_action": row.get("next_action"),
-            "remediation": "reconcile/retry the canonical debt for this artifact",
-            "drill_down_tool": _DEBT_TOOL,
-        })
-
-    present, perr = _persistence_present(health)
+    items = [
+        {
+            "artifact_ref": f"board:{board_id}",
+            "source_ref": f"board:{board_id}",
+            "signal": signal,
+            "count": counters[counter],
+            "next_action": "none",
+            "limitation": limitation,
+            "drill_down_tool": None,
+        }
+        for signal, counter, limitation in domains
+        if counters[counter] is not None and counters[counter] > 0
+    ]
+    present, _ = _persistence_present(health)
     if present:
         items.append({
             "artifact_ref": f"board:{board_id}",
             "source_ref": f"board:{board_id}",
             "signal": "persistence_error",
-            "last_error": perr,
-            "error_text": perr,
-            "next_action": "inspect root_cause then recover the board graph",
-            "remediation": "okto_pulse_kg_rebuild_preflight / WAL recovery",
-            "drill_down_tool": _HEALTH_TOOL,
+            "next_action": "none",
+            "limitation": "The affected graph operations are unavailable.",
+            "drill_down_tool": None,
         })
-
-    if artifact_ref:
-        items = [
-            it for it in items
-            if artifact_ref in (it["artifact_ref"], it["source_ref"])
-        ]
-    policy_projection = (
-        (health.get("operational_domains") or {}).get(
-            "policy_constraint_projection"
-        )
-        or {}
-    )
-    policy_dlq_count = int(policy_projection.get("dlq_count") or 0)
-    if policy_dlq_count > 0:
-        # Aggregate board-scoped evidence is intentional: the health snapshot
-        # exposes no raw handler error or event payload.  Add this after the
-        # artifact filter so a board-level governance delivery failure cannot
-        # be masked by an artifact-scoped readiness request.
-        items.append(
-            {
-                "artifact_ref": f"board:{board_id}",
-                "source_ref": f"board:{board_id}",
-                "signal": _POLICY_PROJECTION_DLQ_SIGNAL,
-                "count": policy_dlq_count,
-                "oldest_at": policy_projection.get("oldest_dlq_at"),
-                "classification": policy_projection.get("classification"),
-                "next_action": "inspect_policy_constraint_projection_dlq",
-                "remediation": (
-                    "diagnose the policy-constraint event delivery failure "
-                    "before replaying the handler execution"
-                ),
-                "drill_down_tool": _HEALTH_TOOL,
-            }
-        )
     return items
 
 
 async def _enforcement_active(db: object, board_id: str) -> bool:
-    from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
-    from okto_pulse.core.services.main import _cognitive_readiness_blocking_active
+    from okto_pulse.core.services.main import cognitive_enforcement_active
 
-    # R01C IMP3 drain: resolve the board via the edition-owned repository port
-    # (the R01B FR3 ``resolve_unit_of_work_factory().wrap`` seam) instead of the ORM
-    # import. Pure existence get-by-id (no owner/permission predicate); the
-    # ``board is not None`` guard is preserved — ``boards.get`` returns None for a
-    # missing board, identical to ``db.get(Board, board_id)``.
-    board = await resolve_unit_of_work_factory().wrap(db).boards.get(board_id)
-    return bool(_cognitive_readiness_blocking_active(board)) if board is not None else False
+    # Reuse the policy reader through the public persistence port in this
+    # transaction. Wrapping the session again without its authenticated actor
+    # conflicts with the edition's semantic actor binding, even for a read.
+    return await cognitive_enforcement_active(db, board_id)
 
 
 async def build_health_readiness(
@@ -247,38 +152,49 @@ async def build_health_readiness(
     *,
     profile: str = "summary",
     surface: str = "rest",
-    artifact_ref: str | None = None,
     scheduler_control: SchedulerControl | None = None,
 ) -> dict[str, Any]:
     """api_1feb6875: the canonical health/readiness projection.
 
     NON-MASKABLE in BOTH summary and full: ``technical_signals`` (scalar counters),
-    ``non_maskable_items`` (per-item drill-down), ``readiness`` (blocking vs
+    ``non_maskable_items`` (bounded Board aggregates), ``readiness`` (blocking vs
     would_block_done) and the top-level ``cognitive_enforcement_mode`` /
     ``enforcement_active``. The full profile only ADDS the prose ``health_issues``
-    + ``root_cause``. Raises ``InvalidProfileError`` on an unknown profile."""
+    + ``root_cause``. Health 1.2 represents unavailable canonical debt as null;
+    absent a known blocker, blocking is null. would_block_done is unknown because
+    Board technical aggregates do not evaluate artifact completion. This projection never runs or changes
+    the authoritative completion gate. Raises ``InvalidProfileError`` on an
+    unknown profile."""
     if profile not in VALID_PROFILES:
         raise InvalidProfileError(f"invalid_profile: {profile}")
 
-    from okto_pulse.core.services.kg_health_service import get_kg_health
+    from okto_pulse.core.services.kg_health_service import HEALTH_SCHEMA_VERSION, get_kg_health
 
     health = await get_kg_health(
         board_id,
         db,
         scheduler_control=scheduler_control,
     )
+    if health.get("health_schema_version") != HEALTH_SCHEMA_VERSION:
+        raise ValueError("kg_health_contract_version_invalid")
     counters = build_technical_signal_counters(health)
-    items = await _non_maskable_items(db, board_id, health, artifact_ref=artifact_ref)
+    debt_unavailable = counters["canonical_debt_open_count"] is None
+    # Infrastructure status is Board-scoped; semantic artifact queries remain separate.
+    items = _non_maskable_items(board_id, health)
 
     present, _ = _persistence_present(health)
     blocking = bool(
         counters["technical_dlq_count"] > 0
         or counters["policy_constraint_projection_dlq_count"] > 0
-        or counters["canonical_debt_open_count"] > 0
+        or (counters["canonical_debt_open_count"] or 0) > 0
         or present
     )
     enforcement_active = await _enforcement_active(db, board_id)
-    would_block_done = blocking and enforcement_active
+    # Observation is not the authoritative gate. Preserve a known blocker;
+    # otherwise incomplete evidence is unknown, never an inferred passage.
+    if debt_unavailable and not blocking:
+        blocking = None
+    would_block_done = None
     mode = "blocking" if enforcement_active else "advisory"
     reasons_set = {it["signal"] for it in items}
     if counters["dead_letter_count"] > 0:
@@ -287,32 +203,34 @@ async def build_health_readiness(
         reasons_set.add("global_outbox_dead_letter")
     if counters["policy_constraint_projection_dlq_count"] > 0:
         reasons_set.add(_POLICY_PROJECTION_DLQ_SIGNAL)
-    if counters["canonical_debt_open_count"] > 0:
+    if (counters["canonical_debt_open_count"] or 0) > 0:
         reasons_set.add("canonical_debt_open")
     if present:
         reasons_set.add("persistence_error")
     reasons = sorted(reasons_set)
+    if debt_unavailable:
+        reasons.append("canonical_debt_observation_unavailable")
 
-    if would_block_done:
-        policy_reason = (
-            "open technical signal + enforcement_active=true → the gate blocks done")
-    elif blocking:
-        policy_reason = (
-            "open technical signal but enforcement_active=false (advisory) → "
-            "would_block_done=false; the artifact is NOT ready while the blocker is open")
-    else:
-        policy_reason = "no open technical signal"
+    policy_reason = (
+        "Technical projection observation does not assess product completion. "
+        "Artifact completion requires its authoritative evidence and policy gates."
+    )
 
     result: dict[str, Any] = {
         "board_id": board_id,
+        "health_schema_version": health["health_schema_version"],
         "profile": "full" if _is_full(profile) else "summary",
-        "overall_state": health.get("overall_state"),
+        "overall_state": (
+            "at_risk" if debt_unavailable and health.get("overall_state") == "healthy"
+            else health.get("overall_state")
+        ),
         # top-level enforcement policy (fr_b3e1fd1b)
         "cognitive_enforcement_mode": mode,
         "enforcement_active": enforcement_active,
         # non-maskable in BOTH profiles
         "technical_signals": counters,
         "readiness": {
+            "canonical_debt_observation_status": "unavailable" if debt_unavailable else "available",
             "blocking": blocking,
             "would_block_done": would_block_done,
             "reasons": reasons,
@@ -320,7 +238,16 @@ async def build_health_readiness(
         },
         "non_maskable_items": items,
         # domain separation, additive (tr_22d4434d)
-        "operational_domains": health.get("operational_domains"),
+        "operational_domains": {
+            **(health.get("operational_domains") or {}),
+            "canonical_debt": {
+                "domain": "canonical_debt",
+                "semantics": "semantic_canonicality_pending",
+                "count": counters["canonical_debt_open_count"],
+                "status": "unavailable" if debt_unavailable else "available",
+                "drill_down_tool": None,
+            },
+        },
     }
     if _is_full(profile):
         result["health_issues"] = health.get("health_issues")
@@ -328,6 +255,8 @@ async def build_health_readiness(
 
     # OR or_36e0cd85: one bounded sample per surfaced open technical signal.
     for signal in (reasons or (["persistence_error"] if present and not reasons else [])):
+        if signal == "canonical_debt_observation_unavailable":
+            continue  # Unknown debt is not an observed open technical signal.
         emit_cognitive_technical_signal_sample(
             signal=signal, surface=surface, blocking=True,
             would_block_done=would_block_done, board_id=board_id)

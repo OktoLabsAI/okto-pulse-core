@@ -1,0 +1,39 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_key": "BASE:T09",
+  "disposition": "mantido",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-reviewer22",
+  "provenance_sha256": "22c33f52f64f77fc26d23d7af345c266ec5440be44c7fa1d6677376508179af6",
+  "reviewed_coverage": [
+    "Actual MCP move refuses linked draft/ready scenarios and preserves Card state; typed details identify each pending scenario and real singular update-status tool parameters.",
+    "Actual task-validation submission to a Test Card is refused with test_card_not_subject_to_task_validation; Card state remains unchanged and no validation is recorded.",
+    "After fixture scenarios pass with typed evidence, the scenario gate releases; independent completion gates remain authoritative.",
+    "Context explicitly states task validation does not apply, returns current pending/ready guidance and emits no redundant Done action for an already completed Test Card.",
+    "Unclassified old run metadata is not accepted as current executable evidence."
+  ],
+  "runs": [
+    {
+      "name": "acceptance-native-test-card-current1",
+      "xml_sha256": "2a2c47a80aa00f9d68326ba621f2f1487fb9207a1ec9510fe0fce11fae35999c",
+      "passed": 10,
+      "cases": [
+        "tests.test_r4_test2_test_card_gate_behavior::test_ts_154b86fb_move_card_done_blocked_lists_pending_and_points_to_update",
+        "tests.test_r4_test2_test_card_gate_behavior::test_ts_154b86fb_gate_releases_once_scenarios_passed",
+        "tests.test_r4_test2_test_card_gate_behavior::test_ts_ab364e51_submit_task_validation_on_test_card_redirects_not_normal_gate",
+        "tests.test_r4_imp3_test_card_flow::test_operational_flow_block_blocked_and_ready",
+        "tests.test_r4_imp3_test_card_flow::test_operational_flow_for_done_card_has_no_done_to_done_action",
+        "tests.test_r4_imp3_test_card_flow::test_next_action_params_cross_check_real_mcp_signatures",
+        "tests.test_r4_imp3_test_card_flow::test_get_task_context_test_card_blocked_flow",
+        "tests.test_r4_imp3_test_card_flow::test_get_task_context_test_card_ready_flow",
+        "tests.test_r4_imp3_test_card_flow::test_get_task_context_done_test_card_has_no_completion_gate",
+        "tests.test_r4_imp3_test_card_flow::test_get_task_context_normal_card_has_no_flow_block"
+      ]
+    }
+  ],
+  "limits": [
+    "MCP identity/independent permission checks injected; actual tool and services run over SQL fixtures.",
+    "Passing scenario state is seeded to isolate its gate. This does not certify authenticated evidence execution or full completion; T39/T40 cover those separately.",
+    "Tests/docs only; no product or frontend changes."
+  ]
+}

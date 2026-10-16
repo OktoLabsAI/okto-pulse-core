@@ -198,12 +198,10 @@ def test_s7_surfaces_contract():
     assert tool is not None
     assert len(tool.description or "") <= 900
 
-    # CLI export exists offline with the single-writer guard (D5/R7).
+    # F4 removes the CLI handler; the remaining MCP export is audited separately.
     from okto_pulse.community import cli as community_cli
 
-    src = inspect.getsource(community_cli.cmd_kg_export)
-    assert "_fail_fast_if_server_running" in src
-    assert "os.replace" in src  # atomic tmp+rename write (BR4)
+    assert not hasattr(community_cli, "cmd_kg_export")
 
     # D7: REST deliberately absent — no export route in the REST module.
     from okto_pulse.community.api import kg_routes

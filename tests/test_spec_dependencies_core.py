@@ -94,7 +94,6 @@ from okto_pulse.core.services.spec_dependency_observability import (
 def _manage_dependency_requirement() -> PermissionRequirement:
     return PermissionRequirement(
         "spec.entity.manage_dependencies",
-        legacy_operation="specs:update",
         entity="spec",
         state="draft",
     )
@@ -555,7 +554,7 @@ def test_manage_dependency_permission_is_a_fail_closed_introduction() -> None:
         requirement,
         permissions=explicit_pair,
     ).allowed
-    assert SKM_PERMISSION_INTRODUCTION_V1.legacy_compatible is False
+    assert not hasattr(SKM_PERMISSION_INTRODUCTION_V1, "legacy_compatible")
     assert SKM_PERMISSION_INTRODUCTION_V1.leaves == ("spec.entity.manage_dependencies",)
     assert any(
         manifest is SKM_PERMISSION_INTRODUCTION_V1
@@ -1487,6 +1486,7 @@ def test_every_card_execution_start_or_resume_edge_uses_dependency_blocker() -> 
         (CardStatus.ON_HOLD, CardStatus.STARTED),
         (CardStatus.ON_HOLD, CardStatus.IN_PROGRESS),
         (CardStatus.VALIDATION, CardStatus.IN_PROGRESS),
+        (CardStatus.REJECTED, CardStatus.IN_PROGRESS),
         (CardStatus.DONE, CardStatus.IN_PROGRESS),
     }
     blocker = SimpleNamespace(
@@ -2099,7 +2099,10 @@ def test_lifecycle_and_card_writers_take_dependency_fence_at_safe_boundary() -> 
     card_source = inspect.getsource(CardService.move_card)
     capture = card_source.index("precedence_expected_edition = int")
     policy_gate = card_source.index("enforce_policy_transition")
-    card_dependency_gate = card_source.index("check_dependencies_met")
+    card_dependency_gate = card_source.index("validate_dependency_admission")
+    dependency_admission = inspect.getsource(CardService.validate_dependency_admission)
+    assert "await self.check_dependencies_met(card.id)" in dependency_admission
+    assert '"dependencies_incomplete"' in dependency_admission
     readiness_lock = card_source.index("require_ready_for_execution")
     report_mutation = card_source.index("card.conclusions = conclusions")
     cancellation_mutation = card_source.index("apply_cancellation_policy")
@@ -2204,7 +2207,6 @@ async def test_allowed_transition_and_mutation_gate_share_exact_blocking_facts(
                 check_ir_coverage=noop,
                 check_or_coverage=noop,
                     check_task_requirement_links_for_spec=noop,
-                    check_decision_presence=noop,
                     check_decisions_coverage=noop,
                     check_code_evidence_coverage=noop,
                 ),

@@ -26,9 +26,9 @@ from okto_pulse.core.domain.guideline_policy import (
     PolicySubjectRef,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
-    SemanticAssessmentCurrentSnapshot,
+    NativeSemanticAssessmentCurrentSnapshot,
 )
-from okto_pulse.core.domain.guideline_policy_transition import (
+from okto_pulse.core.domain.guideline_semantic_transition import (
     PolicyTransitionReasonCode,
     PolicyTransitionSnapshot,
     SemanticBindingComplianceSnapshot,
@@ -51,7 +51,7 @@ DIGEST_B = "b" * 64
 def _decision(*, blocking_metrics: int):
     bindings = ()
     if blocking_metrics:
-        current = SemanticAssessmentCurrentSnapshot(
+        current = NativeSemanticAssessmentCurrentSnapshot(
             subject=PolicySubjectRef(
                 board_id="board-1",
                 entity_type=PolicyEntityType.SPEC,
@@ -65,9 +65,6 @@ def _decision(*, blocking_metrics: int):
             binding_id="binding-1",
             binding_revision=1,
             binding_configuration_digest=DIGEST_A,
-            policy_set_digest=DIGEST_B,
-            binding_head_digest=DIGEST_B,
-            input_digest=DIGEST_A,
         )
         bindings = (
             SemanticBindingComplianceSnapshot(
@@ -241,6 +238,11 @@ async def test_mcp_tool_documents_test_scenario_and_scoped_policy_semantics() ->
     documentation = tool.description
 
     assert documentation is not None
-    assert "test_scenario" in documentation
-    assert "Policy Compliance" in documentation
-    assert "policy_subject_required" in documentation
+    assert "okto-pulse://reference/tool-docs/misc" in documentation
+    assert "entity_id" in documentation and "unscoped pass" in documentation
+    assert len(documentation) <= 900
+    resource = mcp_server._load_resource_file("reference/tool-docs/misc.md")
+    section = resource.split("## `okto_pulse_get_allowed_transitions`", 1)[1].split("\n## ", 1)[0]
+    assert "test_scenario" in section
+    assert "Policy Compliance" in section
+    assert "policy_subject_required" in section

@@ -20,14 +20,8 @@ from okto_pulse.core.kg.curation_policy import (
 )
 
 _REAL_INVENTORY = {
-    "kg_dedup_entities": CURATION_LEVEL_PROPOSE_ONLY,
-    "kg_unmerge": CURATION_LEVEL_PROPOSE_ONLY,
-    "kg_backfill_apply": CURATION_LEVEL_PROPOSE_ONLY,
-    "kg_restore": CURATION_LEVEL_PROPOSE_ONLY,
-    "kg_reset": CURATION_LEVEL_PROPOSE_ONLY,
     "kg_dlq_reprocess": CURATION_LEVEL_PROPOSE_ONLY,
     "kg_connectivity_dlq_reprocess": CURATION_LEVEL_PROPOSE_ONLY,
-    "kg_rebuild_run": CURATION_LEVEL_PROPOSE_ONLY,
     "kg_decay_tick": CURATION_LEVEL_AUTO,
     "kg_dedup_hard_delete": CURATION_LEVEL_FORBIDDEN,
 }
@@ -39,6 +33,7 @@ def test_s6_real_inventory_fully_classified():
     # The policy contains exactly the audited inventory — additions must be
     # deliberate (a new operation defaults to propose_only anyway).
     assert dict(CURATION_POLICY) == _REAL_INVENTORY
+    assert "kg_rebuild_run" not in CURATION_POLICY
 
 
 def test_s6_unknown_operation_fails_closed_to_propose_only():
@@ -59,16 +54,16 @@ def test_s6_forbidden_always_refuses_even_confirmed():
     assert err.code == "curation_policy_violation"
     assert err.operation == "kg_dedup_hard_delete"
     assert err.level == CURATION_LEVEL_FORBIDDEN
-    assert "rebuild" in err.remediation
+    assert "No confirmation can authorize" in err.remediation
 
 
 def test_s6_propose_only_requires_confirmation():
     with pytest.raises(CurationPolicyError) as excinfo:
-        require_curation_allowed("kg_dedup_entities")
+        require_curation_allowed("kg_dlq_reprocess")
     assert excinfo.value.level == CURATION_LEVEL_PROPOSE_ONLY
-    assert "--confirm" in excinfo.value.remediation
+    assert "governed authority" in excinfo.value.remediation
     assert (
-        require_curation_allowed("kg_dedup_entities", confirmed=True)
+        require_curation_allowed("kg_dlq_reprocess", confirmed=True)
         == CURATION_LEVEL_PROPOSE_ONLY
     )
 

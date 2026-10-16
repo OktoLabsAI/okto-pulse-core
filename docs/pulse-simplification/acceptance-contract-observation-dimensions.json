@@ -1,0 +1,45 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "ARQVER:ADV-16",
+  "status": "verified",
+  "coverage": "An IR requires both a steps-array response and timeout handling, represented by two allocated criteria/scenarios. Implementation covers both. The real Community HTTP executor observes the returned steps array and signs a passing result for shape only. Fresh SQL projection credits shape, identifies exactly ac-timeout as missing, leaves the IR incomplete and refuses the real Spec delivery predicate. Attempting to bind that same shape run as timeout proof is refused without adding or rewriting evidence; timeout remains ready with no evidence.",
+  "executions": [
+    {
+      "terminal_session": 75785,
+      "exit_code": 0,
+      "passed": 13,
+      "seconds": 40.26,
+      "cases": [
+        "tests.test_multicard_delivery_integration::test_passing_response_shape_does_not_observe_required_timeout",
+        "tests.test_multicard_delivery_integration::test_diamond_reuses_one_proof_and_persisted_cycle_never_receives_credit",
+        "tests.test_multicard_delivery_integration::test_two_of_three_passing_criteria_never_satisfy_requirement[absent]",
+        "tests.test_multicard_delivery_integration::test_two_of_three_passing_criteria_never_satisfy_requirement[failed]",
+        "tests.test_multicard_delivery_integration::test_ui_completion_cannot_deliver_authorization_or_its_inherited_rule",
+        "tests.test_multicard_delivery_integration::test_failed_authorization_remains_visible_beside_passing_ui",
+        "tests.test_multicard_delivery_integration::test_ui_result_cannot_name_authorization_proof_to_gain_its_criterion[requirement]",
+        "tests.test_multicard_delivery_integration::test_ui_result_cannot_name_authorization_proof_to_gain_its_criterion[criterion]",
+        "tests.test_multicard_delivery_integration::test_changed_authorization_never_rewrites_or_invalidates_independent_ui[target_revision]",
+        "tests.test_multicard_delivery_integration::test_changed_authorization_never_rewrites_or_invalidates_independent_ui[contribution_scope]",
+        "tests.test_multicard_delivery_integration::test_changed_authorization_never_rewrites_or_invalidates_independent_ui[later_failed_run]",
+        "tests.test_multicard_delivery_integration::test_two_partial_authorization_records_never_sum_to_the_inherited_obligation",
+        "tests.test_multicard_delivery_integration::test_one_signed_report_preserves_distinct_criterion_verdicts"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-three-criteria-shape1-community.xml",
+          "sha256": "634fe994c54a61e042a66780c0c94feb2089409f6f15e7fb0ed3af35227cd389"
+        },
+        {
+          "file": "learning-reconciliation-three-criteria-shape1-community.log",
+          "sha256": "831149429156199837ceefc101f467e431bc2d872bd63a3b21e5dbb3d56a19f2"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "One new case plus twelve regressions. HTTP runs in-process against a controlled ASGI service; executor, issuer/verifier, SQL evidence admission, fresh-session projection and delivery predicate are real.",
+    "Initial adopted Spec, Done Cards and accepted external implementation receipt are fixtures. The test does not claim a full start/Done lifecycle or transport authentication.",
+    "No timeout was measured or executed: that deliberate absence is the acceptance condition. A successful shape observation cannot stand in for the unobserved dimension. Deterministic coverage does not prove that every natural-language contract was correctly modeled.",
+    "No productive code, authority, historical semantics or UI changed. Source/site/wheels remain byte-identical to provenance-policy-race-final.json. Latest relevant F16 session90981 exit0 has eight ZERO budgets; frontend39859 passed8."
+  ]
+}

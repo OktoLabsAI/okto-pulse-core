@@ -19,6 +19,11 @@ _BASE_ENTRY = {
     "text": "done",
     "author_id": "agent-1",
     "created_at": "2026-01-01T00:00:00+00:00",
+    "completeness": 95,
+    "completeness_justification": "Required scope was delivered",
+    "drift": 0,
+    "drift_justification": "No scope deviation",
+    "source": "move_to_validation",
 }
 
 _VALID_BLOCK = {
@@ -177,35 +182,35 @@ def test_read_keeps_valid_stored_block():
     assert entry.impact_evidence.files[0].repo == "core"
 
 
-def test_absent_block_preserves_legacy_shape():
-    """TS: AC-1 — entries without the field keep today's behavior."""
+def test_native_report_may_omit_optional_impact():
 
     entry = ConclusionEntry.model_validate(dict(_BASE_ENTRY))
     assert entry.impact_evidence is None
-    assert entry.source is None
-    assert entry.validation_id is None
+    assert entry.source == "move_to_validation"
 
 
-def test_declared_source_and_validation_id_survive():
-    """TS: AC-14/FR-9 — legacy provenance fields are declared, not stripped."""
+@pytest.mark.parametrize('model', [ConclusionEntry, ConclusionEntrySummary])
+def test_reviewer_generated_report_is_not_a_native_executor_report(model):
+    with pytest.raises(ValidationError):
+        model.model_validate({**_BASE_ENTRY, 'source': 'task_validation', 'validation_id': 'val_123'})
 
-    entry = ConclusionEntry.model_validate(
-        {
-            **_BASE_ENTRY,
-            "source": "task_validation",
-            "validation_id": "val_123",
-        }
-    )
-    assert entry.source == "task_validation"
-    assert entry.validation_id == "val_123"
-    lean = ConclusionEntrySummary.model_validate(
-        {
-            **_BASE_ENTRY,
-            "source": "task_validation",
-            "validation_id": "val_123",
-        }
-    )
-    assert lean.source == "task_validation"
+
+@pytest.mark.parametrize('model', [ConclusionEntry, ConclusionEntrySummary])
+@pytest.mark.parametrize('field', list(_BASE_ENTRY))
+def test_incomplete_report_is_refused_without_fabricating_content(model, field):
+    original = {key: value for key, value in _BASE_ENTRY.items() if key != field}
+    entry = dict(original)
+    with pytest.raises(ValidationError):
+        model.model_validate(entry)
+    assert entry == original
+
+
+@pytest.mark.parametrize('field,alias', [('text', 'description'), ('text', 'body'), ('author_id', 'author'), ('author_id', 'author_agent_id')])
+def test_report_aliases_do_not_replace_current_fields(field, alias):
+    entry = dict(_BASE_ENTRY)
+    entry[alias] = entry.pop(field)
+    with pytest.raises(ValidationError):
+        ConclusionEntry.model_validate(entry)
 
 
 def test_summary_projection_never_carries_impact_evidence():

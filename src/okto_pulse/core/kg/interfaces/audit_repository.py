@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
+from okto_pulse.core.ports.projection_findings import ProjectionFindingSnapshot
 
 from okto_pulse.core.kg.interfaces.audit_dtos import (
     AuditRow,
@@ -38,6 +39,16 @@ class AuditWriteContention(AuditPersistenceError):
 
 @runtime_checkable
 class AuditRepository(Protocol):
+    async def get_latest_reference_findings(
+        self, board_id: str, artifact_id: str, *, artifact_type: str, namespace: str,
+    ) -> ProjectionFindingSnapshot | None:
+        """Latest non-undone source evaluation; None means unobserved.
+
+        Callers must separately authorize source reads and compare current source
+        fingerprints. This receipt alone does not assert present applicability.
+        """
+        ...
+
     async def get_latest_for_artifact(
         self,
         board_id: str,
@@ -67,6 +78,8 @@ class AuditRepository(Protocol):
         audit: ConsolidationAuditData,
         node_refs: list[NodeRefData],
         outbox_event: OutboxEventData,
+        *,
+        reference_findings: ProjectionFindingSnapshot | None = None,
     ) -> None:
         """Stage the receipt in the mandatory caller-owned transaction.
 

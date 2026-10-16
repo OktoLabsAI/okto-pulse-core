@@ -129,7 +129,7 @@ def test_process_amendment_done_complete_canonical_with_edges():
     assert spec_edge.edge_type == "belongs_to"
 
     bug_edge = next(e for e in result.edges if "amendment_to_origin_bug" in e.rule_id)
-    assert bug_edge.to_candidate_id == "card_bug0000i_entity"
+    assert bug_edge.to_candidate_id == "kgref:Bug:card:bug0000ijkl"
 
     reg_edge = next(e for e in result.edges if "amendment_to_regression_test_task" in e.rule_id)
     assert reg_edge.to_candidate_id == "card_tc0000mn_entity"

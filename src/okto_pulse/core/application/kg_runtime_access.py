@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from okto_pulse.core.kg.interfaces.graph_query_execution import GraphQueryExecution
+from okto_pulse.core.kg.interfaces.graph_errors import GraphCapabilityUnavailable
 
 
 def _registry() -> Any:
@@ -27,6 +29,31 @@ def resolve_graph_lifecycle() -> Any:
 
 def resolve_cypher_executor() -> Any:
     return _registry().cypher_executor
+
+
+def resolve_graph_query_execution() -> GraphQueryExecution:
+    execution = _registry().graph_query_execution
+    if execution is None:
+        raise GraphCapabilityUnavailable('Graph query execution budget is not configured.')
+    return execution
+
+
+def resolve_bug_clusters_graph_read():
+    """Resolve the optional typed cluster reader without exposing registry internals."""
+    from okto_pulse.core.ports.bug_clusters import BugClustersGraphReadPort
+    reader = _registry().graph_store
+    if not isinstance(reader, BugClustersGraphReadPort):
+        raise GraphCapabilityUnavailable('Bug cluster graph reads are not configured.')
+    return reader
+
+
+def resolve_spec_coverage_graph_read():
+    """Resolve the optional typed coverage observer through its public port."""
+    from okto_pulse.core.ports.spec_coverage_query import SpecCoverageGraphReadPort
+    reader = _registry().graph_store
+    if not isinstance(reader, SpecCoverageGraphReadPort):
+        raise GraphCapabilityUnavailable('Spec coverage graph reads are not configured.')
+    return reader
 
 
 def resolve_graph_transaction() -> Any:
@@ -71,6 +98,9 @@ __all__ = [
     "describe_current_embedding_provider",
     "require_rebuild_audit_artifact_store",
     "resolve_cypher_executor",
+    "resolve_graph_query_execution",
+    "resolve_bug_clusters_graph_read",
+    "resolve_spec_coverage_graph_read",
     "resolve_graph_lifecycle",
     "resolve_graph_schema_manager",
     "resolve_graph_transaction",

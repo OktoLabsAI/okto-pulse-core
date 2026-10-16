@@ -1,7 +1,7 @@
 """Layer 1 Deterministic Worker — KG Pipeline v2 (spec c48a5c33).
 
 Reads structured fields from the pulse.db artifact
-(Story/Ideation/Refinement/Spec/Sprint/Card) and
+(Story/Ideation/Refinement/Spec/Card) and
 emits node + edge candidates with provenance metadata `{layer, rule_id,
 confidence, created_by}`. NO LLM calls. Any relationship that would require
 semantic judgement is emitted as a `missing_link_candidate` for the
@@ -23,6 +23,7 @@ partial writes (BR `CLI dry-run reporta diff sem escrever`).
 """
 
 from __future__ import annotations
+from okto_pulse.core.ports.projection_findings import ProjectionFindingSnapshot
 
 import hashlib
 import json
@@ -33,6 +34,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from okto_pulse.core.ports.code_evidence_projection import (
+    CODE_EVIDENCE_LINK_NAMESPACE, CODE_EVIDENCE_LINK_RULE,
+    CODE_TRACEABILITY_SPEC_ENDPOINTS, TARGET_EVIDENCE_NAMESPACE, TARGET_EVIDENCE_RULE,
+    TARGET_OVERLAP_NAMESPACE, TARGET_OVERLAP_RULE,
+)
 from okto_pulse.core.domain.code_traceability_kg import (
     CODE_INVESTIGATION_RECEIPT_KG_STATUSES,
     CodeInvestigationReceiptKGStatus,
@@ -181,9 +187,8 @@ class WorkerResult:
     # Relational projections are tracked explicitly so graph cleanup never
     # guesses ownership from candidate-id or source-ref prefixes.
     relational_projection_candidate_ids: set[str] = field(default_factory=set)
-    relational_projection_active_set_intent: (
-        RelationalProjectionActiveSetIntent | None
-    ) = None
+    relational_projection_active_set_intents: tuple[RelationalProjectionActiveSetIntent, ...] = ()
+    reference_findings: ProjectionFindingSnapshot | None = None
     content_hash: str = ""
     raw_content: str = ""
 
@@ -423,55 +428,6 @@ def _extract_tech_mentions(text: str) -> list[str]:
                     matches.append(ent.canonical)
                 break
     return matches
-
-
-# =====================================================================
-# Markdown parsing — spec.context "## Decisions" section
-# =====================================================================
-
-
-_DECISIONS_HEADER = re.compile(r"^\s*##\s*decisions\s*$", re.IGNORECASE | re.MULTILINE)
-_NEXT_HEADER = re.compile(r"^\s*##\s+", re.MULTILINE)
-_BULLET_LINE = re.compile(r"^\s*[-*]\s+(.+?)\s*$", re.MULTILINE)
-
-
-def _extract_decisions_from_context(context: str) -> list[str]:
-    """Pull the bulleted items under a `## Decisions` header of spec.context.
-
-    Tolerates markdown irregularities per TR `tr_1b5646c0`:
-    - Header case-insensitive ("Decisions", "decisions", "DECISIONS")
-    - Bullet character may be `-` or `*`
-    - Leading/trailing whitespace ignored
-    - Wrapped lines NOT joined (keeps each bullet atomic)
-    """
-    if not context:
-        return []
-    m = _DECISIONS_HEADER.search(context)
-    if not m:
-        return []
-    start = m.end()
-    after = context[start:]
-    next_m = _NEXT_HEADER.search(after)
-    section = after[: next_m.start()] if next_m else after
-    return [b.group(1).strip() for b in _BULLET_LINE.finditer(section)]
-
-
-def _inherits_refinement_decision_context(spec: dict[str, Any]) -> bool:
-    """Return whether ``context`` contains refinement-owned decisions.
-
-    ``RefinementService.derive_spec`` deliberately copies the refinement's
-    ``decisions`` into the child context under a ``## Decisions`` heading.  The
-    refinement is independently materialized in the KG, so parsing that heading
-    as legacy *spec* decisions duplicates ownership and can create ungrounded
-    Decision nodes before (or after) the spec is populated.
-
-    A spec derived directly from an ideation does not receive such a heading;
-    direct/legacy and ideation-derived specs therefore retain the compatibility
-    parser.  A refinement-derived spec expresses its own decisions through the
-    structured ``spec.decisions`` collection, which is handled separately.
-    """
-
-    return bool(spec.get("refinement_id"))
 
 
 # =====================================================================
@@ -789,7 +745,7 @@ def _project_research_decisions(
                 )
             )
 
-    result.relational_projection_active_set_intent = (
+    result.relational_projection_active_set_intents = (
         RelationalProjectionActiveSetIntent(
             owner_type="refinement",
             owner_id=refinement_id,
@@ -803,7 +759,7 @@ def _project_research_decisions(
                     ),
                 )
             ),
-        )
+        ),
     )
 
 
@@ -815,25 +771,15 @@ def _ref_token(value: Any) -> str:
     return token.replace(":", "_")
 
 
-def _source_item_key(item: Any, index: int) -> str:
-    if isinstance(item, dict):
-        for field_name in (
-            "id",
-            "decision_id",
-            "scenario_id",
-            "contract_id",
-            "rule_id",
-        ):
-            value = item.get(field_name)
-            if value not in (None, ""):
-                token = _ref_token(value)
-                if token:
-                    return token
-    return str(index)
-
-
-def _spec_child_ref(spec_id: str, section: str, item: Any, index: int) -> str:
-    return f"spec:{spec_id}:{section}:{_source_item_key(item, index)}"
+def _spec_child_ref(spec_id: str, section: str, item: Any) -> str:
+    """Persisted children have authored IDs; projection never invents identity."""
+    if (
+        not isinstance(item, dict)
+        or not isinstance(item.get("id"), str)
+        or not item["id"].strip()
+    ):
+        raise ValueError("spec_child_identity_required")
+    return f"spec:{spec_id}:{section}:{_ref_token(item['id'])}"
 
 
 def _arch_value(value: Any) -> str:
@@ -1007,18 +953,7 @@ def _append_architecture_designs(
             )
 
 
-_CODE_TRACEABILITY_SPEC_ENDPOINTS: dict[str, tuple[str, str]] = {
-    "spec": ("Entity", ""),
-    "functional_requirement": ("Requirement", "fr"),
-    "technical_requirement": ("Constraint", "tr"),
-    "acceptance_criterion": ("Criterion", "ac"),
-    "business_rule": ("Constraint", "business_rule"),
-    "api_contract": ("APIContract", "api_contract"),
-    "integration_requirement": ("Requirement", "integration_requirement"),
-    "observability_requirement": ("Constraint", "observability_requirement"),
-    "decision": ("Decision", "decision"),
-    "test_scenario": ("TestScenario", "test_scenario"),
-}
+
 
 
 def _required_traceability_string(
@@ -1152,7 +1087,7 @@ def _spec_link_endpoint(link: dict[str, Any]) -> tuple[str, str]:
         "entity_type",
         max_length=64,
     )
-    endpoint = _CODE_TRACEABILITY_SPEC_ENDPOINTS.get(entity_type)
+    endpoint = CODE_TRACEABILITY_SPEC_ENDPOINTS.get(entity_type)
     if endpoint is None:
         raise ValueError("code_traceability_spec_entity_type_invalid")
     node_type, section = endpoint
@@ -1160,6 +1095,23 @@ def _spec_link_endpoint(link: dict[str, Any]) -> tuple[str, str]:
         return node_type, f"spec:{spec_id}"
     entity_id = _required_traceability_string(link, "entity_id", max_length=255)
     return node_type, f"spec:{spec_id}:{section}:{_ref_token(entity_id)}"
+
+
+def _declared_requirement_targets(references, primary_rows, primary_nodes, secondary_rows=(), secondary_nodes=()):
+    """Resolve only exact, unambiguous authored requirement IDs."""
+    identities: dict[str, list[str]] = {}
+    for rows, emitted in ((primary_rows, primary_nodes), (secondary_rows, secondary_nodes)):
+        for item, (candidate_id, _text) in zip(rows, emitted):
+            if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"]:
+                identities.setdefault(item["id"], []).append(candidate_id)
+    targets: set[str] = set()
+    for reference in references or ():
+        if not isinstance(reference, str):
+            continue
+        matches = identities.get(reference, ())
+        if len(matches) == 1:
+            targets.add(matches[0])
+    return sorted(targets)
 
 
 class DeterministicWorker:
@@ -1269,7 +1221,7 @@ class DeterministicWorker:
                         rule_id=rule_id,
                     )
                 )
-            result.relational_projection_active_set_intent = (
+            result.relational_projection_active_set_intents = (
                 RelationalProjectionActiveSetIntent(
                     owner_type="spec",
                     owner_id=str(spec_id),
@@ -1281,7 +1233,7 @@ class DeterministicWorker:
                             key=lambda edge: edge.candidate_id,
                         )
                     ),
-                )
+                ),
             )
 
         parent_refinement_id = spec.get("refinement_id")
@@ -1331,11 +1283,6 @@ class DeterministicWorker:
 
         # 2. Functional requirements → Requirement (confidence 1.0, deterministic)
         fr_ids: list[tuple[str, str]] = []  # (candidate_id, text)
-        # fr_id_to_cid: maps the canonical fr_id (persisted by IMPL-1 on the
-        # FR dict) to its candidate_id so that linked_requirements references
-        # expressed as fr_ids (rather than positional ints or full text) can
-        # resolve deterministically in sections (a) and (b) below.
-        fr_id_to_cid: dict[str, str] = {}
         for i, req in enumerate(spec.get("functional_requirements") or []):
             text = (
                 req
@@ -1345,17 +1292,13 @@ class DeterministicWorker:
             raw_parts.append(text)
             cid = f"{prefix}_fr_{i}"
             fr_ids.append((cid, text))
-            if isinstance(req, dict):
-                fr_id = req.get("id")
-                if fr_id not in (None, ""):
-                    fr_id_to_cid[str(fr_id)] = cid
             result.nodes.append(
                 EmittedNode(
                     candidate_id=cid,
                     node_type="Requirement",
                     title=text[:120],
                     content=text,
-                    source_artifact_ref=_spec_child_ref(spec_id, "fr", req, i),
+                    source_artifact_ref=_spec_child_ref(spec_id, "fr", req),
                     source_confidence=1.0,
                 )
             )
@@ -1363,7 +1306,6 @@ class DeterministicWorker:
 
         # 3. Technical requirements → Constraint
         tr_ids: list[tuple[str, str]] = []  # (candidate_id, text)
-        tr_id_to_cid: dict[str, str] = {}
         for i, req in enumerate(spec.get("technical_requirements") or []):
             if isinstance(req, dict):
                 text = req.get("text") or req.get("description") or json.dumps(req)
@@ -1372,43 +1314,42 @@ class DeterministicWorker:
             raw_parts.append(text)
             cid = f"{prefix}_tr_{i}"
             tr_ids.append((cid, text))
-            if isinstance(req, dict):
-                tr_id = req.get("id")
-                if tr_id not in (None, ""):
-                    tr_id_to_cid[str(tr_id)] = cid
             result.nodes.append(
                 EmittedNode(
                     candidate_id=cid,
                     node_type="Constraint",
                     title=text[:120],
                     content=text,
-                    source_artifact_ref=_spec_child_ref(spec_id, "tr", req, i),
+                    source_artifact_ref=_spec_child_ref(spec_id, "tr", req),
                     source_confidence=1.0,
                 )
             )
             _add_belongs_to(cid, "tr", i)
 
-        # 4. Acceptance criteria → Criterion (indexed by position — tests
-        #    reference them by index in the JSON, mirroring linked_criteria).
+        # 4. Persisted links use authored IDs only. Text and position are not
+        # identity, including when damaged input reaches the projection worker.
         ac_by_index: dict[int, str] = {}
-        ac_by_text: dict[str, str] = {}
+        ac_by_id: dict[str, list[str]] = {}
         for i, crit in enumerate(spec.get("acceptance_criteria") or []):
-            text = (
-                crit
-                if isinstance(crit, str)
-                else (crit.get("text") or crit.get("description") or json.dumps(crit))
-            )
+            if (
+                not isinstance(crit, dict)
+                or not isinstance(crit.get("id"), str)
+                or not crit["id"].strip()
+            ):
+                raise ValueError("spec_criterion_identity_required")
+            text = crit.get("text") or crit.get("description") or json.dumps(crit)
             raw_parts.append(text)
             cid = f"{prefix}_ac_{i}"
             ac_by_index[i] = cid
-            ac_by_text[text.strip()] = cid
+            if isinstance(crit, dict) and crit.get("id") not in (None, ""):
+                ac_by_id.setdefault(str(crit["id"]), []).append(cid)
             result.nodes.append(
                 EmittedNode(
                     candidate_id=cid,
                     node_type="Criterion",
                     title=text[:120],
                     content=text,
-                    source_artifact_ref=_spec_child_ref(spec_id, "ac", crit, i),
+                    source_artifact_ref=_spec_child_ref(spec_id, "ac", crit),
                     source_confidence=1.0,
                 )
             )
@@ -1435,7 +1376,7 @@ class DeterministicWorker:
                     title=title,
                     content=text,
                     source_artifact_ref=_spec_child_ref(
-                        spec_id, "business_rule", rule, i
+                        spec_id, "business_rule", rule
                     ),
                     source_confidence=1.0,
                 )
@@ -1466,7 +1407,7 @@ class DeterministicWorker:
                     title=title,
                     content=content,
                     source_artifact_ref=_spec_child_ref(
-                        spec_id, "test_scenario", ts, i
+                        spec_id, "test_scenario", ts
                     ),
                     source_confidence=1.0,
                 )
@@ -1482,31 +1423,29 @@ class DeterministicWorker:
                         from_candidate_id=ts_cid,
                         from_candidate_title=title,
                         reason="no_criterion_match",
-                        suggested_candidates=list(ac_by_text.values()),
+                        suggested_candidates=list(ac_by_index.values()),
                         artifact_ref=artifact_ref,
                     )
                 )
                 continue
             for idx, link in enumerate(linked):
                 target_cid = None
-                if isinstance(link, int) and link in ac_by_index:
-                    target_cid = ac_by_index[link]
-                elif isinstance(link, str):
-                    # Try exact text match first, then index lookup.
-                    target_cid = ac_by_text.get(link.strip())
-                    if target_cid is None:
-                        try:
-                            target_cid = ac_by_index.get(int(link))
-                        except (ValueError, TypeError):
-                            pass
+                ambiguous: list[str] = []
+                if isinstance(link, str):
+                    matches = ac_by_id.get(link)
+                    if matches is not None:
+                        if len(matches) == 1:
+                            target_cid = matches[0]
+                        else:
+                            ambiguous = matches
                 if target_cid is None:
                     result.missing_link_candidates.append(
                         MissingLinkCandidate(
                             edge_type="tests",
                             from_candidate_id=ts_cid,
                             from_candidate_title=title,
-                            reason="no_criterion_match",
-                            suggested_candidates=list(ac_by_text.values()),
+                            reason=("ambiguous_criterion_match" if ambiguous else "no_criterion_match"),
+                            suggested_candidates=(ambiguous[:3] if ambiguous else list(ac_by_index.values())),
                             artifact_ref=artifact_ref,
                         )
                     )
@@ -1518,13 +1457,11 @@ class DeterministicWorker:
                         from_candidate_id=ts_cid,
                         to_candidate_id=target_cid,
                         confidence=1.0,
-                        rule_id=f"tests/ac_match@{WORKER_VERSION}",
+                        rule_id="tests/ac_match@v2.1",
                     )
                 )
 
         # 7. APIContract + `implements` edges to Requirement/Constraint via linked_requirements.
-        fr_text_to_cid = {text.strip(): cid for cid, text in fr_ids}
-        tr_text_to_cid = {text.strip(): cid for cid, text in tr_ids}
         requirement_candidate_suggestions = [c for c, _ in fr_ids] + [
             c for c, _ in tr_ids
         ]
@@ -1545,7 +1482,7 @@ class DeterministicWorker:
                     title=title,
                     content=content,
                     source_artifact_ref=_spec_child_ref(
-                        spec_id, "api_contract", api, i
+                        spec_id, "api_contract", api
                     ),
                     source_confidence=1.0,
                 )
@@ -1570,15 +1507,11 @@ class DeterministicWorker:
             for idx, link in enumerate(linked):
                 if not isinstance(link, str):
                     continue
-                # (a) Resolve linked_requirements entry: try canonical FR/TR
-                # ids first, then fall back to full-text match for legacy refs.
-                stripped_link = link.strip()
-                target = (
-                    fr_id_to_cid.get(stripped_link)
-                    or tr_id_to_cid.get(stripped_link)
-                    or fr_text_to_cid.get(stripped_link)
-                    or tr_text_to_cid.get(stripped_link)
+                targets = _declared_requirement_targets(
+                    [link], spec.get("functional_requirements") or [], fr_ids,
+                    spec.get("technical_requirements") or [], tr_ids,
                 )
+                target = targets[0] if targets else None
                 if target is None:
                     result.missing_link_candidates.append(
                         MissingLinkCandidate(
@@ -1637,7 +1570,7 @@ class DeterministicWorker:
                     title=title[:120],
                     content=content,
                     source_artifact_ref=_spec_child_ref(
-                        spec_id, "integration_requirement", ir, i
+                        spec_id, "integration_requirement", ir
                     ),
                     source_confidence=1.0,
                 )
@@ -1693,7 +1626,7 @@ class DeterministicWorker:
                     title=title[:120],
                     content=content,
                     source_artifact_ref=_spec_child_ref(
-                        spec_id, "observability_requirement", req, i
+                        spec_id, "observability_requirement", req
                     ),
                     source_confidence=1.0,
                 )
@@ -1712,20 +1645,19 @@ class DeterministicWorker:
             architecture_designs=spec.get("architecture_designs") or [],
         )
 
-        # 8a. Formalized decisions from spec.decisions[] (spec b66d2562) —
-        #     structured entries win over the legacy markdown regex. Only
-        #     `active` decisions are emitted; superseded/revoked keep their
-        #     historical nodes from earlier commits (supersedence is written
-        #     on-state via subsequent commits).
+        # Native normative history is a source in its own right. Project its
+        # entries and their declared links even during a cold rebuild. Current
+        # reads use normative status; history keeps its provenance. Replacement is not a revision of
+        # another Decision's identity or authored content.
         formal_decisions = [
             d
             for d in (spec.get("decisions") or [])
             if isinstance(d, dict)
-            and d.get("status", "active") == "active"
             and d.get("title")
         ]
+        decision_candidates = {dec['id']: f'{prefix}_fdec_{i}'
+                               for i, dec in enumerate(formal_decisions)}
         tech_whitelist_version = _load_tech_whitelist()[1]
-        formal_titles: set[str] = {d["title"].strip() for d in formal_decisions}
         for i, dec in enumerate(formal_decisions):
             dec_title = dec["title"]
             dec_text = dec.get("rationale") or dec_title
@@ -1738,52 +1670,37 @@ class DeterministicWorker:
                     title=dec_title[:120],
                     content=dec_text,
                     context=dec.get("context") or "",
-                    source_artifact_ref=_spec_child_ref(spec_id, "decision", dec, i),
+                    source_artifact_ref=_spec_child_ref(spec_id, "decision", dec),
                     source_confidence=1.0,
                 )
             )
             _add_belongs_to(dec_cid, "fdec", i)
-            # derives_from — link to linked_requirements when provided,
-            # otherwise fall back to co-occurrence (all FRs, confidence 0.6).
-            # (b) Resolve refs: try canonical fr_id first (IMPL-1 persists the
-            # id field on FR dicts), then fall back to positional int index for
-            # specs written before IMPL-1.  Unresolvable refs are silently
-            # skipped so the co-occurrence fallback still fires when the
-            # explicit_fr_cids set ends up empty.
-            explicit_fr_cids: set[str] = set()
-            for ref in dec.get("linked_requirements") or []:
-                ref_str = str(ref) if ref is not None else ""
-                # Try fr_id lookup first.
-                resolved = fr_id_to_cid.get(ref_str)
-                if resolved is None:
-                    # Legacy fallback: interpret ref as a positional int index.
-                    try:
-                        idx_int = int(ref_str)
-                        if 0 <= idx_int < len(fr_ids):
-                            resolved = fr_ids[idx_int][0]
-                    except (TypeError, ValueError):
-                        pass
-                if resolved is not None:
-                    explicit_fr_cids.add(resolved)
-            for j, (fr_cid, _fr_text) in enumerate(fr_ids):
-                is_explicit = fr_cid in explicit_fr_cids
-                if explicit_fr_cids and not is_explicit:
-                    continue
-                result.edges.append(
-                    EmittedEdge(
-                        candidate_id=f"{prefix}_edge_fdec{i}_derives_fr_{fr_cid}",
-                        edge_type="derives_from",
-                        from_candidate_id=dec_cid,
-                        to_candidate_id=fr_cid,
-                        confidence=1.0 if is_explicit else 0.6,
-                        rule_id=(
-                            f"derives_from/explicit_link@{WORKER_VERSION}"
-                            if is_explicit
-                            else f"derives_from/cooccurrence@{WORKER_VERSION}"
-                        ),
-                    )
-                )
-            # mentions via tech whitelist — same as legacy path.
+            predecessor = dec.get('supersedes_decision_id')
+            if predecessor:
+                target = decision_candidates.get(predecessor)
+                if target is None:
+                    result.missing_link_candidates.append(MissingLinkCandidate(
+                        edge_type='supersedes', from_candidate_id=dec_cid,
+                        from_candidate_title=dec_title, reason='decision_predecessor_missing',
+                        suggested_candidates=[], artifact_ref=artifact_ref))
+                else:
+                    result.edges.append(EmittedEdge(
+                        candidate_id=f'{dec_cid}_supersedes_{target}', edge_type='supersedes',
+                        from_candidate_id=dec_cid, to_candidate_id=target,
+                        confidence=1.0, rule_id='supersedes/explicit_decision@v2.1'))
+            # Only declared FR/TR links justify derives_from. An absent or
+            # unresolved link never authorizes co-occurrence with every FR.
+            explicit_cids = _declared_requirement_targets(dec.get('linked_requirements'),
+                spec.get('functional_requirements') or [], fr_ids,
+                spec.get('technical_requirements') or [], tr_ids)
+            for target_cid in sorted(explicit_cids):
+                result.edges.append(EmittedEdge(
+                    candidate_id=f"{prefix}_edge_fdec{i}_derives_{target_cid}",
+                    edge_type="derives_from", from_candidate_id=dec_cid,
+                    to_candidate_id=target_cid, confidence=1.0,
+                    rule_id="derives_from/explicit_link@v2.1",
+                ))
+            # mentions via the technology whitelist.
             for canonical in _extract_tech_mentions(dec_text):
                 ent_cid = f"ent_{_canonical_slug(canonical)}"
                 if not any(n.candidate_id == ent_cid for n in result.nodes):
@@ -1808,75 +1725,95 @@ class DeterministicWorker:
                     )
                 )
 
-        # 8. Legacy fallback: "## Decisions" bullets in context → Decision nodes
-        #    (backward-compat until the spec is migrated via
-        #    okto_pulse_migrate_spec_decisions). Skips titles already emitted
-        #    from the formalized path above to avoid duplicate candidates in
-        #    the same session.
-        decisions_text = (
-            []
-            if _inherits_refinement_decision_context(spec)
-            else _extract_decisions_from_context(spec.get("context") or "")
+        # These are relational declarations, not proof of implementation or
+        # of satisfying any gate. Status filtering keeps revoked sources out
+        # of the current relationship set while retaining their source nodes.
+        lineage = (
+            ('business_rules', 'br', 'linked_requirements', 'derives_from', 'br_requirement', 'fr'),
+            ('integration_requirements', 'ir', 'linked_requirements', 'derives_from', 'ir_requirement', 'requirements'),
+            ('observability_requirements', 'or', 'linked_requirements', 'derives_from', 'or_requirement', 'requirements'),
+            ('observability_requirements', 'or', 'linked_integration_requirements', 'derives_from', 'or_integration', 'ir'),
+            ('api_contracts', 'api', 'linked_rules', 'implements', 'api_business_rule', 'br'),
         )
-        decisions_text = [t for t in decisions_text if t.strip() not in formal_titles]
-        for i, dec_text in enumerate(decisions_text):
-            raw_parts.append(dec_text)
-            dec_cid = f"{prefix}_dec_{i}"
-            result.nodes.append(
-                EmittedNode(
-                    candidate_id=dec_cid,
-                    node_type="Decision",
-                    title=dec_text[:120],
-                    content=dec_text,
-                    source_artifact_ref=_spec_child_ref(
-                        spec_id, "decision_legacy", dec_text, i
-                    ),
-                    source_confidence=1.0,
+        emitted_ids = {node.candidate_id for node in result.nodes}
+        for collection, source_slot, link_field, edge_type, rule_slot, target_slot in lineage:
+            target_collection = {'ir': 'integration_requirements', 'br': 'business_rules'}.get(target_slot)
+            target_ids: dict[str, list[str]] = {}
+            if target_collection is not None:
+                for index, item in enumerate(spec.get(target_collection) or []):
+                    if (isinstance(item, dict) and item.get('status', 'active') == 'active'
+                            and item.get('id') not in (None, '')):
+                        target_ids.setdefault(str(item['id']), []).append(f'{prefix}_{target_slot}_{index}')
+            for index, item in enumerate(spec.get(collection) or []):
+                if not isinstance(item, dict) or item.get('status', 'active') != 'active':
+                    continue
+                source_cid = f'{prefix}_{source_slot}_{index}'
+                if target_slot == 'requirements':
+                    targets = _declared_requirement_targets(item.get(link_field),
+                        spec.get('functional_requirements') or [], fr_ids,
+                        spec.get('technical_requirements') or [], tr_ids)
+                elif target_slot == 'fr':
+                    targets = _declared_requirement_targets(item.get(link_field),
+                        spec.get('functional_requirements') or [], fr_ids)
+                else:
+                    targets = sorted({matches[0] for reference in item.get(link_field) or []
+                        if len(matches := target_ids.get(str(reference), [])) == 1})
+                for target_cid in targets:
+                    if source_cid in emitted_ids and target_cid in emitted_ids:
+                        result.edges.append(EmittedEdge(
+                            candidate_id=f'{source_cid}_{rule_slot}_{target_cid}',
+                            edge_type=edge_type, from_candidate_id=source_cid,
+                            to_candidate_id=target_cid, confidence=1.0,
+                            rule_id=f'{edge_type}/{rule_slot}@v2.1',
+                        ))
+        for namespace, collections, rule_id in (
+            ('decision_supersedence', ('decisions',), 'supersedes/explicit_decision@v2.1'),
+            ('business_rule_requirements', ('business_rules', 'functional_requirements'), 'derives_from/br_requirement@v2.1'),
+            ('integration_requirements', ('integration_requirements', 'functional_requirements', 'technical_requirements'), 'derives_from/ir_requirement@v2.1'),
+            ('observability_requirements', ('observability_requirements', 'functional_requirements', 'technical_requirements'), 'derives_from/or_requirement@v2.1'),
+            ('observability_integrations', ('observability_requirements', 'integration_requirements'), 'derives_from/or_integration@v2.1'),
+            ('api_business_rules', ('api_contracts', 'business_rules'), 'implements/api_business_rule@v2.1'),
+        ):
+            if all(name in spec and isinstance(spec[name], (list, type(None))) for name in collections):
+                result.relational_projection_active_set_intents += (
+                    RelationalProjectionActiveSetIntent(owner_type='spec', owner_id=str(spec_id),
+                        namespace=namespace, active_refs=(), active_edges=tuple(
+                            RelationalProjectionActiveEdgeRef(candidate_id=edge.candidate_id, edge_type=edge.edge_type,
+                                from_candidate_id=edge.from_candidate_id, to_candidate_id=edge.to_candidate_id,
+                                rule_id=edge.rule_id) for edge in result.edges if edge.rule_id == rule_id)),
                 )
+
+        # Complete declared and narrative sources are needed to replace both
+        # current links and owned legacy co-occurrence without deleting history.
+        if (all(field in spec and isinstance(spec[field], (list, type(None)))
+                for field in ('decisions', 'functional_requirements', 'technical_requirements'))
+                and 'context' in spec and isinstance(spec['context'], (str, type(None)))):
+            result.relational_projection_active_set_intents += (
+                RelationalProjectionActiveSetIntent(owner_type='spec', owner_id=str(spec_id),
+                    namespace='decision_requirements', active_refs=(),
+                    active_edges=tuple(RelationalProjectionActiveEdgeRef(
+                        candidate_id=edge.candidate_id, edge_type=edge.edge_type,
+                        from_candidate_id=edge.from_candidate_id, to_candidate_id=edge.to_candidate_id,
+                        rule_id=edge.rule_id,
+                    ) for edge in result.edges if edge.rule_id == 'derives_from/explicit_link@v2.1')),
             )
-            _add_belongs_to(dec_cid, "dec", i)
-            # derives_from — low-confidence co-occurrence. Cognitive layer can
-            # narrow this down to the specific FR if confidence <0.7.
-            for fr_cid, _fr_text in fr_ids:
-                result.edges.append(
-                    EmittedEdge(
-                        candidate_id=f"{prefix}_edge_dec{i}_derives_fr_{fr_cid}",
-                        edge_type="derives_from",
-                        from_candidate_id=dec_cid,
-                        to_candidate_id=fr_cid,
-                        confidence=0.6,
-                        rule_id=f"derives_from/cooccurrence@{WORKER_VERSION}",
-                    )
-                )
-            # mentions via tech whitelist. confidence=1.0 for exact canonical/
-            # alias hit; we don't enable stemming for any entity yet so the
-            # 0.85 stem path is unused (guarded for future extensions).
-            for canonical in _extract_tech_mentions(dec_text):
-                ent_cid = f"ent_{_canonical_slug(canonical)}"
-                # Entity nodes for canonical techs are emitted once per spec
-                # run; dedup happens at the commit layer, but we still guard
-                # here so the session_count stays accurate.
-                if not any(n.candidate_id == ent_cid for n in result.nodes):
-                    result.nodes.append(
-                        EmittedNode(
-                            candidate_id=ent_cid,
-                            node_type="Entity",
-                            title=canonical,
-                            content=canonical,
-                            source_artifact_ref="tech_entities.yml",
-                            source_confidence=1.0,
-                        )
-                    )
-                result.edges.append(
-                    EmittedEdge(
-                        candidate_id=f"{prefix}_edge_dec{i}_mentions_{ent_cid}",
-                        edge_type="mentions",
-                        from_candidate_id=dec_cid,
-                        to_candidate_id=ent_cid,
-                        confidence=1.0,
-                        rule_id=f"mentions/tech_whitelist@v{tech_whitelist_version}",
-                    )
-                )
+
+        # An absent collection may be a partial source. Only explicit, complete
+        # source collections authorize replacing the owned relationship set.
+        if ("test_scenarios" in spec and "acceptance_criteria" in spec
+                and isinstance(spec["test_scenarios"], (list, type(None)))
+                and isinstance(spec["acceptance_criteria"], (list, type(None)))):
+            result.relational_projection_active_set_intents += (
+                RelationalProjectionActiveSetIntent(
+                    owner_type="spec", owner_id=str(spec_id), namespace="scenario_criteria",
+                    active_refs=(),
+                    active_edges=tuple(RelationalProjectionActiveEdgeRef(
+                        candidate_id=edge.candidate_id, edge_type=edge.edge_type,
+                        from_candidate_id=edge.from_candidate_id, to_candidate_id=edge.to_candidate_id,
+                        rule_id=edge.rule_id,
+                    ) for edge in result.edges if edge.edge_type == "tests"),
+                ),
+            )
 
         # 9. Content hash — used by BR `Idempotent Commit via content_hash`.
         raw = "\n---\n".join(p for p in raw_parts if p)
@@ -2197,126 +2134,6 @@ class DeterministicWorker:
         return result
 
     # ------------------------------------------------------------------
-    # Sprint entry point — lighter artifact, only Entity + outcome Criterion
-    # ------------------------------------------------------------------
-
-    def process_sprint(self, sprint: dict[str, Any]) -> WorkerResult:
-        sid = sprint["id"]
-        board_id = sprint.get("board_id")
-        prefix = f"sprint_{sid[:8]}"
-        artifact_ref = f"sprint:{sid}"
-        result = WorkerResult()
-        lane_type = sprint.get("lane_type") or "normal"
-        origin_sprint_id = sprint.get("origin_sprint_id")
-        origin_bug_id = sprint.get("origin_bug_id")
-        normal_sprint_created = sprint.get("normal_sprint_created")
-        if normal_sprint_created is None:
-            normal_sprint_created = lane_type == "normal"
-        lane_context = (
-            f"lane_type={lane_type}\n"
-            f"origin_sprint_id={origin_sprint_id or ''}\n"
-            f"origin_bug_id={origin_bug_id or ''}\n"
-            f"normal_sprint_created={str(bool(normal_sprint_created)).lower()}"
-        )
-        raw_parts = [
-            sprint.get("title") or "",
-            sprint.get("description") or "",
-            sprint.get("objective") or "",
-            lane_context,
-        ]
-
-        sprint_cid = f"{prefix}_entity"
-        result.nodes.append(
-            EmittedNode(
-                candidate_id=sprint_cid,
-                node_type="Entity",
-                title=sprint.get("title") or f"Sprint {sid}",
-                content=sprint.get("description") or "",
-                context="\n".join(
-                    p for p in [sprint.get("objective") or "", lane_context] if p
-                ),
-                source_artifact_ref=artifact_ref,
-                source_confidence=1.0,
-            )
-        )
-
-        if sprint.get("expected_outcome"):
-            raw_parts.append(sprint["expected_outcome"])
-            oc_cid = f"{prefix}_outcome"
-            result.nodes.append(
-                EmittedNode(
-                    candidate_id=oc_cid,
-                    node_type="Criterion",
-                    title=f"Expected Outcome: {sprint.get('title', '')}",
-                    content=sprint["expected_outcome"],
-                    source_artifact_ref=artifact_ref,
-                    source_confidence=1.0,
-                )
-            )
-            # Outcome criterion belongs to the sprint entity itself.
-            result.edges.append(
-                EmittedEdge(
-                    candidate_id=f"{prefix}_belongs_outcome",
-                    edge_type="belongs_to",
-                    from_candidate_id=oc_cid,
-                    to_candidate_id=sprint_cid,
-                    confidence=1.0,
-                    rule_id=f"belongs_to/sprint_outcome@{WORKER_VERSION}",
-                )
-            )
-
-        # Hierarchy edge: Sprint Entity → Spec Entity. The Spec entity is
-        # written by `process_spec` with the deterministic id
-        # `spec_<short>_entity`; we reference it via the cross-session
-        # `kg:` prefix so the orchestrator resolves it as an existing node
-        # without requiring it in this session.
-        parent_spec_id = sprint.get("spec_id")
-        if parent_spec_id:
-            spec_entity_cand = f"spec_{parent_spec_id[:8]}_entity"
-            result.edges.append(
-                EmittedEdge(
-                    candidate_id=f"{prefix}_belongs_to_spec",
-                    edge_type="belongs_to",
-                    from_candidate_id=sprint_cid,
-                    to_candidate_id=spec_entity_cand,
-                    confidence=1.0,
-                    rule_id=f"belongs_to/sprint_to_spec@{WORKER_VERSION}",
-                )
-            )
-        _attach_to_board_root(
-            result,
-            board_id=board_id,
-            child_candidate_id=sprint_cid,
-            rule_slot="sprint",
-        )
-
-        raw = "\n---\n".join(p for p in raw_parts if p)
-        result.raw_content = raw
-        result.content_hash = _sha256(raw)
-        graph_layer, maturity_status = _layer_attrs_for_artifact(
-            "sprint",
-            sprint.get("status"),
-        )
-        _apply_layer_to_result(
-            result,
-            graph_layer=graph_layer,
-            maturity_status=maturity_status,
-        )
-        logger.info(
-            "deterministic_worker.sprint_processed sprint=%s nodes=%d edges=%d",
-            sid,
-            len(result.nodes),
-            len(result.edges),
-            extra={
-                "event": "deterministic_worker.sprint_processed",
-                "sprint_id": sid,
-                "content_hash": result.content_hash,
-                "worker_version": WORKER_VERSION,
-            },
-        )
-        return result
-
-    # ------------------------------------------------------------------
     # Card entry point — normal/test/bug polymorphism
     # ------------------------------------------------------------------
 
@@ -2349,7 +2166,7 @@ class DeterministicWorker:
 
         # v0.3.1: resolve priority_boost from card.priority — only the root
         # node of the card carries the boost. Hierarchy/belongs_to nodes
-        # (sprint/spec parents) stay at 0.0 per BR "Boost não herda".
+        # (Spec parents) stay at 0.0 per BR "Boost não herda".
         # v0.3.3 (Ideação #4, dec_27de54df): for Bug nodes, severity is the
         # second additive input. MAX preserves the strongest signal without
         # arbitrating which axis dominates.
@@ -2439,24 +2256,9 @@ class DeterministicWorker:
                     )
                 )
 
-        # Hierarchy: Card → Sprint (preferred) or Card → Spec entity.
-        # Parents come from FKs in pulse.db; we reference them by their
-        # deterministic candidate ids (`spec_<short>_entity` /
-        # `sprint_<short>_entity`) which the orchestrator resolves via
-        # the prior session's writes.
-        sprint_id = card.get("sprint_id")
+        # Cards belong directly to their authoritative Spec. Historical Sprint
+        # metadata must never recreate a retired graph endpoint.
         spec_id = card.get("spec_id")
-        if sprint_id:
-            result.edges.append(
-                EmittedEdge(
-                    candidate_id=f"{prefix}_belongs_to_sprint",
-                    edge_type="belongs_to",
-                    from_candidate_id=card_cid,
-                    to_candidate_id=f"sprint_{sprint_id[:8]}_entity",
-                    confidence=1.0,
-                    rule_id=f"belongs_to/card_to_sprint@{WORKER_VERSION}",
-                )
-            )
         if spec_id:
             result.edges.append(
                 EmittedEdge(
@@ -2598,7 +2400,7 @@ class DeterministicWorker:
                     candidate_id=f"{prefix}_belongs_to_origin_bug",
                     edge_type="belongs_to",
                     from_candidate_id=amendment_cid,
-                    to_candidate_id=f"card_{origin_bug_id[:8]}_entity",
+                    to_candidate_id=_source_ref_endpoint("Bug", f"card:{origin_bug_id}"),
                     confidence=1.0,
                     rule_id=f"belongs_to/amendment_to_origin_bug@{WORKER_VERSION}",
                 )
@@ -2678,7 +2480,7 @@ class DeterministicWorker:
                     "declared_revision",
                     "workspace_state_id",
                     "trust_level",
-                    "outcome",
+                    "contextual_outcome",
                     "generation",
                     "payload_sha256",
                     "content_hash",
@@ -2703,8 +2505,8 @@ class DeterministicWorker:
         )
         outcome = _required_traceability_choice(
             receipt,
-            "outcome",
-            allowed=frozenset({"accessible", "partial", "unavailable"}),
+            "contextual_outcome",
+            allowed=frozenset({"evidence_applicable", "no_relevant_existing_implementation", "partial", "unavailable"}),
         )
         trust_level = _required_traceability_choice(
             receipt,
@@ -2733,7 +2535,7 @@ class DeterministicWorker:
             "declared_revision": receipt.get("declared_revision"),
             "workspace_state_id": receipt.get("workspace_state_id"),
             "trust_level": trust_level,
-            "outcome": outcome,
+            "contextual_outcome": outcome,
             "generation": generation,
             "payload_sha256": payload_sha256,
         }
@@ -2848,6 +2650,8 @@ class DeterministicWorker:
             "declared_source_content_sha256",
         )
         _optional_traceability_digest(evidence, "content_hash")
+        if "spec_links" not in evidence or not isinstance(evidence["spec_links"], (list, tuple)):
+            raise ValueError("code_traceability_spec_links_incomplete")
         spec_links = _traceability_sequence(evidence, "spec_links", limit=200)
         safe_links = tuple(
             {
@@ -2958,9 +2762,20 @@ class DeterministicWorker:
                         source_artifact_ref,
                     ),
                     confidence=1.0,
-                    rule_id=f"supports/code_traceability_spec_link@{WORKER_VERSION}",
+                    rule_id=CODE_EVIDENCE_LINK_RULE,
                 )
             )
+        result.relational_projection_active_set_intents = (
+            RelationalProjectionActiveSetIntent(
+                owner_type="code_evidence", owner_id=evidence_id,
+                namespace=CODE_EVIDENCE_LINK_NAMESPACE, active_refs=(),
+                active_edges=tuple(RelationalProjectionActiveEdgeRef(
+                    candidate_id=edge.candidate_id, edge_type=edge.edge_type,
+                    from_candidate_id=edge.from_candidate_id,
+                    to_candidate_id=edge.to_candidate_id, rule_id=edge.rule_id,
+                ) for edge in result.edges if edge.rule_id == CODE_EVIDENCE_LINK_RULE),
+            ),
+        )
         superseded_id = _optional_traceability_string(
             evidence,
             "supersedes_evidence_id",
@@ -3065,7 +2880,12 @@ class DeterministicWorker:
         card_node_type = str(target.get("card_node_type") or "Entity").strip()
         if card_node_type not in {"Entity", "Bug"}:
             raise ValueError("code_traceability_card_node_type_invalid")
+        if ("baseline_evidence_id" not in target or "evidence_links" not in target
+                or not isinstance(target["evidence_links"], (list, tuple))):
+            raise ValueError("code_traceability_target_evidence_incomplete")
         evidence_links = _traceability_sequence(target, "evidence_links", limit=200)
+        if not isinstance(target.get("overlap_target_ids"), (list, tuple)):
+            raise ValueError("code_traceability_target_overlaps_incomplete")
         overlap_target_ids = _traceability_id_sequence(
             target,
             "overlap_target_ids",
@@ -3241,14 +3061,27 @@ class DeterministicWorker:
                     ),
                     confidence=1.0,
                     rule_id=(
-                        f"derives_from/code_traceability_evidence@{WORKER_VERSION}"
+                        TARGET_EVIDENCE_RULE
                     ),
                 )
             )
+        result.relational_projection_active_set_intents = (
+            RelationalProjectionActiveSetIntent(
+                owner_type="implementation_target", owner_id=target_id,
+                namespace=TARGET_EVIDENCE_NAMESPACE, active_refs=(),
+                active_edges=tuple(RelationalProjectionActiveEdgeRef(
+                    candidate_id=edge.candidate_id, edge_type=edge.edge_type,
+                    from_candidate_id=edge.from_candidate_id,
+                    to_candidate_id=edge.to_candidate_id, rule_id=edge.rule_id,
+                ) for edge in result.edges if edge.rule_id == TARGET_EVIDENCE_RULE),
+            ),
+        )
         for overlap_target_id in overlap_target_ids:
             if overlap_target_id == target_id:
                 raise ValueError("code_traceability_overlap_self_reference")
             first_id, second_id = sorted((target_id, overlap_target_id))
+            if first_id != target_id:
+                continue  # The other Target owns this pair and its replacement.
             result.edges.append(
                 EmittedEdge(
                     candidate_id=(
@@ -3273,9 +3106,20 @@ class DeterministicWorker:
                         )
                     ),
                     confidence=1.0,
-                    rule_id=f"overlaps/code_traceability_current@{WORKER_VERSION}",
+                    rule_id=TARGET_OVERLAP_RULE,
                 )
             )
+        result.relational_projection_active_set_intents += (
+            RelationalProjectionActiveSetIntent(
+                owner_type="implementation_target", owner_id=target_id,
+                namespace=TARGET_OVERLAP_NAMESPACE, active_refs=(),
+                active_edges=tuple(RelationalProjectionActiveEdgeRef(
+                    candidate_id=edge.candidate_id, edge_type=edge.edge_type,
+                    from_candidate_id=edge.from_candidate_id,
+                    to_candidate_id=edge.to_candidate_id, rule_id=edge.rule_id,
+                ) for edge in result.edges if edge.rule_id == TARGET_OVERLAP_RULE),
+            ),
+        )
         graph_layer, maturity_status = _layer_attrs_for_artifact(
             "implementation_target",
             lifecycle_status,
@@ -3313,8 +3157,6 @@ class DeterministicWorker:
             return self.process_refinement(artifact)
         if artifact_type == "spec":
             return self.process_spec(artifact)
-        if artifact_type == "sprint":
-            return self.process_sprint(artifact)
         if artifact_type == "card":
             return self.process_card(artifact)
         if artifact_type == "amendment_hotfix_revision":

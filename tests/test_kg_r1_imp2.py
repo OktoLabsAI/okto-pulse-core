@@ -38,7 +38,6 @@ from okto_pulse.core.kg.global_discovery.layer_parity import (
     collect_digest_layer_mismatch_inputs,
     detect_digest_layer_mismatches,
     evaluate_digest_layer_mismatch_inputs,
-    list_digest_layer_mismatches,
 )
 from okto_pulse.core.application.processors.global_outbox import (
     DIGESTED_NODE_TYPES,
@@ -72,6 +71,25 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
 @pytest.fixture(scope="module", autouse=True)
 def _bootstrap_global():
     reset_global_discovery_runtime_for_tests()
+    # The routed Global graph is fail-closed until its backend binding exists;
+    # the composition's explicit initialization door publishes it (inside the
+    # durable writer fence, like any Global mutation) before the runtime
+    # bootstrap can inspect the route.
+    from coordination_fakes import FakeWriteLockPort
+    from global_graph_testing import global_discovery_writer_scope
+    from kg_schema_testing import graph_composition
+    from okto_pulse.core.ports.coordination import (
+        CoordinationProviderMissing,
+        get_write_lock_port,
+        register_coordination_providers,
+    )
+
+    try:
+        get_write_lock_port()
+    except CoordinationProviderMissing:
+        register_coordination_providers(write_lock_port=FakeWriteLockPort())
+    with global_discovery_writer_scope(operation="test_global_route_init"):
+        graph_composition().initialize_global_route()
     bootstrap_global_discovery()
     yield
     reset_global_discovery_runtime_for_tests()
@@ -224,6 +242,34 @@ def _issues_by_code(health, code):
     return [i for i in health.get("health_issues", []) if i.get("code") == code]
 
 
+async def _health_with_parity_probe_ready(db_factory, board_id):
+    """Cold health probes run in a bounded single-flight pool; on the real
+    Grafx runtime the first call can exceed the probe budget (0.35s) and the
+    endpoint returns fail-safe projections. Kick the probes, drain the pool
+    through the public lifecycle facade, then read the completed results so
+    the asserts below judge the parity logic, not probe warm-up."""
+    from okto_pulse.core.services.application_kg import drain_kg_health_probes
+
+    async with db_factory() as db:
+        await get_kg_health(board_id, db)
+    drain_kg_health_probes(timeout_s=10)
+    async with db_factory() as db:
+        return await get_kg_health(board_id, db)
+
+
+async def _health_until_mismatch_cleared(db_factory, board_id):
+    """Re-read health after a reconcile: kick the probes again (the global
+    write advanced the materialization generation, bypassing stale caches),
+    drain, then read."""
+    from okto_pulse.core.services.application_kg import drain_kg_health_probes
+
+    async with db_factory() as db:
+        await get_kg_health(board_id, db)
+    drain_kg_health_probes(timeout_s=10)
+    async with db_factory() as db:
+        return await get_kg_health(board_id, db)
+
+
 # ===========================================================================
 # Detector + reconcile
 # ===========================================================================
@@ -255,15 +301,6 @@ async def test_unavailable_parity_is_preserved_as_not_evaluated(monkeypatch):
         "items": [],
     }
 
-    # The detector has one status-bearing contract: an empty item list without
-    # an evaluated state can never be interpreted as healthy.
-    drilldown = await list_digest_layer_mismatches(
-        object(), board_id="board-unavailable"
-    )
-    assert drilldown["items"] == []
-    assert drilldown["status"] == PARITY_STATUS_UNAVAILABLE
-    assert drilldown["evaluation"] == PARITY_NOT_EVALUATED
-    assert drilldown["evaluation_reason"] == "global_discovery_read_failed"
 
 
 def test_collector_uses_board_type_for_mixed_duplicate_rows_and_skips_ghosts(
@@ -436,27 +473,20 @@ async def test_detector_finds_stale_digest_then_reconcile_clears(db_factory):
 @pytest.mark.asyncio
 async def test_health_surfaces_mismatch_with_fields_then_clears(db_factory):
     board_id = await _new_board(db_factory)
-    nid = await _make_stale_canonical_digest(db_factory, board_id)
+    await _make_stale_canonical_digest(db_factory, board_id)
 
-    async with db_factory() as db:
-        health = await get_kg_health(board_id, db)
+    health = await _health_with_parity_probe_ready(db_factory, board_id)
     issues = _issues_by_code(health, MISMATCH_CODE)
     assert len(issues) == 1, issues
     issue = issues[0]
     assert issue["count"] == 1
-    assert issue["drill_down_tool"] == "okto_pulse_kg_digest_layer_mismatch_list"
-    # AC3: the issue carries the diagnostic fields.
-    sample = issue["sample"]
-    assert sample["original_node_id"] == nid
-    assert sample["expected_layer"] == "working"
-    assert sample["actual_layer"] == "canonical"
-    assert sample["board_id"] == board_id
-    assert "digest_id" in sample
+    assert "drill_down_tool" not in issue
+    assert "sample" not in issue
+    assert issue["operator_action"] == "inspect_kg_health"
 
     # After reconcile/drain the mismatch disappears from Health.
     assert await _run_outbox_no_refs(db_factory, board_id) == 1
-    async with db_factory() as db:
-        health2 = await get_kg_health(board_id, db)
+    health2 = await _health_until_mismatch_cleared(db_factory, board_id)
     assert _issues_by_code(health2, MISMATCH_CODE) == []
 
 
@@ -485,7 +515,7 @@ async def test_mismatch_does_not_override_canonical_debt(db_factory):
             failure_reason="some_reason",
         )
         await db.commit()
-        health = await get_kg_health(board_id, db)
+    health = await _health_with_parity_probe_ready(db_factory, board_id)
 
     # TR4 invariant: with a stronger cause present (canonical_debt_open ranks
     # above digest_vs_board_layer_mismatch), the mismatch NEVER claims primary —
@@ -502,32 +532,6 @@ async def test_mismatch_does_not_override_canonical_debt(db_factory):
 # ===========================================================================
 
 
-@pytest.mark.asyncio
-async def test_drilldown_lists_mismatch_and_emits_metric(db_factory):
-    board_id = await _new_board(db_factory)
-    nid = await _make_stale_canonical_digest(db_factory, board_id)
-
-    gdm.reset_global_discovery_metrics()
-    async with db_factory() as db:
-        result = await list_digest_layer_mismatches(db, board_id=board_id)
-
-    assert result["count"] == 1
-    assert result["health_issue_code"] == MISMATCH_CODE
-    item = result["items"][0]
-    assert item["original_node_id"] == nid
-    assert item["expected_layer"] == "working" and item["actual_layer"] == "canonical"
-    assert "source_artifact_ref" in item and "digest_id" in item
-    # Bounded metric is queryable by board + expected/actual layer.
-    assert gdm.get_digest_layer_mismatch_count(board_id=board_id) == 1
-    assert (
-        gdm.get_digest_layer_mismatch_count(
-            board_id=board_id,
-            expected_layer="working",
-            actual_layer="canonical",
-        )
-        == 1
-    )
-    assert "board_id" in gdm.get_digest_layer_mismatch_labels()
 
 
 # ===========================================================================
@@ -536,19 +540,17 @@ async def test_drilldown_lists_mismatch_and_emits_metric(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_query_global_layer_coherence_and_legacy_fail_closed(db_factory):
+async def test_query_global_layer_coherence(db_factory):
     board_id = await _new_board(db_factory)
     canon = f"dec_c_{uuid.uuid4().hex[:8]}"
     work = f"dec_w_{uuid.uuid4().hex[:8]}"
-    legacy = f"req_l_{uuid.uuid4().hex[:8]}"
     _seed_node(board_id, "Decision", canon, layer="canonical")
     _seed_node(board_id, "Decision", work, layer="working")
-    _seed_node(board_id, "Requirement", legacy, layer=None)  # no graph_layer
     assert (
         await _run_outbox(
             db_factory,
             board_id,
-            [("Decision", canon), ("Decision", work), ("Requirement", legacy)],
+            [("Decision", canon), ("Decision", work)],
         )
         == 1
     )
@@ -570,14 +572,13 @@ async def test_query_global_layer_coherence_and_legacy_fail_closed(db_factory):
     working_ids = _ids("working")
     all_ids = _ids("all")
 
-    # canonical-only: only the canonical node; never working or legacy_unknown.
+    # Canonical-only excludes working.
     assert canon in canonical_ids
     assert work not in canonical_ids
-    assert legacy not in canonical_ids
     # working scope returns the working node, not the canonical one.
     assert work in working_ids and canon not in working_ids
-    # all is diagnostic: surfaces every layer including legacy_unknown.
-    assert {canon, work, legacy} <= all_ids
+    # All includes both current artifact layers.
+    assert {canon, work} == all_ids
 
 
 # ===========================================================================
@@ -585,21 +586,6 @@ async def test_query_global_layer_coherence_and_legacy_fail_closed(db_factory):
 # ===========================================================================
 
 
-@pytest.mark.asyncio
-async def test_legacy_digest_later_gets_expected_layer_via_reconcile(db_factory):
-    """ts_94e83637 (2nd clause): a legacy_unknown digest is fail-closed, and once
-    its board node acquires a real layer the reconciler maps it to the expected
-    layer (no longer stuck outside canonical)."""
-    board_id = await _new_board(db_factory)
-    nid = f"req_{uuid.uuid4().hex[:8]}"
-    _seed_node(board_id, "Requirement", nid, layer=None)  # no layer -> legacy_unknown
-    assert await _run_outbox(db_factory, board_id, [("Requirement", nid)]) == 1
-    assert _digest_layer(board_id, nid) == "legacy_unknown"
-
-    # The board node later acquires a canonical layer; reconcile maps it.
-    _set_node_layer(board_id, "Requirement", nid, "canonical")
-    assert await _run_outbox_no_refs(db_factory, board_id) == 1
-    assert _digest_layer(board_id, nid) == "canonical"
 
 
 def _seed_digest_directly(board_id, *, digest_id, original_node_id, layer):

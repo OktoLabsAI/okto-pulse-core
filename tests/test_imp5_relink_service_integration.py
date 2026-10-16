@@ -14,6 +14,8 @@ from sqlalchemy_test_models import (
     SpecKnowledgeBase,
     SpecStatus,
 )
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+from native_subject_testing import record_native_subject_authority
 from okto_pulse.core.domain.knowledge_selection import KnowledgeSelectionState
 from okto_pulse.core.models.schemas import CardUpdate, SpecUpdate
 from okto_pulse.core.ports.knowledge_propagation import (
@@ -56,7 +58,6 @@ class _V2RelinkPort:
         return KnowledgePropagationScope(
             target=request.target,
             scope_revision=self.revision,
-            v2_active=True,
             selection_state=KnowledgeSelectionState.EXPLICIT_EMPTY,
         )
 
@@ -88,6 +89,10 @@ def _spec(
         ideation_id=ideation_id,
         refinement_id=refinement_id,
         title=spec_id,
+        architecture_adoption=ArchitectureAdoptionScope(
+            board_id=BOARD_ID, spec_id=spec_id, actor_id=ACTOR_ID,
+            adopted_in_edition=1, inherited_resource_ids=(),
+        ).model_dump(mode="json"),
         status=status,
         created_by=ACTOR_ID,
         functional_requirements=[],
@@ -136,9 +141,8 @@ async def _seed_card_relink(db) -> None:
         )
     )
     card = _card("card-relink", "spec-old")
-    card.knowledge_bases = [{"id": "legacy-history", "title": "History"}]
     db.add(card)
-    await db.flush()
+    await record_native_subject_authority(db)
 
 
 @pytest.mark.asyncio
@@ -158,16 +162,13 @@ async def test_card_update_resets_v2_before_reparenting(db_factory) -> None:
 
         assert updated is not None
         assert updated.spec_id == "spec-new"
-        assert updated.knowledge_bases == [
-            {"id": "legacy-history", "title": "History"}
-        ]
+        assert updated.knowledge_bases in (None, [])
         assert len(port.staged) == 1
         plan = port.staged[0]
         assert plan.target.target_id == "card-relink"
         assert plan.target.target_type.value == "card"
         assert plan.parent is not None
         assert plan.parent.parent_id == "spec-old"
-        assert plan.next_scope_v2_active is True
         assert plan.next_scope_selection_state is KnowledgeSelectionState.OMITTED
         assert plan.expected_revision == 7
         assert plan.next_revision == 8
@@ -289,7 +290,7 @@ async def test_spec_update_validates_and_resets_governed_parent(db_factory) -> N
                 ),
             )
         )
-        await db.flush()
+        await record_native_subject_authority(db)
         target_refinement = await db.get(Refinement, "refinement-new")
         assert target_refinement is not None
         await freeze_refinement_completion_fixture(db, target_refinement)
@@ -338,7 +339,7 @@ async def test_spec_relink_validates_new_parent_before_v2_write(db_factory) -> N
                 status=SpecStatus.DRAFT,
             )
         )
-        await db.flush()
+        await record_native_subject_authority(db)
 
         with pytest.raises(SpecLineagePreflightError) as raised:
             await SpecService(
@@ -373,7 +374,7 @@ async def test_spec_link_unlink_and_delete_reset_card_v2_scopes(
                 _card("card-unlink", "spec-a"),
             )
         )
-        await db.flush()
+        await record_native_subject_authority(db)
         service = SpecService(db, knowledge_propagation_port=port)
 
         assert await service.link_card("spec-b", "card-link", ACTOR_ID)

@@ -58,7 +58,7 @@ async def _seed_board(owner: str, name: str) -> str:
 _OVERVIEW_KEYS = {
     "total_ideations", "total_specs", "total_cards_impl", "total_cards_test",
     "funnel", "velocity", "boards", "spec_validation_gate", "task_validation_gate",
-    "spec_evaluation", "sprint_evaluation", "avg_completeness", "avg_drift",
+    "spec_evaluation", "avg_completeness", "avg_drift",
 }
 
 

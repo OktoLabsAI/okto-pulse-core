@@ -154,7 +154,6 @@ def test_semantic_content_digest_supports_all_policy_subject_families(
             **payload,
             "status": "done",
             "evidence": {"outcome": "failed"},
-            "latest_evidence": {"outcome": "passed"},
             "created_by": "another-actor",
             "updated_at": "2026-07-31T00:00:00Z",
             "labels": ["metadata-only"],
@@ -183,7 +182,6 @@ def test_spec_semantic_snapshot_excludes_volatile_nested_metadata() -> None:
                 "scenario_type": "integration",
                 "status": "passed",
                 "evidence": {"runner": "local"},
-                "latest_evidence": {"status": "passed"},
                 "linked_task_ids": ["test-card-1"],
             }
         ],
@@ -204,7 +202,6 @@ def test_spec_semantic_snapshot_excludes_volatile_nested_metadata() -> None:
                 **payload["test_scenarios"][0],
                 "status": "failed",
                 "evidence": {"runner": "remote"},
-                "latest_evidence": {"status": "failed"},
                 "linked_task_ids": ["test-card-2"],
             }
         ],

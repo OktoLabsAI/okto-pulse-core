@@ -17,6 +17,9 @@ Anti-test-theater: the skip state is created through the REAL human write paths
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+from test_r4_imp4_gate_readiness import explicit_checklist_policy  # noqa: F401
+
 from mcp_runtime_testing import register_mcp_test_runtime
 
 import json
@@ -176,7 +179,7 @@ async def test_ts_62759ca4_spec_context_exposes_cognitive_skip_override(db_facto
                          evidence_refs=("card:other",), revisit_at=None)
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r5 test2", owner_id=USER_ID))
-        db.add(Spec(id=spec_id, board_id=board_id, title="s", status=SpecStatus.IN_PROGRESS,
+        db.add(Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"), id=spec_id, board_id=board_id, title="s", status=SpecStatus.IN_PROGRESS,
                     created_by=USER_ID, functional_requirements=[], acceptance_criteria=[],
                     test_scenarios=[], business_rules=[], api_contracts=[]))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="c",
@@ -216,7 +219,7 @@ async def test_ts_62759ca4_contexts_skip_overrides_empty_when_none(db_factory):
         db.add(Board(id=board_id, name="r5 test2", owner_id=USER_ID))
         db.add(Ideation(id=ideation_id, board_id=board_id, title="i",
                         created_by=USER_ID, status=IdeationStatus.EVALUATING))
-        db.add(Spec(id=spec_id, board_id=board_id, title="s", status=SpecStatus.IN_PROGRESS,
+        db.add(Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"), id=spec_id, board_id=board_id, title="s", status=SpecStatus.IN_PROGRESS,
                     created_by=USER_ID, functional_requirements=[], acceptance_criteria=[],
                     test_scenarios=[], business_rules=[], api_contracts=[]))
         await db.commit()

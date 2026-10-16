@@ -1,0 +1,37 @@
+{
+  "scope": "AC-INT-08/ADV-21 investigation: missing native classification relationship projection",
+  "status": "reproduced_gap_not_qualified",
+  "proof_pair": "dist-native-main87",
+  "reproduction": {
+    "test": "test_current_architecture_association_is_present_in_worker_relationships",
+    "terminal_session": 78084,
+    "exit_code": 1,
+    "seconds": 7.14,
+    "finding": "Real authorized classification persists a current association. Community consolidation loads the Spec and projection inputs; production serializer/worker emits both architecture interface APIContract and IR Requirement nodes, but no edge joins their source refs."
+  },
+  "chain": [
+    "ArchitectureClassificationService and CommunitySqlAlchemyStructuredSpecStore persist authoritative decisions in architecture_candidate_decisions.payload.",
+    "CommunitySqlAlchemyConsolidationPersistence.load_artifact loads Spec.architecture_designs, but load_projection_inputs has no classification association projection.",
+    "ConsolidationProjectionInputs exposes quality_assessments, research_decisions, spec_dependencies and card_dependencies only.",
+    "consolidation._spec_to_dict / _run_deterministic_worker do not pass current classification decisions to DeterministicWorker.process_spec.",
+    "Spec relationship ownership namespaces have no architecture association family. Existing architecture_interface projection emits only belongs_to to its Design."
+  ],
+  "next_implementation": [
+    "Read companion KG ownership/schema constraints and map this planned fact to existing physical node/edge types before choosing semantics; do not add concrete graph dialect to Core.",
+    "Add a typed public current-association projection input and Community relational reader, bounded and fail-closed with exact Spec/edition/candidate/source/IR provenance; retain immutable decision history.",
+    "Pass authoritative inputs through both incremental and cold-rebuild paths; declare one owner/rule family and active set including the empty-set case.",
+    "Reproduce reassociation oldIR→newIR with relational reads correct while KG is stale, then actual Grafx convergence retracting only owned obsolete edges; no user repair/polling.",
+    "Build/install/prove pair equality, test affected extraction/materialization/read/gates and run closure with all budgets zero before qualifying either criterion."
+  ],
+  "limits": [
+    "The witness runs the production serializer/extractor as test instrumentation and stops before graph materialization. It proves the missing emitted relation, not the final runtime effect.",
+    "Private worker import exists only in uncommitted test instrumentation, never in an adapter/product module.",
+    "No product, authority, historical semantic, gate or physical schema change was made. No acceptance count increase.",
+    "WIP regression kept in Community alongside existing KG10 WIP; excluded from this evidence-only Core commit."
+  ],
+  "artifacts": {
+    "provenance-native-association-projection1.json": "3c56386715316d9d63f30d428b19cc76202e7aa77dca56448c27a71fa777523c",
+    "native-association-projection1.xml": "2527308789f799cfe3a84cf3488a816e3888a30af6810e3cce4614f68f12bc96"
+  },
+  "wip_test_sha256": "6746708075111721bb5bffbd4378ef382d64bfe06903bda7cce455a6103cef63"
+}

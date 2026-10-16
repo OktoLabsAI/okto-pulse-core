@@ -371,8 +371,16 @@ def _build_source_classification_map(
         # This is load-bearing for forward-compatible readers.  A newly added
         # source family must not poison every board's daily sweep merely
         # because this narrower reconciler has no policy for it yet.
+        # Card-family subtypes (task/test/bug/card_relationship_target) are
+        # governed through ``_SOURCE_OWNER_FAMILY``: their rows live in the
+        # cards table and own ``card:<id>`` identities, so dropping them here
+        # would classify every live card as source_absent and demote boards
+        # wholesale.  ``classify_source_for_kg`` still receives the ORIGINAL
+        # artifact_type (it understands task/test/bug); only the identity is
+        # family-qualified.
         if artifact_type and artifact_type not in GOVERNED_SWEEP_ARTIFACT_TYPES:
-            continue
+            if artifact_type not in _SOURCE_OWNER_FAMILY:
+                continue
         if not sid or not artifact_type:
             logger.warning(
                 "kg.stale.source_snapshot_row_invalid board=%s reason=missing_identity",

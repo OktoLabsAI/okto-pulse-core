@@ -1,0 +1,147 @@
+{
+  "scope": "F6/KG7 scoped Learning history through existing capture list and contextual frontend",
+  "suites": {
+    "core": {
+      "passed": 69,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community_storage_and_replay": {
+      "passed": 72,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community_read_surfaces_and_distribution": {
+      "passed": 61,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "frontend": {
+      "passed": 50,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "One public bounded-history Protocol and SQL adapter return complete qualified history or an explicit limit; SQL applies LIMIT before full revision loading.",
+    "A page shares a 200-record lookup budget and request-local cache; overflow cannot become a complete historical proof.",
+    "Recorded linkage qualifies the selected capture, immutable target claim and successor birth by exact source identity, revision and fingerprint.",
+    "Pending, unavailable-capability, missing-target and limited history remain unverified; partial/corrupt claims fail closed.",
+    "v1 intents preserve their historical scope semantics; only explicit v2/source_bug receives scoped lineage metadata.",
+    "REST/MCP history and packaged SPA regression pass; the frontend parses closed intents and renders inert reasons with explicit historical/currentness distinctions.",
+    "No graph read/write, policy mutation, inferred current approval or global supersedence chain is introduced by this read model.",
+    "Paired installed code was byte-proved before Python behavior tests; final documentation-only rebuild was installed and byte-proved before F16, with all eight budgets zero."
+  ],
+  "limits": [
+    "Lineage metadata deliberately does not assess current applicability or graph availability.",
+    "SQL source fixtures qualify the historical linkage, not evidence authority; real Grafx replay is a separate regression and mocks independent completion gates.",
+    "This is not the complete scoped graph-query/navigation surface, public intent authorship, candidate ranking or rebuild acceptance.",
+    "The record-count bound is not a claim of full query-deadline or release acceptance; existing capture output byte bounds remain in force.",
+    "No real-data migration, release, deployment, new public tool or global acceptance inventory promotion."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-scope-lineage-final.json": "a212572e955af32344074d900da683bc4cd6ec183b93ce145067ad84cc7f2b2a",
+    "PULSE_REFACTOR/.validation-v040/scope-lineage-r1-core.xml": "1e4105ad0bdcd432441ec7a0ea1eee9c04f9416cef27c20d09cc2b5fad92a19e",
+    "PULSE_REFACTOR/.validation-v040/scope-lineage-r1-community.xml": "7cee5a96857737d78ba421b9695f45c76d782ec9a75640194553c181cbc659d3",
+    "PULSE_REFACTOR/.validation-v040/scope-lineage-read-surfaces.xml": "dc20dedbdb59072413a0d40985b834b493900d87ffb201a8a611dae843f6822b",
+    "PULSE_REFACTOR/.validation-v040/scope-lineage-frontend.xml": "e995672bdf0a1adf1fcd6fc6c32aadd5c043f9ee13deaf26807c81b15f4bc4fd",
+    "PULSE_REFACTOR/.validation-v040/provenance-scope-lineage-r1.json": "d15b461e9711701a0d2d9e592d847f893d8b03a8ffdc4da44f03c77c321ec8da",
+    "PULSE_REFACTOR/.validation-v040/provenance-scope-lineage-final.json": "578c3e11a42f64e4a7a69cf93651ed3f3cb0e6fb73403fe5258f7f59f4bfb77b",
+    "PULSE_REFACTOR/.validation-v040/closure-scope-lineage-r1.json": "a1f072e8e155aa267598f1374ad888a159a83059ec6eb751afd564f69c68cbb5",
+    "PULSE_REFACTOR/.validation-v040/scope-lineage-frontend-build.log": "b0a2ce2682e7445ff09472428469624940940c40d05d5daee9ec93b8afa90f6f",
+    "PULSE_REFACTOR/.validation-v040/scope-lineage-lint.log": "60c013c5cdb55810fc3705a7ccab5e2075260d4f4092c9ef00b88139232c1365",
+    "PULSE_REFACTOR/.validation-v040/run_scope_lineage.py": "81c47cfd68b7d9a107c6b600da236e3696df16290c51137ebc76dd9878ee48bb",
+    "PULSE_REFACTOR/.validation-v040/run_scope_lineage_read_surfaces.py": "492ae0b24b46087067dbed09b1aa3850d89be7cf12cbdaaa5f33581f35a354a9",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/kg_cognitive_source.py": "cb0f5209f17682901641f34403c10f9663fe03faec83091129cf0f6a99d0ba96",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "06bf6efb8c61eadb137e96e7b71fb30d7e2451e8f42332462f115a1bcce40727",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_supersedence.py": "a3e2ee894d9a0fcda1f110cc90acb99e9ae19cfe222ba9a28f7065d81460f670",
+    "okto_labs_pulse_core/tests/test_learning_scope_lineage_reader.py": "ce8b71b93accf3e7dc1c85361cce7abc3d4f29fb2769a5ecd5f0faa1bf33600f",
+    "okto_labs_pulse_core/docs/pulse-simplification/LEARNING_CAPTURE_SOURCE.md": "5f6470816ba4ca3557af62cb3911e7cb6211b7a6121afe755d2c7ed784960a27",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_kg_cognitive_source.py": "67200bdf32401cdbd140118dcd0c56f11ef770ac3e0e9d5129a24952b5c83e3b",
+    "okto_labs_pulse_community/tests/test_learning_scope_lineage_storage.py": "2323ca3c309c6d805688314af4c37b8c45f9285dfea38ab492c2be5f0dcee269",
+    "okto_labs_pulse_community/frontend/src/services/learning-capture-api.ts": "3a46a426782eb50c8633c976ab4e64b694785ebd7008d7a6e3f89199cda71fd3",
+    "okto_labs_pulse_community/frontend/src/services/__tests__/learning-capture-api.test.tsx": "9495e08ff2bb79aa0ae8b68cd71ca3148f649e77539b77387b5565345640b195",
+    "okto_labs_pulse_community/frontend/src/components/kanban/LearningCapturePanel.tsx": "bdafe69655b10d444328a52f5f4c4b90aa27ff61633c9fa6cb5b63ba5d739004",
+    "okto_labs_pulse_community/frontend/src/components/kanban/__tests__/LearningCapturePanel.test.tsx": "5a2f4bebc0be162035bd863603010e6448da277a00783c0503c7273db99515ab",
+    "okto_labs_pulse_community/frontend/src/components/kanban/__tests__/LearningCaptureSelector.test.tsx": "783709693e2ba5fef24807deb554b8b2c6c4f968f046eee40e7ba65f1d1f791e",
+    "okto_labs_pulse_community/src/okto_pulse/community/frontend_dist/pulse-frontend-contract.json": "3714229015f4bfc51b579c3dca41d6bb2f06ddcbaeac29455fee73e19685ec64"
+  }
+}

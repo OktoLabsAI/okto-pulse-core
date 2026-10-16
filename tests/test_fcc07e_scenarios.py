@@ -370,7 +370,7 @@ def test_ts_3f432bdf_runner_surfaces_dependency_and_provider_and_pytest_failures
     # GIVEN an FCC-07C dependency-ownership blocking finding (family + surface +
     # remediation are all carried by the injected ownership row).
     c_remediation = (
-        "move 'kuzu' out of the productive core (surface=source); declare it as a "
+        "move 'okto-grafx' out of the productive core (surface=source); declare it as a "
         "Community-owned dependency and register the adapter before removal."
     )
     c_rows = map_packaging_ownership(
@@ -378,8 +378,8 @@ def test_ts_3f432bdf_runner_surfaces_dependency_and_provider_and_pytest_failures
             ok=False,
             blocking=(
                 _make_ownership_row(
-                    symbol="kuzu",
-                    adapter_key="kuzu_graph_store",
+                    symbol="okto-grafx",
+                    adapter_key="grafx_graph_store",
                     surface="source",
                     remediation=c_remediation,
                 ),
@@ -441,10 +441,10 @@ def test_ts_3f432bdf_runner_surfaces_dependency_and_provider_and_pytest_failures
     # THEN the FCC-07C finding: dependency family + surface + remediation.
     c_row = next(g for g in report.gates if g.gate_id == GATE_FCC07C)
     assert c_row.status == "blocked"
-    assert c_row.dependency_family == "kuzu"  # family
+    assert c_row.dependency_family == "okto-grafx"  # family
     assert c_row.remediation is not None
     assert "surface=source" in c_row.remediation  # surface
-    assert "kuzu" in c_row.remediation  # remediation references the family
+    assert "okto-grafx" in c_row.remediation  # remediation references the family
 
     # THEN the FCC-07D finding: provider_key + module + composition_path.
     d_row = next(g for g in report.gates if g.gate_id == GATE_FCC07D)
@@ -507,7 +507,7 @@ def test_ts_aef4d8bb_exit_codes_and_report_schema_deterministic():
         _identity_gate("FCC07B", spec_id="FCC-07B", adapter_key="z_adapter"),
         _identity_gate("FCC07B", spec_id="FCC-07B", adapter_key="a_adapter"),
         _identity_gate("FCC07C", spec_id="FCC-07C", dependency_family="requests"),
-        _identity_gate("FCC07C", spec_id="FCC-07C", dependency_family="kuzu"),
+        _identity_gate("FCC07C", spec_id="FCC-07C", dependency_family="okto-grafx"),
         _identity_gate("FCC07D", spec_id="FCC-07D", provider_key="event_bus"),
         _identity_gate("FCC07D", spec_id="FCC-07D", provider_key="graph_store"),
     ]

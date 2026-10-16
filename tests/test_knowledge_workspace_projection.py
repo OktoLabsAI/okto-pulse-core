@@ -33,7 +33,7 @@ def _attachment(
 ) -> dict:
     raw = {
         "id": resource_id,
-        "title": f"KB {root_id} {version or 'legacy'}",
+        "title": f"KB {root_id} {version or 'unversioned'}",
         "root_source_kb_id": root_id,
         "source_version": version,
         "source_entity_type": "card",
@@ -55,7 +55,7 @@ def _attachment(
         "resource_type": "knowledge_base",
         "resource_id": resource_id,
         "id": resource_id,
-        "title": f"KB {root_id} {version or 'legacy'}",
+        "title": f"KB {root_id} {version or 'unversioned'}",
         "unique_resource_id": f"knowledge_base:{root_id}",
         "attachment_kind": kind,
         "source_entity_type": "card" if kind == "direct" else "spec",
@@ -122,6 +122,58 @@ def _serialized_bytes(value: object) -> int:
     )
 
 
+@pytest.mark.parametrize("resource_type", ["architecture", "mockup"])
+@pytest.mark.parametrize("revision", [None, "1"])
+def test_artifact_pages_preserve_complete_native_bodies(
+    resource_type: str, revision: str | None,
+) -> None:
+    attachments = []
+    for index in range(2):
+        attachment = _attachment(
+            root_id=f"root-{index}", resource_id=f"artifact-{index}",
+            version=revision, kind="inherited_reference", inherited=True,
+        )
+        attachment["resource_type"] = resource_type
+        attachment["unique_resource_id"] = f"{resource_type}:root-{index}"
+        attachments.append(attachment)
+    # A different resource kind must not consume this page's hydration/count budget.
+    attachments.append(_attachment(
+        root_id="kb", resource_id="kb", version="1", kind="direct", inherited=False,
+    ))
+    projection = _projection(attachments)
+    projection["resource_type"] = resource_type
+    requests = KnowledgeWorkspaceProjector.hydration_requests(projection, profile="full")
+    assert len(requests) == 1
+    assert requests[0]["resource_type"] == resource_type
+    large_body = {"html_content": "x" * (300 * 1024)}
+    projection["resources"][resource_type] = [
+        {"id": request["resource_id"], "resource": large_body} for request in requests
+    ]
+    page = KnowledgeWorkspaceProjector.project(projection, profile="full")
+    assert page["resource_type"] == resource_type
+    assert page["count"] == 1
+    assert page["total_count"] == page["raw_attachment_count"] == 2
+    assert page["items"][0]["body"] == large_body
+    assert page["items"][0]["resource_version"] == revision
+    assert "grandfathered" not in page["items"][0]
+    if revision is None:
+        assert page["items"][0]["versioned_projection_id"] == (
+            page["items"][0]["canonical_unique_resource_id"]
+        )
+    assert page["next_cursor"] is not None
+    next_requests = KnowledgeWorkspaceProjector.hydration_requests(
+        projection, profile="full", cursor=page["next_cursor"],
+    )
+    assert len(next_requests) == 1
+    assert next_requests[0]["resource_id"] != requests[0]["resource_id"]
+    other_kind = dict(projection, resource_type="knowledge_base")
+    with pytest.raises(KnowledgeWorkspaceProjectionError) as error:
+        KnowledgeWorkspaceProjector.project(
+            other_kind, profile="detail", cursor=page["items"][0]["detail_cursor"],
+        )
+    assert error.value.code == "knowledge_workspace_cursor_identity_mismatch"
+
+
 def test_ts_fab5c273_groups_only_same_root_version_and_keeps_canonical_identity() -> (
     None
 ):
@@ -135,7 +187,7 @@ def test_ts_fab5c273_groups_only_same_root_version_and_keeps_canonical_identity(
         ),
         _attachment(
             root_id="root-b",
-            resource_id="root-b-legacy",
+            resource_id="root-b-native",
             version=None,
             kind="inherited_reference",
             inherited=True,
@@ -177,18 +229,18 @@ def test_ts_fab5c273_groups_only_same_root_version_and_keeps_canonical_identity(
     assert [item["versioned_projection_id"] for item in first["items"]] == [
         "knowledge_base:root-a@v1",
         "knowledge_base:root-a@v2",
-        "knowledge_base:root-b@legacy",
+        "knowledge_base:root-b",
     ]
-    v1, v2, legacy = first["items"]
+    v1, v2, unversioned = first["items"]
     assert v1["canonical_unique_resource_id"] == "knowledge_base:root-a"
     assert v1["representative_resource_id"] == "root-a-v1-local"
     assert v1["attachment_kind"] == "direct"
     assert len(v1["physical_attachments"]) == 2
     assert v2["representative_resource_id"] == "root-a-v2-parent"
     assert len(v2["physical_attachments"]) == 1
-    assert legacy["resource_version"] is None
-    assert legacy["grandfathered"] is True
-    assert legacy["versioned_projection_id"].endswith("@legacy")
+    assert unversioned["resource_version"] is None
+    assert "grandfathered" not in unversioned
+    assert unversioned["versioned_projection_id"] == unversioned["canonical_unique_resource_id"]
     assert all("body" not in item for item in first["items"])
     assert all(item["detail_cursor"] for item in first["items"])
     assert all("raw" not in json.dumps(item) for item in first["items"])
@@ -460,7 +512,7 @@ def test_detail_cursor_rejects_scope_mismatch_and_unknown_target_stably() -> Non
     assert missing.value.code == "knowledge_workspace_cursor_target_not_found"
 
 
-def test_v1_page_cursor_remains_compatible_but_is_not_a_detail_identity() -> None:
+def test_current_page_cursor_is_not_a_detail_identity() -> None:
     projection = _projection(
         [
             _attachment(
@@ -489,7 +541,8 @@ def test_v1_page_cursor_remains_compatible_but_is_not_a_detail_identity() -> Non
     padded = page_cursor + "=" * (-len(page_cursor) % 4)
     assert json.loads(base64.urlsafe_b64decode(padded).decode("utf-8")) == {
         "offset": 1,
-        "v": 1,
+        "v": 2,
+        "kind": "page",
     }
 
     second = KnowledgeWorkspaceProjector.project(
@@ -515,6 +568,13 @@ def test_v1_page_cursor_remains_compatible_but_is_not_a_detail_identity() -> Non
             cursor=first["items"][0]["detail_cursor"],
         )
     assert detail_for_page.value.code == "knowledge_workspace_cursor_kind_mismatch"
+
+    old_cursor = base64.urlsafe_b64encode(b'{"v":1,"offset":1}').decode("ascii")
+    with pytest.raises(KnowledgeWorkspaceProjectionError) as old_page:
+        KnowledgeWorkspaceProjector.project(
+            projection, profile="summary", cursor=old_cursor, limit=1,
+        )
+    assert old_page.value.code == "knowledge_workspace_invalid_cursor"
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,121 @@
+{
+  "scope": "K3 private Global revision and exact reused Bug source identity",
+  "campaigns": {
+    "candidate-overlay1-community": 9,
+    "bug-projection-roots1-core": 56,
+    "bug-projection-roots1-community": 10
+  },
+  "counts_overlap": true,
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Missing overlay revision is initialized only during fenced construction of a private Learning candidate.",
+    "Existing unstable/unfenced or malformed revision is refused, never repaired; absent fence creates no files.",
+    "Existing artifacts survive literally, initialization is idempotent, and read-only capture preserves all 201 scoped SQL debt exclusions.",
+    "Core selects exact typed Bug aliases without rewriting physical identity, refuses active ambiguity and rejects unrelated types, prefixes and concepts.",
+    "Both native coordinator variants (superseded and reused Bug) match all 16 planned relations and Global projection, preserve original SQL and pass cold replay while completion still refuses pending history.",
+    "Paired installed bytes were proved before tests and final F16 has eight zero budgets without documentation drift."
+  ],
+  "limits": [
+    "Final K3/K4 admission remains pending historical classification, certified supersedence relation composition and current Learning applicability.",
+    "Original/candidate offline fences and final completion refusal remain required; private Global match alone grants no runtime admission.",
+    "No UI change, real-data migration, live-runtime restart, release, tag or deployment.",
+    "Full-plan acceptance inventory remains 78 verified / 33 partial / 135 unaudited."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-candidate-overlay-roots-final-closure.log": "d92a0c503c9be4dffbca32d5f24653e5124beb0464e0ce585c0918c4019c1d82",
+    "PULSE_REFACTOR/.validation-v040/provenance-candidate-overlay-roots-final.json": "21060063507f1a95c213de2cbdc173872ef8c3a07e8877bf5e713b1d658a7717",
+    "PULSE_REFACTOR/.validation-v040/provenance-candidate-overlay1.json": "2ff2475965044803add5301ecc678846b9996382883a244196c0acc6f3c2b387",
+    "PULSE_REFACTOR/.validation-v040/provenance-bug-projection-roots1.json": "f0a092b668ac0ca391b584c35f2539aa3d01a7a72517aa0ed0d9c10f2022fd75",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-projection-roots-repro-core.xml": "2961e9c309e3821713af90926ac12139ff9b52b02c8588edc87c915a5c268a25",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-projection-roots-repro-core.log": "8dd9dc5157de420fcd25da5887257615c7c98781aa6ab9a95911aa1af47ab870",
+    "PULSE_REFACTOR/.validation-v040/record_candidate_overlay_roots.py": "9ba4e86be3a9203516d920f8f857a499056c38a2fd06e0a42bfe5bec7f154e04",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-candidate-overlay1-community.xml": "a0d209e3def573fd427a15993d835817844b000c6839ce7f25d64dde47bf8a35",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-candidate-overlay1-community.log": "9f449cc3afe09067c5244d540c29315343cc40ab3c8aaa68c9e460d69cbb8278",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-projection-roots1-core.xml": "a514df2977785e32cc9383275da6f832f43226b49e687deed4d7f9c55cabf512",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-projection-roots1-core.log": "1f4a60a54f9f2079b51d4f24e05dba189ef5f93c09a27f509e5847b7c1c5a96c",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-projection-roots1-community.xml": "d5ae7196e22d0be599c71a268c27481a510fbac5f4f3e729ccd2af0bc4860790",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-projection-roots1-community.log": "845feecccc905728b9fd0c0e82dd212fcba98bf907355b7033e21973b9211860",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/projection_history.py": "1b097e7472fe26c4c502af6d53229c3ddf8ecf54a86dfb9f671cdafe80ecebf8",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/projection_relations.py": "819eacd9caef03f871e45bb25d269c257058f90c31ce02d1553bc2616b0d7c25",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/projection_history.py": "e9d06ed39761539bfb40574dce5ff31f51e5d5f0cbfa4dbaab98f72bc86a6669",
+    "okto_labs_pulse_core/tests/test_bug_projection_roots.py": "b19802307c1d1a6a9b464db10d498eea560421961705ef144edaa9e399df88ac",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_global_sources.py": "fd73aca61ad523db26b05c0526ea299f8181e365cdf3a38db5d4b76580d72dca",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_graph_candidate.py": "87b61f12a82e7c4f943e09d4708fc10e9f6af72546ca224425fde01cde2df29e",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_graph_reconciliation.py": "0d5eab88b937f6639d08fda71884059062249813ee7d7069fef16aebb490ea02",
+    "okto_labs_pulse_community/tests/test_global_recovery_debt_inventory.py": "3bbedc951332003ac1be0a3de43d757295c3ab6f59a0c28815ab35c2e89762bc",
+    "okto_labs_pulse_community/tests/test_retirement_learning_execution.py": "6c494e34239ff435e3aad0d858c5c8764a761063be8ed1e169f51f2de04d2d23"
+  }
+}

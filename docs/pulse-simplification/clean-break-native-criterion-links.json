@@ -1,0 +1,59 @@
+{
+  "scope": "Exact native criterion-to-requirement links and reverse reads",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "ARQVER:AC-VER-04": [
+      "test_criterion_links_are_bidirectional_without_reverse_writes",
+      "test_each_supported_type_requires_its_exact_unambiguous_identity",
+      "test_create_rejects_text_position_and_foreign_ids_before_any_spec_write",
+      "test_structured_write_keeps_version_history_and_content_when_rejected"
+    ]
+  },
+  "evidence": [
+    "Added three real REST/SQL cases: one criterion links distinct FR and TR identities; its links are readable forward from the Spec and backward through each requirement projection. Link-only writes leave canonical FR/TR payloads byte-equivalent as JSON values.",
+    "A missing ID, a real FR in another Spec, and a TR ID used with the FR type are each refused. Persisted snapshot, version and history are unchanged by rejection.",
+    "Empty links remain savable in Draft, but the planning diagnostic reports criterion_requirement_link_missing and incomplete readiness. No similarity/text/position inference supplies a link.",
+    "Existing Core tests cover all five requirement types, ambiguous identities, invalid closed metadata, bulk and structured writers, mutation history and controlled MCP tool routing.",
+    "Frontend submits one versioned patch for many-to-many links, preserves unavailable existing links, permits unresolved Draft metadata without invented defaults, and prevents duplicate choices and unauthorized/stale editor writes."
+  ],
+  "tests": {
+    "core_passed": 21,
+    "community_passed": 3,
+    "frontend_passed": 15,
+    "total_distinct_passed": 39,
+    "core_seconds": 4.45,
+    "community_final_seconds": 16.57,
+    "failed_setup_campaigns": [
+      {
+        "artifact": "native-criterion-links1.xml",
+        "failed": 3,
+        "reason": "Foreign-Spec fixture omitted required architecture_adoption"
+      },
+      {
+        "artifact": "native-criterion-links2.xml",
+        "failed": 3,
+        "reason": "Fixture ID collided with existing other-spec"
+      },
+      {
+        "artifact": "native-criterion-links3.xml",
+        "failed": 3,
+        "reason": "Snapshot preceded native writer normalization; establish canonical representation before link-only comparison"
+      }
+    ]
+  },
+  "limits": [
+    "REST identity is controlled by the fixture; no complete installed authentication lifecycle claimed.",
+    "This criterion concerns referential integrity and reverse projection. Profile sufficiency and semantic adequacy remain separate gates; linking FR/TR does not confer technical proof.",
+    "No product/SPA change or conversion. Main86 closure remains applicable with eight zero budgets; no promotion or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-criterion-links1.json": "3628f4f6da17bee9465d8b88e20311923a2ec5b7b495847fdce4f37a6bc2ca2d",
+    "native-criterion-links-core1.xml": "a25325aec955d031a4368b2dcfc8c321b265454fc5d1a8c14b959622e919a162",
+    "native-criterion-links1.xml": "f7a863575713930d671bbcad56e41b2acbf2cda9650b4d1769553705fccf108b",
+    "native-criterion-links2.xml": "ab5ec0e01fb207d75a45ba0f6251de25312e353e519216d672c2932f85809d9c",
+    "native-criterion-links3.xml": "2c9e9bb4a05281da43235fbefec54c1abe7b776160f3e920fd575bed05c0924d",
+    "native-criterion-links4.xml": "3bcac581d9e81cbc8931445aee71e5946c09583a9dac29fae4009fbd64293053",
+    "native-criterion-links-frontend1.json": "4ff0b8e3f3962b74c14cc4a3172af247ddbe32b810b38a0cefdb58be6e324044",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

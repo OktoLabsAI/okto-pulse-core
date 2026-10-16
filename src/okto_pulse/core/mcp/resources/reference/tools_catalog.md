@@ -37,7 +37,6 @@ Semantic guideline protocol:
 
 ## KG — Query (Power)
 - `okto_pulse_kg_export_jsonld` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_provenance_drift` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_query_cypher` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_query_natural` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_query_reflective` — docs: `okto-pulse://reference/tool-docs/kg`
@@ -46,49 +45,20 @@ Semantic guideline protocol:
 
 ## KG — Cognitive readiness & closeout
 - `okto_pulse_kg_clear_cognitive_skip` — docs: `okto-pulse://reference/tool-docs/kg`
+- `okto_pulse_kg_create_learning_capture` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_evaluate_bug_cognitive_closure` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_evaluate_cognitive_readiness` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_list_cognitive_dlq` — docs: `okto-pulse://reference/tool-docs/kg`
+- `okto_pulse_kg_get_learning_capture_context` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_list_cognitive_pending_items` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_list_cognitive_readiness_items` — docs: `okto-pulse://reference/tool-docs/kg`
+- `okto_pulse_kg_list_learning_captures` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_record_cognitive_skip` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_update_cognitive_pending_item` — docs: `okto-pulse://reference/tool-docs/kg`
 
-## KG — Rebuild & recovery
-- `okto_pulse_kg_global_discovery_recovery_confirm` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_global_discovery_recovery_preflight` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_global_discovery_recovery_run` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_quarantine_restore` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_rebuild_confirm` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_rebuild_preflight` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_rebuild_run` — docs: `okto-pulse://reference/tool-docs/kg`
-
 ## KG — Operational & health
-- `okto_pulse_kg_canonical_debt_list` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_canonical_partition_integrity_list` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_connectivity_dlq_diagnose` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_connectivity_dlq_reprocess` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_connectivity_dlq_verify` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_dead_letter_list` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_dead_letter_reprocess` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_digest_layer_mismatch_list` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_digest_layer_reconcile` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_global_discovery_recovery_cancel` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_global_discovery_recovery_resume` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_global_discovery_recovery_status` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_global_outbox_dead_letter_list` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_global_outbox_dead_letter_reprocess` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_global_outbox_dead_letter_verify` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_health` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_health_readiness` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_migrate_schema` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_originates_from_contract_audit` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_orphan_backfill` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_orphan_report` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_queue_drilldown` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_stale_canonical_parity_list` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_takedown_status` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_tick_run_now` — docs: `okto-pulse://reference/tool-docs/kg`
 
 ## Session & Agents
 - `okto_pulse_get_my_profile` — docs: `okto-pulse://reference/tool-docs/agent`
@@ -137,7 +107,6 @@ Semantic guideline protocol:
 - `okto_pulse_list_semantic_guideline_findings` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_list_semantic_guideline_waiver_events` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_list_semantic_guideline_waivers` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_record_semantic_guideline_assessment` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_record_semantic_guideline_assessment_v2` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_request_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_revalidate_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
@@ -148,11 +117,9 @@ Semantic guideline protocol:
 - `okto_pulse_adopt_guideline_revision` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_create_guideline` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_create_guideline_revision` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_delete_guideline` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_get_board_guidelines` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_get_guideline_impact` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_get_guideline_revision` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_link_guideline_to_board` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_list_default_guideline_candidates` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_list_guideline_impact_items` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_list_guideline_revisions` — docs: `okto-pulse://reference/tool-docs/guideline`
@@ -160,23 +127,22 @@ Semantic guideline protocol:
 - `okto_pulse_preview_guideline_impact` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_retire_guideline` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_unlink_guideline_from_board` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_update_board_guideline_priority` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_update_default_guideline_refs` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_update_guideline` — docs: `okto-pulse://reference/tool-docs/guideline`
 
 ## Code Traceability
 - `okto_pulse_acknowledge_implementation_overlap` — docs: `okto-pulse://reference/tool-docs/code-traceability`
-- `okto_pulse_classify_legacy_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_clear_code_traceability_not_applicable` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_create_implementation_target` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_get_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_get_code_investigation_receipt` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_get_decision_reviews` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_get_delivery_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_get_implementation_overlaps` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_link_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_list_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_list_implementation_targets` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_mark_code_traceability_not_applicable` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_record_decision_reviews` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_record_delivery_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_set_code_evidence_disposition` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_start_code_investigation` — docs: `okto-pulse://reference/tool-docs/code-traceability`
@@ -218,7 +184,6 @@ Semantic guideline protocol:
 - `okto_pulse_add_ideation_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_answer_ideation_question` — docs: `okto-pulse://reference/tool-docs/ideation`
 - `okto_pulse_ask_ideation_choice_question` — docs: `okto-pulse://reference/tool-docs/ideation`
-- `okto_pulse_ask_ideation_question` — docs: `okto-pulse://reference/tool-docs/ideation`
 - `okto_pulse_create_ideation` — docs: `okto-pulse://reference/tool-docs/ideation`
 - `okto_pulse_delete_ideation` — docs: `okto-pulse://reference/tool-docs/ideation`
 - `okto_pulse_delete_ideation_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
@@ -239,7 +204,6 @@ Semantic guideline protocol:
 - `okto_pulse_answer_refinement_question` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_append_research_decision` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_ask_refinement_choice_question` — docs: `okto-pulse://reference/tool-docs/refinement`
-- `okto_pulse_ask_refinement_question` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_create_refinement` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_delete_refinement` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_delete_refinement_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
@@ -266,13 +230,14 @@ Semantic guideline protocol:
 - `okto_pulse_delete_spec_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_get_checklist_binding` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_checklist_receipt` — docs: `okto-pulse://reference/tool-docs/spec`
+- `okto_pulse_get_requirement_verification` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_spec` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_spec_context` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_spec_evaluation` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_spec_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
+- `okto_pulse_get_spec_validation_cycle` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_list_spec_evaluations` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_list_spec_validations` — docs: `okto-pulse://reference/tool-docs/spec`
-- `okto_pulse_migrate_spec_decisions` — docs: `okto-pulse://reference/tool-docs/decision`
 - `okto_pulse_move_spec` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_remove_spec_entity` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_start_checklist_execution` — docs: `okto-pulse://reference/tool-docs/spec`
@@ -293,15 +258,10 @@ Semantic guideline protocol:
 - `okto_pulse_list_business_rules` — docs: `okto-pulse://reference/tool-docs/business-rule`
 - `okto_pulse_list_integration_requirements` — docs: `okto-pulse://reference/tool-docs/integration-requirement`
 - `okto_pulse_list_observability_requirements` — docs: `okto-pulse://reference/tool-docs/observability-requirement`
-- `okto_pulse_remove_api_contract` — docs: `okto-pulse://reference/tool-docs/api-contract`
-- `okto_pulse_remove_business_rule` — docs: `okto-pulse://reference/tool-docs/business-rule`
-- `okto_pulse_remove_decision` — docs: `okto-pulse://reference/tool-docs/decision`
-- `okto_pulse_update_api_contract` — docs: `okto-pulse://reference/tool-docs/api-contract`
-- `okto_pulse_update_business_rule` — docs: `okto-pulse://reference/tool-docs/business-rule`
-- `okto_pulse_update_decision` — docs: `okto-pulse://reference/tool-docs/decision`
 
 ## Test Scenarios
 - `okto_pulse_add_test_scenario` — docs: `okto-pulse://reference/tool-docs/test-scenario`
+- `okto_pulse_admit_test_verification_report` — docs: `okto-pulse://reference/tool-docs/test-scenario`
 - `okto_pulse_delete_test_scenario` — docs: `okto-pulse://reference/tool-docs/test-scenario`
 - `okto_pulse_execute_test_scenario_evidence` — docs: `okto-pulse://reference/tool-docs/test-scenario`
 - `okto_pulse_list_test_scenarios` — docs: `okto-pulse://reference/tool-docs/test-scenario`
@@ -311,14 +271,11 @@ Semantic guideline protocol:
 
 ## Cards & Tasks
 - `okto_pulse_add_card_dependency` — docs: `okto-pulse://reference/tool-docs/card`
-- `okto_pulse_add_card_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_copy_architecture_to_card` — docs: `okto-pulse://reference/tool-docs/architecture`
-- `okto_pulse_copy_knowledge_to_card` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_copy_mockups_to_card` — docs: `okto-pulse://reference/tool-docs/mockup`
 - `okto_pulse_copy_qa_to_card` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_create_card` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_delete_card` — docs: `okto-pulse://reference/tool-docs/card`
-- `okto_pulse_delete_card_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_drop_card_knowledge_assignments` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_get_card` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_get_card_dependencies` — docs: `okto-pulse://reference/tool-docs/card`
@@ -337,7 +294,6 @@ Semantic guideline protocol:
 - `okto_pulse_replace_card_knowledge_assignments` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_submit_task_validation` — docs: `okto-pulse://reference/tool-docs/misc`
 - `okto_pulse_update_card` — docs: `okto-pulse://reference/tool-docs/card`
-- `okto_pulse_update_card_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 
 ## Amendments
 - `okto_pulse_associate_amendment_revision_artifacts` — docs: `okto-pulse://reference/tool-docs/card`
@@ -347,30 +303,12 @@ Semantic guideline protocol:
 - `okto_pulse_list_amendment_revisions` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_transition_amendment_revision` — docs: `okto-pulse://reference/tool-docs/card`
 
-## Sprints
-- `okto_pulse_answer_sprint_question` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_ask_sprint_question` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_assign_tasks_to_sprint` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_create_sprint` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_delete_sprint_evaluation` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_delete_sprint_question` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_get_sprint` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_get_sprint_context` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_get_sprint_evaluation` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_list_sprint_evaluations` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_move_sprint` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_submit_sprint_evaluation` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_suggest_sprints` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_update_sprint` — docs: `okto-pulse://reference/tool-docs/sprint`
-
 ## Q&A
 - `okto_pulse_add_choice_comment` — docs: `okto-pulse://reference/tool-docs/comment`
 - `okto_pulse_answer_question` — docs: `okto-pulse://reference/tool-docs/qa`
 - `okto_pulse_answer_spec_question` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_ask` — docs: `okto-pulse://reference/tool-docs/qa`
-- `okto_pulse_ask_question` — docs: `okto-pulse://reference/tool-docs/qa`
 - `okto_pulse_ask_spec_choice_question` — docs: `okto-pulse://reference/tool-docs/spec`
-- `okto_pulse_ask_spec_question` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_delete_question` — docs: `okto-pulse://reference/tool-docs/qa`
 - `okto_pulse_delete_spec_question` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_choice_responses` — docs: `okto-pulse://reference/tool-docs/qa`
@@ -389,13 +327,16 @@ Semantic guideline protocol:
 
 ## Architecture
 - `okto_pulse_add_architecture_design` — docs: `okto-pulse://reference/tool-docs/architecture`
+- `okto_pulse_classify_architecture_candidates` — docs: `okto-pulse://reference/tool-docs/architecture`
 - `okto_pulse_delete_architecture_design` — docs: `okto-pulse://reference/tool-docs/architecture`
 - `okto_pulse_dump_architecture_diagram` — docs: `okto-pulse://reference/tool-docs/architecture`
 - `okto_pulse_get_architecture_design` — docs: `okto-pulse://reference/tool-docs/architecture`
 - `okto_pulse_get_architecture_design_schema` — docs: `okto-pulse://reference/tool-docs/architecture`
 - `okto_pulse_import_excalidraw_architecture_diagram` — docs: `okto-pulse://reference/tool-docs/architecture`
+- `okto_pulse_list_architecture_candidates` — docs: `okto-pulse://reference/tool-docs/architecture`
+- `okto_pulse_list_architecture_classifications` — docs: `okto-pulse://reference/tool-docs/architecture`
 - `okto_pulse_list_architecture_designs` — docs: `okto-pulse://reference/tool-docs/architecture`
-- `okto_pulse_list_architecture_propagation_legacy` — docs: `okto-pulse://reference/tool-docs/architecture`
+- `okto_pulse_list_architecture_propagation_report` — docs: `okto-pulse://reference/tool-docs/architecture`
 - `okto_pulse_update_architecture_design` — docs: `okto-pulse://reference/tool-docs/architecture`
 - `okto_pulse_validate_architecture_design_payload` — docs: `okto-pulse://reference/tool-docs/architecture`
 

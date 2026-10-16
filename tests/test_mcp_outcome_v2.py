@@ -23,7 +23,7 @@ from okto_pulse.core.mcp.outcome import (
         ({"error": "Expected version conflict"}, "version_conflict", True),
     ],
 )
-def test_legacy_failures_map_to_stable_error_codes(payload, code, retryable):
+def test_handler_failures_map_to_stable_error_codes(payload, code, retryable):
     outcome = coerce_mcp_tool_outcome(json.dumps(payload), tool_name="probe")
     assert outcome.is_error is True
     assert outcome.code == code
@@ -68,7 +68,7 @@ def test_code_only_canonical_envelopes_are_protocol_errors(payload):
     assert outcome.is_error is True
     assert outcome.code == payload["code"]
     assert outcome.structured_content(tool_name="probe")["outcome"] == "error"
-    assert outcome.legacy_content() == json.dumps(payload)
+    assert outcome.structured_content()["data"] == payload
 
 
 def test_explicit_success_with_informational_code_remains_success():
@@ -135,9 +135,3 @@ def test_plain_text_and_malformed_json_remain_success_data():
         outcome = coerce_mcp_tool_outcome(raw)
         assert outcome.is_error is False
         assert outcome.payload == raw
-
-
-def test_explicit_legacy_text_is_preserved_byte_for_byte():
-    raw = '{"success":true,"value":1}'
-    outcome = coerce_mcp_tool_outcome(raw)
-    assert outcome.legacy_content() == raw

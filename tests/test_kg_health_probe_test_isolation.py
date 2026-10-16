@@ -81,7 +81,7 @@ def test_probe_then_sync_and_async_graph_tests_are_isolated() -> None:
         @contextmanager
         def open_materialized_board_connection(board_id: str):
             # A real current-engine handle, confined to the nested test's
-            # temporary directory. No retired Ladybug helper or user data.
+            # temporary directory. No retired graph-runtime helper or user data.
             database = okto_grafx.connect(_RECORD.parent / board_id)
             try:
                 yield database, database

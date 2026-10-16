@@ -1,5 +1,5 @@
 ---
-version: "1.2"
+version: "1.3"
 ---
 
 # Agent-mediated Code Traceability
@@ -20,24 +20,94 @@ Draft or relax receipt/subject version matching.
 
 ## Delivery evidence
 
+### Current delivery readiness
+
+Use `okto_pulse_get_delivery_evidence(board_id, spec_id, view="readiness")`;
+add `card_id` for one Card. The versioned response is `delivery-readiness/v1`
+with `metrics_version=2`. It separates implementation proof, verification proof
+and lifecycle. It does not average executor/reviewer scores or Card statuses.
+
+For each phase, `percent = floor(100 * satisfied / applicable)` when the
+population, allocation and that phase's evaluation are known. `satisfied` counts
+only current sufficient proof. `applicable` includes waived obligations: a waiver
+may admit a gate but does not earn proof credit. A declared partial contribution
+does not earn fractional credit. A total of 999/1000 is 99%, never 100%.
+
+Units depend on scope:
+- Normal and Bug Cards use their assigned contribution obligations, including
+  qualified inherited BR responsibility. Test evidence may come from another Card.
+- Test Cards have implementation `not_applicable`; verification counts their
+  linked required scenarios with current authenticated results.
+- A Spec uses its unique global obligation inventory and required contributions,
+  not the average of Card percentages. Decisions use their explicit verification
+  plan and need no artificial implementation Card or Test Card.
+
+`status="not_applicable"` has `percent=null` and an empty applicable population.
+It is not a waiver. `status="unknown"` also has `percent=null`, but explains an
+unresolved population, scope, permission or evaluation; never replace it by zero.
+Implementation can remain known when only verification is unavailable. Paginated
+diagnostics do not truncate the metric denominator. Completeness of population,
+scope, evaluation and response page are separate fields.
+
+Examples: 8/8 implemented and 6/8 verified means I=100%, V=75%. Complete current
+proof may yield 100/100 while required Cards or other lifecycle gates remain open.
+An effective human exception can permit completion with proof below 100%; it
+remains visible as an exception. Stored Done plus stale current evidence keeps
+Done history and reports current divergence; reads do not reopen anything.
+
+Minimal action flow:
+1. Read readiness in the intended scope; inspect `summary`, `issues`, lifecycle
+   and `next_actions`. A low percentage is a successful read, not an API failure.
+2. Follow the exact `detail_query` and `page.next_cursor` for omitted facts. The
+   summary exposes at most three next actions; a partial page is not a full audit.
+   Keep scope, phase, limit and snapshot pinned. Restart on stale snapshot/cursor.
+3. Resolve the actual cause using existing native operations. Associate existing
+   valid proof when only its association is missing; do not rerun work merely to
+   satisfy a narrative checkpoint or a manual resolved checkbox. Execute tests
+   only when real evidence is missing, stale, failing or otherwise insufficient.
+4. Re-read affected Card/Spec readiness. Every mutation reauthorizes and rechecks
+   native gates; a read action or 100/100 does not grant transition authority.
+
+The UI shows separate implementation and verification bars, both on the Card and
+in Delivery. "What is missing?" opens scoped causes, expected/observed facts and
+native links. Receipt links require the exact current scenario evidence pointer;
+an unavailable old receipt never opens a replacement result. Inspection links
+retain the full review batch. Exceptions open the Spec's Coverage > Implementation.
+
+The older `delivery_completeness` field is deprecated and retained unchanged for
+existing readers. Its 0/50/80/100 stages are not either new metric. New clients
+must reject an unavailable/incompatible readiness contract instead of translating
+that score. No evidence rewrite, backfill or storage migration accompanies this
+reader compatibility. Previous editions remain audit history, not current credit.
+
 **Mandatory before completing a Spec:** planning/context evidence is not proof of
 the delivered implementation. Call `okto_pulse_get_delivery_evidence(board_id,
-spec_id)` and use its current edition, version and exact obligation references.
+spec_id)` and use its rollup projection: exact obligation references plus the
+per_card block (each linked card's derived obligations and satisfaction).
+
+**Card-scoped delivery:** `okto_pulse_record_delivery_evidence`
+anchors on the CARD — pass `board_id, card_id, spec_id` and a command carrying
+`expected_card_version` (the card CAS fence) and `expected_spec_edition`. The
+obligation universe of a normal/bug card derives from its own spec links; a card
+without links carries exactly the `card:<card_id>` fallback obligation. Waivers
+are NOT accepted on the card surface — they remain a human-only, spec-rollup
+exception on the native ledger; revoke stays human-only everywhere.
 
 1. Tasks/bug cards provide code delivery: follow the existing Target investigation,
    resolution and execution-receipt workflow; record the committed result revision,
    actual file/symbol and explanation, then complete the card. Use
    `okto_pulse_record_delivery_evidence` with kind `implementation` to associate the
-   accepted execution ID with all obligations it actually implements.
+   accepted execution ID with all obligations the card's links derive.
 2. **Test cards alone provide verification.** Execute their linked scenarios using
    the authenticated Test Evidence runtime, record a passing result, and complete
    the test card. Record kind `test`, identifying the scenario and the returned
    implementation association IDs actually tested. The signed run must not predate
    the implementation's source observation. All current implementations for an
    obligation must be covered, possibly jointly by several test cards.
-3. Refresh the delivery projection before `move_spec(..., status="done")`. Missing,
-   stale, failed, revoked, cross-board or wrong-edition proof blocks completion.
-   The gate is separate from planning Skip flags, advisory mode and greenfield.
+3. Refresh the rollup before `move_spec(..., status="done")`. Missing,
+   stale, failed, revoked, cross-board or wrong-edition proof blocks completion
+   (board `delivery_evidence_gate=blocking`; advisory surfaces the verdict without
+   blocking). The gate is separate from planning Skip flags and greenfield.
 
 An agent must not manufacture receipts, claim a task is a test, or self-authorize
 an exemption. Ask an authorized human when implementation or verification is not
@@ -106,7 +176,6 @@ authored `source_role`:
 | `existing_scaffold` | Existing scaffold, starter/base code, generated shell, or structural baseline; context only, not delivered subject behavior |
 | `existing_constraint` | Existing platform, schema, configuration, dependency, or compatibility constraint |
 | `reference_pattern` | Existing source consulted as a pattern; it is not the subject's implementation |
-| `uncategorized_legacy` | Read-only projection of pre-V2 Evidence; never valid on a new authored write |
 
 `existing_scaffold` and `reference_pattern` always require an explicit
 `interpretation_limit` explaining what the next consumer must not conclude.
@@ -176,6 +245,18 @@ currentness.
 
 ### Sequential observations and conflicts
 
+For different Cards sharing one source, an accepted receipt remains current
+when the current head observes the exact same committed source identity,
+revision, workspace ID, fingerprint algorithm/digest/count and canonicalization
+profile. Observation timestamps may differ. Each Card retains its own receipt,
+subject/version, selector scope, trust, capabilities, revocation and expiry;
+the other Card does not corroborate or extend it. Missing head evidence,
+conflict, changed source state and same-Card predecessor receipts remain
+fail-closed. This rule does not extend to Refinement or Spec receipts.
+New Evidence, Resolution and Execution writes still require a fresh preflight
+owning the current source head. Preservation of existing proof does not relax
+the transactional write-head fence or change the storage format.
+
 A new preflight from the same authenticated attestor may advance a **current**
 head within the same frozen selector scope when source identity is unchanged and
 the observed state changes. Both observations must carry a declared revision and
@@ -227,22 +308,16 @@ but conflicts with `current_implementation` Evidence for the same effective
 scope. Record absence on the receipt; do not fabricate an Evidence row whose
 claim is merely that a future implementation does not exist.
 
-V1 receipts and Evidence remain readable for compatibility, but they do not
-carry contextual meaning. A V1 receipt cannot be treated as
-`evidence_applicable`, and V1 Evidence projects as `uncategorized_legacy` with
-`context_origin=unclassified_legacy`. New governed work must not author V1.
-If the live inbound schema exposes only the legacy shape, stop and report the
-missing V2 capability; never infer a role, reuse `accessible` as a contextual
-outcome, or create new ambiguous history. A fresh V2 investigation may still
-be required even after a human classifies old Evidence.
+Receipt and Evidence submissions require `contract_version=2` and the authored
+contextual fields. Earlier formats are rejected without conversion.
 
 ## Submitting Code Evidence
 
 Evidence submission is agent-only and must reference an accepted current V2
 receipt, the frozen selector scope, exact parent/version, explicit contextual
 fields, and recomputable digests. Unknown fields, absolute paths, traversal,
-oversized excerpts, stale heads, mismatched actors, V1/V2 mixtures, and
-`uncategorized_legacy` on a new write fail closed. Accepted Evidence is
+oversized excerpts, stale heads, mismatched actors, unsupported contract versions,
+and unknown source roles fail closed. Accepted Evidence is
 immutable. Correction creates a complete contextual successor with
 `okto_pulse_supersede_code_evidence`.
 
@@ -280,80 +355,35 @@ For each distinct, consequential fact:
 8. Use one idempotency key only for byte-for-byte retries. A corrected fact is
    a new immutable record through `okto_pulse_supersede_code_evidence`.
 
-## Legacy classification is explicit actor governance
-
-When an old item projects as `unclassified_legacy`, neither a human nor an
-agent may infer its role from its path, evidence type, claim, or surrounding
-Spec alone. An authorized human may use the UI/REST batch, and an authorized
-agent may use `okto_pulse_classify_legacy_code_evidence`. Both paths require
-the same `code_traceability.evidence.classify_legacy` permission, complete
-context fields, baseline provenance, justification, and current CAS values.
-
-Classification is an append-only overlay: it records the Evidence payload
-digest, expected classification revision, authored contextual fields,
-baseline provenance, justification, actor, time, revision, and classification
-digest. The original Evidence payload is never edited. A batch is all-or-none,
-idempotent, and compare-and-swap fenced. A later correction appends a new
-classification revision; it does not overwrite history. Public activity
-exposes bounded metadata such as a justification digest, not the justification
-text or source content.
-
-Classification gives an old Evidence item explicit contextual meaning;
-it does not turn its V1 investigation receipt into a V2 receipt and does not
-automatically satisfy a current investigation gate. If classification is
-needed, read the server-authored classification inputs and classify only when
-the existing Evidence and investigation context provide a defensible answer.
-If the meaning remains ambiguous, surface the affected IDs for a human
-decision instead of guessing.
-
 ## Effective projection and frozen Specs
 
-Read `source_context`, not raw Evidence fields alone. Its role counts and
-classification state cover the complete effective evidence set even when the
-visible `evidence` or `source_context_items` collections are bounded. Each
-effective item reports `context_origin` as `authored`,
-`human_legacy_classification`, or `unclassified_legacy`; the middle value is a
-compatibility label for an actor-authored legacy overlay and does not imply
-that the current classifier was human. Never infer origin. Summary and gate
-projections omit the classifier identity. Use
-`detail`/`full` only for an authorized bounded audit that actually needs actor
-provenance.
-
-For the **current Refinement only**, `detail` and `full` with the default scope
-also expose `source_context_classification_inputs` for each visible legacy
-Evidence item. This is the server-authoritative classification preflight: consume
-its `expected_evidence_payload_sha256`, `expected_classification_revision`, and
-`baseline_provenance` exactly. A clean frozen workspace reports
-`committed_snapshot`; a dirty frozen workspace reports
-`preexisting_worktree` with `provenance_note_required=true`, and the classifier must
-supply that note before submission. Do not derive these values from paths,
-claims, or UI state. The collection is always empty for `summary`, gate scope,
-Spec, and Card projections. Spec/Card remain historical views and deliberately
-offer no classification CTA; refresh the current Refinement before starting a
-classification.
+Read `source_context`, not raw Evidence fields alone. Its role counts cover the
+complete effective evidence set even when the visible `evidence` or
+`source_context_items` collections are bounded. Each item has immutable
+agent-authored context (`context_origin=authored`). Detail/full projections
+remain permission-controlled and source-blind.
 
 Use `contextual_evidence_coverage` for the human Source Context Matrix; do not
-reinterpret the legacy `coverage` field. Its authoritative `total` includes
+recompute coverage from raw links. Its authoritative `total` includes
 only inherited active `current_implementation` Evidence, while scaffold,
-constraint, and reference-pattern items remain context-only. The
-`unresolved_applicability_count` reports unclassified legacy items. A numeric
+constraint, and reference-pattern items remain context-only. A numeric
 `coverage_pct` exists only when applicability is explicitly true, the
-projection is complete, every legacy item is classified, the investigation is
+projection is complete, the investigation is
 neither partial nor unavailable, and total is non-zero. Otherwise it is null.
 When `projection_complete=false`, `linked`, `dispositioned`, `pending`, and
 `pending_ids` are bounded lower bounds; refresh or narrow the projection rather
 than presenting them as complete coverage.
 
 Completing a Refinement freezes its delivery context, contextual receipt
-versions, effective Evidence context, and classification revision/digest in
+versions and immutable Evidence context/digests in
 the Refinement snapshot. A derived Spec pins that exact source-context manifest
-and SHA-256. Later Evidence, receipt, or human-classification changes may alter
+and SHA-256. Later Evidence or receipt changes may alter
 a live Refinement projection, but they do not silently rewrite an existing
 Spec.
 
 To adopt a later Refinement snapshot, use the governed Spec Evidence rebase:
 preview against the current Spec version and exact target Refinement version,
-review context/classification/link/disposition deltas, then apply the exact
+review context/link/disposition deltas, then apply the exact
 `preview_sha256`. A stale preview fails closed. Do not emulate a rebase by
 editing links, copying Evidence, or rewriting a frozen manifest. If the live
 agent surface does not expose preview/apply, stop and surface the required
@@ -744,22 +774,12 @@ remediation. Common branches:
 - `code_investigation_unavailable`: report the unavailable capability;
 - `code_investigation_head_conflict`: start a fresh preflight on the new head;
 - `code_investigation_subject_version_conflict`: refetch full context;
-- `code_evidence_source_role_required` or
-  `code_evidence_legacy_role_write_forbidden`: submit a V2 authored role;
-  never author `uncategorized_legacy`;
+- `code_evidence_source_role_required`: submit a required authored source role;
 - `code_evidence_interpretation_limit_required`: explain the limit of a
   scaffold/reference observation;
 - `code_evidence_baseline_provenance_invalid` or
   `code_evidence_post_baseline_source_forbidden`: bind only source that was
   present in the accepted baseline, not planned TO-BE work;
-- `code_evidence_legacy_classification_human_required`: legacy compatibility
-  code for a system/unsupported identity; use an authenticated human or agent
-  with `code_traceability.evidence.classify_legacy`;
-- `code_evidence_legacy_classification_payload_conflict`,
-  `code_evidence_legacy_classification_revision_conflict`, or
-  `code_evidence_legacy_classification_idempotency_conflict`: refresh the
-  legacy classification detail and retry the complete batch with fresh
-  fences or a new idempotency key as appropriate;
 - `code_evidence_disposition_required`: link or disposition pending Evidence;
   an authorized human may explicitly skip this one matrix coverage obligation
   in the Code Evidence Matrix tab or for the Board in Menu → Board;
@@ -774,110 +794,62 @@ See `okto-pulse://reference/errors`,
 
 ## Typed tool inventory
 
-Every command has a closed, operation-specific input schema.
+Each command has a closed operation-specific schema. Input fields, examples,
+returns and fence order are maintained once in
+`okto-pulse://reference/tool-docs/code-traceability`; `tools/list` supplies the
+current executable schemas. The sections above define the workflow and proof
+semantics, not a second parameter reference.
 
-## `okto_pulse_start_code_investigation`
+### Reading older progress checkpoints
 
-Starts a bounded request for the exact current subject/version. It returns the
-server-bound scope, required capabilities, profiles, TTL, and single-use
-challenge; it does not contact a source provider.
+`okto_pulse_get_delivery_evidence(board_id, spec_id, card_id=...)` reads the
+current edition's progress history without loading the entire Spec rollup.
+It returns at most 20 checkpoints, newest first, with authors, revocations,
+source/recovery declarations, totals and `next_cursor`. Follow that cursor
+with the same scope and page size; use `record_id` instead for the full original
+checkpoint. REST uses the same optional query parameters on the existing
+`/boards/{board_id}/specs/{spec_id}/delivery-evidence` GET route.
 
-## `okto_pulse_submit_code_investigation_receipt`
+Every call requires `code_traceability.evidence.read`. A cursor is not a grant:
+it is bound to the reader, scope and ledger generation. Restart after a stale
+cursor, new checkpoint, revocation or edition change. Summary text and Target
+lists carry explicit truncation indicators; detail preserves the original
+payload. An older pending note is not resolved merely because a newer note
+exists. The response never verifies recovery, transfers another author's
+receipt, restores proof or changes state. The successor must inspect their own
+accessible workspace. This history read complements current obligations and
+proof in the delivery projection; it does not replace that projection.
 
-For new governed work, accepts the authenticated external agent's contextual
-V2 outcome: `evidence_applicable`,
-`no_relevant_existing_implementation`, `partial`, or `unavailable`. Actor,
-delivery context, source scope, subject/version, head and trust are
-server-owned. A live schema that exposes only V1 is compatibility-only and
-must not be used to author new contextual history.
+Use `view="resume"` with `card_id` for an accumulated Card read: current
+identity/edition/state, latest progress, paginated notes, composed impact,
+canonical obligation/proof manifests, Targets and recovery limits. Progress
+eligibility combines execution state and the caller's current permission;
+final lifecycle transitions are explicitly not evaluated by this read.
+The UTF-8 projection has a 128 KiB limit, with counts and truncation indicators.
+An implementation declaration remains partial/complete as originally recorded;
+an admitted receipt is not completion credit, and stale proof retains authorship.
+For the adopted execution contract, planned scenarios and related Test Cards
+derive from this Card's canonical contribution criteria, including delimited
+inheritance. Their authenticated results retain the original Test Card and
+author; `observes_this_card` identifies an explicit implementation reference,
+not automatic coverage. The canonical evaluator still decides satisfaction.
+At most 20 related Test Cards are read by default; an incomplete population
+is explicitly unknown, with scoped ledger follow-ups. Use the Spec rollup for
+broader qualification. Targets have a follow-up to their existing paginated
+list, under its own permission.
+Follow-up reads remain subject to their own permissions and gates. The response
+does not inspect a workspace or claim that all narrative pending work is resolved.
 
-## `okto_pulse_get_code_investigation_receipt`
-
-Returns bounded receipt metadata and computed currentness; never an operational
-workspace locator or source excerpt.
-
-## `okto_pulse_submit_code_evidence`
-
-Submits one immutable AS-IS factual snapshot bound to an accepted contextual
-agent receipt. New writes require the V2 role, relevance, scope, origin,
-interpretation-limit, and baseline-provenance contract.
-
-## `okto_pulse_classify_legacy_code_evidence`
-
-Appends one atomic, audited contextual overlay over legacy Evidence without
-editing the original payload. Supply the exact server-authored payload digest,
-classification revision and baseline provenance for every item. Classify only
-when the Evidence context supports the decision; otherwise request human input.
-
-## `okto_pulse_get_code_evidence`
-
-Reads one bounded Evidence projection (`summary`, `detail`, or `full`).
-
-## `okto_pulse_list_code_evidence`
-
-Lists board-scoped Evidence with typed filters and an opaque cursor.
-
-## `okto_pulse_supersede_code_evidence`
-
-Creates an immutable correction and marks its predecessor superseded.
-
-## `okto_pulse_link_code_evidence`
-
-Links Evidence to one current normative Spec entity under a Spec-version fence.
-
-## `okto_pulse_unlink_code_evidence`
-
-Removes one Evidence link under the same Spec-version fence.
-
-## `okto_pulse_set_code_evidence_disposition`
-
-Records the explicit treatment of inherited Evidence for the current Spec.
-
-Do not simulate a frozen Spec rebase through ordinary link/disposition calls.
-
-## `okto_pulse_create_implementation_target`
-
-Creates semantic implementation intent supplied by a human or external agent;
-it does not ask Pulse to discover a target.
-
-## `okto_pulse_update_implementation_target`
-
-Updates semantic Target intent under optimistic revision control.
-
-## `okto_pulse_list_implementation_targets`
-
-Lists persisted Target intent and current lifecycle metadata.
-
-## `okto_pulse_submit_implementation_target_resolution`
-
-Accepts an authenticated external agent resolution bound to Target revision,
-Card version, request selector scope, and current source head.
-For a Card in `rejected`, this bounded resolution renewal remains available so
-blocking mode can establish a Current Target resolution for the rejection's new
-Card version before `rejected → in_progress`. It does not authorize source-code
-work: Target create/update and execution receipt submission remain frozen until
-the executor accepts the handoff and moves the Card to `in_progress`.
-
-## `okto_pulse_get_implementation_overlaps`
-
-Returns overlap derived exclusively from persisted current resolutions.
-
-## `okto_pulse_acknowledge_implementation_overlap`
-
-Records a bounded decision for one exact resolution pair; any changed
-resolution makes it stale.
-
-## `okto_pulse_submit_implementation_target_execution_receipt`
-
-Records the authenticated external agent's final Target disposition.
-
-## `okto_pulse_mark_code_traceability_not_applicable`
-
-Records an explicit scoped human waiver, separate from agent attestation.
-
-## `okto_pulse_clear_code_traceability_not_applicable`
-
-Clears one active waiver while preserving audit history.
+Use `view="ledger"` with `card_id` to page all kinds of immutable Card records,
+or add `record_id` for original declaration/binding detail. Summaries are capped
+at 128 KiB; explicit single-record detail at 512 KiB. Internal replay metadata
+is omitted and named in `omitted_internal_fields`. This history view labels
+currentness `not_evaluated`; a receipt reference is not a fresh observation.
+Both `progress` and `ledger` accept an explicit prior `edition`. The response
+identifies historical versus current edition and labels status as the current
+Card status, never an invented historical status. Cursor scope includes view
+and edition, and authorization is checked again on every page/detail. Use the
+current `resume` view and canonical gates to determine applicable proof.
 
 These are separate closed schemas. Do not collapse them into a heterogeneous
 `target_type + payload` command.

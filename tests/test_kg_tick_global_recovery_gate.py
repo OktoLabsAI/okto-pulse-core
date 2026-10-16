@@ -305,47 +305,6 @@ async def test_terminal_recovery_resumes_and_carries_rebuild_intent(
     assert published[0].force_full_rebuild is True
 
 
-async def test_manual_full_rebuild_never_resets_graph_before_durable_event(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    published: list[dict[str, object]] = []
-
-    async def forbidden_reset(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("graph reset must run only in the durable handler")
-
-    async def capture_publish(
-        session: object,
-        *,
-        board_id: str | None = None,
-        **kwargs: object,
-    ) -> list[str]:
-        published.append({"session": session, "board_id": board_id, **kwargs})
-        return ["durable-tick"]
-
-    monkeypatch.setattr(kg_tick, "reset_last_recomputed_at", forbidden_reset)
-    monkeypatch.setattr(kg_decay_tick, "publish_tick_events", capture_publish)
-    session = object()
-
-    await kg_tick.dispatch_manual_tick(
-        tick_id="manual-force",
-        board_id="board-force",
-        force_full_rebuild=True,
-        relational_context=session,
-    )
-
-    assert published == [
-        {
-            "session": session,
-            "board_id": "board-force",
-            "actor_id": "manual-trigger",
-            "actor_type": "user",
-            "scheduled_at": published[0]["scheduled_at"],
-            "force_full_rebuild": True,
-            "tick_id": "manual-force",
-        }
-    ]
-
-
 async def test_durable_handler_resets_only_after_admission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

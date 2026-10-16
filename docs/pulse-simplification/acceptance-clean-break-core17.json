@@ -1,0 +1,54 @@
+{
+  "scope": "Core17: native fixtures and current contract assertions; no product change",
+  "pair": "dist-native-closeout-final",
+  "qualified_distinct_tests": 55,
+  "qualified_modules": [
+    "tests/test_r4_imp1_gate_contracts.py",
+    "tests/test_r4_imp3_test_card_flow.py",
+    "tests/test_r4_test2_test_card_gate_behavior.py",
+    "tests/test_r4_test3_readiness_policy_behavior.py",
+    "tests/test_r4_tool_family_consolidation.py",
+    "tests/test_r5_imp5_technical_blockers_and_metric.py",
+    "tests/test_r5_test2_context_skip_overrides_readonly.py",
+    "tests/test_r5_test3_human_controls_and_blocker_visibility.py",
+    "tests/test_r6_imp4_lineage_root_immediate_and_counts.py",
+    "tests/test_r6_test1_kb_propagation_context_counts.py"
+  ],
+  "campaigns": [
+    {
+      "name": "core17-native-contexts1",
+      "sha256": "3543bc929e215c3b495edd043f7b89b6c834a42c1b7bcb6fd5104d8df280d82b",
+      "tests": 27,
+      "failed": 2
+    },
+    {
+      "name": "core17-native-followup2",
+      "sha256": "9b3af9dc23d60f2578fa8b45fa7ed28380d4a1acdbe999bab2ffcd693400e225",
+      "tests": 55,
+      "failed": 3
+    },
+    {
+      "name": "core17-native-followup3",
+      "sha256": "529b70f79859597d4ea0aa1d164514447d98c2f75499cc9abe26b9c43b0ee93f",
+      "tests": 8,
+      "failed": 3
+    },
+    {
+      "name": "core17-native-followup4",
+      "sha256": "8709149e2ca7db4e066b7ee5ed1e216a9c4b2eb465c74d166a6cad74d9e86a3a",
+      "tests": 8,
+      "failed": 2
+    },
+    {
+      "name": "core17-native-followup5",
+      "sha256": "8555464c6f4c4b0b58bfc42019e75f1bdd6c524a66037c3fba5a310050d38cee",
+      "tests": 5,
+      "failed": 0
+    }
+  ],
+  "qualification": "Eight full modules in followup2, test-card module in followup4, human-controls module in followup5. Failed campaigns retained.",
+  "limitations": [
+    "Community14 running separately against main1",
+    "C4 and installed E2E remain incomplete"
+  ]
+}

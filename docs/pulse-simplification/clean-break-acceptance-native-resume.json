@@ -1,0 +1,41 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_key": "BASE:T05",
+  "disposition": "mantido",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-reviewer22",
+  "provenance_sha256": "22c33f52f64f77fc26d23d7af345c266ec5440be44c7fa1d6677376508179af6",
+  "reviewed_coverage": [
+    "Fresh SQL session/store receives only persisted Board/Spec/Card IDs: reports original progress and actor even when newest checkpoint is short; no chat or writer object required.",
+    "Unverified recovery, workspace access, unsubmitted work and ownership transfer remain explicitly unknown/false; partial proof does not satisfy implementation and dirty work invalidates current refs without rewriting attribution.",
+    "Related signed tests preserve split-contribution scope and failures; missing test owner is unknown/incomplete work, not zero verification.",
+    "Frozen states expose history without enabling progress. Concurrent append triggers retry rather than stale success.",
+    "Bounded multibyte response retains total obligations and exact progress cursor; 21 records paginated without skips.",
+    "Current MCP successor/reviewer read path additionally reviewed under T04 handoff receipt."
+  ],
+  "runs": [
+    {
+      "name": "acceptance-native-resume-current1",
+      "xml_sha256": "697c6c2303b01b967008614687417ad9d0380613d3d3aebd9c2a75f1cbb7d531",
+      "passed": 11,
+      "cases": [
+        "tests.test_delivery_resume_read::test_resume_does_not_replace_old_work_with_short_latest_note",
+        "tests.test_delivery_resume_read::test_frozen_resume_preserves_history_without_enabling_progress[rejected]",
+        "tests.test_delivery_resume_read::test_frozen_resume_preserves_history_without_enabling_progress[validation]",
+        "tests.test_delivery_resume_read::test_frozen_resume_preserves_history_without_enabling_progress[done]",
+        "tests.test_delivery_resume_read::test_frozen_resume_preserves_history_without_enabling_progress[cancelled]",
+        "tests.test_delivery_resume_read::test_shared_history_does_not_hide_a_late_append",
+        "tests.test_delivery_resume_proofs::test_resume_keeps_partial_proof_author_and_invalidates_it_after_dirty_work",
+        "tests.test_delivery_resume_proofs::test_short_context_checkpoint_retains_prior_accumulated_net_impact",
+        "tests.test_delivery_resume_related_tests::test_related_signed_tests_respect_split_contributions_and_inherited_rule",
+        "tests.test_delivery_resume_related_tests::test_missing_test_owner_is_unknown_work_not_zero_verification",
+        "tests.test_delivery_resume_limits::test_multibyte_manifest_is_capped_without_skipping_progress_cursor"
+      ]
+    }
+  ],
+  "limits": [
+    "Tests call native read store with explicit successor actor; T04 separately exercises actual authenticated MCP reads.",
+    "Fixtures provide native contracts/allocations and signed test producers; no full login/workspace recovery certification.",
+    "Budget limit test mutates a disposable native inventory directly; it proves response/cursor integrity, not authorized content editing."
+  ]
+}

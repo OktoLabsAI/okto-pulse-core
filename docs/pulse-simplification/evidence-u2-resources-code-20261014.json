@@ -1,0 +1,181 @@
+{
+  "date": "2026-10-14",
+  "scope": "U2 native resource and Code Evidence parity; both critical-context guards",
+  "base": {
+    "core": "5ac3772c",
+    "community": "f7e910d4"
+  },
+  "passed_suites": [
+    {
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-resource-parity-r3.xml",
+      "sha256": "1789ca653d30d0fa39964a815f48dc3d5eeda76ee331a96bfcd972a54697f72b",
+      "results": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "16",
+          "time": "56.589",
+          "timestamp": "2026-10-14T21:59:46.511111-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-resource-regression.xml",
+      "sha256": "1fb51425c2395679598f1f1bb93f81bf88578d2a7b4b86f081a795f2a47d6372",
+      "results": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "126",
+          "time": "68.396",
+          "timestamp": "2026-10-14T21:57:57.466060-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-code-evidence-public-parity-r2.xml",
+      "sha256": "348e78a06767a71e56d80d61dcacce39856d98f354fdf3e2b95aded4f05f6ee6",
+      "results": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "36",
+          "time": "173.315",
+          "timestamp": "2026-10-14T22:04:07.288875-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-code-evidence-public-regression.xml",
+      "sha256": "6c7eb3a79992777a9873815806e5479f88f5fd78aa94d1c8af60e6e2ca92fe8a",
+      "results": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "52",
+          "time": "89.789",
+          "timestamp": "2026-10-14T22:05:17.010840-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-critical-context-parity.xml",
+      "sha256": "7789d1fea1e988f51d901004a4afd23d649d9d75b2f0711840a25db11f4d2b6b",
+      "results": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "4",
+          "time": "36.659",
+          "timestamp": "2026-10-14T22:08:15.586695-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    }
+  ],
+  "failed_attempts": [
+    {
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-resource-parity.xml",
+      "sha256": "952189066f4c05ed37321ead3d3672c25faaa74400082129cd352de99f388158",
+      "results": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "5",
+          "skipped": "0",
+          "tests": "16",
+          "time": "77.404",
+          "timestamp": "2026-10-14T21:50:02.864777-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-resource-parity-r2.xml",
+      "sha256": "e0fbcf7e2e07f700395593d21823ada7c4518f30ee4a8053606384ec1743c634",
+      "results": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "3",
+          "skipped": "0",
+          "tests": "16",
+          "time": "108.410",
+          "timestamp": "2026-10-14T21:56:55.564546-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u2-code-evidence-parity.xml",
+      "sha256": "711769e2d6ba88ce10fc68a56579eed0986bb55bd54c4315ec7bb41be1b33ec7",
+      "results": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "12",
+          "skipped": "0",
+          "tests": "36",
+          "time": "156.191",
+          "timestamp": "2026-10-14T22:01:04.513383-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    }
+  ],
+  "failure_resolution": [
+    "Resource initial 5 failures: native reasons replaced by generic wrapper/plaintext. Preserve ResourceGateError and existing public projectors.",
+    "Resource r2 3 failures: test expected message instead of native MCP error field. Assert native code/message/facts without changing the existing projector.",
+    "Code Evidence initial 12 failures: direct REST/MCP lost structured domain reason. Existing domain envelope now retained; REST uses the existing 409 convention."
+  ],
+  "closure": {
+    "artifact": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\closure-u2-resources-code-final.json",
+    "sha256": "75b94e920500e52bdd501b947bf6950770f42e344ca2c80b2f8ba21d97fd68c7",
+    "ok": true,
+    "rows": 9036,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    },
+    "documentation": "Two README projections regenerated/validated with official functions against this completed source audit. No wheel audit."
+  },
+  "frontend": {
+    "command": "rtk proxy npm run test -- src/components/specs/__tests__/ValidationErrorDisplay.test.tsx",
+    "result": "23 passed; no frontend implementation change or new browser proof in this increment"
+  },
+  "source_sha256": {
+    "okto_labs_pulse_core/src/okto_pulse/core/services/main.py": "58a72648afee0bf935e77cbc430314af13c2528acd803da5760d4b30ac969564",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/server.py": "135866f3df1746bcc8dd4251704bea42447d0ce32abc563103e9a67ced0f7c8d",
+    "okto_labs_pulse_community/src/okto_pulse/community/api/specs.py": "dcb5047e28dfbdc3c3b21534d00d7191c467fc4f0c461d010cfab38833bb09cc",
+    "okto_labs_pulse_community/tests/test_spec_planning_resource_parity.py": "9bf15c85a710bf6a19603507a9ce8004e2a94239b059a0e9e498a63bdb315275",
+    "okto_labs_pulse_community/tests/test_spec_planning_code_evidence_parity.py": "ffe513cb470e3a0de995f5b780426670dab4a984403e1aa9394e6a12a8ff989c",
+    "okto_labs_pulse_community/tests/test_spec_planning_critical_context_parity.py": "09b88ec1d959e0ba64ab51fa73b6178e345ff620396b1995a3e8f5d5dbf4090e"
+  },
+  "artifact_preservation": "Previous domain u2-code-evidence-parity.xml copied byte-identically to u2-code-evidence-domain-parity-original.xml before the new public run completed; prior map reference updated, old SHA-256 verified.",
+  "limits": [
+    "Tests import both sibling src trees via explicit PYTHONPATH; module paths verified.",
+    "No final installation, process restart or user-data mutation.",
+    "U3/U4 remain mandatory; native fault injection is not authenticated wire or production outage evidence.",
+    "Ruff reports 3 pre-existing E402 in Core MCP and 2 in Community specs; unchanged imports confirmed against HEAD. Other touched Python files pass."
+  ]
+}

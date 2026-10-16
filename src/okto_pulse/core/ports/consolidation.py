@@ -1243,15 +1243,47 @@ class CurrentSpecDependencyProjection:
 
 
 @dataclass(frozen=True, slots=True)
+class CurrentCardDependencyProjection:
+    """One persisted dependency; its dependent Card owns the projected fact."""
+
+    dependency_id: str
+    board_id: str
+    dependent_card_id: str
+    prerequisite_card_id: str
+    prerequisite_card_type: str
+
+
+@dataclass(frozen=True, slots=True)
 class ConsolidationProjectionInputs:
     """Bounded relational projections loaded alongside one source artifact."""
 
     quality_assessments: tuple[CurrentQualityAssessmentSummary, ...] = ()
     research_decisions: tuple[CurrentResearchDecisionSummary, ...] = ()
     spec_dependencies: tuple[CurrentSpecDependencyProjection, ...] = ()
+    card_dependencies: tuple[CurrentCardDependencyProjection, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CardLifecycleTransition:
+    event_id: str
+    occurred_at: datetime
+    from_status: str | None
+    to_status: str | None
+
+
+def card_resolution_timestamp(current_status, transitions):
+    """Public read policy for source-owned Bug resolution metadata (KG D11)."""
+    from okto_pulse.core.kg.source_projection_metadata import latest_resolution_time
+    return latest_resolution_time(current_status, transitions)
 
 
 class ConsolidationPersistencePort(Protocol):
+    async def latest_card_transitions(
+        self, context: Any, *, board_id: str, card_id: str,
+    ) -> tuple[CardLifecycleTransition, ...]:
+        """Read at most two latest card.moved events, newest first."""
+        ...
+
     async def load_artifact(
         self,
         context: Any,
@@ -1287,7 +1319,6 @@ class ConsolidationPersistencePort(Protocol):
         context: Any,
         *,
         now: datetime,
-        legacy_cutoff: datetime,
     ) -> tuple[ConsolidationQueueRecord, ...]: ...
 
     async def count_pending(self, context: Any) -> int: ...
@@ -1599,6 +1630,7 @@ __all__ = [
     "CurrentQualityAssessmentSummary",
     "CurrentResearchDecisionSummary",
     "CurrentSpecDependencyProjection",
+    "CurrentCardDependencyProjection",
     "ExactConsolidationBatchResult",
     "ExactConsolidationAckReceipt",
     "ExactConsolidationAckIntegrityError",

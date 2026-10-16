@@ -1,10 +1,7 @@
 """Canonical test-scenario type vocabulary.
 
-The write-facing API and MCP schemas import :data:`ScenarioType`, while
-read-facing projections intentionally keep accepting arbitrary strings so
-historical values remain inspectable.  Keeping both the static type and the
-runtime tuple here prevents the transport schemas and service validation from
-drifting.
+API, MCP and stored projections share :data:`ScenarioType`. The runtime
+tuple and static type keep transport and service validation aligned.
 """
 
 from __future__ import annotations
@@ -22,6 +19,23 @@ ScenarioType: TypeAlias = Literal[
 
 VALID_SCENARIO_TYPES: tuple[str, ...] = get_args(ScenarioType)
 DEFAULT_SCENARIO_TYPE: ScenarioType = "integration"
+VerificationMethod: TypeAlias = Literal[
+    "automated_test", "static_analysis", "inspection", "demonstration"
+]
+VALID_VERIFICATION_METHODS: tuple[str, ...] = get_args(VerificationMethod)
+# Every admitted method still requires the concrete edition capability and an
+# authenticated result. Declaring an enum alone cannot grant credit.
+ADMITTED_VERIFICATION_METHODS = frozenset(VALID_VERIFICATION_METHODS)
+
+
+def validate_verification_method(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or value not in VALID_VERIFICATION_METHODS:
+        raise ValueError("verification_method_invalid")
+    return value
+
+
 SCENARIO_TYPE_DESCRIPTION = (
     "Scenario kind: unit, integration, e2e, manual, or negative. "
     "Use negative for invalid, forbidden, or denial paths that the product "
@@ -34,4 +48,8 @@ __all__ = [
     "SCENARIO_TYPE_DESCRIPTION",
     "ScenarioType",
     "VALID_SCENARIO_TYPES",
+    "VerificationMethod",
+    "VALID_VERIFICATION_METHODS",
+    "ADMITTED_VERIFICATION_METHODS",
+    "validate_verification_method",
 ]

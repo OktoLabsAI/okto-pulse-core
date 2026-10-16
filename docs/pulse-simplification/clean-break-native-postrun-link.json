@@ -1,0 +1,33 @@
+{
+  "scope": "ADV-13: post-run criterion links do not extend signed proof",
+  "proof_pair": "dist-native-main87",
+  "criteria": {
+    "ARQVER:ADV-13": [
+      "test_governed_criterion_edits_keep_independent_proof_and_assessment_history",
+      "test_native_digest_limits_applicability_to_exact_selected_criteria"
+    ]
+  },
+  "evidence": [
+    "Extended the governed-edit SQL witness: the independent UI criterion has current passing credit immediately before a new BR requirement link is appended with the production writer/version/permissions.",
+    "After the link is saved, UI test credit is no longer current; no new evidence is issued and aggregate delivery remains blocked. The previously signed observation is not reinterpreted as proving the expanded obligation scope.",
+    "All implementation/test payloads and original assessment contents remain identical. Main87 digest negatives separately prove requirement-link changes affect applicability even when criterion text stays identical."
+  ],
+  "tests": {
+    "community_passed": 1,
+    "seconds": 9.85,
+    "previously_qualified_case": "Same governed case extended; not an additional independent-case count beyond this campaign",
+    "reused": "Main87 native-criterion-applicability-core2 and frontend1; no rerun or new-count claim"
+  },
+  "limits": [
+    "Actual governed service/SQL composition, controlled initial state; no new REST or installed-authentication E2E.",
+    "The added BR already has another unresolved dimension in this fixture; the decisive new observation is loss of previously current UI credit after changing its own requirement links, not an isolated BR-only gate transition.",
+    "No product or SPA change. Main87 closure remains applicable with eight zero budgets; no promotion, migration or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-postrun-link1.json": "b4b4cbe1f292e6d32f3f4a629d7962ad6b5f7f37d7a1325439280c150cc0ba58",
+    "native-postrun-link1.xml": "09447d5aa8b0b9b27838bdcb70d7b74e2bf3a034ee6f10728cd8125fcf061688",
+    "native-criterion-applicability-core2.xml": "49426d879c84994b867e2e338f6103196725ca3b1a33729276e60078961ba93f",
+    "native-criterion-applicability-frontend1.json": "21948bc23ecdf5d39e25cc9f2cbca45450f79e1b39dec9b290431d7b6a59499d",
+    "closure-native-main87.json": "0b9b185c7e16892769af431ffa471141244468db74ccd447dbcf6af474acbfd4"
+  }
+}

@@ -224,6 +224,7 @@ class AmendmentRevisionService:
             "amendment_coverage_confirmed",
             actor,
             {
+                "confirmation": dict(confirmation),
                 "regression_test_task_id": confirmation.get(
                     "regression_test_task_id"
                 ),

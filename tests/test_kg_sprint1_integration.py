@@ -52,18 +52,18 @@ def full_spec_row():
             "- Cache recent streaks in Redis with 5min TTL\n"
         ),
         functional_requirements=[
-            "Player accumulates XP for each action",
-            "Player earns streak multiplier after 7 consecutive days",
+            {"id": "fr_earn", "text": "Player accumulates XP for each action"},
+            {"id": "fr_fixture_1", "text": "Player earns streak multiplier after 7 consecutive days"},
         ],
         technical_requirements=[
-            {"text": "XP write path < 50ms p95"},
+            {"id": "tr_fixture_0", "text": "XP write path < 50ms p95"},
         ],
         acceptance_criteria=[
-            "Level formula matches spec: 1000 XP per level",
-            "Streak multiplier caps at 2.0",
+            {"id": "ac_level", "text": "Level formula matches spec: 1000 XP per level"},
+            {"id": "ac_streak", "text": "Streak multiplier caps at 2.0"},
         ],
         business_rules=[
-            {"title": "Daily XP Cap", "rule": "User cannot exceed 500 XP per day"},
+            {"id": "br_fixture_0", "title": "Daily XP Cap", "rule": "User cannot exceed 500 XP per day"},
         ],
         test_scenarios=[
             {
@@ -72,15 +72,15 @@ def full_spec_row():
                 "given": "User has 950 XP",
                 "when": "User earns 150 XP",
                 "then": "Level increases",
-                "linked_criteria": ["Level formula matches spec: 1000 XP per level"],
+                "linked_criteria": ["ac_level"],
             },
         ],
         api_contracts=[
-            {
+            {"id": "api_fixture_0",
                 "method": "GET",
                 "path": "/leaderboard",
                 "description": "Top-100 users",
-                "linked_requirements": ["Player accumulates XP for each action"],
+                "linked_requirements": ["fr_earn"],
             },
         ],
         created_by="u",
@@ -92,9 +92,8 @@ def full_spec_row():
 # ===========================================================================
 
 
-def test_ts_7b6a1ec1_worker_emits_all_edge_types(full_spec_row):
-    """Complete spec → worker produces tests + implements + derives_from +
-    mentions edges, all tagged layer=deterministic with correct confidence."""
+def test_ts_7b6a1ec1_worker_preserves_links_without_narrative_decisions(full_spec_row):
+    """Linked requirements produce edges; narrative decisions invent no links."""
     result = _run_deterministic_worker(
         ConsolidationQueue(board_id="board-sprint1", artifact_type="spec",
                            artifact_id=full_spec_row.id),
@@ -105,14 +104,13 @@ def test_ts_7b6a1ec1_worker_emits_all_edge_types(full_spec_row):
     # tests + implements come from linked_* matches.
     assert "tests" in edge_types
     assert "implements" in edge_types
-    # derives_from from the ## Decisions section (2 decisions × 2 FRs = 4 edges)
+    # Narrative context is not a formal decision or declared requirement link.
     derives = [e for e in result.edges if e.edge_type == "derives_from"]
-    assert len(derives) == 4
-    assert all(e.confidence == 0.6 for e in derives)
-    # mentions from tech whitelist (PostgreSQL + Redis)
+    assert derives == []
+    assert not [node for node in result.nodes if node.node_type == "Decision"]
+    # Technology text in narrative context cannot manufacture Decision mentions.
     mentions = [e for e in result.edges if e.edge_type == "mentions"]
-    assert any("postgresql" in e.to_candidate_id for e in mentions)
-    assert any("redis" in e.to_candidate_id for e in mentions)
+    assert mentions == []
 
 
 def test_ts_7b6a1ec1_edges_metadata_complete(full_spec_row):
@@ -181,9 +179,9 @@ def test_ts_a278ec64_missing_linked_criteria_skips_tests_edge():
         "title": "Partial Spec",
         "description": "",
         "context": "",
-        "functional_requirements": ["Nothing"],
+        "functional_requirements": [{"id": "fr_fixture_0", "text": "Nothing"}],
         "technical_requirements": [],
-        "acceptance_criteria": ["Some criterion"],
+        "acceptance_criteria": [{"id": "ac_some", "text": "Some criterion"}],
         "business_rules": [],
         "test_scenarios": [
             {
@@ -210,7 +208,7 @@ def test_ts_a278ec64_missing_linked_criteria_enqueues_candidate():
         "context": "",
         "functional_requirements": [],
         "technical_requirements": [],
-        "acceptance_criteria": ["AC-1"],
+        "acceptance_criteria": [{"id": "ac_one", "text": "AC-1"}],
         "business_rules": [],
         "test_scenarios": [
             {"id": "ts_orphan", "title": "Orphan", "given": "g",
@@ -236,13 +234,13 @@ def test_ts_a278ec64_missing_linked_requirements_enqueues_candidate():
         "title": "Partial",
         "description": "",
         "context": "",
-        "functional_requirements": ["FR-A"],
+        "functional_requirements": [{"id": "fr_fixture_0", "text": "FR-A"}],
         "technical_requirements": [],
         "acceptance_criteria": [],
         "business_rules": [],
         "test_scenarios": [],
         "api_contracts": [
-            {"method": "GET", "path": "/x", "description": "d",
+            {"id": "api_fixture_0", "method": "GET", "path": "/x", "description": "d",
              "linked_requirements": []},
         ],
     }

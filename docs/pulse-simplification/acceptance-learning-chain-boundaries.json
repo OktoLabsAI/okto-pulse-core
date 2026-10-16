@@ -1,0 +1,109 @@
+{
+  "scope": "KG7.5/K3 retained Learning chain boundary verification",
+  "community": {
+    "passed": 4,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "The chain rederives each per-Board receipt and preserves the coordinator-supplied Board order and exact relative directory names.",
+    "Full SQL/schema equality ties the phase baseline, each Board boundary and the terminal candidate snapshot.",
+    "The terminal native Board graph inventory must match the retained final schema, counts and multiplicity-preserving fingerprint.",
+    "Native tests reject wrong SQL baselines, wrong SQL terminal snapshots, changed terminal graphs and receipt path traversal.",
+    "Native chain verification succeeds without runtime providers, including unchanged execution with absent canonical Bug.",
+    "Aggregate retained reports are bounded to 64 MiB; SQL boundaries reject active sidecars.",
+    "Paired installed bytes were proved identical before campaigns; F16 passed with no findings or documentation drift and eight zero budgets."
+  ],
+  "limits": [
+    "Coordinator/checkpoint wiring remains incomplete; this boundary verifier has no runtime admission authority.",
+    "The native fixture isolates unrelated lifecycle gates and graph health; full runtime admission is not certified.",
+    "Core behavior is unchanged from the previously published pair; no additional Core campaign was needed.",
+    "Initial graph ownership, original-source/evidence fences, native census and final completion remain obligations of the enclosing coordinator.",
+    "No UI change, real-data migration, active runtime restart, tag or release occurred.",
+    "Full-plan acceptance remains incomplete: 78 verified / 33 partial / 135 unaudited."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-retained-execution-chain2-closure.log": "d113dac7f195edbd14c60fac99fc4bdf52b8752f9826c32c6724d0109935e9a5",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-retained-execution-chain2-community.xml": "17f20f3ccad11131a9c28bb4ac0ac59b7be72b2115e3c0fbd9881b13d142e6b1",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-retained-execution-chain2-community.log": "cf2b74d22c8e824c35a0f2970984210f145d87724e06c57f97658f34ed1725d5",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-retained-execution-chain2.json": "9769dc12eb6296792e33ca580658767486ac4d37b3819bb544f55c3d14895af9",
+    "PULSE_REFACTOR/.validation-v040/run_learning_reconciliation.py": "6af623cd1a283155e82fd4e41c8125078e48f70adfac3a42e6518642e3619662",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_learning_execution.py": "18d45b9eb2a83de5d7dc1948b98913bd9bd9fffb1427ef35fa4cc8644ed90722",
+    "okto_labs_pulse_community/tests/test_retirement_learning_execution.py": "0472f9f5b856978d65b749c1dddfa0af1d32c5978b682dfb8ca022a7f9e58c78"
+  }
+}

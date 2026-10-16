@@ -662,6 +662,7 @@ class KGNodeConnectivityGuard:
         existing_node_refs: Iterable[Any] = (),
         generation_id: str = "",
         deterministic_rdl_alternative_candidate_ids: Iterable[str] = (),
+        deterministic_spec_decision_candidate_ids: frozenset[str] = frozenset(),
     ) -> KGConnectivityValidationResult:
         node_snapshots = tuple(_snapshot_node(node) for node in nodes)
         edge_snapshots = tuple(_snapshot_edge(edge) for edge in edges)
@@ -704,9 +705,28 @@ class KGNodeConnectivityGuard:
             )
             else frozenset()
         )
+        spec_decision_grants = (
+            deterministic_spec_decision_candidate_ids
+            if type(deterministic_spec_decision_candidate_ids) is frozenset
+            and all(type(value) is str and value for value in deterministic_spec_decision_candidate_ids)
+            else frozenset()
+        )
         # RKG-02: the shared resolver decides if a Learning is bug-derived; a
         # plain card:<uuid> only counts when the canonical Bug probe confirms it.
         bug_probe = _build_canonical_bug_probe(existing_refs, node_snapshots)
+        # A complete historical inventory can be much larger than a write
+        # batch. Resolve the immutable batch indexes once and retain the exact
+        # input order/multiplicity of each node's incident edges.
+        resolved_indexes = (
+            {item.candidate_id: item.node_type for item in node_snapshots},
+            {item.candidate_id: item.graph_layer for item in node_snapshots},
+            _existing_ref_index(existing_refs),
+        )
+        edges_by_node: dict[str, list[_EdgeSnapshot]] = {}
+        for edge in edge_snapshots:
+            edges_by_node.setdefault(edge.from_candidate_id, []).append(edge)
+            if edge.to_candidate_id != edge.from_candidate_id:
+                edges_by_node.setdefault(edge.to_candidate_id, []).append(edge)
         for node in node_snapshots:
             try:
                 rule = self._registry.get_rule(node.node_type, writer_path)
@@ -774,13 +794,24 @@ class KGNodeConnectivityGuard:
             else:
                 required_groups = list(rule.required_edge_groups)
 
+            # Only the authenticated Spec projection may carry a normative
+            # Decision with provenance alone. Generic cognitive Decisions keep
+            # their judgement requirement; no co-occurrence edge is invented.
+            from okto_pulse.core.ports.spec_projection import is_spec_owned_node_identity
+            if (writer_class is WriterClass.DETERMINISTIC
+                    and node.node_type == "Decision"
+                    and node.candidate_id in spec_decision_grants
+                    and is_spec_owned_node_identity("Decision", node.source_artifact_ref)):
+                required_groups = [group for group in required_groups if group.name != "decision_judgement"]
+
             for group in required_groups:
                 resolution = self._resolve_group(
                     node=node,
                     group=group,
                     nodes=node_snapshots,
-                    edges=edge_snapshots,
+                    edges=tuple(edges_by_node.get(node.candidate_id, ())),
                     existing_refs=existing_refs,
+                    resolved_indexes=resolved_indexes,
                 )
                 if not resolution.passed:
                     violations.append(
@@ -834,12 +865,15 @@ class KGNodeConnectivityGuard:
         nodes: tuple[_NodeSnapshot, ...],
         edges: tuple[_EdgeSnapshot, ...],
         existing_refs: tuple[KGNodeRef, ...],
+        resolved_indexes: tuple[dict[str, str], dict[str, str | None], dict[str, list[KGNodeRef]]] | None = None,
     ) -> _RequirementResolution:
-        node_types_by_candidate = {item.candidate_id: item.node_type for item in nodes}
-        node_layers_by_candidate = {
-            item.candidate_id: item.graph_layer for item in nodes
-        }
-        existing_by_ref = _existing_ref_index(existing_refs)
+        if resolved_indexes is None:
+            resolved_indexes = (
+                {item.candidate_id: item.node_type for item in nodes},
+                {item.candidate_id: item.graph_layer for item in nodes},
+                _existing_ref_index(existing_refs),
+            )
+        node_types_by_candidate, node_layers_by_candidate, existing_by_ref = resolved_indexes
         touched_unresolved = False
         touched_unsupported = False
         layer_required = any(req.required_target_layer for req in group.alternatives)

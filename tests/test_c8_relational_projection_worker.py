@@ -196,11 +196,11 @@ def test_resolved_rdl_projection_is_stable_and_explicitly_owned() -> None:
         )
         for node in projected
     )
-    assert first.relational_projection_active_set_intent is not None
-    assert first.relational_projection_active_set_intent.owner_type == "refinement"
-    assert first.relational_projection_active_set_intent.owner_id == "refinement-c8"
-    assert first.relational_projection_active_set_intent.namespace == "rdl"
-    assert len(first.relational_projection_active_set_intent.active_refs) == 3
+    assert first.relational_projection_active_set_intents
+    assert first.relational_projection_active_set_intents[0].owner_type == "refinement"
+    assert first.relational_projection_active_set_intents[0].owner_id == "refinement-c8"
+    assert first.relational_projection_active_set_intents[0].namespace == "rdl"
+    assert len(first.relational_projection_active_set_intents[0].active_refs) == 3
     projection_edges = [
         edge for edge in first.edges if edge.candidate_id.startswith("relproj_edge_")
     ]
@@ -271,8 +271,8 @@ def test_rdl_demotion_emits_an_explicit_empty_active_set() -> None:
         node for node in result.nodes if node.node_type in {"Decision", "Alternative"}
     ]
     assert result.relational_projection_candidate_ids == set()
-    assert result.relational_projection_active_set_intent is not None
-    assert result.relational_projection_active_set_intent.active_refs == ()
+    assert result.relational_projection_active_set_intents
+    assert result.relational_projection_active_set_intents[0].active_refs == ()
 
 
 def _refinement_with_alternative_count(
@@ -308,8 +308,8 @@ def _rdl_grants(result, refinement_id: str) -> frozenset[str]:
         relational_projection_candidate_ids=frozenset(
             result.relational_projection_candidate_ids
         ),
-        relational_projection_active_set_intent=(
-            result.relational_projection_active_set_intent
+        relational_projection_active_set_intents=(
+            result.relational_projection_active_set_intents
         ),
     )
 
@@ -370,17 +370,17 @@ def test_exact_rdl_grant_rejects_identity_scope_and_provenance_forgeries() -> No
         relational_projection_candidate_ids=frozenset(
             wrong_agent.relational_projection_candidate_ids
         ),
-        relational_projection_active_set_intent=(
-            wrong_agent.relational_projection_active_set_intent
+        relational_projection_active_set_intents=(
+            wrong_agent.relational_projection_active_set_intents
         ),
     )
 
     wrong_owner = deepcopy(baseline)
-    assert wrong_owner.relational_projection_active_set_intent is not None
-    wrong_owner.relational_projection_active_set_intent = replace(
-        wrong_owner.relational_projection_active_set_intent,
+    assert wrong_owner.relational_projection_active_set_intents
+    wrong_owner.relational_projection_active_set_intents = (replace(
+        wrong_owner.relational_projection_active_set_intents[0],
         owner_id="different-refinement",
-    )
+    ),)
 
     wrong_belongs = deepcopy(baseline)
     next(

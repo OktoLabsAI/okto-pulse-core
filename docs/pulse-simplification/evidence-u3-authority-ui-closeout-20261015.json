@@ -1,0 +1,264 @@
+{
+  "date": "2026-10-15",
+  "scope": "U3 UV19-UV21 native HTTP/browser authority, residual shell cache correction and validation recovery",
+  "baseline": {
+    "core": "b61a7cab",
+    "community": "135454ca"
+  },
+  "runtime": {
+    "api_pid": 11268,
+    "api_port": 8220,
+    "vite_pid": 15256,
+    "vite_port": 5275,
+    "home": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-authority-home",
+    "kind": "Isolated checkout; controlled AuthenticationPort at composition root, not product multi-user authentication"
+  },
+  "spec_id": "e262df40-8214-4e69-b1d5-02b22b85666c",
+  "observations": [
+    "Authorized Draft opened in browser; unsaved FR Title/Content entered.",
+    "Controlled authentication denial returned native HTTP 403 for Spec read and PATCH; persisted title/version/requirements/context/status unchanged.",
+    "Initial UI removed Spec and draft but retained Board name/navigation and KG queue cache. Reproduced with inspected screenshot.",
+    "Shared watcher now confirms Board denial independently before clearing shell/list/Card caches. Subject-only denial or transport failure does not remove Board. Late confirmation from superseded watcher is discarded.",
+    "After correction, native denial removed Spec, draft, Board name/navigation and queue indicators without manual refresh.",
+    "Reload boards while denied kept data hidden. Restoring controlled owner and pressing Reload boards recovered the authoritative list.",
+    "Changing controlled principal to u3-other-human returned native 404 for Spec and Board and removed prior UI context. Owner restored afterwards; no product permission or data changed.",
+    "Main checkout UI 5274/API8200: delayed one validation-cycle GET by 20s then aborted only that request. Pulse loading observed; failure displayed Unavailable, not approval. Native retry recovered Ready with original assessment details."
+  ],
+  "tests": {
+    "distinct_passed": 122,
+    "failures": 0,
+    "errors": 0,
+    "recheck_after_recovery_copy": "7 passed, included in 122 distinct",
+    "initial_failure": "2 new late-response cases failed; generation predicate replaced completed-request signal, then both passed",
+    "warnings": "Existing React act warnings in navigation tests; targeted ESLint exit 0 with 5 warnings"
+  },
+  "typecheck": "npx tsc --noEmit exit 0 after final source changes",
+  "build": {
+    "command": "npm run build",
+    "exit_code": 0,
+    "assets": 78,
+    "packaged_files": 79,
+    "tree_sha256": "f3ea8fcb706574c76a2438da33fd2e22d020e0d7511c37ac2fa1450ca194bf65",
+    "warnings": "Browserslist age and large chunks; no build errors"
+  },
+  "visual_inspection": [
+    "u3-authority-before-revoke.png",
+    "u3-authority-revoked.png",
+    "u3-authority-recovery-denied.png",
+    "u3-authority-retry-restored.png",
+    "u3-authority-other-identity.png",
+    "u3-validation-loading.png",
+    "u3-validation-read-failure.png",
+    "u3-validation-recovered.png"
+  ],
+  "uv_matrix": {
+    "UV18": {
+      "result": "qualified in checkout",
+      "evidence": [
+        "evidence-u3-live-validation-sync-20261014.json",
+        "evidence-u3-integrated-conclusion-delivery-20261015.json",
+        "evidence-u3-coverage-native-progress-20261015.json"
+      ],
+      "proves": "Native opinions/Checklist/lint and Card-only implementation/verification changes converge in open consumers, including constant Spec.version."
+    },
+    "UV19": {
+      "result": "qualified in checkout with controlled boundary fixtures",
+      "evidence": [
+        "u3-authority-shell-final.xml",
+        "u3-integration-offline.yml",
+        "u3-integration-online.yml",
+        "u3-authority-other-identity.json",
+        "u3-authority-other-identity.yml"
+      ],
+      "proves": "Watcher tests cover obsolete response, hidden/offline/focus and deduplication. Integration snapshots preserve draft offline/reconnected. New deferred identity/Board tests reject late denial; browser controlled principal swap removes protected scope."
+    },
+    "UV20": {
+      "result": "qualified in checkout with controlled boundary fixtures",
+      "evidence": [
+        "evidence-u3-card-drafts-20261014.json",
+        "evidence-u3-live-validation-sync-20261014.json",
+        "evidence-u3-native-authority-20261015.json",
+        "u3-authority-denied.json",
+        "u3-authority-recovery-denied.png",
+        "u3-authority-retry-restored.png"
+      ],
+      "proves": "Native MCP external changes preserve dirty authoring and require explicit revision review; revoked MCP and HTTP reads/writes denied; UI protected data/draft cleared, authorized retry recovers."
+    },
+    "UV21": {
+      "result": "qualified in checkout",
+      "evidence": [
+        "evidence-u3-integrated-conclusion-delivery-20261015.json",
+        "u3-validation-loading.png",
+        "u3-validation-read-failure.png",
+        "u3-validation-recovered.png",
+        "u3-authority-shell-final.xml"
+      ],
+      "proves": "Composed conclusion and independent history/pinpoints/keyboard previously observed. Pulse loading, unavailable state and native retry now visually inspected; navigation regressions pass."
+    }
+  },
+  "prior_evidence_hash_audit": {
+    "checked": 155,
+    "matching": 154,
+    "excluded_mutable_file": "u3-integrated-validation/delivery-state.json advanced by the later source/test proof checkpoint; immutable operation receipts and screenshots match"
+  },
+  "limits": [
+    "Controlled AuthenticationPort fixture is not a new LocalAuthProvider capability. Component delayed-response tests are not represented as native browser timing tests.",
+    "No new backend behavior tests: product change is frontend only. Previous source closure budgets were zero; packaged pair and installed closure remain U4.",
+    "No new completion, assessment or delivery writes in main fixture; authority Spec remains Draft. No Done or canonical KG claimed.",
+    "User default runtime/home unchanged. Installed wheels are not qualified by this source/Vite run.",
+    "Browser errors include intentional denied/aborted requests and prior fixture errors; no zero-console-error claim.",
+    "Vite fixture first launched with wrong cwd, then one subprocess exited; confirmed absence before Start-Process Hidden restart in frontend cwd. No product stylesheet fix was necessary."
+  ],
+  "artifacts": [
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-authority-before.json",
+      "sha256": "c0501e29d84e0bd041eaaa011919dced45582b52c45df4131b07d3db60cec554"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-authority-denied.json",
+      "sha256": "31edd933e942fd0baa7470c27d37e75c2682fa445f2798fee39e597d5813637d"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-authority-final-after.json",
+      "sha256": "c0501e29d84e0bd041eaaa011919dced45582b52c45df4131b07d3db60cec554"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-authority-other-identity.json",
+      "sha256": "ad9f65daae287d1a8ca6081cc4eb5ca55b2c893461c5a82d9079d6ae7914a07b"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-authority-shell-final.xml",
+      "sha256": "afc7662376c430d082852e6e8718bd1596617205a39d8ba7d74ad0c673650d8c"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-authority-shell-message.xml",
+      "sha256": "65b6b65b3937854539c54bdb13d227f9dea1c25a0266db7e45dcff055a7a1a55"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-before-revoke.png",
+      "sha256": "bf4476193ced7abeb14113bcc9be3520d4046ecfdb22c72605627573a7093df1"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-final-form.yml",
+      "sha256": "c39af4bf60d9fcbeb88f7ecd552a5dc2a6a7570353cc1fc9c8ec51ab889c0227"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-final-functional.yml",
+      "sha256": "4a7e3fce42ff03e3726591bd8531542b67a798e9cdbfda9b03c04be4375757f3"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-final-open.yml",
+      "sha256": "8313fc2cffefff86181ba4d9cca80f1efe663c63afbaddf3ad7cd69d047b67dd"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-form.yml",
+      "sha256": "a4f9be10a4d8e7b5f03ba82cbbab86c7a6f6cae8da06f803ea2cab952b82cfa5"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-functional.yml",
+      "sha256": "7aa8759134a4c2edfab4a03a91a3ae08d2ffb53b5441cb0b2de37b312bc0ea74"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-open.yml",
+      "sha256": "d8533a68d7ea42618d0fb166211f8d3474092eb0b4b41bcc2c9792818250da84"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-other-identity.png",
+      "sha256": "7d70168778dc95778ce900051ae7dc2d44f3908ecb50adae17946cf302f643a0"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-other-identity.yml",
+      "sha256": "2788eb09d2aef6f915e1ef185482cd3fd2bd77bc7f313e7eea9105ee01bff4cc"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-ready.yml",
+      "sha256": "7ff20a4648799c5745cd1ac696ff577378a91c7ca3064ecf019252070a60f0d0"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-recovery-denied.png",
+      "sha256": "5ff6076c1407e87993f45d35a3eadd6d68b94935d1fbb2d7d1251b899d71ed54"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-recovery-denied.yml",
+      "sha256": "7ac8ebf557e108efc5fc1f958fb2e053c9fbde0171a623d5e7e0a6e3db076405"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-recovery-specs.yml",
+      "sha256": "676ca3eafe950a61fbe616c983c1f7d6cb8c8f8b1011a6387b0b66cb5a0728af"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-recovery-start.yml",
+      "sha256": "b2ee6d2ecd49542c4c1eef9272a9635157a2dd1439a6cadd54da8fbc6c7d8804"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-restored.yml",
+      "sha256": "dfa9663007788898207bfe90597b7bf93cb59627be6f26345c5d6d5f07c557f1"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-retry-denied.yml",
+      "sha256": "92c34062e3adc0bef9e4daf28bf5571e0dac188b7b6e5bf3ac3364f287690bb1"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-retry-restored.png",
+      "sha256": "3158401cffd7a158e528c1abde60dbedc4e971b948193eceea4f79c184f7703d"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-retry-restored.yml",
+      "sha256": "786f5e29659693274b0251816c42f2da7b7c0ed43cff06bc26b902f28d561fd3"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-revoked.png",
+      "sha256": "2d9000d3e64c8e3da5a77b62afbad475ec216c37173a532b1bde4965d3a6e95a"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-revoked.yml",
+      "sha256": "cc4df5a5fe4e9c4b9137f28c291db02f73b6caeefdd09910673a52ecd8581cfa"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-shell-cleared.png",
+      "sha256": "fc8b6f3dbbf735ae51ffc75d1c4452d742cd66a5f5c269f18917433f2e00086e"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-shell-cleared.yml",
+      "sha256": "6615ed7cbe03254286d3a4a3751509200e870dc65aff64ba8a831f0592a5cc1d"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-spec-list.yml",
+      "sha256": "bb091b9eec6ff224666f34258b9b890df071c6acb44d1684a66d8496e742accf"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-authority-terms.yml",
+      "sha256": "19cc034279e9547e9ce9ca9d64fd1dfe92d104d083ca6a8f3ebf27e68ad7ed21"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-validation-loading.png",
+      "sha256": "4bb70fbf17c568728a5d08f44d3a04e04e98751fa8fa8e5747ae3060ef483734"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-validation-loading.yml",
+      "sha256": "bc8cff249f56ca6eecf58a4f5df6608087893f3847ba86ac22f26a77704de315"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-validation-read-failure.png",
+      "sha256": "24641ddcd9b1e24c10167a343e0062ca424773435725309bc3f900ede285d4e7"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-validation-read-failure.yml",
+      "sha256": "199dcae9db06abafa6785dffa2310af0da2804c3aadc1fba26e42ef23eb24717"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-validation-recovered.png",
+      "sha256": "36d5c6d44438cda9f08b106cf350d7a15e52ede77b7e516e4f97b4fc4daab6cd"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-validation-recovered.yml",
+      "sha256": "0d653a0e5a1f79a17b6eb06ee5e4f35cef63080fa2bc10333c1fe9679acaa1f0"
+    },
+    {
+      "path": "okto_labs_pulse_community\\src\\okto_pulse\\community\\frontend_dist\\pulse-frontend-contract.json",
+      "sha256": "fa9716ba02a6b6288c8ac737d877a92876d190bb5e2028cf5a559af1bbf98294"
+    }
+  ],
+  "next_action": "U4: qualify paired wheels/frontend in new isolated home, run new complete mock initiative UI/MCP through Done and KG canonical, then reconcile UV01-UV24.",
+  "community_product_commit": "1c18806d"
+}

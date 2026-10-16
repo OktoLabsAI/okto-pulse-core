@@ -7,6 +7,7 @@ import base64
 import json
 import shutil
 import threading
+import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
@@ -22,6 +23,7 @@ from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
     RebuildAuditArtifactStoreResolver,
     RebuildAuditKey,
+    RebuildAuditObservationBudget,
 )
 from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
 
@@ -130,6 +132,21 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
                 if self._matches(prefix, key):
                     rows.append(copy.deepcopy(payload))
             return rows
+
+    def observe_health_json(self, prefix: RebuildAuditKey, *, budget: RebuildAuditObservationBudget):
+        deadline = time.monotonic() + budget.timeout_seconds
+        rows, consumed = [], 0
+        with self._lock:
+            for index, (raw_key, payload) in enumerate(self._records.items()):
+                if index >= budget.max_entries or time.monotonic() >= deadline:
+                    raise ValueError("observation_budget_exceeded")
+                key = RebuildAuditKey(namespace=raw_key[0], board_id=raw_key[1], kg_generation_id=raw_key[2], artifact_id=raw_key[3])
+                if self._matches(prefix, key):
+                    consumed += len(json.dumps(payload).encode("utf-8"))
+                    if len(rows) >= budget.max_records or consumed > budget.max_bytes:
+                        raise ValueError("observation_budget_exceeded")
+                    rows.append(copy.deepcopy(payload))
+        return rows
 
     def list_json_bounded(
         self,

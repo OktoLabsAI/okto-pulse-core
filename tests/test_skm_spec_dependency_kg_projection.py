@@ -185,7 +185,7 @@ def _commit_worker_result(
         "spec",
         result.spec_lineage_parent_intent,
         frozenset(result.relational_projection_candidate_ids),
-        result.relational_projection_active_set_intent,
+        result.relational_projection_active_set_intents,
     )
 
 
@@ -210,10 +210,12 @@ def test_worker_projects_distinct_operational_precedence_relation() -> None:
     assert precedence[0].from_candidate_id == (f"kgref:Entity:spec:{PREREQUISITE_ID}")
     assert precedence[0].to_candidate_id == "spec_aaaaaaaa_entity"
     assert precedence[0].rule_id.startswith("precedes/spec_dependency/")
-    assert relationship_endpoint_pairs("precedes") == (("Entity", "Entity"),)
+    assert relationship_endpoint_pairs("precedes") == (
+        ("Entity", "Entity"), ("Entity", "Bug"), ("Bug", "Entity"), ("Bug", "Bug"),
+    )
     assert relationship_endpoint_pairs("depends_on") == (("Decision", "Decision"),)
 
-    intent = result.relational_projection_active_set_intent
+    intent = result.relational_projection_active_set_intents[0]
     assert intent is not None
     assert intent.owner_type == "spec"
     assert intent.owner_id == DEPENDENT_ID
@@ -277,6 +279,25 @@ def test_dependent_projection_never_overwrites_canonical_prerequisite_root() -> 
     assert not any(
         node.source_artifact_ref == f"spec:{PREREQUISITE_ID}" for node in result.nodes
     )
+
+
+def test_scenario_replacement_and_dependency_active_set_coexist(monkeypatch):
+    store = InMemoryGraphStore()
+    store.create_node(BOARD_ID, "Entity", "prerequisite", {"source_artifact_ref": f"spec:{PREREQUISITE_ID}"})
+    source = _spec(dependencies=[{"dependency_id": DEPENDENCY_ID,
+        "dependent_spec_id": DEPENDENT_ID, "prerequisite_spec_id": PREREQUISITE_ID}])
+    source.update(acceptance_criteria=[{"id": "ac_one", "text": "Accepted"}],
+        test_scenarios=[{"id": "ts_one", "title": "Scenario", "linked_criteria": ["ac_one"]}])
+    worker = DeterministicWorker()
+    result = worker.process_spec(source)
+    assert [item.namespace for item in result.relational_projection_active_set_intents] == ["dependencies", "scenario_criteria"]
+    _commit_worker_result(monkeypatch, store, result, artifact_id=DEPENDENT_ID, session_id="both-created")
+    assert sum(edge["_type"] == "tests" for edge in store._board_edges(BOARD_ID)) == 1
+    assert sum(edge["_type"] == "precedes" for edge in store._board_edges(BOARD_ID)) == 1
+    source["test_scenarios"][0]["linked_criteria"] = []
+    _commit_worker_result(monkeypatch, store, worker.process_spec(source), artifact_id=DEPENDENT_ID, session_id="scenario-removed")
+    assert not any(edge["_type"] == "tests" for edge in store._board_edges(BOARD_ID))
+    assert sum(edge["_type"] == "precedes" for edge in store._board_edges(BOARD_ID)) == 1
 
 
 def test_active_set_removes_tombstoned_edge_and_compensates_exactly() -> None:
@@ -351,7 +372,7 @@ def test_active_set_removes_tombstoned_edge_and_compensates_exactly() -> None:
 
 def test_empty_authoritative_set_emits_cleanup_intent() -> None:
     result = DeterministicWorker().process_spec(_spec(dependencies=[]))
-    intent = result.relational_projection_active_set_intent
+    intent = result.relational_projection_active_set_intents[0]
     assert intent is not None
     assert intent.active_edges == ()
     assert not [edge for edge in result.edges if edge.edge_type == "precedes"]
@@ -905,8 +926,8 @@ def test_dependency_endpoint_rejects_spec_child_reference(
     )
     edge = next(item for item in result.edges if item.edge_type == "precedes")
     edge.from_candidate_id = f"kgref:Entity:spec:{PREREQUISITE_ID}:child"
-    intent_edge = result.relational_projection_active_set_intent.active_edges[0]
-    result.relational_projection_active_set_intent = SimpleNamespace(
+    intent_edge = result.relational_projection_active_set_intents[0].active_edges[0]
+    result.relational_projection_active_set_intents = (SimpleNamespace(
         owner_type="spec",
         owner_id=DEPENDENT_ID,
         namespace="dependencies",
@@ -920,7 +941,7 @@ def test_dependency_endpoint_rejects_spec_child_reference(
                 rule_id=intent_edge.rule_id,
             ),
         ),
-    )
+    ),)
 
     with pytest.raises(primitives.KGPrimitiveError) as caught:
         _commit_worker_result(

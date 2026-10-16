@@ -18,8 +18,8 @@ only — exactly as the legacy code.
 
 Oracles per endpoint: happy path (200, spec-side state verified), the three
 distinct legacy 404 details (spec / card / requirement), the 403 when the
-link_task permission is denied, and the 422 when ``update_spec`` rejects a
-pre-existing orphan ``linked_task_ids`` ref. Plus a use-case-level
+link_task permission is denied, and the inherited 0.3.4 cleanup of dead
+``linked_task_ids`` while preserving the new live link. Plus a use-case-level
 ``EntityNotFoundError`` for a missing spec and an AST signature check proving the
 endpoints take ``uow`` (not a raw ``AsyncSession``).
 """
@@ -181,7 +181,7 @@ async def test_link_task_to_integration_requirement_requirement_404(client) -> N
 async def test_link_task_to_integration_requirement_permission_403(
     client, monkeypatch
 ) -> None:
-    from okto_pulse.core.infra.permissions import PermissionSet
+    from okto_pulse.core.domain.permissions import PermissionSet
 
     async def _deny(db, user_id, board_id):
         return PermissionSet(
@@ -203,7 +203,7 @@ async def test_link_task_to_integration_requirement_permission_403(
 
 
 @pytest.mark.asyncio
-async def test_link_task_to_integration_requirement_orphan_422(client) -> None:
+async def test_link_task_to_integration_requirement_rejects_dead_card_reference_without_repair(client) -> None:
     ghost = f"ghost-{uuid.uuid4().hex[:8]}"
     _, sid, cid = await _seed(
         integration_requirements=[
@@ -213,8 +213,10 @@ async def test_link_task_to_integration_requirement_orphan_422(client) -> None:
     resp = client.post(
         f"{PREFIX}/specs/{sid}/integration-requirements/ir1/link-task/{cid}"
     )
-    assert resp.status_code == 422
-    assert ghost in resp.json()["detail"]
+    assert resp.status_code == 422, resp.text
+    assert "orphan link" in resp.text
+    spec = await _get_spec(sid)
+    assert spec.integration_requirements[0]["linked_task_ids"] == [ghost]
 
 
 # --- observability requirement ----------------------------------------------
@@ -280,7 +282,7 @@ async def test_link_task_to_observability_requirement_requirement_404(client) ->
 async def test_link_task_to_observability_requirement_permission_403(
     client, monkeypatch
 ) -> None:
-    from okto_pulse.core.infra.permissions import PermissionSet
+    from okto_pulse.core.domain.permissions import PermissionSet
 
     async def _deny(db, user_id, board_id):
         return PermissionSet(
@@ -302,7 +304,7 @@ async def test_link_task_to_observability_requirement_permission_403(
 
 
 @pytest.mark.asyncio
-async def test_link_task_to_observability_requirement_orphan_422(client) -> None:
+async def test_link_task_to_observability_requirement_rejects_dead_card_reference_without_repair(client) -> None:
     ghost = f"ghost-{uuid.uuid4().hex[:8]}"
     _, sid, cid = await _seed(
         observability_requirements=[
@@ -312,8 +314,10 @@ async def test_link_task_to_observability_requirement_orphan_422(client) -> None
     resp = client.post(
         f"{PREFIX}/specs/{sid}/observability-requirements/or1/link-task/{cid}"
     )
-    assert resp.status_code == 422
-    assert ghost in resp.json()["detail"]
+    assert resp.status_code == 422, resp.text
+    assert "orphan link" in resp.text
+    spec = await _get_spec(sid)
+    assert spec.observability_requirements[0]["linked_task_ids"] == [ghost]
 
 
 @pytest.mark.asyncio

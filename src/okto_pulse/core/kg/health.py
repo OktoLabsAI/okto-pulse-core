@@ -297,8 +297,8 @@ def check_global(board_id: str) -> LayerHealth:
     # Spec 849d6292 (FR8/AC8): surface the digested-type count (aligned to
     # VECTOR_INDEX_TYPES via DIGESTED_NODE_TYPES) and the missing-embedding skip
     # count (or_a921cc64) so operators see WHY a node is not globally
-    # searchable. A skip is legacy data without an embedding — a backfill, NOT
-    # a rebuild — so the diagnostic must never recommend a rebuild for it.
+    # searchable. Missing embeddings are an observed availability gap; this
+    # diagnostic does not prescribe data conversion or a maintenance operation.
     skipped = get_missing_embedding_skipped_count(board_id=board_id)
     counts = {
         "digests": digests,
@@ -307,7 +307,7 @@ def check_global(board_id: str) -> LayerHealth:
     }
     skip_note = (
         f"; {skipped} eligible node(s) skipped for missing embedding "
-        f"(legacy data — backfill embeddings, NOT a rebuild)"
+        f"(embedding unavailable; excluded from global discovery)"
         if skipped else ""
     )
     if digests == 0:

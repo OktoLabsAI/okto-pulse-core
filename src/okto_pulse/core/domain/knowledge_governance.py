@@ -226,7 +226,7 @@ class KnowledgeGovernanceMetadataV1:
 
 @dataclass(frozen=True, slots=True)
 class KnowledgeGovernanceProjection:
-    """Read projection for both governed and historical Knowledge records."""
+    """Read projection for current Knowledge records with optional metadata."""
 
     metadata_status: str
     missing_fields: tuple[str, ...]
@@ -273,7 +273,7 @@ def parse_knowledge_governance_metadata(
 ) -> KnowledgeGovernanceMetadataV1 | None:
     """Validate and normalize an optional write envelope.
 
-    ``None`` represents omitted/legacy metadata and is intentionally accepted.
+    ``None`` represents omitted metadata and is intentionally accepted.
     Any non-null envelope is validated in full and raises one deterministic,
     aggregate error before a caller performs persistence or propagation.
     """
@@ -454,23 +454,14 @@ def normalize_knowledge_governance_metadata(
 def project_knowledge_governance(
     raw: object | None,
 ) -> KnowledgeGovernanceProjection:
-    """Project a row without mutating or backfilling historical metadata."""
-
+    """Project optional native metadata; refuse invalid supplied evidence."""
     if raw is None:
         return KnowledgeGovernanceProjection(
-            metadata_status="legacy_incomplete",
+            metadata_status="omitted",
             missing_fields=(_ROOT_PATH,),
             metadata=None,
         )
-    try:
-        parsed = parse_knowledge_governance_metadata(raw)
-    except KnowledgeGovernanceInvalidMetadata as exc:
-        paths = tuple(sorted({issue.path for issue in exc.issues})) or (_ROOT_PATH,)
-        return KnowledgeGovernanceProjection(
-            metadata_status="legacy_incomplete",
-            missing_fields=paths,
-            metadata=raw,
-        )
+    parsed = parse_knowledge_governance_metadata(raw)
     assert parsed is not None
     return KnowledgeGovernanceProjection(
         metadata_status="complete",

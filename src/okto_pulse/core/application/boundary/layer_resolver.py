@@ -47,7 +47,6 @@ _EXACT_FILE_LAYERS: tuple[tuple[str, str], ...] = (
     ("okto_pulse/core/infra/permissions.py", DOMAIN),
     ("okto_pulse/core/infra/relational_lifecycle_decomposition.py", APPLICATION),
     ("okto_pulse/core/infra/schema_lifecycle.py", PORTS),
-    ("okto_pulse/core/infra/startup_schema_sweep.py", APPLICATION),
     ("okto_pulse/core/infra/storage.py", PORTS),
     ("okto_pulse/core/runtime_context.py", COMPOSITION),
     ("okto_pulse/core/runtime_registry.py", COMPOSITION),

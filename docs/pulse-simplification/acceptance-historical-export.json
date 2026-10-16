@@ -1,0 +1,560 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE F7/T45 legacy history and ordinary import",
+  "criteria": {
+    "BASE:T45": {
+      "status": "verified",
+      "covered": "The byte-verified installed v0.3.4 pair exports an actual Sprint from the frozen disposable predecessor database with Q&A, evaluations and history. Current passive Markdown/HTML readers preserve that evidence without rewriting the JSON or SQL. Sprint is absent from the live ORM, permission registry and export enum; removed REST exports return 404 before materialization. Ordinary preset import rejects retired Sprint subtrees or flat paths before staging any item, including dry-run. Existing retirement migration/rollback handles installation data separately; no new operational Sprint import path is introduced."
+    }
+  },
+  "final_distinct_cases": 32,
+  "provenance": {
+    "file": "provenance-historical-export-fix1.json",
+    "sha256": "13d34c7e2a4679c15ac54714788e7f275aae88e15ed3a02a540a5cfc1be0aeaa",
+    "identity": {
+      "checked_at": "2026-09-30T23:46:41.704574+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 859,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "a626d4f490c604047c914daca58cbfb5f29d5068",
+          "dirty": true,
+          "dirty_entry_count": 2,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-historical-export-fix1\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "9827b5e139423641c1f759dffecdfa229af83d0e3e10b56110e73f228839f41d",
+            "size": 3792812
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 922,
+          "byte_identical": true,
+          "aggregate_sha256": "09e4686999607d34f6206b42e38590c27f5ec97d19abec09edf726ba95dfa429",
+          "chain_hashes": {
+            "source": "09e4686999607d34f6206b42e38590c27f5ec97d19abec09edf726ba95dfa429",
+            "wheel": "09e4686999607d34f6206b42e38590c27f5ec97d19abec09edf726ba95dfa429",
+            "site_packages": "09e4686999607d34f6206b42e38590c27f5ec97d19abec09edf726ba95dfa429"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 373,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "fb0f32b5ebcec2db5ad29dbccd91d0e358a1b318",
+          "dirty": true,
+          "dirty_entry_count": 2,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-historical-export-fix1\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "155b42c37fceb167c7b24006b17feba0afb24860739300c7959880289f9ea19b",
+            "size": 4535060
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 458,
+          "byte_identical": true,
+          "aggregate_sha256": "1a43c2361a5b389df2c90a4b3d46fae4fabde49eaaa4007b552b2602de632b61",
+          "chain_hashes": {
+            "source": "1a43c2361a5b389df2c90a4b3d46fae4fabde49eaaa4007b552b2602de632b61",
+            "wheel": "1a43c2361a5b389df2c90a4b3d46fae4fabde49eaaa4007b552b2602de632b61",
+            "site_packages": "1a43c2361a5b389df2c90a4b3d46fae4fabde49eaaa4007b552b2602de632b61"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "captured_predecessor_export": {
+    "file": "learning-reconciliation-historical-export1-community-tmp\\test_predecessor_export_retain0\\predecessor-export.json",
+    "sha256": "a250d52a39de4e06b998914c7f0d92b96acfde9f343b6fff1bee65622498d588",
+    "provenance": {
+      "core": {
+        "commit": "207072509a282e8adec1481d05aee2d54c382bde",
+        "wheel_sha256": "0e88432f27a721c254046342e7d44db228828347e433acf41c2ae2fb428b56d9",
+        "python_files": 769,
+        "payload_files": 834
+      },
+      "community": {
+        "commit": "b6dda64f512920fa4aaaf9d50c331b1796b87e27",
+        "wheel_sha256": "6925e90a36054ae954d516f3fc4f5ed1513812bfdb915d145eb9a9bd5afa1d27",
+        "python_files": 311,
+        "payload_files": 395
+      }
+    },
+    "bundle": {
+      "contract_version": "entity-export-bundle/v1",
+      "subject": {
+        "board_id": "board-a",
+        "entity_type": "sprint",
+        "entity_id": "sprint-a",
+        "title": "Original Sprint a",
+        "status": "closed",
+        "captured_at": "2026-09-30T23:40:52.632786+00:00",
+        "version": 1
+      },
+      "history_scope": "complete",
+      "sections": [
+        {
+          "section_key": "base",
+          "schema_version": "entity-export-base/v1",
+          "payload": {
+            "record": {
+              "id": "sprint-a",
+              "spec_id": "spec-a",
+              "board_id": "board-a",
+              "title": "Original Sprint a",
+              "description": null,
+              "spec_version": 1,
+              "status": "closed",
+              "lane_type": "normal",
+              "origin_sprint_id": null,
+              "origin_bug_id": null,
+              "start_date": null,
+              "end_date": null,
+              "objective": null,
+              "expected_outcome": null,
+              "test_scenario_ids": {
+                "state": "separated",
+                "section_key": "test_scenarios"
+              },
+              "business_rule_ids": {
+                "state": "separated",
+                "section_key": "business_rules"
+              },
+              "evaluations": {
+                "state": "separated",
+                "section_key": "evaluations"
+              },
+              "skip_test_coverage": false,
+              "skip_rules_coverage": false,
+              "skip_qualitative_validation": false,
+              "validation_threshold": null,
+              "require_task_validation": null,
+              "validation_min_confidence": 90,
+              "validation_min_completeness": null,
+              "validation_max_drift": null,
+              "version": 1,
+              "labels": null,
+              "archived": false,
+              "pre_archive_status": null,
+              "cancellation_reason": null,
+              "cancelled_at": null,
+              "cancelled_by": null,
+              "created_by": "owner",
+              "created_at": "2026-09-21T11:38:51+00:00",
+              "updated_at": "2026-09-30T23:40:52+00:00"
+            }
+          },
+          "digest": "cce542fff5f3099156ffbc544e8de986612214ed8dc5d85fdea8b61be12dbb5e"
+        },
+        {
+          "section_key": "qa",
+          "schema_version": "entity-export-section/v1",
+          "payload": {
+            "embedded": {},
+            "records": {
+              "sprint_qa_items": [
+                {
+                  "question": "BASELINE-QUESTION",
+                  "answer": "BASELINE-ANSWER"
+                }
+              ]
+            }
+          },
+          "digest": "2f60f45f16c7ba8327cf16ca4c24c7d076cfbe6c1253ca24a5f00ac47e54989f"
+        },
+        {
+          "section_key": "evaluations",
+          "schema_version": "entity-export-section/v1",
+          "payload": {
+            "embedded": {
+              "evaluations": [
+                {
+                  "id": "export-evaluation",
+                  "overall_justification": "BASELINE-EVIDENCE-PRESERVED"
+                }
+              ]
+            },
+            "records": {}
+          },
+          "digest": "e149195c816c70e5191fc305052b0bcd04985a976ccfc2a7086dd99227c932db"
+        },
+        {
+          "section_key": "history",
+          "schema_version": "entity-export-section/v1",
+          "payload": {
+            "embedded": {},
+            "records": {
+              "sprint_history": [
+                {
+                  "id": "export-history",
+                  "sprint_id": "sprint-a",
+                  "action": "updated",
+                  "actor_type": "user",
+                  "actor_id": "owner",
+                  "actor_name": "Owner",
+                  "changes": [
+                    {
+                      "field": "title",
+                      "new": "After",
+                      "old": "Before"
+                    }
+                  ],
+                  "summary": "BASELINE-HISTORY",
+                  "version": null,
+                  "created_at": "2026-09-30T23:40:52+00:00"
+                }
+              ]
+            }
+          },
+          "digest": "b7090ff775931ad2454d863abe299f5f9991abcc97276e5d1c4923e7797fc2f0"
+        }
+      ],
+      "manifest": {
+        "contract_version": "entity-export-manifest/v1",
+        "source_complete": true,
+        "complete_for_actor": true,
+        "entries": [
+          {
+            "section_key": "base",
+            "status": "included",
+            "complete_for_actor": true,
+            "source_complete": true,
+            "schema_version": "entity-export-base/v1",
+            "required_permission": "sprint.entity.read",
+            "total_count": 1,
+            "included_count": 1,
+            "pagination_complete": true
+          },
+          {
+            "section_key": "cards",
+            "status": "omitted",
+            "complete_for_actor": true,
+            "source_complete": true,
+            "reason_code": "not_requested",
+            "required_permission": "card.entity.read"
+          },
+          {
+            "section_key": "qa",
+            "status": "included",
+            "complete_for_actor": true,
+            "source_complete": true,
+            "schema_version": "entity-export-section/v1",
+            "required_permission": "sprint.qa.read",
+            "total_count": 1,
+            "included_count": 1,
+            "pagination_complete": true
+          },
+          {
+            "section_key": "evaluations",
+            "status": "included",
+            "complete_for_actor": true,
+            "source_complete": true,
+            "schema_version": "entity-export-section/v1",
+            "required_permission": "sprint.evaluations.read",
+            "total_count": 1,
+            "included_count": 1,
+            "pagination_complete": true
+          },
+          {
+            "section_key": "test_scenarios",
+            "status": "omitted",
+            "complete_for_actor": true,
+            "source_complete": true,
+            "reason_code": "not_requested",
+            "required_permission": "spec.tests.read"
+          },
+          {
+            "section_key": "business_rules",
+            "status": "omitted",
+            "complete_for_actor": true,
+            "source_complete": true,
+            "reason_code": "not_requested",
+            "required_permission": "spec.rules.read"
+          },
+          {
+            "section_key": "history",
+            "status": "included",
+            "complete_for_actor": true,
+            "source_complete": true,
+            "schema_version": "entity-export-section/v1",
+            "required_permission": "sprint.history_read",
+            "total_count": 1,
+            "included_count": 1,
+            "pagination_complete": true
+          },
+          {
+            "section_key": "policy_compliance",
+            "status": "omitted",
+            "complete_for_actor": true,
+            "source_complete": true,
+            "reason_code": "not_requested",
+            "required_permission": "guidelines.assessments.read"
+          },
+          {
+            "section_key": "policy_waivers",
+            "status": "omitted",
+            "complete_for_actor": true,
+            "source_complete": true,
+            "reason_code": "not_requested",
+            "required_permission": "guidelines.waiver.read"
+          },
+          {
+            "section_key": "resource_decisions",
+            "status": "omitted",
+            "complete_for_actor": true,
+            "source_complete": true,
+            "reason_code": "not_requested"
+          }
+        ]
+      },
+      "generated_at": "2026-09-30T23:40:52.632786+00:00",
+      "source_complete": true,
+      "complete_for_actor": true,
+      "overall_state": "complete",
+      "snapshot_fingerprint": "212296ce76568ee500dfc6d6625ecb84765eb6d3c16adbfacb244a42ee1f59bc",
+      "bundle_digest": "308064da69d314298b6ac0078651fcd48e16d277cf4e21d5fc5df7682471932d"
+    }
+  },
+  "runs": [
+    {
+      "file": "learning-reconciliation-historical-export1-community.xml",
+      "sha256": "c71aa270e3487f58a738118c7ef618e868f9558610bda96218471bf5c0647995",
+      "log_sha256": "79fc68513acb477925666e399de5da8da60c25490fb08999ca2ca5d00bf4ebf2",
+      "terminal_session": 24967,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "4",
+          "time": "43.035",
+          "timestamp": "2026-09-30T20:40:11.732571-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_predecessor_history_export::test_predecessor_export_retains_evidence_as_passive_history",
+        "tests.test_entity_exports::test_retired_sprint_export_is_not_materialized[preflight]",
+        "tests.test_entity_exports::test_retired_sprint_export_is_not_materialized[download]",
+        "tests.test_entity_exports::test_spec_and_card_exports_ignore_legacy_sprint_without_mutating_history"
+      ]
+    },
+    {
+      "file": "learning-reconciliation-historical-export-fix1-core.xml",
+      "sha256": "bcf62a1ecc7fbc55f3e62dec1ee33482eda179a76ef0e1c3951d9c0b06bd6701",
+      "log_sha256": "b6a76ab63f2d003361df4a6cda26d6e5067e378973ec09ade8d35d04aaf31d01",
+      "terminal_session": 8479,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "19",
+          "time": "10.339",
+          "timestamp": "2026-09-30T20:47:51.782687-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_import_export_api::test_guidelines_generic_export_delegates_to_lossless_v3",
+        "tests.test_import_export_api::test_guidelines_legacy_v1_import_is_context_only_and_dry_run",
+        "tests.test_import_export_api::test_guidelines_invalid_legacy_import_is_atomic_and_structured",
+        "tests.test_import_export_api::test_design_systems_roundtrip_single_and_bulk",
+        "tests.test_import_export_api::test_design_systems_import_dry_run_and_invalid_item",
+        "tests.test_import_export_api::test_presets_roundtrip_clean_tenant_and_duplicates",
+        "tests.test_import_export_api::test_presets_import_rejects_id_owned_by_another_catalog",
+        "tests.test_import_export_api::test_presets_import_dry_run_and_invalid_item",
+        "tests.test_import_export_api::test_legacy_sprint_grants_cannot_return_through_preset_import[flags0-False]",
+        "tests.test_import_export_api::test_legacy_sprint_grants_cannot_return_through_preset_import[flags0-True]",
+        "tests.test_import_export_api::test_legacy_sprint_grants_cannot_return_through_preset_import[flags1-False]",
+        "tests.test_import_export_api::test_legacy_sprint_grants_cannot_return_through_preset_import[flags1-True]",
+        "tests.test_import_export_api::test_legacy_sprint_grants_cannot_return_through_preset_import[flags2-False]",
+        "tests.test_import_export_api::test_legacy_sprint_grants_cannot_return_through_preset_import[flags2-True]",
+        "tests.test_import_export_api::test_legacy_sprint_grants_cannot_return_through_preset_import[flags3-False]",
+        "tests.test_import_export_api::test_legacy_sprint_grants_cannot_return_through_preset_import[flags3-True]",
+        "tests.test_import_export_api::test_board_config_global_writes_require_real_admin_principal",
+        "tests.test_import_export_api::test_board_config_roundtrip_versions_and_active",
+        "tests.test_import_export_api::test_board_config_import_dry_run_and_invalid_item"
+      ]
+    },
+    {
+      "file": "historical-export-fix1-frontend.xml",
+      "sha256": "c77718de1004bf03bd4f2e05af180f39152c51b116b1b3fa840c933a1e7dad99",
+      "log_sha256": "f82b0a48b031f433a2e6bfa3021bb6cab0f15fd134d2774ab3acca6de24bcd1c",
+      "terminal_session": 42436,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "src/components/permissions/PresetListModal.permissions.test.tsx",
+          "timestamp": "2026-09-30T23:47:53.228Z",
+          "hostname": "Alienware_m15",
+          "tests": "3",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.6399317"
+        },
+        {
+          "name": "src/components/shared/ImportExportButtons.test.tsx",
+          "timestamp": "2026-09-30T23:47:53.230Z",
+          "hostname": "Alienware_m15",
+          "tests": "5",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.1168311"
+        },
+        {
+          "name": "src/services/__tests__/api.permissionPresets.test.ts",
+          "timestamp": "2026-09-30T23:47:53.232Z",
+          "hostname": "Alienware_m15",
+          "tests": "1",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.0222355"
+        }
+      ],
+      "cases": [
+        "src/components/permissions/PresetListModal.permissions.test.tsx::PresetListModal ADMIN-CATALOG permissions > does not read the catalog without permission and keeps import/export independent",
+        "src/components/permissions/PresetListModal.permissions.test.tsx::PresetListModal ADMIN-CATALOG permissions > enables clone alone while create, edit, delete, import, and export stay denied",
+        "src/components/permissions/PresetListModal.permissions.test.tsx::PresetListModal ADMIN-CATALOG permissions > renders every policy summary chip with the shared dark-mode palette",
+        "src/components/shared/ImportExportButtons.test.tsx::ImportExportButtons > stops a rejected legacy preset preview without retry, replacement or success",
+        "src/components/shared/ImportExportButtons.test.tsx::ImportExportButtons > merges one or many selected envelopes into one bulk import",
+        "src/components/shared/ImportExportButtons.test.tsx::ImportExportButtons > requires confirmation before replacing a non-versioned same-id item",
+        "src/components/shared/ImportExportButtons.test.tsx::ImportExportButtons > does not replace when the user declines confirmation",
+        "src/components/shared/ImportExportButtons.test.tsx::ImportExportButtons > keeps import and export gates independent and never invokes a denied callback",
+        "src/services/__tests__/api.permissionPresets.test.ts::permission preset API lineage surface > uses the clone endpoint so the backend retains base_preset_id"
+      ]
+    }
+  ],
+  "retained_reproduction": {
+    "file": "learning-reconciliation-historical-export1-core.xml",
+    "sha256": "e847906dc7dca26cf4e71eaec559898b70ee0b0da43e78e8ee2a34b2ffab3bb1",
+    "log_sha256": "1c468c1f689242f20fcac4a01cf0d99b4f9b9ca539a4875e8d2628d409c3f14d",
+    "terminal_session": 52106,
+    "exit_code": 1,
+    "suites": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "1",
+        "skipped": "0",
+        "tests": "1",
+        "time": "7.796",
+        "timestamp": "2026-09-30T20:41:56.383167-03:00",
+        "hostname": "Alienware_m15"
+      }
+    ],
+    "cases": [
+      "tests.test_import_export_api::test_legacy_sprint_grants_cannot_return_through_preset_import[False]"
+    ]
+  },
+  "closure": {
+    "file": "learning-reconciliation-historical-export-fix1-closure.log",
+    "sha256": "98c78dda81bb2f2b4615ba2062c38c237c72433eb14578c0a770cf831d09f2a3",
+    "terminal_session": 17405,
+    "exit_code": 0,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": []
+  },
+  "limits": [
+    "The old export is produced by the real installed predecessor, not fabricated as a current bundle. Its content rows are deliberately seeded test evidence; no real user data is accessed.",
+    "The ordinary import fix follows F7 item 5. It rejects retired permission content instead of silently dropping it or inferring replacement permissions. Historical permission evaluation and migrated overrides are unchanged.",
+    "Community export qualification preceded the isolated Core import change; those renderer/export code paths did not change. Full import API suite ran after rebuilding/installing and proving the final pair.",
+    "Frontend tests use Vitest/jsdom and a rejected callback. No browser/backend E2E claimed; product SPA unchanged, so no SPA rebuild.",
+    "No new public historical entity or upload/import authority was added. Historical documents are read passively; live installation conversion remains the governed retirement migration already qualified by T26/T29/T30."
+  ]
+}

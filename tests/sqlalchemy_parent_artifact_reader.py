@@ -2,7 +2,7 @@
 
 from sqlalchemy import select
 
-from sqlalchemy_test_models import Card, Spec, Sprint
+from sqlalchemy_test_models import Card, Spec
 from okto_pulse.core.ports.parent_artifact import ParentArtifactRecord
 
 
@@ -16,8 +16,10 @@ class TestSqlAlchemyParentArtifactReader:
         artifact_type: str,
         ids: frozenset[str],
     ) -> tuple[ParentArtifactRecord, ...]:
-        models = {"spec": Spec, "sprint": Sprint, "card": Card}
-        model = models[artifact_type]
+        models = {"spec": Spec, "card": Card}
+        model = models.get(artifact_type)
+        if model is None:
+            raise ValueError(f"unsupported_parent_artifact_type:{artifact_type}")
         result = await context.execute(
             select(model.id, model.title, model.status).where(model.id.in_(ids))
         )

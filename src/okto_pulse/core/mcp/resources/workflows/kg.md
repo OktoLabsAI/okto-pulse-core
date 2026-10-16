@@ -27,18 +27,9 @@ For adopted semantic guidelines, assessment receipts, governed exceptions,
 projection identity and rebuild behavior, read the single canonical
 protocol at `okto-pulse://reference/policy-compliance`.
 
-When KG Health reports `digest_vs_board_layer_mismatch` after all operational
-queues are idle, inspect the rows with
-`okto_pulse_kg_digest_layer_mismatch_list`. An authorized KG administrator may
-then call `okto_pulse_kg_digest_layer_reconcile` with a bounded audit reason and
-wait for the outbox to return to idle before verifying the mismatch list again.
-This is a parity sync, not a rebuild. The worker keyset-inventories authoritative
-publishable board sources with physical duplicate detection, guards stale prune
-against derived clustering relationships, repairs identities and Board links,
-and backfills missing identities. It revalidates the source inventory before a
-board-isolated ACK and requires a post-flush fresh-handle proof of one stable
-digest, the correct Board edge, and exactly one total inbound Board edge per
-source.
+KG Health aggregates publication-layer mismatch signals. Automatic internal
+workers reconcile projection debt; no public manual repair command is available.
+Substantive decisions and their applicable gates remain unchanged.
 
 ## Consolidation Primitives (7 tools)
 
@@ -78,54 +69,20 @@ source.
 `candidate_id` is session-local: calling `get_similar_nodes` before
 `add_node_candidate` deterministically returns `candidate_not_found`.
 
-## Global Discovery recovery (component-scoped)
+## Global Discovery availability
 
-Never infer the remedy from generic `overall_state=recovery_needed`. If
-`graph_state` is healthy while `discovery_state=recovery_needed` and
-`discovery_recovery_required=true`, use only
-`okto_pulse_kg_global_discovery_recovery_preflight` →
-`okto_pulse_kg_global_discovery_recovery_confirm` →
-`okto_pulse_kg_global_discovery_recovery_run`. Board rebuild preflight refuses
-this discovery-only case. The global preflight requires all board graphs to be
-healthy; healthy/quarantined discovery is not admitted.
+Health identifies the affected component and its concrete reason. A healthy
+Board graph does not imply that Global Discovery is available. When discovery
+is unavailable, affected operations fail closed; health does not authorize
+repair or expose a recovery executor. Board knowledge and semantic consolidation
+retain their own integrity checks and authorization.
 
-`run` persists integrity-bound worker inputs, creates the durable control row,
-dispatches owned background work, and returns `accepted` without waiting for
-the native candidate/cutover. Poll
-`okto_pulse_kg_global_discovery_recovery_status` for authoritative progress and
-the terminal outcome. Retrying the exact confirmation/run binding returns the
-existing run; do not issue a new recovery while the existing run is `pending`
-or `running`.
+### Delivery availability
 
-### Terminal Global Discovery outbox recovery
-
-Use the global-outbox dead-letter family only after the delivery root cause is
-fixed; it is distinct from the board consolidation DLQ family:
-
-1. Page `okto_pulse_kg_global_outbox_dead_letter_list` with `limit<=100` and
-   retain the returned immutable IDs. With `classification`, an empty page may
-   still carry `next_cursor`; follow it until null.
-2. For legacy rows, call `okto_pulse_kg_global_outbox_dead_letter_reprocess`
-   with 1-100 explicit, unique IDs and an audit reason.
-   Never interpret an empty selection as all. Governed
-   `gd_parity:...:attempt:n` rows are immutable
-   delivery history: do not rearm them. `kg.tick.daily` starts the automatic
-   recovery chain; each `kg.tick.delivery_redrive` event runs one globally
-   bounded page, serves one oldest due item per board before repeating a board,
-   and advances the persisted round-robin checkpoint in the same transaction
-   as fresh `attempt:n+1` rows. Due backlog schedules the next bounded event in
-   that transaction. A governed or mixed manual selection fails closed with
-   `governed_delivery_attempt_tick_owned`.
-   The orphan watchdog is independently board-bounded and resumes from a
-   persisted rotating cursor, so an active prefix cannot starve a later
-   missing, malformed, terminal, or already-processed attempt.
-3. Call `okto_pulse_kg_global_outbox_dead_letter_verify` with those exact IDs.
-   Treat `still_dead_lettered`, dangling/cyclic lineage reason codes, or a busy
-   response as unresolved; queued/applied are idempotent replay outcomes.
-
-Each operation owns a dedicated relational transaction. Selection validation
-and guarded requeue are atomic; `process_now=true` wakes the outbox worker only
-after commit.
+Health reports terminal delivery failures separately from active queue depth and
+cognitive work. These signals remain visible and do not grant a maintenance
+command or a waiver of product gates. Automatic delivery processing retains its
+own retry limits and integrity checks.
 
 ## Durable stale-canonical catch-up
 
@@ -160,11 +117,11 @@ follow the caller-owned commit boundary.
 > Before running ANY mandatory KG query set below — and in particular the Stage 1 ideation triad — call `okto_pulse_kg_health(board_id)` **first** and read its `graph_state` field. The graph is **degraded** when `graph_state` is one of exactly `recovery_needed` or `quarantined` (these two values are the `_RISK_STATE_HARD_REJECT` predicate; no other `graph_state` value is a degraded trigger). When the graph is degraded, follow these steps in order:
 >
 > 1. **Call `okto_pulse_kg_health(board_id)` first** and read `graph_state`.
-> 2. **Branch on the degraded `graph_state`** (`recovery_needed` or `quarantined`): the mandatory KG queries are EXPECTED to be unavailable. `okto_pulse_kg_get_learning_from_bugs` in particular returns a structured `graph_unavailable` whose message carries the hint `Use the explicit KG Health recovery flow`; on a degraded board this `graph_unavailable` is the EXPECTED signal — do not retry it in a loop.
+> 2. **Branch on the degraded `graph_state`** (`recovery_needed` or `quarantined`): the mandatory KG queries are EXPECTED to be unavailable. `okto_pulse_kg_get_learning_from_bugs` in particular returns a structured `graph_unavailable` with the affected component and reason; on a degraded board this `graph_unavailable` is the EXPECTED signal — do not retry it in a loop.
 > 3. **Record the degraded `graph_state` in the ideation** — a one-line note such as `KG degraded: graph_state=<recovery_needed|quarantined>; Stage 1 triad skipped under the Degraded-KG Fallback Rule.`
 > 4. **Proceed past `okto_pulse_evaluate_ideation` with a warning** — do not block on the unavailable triad. Skipping the Stage 1 triad on a degraded graph is expected-and-logged and is **not a protocol violation**.
 >
-> This rule keys ONLY on the existing `graph_state` field and the existing structured `graph_unavailable`. Recovering a degraded graph is the separate KG Health recovery flow (an operator-driven path, out of scope for this rule), and this rule does **not** define any new error code or response envelope for the degraded case. When `graph_state` is not one of the two degraded values, run the mandatory query sets normally.
+> This rule keys ONLY on the existing `graph_state` field and the existing structured `graph_unavailable`. There is no public recovery executor; consult `okto-pulse://reference/kg-health` for the recovery boundary. Health grants no maintenance command or gate waiver, and this rule does **not** define any new error code or response envelope for the degraded case. When `graph_state` is not one of the two degraded values, run the mandatory query sets normally.
 
 **Stage 1 — Ideation (before moving to `evaluating` and before answering any Q&A)**
 
@@ -224,7 +181,11 @@ the mandatory sweep happens before the spec leaves `draft`.
 | `okto_pulse_kg_query_natural` | Natural language search via embedding + HNSW |
 | `okto_pulse_kg_schema_info` | Schema introspection: node types, rel types, vector indexes |
 
-**Safety rails:** Timeout: 5s default, 30s max. Max rows: 50 by default and 1000 hard cap. Rate limit: **30 queries/min per agent**. Cypher injection: blacklist keywords rejected.
+**Safety rails:** query limits and read-only syntax are defined in
+`okto-pulse://reference/tool-docs/kg` and the live query contract returned by
+`okto_pulse_kg_schema_info`. Calls may narrow the Board timeout, not raise it.
+Only the authorized human can change Board policy; a resource-limit refusal
+requires a smaller query, not an unchanged retry.
 
 **Layer contract:** Graph nodes expose `graph_layer` (`canonical` or `working`). `kg_layer_counts` is a health payload aggregate, not a node property. `okto_pulse_kg_query_cypher` enforces canonical-only visibility by default and should be called with `include_working=true` for working graph checks, rebuild validation, or E2E ingestion tests.
 
@@ -248,7 +209,6 @@ Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment t
 | Trigger | Pattern |
 |---|---|
 | Spec reaches `done` | Begin canonical consolidation on the spec. The **cognitive** candidates you may create are `Decision`, `Assumption`, `Alternative`. `Criterion` (from acceptance criteria) and `Constraint` (from technical requirements / business rules) are **deterministic-only**: the deterministic worker materializes them — reference the existing deterministic nodes, never create `Criterion`/`Constraint` on the cognitive path. `approved` and `validated` remain working/diagnostic only. |
-| Sprint closes (moves to `closed`) | Consolidate retrospective Learnings + Bugs + Learning→validates→Bug edges |
 | Q&A on an ideation/refinement/spec gets an answer that contains a decision | Carry decision into next formalized spec first, then consolidate from that spec-side formalization |
 | Bug card moves to `done` with root cause + fix narrative | Consolidate a Learning node that validates the Bug node |
 | Complete SDLC/E2E flow about to be reported as finished | Create a final report consolidation session |
@@ -342,11 +302,11 @@ Cognitive artifacts (`Learning` / `Alternative` / `Assumption`) prove connectivi
 
 ### KG Health
 
-`okto_pulse_kg_health(board_id)` — returns a JSON health snapshot. It carries the KG-01 contract fields (`board_id`, `graph_state`, `discovery_state`, `overall_state`, `metric_status`, `correlation_id`, `checked_at`, …) alongside the legacy aggregation fields (`queue_depth`, `oldest_pending_age_s`, `dead_letter_count`, `total_nodes`, `default_score_ratio`, `avg_relevance`, `schema_version`, `contradict_warn_count`), the daily-tick fields `last_decay_tick_at` / `nodes_recomputed_in_last_tick`, `decay_scheduler_diagnostics`, and `storage_footprint_proxy`.
+`okto_pulse_kg_health(board_id)` — returns a JSON health snapshot. It carries the KG-01 contract fields (`board_id`, `graph_state`, `discovery_state`, `overall_state`, `metric_status`, `correlation_id`, `checked_at`, …) alongside the aggregation fields (`queue_depth`, `oldest_pending_age_s`, `dead_letter_count`, `total_nodes`, `default_score_ratio`, `avg_relevance`, `contradict_warn_count`), the daily-tick fields `last_decay_tick_at` / `nodes_recomputed_in_last_tick`, `decay_scheduler_diagnostics`, and `storage_footprint_proxy`.
 
 **When to consult:** before long consolidation cycles, after flagging contradictions, when debugging stale ranking (`default_score_ratio > 0.7`).
 
-**Storage:** each board's KG persists through the runtime graph-store adapter. The core contract reports `graph_state` for the canonical/working graph and `discovery_state` for the discovery/embedding index without naming a concrete storage engine or filesystem layout. Never delete the graph store; schema migrations self-heal on the hot path. A degraded `graph_state` / `discovery_state` points at the matching operational store owned by the active runtime adapter.
+**Storage:** each board's KG persists through the runtime graph-store adapter. The core contract reports `graph_state` for the canonical/working graph and `discovery_state` for the discovery/embedding index without naming a concrete storage engine or filesystem layout. Incompatible stores are refused without migration, conversion or automatic deletion; v0.4.0 requires a fresh compatible installation. A degraded `graph_state` / `discovery_state` points at the matching operational store owned by the active runtime adapter.
 
 ### Operational Signals — Separate Domains + Drill-Down (spec 007d1308)
 
@@ -357,10 +317,10 @@ KG Health surfaces three **distinct** operational signals — never merged into 
 | Signal (`health_issues[].code`) | Domain | Drill-down tool |
 |---|---|---|
 | `cognitive_consolidation_pending` | Cognitive items awaiting agent action (pending/in_progress/failed) | `okto_pulse_kg_list_cognitive_pending_items` |
-| `dead_letter_backlog` | Consolidation rows that exhausted retries | `okto_pulse_kg_dead_letter_list` → `okto_pulse_kg_dead_letter_reprocess` after fixing the root cause |
-| `canonical_debt_open` | Artifacts still outside canonical consolidation | `okto_pulse_kg_canonical_debt_list` |
+| `dead_letter_backlog` | Consolidation rows that exhausted retries | Health reports the affected component; unavailable delivery remains a technical limitation. |
+| `canonical_debt_open` | Artifacts still outside canonical consolidation | `okto_pulse_kg_health` |
 
-Each tool lists ONLY its own domain — do NOT infer one signal's backlog from another's counters, and do not reprocess the wrong queue. `okto_pulse_kg_dead_letter_list` exposes both `rows`/`id` (legacy) and the additive `items`/`dead_letter_id` + `last_error`/`error_text` (full `errors[]` history preserved). The three listings emit the bounded `kg_operational_inspection_list_total` counter (labels: `signal`=`cognitive_pending`/`dead_letter`/`canonical_debt`, `surface`, `outcome`) so the **absence** of operational drill-down is itself diagnosable.
+The signals have separate counters. Do not infer cognitive readiness from active queue depth or treat a technical failure as completed work.
 
 ### Consolidation Hygiene Checklist
 

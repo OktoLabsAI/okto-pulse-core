@@ -1,0 +1,143 @@
+{
+  "scope": "F6 authorized transactional creation of a semantic Learning capture from authenticated scenario evidence",
+  "suites": {
+    "learning-capture-writer-core": {
+      "tests": 89,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-capture-writer-community": {
+      "tests": 89,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-capture-writer-fixed-community": {
+      "tests": 23,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "The use case and Core operation stage an authored capture in real SQL before Bug Done with a signed Community receipt.",
+    "All thirteen permission denials occur before source/writer access; Board, realm and missing Bug access remain closed.",
+    "Repeated and concurrent requests retain one record; different content conflicts without overwriting history.",
+    "Caller rollback leaves no capture; the use case never commits or changes Bug status.",
+    "Stale source digest/version, unlinked scenario and forged receipt refuse staging.",
+    "Transactional head reads include staged rows and verify revision integrity."
+  ],
+  "limits": [
+    "Creation is an internal staging use case; REST/MCP/frontend exposure remains pending.",
+    "Explicit reuse/supersedence and other evidence-reference kinds remain required work.",
+    "Authentication does not establish narrative truth, independent review or implementation passing credit.",
+    "Policy/preview, Done binding/outbox, deterministic graph materialization and installed recovery remain pending.",
+    "The 23-case final suite repeats 19 previous cases; counts are separate runs, not 201 distinct tests.",
+    "Initial F16 failed only generated README matrices; the final report qualifies the regenerated pair.",
+    "The first 23-case run had two not-found exception construction failures; the fixed build reran all 23 cases.",
+    "Broader 89/89 suites precede that one-line error-construction fix; their historical results are not rewritten."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-capture-writer-core.xml": "931d04efa42c65032ec787218a7dbc88c7f97aa0f7831104ac3388e8a0a9b377",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-writer-test-core.log": "923612e38e828f4a782a7b9287cda6b949e2828d4900f816c5d46f22b8e47b7e",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-writer-community.xml": "f7999b3df54ed10a158f02ebd9db6521d1234f3e6dcecdc0714f4eaefea0dee0",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-writer-test-community.log": "1b4e7dd1ddea6aaa2b743ade7d0c6949937e559068cf3effef97a518c9d43e1f",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-writer-fixed-community.xml": "0c375d3f0233566bb5727f2268131697c32d07121e01ec35713101ba69750cd3",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-writer-fixed-test-community.log": "273b099434c6d82b50b68385d86af074bf0db443dcef1a8736f8f9172f7ca920",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-capture-writer.json": "8c55b2360c03839019102afa23f00e1dcd6834f8e7f23e41ef1404313a5c49d5",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-capture-writer-final.json": "b3ff32f2ff5ae6db325e2a4c994816ed74459bb098635c2b6ddbcfd7ac9b18b1",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-capture-writer.json": "baa3e3539f8c5d6cac5fec1687b1ea3e84ed6c1f894dd6438aa91620142a9082",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-capture-writer-final.json": "f59263d74c8682f132332483e10a505ffd22ac82bd938b17d90c3978f928d689",
+    "PULSE_REFACTOR/.validation-v040/run_learning_capture_writer.py": "cbcd6f700cce59b11ad718aa73da91c4f0779ac844fab505b506d3efcad4d585",
+    "PULSE_REFACTOR/.validation-v040/run_learning_capture_writer_final.py": "0193d6788aebf52f067de135d5ff9f0c7bdb99b23c78006be46a5dfd4968217e",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-capture-writer-fixed.json": "8245deea6eaebf2b987a43daf6758415e13eb387344ef68602c5bd3e31210b0b",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-capture-writer-fixed.json": "f59263d74c8682f132332483e10a505ffd22ac82bd938b17d90c3978f928d689",
+    "PULSE_REFACTOR/.validation-v040/run_learning_capture_writer_fixed.py": "34762e97f893a14cd0e28bcb9760c9f131a4fc2b8a0387f0af67bb0bc4a0042a",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-writer-final-community.xml": "49718febbe7409785b80d0fc0d21cad7007248c6d1b9fef6779dd5b197c720a7",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-writer-final-test-community.log": "b78fc397705c37cb8ffab53e1bf8f7e10e5f048d5888e19ec7b4313ad6ca6ca7",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/learning_capture.py": "5d260674489889ca636186cc1f946cfda16038f85d31999a1a7d93f1481a6826",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/kg_cognitive_source.py": "f625a115a1e3093e48594b8d7ec9c6eda2b02d6d5bbb734974ede7d55c7466ce",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/application_services.py": "28518cdd5d0acd19c1d2e38453956faccdbc4ba6538867559d454e9e41ed41fd",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "c7be46956f59c89cdaea3e2aa2188f7bdc0e398b75b6b1c94e759b9b5125b12e",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/learning_capture.py": "152ad1f05896a38bb145826a71d5117e42975c0f1a2553d619a662ccacf9a92e",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/kg_operations.py": "df39ea93a143895f54f0827c7f6de991573bfd47e623940fd6cd40b3ad781439",
+    "okto_labs_pulse_core/docs/pulse-simplification/LEARNING_CAPTURE_SOURCE.md": "e42550a67e03951a70290a8fde8b08fbb1a20507b80ad1b05889f23930121e42",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_kg_cognitive_source.py": "81e35091217c9edf07b8548592dba734ec0faa2f5357968c66a8a246de75ec04",
+    "okto_labs_pulse_community/tests/test_learning_capture_writer.py": "8c0c9f2fa5ebeccc3f21a18ea8da39aa90226cc3abc4b0d2df34f249f026b75b"
+  }
+}

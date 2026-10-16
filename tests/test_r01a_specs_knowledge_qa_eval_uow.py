@@ -140,7 +140,7 @@ async def test_knowledge_lifecycle_create_get_list_delete(client) -> None:
     created = client.post(f"{PREFIX}/specs/{spec_id}/knowledge", json=_kb_payload())
     assert created.status_code == 201, created.text
     kb_id = created.json()["id"]
-    assert created.json()["governance"]["metadata_status"] == "legacy_incomplete"
+    assert created.json()["governance"]["metadata_status"] == "omitted"
 
     got = client.get(f"{PREFIX}/specs/{spec_id}/knowledge/{kb_id}")
     assert got.status_code == 200, got.text

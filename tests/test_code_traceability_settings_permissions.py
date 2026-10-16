@@ -70,29 +70,36 @@ def test_traceability_defaults_advisory_and_authored_policy_is_closed() -> None:
     }
 
 
-@pytest.mark.parametrize(
-    "legacy",
-    [None, {}, {"code_traceability": None}, {"code_traceability": {"mode": "off"}}],
-)
-def test_legacy_absence_null_and_off_resolve_to_advisory(legacy) -> None:
-    resolved = resolve_code_traceability_settings(legacy)
-    assert resolved.mode is CodeTraceabilityEnforcement.ADVISORY
+@pytest.mark.parametrize("settings", [None, {}])
+def test_native_absence_resolves_creation_default(settings) -> None:
+    assert resolve_code_traceability_settings(settings).mode is CodeTraceabilityEnforcement.ADVISORY
 
 
-def test_unrelated_board_patch_upgrades_legacy_off_but_authored_off_is_rejected() -> (
-    None
-):
+@pytest.mark.parametrize("policy", [None, {"mode": "off"}])
+def test_incompatible_policy_is_refused_without_conversion(policy) -> None:
+    from copy import deepcopy
+    from okto_pulse.core.services.code_traceability_gate import CodeTraceabilityContractError
+
+    settings = {"code_traceability": policy, "max_scenarios_per_card": 3}
+    original = deepcopy(settings)
+    with pytest.raises(CodeTraceabilityContractError, match="code_traceability_settings_invalid"):
+        resolve_code_traceability_settings(settings)
+    with pytest.raises(ValidationError):
+        BoardGovernanceService.from_settings(settings)
+    with pytest.raises(ValidationError):
+        BoardGovernanceService.merge_settings_patch(settings, {"max_scenarios_per_card": 5})
+    assert settings == original
+
+
+def test_native_policy_patch_preserves_blocking_and_rejects_authored_off() -> None:
     merged = BoardGovernanceService.merge_settings_patch(
-        {"code_traceability": {"mode": "off"}, "max_scenarios_per_card": 3},
+        {"code_traceability": {"mode": "blocking"}, "max_scenarios_per_card": 3},
         {"max_scenarios_per_card": 5},
     )
-    assert merged["code_traceability"]["mode"] == "advisory"
-    assert merged["max_scenarios_per_card"] == 5
-
+    assert merged["code_traceability"]["mode"] == "blocking"
     with pytest.raises(ValidationError):
         BoardGovernanceService.merge_settings_patch(
-            {"code_traceability": {"mode": "advisory"}},
-            {"code_traceability": {"mode": "off"}},
+            merged, {"code_traceability": {"mode": "off"}},
         )
 
 
@@ -135,9 +142,10 @@ def test_code_traceability_permission_generation_is_fail_closed() -> None:
     manifest = CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1
     assert manifest in PERMISSION_INTRODUCTION_MANIFESTS
     assert manifest.version == "CODE-TRACEABILITY/v1"
-    assert manifest.legacy_compatible is False
+    assert not hasattr(manifest, "legacy_compatible")
     assert len(manifest.leaves) == 22
-    assert len(ALL_FLAGS) == 588
+    assert len(ALL_FLAGS) == 536  # Classification and telemetry migration notice removed.
+    assert "metrics.settings.migration_notice_seen" not in ALL_FLAGS
     assert set(manifest.leaves) <= set(ALL_FLAGS)
     assert set(dict(manifest.historical_authorities)) == set(manifest.leaves)
 
@@ -150,15 +158,13 @@ def test_code_traceability_permission_generation_is_fail_closed() -> None:
     assert PermissionSet(_flags(operation, authority)).has(operation) is True
 
 
-def test_only_the_five_preexisting_migration_manifests_allow_legacy_fallback() -> None:
-    assert [
-        manifest.version
-        for manifest in PERMISSION_INTRODUCTION_MANIFESTS
-        if manifest.legacy_compatible
-    ] == [
-        "ADMIN-CATALOG/v1",
-        "OPERATIONAL/v1",
-        "MCP-GAPS/v1",
-        "KG-OPERATIONS/v1",
-        "SDLC-TRANSITIONS/v1",
-    ]
+def test_all_introduced_operations_refuse_retired_tokens() -> None:
+    from okto_pulse.core.domain.permissions import PermissionContext, evaluate_permission
+
+    for manifest in PERMISSION_INTRODUCTION_MANIFESTS:
+        for operation in manifest.leaves:
+            denied = evaluate_permission(PermissionContext(
+                operation=operation,
+                permissions=["board:read", "specs:update", "cards:move"],
+            ))
+            assert not denied.allowed, operation

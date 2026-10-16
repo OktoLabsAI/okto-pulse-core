@@ -256,8 +256,9 @@ async def test_critical_action_registry_covers_required_categories():
         "gate_sensitive_write",
     }.issubset(categories)
 
-    for entity_type in ("card", "spec", "sprint", "ideation", "refinement"):
+    for entity_type in ("card", "spec", "ideation", "refinement"):
         assert critical_actions_for_entity(entity_type)
+    assert critical_actions_for_entity("sprint") == ()
 
     assert (
         get_critical_action_definition(CriticalAction.SPEC_SUBMIT_EVALUATION)

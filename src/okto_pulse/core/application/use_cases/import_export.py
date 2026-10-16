@@ -335,7 +335,6 @@ class ExportDesignSystemsUseCase:
                 actor,
                 PermissionRequirement(
                     "design_system.export",
-                    legacy_operation="spec.architecture.read",
                 ),
                 uow=uow,
                 board_id=command.board_id,
@@ -355,7 +354,6 @@ class ExportDesignSystemsUseCase:
                 actor,
                 PermissionRequirement(
                     "design_system.export",
-                    legacy_operation="spec.architecture.read",
                 ),
                 uow=uow,
             )
@@ -415,7 +413,6 @@ class ImportDesignSystemsUseCase:
             actor,
             PermissionRequirement(
                 "design_system.import",
-                legacy_operation="spec.architecture.import",
             ),
             uow=uow,
         )
@@ -494,7 +491,6 @@ class ExportPresetsUseCase:
             actor,
             PermissionRequirement(
                 "permission_preset.export",
-                legacy_operation="board.read",
             ),
             uow=uow,
         )
@@ -556,10 +552,23 @@ class ImportPresetsUseCase:
             actor,
             PermissionRequirement(
                 "permission_preset.import",
-                legacy_operation="profile.update",
             ),
             uow=uow,
         )
+        # Ordinary catalog import is not the bounded retirement migration.
+        # Dropping this subtree would change historical absent-flag semantics;
+        # retaining it would recreate an operational preset from retired data.
+        # Validate the complete batch before staging even its first valid item.
+        for index, item in enumerate(command.items):
+            flags = _item_value(item, "flags")
+            if isinstance(flags, dict) and any(
+                key == "sprint" or key.startswith("sprint.") for key in flags
+            ):
+                raise ImportItemError(index, {
+                    "code": "retired_sprint_permissions",
+                    "message": "Retired Sprint permissions cannot be imported as an active preset. "
+                    "Preserve the original export as history and use the retirement migration for legacy installations.",
+                })
         result = ImportResult()
         for index, item in enumerate(command.items):
             preset_id = _item_value(item, "id")
@@ -641,7 +650,6 @@ class ExportBoardConfigUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.export",
-                legacy_operation="board.read",
             ),
             uow=uow,
         )
@@ -698,7 +706,6 @@ class ImportBoardConfigUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.import",
-                legacy_operation="spec.entity.edit_fields",
             ),
             roles=("admin", "operator"),
             uow=uow,
@@ -709,18 +716,25 @@ class ImportBoardConfigUseCase:
         # The envelope is atomic. Preflight every item's ref delta before the
         # first staged create so a later governed item cannot leave earlier
         # versions pending in adapters that expose eager writes.
+        for index, item in enumerate(command.items):
+            try:
+                await service.prepare_version_settings(
+                    actor_kind=actor.actor_kind,
+                    settings_payload=item.get("settings_payload"),
+                    scope=str(item.get("scope") or "global"),
+                )
+            except DefaultBoardConfigurationError as exc:
+                raise ImportItemError(index, exc.to_dict()) from exc
         for item in command.items:
             diff = await service.preview_create_guideline_ref_diff(
                 scope=str(item.get("scope") or "global"),
                 guideline_default_refs=item.get("guideline_default_refs") or None,
-                compatibility_import=True,
             )
             if guideline_ref_diff_has_changes(diff):
                 await require_authorization(
                     actor,
                     PermissionRequirement(
                         "default_board_config.guidelines.edit",
-                        legacy_operation="guidelines.adoption.manage",
                     ),
                     uow=uow,
                 )
@@ -729,6 +743,7 @@ class ImportBoardConfigUseCase:
             try:
                 await service.create_version(
                     actor=actor.actor_id,
+                    actor_kind=actor.actor_kind,
                     settings_payload=item.get("settings_payload"),
                     scope=item.get("scope") or "global",
                     guideline_default_refs=item.get("guideline_default_refs") or None,
@@ -736,7 +751,6 @@ class ImportBoardConfigUseCase:
                     spec_checklist_mode=item.get("spec_checklist_mode"),
                     activate=bool(item.get("activate")),
                     query_scope=query_scope,
-                    compatibility_import=True,
                 )
             except DefaultBoardConfigurationError as exc:
                 raise ImportItemError(index, exc.to_dict()) from exc

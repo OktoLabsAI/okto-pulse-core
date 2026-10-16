@@ -52,6 +52,28 @@ _ENDPOINTS = (
 )
 
 
+@pytest.fixture(autouse=True)
+def native_application_projection(request):
+    from okto_pulse.community.adapters.sqlalchemy_application_persistence import (
+        CommunitySqlAlchemyApplicationPersistence,
+    )
+    from okto_pulse.core.ports.application_persistence import (
+        register_application_persistence_port,
+    )
+    register_application_persistence_port(CommunitySqlAlchemyApplicationPersistence())
+    from okto_pulse.core.domain.realm import RealmScope
+    factory = get_session_factory()
+    previous_info = dict(factory.kw.get("info", {}))
+    request.addfinalizer(lambda: factory.configure(info=previous_info))
+    factory.configure(info={**previous_info, "realm_scope": RealmScope.local()})
+    from okto_pulse.community.adapters.sqlalchemy_policy_subject_versioning import CommunitySemanticSession
+    previous_session_class = factory.kw.get("sync_session_class")
+    request.addfinalizer(lambda: factory.configure(sync_session_class=previous_session_class))
+    factory.configure(sync_session_class=CommunitySemanticSession)
+
+
+
+
 @pytest.fixture
 def client(tmp_path):
     from kg_registry_testing import configure_test_kg_registry
@@ -343,7 +365,7 @@ async def test_delete_board_commits_relational_erasure_before_external_stores(
             "owner",
             "rest",
             board_id="board-strict-erasure",
-            permissions=["board.read"],
+            permissions=["board.read", "board.admin.delete"],
         ),
         uow=_Uow(),
     )
@@ -437,7 +459,7 @@ async def test_delete_board_relational_erasure_failure_skips_commit_and_physical
                 "owner",
                 "rest",
                 board_id="board-strict-erasure",
-                permissions=["board.read"],
+                permissions=["board.read", "board.admin.delete"],
             ),
             uow=_Uow(),
         )
@@ -524,7 +546,7 @@ async def test_delete_board_external_failure_occurs_only_after_source_commit(
                 "owner",
                 "rest",
                 board_id="board-external-failure",
-                permissions=["board.read"],
+                permissions=["board.read", "board.admin.delete"],
             ),
             uow=_Uow(),
         )
@@ -598,7 +620,7 @@ async def test_delete_board_resumes_durable_erasure_after_source_is_absent(
             "owner",
             "rest",
             board_id="board-resume-erasure",
-            permissions=["board.read"],
+            permissions=["board.read", "board.admin.delete"],
         ),
         uow=_Uow(),
     )
@@ -717,7 +739,7 @@ async def test_delete_board_cancellation_drains_terminal_erasure(
                 "owner",
                 "rest",
                 board_id="board-cancel-terminal",
-                permissions=["board.read"],
+                permissions=["board.read", "board.admin.delete"],
             ),
             uow=_Uow(),
         )
@@ -783,7 +805,7 @@ async def test_get_board_columns_200(client) -> None:
 async def test_get_board_columns_404(client) -> None:
     resp = client.get(f"{PREFIX}/{_missing()}/columns")
     assert resp.status_code == 404
-    assert resp.json()["detail"] == "Board not found"
+    assert resp.json()["detail"] == {"error": "board_not_found"}
 
 
 # --- archive / restore ------------------------------------------------------

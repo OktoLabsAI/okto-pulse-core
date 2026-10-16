@@ -98,7 +98,10 @@ def _seed_learning_with_canonical_bug(board_id, *, learning_ref):
         )
         _apply_graph_node_create(orch, "Bug", bug_id, bug_attrs)
         orch.create_edge(edge_type="validates", from_id=learning_id, to_id=bug_id,
-                         attrs={"confidence": 1.0}, from_type="Learning", to_type="Bug")
+                         attrs={"confidence": 0.93, "layer": "cognitive",
+                                "rule_id": "validates/native-capture@v1",
+                                "created_by": "author:original", "fallback_reason": ""},
+                         from_type="Learning", to_type="Bug")
     return learning_id, bug_id, bug_attrs
 
 
@@ -225,6 +228,7 @@ def test_cognitive_canonical_node_and_edge_survive_rebuild():
     # The canonical Learning + its validates edge are back.
     assert _count(board_id, "Learning", layer=GRAPH_LAYER_CANONICAL) == 1
     assert _edge_count(board_id, "validates") == 1
+    assert snapshot_canonical_cognitive(board_id).edges == snap.edges
 
 
 def test_cognitive_decision_and_alternative_edge_survive_rebuild():

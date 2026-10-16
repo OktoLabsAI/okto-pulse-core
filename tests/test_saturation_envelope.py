@@ -7,6 +7,8 @@ skip-flagged, empty).
 
 from __future__ import annotations
 
+import pytest
+
 from okto_pulse.core.services.analytics_service import spec_saturation_envelope
 
 
@@ -19,7 +21,7 @@ def _coverage(**overrides) -> dict:
         "br_task_linkage_pct": 100.0, "brs_total": 2,
         "contract_task_linkage_pct": 100.0, "contracts_total": 1,
         "tr_task_linkage_pct": 100.0, "trs_total": 2,
-        "decisions_coverage_pct": 100.0, "decisions_total": 1,
+        "decisions_planning_pct": 100.0, "decisions_total": 1,
         "ir_task_linkage_pct": 100.0, "irs_total": 1,
         "or_task_linkage_pct": 100.0, "ors_total": 1,
         "skip_test_coverage": False, "skip_rules_coverage": False,
@@ -39,7 +41,7 @@ def test_partial_coverage_lowers_pct_and_lists_blocking():
     env = spec_saturation_envelope(
         _coverage(
             ac_coverage_pct=50.0,
-            decisions_coverage_pct=0.0,
+            decisions_planning_pct=0.0,
         )
     )
     assert env["pct"] < 100
@@ -74,7 +76,7 @@ def test_blocking_order_is_canonical():
         _coverage(
             or_task_linkage_pct=0.0,
             ac_coverage_pct=50.0,
-            decisions_coverage_pct=80.0,
+            decisions_planning_pct=80.0,
         )
     )
     assert env["blocking"].index("acceptance_criteria") < env["blocking"].index("decisions")
@@ -94,3 +96,14 @@ def test_pct_rounded_to_one_decimal():
     )
     assert env["pct"] == round(env["pct"], 1)
     assert isinstance(env["pct"], float)
+
+
+@pytest.mark.parametrize("old_switch", ["0", "1"])
+def test_mcp_mutation_contract_is_independent_of_retired_switch(monkeypatch, old_switch):
+    from okto_pulse.core.mcp import server
+
+    monkeypatch.setenv("OKTO_PULSE_LEGACY_COVERAGE", old_switch)
+    result = server._saturation_response(_coverage(ac_coverage_pct=0.0))
+    assert set(result) == {"saturation"}
+    assert result["saturation"]["pct"] < 100
+    assert result["saturation"]["blocking"] == ["acceptance_criteria"]

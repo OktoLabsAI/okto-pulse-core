@@ -12,7 +12,6 @@ from okto_pulse.core.telemetry import publish_health as publish_health_mod
 from okto_pulse.core.telemetry.schema import normalize_event, now_utc
 from okto_pulse.core.telemetry.settings import (
     TelemetryMode,
-    mark_migration_notice_seen,
     record_consent,
     resolve_telemetry_config,
 )
@@ -116,21 +115,10 @@ class TelemetryService:
             "circuit_open_until": state.get("circuit_open_until"),
             "schema_status": schema_status,
         }
-        if cfg.migration_notice and cfg.migration_notice.get("pending"):
-            logger.info(
-                "metrics.migration_notice",
-                extra={
-                    "metric_name": "metrics_migration_notice_total",
-                    "notice_key": cfg.migration_notice.get("type"),
-                    "outcome": "pending_returned",
-                },
-            )
         return {
             "mode": cfg.mode,
             "ui_mode": cfg.ui_mode,
             "enabled": cfg.mode == "anonymous_beacon",
-            "normalized_from": cfg.normalized_from,
-            "migration_notice": cfg.migration_notice,
             "source": cfg.source,
             "retention_days": cfg.retention_days,
             "schema_version": cfg.schema_version,
@@ -248,8 +236,6 @@ class TelemetryService:
             "mode": effective_mode,
             "ui_mode": "on" if effective_mode == "anonymous_beacon" else "off",
             "enabled": effective_mode == "anonymous_beacon",
-            "normalized_from": state.get("normalized_from"),
-            "migration_notice": cfg.migration_notice,
             "changed": True,
             "changed_at": state["changed_at"],
             "source": source,
@@ -259,19 +245,6 @@ class TelemetryService:
             "resolved_precedence": list(cfg.resolved_precedence),
         }
 
-    def mark_migration_notice_seen(self, *, notice_key: str) -> dict[str, Any]:
-        result = mark_migration_notice_seen(self.settings, notice_key=notice_key)
-        logger.info(
-            "metrics.migration_notice",
-            extra={
-                "metric_name": "metrics_migration_notice_total",
-                "notice_key": notice_key,
-                "outcome": "seen_idempotent"
-                if result["idempotent"]
-                else "seen_acknowledged",
-            },
-        )
-        return result
 
     def export_events(self, destination_ref: str | None = None) -> dict[str, Any]:
         out = self.store().export_events(destination_ref)

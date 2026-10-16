@@ -1,0 +1,31 @@
+{
+  "scope": "ADV-14 removal of sole Test Card invalidates approved planning",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "ARQVER:ADV-14",
+  "test": "test_architecture_start_transition::test_removing_only_test_card_invalidates_previously_complete_approved_plan",
+  "result": {
+    "passed": 1,
+    "failed": 0,
+    "seconds": 11.39,
+    "terminal_session": 72757
+  },
+  "evidence": [
+    "A complete native plan initially passes the real execution-contract gate.",
+    "Authorized REST DELETE of the sole Test Card returns 204 and removes scenario allocation; criterion/FR, validations, evaluations and edition remain intact.",
+    "Scenario stays ready without fabricated evidence; readiness gate now refuses incomplete planning.",
+    "Actual Spec move to in_progress is rejected for no linked Test Card and leaves the relational snapshot unchanged.",
+    "Frontend pending-plan, missing-Test-Card and no-delivery-credit cases reviewed; existing 29-pass campaign hash checked and relevant component/test diff from08659ae2 empty."
+  ],
+  "limits": [
+    "Initial approved/validated plan and authenticated user are fixture inputs; this is not installed authentication or a new assessment workflow.",
+    "No product/frontend change; tests do not alter deletion authority or manufacture an approval invalidation rule.",
+    "Main88 closure remains green with eight zero budgets. No promotion or real-data actions."
+  ],
+  "artifacts": {
+    "provenance-native-association-gate1.json": "17e4c7ecfba3021b390b8df0ea9a78e061d8b17b42b93265d35ace4f1509ff1e",
+    "native-test-card-removal1.xml": "6530ad5a87294610ee8dc4c0c9dd10a164d27face8887bfe1c3ae76b48fc4ca2",
+    "native-verification-start-frontend1.json": "c0b045da14b876273f918bb6fedd26f7ad61580f4af5a5053e20d5d82075eb04",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

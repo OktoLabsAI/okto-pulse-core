@@ -1,0 +1,59 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_keys": [
+    "KG:KG-19"
+  ],
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main37",
+  "provenance_sha256": "359f6a6d3e08e159111c54dc932d1c2ba06960486fe9125ff1de9fa56c3a382a",
+  "runs": [
+    {
+      "name": "acceptance-native-crash-replay4",
+      "xml_sha256": "241985f303f6c83bc131702d93747c904a86b51a42d962640ea14dc2807f1dbf",
+      "passed": 1,
+      "failed": 0,
+      "cases": [
+        "tests.test_native_projection_crash_replay::test_real_crash_before_ack_replays_current_source_without_duplicate_relations"
+      ]
+    }
+  ],
+  "initial_runs": [
+    {
+      "name": "acceptance-native-crash-replay1",
+      "xml_sha256": "b218eeda5333669521fcaa875b372941b434bf9a0386c701e6d0bda82454faec",
+      "passed": 0,
+      "failed": 1,
+      "cases": []
+    },
+    {
+      "name": "acceptance-native-crash-replay2",
+      "xml_sha256": "556f8529006410d52413f36b8f348c3703193094e9f77546c50540e61805c875",
+      "passed": 0,
+      "failed": 1,
+      "cases": []
+    },
+    {
+      "name": "acceptance-native-crash-replay3",
+      "xml_sha256": "5fc826d28aedec81e56b1ee669e7e7918025c2ba14215315e0918ca283f528ef",
+      "passed": 0,
+      "failed": 1,
+      "cases": []
+    }
+  ],
+  "review": "A real subprocess opens the native admitted SQL schema and existing routed Grafx graph, commits revision 2 and terminates with os._exit(73) at before_relational_ack after the actual fence and durability_applied checks. Reopening observes revision-2 graph relations, the claimed queue token/deadline and unchanged relational audit IDs. Revision 3 arrives while that claim exists. Existing stale-claim recovery and the real worker converge to revision 3 without duplicate relation/provenance/maturity tuples; another replay preserves the entire multiset.",
+  "native_storage": "The opt-in native_schema test fixture uses initialize_current_schema/current_schema_contract on empty storage. Child and parent reopen through the normal format guard; no manual schema stamp, conversion or bypass.",
+  "timing": "Only the crashed child writer's TTL is configured to an admitted 5 seconds, with normal ownership verification and heartbeat. The test waits 6 real seconds after termination before reacquiring. Claim recovery receives a clock at its persisted deadline+1 via the existing WorkerClockPort. No lease marker is deleted or bypassed.",
+  "failure_disposition": [
+    "replay1: hook targeted a nested helper unavailable as a module attribute; process did not reach crash point.",
+    "replay2: ordinary reopen correctly refused the partial Base.metadata fixture. Switched this test to the official native initializer.",
+    "replay3: crash boundary and persisted graph/no-ACK assertions passed; immediate retry correctly refused the still-valid 300-second writer lease. Final test uses a short valid TTL and waits for actual expiration."
+  ],
+  "source_sha256": "fbc7781c1f8b360ef584639272820f1c57edfc1a244ab5ff23e83c4031d40bd5",
+  "helper_sha256": "946771204d62fc7879d2dd475bd7d4a30cc6d65890046a3241563701676af627",
+  "closure_reference": "closure-native-main37.json; product and SPA unchanged since the byte proof and eight-zero-budget closure.",
+  "limits": [
+    "One focused real-process crash proof; not a full HTTP/browser E2E campaign or every possible crash point.",
+    "Source changes are test fixtures; no new permission, policy or lifecycle authority.",
+    "Only KG-19 qualified here. Other fixed acceptance criteria remain open."
+  ]
+}
