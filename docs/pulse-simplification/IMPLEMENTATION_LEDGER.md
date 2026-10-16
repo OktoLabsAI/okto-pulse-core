@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — Assessment integral da superfície documental MCP
+
+Solicitação do usuário: conferir instruções e resources quanto a clareza,
+melhoria, duplicidade e ambiguidade. Concluído o
+[assessment](MCP_INSTRUCTIONS_ASSESSMENT_20261015.md), com nove divergências
+confirmadas, cinco oportunidades editoriais e sequência delimitada de correção.
+Base Core `3376ba3f` / Community `8e75f23f`; nenhuma alteração funcional ou das
+instruções publicadas neste checkpoint.
+
+Capturados initialize, tools/list e resources/list paginados e todos os corpos
+no runtime instalado isolado MCP8241: 285 tools, 54 resources, zero templates.
+Coletor leu integralmente os 60 documentos Markdown locais; varredura de nomes,
+URIs, argumentos, descrições e duplicidade, seguida de revisão dirigida das
+regras e confronto com schema/código. Não é certificação de execução das 285
+tools. Confirmados 867/326 arquivos Python instalados byte a byte; zero drift.
+Quatro exemplos validados offline contra o schema servido: duas formas antigas
+recusadas e duas formas nativas válidas, sem chamadas de mutação.
+
+Achados incluem proibição obsoleta de Cards em Draft, vínculo de cenário
+duplicado, Decision descrita por Task em vez de plano de verificação, strings
+delimitadas indevidas, onze parâmetros antigos de cinco tools KG, perfil legacy,
+ferramenta Knowledge inexistente/herança contraditória, receitas Sprint/migração
+e promessa incorreta de leitura de histórico antigo. Os quatro overrides
+Community são relevantes: mudanças apenas no Core não corrigem o consumidor.
+
+Recibo versionado: [evidências](MCP_INSTRUCTIONS_REVIEW_EVIDENCE_20261015.json).
+Capturas completas e helpers locais em
+`PULSE_REFACTOR/.validation-v040/mcp-instructions-review-20261015/`.
+Nenhuma reinstalação, reinício, alteração da home padrão ou enfraquecimento
+de gate/autoridade. Nenhum novo teste de comportamento declarado nesta revisão.
+Retomada: implementar a etapa 1 (A01–A09) somente quando solicitado; depois
+responsabilidade editorial, clareza de operação e qualificação previstas no
+assessment. U1–U4 da validação unificada permanecem concluídos.
+
 ### 2026-10-15 — U4 e validação unificada: qualificação final concluída
 
 Plano [SPEC_UNIFIED_VALIDATION_PLAN.md](SPEC_UNIFIED_VALIDATION_PLAN.md)
