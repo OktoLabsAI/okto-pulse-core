@@ -41,7 +41,11 @@ Comandos e evidências: helpers locais `u4_qualify_final_r3.py`, `u4_native.py`
 e `u4_final_audit.py`; testes via `run_scenario_checkout.py` com os dois imports
 fixados. Playwright CLI no runtime instalado. Pacote/recibos/capturas mantidos
 em `.validation-v040/spec-unified-20261014` e `output/playwright`.
-Resta apenas publicar este fechamento; registrar os hashes dos commits abaixo.
+Fechamento publicado em `feature/v0.4.0`: Core `49d9239c` e Community
+`8e75f23f`, ambos com push confirmado. Community inclui as seis capturas finais
+selecionadas; dumps intermediários permanecem locais. Este apontamento final
+registra a publicação, sem alteração do par funcional já qualificado.
+Próximo passo: revisão do usuário; nenhuma implementação de U1–U4 pendente.
 
 ### 2026-10-15 — planejamento final reconciliado após consolidação
 
