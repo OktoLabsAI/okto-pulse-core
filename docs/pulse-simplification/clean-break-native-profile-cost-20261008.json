@@ -1,0 +1,104 @@
+{
+  "scope": [
+    "BASE:T43",
+    "KG:KG-64",
+    "ARQVER:AC-INT-12"
+  ],
+  "status": "partial",
+  "proof_pair": "dist-native-main90",
+  "evidence": [
+    "Public Spec creation supplies one FR and its criterion. Requirement reader proposes a functional profile requiring author acceptance; scoped public writer accepts it.",
+    "Public BR creation records selected inheritance from that FR/digest and reuses the same criterion. Each Spec still has exactly one criterion and one BR.",
+    "Second agent reads resolved qualifications/inheritance and still-incomplete verification work; delivery_evaluated remains false. No default or inheritance grants delivery credit.",
+    "Profile/method/criterion projections and semantic classification decisions match across all four batch/individual and reader-permission variants.",
+    "Ten real calls per case measure default read/acceptance, qualified read, BR authorship and second-agent profile resume. Full catalog and eight resource reads remain included."
+  ],
+  "results": {
+    "passed": 4,
+    "seconds": 28.1
+  },
+  "summary": {
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[batch-broad-reader-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 8,
+        "tools/call": 54
+      },
+      "requests": 66,
+      "bytes": 1046484,
+      "tokens_cl100k_base": 262360,
+      "profile_and_criterion_reuse": {
+        "requests": 10,
+        "bytes": 55878,
+        "tokens_cl100k_base": 13872
+      }
+    },
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[batch-read-only-reader-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 8,
+        "tools/call": 55
+      },
+      "requests": 67,
+      "bytes": 1048233,
+      "tokens_cl100k_base": 261014,
+      "profile_and_criterion_reuse": {
+        "requests": 10,
+        "bytes": 55878,
+        "tokens_cl100k_base": 13874
+      }
+    },
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[individual-broad-reader-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 8,
+        "tools/call": 79
+      },
+      "requests": 91,
+      "bytes": 1085202,
+      "tokens_cl100k_base": 272637,
+      "profile_and_criterion_reuse": {
+        "requests": 10,
+        "bytes": 55880,
+        "tokens_cl100k_base": 14026
+      }
+    },
+    "tests/test_native_classification_cost.py::test_native_authorship_classification_and_second_agent_resume[individual-read-only-reader-native_schema]": {
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 8,
+        "tools/call": 80
+      },
+      "requests": 92,
+      "bytes": 1086948,
+      "tokens_cl100k_base": 271722,
+      "profile_and_criterion_reuse": {
+        "requests": 10,
+        "bytes": 55880,
+        "tokens_cl100k_base": 13984
+      }
+    }
+  },
+  "artifact": {
+    "file": "benchmark-native-profiles-main90-20261008.json.gz",
+    "sha256": "95e4a3188ab353815cce3e7e2261b1ceb45913c955d134ae1ca51eaec5e9be27",
+    "raw_sha256": "92eb5dce7bbd47f7b428885527de31ac313ee9be331a45d3658a11aa31c397d6"
+  },
+  "artifacts": {
+    "provenance-native-profile-cost-20261008.json": "38e085149c71d7e514434ba6b10f0ea4dccda440a433c2ad07f7c0b9b0309591",
+    "native-profile-cost-20261008-2.xml": "8d7bdec784eab8d2b16cca66e1d390e63e8409a427a78b4c01d6c457401b9ec0",
+    "native-profile-measurement90-20261008.xml": "ccaa1a3d0624d61debdde1829152afb69e4e5ad5b8d4a2e735d7a68f8012c13a"
+  },
+  "limits": [
+    "Authenticated execution/evidence reuse is not yet measured in this shared-initiative campaign. No whole-flow or target-percentage gain claimed.",
+    "Profile/default segment is measured cost, not a counterfactual saving. Only actual batch-versus-individual classifications provide an executed comparison.",
+    "Initial completed initiative/grants remain controlled inputs; no external execution or full Spec delivery is asserted here.",
+    "Random IDs/timestamps affect token counts; compare equivalent variants, not different historical populations.",
+    "First fixture run accepted profile but correctly remained unqualified without a linked criterion. Added explicit criterion to the public creation payload, not a gate relaxation.",
+    "No acceptance promoted, product/frontend/SPA change, old runtime or real-data operation."
+  ]
+}

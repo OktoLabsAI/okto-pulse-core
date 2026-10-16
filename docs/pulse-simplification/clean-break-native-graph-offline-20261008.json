@@ -1,0 +1,31 @@
+{
+  "scope": "DEI-T60 relational progress and resume with unavailable KG provider acquisition",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "DEI:DEI-T60",
+  "result": {
+    "passed": 2,
+    "failed": 0,
+    "seconds": 11.37,
+    "terminal_session": 24629
+  },
+  "evidence": [
+    "Full native schema, actual REST/MCP handlers, real authorization with explicit fixture principals, relational store and commit.",
+    "Graph provider registry acquisition is replaced with a deterministic ConnectionError; the fault is explicitly exercised first, then access counter is reset.",
+    "Progress persists successfully while provider acquisition remains unavailable. Writer SQL session is closed; a fresh SQL session/store reads Card resume with the new durable checkpoint and prior history.",
+    "A whole-Spec rollup is separately forbidden. Resume still supplies obligations, preserves unsatisfied implementation and unverified recovery, and offers no repair/rebuild action.",
+    "Exact write replay in the successor SQL session returns the original record without duplicates. Neither transport acquires a graph provider."
+  ],
+  "limits": [
+    "Injected provider-acquisition outage, not a network/process crash test. Existing running Pulse/Grafx processes were not touched.",
+    "In-process credential extraction and accepted-origin setup are fixtures. This does not claim installed authentication E2E, dispatcher delivery or graph convergence.",
+    "Only backend test changed. Frontend44 reused after hash verification and previously empty relevant source diff; not rerun/recounted.",
+    "No product changes, migration, real-data operation or promotion. Current installed pair parity and main88 closure remain applicable; eight budgets zero."
+  ],
+  "artifacts": {
+    "provenance-native-graph-offline-20261008.json": "bedd599f6bcd3ae1f7d61ed4fd3644f9e1727210de4337068450f9dfd759cc53",
+    "native-graph-offline-20261008.xml": "d131b11a9a64d9863e60d2547749c40062708e4bd0f9ac9fffdfb895e0408fa1",
+    "native-delivery-envelope-frontend1.json": "a751880c26e35030dc6efc27dfb79d81a4f937cd3ffa9d2bf7f490e31f2d146d",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

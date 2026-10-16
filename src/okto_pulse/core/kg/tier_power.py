@@ -5,9 +5,9 @@ query_natural: hybrid search (embedding + HNSW + 1-hop) with fallback
 schema_info: schema introspection with stable/internal type ACL
 
 Safety rails applied to ALL tier power queries:
-- Timeout: 5s default, 30s max hard ceiling (asyncio.wait_for)
-- Max rows: 1000 default, 10000 max
-- Rate limit: 30 queries/min per agent (token bucket)
+- Timeout: 15s default, 30s hard ceiling, enforced by the native executor
+- Max rows: 200 default, 1000 max
+- Resource concurrency is enforced by the edition, without question-count quotas
 - Cypher injection mitigation via parser whitelist
 
 All queries logged in tier_power_audit with pattern_hash for telemetry.
@@ -17,8 +17,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import re
 import unicodedata
+from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout, GraphQueryResourceLimit
+from okto_pulse.core.kg.query_response_budget import enforce_query_response_budget
 from typing import Any
 
 from okto_pulse.core.kg.query_contract import (
@@ -328,43 +331,6 @@ def auto_bound_var_length_path(cypher: str, max_depth: int = 20) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Rate limiter — token bucket (FR-5)
-# ---------------------------------------------------------------------------
-#
-# R03 IMP1 (FR2/AC2): the in-memory token bucket lives ONLY behind the
-# RateLimiter port — the canonical concrete is
-# ``community.adapters.memory.CommunityInMemoryRateLimiter`` (the Community
-# edition composes ``CommunityInMemoryRateLimiter``). The duplicate module-global
-# ``_TokenBucket`` / ``_rate_limiter`` that used to live here was vestigial — the
-# runtime resolves the slot through ``require_rate_limiter()`` — so it is removed,
-# together with its ``BASELINE_SINGLETONS`` ledger entry. Token-bucket
-# semantics (30 tokens / 60s window per agent) are unchanged.
-
-
-def reset_rate_limiter_for_tests() -> None:
-    """Reset the rate limiter — drops the whole KG registry (tests only)."""
-    from okto_pulse.core.kg.interfaces.registry import reset_registry_for_tests
-
-    reset_registry_for_tests()
-
-
-def check_rate_limit(agent_id: str) -> None:
-    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
-
-    # AC3 (base fail-closed): read the rate limiter through the required port —
-    # an unregistered slot raises ``runtime_provider_missing`` instead of a late
-    # ``AttributeError`` on ``None`` or a silent concrete fallback.
-    limiter = get_kg_registry().require_rate_limiter()
-    allowed, retry_after = limiter.allow(agent_id)
-    if not allowed:
-        raise TierPowerError(
-            "rate_limited",
-            "Rate limit exceeded: 30 queries/min",
-            details={"retry_after": retry_after},
-        )
-
-
-# ---------------------------------------------------------------------------
 # Pattern hash for audit telemetry (FR-8)
 # ---------------------------------------------------------------------------
 
@@ -388,16 +354,16 @@ def compute_pattern_hash(cypher: str) -> str:
 # Safety defaults (FR-5)
 # ---------------------------------------------------------------------------
 
-DEFAULT_TIMEOUT_MS = 5000
+DEFAULT_TIMEOUT_MS = 15000
 MAX_TIMEOUT_MS = 30000
-DEFAULT_MAX_ROWS = 1000
-MAX_MAX_ROWS = 10000
+DEFAULT_MAX_ROWS = 200
+MAX_MAX_ROWS = 1000
 MAX_TRAVERSAL_DEPTH = 20
 
 
 def clamp_timeout(timeout_ms: int | None) -> int:
     t = timeout_ms or DEFAULT_TIMEOUT_MS
-    return max(1000, min(t, MAX_TIMEOUT_MS))
+    return max(1, min(t, MAX_TIMEOUT_MS))
 
 
 def clamp_max_rows(max_rows: int | None) -> int:
@@ -705,6 +671,7 @@ def execute_cypher_read_only(
                 unfiltered_cleaned,
                 params,
                 max_rows=max_rows,
+                timeout_ms=clamp_timeout(timeout_ms),
             )
             result = dict(paired_result["primary"])
             comparison_result = dict(paired_result["comparison"])
@@ -714,13 +681,14 @@ def execute_cypher_read_only(
                 cleaned,
                 params,
                 max_rows=max_rows,
+                timeout_ms=clamp_timeout(timeout_ms),
             )
-        return _apply_canonical_projection(
+        return enforce_query_response_budget(_apply_canonical_projection(
             result,
             include_working=include_working,
             canonical_filter_mode=canonical_filter_mode,
             comparison_result=comparison_result,
-        )
+        ))
 
     raise TierPowerError(
         "graph_backend_unconfigured",
@@ -757,6 +725,7 @@ def _find_literal_node_matches(
     query_text: str,
     *,
     limit: int,
+    min_confidence: float = 0.5,
 ) -> list[dict]:
     """Exact/text fallback across every node type.
 
@@ -798,16 +767,18 @@ def _find_literal_node_matches(
                 result = executor.execute_read_only(
                     board_id,
                     f"MATCH (n:{node_type}) "
-                    "WHERE n.id = $q "
+                    "WHERE n.source_confidence >= $minimum AND (n.id = $q "
                     "OR n.title = $q "
-                    "OR n.source_artifact_ref = $q "
+                    "OR n.source_artifact_ref = $q) "
                     "RETURN n.id, n.title, n.source_artifact_ref "
                     "LIMIT $k",
-                    {"q": query_text, "k": max(1, limit - len(out))},
+                    {"q": query_text, "k": max(1, limit - len(out)), "minimum": min_confidence},
                     max_rows=max(1, limit - len(out)),
                 )
                 for row in result.get("rows") or []:
                     _append(row, node_type, 1.0)
+            except (GraphQueryTimeout, GraphQueryResourceLimit):
+                raise
             except Exception:
                 pass
 
@@ -818,18 +789,22 @@ def _find_literal_node_matches(
                 result = executor.execute_read_only(
                     board_id,
                     f"MATCH (n:{node_type}) "
-                    "WHERE n.title CONTAINS $q "
+                    "WHERE n.source_confidence >= $minimum AND (n.title CONTAINS $q "
                     "OR n.content CONTAINS $q "
-                    "OR n.source_artifact_ref CONTAINS $q "
+                    "OR n.source_artifact_ref CONTAINS $q) "
                     "RETURN n.id, n.title, n.source_artifact_ref "
                     "LIMIT $k",
-                    {"q": query_text[:200], "k": max(1, limit - len(out))},
+                    {"q": query_text[:200], "k": max(1, limit - len(out)), "minimum": min_confidence},
                     max_rows=max(1, limit - len(out)),
                 )
                 for row in result.get("rows") or []:
                     _append(row, node_type, 0.65)
+            except (GraphQueryTimeout, GraphQueryResourceLimit):
+                raise
             except Exception:
                 pass
+    except (GraphQueryTimeout, GraphQueryResourceLimit):
+        raise
     except Exception as exc:
         logger.debug(
             "kg.natural.literal_fallback_failed board=%s err=%s",
@@ -855,6 +830,40 @@ def _dedupe_natural_results(rows: list[dict]) -> list[dict]:
     return [best[node_id] for node_id in order]
 
 
+def _filter_natural_source_confidence(board_id: str, rows: list[dict], minimum: float) -> list[dict]:
+    """Qualify final identities, including vector hits and equivalence survivors.
+
+    Similarity/RRF scores are not source confidence. An absent confidence or
+    unavailable qualification cannot silently admit a candidate.
+    """
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    if not rows:
+        return []
+    executor = get_kg_registry().cypher_executor
+    if executor is None:
+        raise TierPowerError("query_confidence_unavailable", "Source confidence could not be resolved.")
+    grouped: dict[str, set[str]] = {}
+    for row in rows:
+        kind, identity = row.get("node_type"), row.get("node_id")
+        if kind in NODE_TYPES and isinstance(identity, str) and identity:
+            grouped.setdefault(kind, set()).add(identity)
+    allowed: set[tuple[str, str]] = set()
+    try:
+        for kind, identities in grouped.items():
+            result = executor.execute_read_only(
+                board_id,
+                f"MATCH (n:{kind}) WHERE n.id IN $ids AND n.source_confidence >= $minimum RETURN n.id",
+                {"ids": sorted(identities), "minimum": minimum}, max_rows=len(identities),
+            )
+            allowed.update((kind, row[0]) for row in result.get("rows", []) if row and row[0] in identities)
+    except (GraphQueryTimeout, GraphQueryResourceLimit):
+        raise
+    except Exception as exc:
+        raise TierPowerError("query_confidence_unavailable", "Source confidence could not be resolved.") from exc
+    return [row for row in rows if (row.get("node_type"), row.get("node_id")) in allowed]
+
+
 def execute_natural_query(
     board_id: str,
     nl_query: str,
@@ -875,12 +884,10 @@ def execute_natural_query(
 ) -> dict:
     """Hybrid search: embed query -> HNSW k-NN -> 1-hop traversal -> ranking.
 
-    Optional ``since`` / ``until`` parameters accept ISO-8601 timestamps
-    and post-filter results by ``n.created_at`` so an agent can scope the
-    query to a release window, a sprint, or "what happened since I last
-    looked". Invalid timestamps are ignored (best-effort). Over-fetch by a
-    10x factor so post-filter still returns ``limit`` matches when the window
-    is narrow.
+    Optional ``since`` / ``until`` bounds filter retrieved candidates by
+    ``source_updated_at``. Projection creation never substitutes for missing
+    source time. This is a latest-update window, not event history or as-of
+    reconstruction. Retrieval is bounded even when over-fetching 10x.
 
     Ideação 2cf21a31 — optional pre-retrieve rewrite stage:
 
@@ -906,6 +913,10 @@ def execute_natural_query(
     # normalize_graph_layer (the single layer allowlist) so there is no second
     # vocabulary to drift from query_global/get_related_context.
     from okto_pulse.core.kg.kg_service import KGToolError, normalize_graph_layer
+
+    if (type(min_confidence) not in (int, float) or not math.isfinite(min_confidence)
+            or not 0 <= min_confidence <= 1):
+        raise TierPowerError("invalid_param", "min_confidence must be a finite number from 0 to 1.")
 
     try:
         graph_layer = normalize_graph_layer(graph_layer)
@@ -942,6 +953,8 @@ def execute_natural_query(
             fusion_paraphrases=fusion_paraphrases,
         )
         rewrite_result = rewriter.rewrite(nl_query)
+    except (GraphQueryTimeout, GraphQueryResourceLimit):
+        raise
     except Exception as e:  # noqa: BLE001 — anything falls back
         logger.warning(
             "execute_natural_query.rewrite_failed strategy=%s error=%s",
@@ -964,6 +977,8 @@ def execute_natural_query(
     if applied_strategy == "hyde" and rewrite_result.hyde_passage:
         try:
             hyde_vec = embedder.encode(rewrite_result.hyde_passage)
+        except (GraphQueryTimeout, GraphQueryResourceLimit):
+            raise
         except Exception:
             hyde_vec = None
 
@@ -973,9 +988,12 @@ def execute_natural_query(
             board_id,
             variant_query,
             limit=fetch_limit,
+            min_confidence=min_confidence,
         )
         try:
             query_vec = override_vec if override_vec is not None else embedder.encode(variant_query)
+        except (GraphQueryTimeout, GraphQueryResourceLimit):
+            raise
         except Exception:
             query_vec = None
 
@@ -997,7 +1015,7 @@ def execute_natural_query(
                         "similarity": r["similarity"],
                     })
         elif store is not None:
-            f = QueryFilters(min_confidence=0.0, max_rows=fetch_limit)
+            f = QueryFilters(min_confidence=min_confidence, max_rows=fetch_limit)
             for node_type in NODE_TYPES:
                 try:
                     rows = store.find_by_topic(board_id, node_type, variant_query[:50], f)
@@ -1009,6 +1027,8 @@ def execute_natural_query(
                             "source_artifact_ref": None,
                             "similarity": 0.5,
                         })
+                except (GraphQueryTimeout, GraphQueryResourceLimit):
+                    raise
                 except Exception:
                     pass
         else:
@@ -1018,9 +1038,9 @@ def execute_natural_query(
                     try:
                         result = executor.execute_read_only(
                             board_id,
-                            f"MATCH (n:{node_type}) WHERE n.title CONTAINS $q "
+                            f"MATCH (n:{node_type}) WHERE n.title CONTAINS $q AND n.source_confidence >= $minimum "
                             f"RETURN n.id, n.title LIMIT $k",
-                            {"q": variant_query[:50], "k": fetch_limit},
+                            {"q": variant_query[:50], "k": fetch_limit, "minimum": min_confidence},
                             max_rows=fetch_limit,
                         )
                         for row in result.get("rows") or []:
@@ -1031,6 +1051,8 @@ def execute_natural_query(
                                 "source_artifact_ref": None,
                                 "similarity": 0.5,
                             })
+                    except (GraphQueryTimeout, GraphQueryResourceLimit):
+                        raise
                     except Exception:
                         pass
         return _dedupe_natural_results(out)
@@ -1046,6 +1068,8 @@ def execute_natural_query(
             # so existing callers still see the warning they expect.
             try:
                 embedder.encode(nl_query)
+            except (GraphQueryTimeout, GraphQueryResourceLimit):
+                raise
             except Exception:
                 warning = "embedding_unavailable"
 
@@ -1089,13 +1113,13 @@ def execute_natural_query(
             all_results, _eqv_mapping,
             id_keys=("node_id",), dedupe_key="node_id", score_key="similarity",
         )
+    all_results = _filter_natural_source_confidence(board_id, all_results, min_confidence)
     filtered_out = 0
     if temporal_filter_requested and all_results:
-        node_ids = [r["node_id"] for r in all_results]
-        timestamps = _batch_lookup_created_at(board_id, node_ids)
+        timestamps = _batch_lookup_source_updated_at(board_id, all_results)
         kept: list[dict] = []
         for r in all_results:
-            ts = timestamps.get(r["node_id"])
+            ts = timestamps.get((r["node_type"], r["node_id"]))
             if ts is None:
                 # Node vanished between vector hit and lookup — drop to avoid
                 # misleading an agent that asked for a specific window.
@@ -1107,7 +1131,7 @@ def execute_natural_query(
             if until_dt is not None and ts > until_dt:
                 filtered_out += 1
                 continue
-            r["created_at"] = ts.isoformat()
+            r["source_updated_at"] = ts.isoformat()
             kept.append(r)
         all_results = kept
 
@@ -1155,6 +1179,8 @@ def execute_natural_query(
                 r["parent_artifact"] = parent_map.get(
                     r.get("source_artifact_ref", ""),
                 )
+        except (GraphQueryTimeout, GraphQueryResourceLimit):
+            raise
         except Exception as e:  # noqa: BLE001 — never break on parent lookup
             logger.warning(
                 "execute_natural_query.parent_lookup_failed error=%s",
@@ -1184,6 +1210,8 @@ def execute_natural_query(
                     "approx_compressed_tokens": comp.approx_compressed_tokens,
                 }
                 compression_applied = True
+        except (GraphQueryTimeout, GraphQueryResourceLimit):
+            raise
         except Exception as e:  # noqa: BLE001
             logger.warning(
                 "execute_natural_query.compression_failed error=%s",
@@ -1208,6 +1236,11 @@ def execute_natural_query(
         resp["temporal_filter"] = {
             "since": since,
             "until": until,
+            "field": "source_updated_at",
+            "interpretation": "latest_source_update_not_history",
+            "history_complete": False,
+            "as_of_supported": False,
+            "complete_for_window": False,
             "candidates_before_filter": total_before_filter,
             "filtered_out": filtered_out,
         }
@@ -1310,42 +1343,45 @@ def _apply_graph_layer_to_natural_results(
     return kept, audit
 
 
-def _batch_lookup_created_at(board_id: str, node_ids: list[str]) -> dict[str, Any]:
-    """Fetch ``created_at`` for a list of node ids in one pass across all
-    node types. Returns a mapping ``{node_id: datetime}``. Nodes without a
-    known created_at (e.g. degenerate rows) are omitted — callers treat the
-    absence as "outside the temporal window" to be safe.
-    """
-    from datetime import timezone
+def _batch_lookup_source_updated_at(board_id: str, rows: list[dict]) -> dict[tuple[str, str], Any]:
+    """Read source update times for candidate identities, never projection time."""
+    from datetime import datetime, timezone
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-    if not node_ids:
+    if not rows:
         return {}
-
-    out: dict[str, Any] = {}
-    executor = getattr(get_kg_registry(), "cypher_executor", None)
+    executor = get_kg_registry().cypher_executor
     if executor is None:
-        return out
-    for node_type in NODE_TYPES:
-        try:
+        raise TierPowerError("query_temporal_unavailable", "Source update times could not be resolved.")
+    grouped: dict[str, set[str]] = {}
+    for row in rows:
+        kind, identity = row.get("node_type"), row.get("node_id")
+        if kind in NODE_TYPES and isinstance(identity, str) and identity:
+            grouped.setdefault(kind, set()).add(identity)
+    out: dict[tuple[str, str], Any] = {}
+    try:
+        for kind, identities in grouped.items():
             result = executor.execute_read_only(
                 board_id,
-                f"MATCH (n:{node_type}) WHERE n.id IN $ids "
-                f"RETURN n.id, n.created_at",
-                {"ids": node_ids},
-                max_rows=max(len(node_ids), 1),
+                f"MATCH (n:{kind}) WHERE n.id IN $ids RETURN n.id, n.source_updated_at",
+                {"ids": sorted(identities)}, max_rows=len(identities),
             )
-            for row in result.get("rows") or []:
-                nid = row[0]
-                ts = row[1]
-                if ts is None:
+            for identity, timestamp in result.get("rows") or []:
+                if identity not in identities or timestamp is None:
                     continue
-                # graph backend returns a Python datetime; ensure tz-aware UTC
-                if hasattr(ts, "tzinfo") and ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
-                out[nid] = ts
-        except Exception:
-            continue
+                if isinstance(timestamp, str):
+                    timestamp = _parse_iso_ts(timestamp)
+                if not isinstance(timestamp, datetime):
+                    raise ValueError("Invalid stored source update timestamp")
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+                out[(kind, identity)] = timestamp
+    except (GraphQueryTimeout, GraphQueryResourceLimit):
+        raise
+    except Exception as exc:
+        raise TierPowerError(
+            "query_temporal_unavailable", "Source update times could not be resolved."
+        ) from exc
     return out
 
 

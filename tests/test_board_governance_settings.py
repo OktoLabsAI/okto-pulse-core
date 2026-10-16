@@ -67,22 +67,21 @@ async def test_null_settings_resolve_to_safe_defaults(db_factory):
         assert resolved.require_full_context_for_critical_actions is True
 
 
-async def test_legacy_role_separation_does_not_grant_self_answering(db_factory):
+@pytest.mark.parametrize("retired_value", [False, True])
+async def test_retired_role_separation_is_refused_without_mutating_settings(db_factory, retired_value):
+    from pydantic import ValidationError
+    from sqlalchemy_test_models import Board
     from okto_pulse.core.services.board_governance import BoardGovernanceService
 
-    for legacy_value in (False, True):
-        async with db_factory() as db:
-            board = await _create_board(
-                db,
-                settings={"qa_require_role_separation": legacy_value},
-            )
-            board_id = board.id
-            await db.commit()
-
-        async with db_factory() as db:
-            resolved = await BoardGovernanceService(db).resolve(board_id)
-            assert resolved.allow_agent_self_answering is False
-            assert resolved.qa_require_role_separation is legacy_value
+    async with db_factory() as db:
+        board = await _create_board(db, settings={"qa_require_role_separation": retired_value})
+        board_id = board.id
+        await db.commit()
+    async with db_factory() as db:
+        with pytest.raises(ValidationError, match="qa_require_role_separation_removed"):
+            await BoardGovernanceService(db).resolve(board_id)
+        stored = await db.get(Board, board_id)
+        assert stored.settings == {"qa_require_role_separation": retired_value}
 
 
 async def test_board_update_merges_partial_governance_settings_and_logs_safe_event(db_factory):
@@ -139,3 +138,22 @@ async def test_board_update_merges_partial_governance_settings_and_logs_safe_eve
             "surface": "board_patch",
             "outcome": "changed",
         }
+
+
+async def test_board_settings_no_longer_expose_retired_cognitive_inference_config():
+    from okto_pulse.core.models.schemas import BoardSettings
+
+    assert "cognitive_llm_config" not in BoardSettings.model_fields
+    assert "cognitive_llm_config" not in BoardSettings.model_json_schema()["properties"]
+    assert "cognitive_llm_config" not in BoardSettings().model_dump()
+
+
+@pytest.mark.parametrize("retired_value", [None, {}, {"provider": "openai", "model": "x"}])
+async def test_removed_cognitive_inference_settings_are_refused_without_conversion(retired_value):
+    from pydantic import ValidationError
+    from okto_pulse.core.models.schemas import BoardSettings
+
+    settings = {"cognitive_llm_config": retired_value}
+    with pytest.raises(ValidationError, match="cognitive_llm_config_removed"):
+        BoardSettings.model_validate(settings)
+    assert settings == {"cognitive_llm_config": retired_value}

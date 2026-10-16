@@ -1,0 +1,68 @@
+{
+  "scope": "Community14 native SQL and explicit Grafx driver; Core19 terminal retained",
+  "qualified_community_distinct_cases": 16,
+  "runs": [
+    {
+      "name": "community14-native-realms1",
+      "sha256": "9e47d53768eb517442932f68ea986f8fe58d15c6771bc886e4e77f249e78fd74",
+      "tests": 15,
+      "failed": 6,
+      "failed_modules": [
+        "tests.test_materialization_census_volume",
+        "tests.test_materialization_health_adapters"
+      ]
+    },
+    {
+      "name": "community14-native-realms2",
+      "sha256": "88e0c0ba80205e2804258a3bb2eb047bc39323307cdc6ccc6fc519f4cfd5ba3f",
+      "tests": 13,
+      "failed": 5,
+      "failed_modules": [
+        "tests.test_materialization_census_volume"
+      ]
+    },
+    {
+      "name": "community14-native-realms3",
+      "sha256": "a0b9948fc6e3b9a32b892b41355655f20faa134a15e14bf07e6221eb41672fea",
+      "tests": 5,
+      "failed": 0,
+      "failed_modules": []
+    },
+    {
+      "name": "community14-native-driver1",
+      "sha256": "03e346075920a0385b6bf3aa056ea4b5d5e66864fb2e41ebd7628e13b9ba74ac",
+      "tests": 1,
+      "failed": 0,
+      "failed_modules": []
+    },
+    {
+      "name": "clean-break-full-run19",
+      "sha256": "aee8f2e6fd60de6dc0c110d3588c40e3f61c0f010981366c7af0ea5456bf8a39",
+      "tests": 981,
+      "failed": 20,
+      "failed_modules": [
+        "tests.test_rest_ideation_refinement_scope",
+        "tests.test_s01_fake_saas_relational_adapter",
+        "tests.test_scenario_type_fail_closed",
+        "tests.test_scenario_verification_method",
+        "tests.test_services_import_isolation",
+        "tests.test_skb_b14_policy_constraint_projection_health",
+        "tests.test_skb_b14_policy_governance_mcp",
+        "tests.test_skm_spec_dependency_kg_projection",
+        "tests.test_spec_coverage_graph",
+        "tests.test_spec_coverage_mcp",
+        "tests.test_spec_coverage_query"
+      ]
+    }
+  ],
+  "pair": "dist-native-main18",
+  "grafx_driver_environment": {
+    "OKTO_E2E_GRAFX_REPO": "D:/Projetos/Techridy/okto_grafx"
+  },
+  "limitations": [
+    "Transfer shared fixture rerun active",
+    "Learning submission and MCP overlay modules pending",
+    "Core19 failures pending",
+    "C4 and installed E2E incomplete"
+  ]
+}

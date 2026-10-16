@@ -10,12 +10,12 @@ JSON payload describing the live state of a board's knowledge graph:
       band (sintoma de inflation), and avg_relevance.
     * In-process counter from scoring.get_contradict_warn_count for
       contradict_warn_count.
-    * schema_version is a fixed string ("1.0") versioning the response
+    * health_schema_version is a fixed string ("1.3") versioning the response
       payload independently of the graph backend schema.
 
-When graph backend hasn't been bootstrapped for the board (or any aggregation
-fails), graph backend-derived fields gracefully degrade to zero and the response
-still ships. The endpoint must never 500 on a healthy app DB.
+Failed or incomplete observations retain explicit unavailability. Public graph
+totals are null and unavailable layer maps are empty; only confirmed observations
+can establish zero counts. The endpoint remains available when probes fail.
 """
 
 from __future__ import annotations
@@ -100,8 +100,7 @@ _STATE_SEVERITY = {
 logger = logging.getLogger("okto_pulse.services.kg_health")
 
 
-HEALTH_SCHEMA_VERSION = "1.1"
-LEGACY_HEALTH_SCHEMA_VERSION = "1.0"
+HEALTH_SCHEMA_VERSION = "1.3"
 _MATERIALIZATION_EVIDENCE_BUDGET_S = 2.0
 _MATERIALIZATION_EVIDENCE_UNAVAILABLE = "materialization_evidence_unavailable"
 _CURRENT_GENERATION_STORE_UNAVAILABLE_REASON = "current_generation_store_unavailable"
@@ -660,17 +659,10 @@ def _build_health_diagnostics(
                 "reason": "graph:empty_after_materialized_history",
                 "description": (
                     "Relational audit/ref history shows prior KG materialization "
-                    "but the graph adapter currently returns zero nodes."
+                    "but the graph adapter currently returns zero nodes. "
+                    "The affected graph operations are unavailable."
                 ),
-                "operator_action": "run_local_offline_kg_recovery_executor",
-                "execution_mode": "recovery_only_offline",
-                "recovery_executor": "okto-pulse-kg-recovery-only",
-                "remediation": (
-                    "Stop Pulse/API/MCP and SDLC writers; inspect the live "
-                    "data home, rehearse on a physical isolated copy, then "
-                    "execute against the exact live home within 2 hours using "
-                    "the path-bound single-use rehearsal receipt."
-                ),
+                "operator_action": "none",
             }
         )
     elif board_graph_queryable:
@@ -725,9 +717,10 @@ def _build_health_diagnostics(
                 "description": (
                     "The global discovery graph has a concrete recovery signal. "
                     "This can make overall KG Health recovery_needed even when the "
-                    "current board graph is queryable."
+                    "current board graph is queryable. Global discovery operations "
+                    "are unavailable for the affected component."
                 ),
-                "operator_action": "run_explicit_global_discovery_recovery",
+                "operator_action": "none",
             }
         )
 
@@ -743,26 +736,26 @@ def _build_health_diagnostics(
                 "reason": "dead_letter_count_gt_zero",
                 "description": (
                     f"{dead_letter_count} consolidation row(s) are dead-lettered "
-                    "and need inspection/reprocess. Distinct from cognitive pending "
+                    "and their affected graph updates are unavailable. Distinct from cognitive pending "
                     "and canonical debt."
                 ),
-                "operator_action": "inspect_dead_letters",
-                "drill_down_tool": "okto_pulse_kg_dead_letter_list",
+                "operator_action": "none",
+                "drill_down_tool": None,
             }
         )
 
     if board_graph_recovery_required:
         primary = "board_graph_recovery_required"
-        operator_action = "run_local_offline_kg_recovery_executor"
+        operator_action = "none"
     elif discovery_recovery_required:
         primary = "discovery_recovery_required"
-        operator_action = "run_explicit_global_discovery_recovery"
+        operator_action = "none"
     elif rest_metric_status == "unavailable":
         primary = "telemetry_unavailable"
         operator_action = "inspect_telemetry"
     elif dead_letter_count > 0:
         primary = "dead_letter_backlog"
-        operator_action = "inspect_dead_letters"
+        operator_action = "none"
     else:
         primary = "none"
         operator_action = "none"
@@ -1156,7 +1149,14 @@ def _ensure_health_probe(
                         (request.board_id, epoch)
                     )
                     try:
-                        value = request.build()
+                        # Graph steps nest in this worker-owned scope. Their
+                        # native query budgets must not restart at every step.
+                        value = _run_health_probe_step(
+                            probe_name=request.name,
+                            board_id=request.board_id,
+                            step_name=request.name,
+                            build=request.build,
+                        )
                     except Exception as exc:
                         ok = False
                         value = None
@@ -1374,6 +1374,20 @@ def _run_health_probe_step(
         ):
             raise RuntimeError("health_probe_invalidated")
         _HEALTH_PROBE_PHASES[(probe_name, board_id)] = step_name
+    if probe_name in {_GRAPH_HEALTH_PROBE, _PARITY_HEALTH_PROBE}:
+        from okto_pulse.core.kg.interfaces import get_kg_registry
+
+        observation = getattr(get_kg_registry(), "graph_health_observation", None)
+        if observation is None:
+            raise RuntimeError("graph_health_observation_unavailable")
+        # Enter inside the worker, where the graph read actually executes.
+        # Never fall back to an ordinary read that may recover/open a writer.
+        timeout = (
+            _HEALTH_PARITY_PROBE_BUDGET_S
+            if probe_name == _PARITY_HEALTH_PROBE else _HEALTH_PROBE_BUDGET_S
+        )
+        with observation.scope(board_id, timeout_seconds=timeout):
+            return build()
     return build()
 
 
@@ -1976,13 +1990,7 @@ _DISCOVERY_HEALTH_PROBE = "discovery_snapshot"
 def _unavailable_kg_layer_counts(reason: str) -> dict[str, Any]:
     return {
         "status": "unavailable",
-        "by_layer": {
-            "canonical": 0,
-            "working": 0,
-            "none": 0,
-            "legacy_unknown": 0,
-            "unclassified": 0,
-        },
+        "by_layer": {},
         "by_maturity_status": {},
         "reason": reason,
     }
@@ -2183,10 +2191,7 @@ def _read_cognitive_health_counts(board_id: str) -> tuple[int, int, str]:
         store = CognitiveConsolidationItemStore(
             artifact_store=require_rebuild_audit_artifact_store()
         )
-        generation = store.latest_generation(board_id)
-        if not generation:
-            return 0, 0, "available"
-        items = list(store.list_items(board_id, generation))
+        items = store.observe_latest_items(board_id)
         counts = compute_status_counts(items)
         active = (
             int(counts.get("pending", 0))
@@ -2217,7 +2222,7 @@ def _read_current_kg_generation(board_id: str) -> tuple[str | None, str, str]:
         artifact_store = get_kg_registry().require_rebuild_audit_artifact_store()
         generation_id = RebuildAuditKGGenerationRepository(
             artifact_store=artifact_store
-        ).get_current(board_id)
+        ).observe_current(board_id)
         return generation_id, "available", "ok"
     except Exception:
         return None, "unavailable", _CURRENT_GENERATION_STORE_UNAVAILABLE_REASON
@@ -2426,8 +2431,8 @@ async def get_kg_health(
     """Compose the /api/v1/kg/health payload for ``board_id``.
 
     Raises ``BoardNotFoundError`` when the board is not found in the
-    SQLite app DB. All graph backend-derived metrics degrade to zero on lookup
-    errors — the endpoint never 500s for a transient graph backend issue.
+    relational app store. Failed graph observations retain explicit unknown
+    counts; an unavailable sensor is never evidence of an empty graph.
     """
     relational = await get_kg_health_read_port().queue_snapshot(
         db,
@@ -2636,6 +2641,7 @@ async def get_kg_health(
     graph_metrics_available = confirmed_empty_evidence or (
         not skip_board_graph_reads
         and (graph_probe.status != "unavailable" or "graph_metrics" in graph_partial)
+        and graph_snapshot["graph_metrics"].get("status") == "available"
     )
     artifact_snapshot = dict(artifact_probe.value)
     if artifact_probe.status == "unavailable":
@@ -2755,7 +2761,7 @@ async def get_kg_health(
         _DISCOVERY_HEALTH_PROBE: discovery_probe.diagnostic(),
         "graph_metrics": {
             "status": ("available" if graph_metrics_available else "unavailable"),
-            "reason": "ok" if graph_metrics_available else graph_probe.reason,
+            "reason": "ok" if graph_metrics_available else graph_metrics.get("reason", graph_probe.reason),
         },
         "schema_version": {
             "status": (
@@ -3081,6 +3087,14 @@ async def get_kg_health(
             combined_reasons.append(materialization_probe_reason)
         classification_reason = ";".join(combined_reasons)
 
+    if not graph_metrics_available:
+        rest_metric_status = "unavailable"
+        if overall_state == HealthState.HEALTHY:
+            overall_state = HealthState.AT_RISK
+        if "graph_metrics_observation_incomplete" not in combined_reasons:
+            combined_reasons.append("graph_metrics_observation_incomplete")
+        classification_reason = ";".join(combined_reasons)
+
     # FR1/TR1 (spec R2c): feed real ring-buffer observations to the
     # correlator instead of empty-list stubs.  The collector module keeps
     # per-board deques (maxlen 200 / 50) that telemetry writers populate
@@ -3114,15 +3128,15 @@ async def get_kg_health(
                     "delivery event(s) need read-only diagnosis. This domain is "
                     "separate from consolidation DLQ and the active retry window."
                 ),
-                "operator_action": "inspect_global_outbox_dead_letters",
-                "drill_down_tool": ("okto_pulse_kg_global_outbox_dead_letter_list"),
+                "operator_action": "none",
+                "drill_down_tool": None,
             }
         )
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = (
                 "global_outbox_dead_letter_backlog"
             )
-            health_diagnostics["operator_action"] = "inspect_global_outbox_dead_letters"
+            health_diagnostics["operator_action"] = "none"
     if decay_scheduler_diagnostics["operational_debt"]:
         health_diagnostics["health_issues"].append(
             {
@@ -3233,6 +3247,7 @@ async def get_kg_health(
         )
 
         canonical_debt = await summarize_canonical_debt(db, board_id)
+        canonical_debt["status"] = "available"
     except Exception as exc:  # pragma: no cover - defensive health path
         logger.warning(
             "kg.health.canonical_debt_summary_failed board=%s err=%s",
@@ -3240,14 +3255,26 @@ async def get_kg_health(
             exc,
         )
         canonical_debt = {
-            "open_count": 0,
-            "retryable_count": 0,
-            "blocked_count": 0,
-            "retry_scheduled_count": 0,
-            "terminal_count": 0,
+            "open_count": None,
+            "retryable_count": None,
+            "blocked_count": None,
+            "retry_scheduled_count": None,
+            "terminal_count": None,
             "by_state": {},
             "status": "unavailable",
         }
+        if overall_state == HealthState.HEALTHY:
+            overall_state = HealthState.AT_RISK
+        combined_reasons.append("canonical_debt_observation_unavailable")
+        classification_reason = ";".join(combined_reasons)
+        health_diagnostics["health_issues"].append({
+            "code": "canonical_debt_observation_unavailable",
+            "component": "canonical_graph",
+            "severity": "warning",
+            "reason": "canonical_debt_observation_unavailable",
+            "description": "Canonical projection status is unavailable; absence of pending work cannot be verified.",
+            "operator_action": "none",
+        })
     if int(canonical_debt.get("open_count") or 0) > 0:
         health_diagnostics["health_issues"].append(
             {
@@ -3260,13 +3287,12 @@ async def get_kg_health(
                     "remain outside canonical consolidation and require retry or "
                     "cognitive promotion."
                 ),
-                "operator_action": "inspect_canonical_debt",
-                "drill_down_tool": "okto_pulse_kg_canonical_debt_list",
+                "operator_action": "inspect_kg_health",
             }
         )
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = "canonical_debt_open"
-            health_diagnostics["operator_action"] = "inspect_canonical_debt"
+            health_diagnostics["operator_action"] = "inspect_kg_health"
 
     # FR7 (spec 007d1308 / dec_68fd26a2): cognitive pending is its OWN
     # operational signal with its own drill-down tool, kept separate from the
@@ -3300,8 +3326,7 @@ async def get_kg_health(
             health_diagnostics["operator_action"] = "inspect_cognitive_pending"
 
     # FR6 / AC5 (R7): canonical Learning partition integrity is exposed as ONE
-    # AGGREGATE health issue. Per-node detail (mixed-evidence deferred,
-    # provenance-only observed) lives ONLY in the read-only drilldown — Health
+    # AGGREGATE health issue. The public per-node inspector is retired; Health
     # uses cheap COUNTs (a SQL count + a file-backed store read off the event
     # loop), never a graph scan, so it stays light per tick. Counts are disjoint
     # (a go-forward HOLD and a historical DEBT are mutually exclusive per
@@ -3345,10 +3370,8 @@ async def get_kg_health(
                     f"{partition_blocking} canonical Learning partition-integrity "
                     "signal(s): bug-derived canonical Learning lacking canonical Bug "
                     "evidence (go-forward holds + historical remediation debt). "
-                    "Per-node detail is in the drilldown."
                 ),
-                "operator_action": "inspect_canonical_partition_integrity",
-                "drill_down_tool": "okto_pulse_kg_canonical_partition_integrity_list",
+                "operator_action": "inspect_kg_health",
                 "counts": {
                     "cognitive_pending": partition_cognitive_pending,
                     "canonical_debt": partition_debt_open,
@@ -3366,7 +3389,7 @@ async def get_kg_health(
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = "canonical_partition_integrity"
             health_diagnostics["operator_action"] = (
-                "inspect_canonical_partition_integrity"
+                "inspect_kg_health"
             )
 
     digest_inputs = parity_snapshot["digest_inputs"]
@@ -3441,7 +3464,6 @@ async def get_kg_health(
     # (the source regression is the more specific cause; the digest mismatch is its
     # R1 consequence).
     if stale_parity.get("count"):
-        _scp_sample = stale_parity["items"][0]
         health_diagnostics["health_issues"].append(
             {
                 "code": "stale_canonical_parity",
@@ -3455,8 +3477,7 @@ async def get_kg_health(
                     "maturity/status event or sweep."
                 ),
                 "count": stale_parity["count"],
-                "operator_action": "inspect_stale_canonical_parity",
-                "drill_down_tool": "okto_pulse_kg_stale_canonical_parity_list",
+                "operator_action": "inspect_kg_health",
                 # AC5/AC13: read-only diagnostic — the literal contract flag makes the
                 # no-mutation guarantee explicit (no agent-facing mutation tool clears
                 # this; the R2 reconciler is the only internal demotion path).
@@ -3464,20 +3485,6 @@ async def get_kg_health(
                 "global_discovery_evaluation": stale_parity.get(
                     "global_discovery_evaluation"
                 ),
-                "sample": {
-                    "node_id": _scp_sample.get("node_id"),
-                    "source_artifact_ref": _scp_sample.get("source_artifact_ref"),
-                    "board_graph_stale": _scp_sample.get("board_graph_stale"),
-                    "global_discovery_stale_digest": _scp_sample.get(
-                        "global_discovery_stale_digest"
-                    ),
-                    "expected_graph_layer": _scp_sample.get("expected_graph_layer"),
-                    "expected_maturity_status": _scp_sample.get(
-                        "expected_maturity_status"
-                    ),
-                    "current_source_status": _scp_sample.get("current_source_status"),
-                    "recommended_action": _scp_sample.get("recommended_action"),
-                },
                 "precedence_explanation": (
                     "Ranked BELOW canonical_debt_open, cognitive_consolidation_pending, "
                     "canonical_partition_integrity and DLQ/operational failures (never "
@@ -3488,7 +3495,7 @@ async def get_kg_health(
         )
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = "stale_canonical_parity"
-            health_diagnostics["operator_action"] = "inspect_stale_canonical_parity"
+            health_diagnostics["operator_action"] = "inspect_kg_health"
 
     # R1-IMP2 — digest_vs_board_layer_mismatch: a published DecisionDigest
     # graph_layer diverging from the expected_digest_layer recomputed from the
@@ -3497,7 +3504,6 @@ async def get_kg_health(
     # canonical_partition_integrity (only claims primary if still "none"), ABOVE
     # orphan_integrity_warning. Distinct cause -> no double-count with those.
     if digest_layer_mismatches:
-        _ddm_sample = digest_layer_mismatches[0]
         health_diagnostics["health_issues"].append(
             {
                 "code": "digest_vs_board_layer_mismatch",
@@ -3511,15 +3517,7 @@ async def get_kg_health(
                     "these on the next drain."
                 ),
                 "count": len(digest_layer_mismatches),
-                "operator_action": "inspect_digest_layer_mismatch",
-                "drill_down_tool": "okto_pulse_kg_digest_layer_mismatch_list",
-                "sample": {
-                    "board_id": _ddm_sample["board_id"],
-                    "digest_id": _ddm_sample["digest_id"],
-                    "original_node_id": _ddm_sample["original_node_id"],
-                    "expected_layer": _ddm_sample["expected_layer"],
-                    "actual_layer": _ddm_sample["actual_layer"],
-                },
+                "operator_action": "inspect_kg_health",
                 "precedence_explanation": (
                     "Ranked BELOW canonical_debt_open, cognitive_consolidation_pending "
                     "and canonical_partition_integrity (never overrides them) and ABOVE "
@@ -3532,7 +3530,7 @@ async def get_kg_health(
             health_diagnostics["primary_health_cause"] = (
                 "digest_vs_board_layer_mismatch"
             )
-            health_diagnostics["operator_action"] = "inspect_digest_layer_mismatch"
+            health_diagnostics["operator_action"] = "inspect_kg_health"
 
     unavailable_hot_probes = sorted(
         name
@@ -3595,12 +3593,12 @@ async def get_kg_health(
                     "non-allowlisted orphan KG node(s) remain. This is graph "
                     "integrity debt, not by itself a graph recovery signal."
                 ),
-                "operator_action": "inspect_orphan_integrity_report",
+                "operator_action": "inspect_kg_health",
             }
         )
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = "orphan_integrity_warning"
-            health_diagnostics["operator_action"] = "inspect_orphan_integrity_report"
+            health_diagnostics["operator_action"] = "inspect_kg_health"
 
     # R6-IMP2 (FR2/AC2): the ACTIVE operational-queue backlog is its OWN signal
     # with its own drill-down tool — distinct from dead-letter / canonical debt /
@@ -3622,7 +3620,7 @@ async def get_kg_health(
                     "global_update_outbox. Distinct from dead-letter and canonical debt."
                 ),
                 "operator_action": "inspect_active_queue",
-                "drill_down_tool": "okto_pulse_kg_queue_drilldown",
+                "drill_down_tool": None,
                 "counts": {
                     s["source"]: s["queue_depth"] for s in active_queue["sources"]
                 },
@@ -3677,27 +3675,28 @@ async def get_kg_health(
             "semantics": "transient_operational",
             "count": int(active_queue["total_active_depth"]),
             "classification": active_queue["classification"],
-            "drill_down_tool": "okto_pulse_kg_queue_drilldown",
+            "drill_down_tool": None,
         },
         "dead_letter": {
             "domain": "dead_letter",
             "semantics": "terminal_failure",
             "count": int(dead_letter_count),
-            "drill_down_tool": "okto_pulse_kg_dead_letter_list",
+            "drill_down_tool": None,
         },
         "global_outbox_dead_letter": {
             "domain": "global_outbox_dead_letter",
             "semantics": "terminal_global_discovery_delivery_failure",
             "count": global_outbox_dead_letter_count,
             "oldest_age_seconds": global_outbox_dead_letter["oldest_age_seconds"],
-            "drill_down_tool": ("okto_pulse_kg_global_outbox_dead_letter_list"),
+            "drill_down_tool": None,
             "drill_down_signal": "global_outbox_dead_letter",
         },
         "canonical_debt": {
             "domain": "canonical_debt",
             "semantics": "semantic_canonicality_pending",
-            "count": int(canonical_debt.get("open_count") or 0),
-            "drill_down_tool": "okto_pulse_kg_canonical_debt_list",
+            "count": canonical_debt["open_count"],
+            "status": canonical_debt["status"],
+            "drill_down_tool": None,
         },
         _POLICY_CONSTRAINT_PROJECTION_DOMAIN: (policy_constraint_projection),
     }
@@ -3752,6 +3751,9 @@ async def get_kg_health(
         safe_write_diag=safe_write_diag,
         scope=root_cause_scope,
     )
+    if not graph_metrics_available:
+        root_cause["materialized_node_count"] = None
+        root_cause["categories"]["empty_after_materialized_history"]["materialized_node_count"] = None
     # Card detail #4: an unavailable recovery drill-down must NOT read as healthy.
     if root_cause["drilldown_unavailable"]:
         if overall_state == HealthState.HEALTHY:
@@ -3805,16 +3807,15 @@ async def get_kg_health(
         # source_enumeration_failure / safe_write_drain_failure with materialized
         # node count, source count, queue state and last safe-write outcome.
         "root_cause": root_cause,
-        "total_nodes": total_nodes,
-        "default_score_count": default_score_count,
-        "default_score_ratio": round(default_score_ratio, 4),
-        "avg_relevance": graph_metrics["avg_relevance"],
+        "total_nodes": total_nodes if graph_metrics_available else None,
+        "default_score_count": default_score_count if graph_metrics_available else None,
+        "default_score_ratio": round(default_score_ratio, 4) if graph_metrics_available else None,
+        "avg_relevance": graph_metrics["avg_relevance"] if graph_metrics_available else None,
         "source_count": (
             int(source_diag["source_count"])
             if source_diag.get("source_count") is not None
             else None
         ),
-        "schema_version": LEGACY_HEALTH_SCHEMA_VERSION,
         "health_schema_version": HEALTH_SCHEMA_VERSION,
         "graph_schema_version": graph_schema_version,
         "contradict_warn_count": get_contradict_warn_count(board_id),
@@ -3839,18 +3840,31 @@ async def get_kg_health(
         "decay_scheduler_diagnostics": decay_scheduler_diagnostics,
         "storage_footprint_proxy": storage_footprint_proxy,
         "native_runtime_budget": native_runtime_budget,
-        "orphan_integrity": orphan_integrity,
+        # Public Health carries aggregate observation, never per-node scanner
+        # samples or future internal diagnostic extensions from the provider.
+        "orphan_integrity": {
+            key: orphan_integrity[key]
+            for key in (
+                "classification_delta", "integrity_warning", "orphan_count",
+                "orphan_count_by_type", "unresolved_reasons", "allowlisted_root_count",
+                "generation_id", "correlation_id", "zero_orphan_validation", "reason",
+            )
+            if key in orphan_integrity
+        },
         "kg_layer_counts": kg_layer_counts,
         "canonical_debt": canonical_debt,
         "rebuild_diagnostics": {
             "last_outcome": (
+                "unavailable"
+                if canonical_debt["status"] == "unavailable"
+                else
                 "rebuild_complete_with_canonical_debt"
                 if int(canonical_debt.get("open_count") or 0) > 0
                 else "rebuild_complete"
                 if current_kg_generation_id
                 else "no_generation"
             ),
-            "canonical_open_debt_count": int(canonical_debt.get("open_count") or 0),
+            "canonical_open_debt_count": canonical_debt["open_count"],
             "layer_counts_status": kg_layer_counts.get("status", "unknown"),
             "operator_action": health_diagnostics["operator_action"],
         },
@@ -3942,14 +3956,6 @@ _SAFE_WRITE_OUTCOME_SEVERITY: dict[str, int] = {
 }
 
 
-def _bounded_probe_error(exc: BaseException) -> str:
-    """Bounded, body-free description of a probe failure (type + short msg)."""
-    msg = str(exc).replace("\n", " ").strip()
-    if len(msg) > 200:
-        msg = msg[:200] + "…"
-    return f"{type(exc).__name__}: {msg}" if msg else type(exc).__name__
-
-
 def _probe_rebuild_source_diagnostics(board_id: str) -> dict[str, Any]:
     """Read-only probe of the deterministic rebuild source enumeration (D1/D3).
 
@@ -3962,9 +3968,15 @@ def _probe_rebuild_source_diagnostics(board_id: str) -> dict[str, Any]:
         from okto_pulse.core.kg.rebuild_sources import RebuildSourceEnumerator
 
         from okto_pulse.core.application.kg_rebuild import build_source_store
+        from okto_pulse.core.application.rebuild_ports import SourceObservationBudget
 
         source_set = RebuildSourceEnumerator(
-            source_store=build_source_store()
+            source_store=build_source_store(
+                observation_budget=SourceObservationBudget(timeout_seconds=_HEALTH_PROBE_BUDGET_S)
+            ),
+            # These two counters exclude the cognitive digest. Do not load or
+            # hash that separate store for a count-only Health observation.
+            cognitive_digest_provider=lambda _: {},
         ).enumerate(board_id=board_id)
         canonical = int(source_set.canonical_source_count)
         working = int(source_set.working_source_count)
@@ -3986,7 +3998,9 @@ def _probe_rebuild_source_diagnostics(board_id: str) -> dict[str, Any]:
             "canonical_source_count": None,
             "working_source_count": None,
             "enumeration_failure": True,
-            "error": _bounded_probe_error(exc),
+            # Exception bodies may contain storage paths, SQL or credentials.
+            # Truncation is not redaction; public diagnostics use stable codes.
+            "error": "source_enumeration_unavailable",
         }
 
 
@@ -4035,7 +4049,7 @@ def _probe_safe_write_diagnostics(board_id: str) -> dict[str, Any]:
             "last_safe_write_outcome": "unknown",
             "drain_failure": False,
             "outcomes": {},
-            "probe_error": _bounded_probe_error(exc),
+            "probe_error": "safe_write_observation_unavailable",
         }
 
 
@@ -4170,8 +4184,8 @@ def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
     """Pull node-level aggregates from graph backend for ``board_id``.
 
     Returns a dict with total_nodes, default_score_count and avg_relevance.
-    On any graph backend error (board not bootstrapped, schema drift, lock contention)
-    returns zeroed defaults so the health endpoint stays available.
+    Any failed or bounded result makes the observation incomplete. Internal
+    arithmetic placeholders never become public zero counts (Health 1.3).
     """
     try:
         from okto_pulse.core.kg.interfaces import get_kg_registry
@@ -4188,6 +4202,8 @@ def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
     default_score_count = 0
     relevance_sum = 0.0
     relevance_n = 0
+    incomplete = False
+    limit_reached = False
 
     try:
         cypher = get_kg_registry().cypher_executor
@@ -4204,6 +4220,7 @@ def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
                 if isinstance(result, Exception):
                     raise result
             except Exception as exc:
+                incomplete = True
                 logger.debug(
                     "kg.health.graph_query_failed board=%s type=%s err=%s",
                     board_id,
@@ -4211,7 +4228,14 @@ def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
                     exc,
                 )
                 continue
-            for row in result.get("rows", []):
+            rows = result.get("rows")
+            if not isinstance(rows, list):
+                incomplete = True
+                continue
+            if len(rows) >= 10000 or result.get("truncated") or result.get("has_more"):
+                incomplete = True
+                limit_reached = True
+            for row in rows:
                 rel = row[0]
                 total_nodes += 1
                 if rel is not None:
@@ -4234,6 +4258,8 @@ def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
         "total_nodes": total_nodes,
         "default_score_count": default_score_count,
         "avg_relevance": avg_relevance,
+        "status": "unavailable" if incomplete else "available",
+        "reason": "graph_metrics_limit_reached" if limit_reached else "graph_metrics_query_unavailable" if incomplete else "ok",
     }
 
 
@@ -4242,6 +4268,8 @@ def _zero_graph_metrics() -> dict[str, Any]:
         "total_nodes": 0,
         "default_score_count": 0,
         "avg_relevance": 0.0,
+        "status": "unavailable",
+        "reason": "graph_metrics_unavailable",
     }
 
 
@@ -4269,12 +4297,7 @@ def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
             board_id,
             exc,
         )
-        return {
-            "status": "unavailable",
-            "by_layer": counts,
-            "by_maturity_status": maturity_counts,
-            "reason": "schema_import_failed",
-        }
+        return _unavailable_kg_layer_counts("schema_import_failed")
 
     try:
         cypher = get_kg_registry().cypher_executor
@@ -4292,14 +4315,25 @@ def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
                 for node_type in NODE_TYPES
             ],
         )
-        for result in results:
+        for _node_type, result in zip(NODE_TYPES, results, strict=True):
             try:
                 if isinstance(result, Exception):
                     raise result
-                for row in result.get("rows", []):
+                rows = result.get("rows")
+                if (
+                    not isinstance(rows, list)
+                    or len(rows) >= 10000
+                    or result.get("truncated")
+                    or result.get("has_more")
+                ):
+                    failed_node_types += 1
+                    continue
+                for row in rows:
                     layer = str(row[0] or "unclassified")
                     maturity = str(row[1] or "unclassified")
-                    count = int(row[2] or 0)
+                    count = row[2]
+                    if type(count) is not int or count < 0:
+                        raise ValueError("invalid_layer_count")
                     counts[layer] = counts.get(layer, 0) + count
                     maturity_counts[maturity] = maturity_counts.get(maturity, 0) + count
                 successful_node_types += 1
@@ -4312,22 +4346,19 @@ def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
             board_id,
             exc,
         )
+        return _unavailable_kg_layer_counts("graph_open_failed")
+    if failed_node_types:
+        # A prefix is not the Board total. Keep completeness diagnostics while
+        # withholding all counts until every requested node type was observed.
         return {
-            "status": "unavailable",
-            "by_layer": counts,
-            "by_maturity_status": maturity_counts,
-            "reason": "graph_open_failed",
-        }
-    if successful_node_types == 0 and failed_node_types > 0:
-        return {
-            "status": "unavailable",
-            "by_layer": counts,
-            "by_maturity_status": maturity_counts,
-            "reason": "layer_columns_unavailable",
+            **_unavailable_kg_layer_counts(
+                "layer_counts_incomplete" if successful_node_types else "layer_columns_unavailable"
+            ),
+            "status": "partial" if successful_node_types else "unavailable",
             "failed_node_types": failed_node_types,
         }
     return {
-        "status": "partial" if failed_node_types else "ok",
+        "status": "ok",
         "by_layer": counts,
         "by_maturity_status": maturity_counts,
         "failed_node_types": failed_node_types,

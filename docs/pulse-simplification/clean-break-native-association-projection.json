@@ -1,0 +1,68 @@
+{
+  "scope": "AC-INT-08/ADV-21 current architecture associations reach deterministic KG",
+  "status": "implementation_verified_consumer_gate_acceptance_pending",
+  "proof_pair": "dist-native-main88",
+  "implementation": [
+    "Core resolves current association facts through existing public structured Spec and adopted architecture ports, reusing classification currentness per fragment.",
+    "A typed derived association is prepared after deterministic extraction for ordinary consolidation and reserved rebuild; no adapter imports Core private services.",
+    "Existing implements(APIContract,Requirement) is owned by the exact destination Spec IR, rule implements/architecture_association@v1. No new physical graph type or delivery credit.",
+    "The Community Grafx adapter queries the declared owner endpoint and replaces only matching deterministic writer edges.",
+    "Incomplete or corrupt populations refuse reconciliation. Complete current context-only, pending or retired classifications contribute no association.",
+    "Cancelled Spec policy is unchanged; native decision history is not rewritten."
+  ],
+  "verification": {
+    "python_byte_identical": {
+      "core": 838,
+      "community": 317
+    },
+    "payload_byte_identical": {
+      "core": 899,
+      "community": 403
+    },
+    "backend_distinct_passed": 91,
+    "frontend_passed": 69,
+    "total_distinct_passed": 160,
+    "real_grafx": "Initial reserved rebuild materializes association. Reclassification read reports new IR while graph still has old edge. Explicit offline queue then replaces old edge; context-only retracts it. Ordinary relationship churn/rebuild and reordered source identities pass.",
+    "domain": "Partial fragment currentness, changed/retired/pending/context-only/missing/inactive/ambiguous IR, corrupt/incomplete/foreign sources, exact owner endpoints and writer isolation.",
+    "closure": "Passed, no findings, eight budgets zero. README matrices regenerated using official renderer.",
+    "frontend": "Classification authoring/panel and graph canvas selection, mocked API/jsdom. Canvas getContext warnings are not browser rendering proof.",
+    "ruff_and_diff_check": "passed"
+  },
+  "failed_or_interrupted_attempts": [
+    {
+      "campaign": "native-association-rebuild1",
+      "result": "1 passed, 1 failed",
+      "cause": "Offline materialize harness does not dispatch classification outbox. Added explicit queue stimulus, no product relaxation."
+    },
+    {
+      "campaign": "closure-native-main88-review",
+      "result": "exit 1",
+      "cause": "README import matrices stale; budgets already zero. Regenerated both matrices."
+    },
+    {
+      "campaign": "native-association-parity1",
+      "result": "interrupted exit 1; no terminal XML qualification",
+      "cause": "Existing fixture omitted native schema marker and reserved rebuild correctly refused storage_format_incompatible:version. Stopped test process, verified no pytest process with this basetemp. Corrected two tests to native_schema=True."
+    }
+  ],
+  "limits": [
+    "No full planning/delivery consumer or start-gate witness in the stale-graph scenario yet. AC-INT-08 and ADV-21 remain pending.",
+    "Offline parity witness explicitly enqueues after governed classification; it does not claim event-dispatcher integration.",
+    "No whole-plan completion, promotion, tag, release, real-data action, schema compatibility path or SPA rebuild.",
+    "Existing unrelated KG10 WIP remains uncommitted."
+  ],
+  "artifacts": {
+    "provenance-native-main88-installed.json": "ff0e5a5e79821610913fb570cdc06c238dc0234679b57ff3266db602780e3048",
+    "provenance-native-association-rebuild1.json": "e7ccea5db80cb0a3f8354d989e33dbf25e7cecff78a2a000666e4fbd93032f1d",
+    "native-association-domain1.xml": "03d83f5154cf9365a486a95a7cef2a4e28b2404fa449a5a257b6653715d28293",
+    "native-association-regressions1.xml": "a545b732508a77ff157a5a9383529f62b696835ee300c5fb2cd5f00156e7d97d",
+    "native-association-rebuild1.xml": "0c0a505eb1aa6e09a07e56d9e39973d1dcd2cd0248ca780d509d079e02f236f6",
+    "native-association-rebuild2.xml": "7debb3c8ec373392deefedb96a71f32c5664108fefa107924721c165864f4c14",
+    "native-association-rebuild3.xml": "7d6d28db3088fc63a1147a2c283e876d95846cdab5402c026d927ea6e9cdf696",
+    "native-association-parity1.log": "f67ab10ad4e4c53121b6a5fe4da9c10ddee905b978d3788d2723d7bfacbe28a9",
+    "native-association-parity2.xml": "f1b9a2af3f04e578e80690a09cda7308ed4c40851cf369aad94b68973b2552c6",
+    "native-association-frontend1.json": "a0024e43aac38b777fa3ac6194bcbe358d09bcfa9e49e0b26990684bed0d55b2",
+    "closure-native-main88-review.json": "97f00a2e65e53dfbf99a67b23bdcd1f41a42e8cb2364d5b0a1e9c35f351776b0",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

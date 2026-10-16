@@ -1,0 +1,23 @@
+{
+  "scope": "Remove top-level legacy evidence conversion from test-card context",
+  "status": "verified",
+  "proof_pair": "dist-native-main90",
+  "change": "The evidence verifier receives the original native scenario; no evidence dictionary is reconstructed from obsolete top-level fields.",
+  "results": {
+    "core_passed": 33,
+    "closure_ok": true,
+    "zero_budgets": 8
+  },
+  "limits": [
+    "AC-INT-11 remains pending: this change does not prove its full operational/health flow.",
+    "No frontend implementation or contract shape changed; no SPA rebuild.",
+    "No acceptance index advancement; 220 verified, 15 pending, 11 superseded.",
+    "Only validation venv reinstalled; no promotion or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-main90.json": "66a5ad055bfb94090e8a22f64b98e63230f95b656fc462009c984e655113938e",
+    "native-main90-core.xml": "18898f38cf2355e46f575889499455fbb60391f6438fae69cbf457ff729ebd81",
+    "native-main90-core.log": "a5fb47c165d99665626dfdc16aee026efe48ae9de4b9f5e62d6227ea52e684a7",
+    "closure-native-main90.json": "738a5f3f3390888489c030ace3cfdd62c223416a5d689a599dcbf1da759fddfd"
+  }
+}

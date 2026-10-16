@@ -26,6 +26,10 @@ from sqlalchemy_test_models import (
 from okto_pulse.core.services.architecture import ArchitectureFindingRunStore
 
 
+from okto_pulse.core.domain.permissions import PermissionSet
+from okto_pulse.core.ports.permission_policy import registered_permission_flags
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
 USER_ID = "architecture-mcp-agent"
 
 
@@ -41,15 +45,7 @@ def _stub_ctx(board_id: str):
             "agent_id": USER_ID,
             "agent_name": "architecture-mcp-agent",
             "board_id": board_id,
-            "permissions": [
-                "board:read",
-                "cards:update",
-                "specs:update",
-                "code_traceability.investigation.read",
-                "code_traceability.evidence.read",
-                "code_traceability.target.read",
-                "code_traceability.overlap.read",
-            ],
+            "permissions": PermissionSet(registered_permission_flags()),
         },
     )()
 
@@ -104,21 +100,21 @@ def _topology_entities() -> list[dict]:
             "name": "Customer Portal",
             "entity_type": "web_app",
             "responsibility": "Sends requests.",
-            "boundaries": "Browser.",
+            "boundaries": ["Browser."],
         },
         {
             "id": "entity-api",
             "name": "Pulse API",
             "entity_type": "api",
             "responsibility": "Handles requests.",
-            "boundaries": "Backend.",
+            "boundaries": ["Backend."],
         },
         {
             "id": "entity-audit",
             "name": "Audit Sink",
             "entity_type": "service",
             "responsibility": "Consumes audit records.",
-            "boundaries": "Async sink.",
+            "boundaries": ["Async sink."],
         },
     ]
 
@@ -186,9 +182,11 @@ async def _seed_spec_card():
     spec_id = _id("architecture-mcp-spec")
     card_id = _id("architecture-mcp-card")
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="Architecture MCP Board", owner_id=USER_ID))
+        db.add(Board(id=board_id, realm_id="local", name="Architecture MCP Board", owner_id=USER_ID))
         db.add(
             Spec(
+                execution_contract={"contract_version": "spec-execution-contract/v1", "board_id": board_id, "spec_id": spec_id, "adopted_in_edition": 1, "actor_id": USER_ID, "origin": "new_spec"},
+                architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Architecture MCP Spec",
@@ -228,9 +226,65 @@ async def _call(name: str, **kwargs) -> dict:
 @pytest_asyncio.fixture(autouse=True)
 async def _stub_auth(_seed_spec_card):
     board_id, _, _ = _seed_spec_card
-    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))), \
-         patch.object(mcp_server, "check_permission", return_value=None):
+    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))):
         yield
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["delete", "import"])
+async def test_mcp_architecture_operations_reject_stale_version(_seed_spec_card, operation):
+    board_id, spec_id, _ = _seed_spec_card
+    created = await _call(
+        "okto_pulse_add_architecture_design", board_id=board_id, parent_type="spec", parent_id=spec_id,
+        title="Original", global_description="Operation version fixture.", diagrams=_architecture_diagrams(),
+    )
+    assert created.get("success") is True, created
+    original = created["architecture_design"]
+    updated = await _call(
+        "okto_pulse_update_architecture_design", board_id=board_id, design_id=original["id"],
+        title="Current architecture", expected_version=original["version"],
+    )
+    assert updated.get("success") is True, updated
+    args = {"board_id": board_id, "design_id": original["id"], "expected_version": original["version"]}
+    if operation == "import":
+        rejected = await _call("okto_pulse_import_excalidraw_architecture_diagram", **args,
+                               title="Stale diagram", payload_json={"elements": []})
+    else:
+        rejected = await _call("okto_pulse_delete_architecture_design", **args)
+    assert rejected["code"] == "architecture_version_conflict", rejected
+    current = await _call("okto_pulse_get_architecture_design", board_id=board_id, design_id=original["id"])
+    assert current["architecture_design"]["version"] == original["version"] + 1
+    assert current["architecture_design"]["title"] == "Current architecture"
+    assert len(current["architecture_design"]["diagrams"]) == len(original["diagrams"])
+
+
+@pytest.mark.asyncio
+async def test_mcp_authored_version_conflict_preserves_current_architecture(_seed_spec_card):
+    board_id, spec_id, _ = _seed_spec_card
+    created = await _call(
+        "okto_pulse_add_architecture_design", board_id=board_id,
+        parent_type="spec", parent_id=spec_id, title="Original",
+        global_description="Version conflict fixture.", diagrams=_architecture_diagrams(),
+    )
+    assert created.get("success") is True, created
+    original = created["architecture_design"]
+    updated = await _call(
+        "okto_pulse_update_architecture_design", board_id=board_id,
+        design_id=original["id"], title="Winner", expected_version=original["version"],
+    )
+    assert updated.get("success") is True, updated
+    rejected = await _call(
+        "okto_pulse_update_architecture_design", board_id=board_id,
+        design_id=original["id"], title="Stale", expected_version=original["version"],
+    )
+    assert rejected["success"] is False
+    assert rejected["code"] == "architecture_version_conflict"
+    assert rejected["expected_version"] == original["version"]
+    loaded = await _call(
+        "okto_pulse_get_architecture_design", board_id=board_id, design_id=original["id"],
+    )
+    assert loaded["architecture_design"]["title"] == "Winner"
+    assert loaded["architecture_design"]["version"] == original["version"] + 1
 
 
 @pytest.mark.asyncio
@@ -244,7 +298,7 @@ async def test_mcp_add_list_get_import_and_dump_architecture(_seed_spec_card):
         parent_id=spec_id,
         title="Spec Architecture",
         global_description="Architecture exposed through MCP.",
-        diagrams=json.dumps(_architecture_diagrams()),
+        diagrams=_architecture_diagrams(),
     )
     assert created.get("success") is True, created
     design_id = created["architecture_design"]["id"]
@@ -262,7 +316,7 @@ async def test_mcp_add_list_get_import_and_dump_architecture(_seed_spec_card):
         "okto_pulse_get_architecture_design",
         board_id=board_id,
         design_id=design_id,
-        include_payloads="true",
+        include_payloads=True,
     )
     assert loaded.get("success") is True
     assert loaded["architecture_design"]["diagrams"][0]["adapter_payload"]["elements"][0]["id"] == "mcp-shape"
@@ -272,15 +326,13 @@ async def test_mcp_add_list_get_import_and_dump_architecture(_seed_spec_card):
         board_id=board_id,
         design_id=design_id,
         title="Imported via MCP",
-        payload_json=json.dumps(
-            {
+        payload_json={
                 "type": "excalidraw",
                 "version": 2,
                 "elements": [{"id": "imported-shape", "type": "text", "text": "MCP"}],
                 "appState": {},
                 "files": {},
-            }
-        ),
+            },
     )
     assert imported.get("success") is True
     assert len(imported["architecture_design"]["diagrams"]) == 2
@@ -306,25 +358,21 @@ async def test_mcp_rejects_invalid_architecture_payload_with_context(_seed_spec_
         parent_id=spec_id,
         title="Invalid Spec Architecture",
         global_description="This payload should be critiqued before persistence.",
-        entities=json.dumps(
-            [
+        entities=[
                 {
                     "id": "entity-api",
                     "name": "API",
                     "entity_type": "api",
                 }
-            ]
-        ),
-        interfaces=json.dumps(
-            [
+            ],
+        interfaces=[
                 {
                     "id": "interface-invalid",
                     "name": "Invalid interface",
                     "participants": ["entity-api", "entity-missing"],
                     "direction": "both ways",
                 }
-            ]
-        ),
+            ],
     )
 
     assert "error" in created
@@ -347,9 +395,8 @@ async def test_mcp_save_requires_acknowledgement_for_structured_topology_warning
         parent_id=spec_id,
         title="Warning-bearing MCP Architecture",
         global_description="MCP create must reject warning-bearing saves without ack.",
-        entities=json.dumps(_topology_entities()),
-        interfaces=json.dumps(
-            [
+        entities=_topology_entities(),
+        interfaces=[
                 {
                     "id": "interface-web-api",
                     "name": "Call Pulse API",
@@ -361,9 +408,8 @@ async def test_mcp_save_requires_acknowledgement_for_structured_topology_warning
                     "request_schema": {"type": "object"},
                     "response_schema": {"type": "object"},
                 }
-            ]
-        ),
-        diagrams=json.dumps(warning_diagrams),
+            ],
+        diagrams=warning_diagrams,
     )
 
     assert created.get("success") is False, created
@@ -432,9 +478,9 @@ async def test_rest_and_mcp_save_acknowledgement_required_payloads_match_semanti
         parent_id=spec_id,
         title=payload["title"],
         global_description=payload["global_description"],
-        entities=json.dumps(payload["entities"]),
-        interfaces=json.dumps(interfaces),
-        diagrams=json.dumps(warning_diagrams),
+        entities=payload["entities"],
+        interfaces=interfaces,
+        diagrams=warning_diagrams,
     )
 
     def _warning_semantics(warning: dict) -> dict:
@@ -478,7 +524,7 @@ async def test_mcp_add_architecture_rejects_non_excalidraw_diagram_format(_seed_
         parent_id=spec_id,
         title="Mermaid Architecture",
         global_description="Mermaid text belongs in entity descriptions, not diagram format.",
-        diagrams=json.dumps(_mermaid_diagrams()),
+        diagrams=_mermaid_diagrams(),
     )
 
     assert "error" in created
@@ -499,6 +545,8 @@ async def test_mcp_get_architecture_schema_exposes_authoring_contract(_seed_spec
     assert "Mermaid" in " ".join(schema["root_contract"]["rules"])
     assert "mcp_server" in schema["entity_type_examples"]
     assert schema["entity_contract"]["anti_patterns"]
+    assert schema["entity_contract"]["boundaries"]["type"] == "array"
+    assert schema["entity_contract"]["boundaries"]["default"] == []
     assert "endpoint" in schema["interface_contract"]["recommended"]
     assert "participants" not in schema["interface_contract"]["recommended"]
     assert "interfaces do not own source/target" in " ".join(schema["interface_contract"]["rules"])
@@ -519,6 +567,37 @@ async def test_mcp_get_architecture_schema_exposes_authoring_contract(_seed_spec
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("boundaries,valid", [
+    (["Browser, isolated", "No direct SQL"], True),
+    ([], True), ("Browser", False), (None, False), ([" "], False), (["Browser", 7], False),
+])
+async def test_mcp_boundaries_dry_run_and_save_agree(_seed_spec_card, boundaries, valid):
+    board_id, spec_id, _ = _seed_spec_card
+    entities = _topology_entities()[:2]
+    entities[0]["boundaries"] = boundaries
+    diagrams = _topology_diagrams()
+    diagrams[0]["diagram_type"] = "context"
+    diagrams[0]["adapter_payload"]["elements"].pop(2)
+    payload = dict(
+        board_id=board_id, parent_type="spec", parent_id=spec_id,
+        title="Structured boundaries", global_description="Browser invokes the backend public API.",
+        entities=entities, diagrams=diagrams,
+        interfaces=[{"id": "interface-web-api", "name": "Checkout operations", "participants": ["entity-web", "entity-api"]}],
+    )
+    checked = await _call("okto_pulse_validate_architecture_design_payload", **payload)
+    assert checked.get("valid") is valid, checked
+    saved = await _call("okto_pulse_add_architecture_design", **payload)
+    if valid:
+        assert saved.get("success") is True, saved
+        design_id = saved["architecture_design"]["id"]
+        loaded = await _call("okto_pulse_get_architecture_design", board_id=board_id, design_id=design_id)
+        assert loaded["architecture_design"]["entities"][0]["boundaries"] == boundaries
+    else:
+        assert saved.get("success") is not True, saved
+        assert "boundaries" in json.dumps(saved)
+
+
+@pytest.mark.asyncio
 async def test_mcp_validate_architecture_payload_reports_issues_warnings_and_fixes(_seed_spec_card):
     board_id, spec_id, _ = _seed_spec_card
 
@@ -529,17 +608,14 @@ async def test_mcp_validate_architecture_payload_reports_issues_warnings_and_fix
         parent_id=spec_id,
         title="Invalid Architecture",
         global_description="Dry-run should return contextual feedback.",
-        entities=json.dumps(
-            [
+        entities=[
                 {
                     "id": "entity-api",
                     "name": "API",
                     "entity_type": "api",
                 }
-            ]
-        ),
-        interfaces=json.dumps(
-            [
+            ],
+        interfaces=[
                 {
                     "id": "interface-invalid",
                     "name": "Invalid interface",
@@ -547,10 +623,8 @@ async def test_mcp_validate_architecture_payload_reports_issues_warnings_and_fix
                     "participants": ["entity-api", "entity-missing"],
                     "direction": "both ways",
                 }
-            ]
-        ),
-        diagrams=json.dumps(
-            [
+            ],
+        diagrams=[
                 {
                     "id": "diagram-invalid",
                     "title": "Invalid diagram",
@@ -573,8 +647,7 @@ async def test_mcp_validate_architecture_payload_reports_issues_warnings_and_fix
                         "files": {},
                     },
                 }
-            ]
-        ),
+            ],
     )
 
     assert critique.get("success") is True, critique
@@ -600,7 +673,7 @@ async def test_mcp_validate_architecture_payload_rejects_non_excalidraw_diagram_
         parent_id=spec_id,
         title="Mermaid Architecture",
         global_description="Mermaid text belongs in entity descriptions, not diagram format.",
-        diagrams=json.dumps(_mermaid_diagrams()),
+        diagrams=_mermaid_diagrams(),
     )
 
     assert critique.get("success") is True, critique
@@ -627,8 +700,8 @@ async def test_mcp_validate_architecture_payload_matches_backend_structured_warn
         parent_id=spec_id,
         title="Topology Contract",
         global_description="MCP and REST share the backend critic result.",
-        entities=json.dumps(entities),
-        interfaces=json.dumps([
+        entities=entities,
+        interfaces=[
             {
                 "id": "interface-web-api",
                 "name": "Call Pulse API",
@@ -641,8 +714,8 @@ async def test_mcp_validate_architecture_payload_matches_backend_structured_warn
                 "request_schema": {"type": "object"},
                 "response_schema": {"type": "object"},
             }
-        ]),
-        diagrams=json.dumps(diagrams),
+        ],
+        diagrams=diagrams,
     )
 
     db_factory = get_session_factory()
@@ -736,9 +809,9 @@ async def test_rest_and_mcp_validate_architecture_payload_return_identical_warni
         parent_id=spec_id,
         title=payload["title"],
         global_description=payload["global_description"],
-        entities=json.dumps(entities),
-        interfaces=json.dumps(interfaces),
-        diagrams=json.dumps(diagrams),
+        entities=entities,
+        interfaces=interfaces,
+        diagrams=diagrams,
     )
 
     assert mcp.get("success") is True, mcp
@@ -765,7 +838,7 @@ async def test_mcp_validate_architecture_payload_accepts_complete_payload_withou
             "name": "Customer Portal",
             "entity_type": "web_app",
             "responsibility": "Collects checkout input.",
-            "boundaries": "Browser UI boundary.",
+            "boundaries": ["Browser UI boundary."],
             "technologies": ["React"],
         },
         {
@@ -773,7 +846,7 @@ async def test_mcp_validate_architecture_payload_accepts_complete_payload_withou
             "name": "Checkout API",
             "entity_type": "api",
             "responsibility": "Validates checkout and creates orders.",
-            "boundaries": "Backend API boundary.",
+            "boundaries": ["Backend API boundary."],
             "technologies": ["FastAPI"],
         },
     ]
@@ -834,9 +907,9 @@ async def test_mcp_validate_architecture_payload_accepts_complete_payload_withou
         parent_id=spec_id,
         title="Checkout Architecture",
         global_description="Customer Portal calls Checkout API to create orders.",
-        entities=json.dumps(entities),
-        interfaces=json.dumps(interfaces),
-        diagrams=json.dumps(diagrams),
+        entities=entities,
+        interfaces=interfaces,
+        diagrams=diagrams,
     )
     listed = await _call(
         "okto_pulse_list_architecture_designs",
@@ -866,11 +939,11 @@ async def test_mcp_copy_architecture_to_card_and_task_context(_seed_spec_card):
         parent_id=spec_id,
         title="Spec Architecture",
         global_description="Architecture copied into card context.",
-        diagrams=json.dumps(_architecture_diagrams()),
+        diagrams=_architecture_diagrams(),
     )
     source_id = created["architecture_design"]["id"]
 
-    # profile=full preserves the prior payload shape (back-compat, R2.3).
+    # Full projection includes the complete native resource payload.
     copied = await _call(
         "okto_pulse_copy_architecture_to_card",
         board_id=board_id,
@@ -886,7 +959,7 @@ async def test_mcp_copy_architecture_to_card_and_task_context(_seed_spec_card):
         "okto_pulse_get_task_context",
         board_id=board_id,
         card_id=card_id,
-        include_architecture="true",
+        include_architecture=True,
     )
     assert "architecture_designs" in context["card"]
     assert context["card"]["architecture_designs"][0]["source_design_id"] == source_id
@@ -988,14 +1061,14 @@ async def test_mcp_task_context_projects_architecture_findings_full_and_summary(
         "okto_pulse_get_task_context",
         board_id=board_id,
         card_id=card_id,
-        include_architecture="true",
+        include_architecture=True,
         profile="full",
     )
     summary_context = await _call(
         "okto_pulse_get_task_context",
         board_id=board_id,
         card_id=card_id,
-        include_architecture="true",
+        include_architecture=True,
     )
 
     for context in (full_context, summary_context):
@@ -1104,7 +1177,7 @@ async def test_mcp_spec_lock_allows_dry_run_but_blocks_architecture_writes(
 
 @pytest.mark.asyncio
 async def test_mcp_architecture_tools_enforce_granular_permissions(_seed_spec_card):
-    from okto_pulse.core.infra.permissions import _build_preset_flags, resolve_permissions
+    from okto_pulse.core.domain.permissions import _build_preset_flags, resolve_permissions
 
     board_id, spec_id, card_id = _seed_spec_card
     created = await _call(
@@ -1113,7 +1186,7 @@ async def test_mcp_architecture_tools_enforce_granular_permissions(_seed_spec_ca
         parent_type="spec",
         parent_id=spec_id,
         title="Permissioned Architecture",
-        global_description="Architecture created with legacy-compatible permissions.",
+        global_description="Architecture created with native permissions.",
     )
     assert created.get("success") is True, created
 

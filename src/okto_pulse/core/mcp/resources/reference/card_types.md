@@ -12,7 +12,7 @@ version: "1.0"
 
 ## Normal Card Rules
 
-- `card_type="normal"` → spec must be in `approved`, `in_progress`, or `done`
+- `card_type="normal"` → create in Spec `draft` (only `not_started`), `approved`, or `in_progress`. Creation in Draft is planning, not execution. Spec `done` blocks normal-card creation/content changes and start/reopen; use the governed revision path for new normal work.
 - Goes through the standard validation gate when `validation_config.required == true`
 - Requires conclusion, completeness, and drift when moving to `validation` or `done`
 - Transition: `not_started` → `started` → `in_progress` → `validation` → `done`; an admitted failed completion internally enters `rejected`, whose sole exit is `in_progress`
@@ -21,14 +21,14 @@ version: "1.0"
 
 - `card_type="test"` **requires** `test_scenario_ids` to be non-empty — the server rejects card creation without it.
 - A single test card may link at most `board.settings.max_scenarios_per_card` scenarios (default 3; some boards configure 2). Split larger sets before creation; the API rejects over-limit requests with `max_scenarios_per_card_exceeded`.
-- Spec must be in `approved`, `validated`, `in_progress`, or `done` for test card creation.
+- Spec must be in `draft`, `approved`, `validated`, `in_progress`, or `done` for test card creation. In Draft the Card must remain `not_started`; creation does not authorize execution. On a locked/Done Spec, only eligible existing scenario links and governed operational evidence are allowed; new semantic coverage follows the amendment/revision path.
 - The scenario-coverage gate counts **only cards with `card_type="test"`**. A `card_type="normal"` card with `test_scenario_ids` does NOT count toward scenario coverage.
 - **Always use `card_type="test"` when the intent is to cover a scenario.**
 - Test cards skip `okto_pulse_submit_task_validation` — moving to `done` is controlled by scenario status.
 - Test cards may move `not_started` → `started` → `in_progress`, and the API also accepts direct `not_started` → `in_progress` when the same prerequisites are met.
 - When moving test card to `done`, `okto_pulse_move_card` requires: `conclusion`, `completeness`, `completeness_justification`, `drift`, `drift_justification`.
 - **Before moving to `done`**: ALL linked test scenarios must have an honest terminal result (`passed`, `failed`, or `automated`), not `draft` or `ready`, with the required evidence. Call `okto_pulse_update_test_scenario_status` with the observed result first. If the spec is already `validated` or `done`, this status update is allowed only for a scenario already linked to an executable test card (`started`, `in_progress`, `validation`, or `done`); it records operational evidence and does not unlock semantic spec content.
-- **Execution complete is not product approval.** A failed scenario stays `failed` even when the Test Card finishes reporting it. Required evidence is checked (Evidence V2 also requires its authenticated receipt); other completion gates still apply. Sprint review requires `passed` unless its effective skip applies, and bug regression/delivery gates have separate evidence and success rules. Never change a failure to `passed` merely to close a card.
+- **Execution complete is not product approval.** A failed scenario stays `failed` even when the Test Card finishes reporting it. Required evidence is checked (Evidence V2 also requires its authenticated receipt); other completion gates still apply. Bug regression/delivery gates have separate evidence and success rules. Never change a failure to `passed` merely to close a card.
 - Runtime `next_action.params_template` contains placeholders, not a ready-to-execute command. Replace `<observed_terminal_status>` with the actual result from `status_choices`; that choices list is guidance metadata, not an argument to the scenario tool. Then verify the follow-up transition and its other gates.
 
 **Test card naming convention:** Prefix with `[TEST]`:
@@ -99,7 +99,7 @@ authenticated family, see `okto-pulse://reference/policy-compliance`.
        coverage (refinement/spec-revision authoring alone does NOT satisfy
        the bug gate)
 3. Create a fresh test task & link to bug (still started)
-   └── okto_pulse_update_card(card_id=bug_id, linked_test_task_ids="<test_task_id>")
+   └── okto_pulse_update_card(card_id=bug_id, linked_test_task_ids=["<test_task_id>"])
 4. Move to in_progress (BLOCKED until step 3 is done)
    └── System validates:
        ✓ At least 1 test task linked

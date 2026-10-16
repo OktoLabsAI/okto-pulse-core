@@ -1,0 +1,32 @@
+{
+  "scope": [
+    "BASE:T43",
+    "KG:KG-64"
+  ],
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main92",
+  "scope_authority": {
+    "document": "CLEAN_BREAK_040_REASSESSMENT.md",
+    "lines": "187-197; C4 item 4",
+    "rule": "Maintain current-flow measurement and declared limits; do not keep a second implementation for the benchmark or infer savings from unequal populations."
+  },
+  "qualification": "Current contract cost measurement and bounded comparative report accepted under the approved clean-break reassessment. Historical three-state equivalent-flow savings are NOT demonstrated.",
+  "supporting_receipts": [
+    "clean-break-native-benchmark-accounting-20261008.json",
+    "clean-break-native-execution-cost-20261008.json",
+    "clean-break-native-continuous-cost-main92-20261008.json"
+  ],
+  "verified": [
+    "Full serialized metadata/resources/requests/responses counted with one tokenizer; source/wheel/install correspondence proven before campaigns.",
+    "Continuous same-Spec Draft-to-Done comparison preserves all 26 decisions, review policies, evidence and final outcomes; 84 to 59 calls (29.7619%), all eight tests passed.",
+    "Broad agent and all four separated-reviewer sessions included; no deferred-loading gain claimed.",
+    "Frozen historical archives verified against recorded SHA256 and JSON; populations are not equivalent to the current continuous flow."
+  ],
+  "not_claimed": [
+    "50% schema/bootstrap target achieved",
+    "30% whole-flow target achieved",
+    "Equivalent historical v0.3.3/without-KG/with-KG flow comparison",
+    "Measured isolated marginal KG cost"
+  ],
+  "limits": "These are explicit measurement limits required by the reassessment, not pending product features and not permission to weaken any gate."
+}

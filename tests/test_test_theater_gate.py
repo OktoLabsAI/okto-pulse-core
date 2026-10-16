@@ -87,7 +87,7 @@ async def test_ts4_passed_accepts_output_snippet_or_test_run_id():
         validate_test_scenario_evidence as _validate_evidence,
     )
 
-    base = {"last_run_at": "2026-04-27T20:00:00"}
+    base = {"last_run_at": "2026-04-27T20:00:00", "expected_output_snapshot": "1 passed", "non_replayable_justification": "Observed externally without a deterministic replay harness"}
 
     # output_snippet only
     ok, _ = _validate_evidence("passed", {**base, "output_snippet": "1 passed"})
@@ -119,7 +119,7 @@ async def test_ts4b_failed_same_as_passed():
 
     ok, _ = _validate_evidence(
         "failed",
-        {"last_run_at": "2026-04-27T20:00:00", "output_snippet": "1 failed"},
+        {"last_run_at": "2026-04-27T20:00:00", "output_snippet": "1 failed", "expected_output_snapshot": "1 passed", "non_replayable_justification": "Observed externally without a deterministic replay harness"},
     )
     assert ok
 
@@ -161,10 +161,7 @@ async def test_ts7_response_schema_preserves_scenario_evidence():
             "test_function": "test_contract",
             "last_run_at": "2026-05-09T12:00:00Z",
             "output_snippet": "1 passed",
-            "command": "python -m pytest tests/test_api.py -q",
-        },
-        "latest_evidence": {
-            "last_run_at": "2026-05-09T12:05:00Z",
+            "replay_command": "python -m pytest tests/test_api.py -q",
             "test_run_id": "ci-123",
         },
     })
@@ -175,5 +172,5 @@ async def test_ts7_response_schema_preserves_scenario_evidence():
     assert dumped["evidence"]["test_function"] == "test_contract"
     assert dumped["evidence"]["last_run_at"] == "2026-05-09T12:00:00Z"
     assert dumped["evidence"]["output_snippet"] == "1 passed"
-    assert dumped["evidence"]["command"] == "python -m pytest tests/test_api.py -q"
-    assert dumped["latest_evidence"]["test_run_id"] == "ci-123"
+    assert dumped["evidence"]["replay_command"] == "python -m pytest tests/test_api.py -q"
+    assert dumped["evidence"]["test_run_id"] == "ci-123"

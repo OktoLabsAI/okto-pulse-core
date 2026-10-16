@@ -15,6 +15,7 @@ from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
+    PermissionDeniedError,
     commit,
 )
 from okto_pulse.core.application.use_cases.authorization import (
@@ -99,10 +100,19 @@ class CreateBoardUseCase:
             actor,
             PermissionRequirement(
                 "board.admin.create",
-                legacy_operation="board.read",
             ),
             uow=uow,
         )
+        settings = command.data.settings
+        if actor.actor_kind != "human" and settings is not None:
+            # Omission inherits the human-authored template in the existing
+            # transaction. An explicit false is also an override and could
+            # replace a true template value; executors cannot author either.
+            authored = settings.model_dump(exclude_unset=True)
+            if {"skip_cognitive_consolidation", "bug_learning_closeout", "missing_link_gate", "kg_query_timeout_ms"}.intersection(authored):
+                raise PermissionDeniedError(
+                    "Cognitive and query policy overrides require an authenticated human."
+                )
         board = await service.create_board(
             actor.actor_id, command.data, realm_id=actor.realm_id
         )

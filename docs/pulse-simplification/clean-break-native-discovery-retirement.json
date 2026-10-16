@@ -1,0 +1,76 @@
+{
+  "criterion": "KG:KG-52",
+  "qualification": "verified_current_pair_review",
+  "proof_pair": "dist-native-main71",
+  "scope": "Rewritten KG52: Q15 and current sources/queries without Sprint; no old-source or saved-state migration. Historical migration obligation is superseded.",
+  "changes": [
+    "Removed backend inference of text type from untyped/invalid Discovery metadata; explicit supported types required.",
+    "Removed equivalent frontend fallback; incompatible saved query produces a visible refusal and makes no query/selector call.",
+    "Removed six Sprint-specific activity verbs and current catalog sprint-plan guidance.",
+    "Includes main70 Q15 rejection of obsolete requirements and stable FR/AC references."
+  ],
+  "evidence": {
+    "q15": "Real SQLite adapter, Board isolation, Done gaps, excluded cancelled Specs and inactive archived/cancelled links. Repeat reads issue SELECT only.",
+    "source_retirement": "Retired Sprint events have no live DTO/handler/projection, queue work rejects before graph access, archive envelopes cannot restore Sprint; native Card/Spec targets preserved.",
+    "saved_intents": "Retired intent hidden without writes and refused before dispatch; current metadata survives unchanged, old untyped metadata rejected at response/execution/UI.",
+    "storage": "44 current-storage tests cover incompatible schema refusal before WAL/seeding, source preservation, restart and repeatable native catalog seed.",
+    "reviewed_paths": [
+      "core/discovery_intent_catalog.py",
+      "core/discovery_params_schema.py",
+      "core/services/discovery_executor.py",
+      "core/services/discovery_catalog_reader.py",
+      "community/adapters/current_data_seeds.py",
+      "community/adapters/sqlalchemy_discovery_catalog.py",
+      "frontend/src/components/knowledge/GlobalSearchView.tsx"
+    ],
+    "local_state": "GlobalSearchView persists only discovery-intents-open visibility; no conversion of saved queries. Sprint UI navigation guards remain refusal behavior.",
+    "catalog_seed": "Adds current missing definitions and refreshes catalog-owned bindings in compatible storage; preserves labels, disabled rows and user definitions. It does not rename retired intents or convert Sprint sources."
+  },
+  "tests": {
+    "core_passed": 111,
+    "community_relational_lineage_passed": 7,
+    "community_storage_passed": 44,
+    "frontend_passed": 17,
+    "total_distinct_passed": 179,
+    "initial_expected_core_failures": 9,
+    "initial_expected_frontend_failures": 1
+  },
+  "frontend": {
+    "files": 79,
+    "assets": 78,
+    "sha256": "b79f5aef7a16b6b6d785d9d5fc5d707dfb5a33024e7a8991a6c0c968f87f1b6d",
+    "official_build": "terminal0",
+    "verify_frontend_dist": "terminal0"
+  },
+  "closure": {
+    "ok": true,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    },
+    "findings": [],
+    "documentation_findings": []
+  },
+  "limits": [
+    "Component frontend tests, not a live-browser installed-server claim.",
+    "Generic unknown activity metadata remains readable without adding retired navigation or converting it into current sources.",
+    "No promotion, real runtime modification, data conversion or deletion.",
+    "Qualification applies to rewritten KG52, not completion of the entire consolidated plan."
+  ],
+  "artifacts": {
+    "provenance-native-main71.json": "2a262833ef6a04b05043228901d8250539f577033601388c7aa700ed853a7687",
+    "native-discovery-schema-repro1.xml": "34e46502703948e3a88d8556ef1658257d3c902125f3602ee19e14f5c267ab8c",
+    "native-discovery-schema-frontend-repro1.json": "aba86bba69d19d9c2a29e20982f37d4f781cccf320a362618c97d771eca23731",
+    "native-discovery-schema-current2.xml": "26e0949abd472af89ee97228cc19ba51459d6c6e0e3f1ef9b42057f6b064aa76",
+    "native-discovery-schema-relational1.xml": "1ac42d1b74011755d02150dfc426ae20b4dae3dbbacd550b9fc7fa24665ad363",
+    "native-discovery-schema-frontend2.json": "30ef41459c83d164c753ed153166a9a897ffe79dae62ae5b96b2c49b4bf6a908",
+    "native-discovery-storage1.xml": "806dcab70f7c57c2982af682514fc09c3171f8fcf0742f06f134a510eced05ff",
+    "closure-native-main71.json": "50921d66df86b2107b9922f2e6eba86c2c08b8a7a7d1d914742bdef7acc87640"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "scope": "Native Spec coverage query, graph observation and MCP consumers",
+  "qualified_distinct_cases": 52,
+  "qualified_modules": [
+    "tests/test_spec_coverage_query.py",
+    "tests/test_spec_coverage_graph.py",
+    "tests/test_spec_coverage_mcp.py"
+  ],
+  "runs": [
+    {
+      "name": "core19-native-coverage1",
+      "sha256": "abbc572735928d7bdfd275e70ebb078892957bec6cab7052f38c64801a32632f",
+      "tests": 52,
+      "failed": 1
+    },
+    {
+      "name": "core19-native-coverage2",
+      "sha256": "a1463c3feffd3add3151e1be264c6fc5af7879ab1e0d15af813f8166868d9a08",
+      "tests": 52,
+      "failed": 0
+    }
+  ],
+  "pair": "dist-native-saas19",
+  "product_changed": false,
+  "limitations": [
+    "Community14 transfer still running",
+    "C4 and installed E2E remain incomplete"
+  ]
+}

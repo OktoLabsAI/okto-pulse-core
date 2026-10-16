@@ -242,60 +242,6 @@ def test_generic_reconciliation_rejects_existing_ct_target_before_mutation() -> 
     assert len(scope.statements) == 1
 
 
-@pytest.mark.asyncio
-async def test_generic_boost_denies_ct_before_set_or_audit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from okto_pulse.core.domain.code_traceability_kg import (
-        CodeTraceabilityKGWriteViolation,
-    )
-    from okto_pulse.core.kg import governance
-    from okto_pulse.core.kg.interfaces import registry as registry_module
-    from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
-
-    class _Scope:
-        def __init__(self) -> None:
-            self.statements: list[str] = []
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return None
-
-        def execute(self, statement: str, _params: dict) -> GraphStatementResult:
-            self.statements.append(statement)
-            if "SET " in statement:
-                raise AssertionError("CT boost reached SET")
-            if "MATCH (n:Entity" in statement:
-                return GraphStatementResult.from_rows(
-                    [[0.5, None, None, "code_evidence"]]
-                )
-            return GraphStatementResult()
-
-    class _Transaction:
-        def __init__(self, scope: _Scope) -> None:
-            self.scope = scope
-
-        async def begin(self, _board_id: str) -> _Scope:
-            return self.scope
-
-    scope = _Scope()
-    monkeypatch.setattr(
-        registry_module,
-        "get_kg_registry",
-        lambda: SimpleNamespace(graph_transaction=_Transaction(scope)),
-    )
-
-    with pytest.raises(CodeTraceabilityKGWriteViolation):
-        await governance.mutate_boost_node_graph(
-            BOARD_ID,
-            "ct-node",
-            actor_id="cognitive-agent",
-        )
-
-    assert scope.statements
-    assert all("SET " not in statement for statement in scope.statements)
 
 
 def test_bounded_query_templates_exclude_ct_before_limit_and_count() -> None:
@@ -455,12 +401,20 @@ async def test_session_similarity_runs_with_complete_ct_read_grant(
             {"board_id": BOARD_ID, "cypher": "MATCH (n) RETURN n"},
         ),
         (
+            "okto_pulse_kg_query_cypher",
+            {"board_id": BOARD_ID, "cypher": "MATCH (n:Entity) RETURN count(n)"},
+        ),
+        (
+            "okto_pulse_kg_query_cypher",
+            {"board_id": BOARD_ID, "cypher": "MATCH (n:Entity) RETURN collect(n.id)"},
+        ),
+        (
             "okto_pulse_kg_query_natural",
-            {"board_id": BOARD_ID, "nl_query": "traceability"},
+            {"board_id": BOARD_ID, "nl_query": "traceability", "graph_layer": "all"},
         ),
         (
             "okto_pulse_kg_query_reflective",
-            {"board_id": BOARD_ID, "nl_query": "traceability"},
+            {"board_id": BOARD_ID, "nl_query": "traceability", "graph_layer": "all"},
         ),
     ),
 )
@@ -503,6 +457,15 @@ async def test_arbitrary_mcp_query_runs_with_complete_ct_read_grant(
 ) -> None:
     from okto_pulse.core.mcp import kg_power_tools
 
+    async def query_policy(_board_id, _board_agent):
+        return SimpleNamespace(effective_timeout=lambda value: value or 15000)
+
+    async def execute_budgeted(_board_id, _timeout_ms, operation):
+        return operation()
+
+    monkeypatch.setattr(kg_power_tools, "_read_query_policy", query_policy)
+    monkeypatch.setattr(kg_power_tools, "_run_query_with_deadline", execute_budgeted)
+
     async def _agent():
         return SimpleNamespace(id="agent-ct-kg")
 
@@ -535,52 +498,6 @@ async def test_arbitrary_mcp_query_runs_with_complete_ct_read_grant(
     assert payload["rows"] == [["legacy"]]
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("ct_read", (False, True))
-async def test_provenance_drift_requires_complete_ct_authority_before_provider(
-    ct_read: bool,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from okto_pulse.core.kg import provenance_drift
-    from okto_pulse.core.mcp import kg_power_tools
-
-    async def _agent():
-        return SimpleNamespace(id="agent-ct-kg")
-
-    async def _board_agent(_board_id: str):
-        return _mcp_context(ct_read=ct_read)
-
-    called = False
-
-    async def _report(*_args, **_kwargs):
-        nonlocal called
-        called = True
-        return {
-            "checked_count": 0,
-            "drifted_count": 0,
-            "skipped_count": 0,
-            "drifted": [],
-        }
-
-    monkeypatch.setattr(provenance_drift, "provenance_drift_report", _report)
-    catalog = _Catalog()
-    kg_power_tools.register_kg_power_tools(
-        catalog,
-        get_agent=_agent,
-        get_board_agent=_board_agent,
-    )
-
-    payload = json.loads(
-        await catalog.tools["okto_pulse_kg_provenance_drift"](
-            board_id=BOARD_ID,
-        )
-    )
-
-    assert called is ct_read, payload
-    if ct_read:
-        assert payload["drifted"] == []
-    else:
-        assert payload["error"]["code"] == "permission_denied"
 
 
 @pytest.mark.asyncio

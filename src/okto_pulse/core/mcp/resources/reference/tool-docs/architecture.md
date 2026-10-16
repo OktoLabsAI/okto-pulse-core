@@ -6,6 +6,16 @@ version: "1.0"
 
 Full long-form documentation (args, returns, examples, enum prose) for `okto_pulse_*` tools in this family. The `tools/list` surface carries only the compact summary; read here on demand.
 
+## Entity boundaries contract
+
+`entities[].boundaries` is an ordered JSON array of non-blank strings, for example
+`["Application boundary", "Tenant data, isolated per account"]`. Each item is one
+boundary statement; commas and newlines inside an item are preserved, never split.
+Omitting the field defaults to `[]`; an empty list retains the existing authoring
+warning. Scalar text, `null`, non-string items and whitespace-only items are rejected
+by both dry-run and save. Create, update, read, snapshots and propagation use this
+same contract. There is no automatic conversion of previously authored scalar data.
+
 ## `okto_pulse_add_architecture_design`
 
 Create an Architecture Design on an ideation, refinement, spec, or card.
@@ -21,7 +31,7 @@ are not blockers, but they usually mark details a downstream implementer or
 validator would otherwise have to guess.
 
 The server critiques the full payload before accepting it. Rejections include
-contextual paths such as entities[0].name, interfaces[1].participants[0] when legacy participants are supplied, or
+contextual paths such as entities[0].name, interfaces[1].participants[0] when participants are supplied, or
 diagrams[0].adapter_payload.elements[2].linkedEntityId. Fix the cited field
 and retry; do not move invalid architecture into prose fields to bypass the
 structured artifact.
@@ -32,7 +42,7 @@ Args:
     parent_id: Parent entity ID
     title: Design title
     global_description: Required global architecture description
-    entities: JSON array or native list of entity descriptions. Use concrete
+    entities: Native JSON array of entity descriptions. Use concrete
         names and categorical types, for example:
         [
           {
@@ -40,6 +50,7 @@ Args:
             "name": "Customer Portal",
             "entity_type": "web_app",
             "responsibility": "Collects checkout input and displays order status.",
+            "boundaries": ["Browser runtime", "No direct access to order storage"],
             "technologies": ["React", "Vite"]
           },
           {
@@ -60,7 +71,7 @@ Args:
         Do not use entity name == entity_type, such as name="API" and
         entity_type="api"; the API rejects that because ownership and task
         boundaries become ambiguous.
-    interfaces: JSON array or native list of interface/contract descriptions.
+    interfaces: Native JSON array of interface/contract descriptions.
         endpoint is optional but recommended for API paths, RPC methods,
         event names, queue names, or operations. Interfaces do not own
         source/target; diagram connections define endpoint entities through
@@ -79,7 +90,7 @@ Args:
             "response_schema": {"type": "object", "required": ["order_id"]}
           }
         ]
-    diagrams: JSON array or native list of diagrams; adapter_payload is stored
+    diagrams: Native JSON array of diagrams; adapter_payload is stored
         separately. Only format="excalidraw_json" is accepted. Mermaid,
         PlantUML, C4, SVG, and raw snippets may be included only as
         descriptive text in entity responsibility, boundaries, notes, or
@@ -89,8 +100,7 @@ Args:
         and connectionType. One connector can carry several interface
         contracts/endpoints, for example
         linkedInterfaceIds=["interface-create-order", "interface-get-order"].
-        linkedInterfaceId remains accepted for legacy single-contract
-        edges. connectionType accepts only "direct" and "elbow"; do not
+        The array is required even for a single contract. connectionType accepts only "direct" and "elbow"; do not
         send "curved". Example:
         [
           {
@@ -114,7 +124,7 @@ Args:
     spec_id: Source spec ID
     card_id: Target card ID
     design_ids: Optional multi-value design IDs to copy; empty copies all
-    profile: Response projection profile — `summary` (default) | `full` | `legacy`.
+    profile: Response projection profile — `summary` (default) | `full`.
 
 Returns:
     Response shape depends on `profile` (R2.3 projection):
@@ -125,10 +135,10 @@ Returns:
       `follow_up[{rel, target_ref}]`). The full bodies are persisted on the card
       regardless of profile — read them with `okto_pulse_get_task_context(profile=full, context_scope=all)`
       or re-call here with `profile=full`.
-    - `full` / `legacy`: the prior payload with complete bodies —
+    - `full`: the prior payload with complete bodies —
       `{success, copied, architecture_designs:[...]}`, no projection envelope.
     - Unsupported profile (e.g. `detail`): structured error `unsupported_projection`
-      with `supported_profiles=[summary, full, legacy]` (no silent fallback, no copy
+      with `supported_profiles=[summary, full]` (no silent fallback, no copy
       performed).
 
 ## `okto_pulse_delete_architecture_design`
@@ -206,7 +216,7 @@ Args:
     board_id: Board ID
     design_id: Architecture Design ID
     title: Diagram title
-    payload_json: Excalidraw JSON object or JSON string
+    payload_json: Native Excalidraw JSON object
     diagram_type: context/container/component/sequence/deployment/data_flow/other
     replace_diagram_id: Existing diagram ID to replace; empty appends a new diagram
     description: Optional diagram description
@@ -248,7 +258,7 @@ Contextual validation examples:
 - entities[0].name duplicates entity_type "api" -> use a concrete name such
   as "Checkout API" and keep entity_type as "api".
 - interfaces[0].participants[1] references an unknown entity -> remove
-  legacy participants or correct the participant id/name.
+  invalid participants or correct the participant id/name.
 - interfaces[0].direction must be one of source_to_target,
   target_to_source, bidirectional, none.
 - diagrams[0].adapter_payload.elements[2].linkedInterfaceIds must reference
@@ -263,9 +273,9 @@ Args:
     design_id: Architecture Design ID
     title: Optional new title
     global_description: Optional new global description
-    entities: Optional JSON array/native list
-    interfaces: Optional JSON array/native list
-    diagrams: Optional JSON array/native list
+    entities: Optional native JSON array
+    interfaces: Optional native JSON array
+    diagrams: Optional native JSON array
     change_summary: Optional version summary
 
 Returns:
@@ -289,7 +299,7 @@ The response includes:
 
 Typical catches:
 - entities where name duplicates entity_type after normalization.
-- interfaces with invalid legacy participants, invalid direction, or missing
+- interfaces with invalid participants, invalid direction, or missing
   protocol/contract metadata for schema payloads.
 - diagrams with any format other than excalidraw_json. Mermaid, PlantUML,
   C4, SVG, and raw snippets are allowed only as descriptive text in entity
@@ -305,9 +315,9 @@ Args:
     design_id: Update mode Architecture Design ID
     title: Candidate title
     global_description: Candidate global description
-    entities: Candidate JSON array/native list, or omitted to keep existing in update mode
-    interfaces: Candidate JSON array/native list, or omitted to keep existing in update mode
-    diagrams: Candidate JSON array/native list, or omitted to keep existing in update mode
+    entities: Candidate native JSON array, or omitted to keep existing in update mode
+    interfaces: Candidate native JSON array, or omitted to keep existing in update mode
+    diagrams: Candidate native JSON array, or omitted to keep existing in update mode
 
 Returns:
     JSON dry-run critique; this tool does not write anything.
@@ -325,7 +335,139 @@ auto-marking the inherited architecture N/A. To propagate, fix the SOURCE design
 backend critic resolves the findings, then retry the copy.
 
 
-## `okto_pulse_list_architecture_propagation_legacy`
+## `okto_pulse_list_architecture_candidates`
+
+Page summaries of the adopted contract population of one Spec, using the same
+effective-resource lineage as the existing Resource Gate. Requires board access,
+`spec.entity.read` and `spec.architecture.read`. No IR, classification, source
+refresh or external schema fetch is performed.
+
+New Specs persist their adopted architecture selection at creation. When deriving,
+omitted `architecture_design_ids` adopts the then-effective roots; an explicit
+list selects those roots, and `[]` selects no inherited root. Copy/derive still
+use the existing Design snapshots; reference_only/none do not create snapshots.
+References retain their existing current-source behavior. Unknown selection IDs
+are rejected before the Spec is created. Sources added to an ancestor later are
+not silently adopted. Directly authored or attached Spec Designs remain effective.
+
+Every Spec requires persisted adoption. Missing or invalid selection is rejected;
+the reader neither infers inheritance nor repairs the stored scope. Changing a
+normative scope must use authorized revision/locks. Candidate reads consult architecture
+metadata only, so unrelated KB/mockup availability is not a candidate gate.
+
+Args:
+    board_id: Board ID
+    spec_id: Spec ID in that board
+    offset: Offset among semantic variants (default 0; nonnegative int64)
+    limit: Summary page size (default 25; range 1..100)
+    candidate_id: Optional exact identity for a full contract detail
+    source_digest: Required together with candidate_id; must match the current variant
+
+Returns:
+    JSON `{success, contract_version, board_id, spec_id, spec_version,
+    spec_edition, source_complete, population_state, total, total_variants,
+    offset, limit, has_more, profile, candidates, issues, issue_counts,
+    issues_truncated}`.
+    Each candidate includes stable `id`, root/interface identities, semantic
+    `source_digest`, name/type/direction/protocol, adopted physical revisions and
+    signals for reference-only, missing or unrestricted content. Conflicting
+    variants remain visible under the same candidate ID. `total` is null when
+    enumeration or identity is unresolved; complete empty is distinct from
+    unresolved data. `total_variants` and continuation refer to semantic variants;
+    `total` counts logical candidates. Global issue counts include sources outside
+    the page; diagnostic examples are bounded to 100. Only a detail response
+    contains the full `contract`. A changed detail digest yields an explicit error.
+    Population completeness does not mean classification or approval to start.
+
+Example: `{"board_id":"<board-id>","spec_id":"<spec-id>"}`.
+
+## `okto_pulse_list_architecture_classifications`
+
+Read classification currentness for one Spec edition. Requires `spec.entity.read`,
+`spec.architecture.read` and `spec.integration_requirements.read` before reading
+source contracts or IR bindings. REST: `GET /boards/{board_id}/specs/{spec_id}/architecture-classifications`.
+
+`offset` and `limit` (1–100, default 25) page logical candidates and retired
+witnesses. Optional `state` filters pending/current/review_required/unresolved/
+retired/unavailable items; `state_counts` always covers the full population.
+Incomplete sources/history yield `total=null`, observed counts and no claim of
+classification completeness. `classification_complete` is structural currentness,
+not semantic approval, requirement readiness, rollout adoption or start permission.
+
+Supply `candidate_id` with the exact `source_digest` for detail. Detail preserves
+analyzed/current contracts, changed JSON paths, scopes, authorship, revision
+provenance and IR bindings. Diagnostics are capped at 100 paths/16 KiB; truncation
+never makes an outdated decision current. Conflicting source variants remain
+unresolved and can be inspected individually. A retired witness uses its analyzed
+digest. Retirement/context-only does not remove normative IR obligations.
+
+For a resolved current source, detail also offers `promotion_suggestion` for the
+whole contract, with source-backed `proposed_ir`, `scope_paths: [""]`, explicit
+`requires_author_review` and `missing_required_fields`. Only a recognized explicit
+contract discriminator supplies an existing IR type (`http` maps to `api`).
+Unknown/MCP/in-process/gRPC types remain for the author to classify. Participant
+order never supplies provider/consumer; no HTTP method is inferred. Declared
+schemas/errors/direction/protocol/participants stay in the proposed data contract;
+references remain data and are not fetched. This is an editable draft, not a
+write or semantic approval. Partial adoption requires content authored for those
+scopes; do not silently reuse the whole-contract proposal as partial coverage.
+
+Reads do not refresh sources, fetch `schema_ref`, convert incompatible work, reopen Done
+Specs, create IRs, or persist decisions. Use the authorized writer to classify or
+revise a decision; source/version changes require refreshing before retrying.
+
+## `okto_pulse_classify_architecture_candidates`
+
+Classify adopted contracts in one atomic batch. REST exposes the same command at
+`POST /boards/{board_id}/specs/{spec_id}/architecture-classifications`.
+Supply `board_id`, `spec_id` and a typed `batch` object with positive integer
+`expected_spec_version`, `expected_spec_edition`, an `idempotency_key` and 1–50
+`decisions`. The batch is bounded to 256 KiB of JSON; REST also limits the raw
+body to 256 KiB before authentication/UOW dependencies.
+
+Each decision has `candidate_ref`, `expected_source_digest` from the reader and:
+
+- `promote_to_ir`: authored `integration_requirements`, each with an explicit
+  `integration_type`. The existing structured IR validator validates the whole
+  resulting Spec before any IR or decision is persisted. No type/HTTP contract
+  is inferred from the architecture.
+- `associate_existing_ir`: `integration_requirement_refs` to uniquely identified,
+  active IRs already in this Spec. This does not edit their normative content.
+- `context_only`: a nonblank `reason`. Existing IR obligations remain normative.
+
+The default `scope_paths: [""]` classifies the full candidate. Partial scopes use
+RFC6901 paths through named object members, never positional array indexes. They
+must be disjoint and carry a consistent `remainder_reason` for the unassigned
+remainder. The decision retains the entire source contract and adopted revisions;
+`schema_ref` is data and is never fetched.
+
+Authority: Board/realm access, Spec/architecture/IR reads, `spec.entity.edit_fields`,
+and IR create for promotion or IR update for association. All decisions are
+authorized before reading Design bodies. New writes require Draft, current
+edition/version/digest and unlocked content. A single batch creates its IRs,
+decisions, events, history and actor-bound receipt in one transaction, with one
+Spec version increment. No automatic IRs, tasks, approval or policy changes.
+
+Return: `contract_version: "architecture-classification/v1"`, Board/Spec/edition,
+new `spec_version`, `idempotency_key`, `created_ir_ids`, decision IDs/references,
+`replayed`, and `pending_checks`. MCP adds `success`. Exact retries return the
+original receipt after checking current authority. A key reused by another actor
+or for another payload conflicts without exposing the original result.
+The Community MCP host places this payload in `structuredContent.data` using
+the shared outcome v2 envelope; handled failures set native `isError=true`.
+
+Stable errors are safe codes/messages (REST `detail`, MCP `error`/`message` with
+`status_code`): 404 unavailable Spec, 403 permission, 409 stale source/fence/lock/
+Draft/idempotency, 422 malformed scope/IR/request, 413 oversized batch. Responses
+never echo submitted contracts or provider diagnostics. Refresh and review stale
+source/fence conflicts before submitting a new intent; do not blindly retarget
+an existing idempotency key.
+
+Classification records a local decision. `pending_checks` explicitly leaves
+requirement readiness and Spec start admission to their gates. It is not an
+approval to execute or a waiver of verification.
+
+## `okto_pulse_list_architecture_propagation_report`
 
 Read-only, forward-only diagnostic. Lists Architecture Design snapshots that were copied
 before the propagation-eligibility rule and whose SOURCE is now ineligible. It NEVER
@@ -335,12 +477,12 @@ Args:
     board_id: Board ID
     limit: Max items per page (1..200; default 100)
     offset: Pagination offset (default 0)
-    include_clean: "true" to also list snapshots whose source is currently eligible (default "false")
+    include_clean: true to also list snapshots whose source is currently eligible (default false)
     parent_type_filter: Optional parent_type filter (ideation | refinement | spec | card)
 
 Returns:
     JSON: `{ success, board_id, items: [{ target_design_id, target_parent{type,id},
-    source_design_id, source_ref, source_version, legacy_status
+    source_design_id, source_ref, source_version, source_status
     (source_blocked | verdict_missing | source_unavailable), verdict_status, finding_keys,
     remediation, mutation_performed: false }], scanned_total, limit, offset,
     mutation_performed: false }`. No mutation is ever performed.

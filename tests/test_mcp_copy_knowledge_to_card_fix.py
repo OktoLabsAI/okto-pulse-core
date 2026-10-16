@@ -1,14 +1,7 @@
-"""Bug 16fd0744 — okto_pulse_copy_knowledge_to_card AttributeError.
+"""Spec Knowledge service ownership and persisted list contract.
 
-The MCP handler was instantiating SpecService and calling .list_knowledge
-on it, but list_knowledge actually lives on SpecKnowledgeService. Symptom:
-``'SpecService' object has no attribute 'list_knowledge'`` 100% of calls.
-
-Fix: the MCP use case now resolves the spec-knowledge application service from
-the UnitOfWork catalog and calls ``spec_knowledge.list_knowledge(spec_id)``.
-
-These tests pin the contract (class layout) AND exercise the actual handler
-end-to-end with a real DB so the bug cannot regress silently.
+The retired physical Spec-to-Card copy tool has no handler/use case in v0.4.0.
+Keep the native service ownership and real persistence regression coverage.
 """
 
 from __future__ import annotations
@@ -49,65 +42,6 @@ def test_spec_knowledge_service_owns_list_knowledge():
     assert hasattr(SpecKnowledgeService, "list_knowledge")
     sig = inspect.signature(SpecKnowledgeService.list_knowledge)
     assert "spec_id" in sig.parameters
-
-
-def _server_source() -> str:
-    from okto_pulse.core.mcp import server as mcp_server
-    from pathlib import Path
-    return Path(mcp_server.__file__).read_text(encoding="utf-8")
-
-
-def _handler_block(name: str) -> str:
-    """Slice the source between the handler def and the next top-level def."""
-    src = _server_source()
-    marker = f"async def {name}("
-    start = src.index(marker)
-    rest = src[start + len(marker):]
-    next_def = rest.find("\nasync def ")
-    end = start + len(marker) + (next_def if next_def != -1 else len(rest))
-    return src[start:end]
-
-
-def _use_case_source() -> str:
-    """Source of the MCP-FU6 copy-knowledge use case (where the logic now lives)."""
-    from pathlib import Path
-
-    from okto_pulse.core.application.use_cases import mcp_card_crud
-    return Path(mcp_card_crud.__file__).read_text(encoding="utf-8")
-
-
-def test_handler_source_uses_spec_knowledge_service():
-    """The MCP copy path must use the spec-knowledge port, not SpecService.
-
-    MCP-FU6 strangler: the handler now delegates to ``McpCopyKnowledgeToCardUseCase``
-    over the MCP UoW. The concrete ``SpecKnowledgeService`` belongs in the
-    relational adapter catalog; the use case consumes ``uow.services.spec_knowledge``.
-    """
-    block = _handler_block("okto_pulse_copy_knowledge_to_card")
-    assert "McpCopyKnowledgeToCardUseCase" in block, (
-        "handler must delegate to McpCopyKnowledgeToCardUseCase"
-    )
-    uc_src = _use_case_source()
-    assert "uow.services.spec_knowledge.list_knowledge" in uc_src, (
-        "McpCopyKnowledgeToCardUseCase must use the spec-knowledge service port"
-    )
-    assert "SpecKnowledgeService" not in uc_src
-    assert "spec_service.list_knowledge" not in block
-    assert "spec_service.list_knowledge" not in uc_src
-
-
-def test_handler_copies_kb_into_card_knowledge_bases_not_comments():
-    """The task snapshot must be card-local structured KE, not a loose comment.
-
-    The write moved into ``McpCopyKnowledgeToCardUseCase`` (MCP-FU6); the guard
-    asserts the use case keeps the card-local knowledge_bases write + provenance.
-    """
-    uc_src = _use_case_source()
-
-    assert "CardUpdate(knowledge_bases=existing)" in uc_src
-    assert "allow_card_resource_write=True" in uc_src
-    assert "Comment(" not in uc_src
-    assert "copied_from_spec:" in uc_src
 
 
 # ---------------------------------------------------------------------------

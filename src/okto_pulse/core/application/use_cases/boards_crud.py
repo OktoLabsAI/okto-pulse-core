@@ -320,17 +320,39 @@ class UpdateBoardUseCase:
     async def execute(
         self, command: UpdateBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateBoardResult:
-        await _require_owned_board(uow, command.board_id, actor)
+        current = await _require_owned_board(uow, command.board_id, actor)
         await require_authorization(
             actor,
             PermissionRequirement(
                 "board.admin.edit",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
         )
         service = uow.services.boards
+        # D17: permission to edit a Board does not grant an executor authority
+        # to change its cognitive gate. Identity comes from the authenticated
+        # principal, never from the transport name (agents can use REST).
+        authored = command.data.model_dump(exclude_unset=True)
+        if "settings" in authored and actor.actor_kind != "human":
+            previous = dict(getattr(current, "settings", None) or {})
+            proposed = (
+                BoardGovernanceService.merge_settings_patch(previous, authored["settings"])
+                if authored["settings"] is not None else {}
+            )
+            if any(
+                previous.get(key, default) != proposed.get(key, default)
+                for key, default in (
+                    ("skip_cognitive_consolidation", False),
+                    ("cognitive_readiness_policy", "advisory"),
+                    ("bug_learning_closeout", "advisory"),
+                    ("missing_link_gate", "advisory"),
+                    ("kg_query_timeout_ms", 15000),
+                )
+            ):
+                raise PermissionDeniedError(
+                    "Cognitive and query policy changes require an authenticated human."
+                )
         board = await service.update_board(
             command.board_id,
             actor.actor_id,
@@ -399,7 +421,6 @@ class DeleteBoardUseCase:
             actor,
             PermissionRequirement(
                 "board.admin.delete",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -559,30 +580,16 @@ class CreateCardInBoardUseCase:
             uow=uow,
             board_id=command.board_id,
         )
-        if getattr(command.data, "knowledge_propagation", None) is not None:
-            from okto_pulse.core.application.use_cases.knowledge_propagation import (
-                CreateCardKnowledgeV2Command,
-                CreateCardKnowledgeV2UseCase,
-            )
-
-            mutation = await CreateCardKnowledgeV2UseCase().execute(
-                CreateCardKnowledgeV2Command(command.board_id, command.data),
-                actor=actor,
-                uow=uow,
-            )
-            return CreateCardInBoardResult(None, knowledge_mutation=mutation)
-
-        service = uow.services.cards
-        card = await service.create_card(
-            command.board_id,
-            actor.actor_id,
-            command.data,
-            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
+        from okto_pulse.core.application.use_cases.knowledge_propagation import (
+            CreateCardKnowledgeV2Command,
+            CreateCardKnowledgeV2UseCase,
         )
-        if not card:
-            raise EntityNotFoundError("board", command.board_id)
-        await commit(uow)
-        return CreateCardInBoardResult(await service.get_card(card.id))
+        mutation = await CreateCardKnowledgeV2UseCase().execute(
+            CreateCardKnowledgeV2Command(command.board_id, command.data),
+            actor=actor,
+            uow=uow,
+        )
+        return CreateCardInBoardResult(None, knowledge_mutation=mutation)
 
 
 # --- board columns (read) ---------------------------------------------------
@@ -778,7 +785,6 @@ class ArchiveTreeUseCase:
             actor,
             PermissionRequirement(
                 f"{command.entity_type}.entity.archive",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -838,7 +844,6 @@ class RestoreTreeUseCase:
             actor,
             PermissionRequirement(
                 f"{command.entity_type}.entity.restore",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -893,7 +898,6 @@ class ShareBoardUseCase:
             actor,
             PermissionRequirement(
                 "board.share.create",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -952,7 +956,6 @@ class ListBoardSharesUseCase:
             actor,
             PermissionRequirement(
                 "board.share.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -995,7 +998,6 @@ class UpdateBoardShareUseCase:
             actor,
             PermissionRequirement(
                 "board.share.edit",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -1047,7 +1049,7 @@ class RevokeBoardShareUseCase:
         )
         await require_authorization(
             actor,
-            PermissionRequirement(operation, legacy_operation="board.read"),
+            PermissionRequirement(operation),
             uow=uow,
             board_id=command.board_id,
         )

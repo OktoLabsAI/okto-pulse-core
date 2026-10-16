@@ -35,6 +35,22 @@ BOARD_ID = "card-type-val-board-001"
 USER_ID = "card-type-val-agent-001"
 
 
+@pytest.fixture(autouse=True)
+def native_knowledge_port(_knowledge_propagation_empty_test_port, request):
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.community.adapters.sqlalchemy_knowledge_propagation import (
+        CommunitySqlAlchemyKnowledgePropagationStore,
+    )
+    from okto_pulse.core.ports.knowledge_propagation import register_knowledge_propagation_port
+    from okto_pulse.core.domain.realm import RealmScope
+
+    factory = get_session_factory()
+    previous_info = dict(factory.kw.get("info", {}))
+    request.addfinalizer(lambda: factory.configure(info=previous_info))
+    factory.configure(info={**previous_info, "realm_scope": RealmScope.local()})
+    register_knowledge_propagation_port(CommunitySqlAlchemyKnowledgePropagationStore(factory))
+
+
 # ---------------------------------------------------------------------------
 # Source contract — guard the validation block from regressing.
 # ---------------------------------------------------------------------------

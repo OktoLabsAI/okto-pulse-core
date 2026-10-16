@@ -94,7 +94,7 @@ F05_SERVICE_SLICES: tuple[ServiceSlice, ...] = (
         "architecture_and_resources",
         (
             "services/architecture.py",
-            "services/architecture_propagation_legacy.py",
+            "services/architecture_propagation_report.py",
             "services/design_system.py",
             "services/effective_resource_propagation.py",
             "services/spec_resource_propagation.py",
@@ -143,12 +143,6 @@ F05_SERVICE_SLICES: tuple[ServiceSlice, ...] = (
         ("services/spec_structured_entities.py",),
         "structured requirement identity, validation and migration rules",
         "spec JSON mutation and ORM dirty tracking",
-    ),
-    ServiceSlice(
-        "legacy_materialization_command",
-        ("commands/materialize_legacy_fr_ac.py",),
-        "legacy-to-structured conversion policy",
-        "spec enumeration and persisted JSON mutation",
     ),
     ServiceSlice(
         "kg_relational_workflows",

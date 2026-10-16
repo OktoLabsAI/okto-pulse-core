@@ -61,7 +61,6 @@ WORKING_ARTIFACT_TYPES = frozenset(
         "task",
         "test",
         "bug",
-        "sprint",
         "amendment_hotfix_revision",
         "code_investigation_receipt",
         "code_evidence",
@@ -74,7 +73,6 @@ REBUILD_ARTIFACT_TYPES: tuple[str, ...] = (
     "ideation",
     "refinement",
     "spec",
-    "sprint",
     "task",
     "test",
     "bug",
@@ -158,8 +156,6 @@ def classify_source_for_kg(
     - refinement enters canonical only at done.
     - spec enters canonical only at done.
     - task/test/bug enter canonical only at done.
-    - sprint remains working/diagnostic-only until deterministic rebuild
-      materializes sprint sources end-to-end.
     """
 
     kind = str(artifact_type or "").strip().lower()
@@ -244,16 +240,6 @@ def classify_source_for_kg(
             disposition=DISPOSITION_SKIPPED_BY_MATURITY,
             reason_code="amendment_lineage_incomplete",
         )
-    if kind == "sprint":
-        return SourceMaturityClassification(
-            artifact_type=kind,
-            artifact_status=status,
-            graph_layer=GRAPH_LAYER_WORKING,
-            maturity_status=MATURITY_WORKING_IMMATURE,
-            disposition=DISPOSITION_SKIPPED_BY_MATURITY,
-            reason_code="sprint_not_canonical",
-        )
-
     canonical_statuses = CANONICAL_STATUS_BY_ARTIFACT_TYPE.get(kind, frozenset())
     if status in canonical_statuses:
         return SourceMaturityClassification(

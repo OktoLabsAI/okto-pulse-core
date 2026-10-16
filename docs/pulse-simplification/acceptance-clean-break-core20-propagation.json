@@ -1,0 +1,23 @@
+{
+  "scope": "Native resource propagation, REST scope and pagination test adapter",
+  "pair": "dist-native-saas19",
+  "qualified_distinct_cases": 37,
+  "runs": [
+    {
+      "name": "core20-native-propagation1",
+      "xml_sha256": "24cfa4975f0c053fbe60cb1e287c4b4bca1451216d6048a4f3caf68ec8a005b1",
+      "tests": 23,
+      "failed": 2
+    },
+    {
+      "name": "core20-native-propagation2",
+      "xml_sha256": "5b1b4e44dd719856eccd864008dd4963d8f4fca387488afb5fb20ffd892f44bb",
+      "tests": 37,
+      "failed": 0
+    }
+  ],
+  "limitations": [
+    "Empty native Knowledge test double is not assignment persistence certification",
+    "Community followup, installed E2E and C4 incomplete"
+  ]
+}

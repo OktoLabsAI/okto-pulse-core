@@ -21,6 +21,7 @@ def test_ska_tool_manifest_freezes_all_thirteen_live_contracts() -> None:
             "okto-pulse://reference/tool-docs/"
         )
         assert entry["permission_policy"]
+        assert all("." in operation for operation in entry["permission_policy"])
         assert len(entry["schema_sha256"]) == 64
         assert len(entry["implementation_sha256"]) == 64
 

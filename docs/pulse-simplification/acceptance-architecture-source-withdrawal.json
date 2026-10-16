@@ -1,0 +1,57 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "ARQVER:AC-ARQ-14",
+  "status": "verified",
+  "coverage": "Actual classification batch promotes two IRs. REST DELETE through the real Architecture use case/repository removes their source after Draft allocation. Exact IR JSON and all classification payloads remain identical. A fresh-session reader identifies the candidate as retired, has no current contract, retains the analyzed contract and design/revision1 provenance and both IR references. A new spec.semantic_changed event records the actor and architecture field change. Real execution-plan and delivery gates still reject the pending obligations.",
+  "executions": [
+    {
+      "terminal_session": 59169,
+      "exit_code": 0,
+      "passed": 9,
+      "cases": [
+        "tests.test_architecture_acceptance_witnesses::test_same_origin_has_independent_persisted_decisions_in_two_specs",
+        "tests.test_architecture_acceptance_witnesses::test_accepted_suggestion_preserves_complete_contract_and_workflow",
+        "tests.test_architecture_acceptance_witnesses::test_new_candidate_after_batch_is_pending_and_homonymous_origins_stay_distinct",
+        "tests.test_architecture_acceptance_witnesses::test_partial_publication_keeps_consumption_in_explicit_context",
+        "tests.test_architecture_acceptance_witnesses::test_reference_only_http_read_has_no_remote_io_or_domain_writes",
+        "tests.test_architecture_acceptance_witnesses::test_association_preserves_pending_local_delivery_and_rejects_foreign_ir",
+        "tests.test_architecture_acceptance_witnesses::test_embedded_gate_instructions_remain_data_after_promotion",
+        "tests.test_architecture_acceptance_witnesses::test_promoted_ir_cannot_be_dismissed_as_context_in_approved_scope",
+        "tests.test_architecture_acceptance_witnesses::test_source_withdrawal_preserves_promoted_obligations_and_classification_history"
+      ],
+      "xml": {
+        "file": "learning-reconciliation-architecture-delivery5-community.xml",
+        "sha256": "15663a93ad87243f9a53aad14abc8ec8a1122fb06cc8f65ce42186699bc67a88"
+      },
+      "log": {
+        "file": "learning-reconciliation-architecture-delivery5-community.log",
+        "sha256": "7dd369d04264c920b2fa15843187f878b413446c00770916cc6d8c9f4e465538"
+      }
+    },
+    {
+      "terminal_session": 76234,
+      "exit_code": 0,
+      "passed": 1,
+      "cases": [
+        "tests.test_architecture_acceptance_witnesses::test_source_withdrawal_preserves_promoted_obligations_and_classification_history"
+      ],
+      "xml": {
+        "file": "learning-reconciliation-architecture-delivery6-community.xml",
+        "sha256": "7894cbb2975fc00f23dac3521bdbc164ad7b6726a46b39a341845f49cff0b0fc"
+      },
+      "log": {
+        "file": "learning-reconciliation-architecture-delivery6-community.log",
+        "sha256": "11226fced4bc4ad66a06e604cd9569ee4cc29445d5dcd27ca583c4180f166532"
+      }
+    }
+  ],
+  "distinct_cases": 9,
+  "limits": [
+    "The9-case suite passed35.25s; the targeted final case passed13.06s after adding exact revision and deletion-event assertions. Do not count this as10 distinct cases.",
+    "REST identity is supplied by the existing disposable fixture as the Board owner. Classification, authorized delete, propagation composition, SQL, fresh-session review and gates are real. This is not an authentication transport test.",
+    "Draft allocation is a fixture and the plan deliberately lacks qualification/proof. No claim of a previously executable/complete delivery. The test proves deletion does not remove the promoted obligations or fabricate readiness.",
+    "Retired status is derived from the complete current source population plus immutable classification history. Source identity/revision is retained in that history; the deletion event is parent-scoped (architecture_designs), not a new per-design tombstone/history format. No history semantics were changed.",
+    "Probe4 failed because the inherited fixture did not compose the Spec resource propagation port. Final5 registers actual Community relational effects and passes. A test-tail placement error was also corrected before final5; no productive change was made.",
+    "Productive source/site/wheel payload remains the byte-proven evaluation-authority-fix1 pair (provenance-single-agent-full1.json). Existing F16 session31859 exit0 has eight ZERO budgets; frontend46579 passed54. No UI or registry changes."
+  ]
+}

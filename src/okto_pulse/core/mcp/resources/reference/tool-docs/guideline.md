@@ -13,31 +13,19 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 
 Create a guideline identity and immutable initial revision (`1.0.0`). If scope
 is "global", it goes into the catalog; if scope is "inline", set a board_id.
-Requires `guidelines.revisions.create`. This compatibility payload cannot
+Requires `guidelines.revisions.create`. The initial context-only payload cannot
 author executable rules.
 
 Args:
     board_id: Board ID (used for authentication; also used as guideline board_id if scope is "inline")
     title: Guideline title
     content: Guideline content (Markdown supported)
-    tags: Pipe-separated tags (e.g. "coding|architecture") — empty = no tags
+    tags: Native string array of tags — empty = no tags
     scope: "global" (catalog) or "inline" (board-specific)
 
 Returns:
     JSON with created guideline
 
-## `okto_pulse_delete_guideline`
-
-Compatibility name for retiring a guideline. Retirement is terminal for new
-adoptions, but immutable revisions, binding lineage and audit evidence remain.
-Requires `guidelines.revisions.retire`.
-
-Args:
-    board_id: Board ID (used for authentication)
-    guideline_id: Guideline ID to retire
-
-Returns:
-    JSON with success status
 
 ## `okto_pulse_get_board_guidelines`
 
@@ -52,20 +40,6 @@ Args:
 Returns:
     JSON with guidelines sorted by ascending priority (lower values first).
 
-## `okto_pulse_link_guideline_to_board`
-
-Deprecated direct-adoption shim. It checks `guidelines.adoption.manage` and
-returns `guideline_impact_preview_required` without mutation. Use
-`okto_pulse_preview_guideline_impact`, then
-`okto_pulse_adopt_guideline_revision` with the exact receipt and digest.
-
-Args:
-    board_id: Board ID
-    guideline_id: Guideline ID to link
-    priority: Non-negative order; lower values are evaluated first (default 0).
-
-Returns:
-    Typed migration error with `next_action=preview_then_adopt`.
 
 ## `okto_pulse_list_guidelines`
 
@@ -121,19 +95,6 @@ Args:
 Returns:
     JSON with the EFFECTIVE template (including its default guideline refs).
 
-## `okto_pulse_update_board_guideline_priority`
-
-Deprecated direct-adoption shim. It checks `guidelines.adoption.manage` and
-returns `guideline_impact_preview_required` without mutation. Preview the
-proposed priority and then adopt using the exact receipt.
-
-Args:
-    board_id: Board ID
-    guideline_id: Linked guideline ID
-    priority: New non-negative order; lower values are evaluated first.
-
-Returns:
-    Typed migration error with `next_action=preview_then_adopt`.
 
 ## `okto_pulse_unlink_guideline_from_board`
 
@@ -147,21 +108,6 @@ Args:
 Returns:
     JSON with success status
 
-## `okto_pulse_update_guideline`
-
-Compatibility façade that appends an immutable guideline revision when title,
-content or tags change. Requires `guidelines.revisions.create`; a no-op keeps
-the current head. Semantic metrics require the governed revision tool.
-
-Args:
-    board_id: Board ID (used for authentication)
-    guideline_id: Guideline ID to update
-    title: New title (empty = no change)
-    content: New content (empty = no change)
-    tags: New pipe-separated tags (empty = no change)
-
-Returns:
-    JSON with updated guideline
 
 ## Governed policy tool conventions
 
@@ -287,37 +233,12 @@ Args:
 Returns:
     Outcome with the new exact-revision binding.
 
-## `okto_pulse_record_semantic_guideline_assessment`
-
-Record complete externally-produced semantic metric evidence. The normative
-assessment and gate protocol lives only in the canonical protocol linked
-above.
-
-Args:
-    board_id: Authenticated board scope.
-    entity_type: Closed governed entity type.
-    subject_id: Exact entity identity.
-    expected_subject_version: Exact current entity version fence.
-    expected_subject_edition: Required exact validation-edition fence for
-        Ideation, Refinement, and Spec; omit for Sprint, Card, and Test Scenario.
-    binding_id: Exact adopted binding identity.
-    expected_binding_revision: Exact binding revision fence.
-    guideline_revision_id: Exact adopted guideline revision fence.
-    idempotency_key: Retry-stable client key.
-    confidence: Compulsory whole-assessment confidence, 0 through 100.
-    metric_results: Complete score, rationale, evidence and pinpoint set.
-    model_id: Optional assessor model identifier.
-
-Returns:
-    Outcome with one atomically sealed result and all metric evidence.
-
 ## `okto_pulse_record_semantic_guideline_assessment_v2`
 
 Record an actionable semantic assessment using the explicit `v2` contract.
 The server resolves and authorizes every anchor, snapshots a human-readable
 label/excerpt, computes digests and persists the assessment atomically. The
-readers-first capability gate must be active before either REST or MCP admits
-the write.
+runtime capability checks must pass before either REST or MCP admits the write.
 
 Args:
     board_id: Authenticated board scope.
@@ -325,7 +246,7 @@ Args:
     subject_type, subject_id: Exact governed subject.
     expected_subject_version: Exact current subject version fence.
     expected_subject_edition: Required exact validation-edition fence for
-        Ideation, Refinement, and Spec; omit for Sprint, Card, and Test Scenario.
+        Ideation, Refinement, and Spec; omit for Card and Test Scenario.
     binding_id, expected_binding_revision: Exact adopted binding fences.
     guideline_revision_id: Exact adopted guideline revision fence.
     idempotency_key: Retry-stable client key.
@@ -337,14 +258,12 @@ Args:
 
 Returns:
     A `v2` result with server-owned snapshots, findings and metric evidence.
-    Disabled writer returns `unsupported_contract_version`; requested writer
-    with incomplete prerequisites returns `v2_writer_not_ready`.
+    Incomplete runtime prerequisites return `v2_writer_not_ready`.
 
 ## `okto_pulse_list_semantic_guideline_assessments`
 
 Page immutable semantic assessment results. Product surfaces group them as
-Current or Previous by subject edition; legacy SQL `NULL` editions are
-history-only under Previous.
+Current or Previous by subject edition. Missing subject editions are invalid.
 
 Args:
     board_id: Authenticated board scope.
@@ -353,7 +272,7 @@ Args:
     entity_type, subject_id: Optional exact subject filters.
     guideline_id, binding_id: Optional exact policy filters.
     outcome: Optional `passed` or `metric_threshold_failed`.
-    currentness: Technical compatibility filter `current|stale`; scanning
+    currentness: Technical audit filter `current|stale`; scanning
         remains keyset-safe. Use lifecycle state for human decisions.
     profile: Closed `summary`, `detail`, or `full` projection.
 
@@ -362,7 +281,7 @@ Returns:
 
 ## `okto_pulse_get_semantic_guideline_assessment`
 
-Read one immutable semantic assessment result by compatibility receipt identity.
+Read one immutable semantic assessment result by its server-issued receipt identity.
 
 Args:
     board_id: Authenticated board scope.

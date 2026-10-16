@@ -25,7 +25,7 @@ Profiles (reuses the R5.1 envelope contract):
 - ``detail`` — ``summary`` plus prose ``description``/scope fields, bounded
   2 KiB primary-artifact previews, and a larger deterministic 64 KiB response
   budget (full artifact bodies still live behind ``profile=full``).
-- ``full`` / ``legacy`` with the default task ``context_scope=all`` — the
+- ``full`` with the default task ``context_scope=all`` — the
   assembled payload UNCHANGED (FR-2/FR-9 back-compat).
 - task ``full`` + ``context_scope=gate`` — bounded 32 KiB pre-mutation slice:
   current gate/readiness metadata plus a metadata-only inventory for omitted
@@ -36,7 +36,7 @@ The exploratory live byte budget is applied to ``get_task_context`` after full
 assembly; the gate scope is assembled from bounded reads. When a projection exceeds
 its budget, deterministic collection/string limits are applied and
 ``projection.truncated`` becomes true with a ``read_full_context`` follow-up.
-``full/all`` and ``legacy`` are never budget-truncated. The additive
+``full/all`` are never budget-truncated. The additive
 ``full/gate`` task scope is the mandatory in-band transition/evaluation read;
 mutations still resolve and fingerprint full context server-side. Other context
 families continue to share the dedup/envelope path without inheriting a
@@ -76,7 +76,7 @@ from okto_pulse.core.mcp.projection_envelope import (
 _LOG = logging.getLogger("okto_pulse.mcp.context_projection")
 
 # Profiles that return the assembled payload unchanged (back-compat).
-_PASSTHROUGH_PROFILES = frozenset({"full", "legacy"})
+_PASSTHROUGH_PROFILES = frozenset({"full"})
 
 # ``get_task_context`` keeps its historical full/all response byte-compatible,
 # but status-changing callers can request the complete *gate* slice in-band.
@@ -182,6 +182,9 @@ _STRUCTURED_BUDGET_PATHS: tuple[tuple[str, ...], ...] = (
 _RECENT_FIRST_COLLECTION_KEYS = frozenset({"comments", "validations", "evaluations"})
 _TRUNCATION_SUFFIX = "…[truncated]"
 _POST_ASSEMBLY_SEMANTIC_BLOCKS = (
+    "test_verification_context",
+    "scenario_reference_context",
+    "missing_link_context",
     "test_card_operational_flow",
     "gate_readiness",
     "code_traceability",
@@ -202,7 +205,6 @@ _GATE_CARD_KEYS = (
     "labels",
     "card_type",
     "spec_id",
-    "sprint_id",
     "position",
     "test_scenario_ids",
     "linked_test_task_ids",
@@ -503,6 +505,23 @@ def _path_value(root: Mapping[str, Any], path: tuple[str, ...]) -> Any:
             return None
         current = current[component]
     return current
+
+
+def _strict_context_budget(value: dict[str, Any], budget: int) -> tuple[dict[str, Any], int]:
+    """Finish the existing truncation path without claiming an oversized read.
+
+    Protected routing and reference identities have already been removed and
+    reserved by the caller. A bound on each container is not an aggregate bound.
+    """
+    omitted = 0
+    for limit in (16, 8, 4, 2, 1):
+        if _stable_payload_bytes(value) <= budget:
+            return value, omitted
+        value, dropped, _ = _bounded_clone(value, string_limit=64, list_limit=limit, mapping_limit=limit)
+        omitted += dropped
+    if _stable_payload_bytes(value) > budget:
+        raise ValueError('context_response_budget_exceeded')
+    return value, omitted
 
 
 def _drop_path(root: dict[str, Any], path: tuple[str, ...]) -> int:
@@ -914,9 +933,15 @@ def _project_task_gate_context(
         # the additive drilldown inventory.
         projected["content_manifest"] = _content_manifest(source)
 
+    protected = {key: source[key] for key in ("scenario_reference_context", "missing_link_context")
+                 if source.get(key) is not None}
+    projected.update(protected)
     omitted = max(0, _count_fields(source) - _count_fields(projected))
+    for key in protected:
+        projected.pop(key, None)
     truncated = False
-    body_budget = CONTEXT_GATE_BUDGET_BYTES - _PROJECTION_METADATA_RESERVE_BYTES
+    reserved = _stable_payload_bytes(protected) if protected else 0
+    body_budget = CONTEXT_GATE_BUDGET_BYTES - _PROJECTION_METADATA_RESERVE_BYTES - reserved
     if _stable_payload_bytes(projected) > body_budget:
         projected, bounded_omitted, truncated = _bounded_clone(
             projected,
@@ -972,6 +997,11 @@ def _project_task_gate_context(
         omitted += strict_omitted
         truncated = True
 
+    if _stable_payload_bytes(projected) > body_budget:
+        projected, strict_omitted = _strict_context_budget(projected, body_budget)
+        omitted += strict_omitted
+        truncated = True
+    projected.update(protected)
     projection: dict[str, Any] = {
         "profile": "full",
         "context_scope": "gate",
@@ -1039,6 +1069,7 @@ def _essential_context_projection(
     )
     top_keys = (
         "my_test_scenarios",
+        "test_verification_context",
         "validations",
         "resource_gate_summary",
         "validation_config",
@@ -1087,12 +1118,12 @@ def _essential_context_projection(
 
 
 def _apply_profile_budget(
-    projected: dict[str, Any], *, profile: str
+    projected: dict[str, Any], *, profile: str, reserved_bytes: int = 0
 ) -> tuple[dict[str, Any], int, bool]:
     """Fit summary/detail under their advertised response budget."""
 
     budget = _PROFILE_BUDGET_BYTES[profile]
-    body_budget = budget - _PROJECTION_METADATA_RESERVE_BYTES
+    body_budget = budget - _PROJECTION_METADATA_RESERVE_BYTES - reserved_bytes
     if _stable_payload_bytes(projected) <= body_budget:
         return projected, 0, False
 
@@ -1156,6 +1187,10 @@ def _apply_profile_budget(
         omitted += strict_omitted
         truncated = True
 
+    if _stable_payload_bytes(current) > body_budget:
+        current, strict_omitted = _strict_context_budget(current, body_budget)
+        omitted += strict_omitted
+        truncated = True
     return current, omitted, truncated
 
 
@@ -1319,7 +1354,7 @@ class MCPContextProjectionService:
             return unsupported_projection_error(profile)
 
         if resolved_profile in _PASSTHROUGH_PROFILES:
-            # FR-2/FR-9: full/legacy preserve the assembled payload exactly. We still
+            # FR-2/FR-9: full preserve the assembled payload exactly. We still
             # record usage telemetry (no envelope is injected into the payload).
             out = dict(result)
             _emit_context_projection_metric(
@@ -1382,10 +1417,17 @@ class MCPContextProjectionService:
         task_context_budgeted = tool_name == "okto_pulse_get_task_context"
         truncated = False
         if task_context_budgeted:
+            # Keep complete routing identities/offset=0, even under strict fallback.
+            # Reserve their actual size instead of truncating a follow-up argument.
+            protected = {key: projected.pop(key) for key in ("scenario_reference_context", "missing_link_context")
+                         if projected.get(key) is not None}
+            reserved = _stable_payload_bytes(protected) if protected else 0
             projected, budget_omitted, truncated = _apply_profile_budget(
                 projected,
                 profile=resolved_profile,
+                reserved_bytes=reserved,
             )
+            projected.update(protected)
             omitted += budget_omitted
 
         # FR-10 / ac_622687f9: canonical R5 projection metadata. The byte counter
@@ -1404,6 +1446,10 @@ class MCPContextProjectionService:
             projection["budget_bytes"] = _PROFILE_BUDGET_BYTES[resolved_profile]
         if truncated:
             projection["truncation_reason"] = "profile_payload_budget"
+            verification = projected.get("test_verification_context")
+            if isinstance(verification, dict):
+                verification["content_complete"] = False
+                verification["next_read"] = "okto_pulse_get_task_context(profile=full, context_scope=all)"
         projected["projection"] = projection
         # The payload_bytes value affects its own digit count. Iteration converges
         # once that digit count is stable (normally two passes).

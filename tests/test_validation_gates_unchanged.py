@@ -1,6 +1,5 @@
 """Anti-regression test for spec 233eaad3 — guarantees that the
-validation gates (submit_spec_validation, submit_spec_evaluation, and
-submit_sprint_evaluation) were NOT modified.
+Spec validation gate matches the reviewed native baseline. Sprint evaluation is retired.
 
 The Analytics cancelled-card filter affects ``spec_coverage_summary``
 (which the gates consume internally), but the gate functions themselves
@@ -24,26 +23,18 @@ MAIN_PY = REPO_ROOT / "src" / "okto_pulse" / "core" / "services" / "main.py"
 
 
 # ---------------------------------------------------------------------------
-# Baselines updated after the 2026-07-14 sprint reviewer-separation and
-# optimistic-versioning contract, then after the 2026-07-25 append-only
-# SpecHistory audit for validation submissions, after the 2026-07-27 SK-A A3
-# checklist predicate, and after the 2026-07-31 SK-B3 semantic policy transition
-# gate was deliberately added to successful Spec Validation. The 2026-08-12 SK-M
-# lifecycle fence now serializes a successful validation with the board's Spec
-# dependency graph before mutating the validation head. The canonical five-score
-# quality contract intentionally replaced the old three-score gate while keeping
-# legacy record compatibility. The 2026-08-22 Source Context contract adds the
-# fail-closed Code Evidence Matrix prerequisite and its typed validation error
-# projection. If a gate changes intentionally, review its semantic tests and
-# update this versioned constant in the same change.
+# Native v0.4.0 baseline reviewed against b1100a36 (the prior hash).
+# The approved clean break removes formal/three-score submissions and their
+# history projections, and rejects unknown input fields. The existing five-score
+# thresholds, guideline/lifecycle fences, edition/head checks, promotion and
+# append-only native history remain. Behavioral coverage lives in
+# test_spec_validation_current_input.py and test_spec_validation_native_history.py.
+# Update this constant only after reviewing an intentional semantic change.
 # ---------------------------------------------------------------------------
 
 EXPECTED_HASHES = {
     "submit_spec_validation": (
-        "478c0747f8ad13cd4c48cdee07d4c7373836a3ae6ae3999ac3a19b3e087a0611"
-    ),
-    "submit_evaluation": (
-        "90dc97c780b0c0f2297f7be6c627708bfaddc42f8f1a62b1138a80aea675ef9a"
+        "5c4d3821c9c23b00a659b5550812d5dfb7fc2653f1b88d8e05ed86e71a6306ad"
     ),
 }
 
@@ -82,13 +73,6 @@ class TestValidationGatesUnchanged:
         assert "approved" in src, "approved status check missing"
         assert "validated" in src, "validated status promotion missing"
 
-    def test_submit_evaluation_has_marker_strings(self):
-        """SprintService.submit_evaluation (sprint_evaluation) deve continuar
-        gravando sprint_evaluation_submitted no activity log."""
-        src = _function_source(MAIN_PY, "submit_evaluation")
-        assert "sprint_evaluation_submitted" in src, (
-            "sprint_evaluation_submitted activity log marker missing"
-        )
 
     def test_versioned_baseline_hashes_are_unchanged(self):
         """Fail deterministically when a protected gate changes."""
@@ -96,7 +80,6 @@ class TestValidationGatesUnchanged:
             "submit_spec_validation": _hash(
                 _function_source(MAIN_PY, "submit_spec_validation")
             ),
-            "submit_evaluation": _hash(_function_source(MAIN_PY, "submit_evaluation")),
         }
 
         assert current_hashes == EXPECTED_HASHES, (

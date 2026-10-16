@@ -66,7 +66,7 @@ class GetProjectStructureUseCase:
                 spec_id=spec.id,
                 spec_version=int(spec.version),
                 structure_revision=int(
-                    getattr(spec, "project_structure_revision", 0) or 0
+                    spec.project_structure_revision
                 ),
             )
         )
@@ -132,7 +132,7 @@ class GetCardProjectStructureProjectionUseCase:
                 spec_id=spec.id,
                 spec_version=int(spec.version),
                 structure_revision=int(
-                    getattr(spec, "project_structure_revision", 0) or 0
+                    spec.project_structure_revision
                 ),
                 reference_type=reference_type,
                 reference_id=card.id,

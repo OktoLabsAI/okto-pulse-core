@@ -7,6 +7,10 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from r3_scenario_helpers import (
+    native_knowledge_port,  # noqa: F401 -- shared autouse fixture
+    select_native_knowledge,
+)
 
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
@@ -24,10 +28,9 @@ from sqlalchemy_test_models import (
     Spec,
     SpecKnowledgeBase,
     SpecStatus,
-    Sprint,
-    SprintStatus,
 )
 from okto_pulse.core.services.traceability import build_lineage_graph
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 
 
 USER_ID = "traceability-report-agent"
@@ -46,7 +49,7 @@ def _stub_ctx(board_id: str):
             "agent_name": USER_ID,
             "board_id": board_id,
             "permissions": [
-                "board:read",
+                "board.read",
                 "code_traceability.investigation.read",
                 "code_traceability.evidence.read",
                 "code_traceability.target.read",
@@ -71,7 +74,6 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
     refinement_id = _id("trace-refinement")
     spec_id = _id("trace-spec")
     direct_spec_id = _id("trace-direct-spec")
-    sprint_id = _id("trace-sprint")
     task_id = _id("trace-task")
     test_card_id = _id("trace-test-card")
     bug_card_id = _id("trace-bug-card")
@@ -105,6 +107,10 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
         )
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=USER_ID, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 ideation_id=ideation_id,
@@ -112,17 +118,17 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
                 title="Traceability Spec",
                 status=SpecStatus.DONE,
                 created_by=USER_ID,
-                functional_requirements=["FR-1"],
+                functional_requirements=[{"id": "fr-1", "text": "FR-1"}],
                 technical_requirements=[
                     {"id": "tr-1", "text": "TR-1", "linked_task_ids": [task_id]}
                 ],
-                acceptance_criteria=["AC-1"],
+                acceptance_criteria=[{"id": "ac-1", "text": "AC-1"}],
                 test_scenarios=[
                     {
                         "id": "ts-1",
                         "title": "Happy path",
                         "status": "passed",
-                        "linked_criteria": ["0"],
+                        "linked_criteria": ["ac-1"],
                         "linked_task_ids": [task_id],
                     }
                 ],
@@ -133,7 +139,7 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
                         "rule": "Preserve references",
                         "when": "Exporting context",
                         "then": "Resolve linked resources",
-                        "linked_requirements": ["0"],
+                        "linked_requirements": ["fr-1"],
                         "linked_task_ids": [task_id],
                     }
                 ],
@@ -143,7 +149,7 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
                         "method": "GET",
                         "path": "/traceability",
                         "description": "Traceability endpoint",
-                        "linked_requirements": ["0"],
+                        "linked_requirements": ["fr-1"],
                         "linked_task_ids": [task_id],
                     }
                 ],
@@ -153,7 +159,7 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
                         "title": "Resolve references in context",
                         "status": "active",
                         "rationale": "Validators need inherited artifacts.",
-                        "linked_requirements": ["0"],
+                        "linked_requirements": ["fr-1"],
                         "linked_task_ids": [task_id],
                     }
                 ],
@@ -168,8 +174,8 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
                 title="Direct Traceability Spec",
                 status=SpecStatus.DONE,
                 created_by=USER_ID,
-                functional_requirements=["FR-direct"],
-                acceptance_criteria=["AC-direct"],
+                functional_requirements=[{"id": "fr-direct", "text": "FR-direct"}],
+                acceptance_criteria=[{"id": "ac-direct", "text": "AC-direct"}],
                 test_scenarios=[],
                 business_rules=[],
                 api_contracts=[],
@@ -186,21 +192,10 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
             )
         )
         db.add(
-            Sprint(
-                id=sprint_id,
-                board_id=board_id,
-                spec_id=spec_id,
-                title="Traceability Sprint",
-                status=SprintStatus.CLOSED,
-                created_by=USER_ID,
-            )
-        )
-        db.add(
             Card(
                 id=task_id,
                 board_id=board_id,
                 spec_id=spec_id,
-                sprint_id=sprint_id,
                 title="Implement traceable feature",
                 status=CardStatus.DONE,
                 card_type=CardType.NORMAL,
@@ -208,16 +203,6 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
                 test_scenario_ids=["ts-1"],
                 conclusions=[{"text": "Implemented", "author_id": USER_ID}],
                 validations=[{"id": "validation-1", "outcome": "success"}],
-                knowledge_bases=[
-                    {
-                        "id": "card-kb",
-                        "title": "Card KB",
-                        "description": "Card knowledge",
-                        "content": "Implementation details",
-                        "mime_type": "text/markdown",
-                        "source_type": "manual",
-                    }
-                ],
                 screen_mockups=[{"id": "card-mockup", "title": "Card Mockup"}],
             )
         )
@@ -226,7 +211,6 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
                 id=test_card_id,
                 board_id=board_id,
                 spec_id=spec_id,
-                sprint_id=sprint_id,
                 title="Validate traceable feature",
                 status=CardStatus.DONE,
                 card_type=CardType.TEST,
@@ -240,7 +224,6 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
                 id=bug_card_id,
                 board_id=board_id,
                 spec_id=spec_id,
-                sprint_id=sprint_id,
                 title="Fix traceability regression",
                 status=CardStatus.DONE,
                 card_type=CardType.BUG,
@@ -282,26 +265,30 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
         )
         await db.commit()
 
+    await select_native_knowledge(
+        db_factory, board_id, "card", task_id, [spec_kb_id], actor_id=USER_ID,
+    )
+
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))), \
          patch.object(mcp_server, "check_permission", return_value=None):
         report = await _call(
             "okto_pulse_get_traceability_report",
             board_id=board_id,
             ideation_id=ideation_id,
-            include_artifacts="true",
+            include_artifacts=True,
         )
         global_report = await _call(
             "okto_pulse_get_traceability_report",
             board_id=board_id,
-            include_artifacts="false",
+            include_artifacts=False,
         )
         task_context = await _call(
             "okto_pulse_get_task_context",
             board_id=board_id,
             card_id=task_id,
-            include_knowledge="true",
-            include_mockups="true",
-            include_architecture="true",
+            include_knowledge=True,
+            include_mockups=True,
+            include_architecture=True,
             profile="full",
         )
 
@@ -328,12 +315,10 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
     task = next(card for card in spec["cards"] if card["id"] == task_id)
     assert task["conclusions_count"] == 1
     assert task["validations_count"] == 1
-    assert task["artifacts"]["knowledge_bases"][0]["id"] == "card-kb"
-    assert task["artifacts"]["knowledge_bases"][0]["source_type"] == "manual"
+    assert task["artifacts"]["knowledge_bases"] == []
     assert task["artifacts"]["mockups"][0]["id"] == "card-mockup"
     assert task["artifacts"]["architecture_designs"][0]["id"] == architecture_id
     assert {kb["id"] for kb in task["resolved_artifacts"]["knowledge_bases"]} == {
-        "card-kb",
         spec_kb_id,
     }
     assert {mockup["id"] for mockup in task["resolved_artifacts"]["screen_mockups"]} == {
@@ -346,7 +331,7 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
     }
 
     resolved = task_context["resolved_references"]
-    assert {kb["id"] for kb in resolved["knowledge_bases"]} == {"card-kb", spec_kb_id}
+    assert {kb["id"] for kb in resolved["knowledge_bases"]} == {spec_kb_id}
     assert {mockup["id"] for mockup in resolved["screen_mockups"]} == {
         "card-mockup",
         "spec-mockup",
@@ -391,7 +376,7 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
         (edge["source"], edge["target"], edge["relationship"])
         for edge in graph["edges"]
     }
-    assert graph["root_ideation"]["id"] == ideation_id
+    assert graph["root_entity"]["id"] == ideation_id
     assert f"spec:{direct_spec_id}" in node_ids
     assert f"spec:{spec_id}" in node_ids
     assert f"task:{task_id}" in node_ids
@@ -399,7 +384,7 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
     assert f"bug:{bug_card_id}" in node_ids
     assert all(node["entity_type"] != "artifact" for node in graph["nodes"])
     assert graph["summary"]["artifacts"] == 0
-    assert node_by_id[f"bug:{bug_card_id}"]["stage"] == 5
+    assert node_by_id[f"bug:{bug_card_id}"]["stage"] == 4
     assert (f"ideation:{ideation_id}", f"spec:{direct_spec_id}") in edge_pairs
     assert (f"refinement:{refinement_id}", f"spec:{spec_id}") in edge_pairs
     assert (f"task:{task_id}", f"bug:{bug_card_id}") in edge_pairs
@@ -415,7 +400,6 @@ async def test_lineage_graph_allows_standalone_spec_root():
     db_factory = get_session_factory()
     board_id = _id("trace-board")
     spec_id = _id("standalone-spec")
-    sprint_id = _id("standalone-sprint")
     task_id = _id("standalone-task")
     test_card_id = _id("standalone-test-card")
     bug_card_id = _id("standalone-bug-card")
@@ -424,20 +408,24 @@ async def test_lineage_graph_allows_standalone_spec_root():
         db.add(Board(id=board_id, name="Standalone Spec Board", owner_id=USER_ID))
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=USER_ID, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Standalone KG Bug Spec",
                 status=SpecStatus.APPROVED,
                 created_by=USER_ID,
-                functional_requirements=["Create bug lineage from a spec root"],
+                functional_requirements=[{"id": "fr-1", "text": "Create bug lineage from a spec root"}],
                 technical_requirements=[],
-                acceptance_criteria=["Bug lineage graph opens without ideation"],
+                acceptance_criteria=[{"id": "ac-1", "text": "Bug lineage graph opens without ideation"}],
                 test_scenarios=[
                     {
                         "id": "ts-standalone",
                         "title": "Standalone bug coverage",
                         "status": "draft",
-                        "linked_criteria": ["0"],
+                        "linked_criteria": ["ac-1"],
                         "linked_task_ids": [test_card_id],
                     }
                 ],
@@ -446,21 +434,10 @@ async def test_lineage_graph_allows_standalone_spec_root():
             )
         )
         db.add(
-            Sprint(
-                id=sprint_id,
-                board_id=board_id,
-                spec_id=spec_id,
-                title="Standalone Sprint",
-                status=SprintStatus.CLOSED,
-                created_by=USER_ID,
-            )
-        )
-        db.add(
             Card(
                 id=task_id,
                 board_id=board_id,
                 spec_id=spec_id,
-                sprint_id=sprint_id,
                 title="Implement standalone flow",
                 status=CardStatus.DONE,
                 card_type=CardType.NORMAL,
@@ -472,7 +449,6 @@ async def test_lineage_graph_allows_standalone_spec_root():
                 id=test_card_id,
                 board_id=board_id,
                 spec_id=spec_id,
-                sprint_id=sprint_id,
                 title="Regression test for standalone bug",
                 status=CardStatus.NOT_STARTED,
                 card_type=CardType.TEST,
@@ -525,7 +501,7 @@ async def test_lineage_graph_allows_standalone_spec_root():
         "title": "Standalone KG Bug Spec",
         "status": "approved",
     }
-    assert graph["root_ideation"]["entity_type"] == "spec"
+    assert graph["root_entity"]["type"] == "spec"
     assert graph["summary"]["ideations"] == 0
     assert graph["summary"]["orphan_specs"] == 1
     assert graph["warnings"] == [
@@ -533,13 +509,12 @@ async def test_lineage_graph_allows_standalone_spec_root():
         "lineage exists."
     ]
     assert f"spec:{spec_id}" in node_ids
-    assert f"sprint:{sprint_id}" in node_ids
     assert f"task:{task_id}" in node_ids
     assert f"test:{test_card_id}" in node_ids
     assert f"bug:{bug_card_id}" in node_ids
-    assert (f"spec:{spec_id}", f"sprint:{sprint_id}", "has_sprint") in edge_relationships
-    assert (f"sprint:{sprint_id}", f"task:{task_id}", "contains_card") in edge_relationships
-    assert (f"sprint:{sprint_id}", f"test:{test_card_id}", "contains_card") in edge_relationships
+    assert all("sprint:" not in str(edge) for edge in edge_relationships)
+    assert (f"spec:{spec_id}", f"task:{task_id}", "has_card") in edge_relationships
+    assert (f"spec:{spec_id}", f"test:{test_card_id}", "has_card") in edge_relationships
     assert (f"task:{task_id}", f"bug:{bug_card_id}", "originates_bug") in edge_relationships
     assert (f"test:{test_card_id}", f"bug:{bug_card_id}", "regression_test") in edge_relationships
     assert bug_graph["root_entity"]["type"] == "spec"

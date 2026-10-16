@@ -80,7 +80,6 @@ async def _load_board(
             actor,
             PermissionRequirement(
                 "board.admin.edit",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=board_id,

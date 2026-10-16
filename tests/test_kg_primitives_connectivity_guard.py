@@ -68,6 +68,7 @@ def _seed_node(
     maturity_status: str | None = None,
 ) -> None:
     attrs = {
+        "generation": 0,
         "title": f"Seed {node_type}",
         "content": "",
         "context": "",
@@ -493,7 +494,7 @@ async def test_source_artifact_ref_dedup_hit_with_existing_edge_counts_merge(
 
 
 @pytest.mark.asyncio
-async def test_degraded_graph_returns_contextual_error_without_opening_kuzu(
+async def test_degraded_graph_returns_contextual_error_without_opening_the_graph(
     board_id,
     agent_id,
     db_factory,
@@ -517,7 +518,7 @@ async def test_degraded_graph_returns_contextual_error_without_opening_kuzu(
         }
 
     def forbidden_open(_board_id):
-        raise AssertionError("degraded commit must not open LadybugDB")
+        raise AssertionError("degraded commit must not open the board graph")
 
     import okto_pulse.core.services.kg_health_service as health_service
     import kg_schema_testing as kg_schema

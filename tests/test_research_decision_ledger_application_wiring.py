@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
+from unittest.mock import AsyncMock
+from test_imp4_knowledge_application import _KnowledgeFacade
 
 from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.core.application.use_cases.mcp_refinement_crud import (
@@ -113,7 +115,8 @@ class _RefinementService:
         self.refinement.status = RefinementStatus.DONE
         return self.refinement
 
-    async def derive_spec(self, _refinement_id, _actor_id, **_kwargs):
+    async def derive_spec(self, _refinement_id, _actor_id, **kwargs):
+        self.spec.id = kwargs["target_id"]
         return self.spec
 
 
@@ -121,6 +124,9 @@ class _Uow:
     def __init__(self, services) -> None:
         self.services = services
         self.commit_calls = 0
+
+    async def synchronize(self, **_kwargs) -> None:
+        pass
 
     async def commit(self) -> None:
         self.commit_calls += 1
@@ -204,10 +210,14 @@ async def test_mcp_refinement_derivation_binds_only_resolved_references() -> Non
             ),
         )
     )
+    events = []
+    knowledge = _KnowledgeFacade(events)
     uow = _Uow(
         SimpleNamespace(
             refinements=_RefinementService(refinement, spec=spec),
             research_decisions=store,
+            knowledge_propagation=knowledge,
+            specs=SimpleNamespace(get_spec=AsyncMock(return_value=None)),
         )
     )
 
@@ -221,7 +231,9 @@ async def test_mcp_refinement_derivation_binds_only_resolved_references() -> Non
         uow=uow,
     )
 
-    assert result.spec is spec
+    assert result.spec is None
+    assert result.knowledge_mutation.result_v2.creation_result["spec_id"] == spec.id
+    assert events == ["knowledge_preflight", "knowledge_mutate"]
     assert store.snapshot is not None
     assert store.derivation is not None
     assert [ref.entry_id for ref in store.derivation.references] == [

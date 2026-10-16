@@ -189,7 +189,7 @@ def test_reuses_testing_provider_prefix_from_conformance_matrix():
 
 
 def test_non_testing_namespace_is_production_allowed_in_both_contexts():
-    module = "okto_pulse.core.kg.providers.ladybug_graph_store"
+    module = "okto_pulse.core.kg.providers.grafx_graph_store"
     for context in ("production", "test"):
         verdict = classify_provider(module=module, context=context)  # type: ignore[arg-type]
         assert verdict.classification == "production_allowed"

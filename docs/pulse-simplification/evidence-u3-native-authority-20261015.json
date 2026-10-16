@@ -1,0 +1,101 @@
+{
+  "date": "2026-10-15",
+  "scope": "UV20 native MCP revocation",
+  "result": {
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "38ce74e1-4d5c-4e1b-8a3b-9c8160dd40b2",
+    "observations": [
+      {
+        "label": "authorized-read",
+        "outcome": "success",
+        "error_code": null
+      },
+      {
+        "label": "revoked-read-same-session",
+        "outcome": "error",
+        "error_code": "permission_denied"
+      },
+      {
+        "label": "revoked-write-same-session",
+        "outcome": "error",
+        "error_code": "permission_denied"
+      }
+    ],
+    "agent_id": "30511e38-ff78-47bc-b1c4-92ffa7da6bd3",
+    "effective_override_response": {
+      "id": "913af98b-3b42-4489-84fa-2633a5b80c7a",
+      "agent_id": "30511e38-ff78-47bc-b1c4-92ffa7da6bd3",
+      "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+      "granted_by": "local-user",
+      "granted_at": "2026-10-15T21:45:16",
+      "permission_overrides": {
+        "board": {
+          "read": false
+        },
+        "spec": {
+          "tests": {
+            "execute": false
+          }
+        }
+      }
+    },
+    "owner_after_success": true,
+    "spec_and_scenario_state_unchanged": true,
+    "cleanup": {
+      "revoke_status": 204,
+      "inactive_status": 200
+    }
+  },
+  "limits": [
+    "HTTP human/browser revocation remains a separate controlled AuthenticationPort fixture.",
+    "First probe tested spec.entity.read whereas this existing MCP read uses board.read; no product authority changed.",
+    "Second probe correctly denied reading; its helper initially incorrectly required data=null despite structured error-only metadata.",
+    "Both disposable agents were removed from the isolated Board and deactivated; no user authority or product data was changed."
+  ],
+  "artifacts": [
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/authority-authorized-read.json",
+      "sha256": "87275eb5eb30fd4099335ce7738173fb06ef38b43f5fd544b7139b3ec460a7d3"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/authority-board-read-authorized-read.json",
+      "sha256": "87275eb5eb30fd4099335ce7738173fb06ef38b43f5fd544b7139b3ec460a7d3"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/authority-board-read-revoked-read-same-session.json",
+      "sha256": "031d45f000cab859b6d57db751d26d483932471307efb9c28b0510be40694272"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/authority-final-authorized-read.json",
+      "sha256": "87275eb5eb30fd4099335ce7738173fb06ef38b43f5fd544b7139b3ec460a7d3"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/authority-final-owner-after.json",
+      "sha256": "87275eb5eb30fd4099335ce7738173fb06ef38b43f5fd544b7139b3ec460a7d3"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/authority-final-revoked-read-same-session.json",
+      "sha256": "031d45f000cab859b6d57db751d26d483932471307efb9c28b0510be40694272"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/authority-final-revoked-write-same-session.json",
+      "sha256": "6f169b0c2f85facc1940b4704f1cc7a3d7729127f732ea47111c0b92d20bdcef"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/authority-native-board-read.json",
+      "sha256": "368359c48a4659a58708e875672ec0422d9a5932ca3695abb3c5193a68e149ac"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/authority-native-final.json",
+      "sha256": "891a597106d1287e9cce763ca6c4b812c0f106294cbe093e789742f9984fb856"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/authority-native.json",
+      "sha256": "8b46aff88e15ebadebb0fbeae606112dfd9690ed64f20c424431c8bf607f75ef"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-integrated-validation/authority-revoked-read-same-session.json",
+      "sha256": "87275eb5eb30fd4099335ce7738173fb06ef38b43f5fd544b7139b3ec460a7d3"
+    }
+  ]
+}

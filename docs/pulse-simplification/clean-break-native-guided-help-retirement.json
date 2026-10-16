@@ -1,0 +1,129 @@
+{
+  "scope": "Retire Sprint guidance from native guided help; installed fresh runtime observation",
+  "proof_pair": "dist-native-main81",
+  "changes": [
+    "Board navigation help now names Stories, Ideations, Refinements, Specs and Tasks without Sprint.",
+    "CLI comment names Okto Grafx; terms helper comment matches DATA_DIR/dotenv/default precedence.",
+    "Official frontend build regenerated embedded SPA."
+  ],
+  "tests": {
+    "frontend_passed": 28,
+    "frontend_failed": 0,
+    "build": "passed",
+    "verify_frontend_dist": "passed"
+  },
+  "frontend": {
+    "files": 79,
+    "assets": 78,
+    "tree_sha256": "ee5768cdcd7c8930a1f4effa2951593ee714eaa069a4cfc2cf013f85a5c5e2cf"
+  },
+  "installed_observation": {
+    "pair": "dist-native-main80",
+    "fresh_venv": true,
+    "python_source_wheel_installed_byte_identical": true,
+    "init_exit": 0,
+    "served_packaged_frontend": true,
+    "ui_created_topic_and_story": true,
+    "story_persisted_after_reload": true,
+    "browser_console_errors": 0,
+    "runtime_exit": 0,
+    "consolidation": "Initial writer contention recovered: queue and dead letter empty; story audit committed without error."
+  },
+  "closure": {
+    "ok": true,
+    "findings": [],
+    "documentation_findings": [],
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ]
+  },
+  "limits": [
+    "Installed browser observation is main80, predating the guided-help text fix in main81.",
+    "KG66 remains pending: qualify the final pair with broader installed contract/behavior evidence; do not conflate this Story smoke with full acceptance.",
+    "Acceptance counts unchanged:98 verified/137 pending/11 superseded.",
+    "No real user runtime/data touched. No promotion."
+  ],
+  "artifacts": {
+    "provenance-native-main81.json": "6b4cdc3243718311847249b8c90b0d44e3b74c5880446a650b6dfc987141d5de",
+    "native-guided-help-retirement1.json": "0a69f1a521c591417e9ccbcfde44740c4680931b94645e238566e61ebfef08aa",
+    "closure-native-main81.json": "847e9924ef3293a01f2b6aab3161a0717296d4d14bf0142d7f0462b853c87ec4",
+    "provenance-kg66-fresh-main80.json": "7216f90a78d0b9784ea14fab20c74929beb1e06941137c0cf31a77b95a0f64c1",
+    "kg66-main80/init-result.json": "f98ddc70783957159ea67a7e63711b6621dffcae7e35ec3ad1115c945a078bdf",
+    "kg66-main80/server.json": "8e4472a49fe92ba10f51222a07567c9d3629319641b080aa26f23d5d684bfd33",
+    "kg66-main80/consolidation-after-stop.json": "143d91c24beac1a6c1cb654346f94733c4f8136a20c6e4497bfe24544be5b76d",
+    "kg66-main80/browser/observations/snapshot.txt": "f7d7c433db782517cf24775e9b600fcff29567d5d09e1405e870445de54007ba",
+    "kg66-main80/browser/observations/requests.txt": "d424f9e03562209d52c99d789d2cd27697b5d6f1ae74e436c30bb766bcf3f0ad",
+    "kg66-main80/browser/observations/console.txt": "5e022534a5fe0feeb06a8fc815ff2ad8e4598aae62e789579db7dbcbfb58bc2a"
+  }
+}

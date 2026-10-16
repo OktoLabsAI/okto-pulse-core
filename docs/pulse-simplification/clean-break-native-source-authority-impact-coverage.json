@@ -1,0 +1,71 @@
+{
+  "criteria": [
+    "KG:KG-56",
+    "KG:KG-57",
+    "KG:KG-58"
+  ],
+  "qualification": "verified_current_pair_review",
+  "proof_pair": "dist-native-main73",
+  "changes": [
+    "Added executable frozen-source suggestion witness for validated/in_progress/done. Product and frontend unchanged."
+  ],
+  "evidence": {
+    "KG:KG-56": [
+      "Deterministic worker produces candidates for missing AC/API requirement links; resolver retains candidates without tests/implements/fallback edges, source mutation, coverage increase or persistence access.",
+      "Existing real relational locked-Spec tests preserve traceability-only links without unlocking normative content; content edit still requires Draft.",
+      "Variant permission denial occurs before unit of work; granting exact leaf reaches persistence, sibling permission does not substitute.",
+      "REST/MCP conflict projection tests preserve refusal/rollback; UI omits correction for Done and restricts contextual coverage."
+    ],
+    "KG:KG-57": [
+      "Real SQL and Grafx path through a shared Card labels unrelated scenario potential_shared_card_reach, even with every edge observed and source-confirmed.",
+      "Confirmed direct links and potential indirect reach stay separate through transport and frontend. Proof store is never read by informational impact.",
+      "Depth frontier, history and stale cursor checks preserve limits rather than claiming complete confirmed impact."
+    ],
+    "KG:KG-58": [
+      "Linked Done Test Card and structural coverage do not become delivery proof; no admitted passing record means verification missing.",
+      "Real signed ledger evidence matches authoritative gate rollup; rejected revision/reopened/failed or unauthenticated facts receive no credit.",
+      "Restricted proof is neither read nor counted; frontend distinguishes planning links, graph observations, unknown proof and verified evidence."
+    ]
+  },
+  "tests": {
+    "core_impact_coverage": 88,
+    "community_impact_coverage": 43,
+    "frontend_impact_coverage": 21,
+    "core_frozen_suggestions_and_lock": 6,
+    "frontend_frozen_source": 9,
+    "core_permission_and_conflict": 27,
+    "community_conflict_projection": 30,
+    "total_distinct_passed": 224
+  },
+  "closure": {
+    "reused_unchanged_product_report": "closure-native-main73.json",
+    "ok": true,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    }
+  },
+  "limits": [
+    "KG56 certifies the non-adoption/authority invariant for the read-only suggestion path. Durable semantic hypothesis storage and replay under complement section5.4 are NOT claimed implemented by this receipt.",
+    "Several transport tests inject actor or exceptions and prove dispatch/projection; real relational/Grafx/ledger tests supply separate persistence evidence.",
+    "Frontend tests use controlled APIs, not live-browser installed-server E2E.",
+    "No new policy, lock, schema, runtime, migration, conversion or production promotion."
+  ],
+  "artifacts": {
+    "provenance-native-impact-coverage1.json": "57c41b0573dace99d4c7593f8d0e7f0fd4bf48d339480e51aa465c4ca561d637",
+    "native-impact-coverage1.xml": "31dd79c8c0c488826b55aaa8baf5a7d31df9b4f84c9728ddf34fefc9bb624010",
+    "native-impact-coverage-relational1.xml": "4075e0f6bc089057af85bb3bdb2f8092f8ecda773654ae727a45230a79eb0fef",
+    "native-impact-coverage-frontend1.json": "5ca7141ee199f97466fb07062ddbeb88ee51ae2747a9bdd51e96e0b37313a9c3",
+    "native-frozen-suggestions1.xml": "5df000e143f9598140d9015d9aaf7bf9b00070cd623c633720d236b80a1be4d2",
+    "native-frozen-suggestions-frontend1.json": "49e8c008896198750a9c5eb76b9b18186fe791e3adb79c77331dd611af8924a5",
+    "native-frozen-domain-authority1.xml": "d9341c57b24a32cccc87ab8250edc747274ea989a228d25667774bc30b67ce7c",
+    "native-frozen-domain-rest1.xml": "2d396063ce1934c59501920b6a69d89fd27bb684c8ddc017f94dd6f28e02c644",
+    "closure-native-main73.json": "50921d66df86b2107b9922f2e6eba86c2c08b8a7a7d1d914742bdef7acc87640"
+  }
+}

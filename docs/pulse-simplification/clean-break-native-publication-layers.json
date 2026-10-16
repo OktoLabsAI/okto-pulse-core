@@ -1,0 +1,60 @@
+{
+  "scope": "C1/C3 removal of durable legacy digest publication",
+  "proof_pair": "dist-native-main68",
+  "review_base": {
+    "core": "cf17d860",
+    "community": "6ba66908"
+  },
+  "changes": [
+    "Publication resolver accepts only canonical and working; missing or retired values raise global_projection_graph_layer_invalid without assigning a replacement.",
+    "Grafx digest upsert rejects noncurrent layers before vector access and transaction creation.",
+    "Removed the test requirement to publish legacy_unknown then convert it to canonical through reconciliation.",
+    "Preserved native canonical/working reconciliation and the Learning publication policy with debt, pending holds and evidence requirements."
+  ],
+  "verified": [
+    "Real outbox processing refuses a source with missing layer, leaves its layer NULL and creates no digest; repeated reconciliation does not convert it.",
+    "Five noncurrent values are refused by real Grafx adapter with no published LSN change, no open transaction and no digest.",
+    "31 Core publication/parity cases and14 Community Grafx cases pass."
+  ],
+  "tests": {
+    "native-publication-layers-core1.xml": {
+      "tests": "31",
+      "failures": "0",
+      "errors": "0",
+      "time": "285.271"
+    },
+    "native-publication-layers-community1.xml": {
+      "tests": "14",
+      "failures": "0",
+      "errors": "0",
+      "time": "29.094"
+    }
+  },
+  "distinct_passed": 45,
+  "closure": {
+    "ok": true,
+    "findings": [],
+    "documentation_findings": [],
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    }
+  },
+  "remaining": [
+    "legacy_unknown labels still occur in diagnostic collection, natural-query audit and recovery/source inventory. Their current native-invalid-data responsibilities must be separated from retired format support; this increment does not claim their complete removal.",
+    "No frontend changes or frontend run in this increment; public valid artifact layers are unchanged.",
+    "The full acceptance scope is still open; index remains83 verified/152 pending/11 superseded with per-criterion proof pairs preserved."
+  ],
+  "artifacts": {
+    "provenance-native-main68.json": "8cd834b57b8270d852f4f80e7e655a6a9486621b29a1264bd9e90a1a2e8b33e6",
+    "closure-native-main68.json": "2c8583953abaa36836bdd3938fe150a915d6b3a480dea4da4ab9ae21569c205f",
+    "native-publication-layers-core1.xml": "03ec18d4eeed58066ed2e3878d245d5f27e5266648c610be60c878d28030dec1",
+    "native-publication-layers-community1.xml": "3ac4df1f34b0c2b1ab7e94203d8bdac35e8a6fc8fe7a7dc80577b864dd274e78"
+  }
+}

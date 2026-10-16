@@ -40,6 +40,7 @@ from okto_pulse.core.application.use_cases.submit_spec_validation import (
 )
 from okto_pulse.core.domain.enums import CardType
 from okto_pulse.core.models.schemas import SpecUpdate
+from spec_planning_fixtures import manifest_payload
 from sqlalchemy_test_models import (
     ActivityLog,
     Board,
@@ -59,6 +60,8 @@ ATTACKER = "spec-rest-scope-attacker"
 OTHER_OWNER = "spec-rest-scope-owner"
 
 VALIDATION = {
+    "idempotency_key": "scope-review",
+    "expected_planning_manifest": manifest_payload("foreign-spec"),
     "expected_validation_edition": 1,
     "expected_spec_version": 1,
     "expected_head_revision": 0,
@@ -91,7 +94,7 @@ EVALUATION = {
 
 
 async def _allow_permissions(db, user_id, board_id):
-    from okto_pulse.core.infra.permissions import resolve_permissions
+    from okto_pulse.core.domain.permissions import resolve_permissions
 
     return resolve_permissions(None, None, None)
 
@@ -191,6 +194,8 @@ async def spec_graph(db_factory) -> dict[str, str]:
             creator = ATTACKER if scope in {"owned", "realm"} else OTHER_OWNER
             db.add(
                 Spec(
+                    execution_contract={"contract_version": "spec-execution-contract/v1", "board_id": ids[f"{scope}_board"], "spec_id": ids[f"{scope}_spec"], "adopted_in_edition": 1, "actor_id": creator, "origin": "new_spec"},
+                    architecture_adoption={"contract_version": "architecture-adoption/v1", "board_id": ids[f"{scope}_board"], "spec_id": ids[f"{scope}_spec"], "adopted_in_edition": 1, "actor_id": creator, "inherited_resource_ids": []},
                     id=ids[f"{scope}_spec"],
                     board_id=ids[f"{scope}_board"],
                     title=f"{scope} scoped spec",
@@ -355,6 +360,13 @@ def _request(
     path: str,
     **kwargs: Any,
 ):
+    if method == "POST" and path.endswith("/validation") and "json" in kwargs:
+        # Valid shape for each target, so this probes authorization, not an
+        # unrelated mismatch between the route and the submitted identity.
+        kwargs["json"] = {
+            **kwargs["json"],
+            "expected_planning_manifest": manifest_payload(path.split("/")[1]),
+        }
     return client.request(method, f"{PREFIX}/{path.lstrip('/')}", **kwargs)
 
 
@@ -511,7 +523,7 @@ async def test_board_create_and_list_role_realm_matrix(
         json={"title": "viewer denied", "delivery_context": "brownfield"},
     )
     assert viewer_list.status_code == 200, viewer_list.text
-    assert ids["viewer_spec"] in {row["id"] for row in viewer_list.json()}
+    assert ids["viewer_spec"] in {row["id"] for row in viewer_list.json()["items"]}
     assert viewer_create.status_code == 404
 
     for scope in ("owned", "editor", "admin"):
@@ -526,7 +538,7 @@ async def test_board_create_and_list_role_realm_matrix(
             },
         )
         assert listed.status_code == 200, (scope, listed.text)
-        assert ids[f"{scope}_spec"] in {row["id"] for row in listed.json()}
+        assert ids[f"{scope}_spec"] in {row["id"] for row in listed.json()["items"]}
         assert created.status_code == 201, (scope, created.text)
         assert created.json()["board_id"] == ids[f"{scope}_board"]
 
@@ -771,6 +783,7 @@ def _denied_uow() -> tuple[Any, Any, Any]:
         commit=AsyncMock(),
         rollback=AsyncMock(),
         synchronize=AsyncMock(),
+        begin_write=AsyncMock(),
     )
     actor = ActorContext(ATTACKER, "rest", realm_id="local")
     return uow, services, actor
@@ -840,7 +853,7 @@ async def test_denied_writes_stop_before_resolvers_children_writers_and_commit(
         ),
         (
             SubmitSpecValidationUseCase(),
-            SubmitSpecValidationCommand("foreign-spec", {}),
+            SubmitSpecValidationCommand("foreign-spec", VALIDATION),
         ),
     ]
     for use_case, command in commands:

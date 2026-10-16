@@ -197,7 +197,7 @@ def test_each_report_maps_to_gate_with_collapsed_status_success():
         mode="quick",
         conformance_matrix=fake_matrix(ok=True),
         packaging_ownership=fake_ownership(ok=True),
-        readiness=fake_readiness((_readiness_row("kuzu_graph_store", "ready"),)),
+        readiness=fake_readiness((_readiness_row("grafx_graph_store", "ready"),)),
         provider_guard=fake_guard(),
     )
 
@@ -212,9 +212,9 @@ def test_each_report_maps_to_gate_with_collapsed_status_success():
 def test_each_report_maps_to_gate_with_collapsed_status_blocked():
     report = orchestrate_final_clean_core(
         mode="full",
-        conformance_matrix=fake_matrix(ok=False, missing=("kuzu_graph_store",)),
+        conformance_matrix=fake_matrix(ok=False, missing=("grafx_graph_store",)),
         packaging_ownership=fake_ownership(
-            ok=False, blocking=(_ownership_row("kuzu", "kuzu_graph_store"),)
+            ok=False, blocking=(_ownership_row("okto-grafx", "grafx_graph_store"),)
         ),
         readiness=fake_readiness((_readiness_row("inmemory_cache_backend", "blocked"),)),
         provider_guard=fake_guard(violations=(_violation("event_bus"),)),
@@ -243,7 +243,7 @@ def test_ownership_blocking_emits_one_gate_per_blocking_finding_with_identity():
         packaging_ownership=fake_ownership(
             ok=False,
             blocking=(
-                _ownership_row("kuzu", "kuzu_graph_store"),
+                _ownership_row("okto-grafx", "grafx_graph_store"),
                 _ownership_row("torch", "sentence_transformer_embedding_provider"),
             ),
         ),
@@ -252,10 +252,10 @@ def test_ownership_blocking_emits_one_gate_per_blocking_finding_with_identity():
     assert len(c_gates) == 2
     assert all(g.status == "blocked" for g in c_gates)
     assert {g.adapter_key for g in c_gates} == {
-        "kuzu_graph_store",
+        "grafx_graph_store",
         "sentence_transformer_embedding_provider",
     }
-    assert {g.dependency_family for g in c_gates} == {"kuzu", "torch"}
+    assert {g.dependency_family for g in c_gates} == {"okto-grafx", "torch"}
 
 
 def test_provider_guard_violation_surfaces_provider_key():
@@ -291,11 +291,11 @@ def test_deferred_adapter_collapses_to_skipped_and_does_not_block():
 # The C->B feed: C's dependency_audit_passed FLIPS the FCC-07B outcome.
 # --------------------------------------------------------------------------- #
 def _full_binding_except_dep_audit() -> RemovalEvidenceBinding:
-    """A binding for the real ``kuzu_graph_store`` adapter whose evidence is
+    """A binding for the real ``grafx_graph_store`` adapter whose evidence is
     complete EXCEPT ``dependency_audit_passed`` (left None) — so the readiness
     verdict hinges entirely on the C->B feed."""
     return RemovalEvidenceBinding(
-        adapter_key="kuzu_graph_store",
+        adapter_key="grafx_graph_store",
         evidence=AdapterEvidence(
             port_closed=True,
             community_registered=True,
@@ -309,16 +309,16 @@ def _full_binding_except_dep_audit() -> RemovalEvidenceBinding:
 
 
 def test_c_to_b_feed_flips_readiness_to_ready():
-    # FCC-07C says dependency_audit_passed=True for kuzu -> the binder merges it
+    # FCC-07C says dependency_audit_passed=True for okto-grafx -> the binder merges it
     # into the otherwise-complete evidence -> readiness becomes ready -> success.
     report = orchestrate_final_clean_core(
         mode="quick",
         packaging_ownership=fake_ownership(ok=True),
-        dependency_audit=fake_projection({"kuzu_graph_store": True}),
+        dependency_audit=fake_projection({"grafx_graph_store": True}),
         removal_bindings=[_full_binding_except_dep_audit()],
     )
     b_gate = _gate(report, GATE_FCC07B)
-    assert b_gate.adapter_key == "kuzu_graph_store"
+    assert b_gate.adapter_key == "grafx_graph_store"
     assert b_gate.status == "success"
     # evidence_fields reflect the merged input: C's dependency_audit_passed=True.
     assert b_gate.evidence_fields.as_map()["dependency_audit_passed"] is True
@@ -331,7 +331,7 @@ def test_without_c_feed_readiness_stays_blocked():
         removal_bindings=[_full_binding_except_dep_audit()],
     )
     b_gate = _gate(report, GATE_FCC07B)
-    assert b_gate.adapter_key == "kuzu_graph_store"
+    assert b_gate.adapter_key == "grafx_graph_store"
     assert b_gate.status == "blocked"
     assert b_gate.evidence_fields.as_map()["dependency_audit_passed"] is None
 
@@ -339,7 +339,7 @@ def test_without_c_feed_readiness_stays_blocked():
 def test_c_feed_false_keeps_b_blocked():
     report = orchestrate_final_clean_core(
         mode="quick",
-        dependency_audit=fake_projection({"kuzu_graph_store": False}),
+        dependency_audit=fake_projection({"grafx_graph_store": False}),
         removal_bindings=[_full_binding_except_dep_audit()],
     )
     b_gate = _gate(report, GATE_FCC07B)
@@ -349,12 +349,12 @@ def test_c_feed_false_keeps_b_blocked():
 
 def test_c_to_b_feed_via_adapter_evidence_path():
     # The evidence-map B build path also threads C's dependency_audit_passed. The
-    # aggregator reports the WHOLE inventory, so select the kuzu row explicitly.
+    # aggregator reports the WHOLE inventory, so select the Grafx row explicitly.
     report = orchestrate_final_clean_core(
         mode="quick",
-        dependency_audit=fake_projection({"kuzu_graph_store": True}),
+        dependency_audit=fake_projection({"grafx_graph_store": True}),
         adapter_evidence={
-            "kuzu_graph_store": AdapterEvidence(
+            "grafx_graph_store": AdapterEvidence(
                 port_closed=True,
                 community_registered=True,
                 oracle_passed=True,
@@ -364,7 +364,7 @@ def test_c_to_b_feed_via_adapter_evidence_path():
             )
         },
     )
-    b_gate = _gate_for_adapter(report, GATE_FCC07B, "kuzu_graph_store")
+    b_gate = _gate_for_adapter(report, GATE_FCC07B, "grafx_graph_store")
     assert b_gate.status == "success"
     assert b_gate.evidence_fields.as_map()["dependency_audit_passed"] is True
 
@@ -390,7 +390,7 @@ def test_no_rule_duplication_status_comes_from_injected_report(monkeypatch):
         mode="quick",
         conformance_matrix=fake_matrix(ok=True),
         packaging_ownership=fake_ownership(
-            ok=False, blocking=(_ownership_row("kuzu", "kuzu_graph_store"),)
+            ok=False, blocking=(_ownership_row("okto-grafx", "grafx_graph_store"),)
         ),
         readiness=fake_readiness((_readiness_row("x", "ready"),)),
         provider_guard=fake_guard(),
@@ -409,7 +409,7 @@ def test_aggregate_report_collects_all_four_gates_and_mode():
         mode="full",
         conformance_matrix=fake_matrix(ok=True),
         packaging_ownership=fake_ownership(ok=True),
-        dependency_audit=fake_projection({"kuzu_graph_store": True}),
+        dependency_audit=fake_projection({"grafx_graph_store": True}),
         removal_bindings=[_full_binding_except_dep_audit()],
         provider_guard=fake_guard(),
     )

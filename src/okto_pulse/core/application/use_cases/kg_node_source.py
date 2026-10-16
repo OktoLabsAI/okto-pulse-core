@@ -48,7 +48,6 @@ _OWNERS = {
     "spec": ("specs", "get_spec"),
     "refinement": ("refinements", "get_refinement"),
     "ideation": ("ideations", "get_ideation"),
-    "sprint": ("sprints", "get_sprint"),
     "story": ("stories", "get_story"),
     "card": ("cards", "get_card"),
 }

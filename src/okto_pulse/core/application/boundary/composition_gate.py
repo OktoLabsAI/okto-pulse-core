@@ -122,8 +122,7 @@ class CompositionBoundaryGateInput:
     owned_provider_keys: tuple[str, ...] = OWNED_PROVIDER_KEYS
     deferred_boundaries: tuple[str, ...] = DEFERRED_BOUNDARIES
     default_only_exclusions: tuple[str, ...] = (
-        "kg_migration_sweep",
-        "shutdown_kg_events_hub",
+            "shutdown_kg_events_hub",
         "close_all_connections",
     )
     mode: str = "bootstrap"

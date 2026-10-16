@@ -15,6 +15,7 @@ from typing import Any
 
 
 from okto_pulse.core.application.scope import QueryScope
+from okto_pulse.core.ports.authentication import PrincipalKind
 from okto_pulse.core.domain.configuration_presence import (
     project_configuration_presence,
 )
@@ -99,12 +100,10 @@ class DefaultBoardConfigApiService:
         *,
         scope: str,
         guideline_default_refs: list[Any] | None,
-        compatibility_import: bool = False,
     ) -> dict[str, list[str]]:
         return await self._svc.preview_create_guideline_ref_diff(
             scope=scope,
             guideline_default_refs=guideline_default_refs,
-            compatibility_import=compatibility_import,
         )
 
     async def preview_activate_guideline_ref_diff(
@@ -193,10 +192,19 @@ class DefaultBoardConfigApiService:
 
     # -- writes (admin) ----------------------------------------------------
 
+    async def prepare_version_settings(
+        self, *, settings_payload: dict[str, Any] | None,
+        actor_kind: PrincipalKind, scope: str = "global",
+    ) -> dict[str, Any]:
+        return await self._svc.prepare_version_settings(
+            settings_payload=settings_payload, actor_kind=actor_kind, scope=scope,
+        )
+
     async def create_version(
         self,
         *,
         actor: str,
+        actor_kind: PrincipalKind = "unknown",
         settings_payload: dict[str, Any] | None = None,
         scope: str = "global",
         guideline_default_refs: list[Any] | None = None,
@@ -204,18 +212,17 @@ class DefaultBoardConfigApiService:
         spec_checklist_mode: str | None = None,
         activate: bool = False,
         query_scope: QueryScope | None = None,
-        compatibility_import: bool = False,
     ) -> dict[str, Any]:
         template = await self._svc.create_version(
             settings_payload=settings_payload,
             actor=actor,
+            actor_kind=actor_kind,
             scope=scope,
             guideline_default_refs=guideline_default_refs,
             design_system_default_ref=design_system_default_ref,
             spec_checklist_mode=spec_checklist_mode,
             activate=activate,
             query_scope=query_scope,
-            compatibility_import=compatibility_import,
         )
         return self._serialize(template)
 
@@ -224,17 +231,19 @@ class DefaultBoardConfigApiService:
         *,
         template_id: str,
         actor: str,
+        actor_kind: PrincipalKind = "unknown",
         query_scope: QueryScope | None = None,
     ) -> dict[str, Any]:
         template = await self._svc.activate_version(
             template_id,
             actor,
+            actor_kind=actor_kind,
             query_scope=query_scope,
         )
         return self._serialize(template)
 
-    async def deactivate_version(self, *, template_id: str, actor: str) -> dict[str, Any]:
-        template = await self._svc.deactivate_version(template_id, actor)
+    async def deactivate_version(self, *, template_id: str, actor: str, actor_kind: PrincipalKind = "unknown") -> dict[str, Any]:
+        template = await self._svc.deactivate_version(template_id, actor, actor_kind=actor_kind)
         return self._serialize(template)
 
     # -- guideline defaults (spec 8a2fad91) --------------------------------

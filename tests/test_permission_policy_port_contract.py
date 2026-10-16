@@ -17,7 +17,6 @@ from okto_pulse.core.domain.permissions import (
 from okto_pulse.core.ports.permission_policy import (
     PermissionPolicyPort,
     builtin_permission_presets,
-    merge_permission_registry_defaults,
     registered_permission_flags,
 )
 
@@ -64,6 +63,7 @@ def test_permission_domain_module_has_only_stdlib_and_canonical_domain_imports()
         "logging",
         "okto_pulse.core.domain.code_traceability_kg",
         "okto_pulse.core.domain.mcp_permission_registry",
+        "okto_pulse.core.domain.permission_migration_review",
         "okto_pulse.core.domain.sdlc_registry",
         "typing",
     }
@@ -82,7 +82,7 @@ def test_default_and_fake_policies_satisfy_the_public_protocol() -> None:
     assert FakePolicy().evaluate(PermissionContext("board.read")).allowed is True
 
 
-def test_default_policy_preserves_ceiling_and_legacy_decisions() -> None:
+def test_default_policy_preserves_ceiling_and_refuses_retired_tokens() -> None:
     policy = DefaultPermissionPolicy()
     permissions = policy.resolve(
         agent_flags={"board": {"read": True}},
@@ -97,10 +97,10 @@ def test_default_policy_preserves_ceiling_and_legacy_decisions() -> None:
         PermissionContext(
             "board.read",
             permissions=["board:read"],
-            legacy_operation="board:read",
         )
     )
-    assert legacy == PermissionDecision.allow("board.read")
+    assert not legacy.allowed
+    assert legacy.required_permission == "board.read"
 
 
 def test_default_policy_rejects_an_empty_operation() -> None:
@@ -108,10 +108,14 @@ def test_default_policy_rejects_an_empty_operation() -> None:
         DefaultPermissionPolicy().evaluate(PermissionContext("  "))
 
 
-def test_infra_compatibility_facade_reexports_domain_identity() -> None:
-    from okto_pulse.core.infra.permissions import PermissionSet as LegacyPermissionSet
+def test_retired_permission_facade_and_constants_are_absent() -> None:
+    import importlib.util
+    from okto_pulse.core.domain import permissions
+    from okto_pulse import core
 
-    assert LegacyPermissionSet is PermissionSet
+    assert importlib.util.find_spec("okto_pulse.core.infra.permissions") is None
+    assert not hasattr(permissions, "Permissions")
+    assert not hasattr(core, "Permissions")
 
 
 def test_adapter_bootstrap_views_do_not_expose_mutable_registry_state() -> None:
@@ -123,7 +127,3 @@ def test_adapter_bootstrap_views_do_not_expose_mutable_registry_state() -> None:
     assert presets
     presets[0]["flags"]["board"]["read"] = False
     assert builtin_permission_presets()[0]["flags"]["board"]["read"] is True
-
-    merged, added = merge_permission_registry_defaults({"board": {"read": False}})
-    assert merged["board"]["read"] is False
-    assert added > 0

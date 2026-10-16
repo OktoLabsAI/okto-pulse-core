@@ -25,6 +25,7 @@ from okto_pulse.core.services.bug_regression_scenarios import (
     BugRegressionCoverageState,
     BugRegressionEligibilityReason,
     BugRegressionRejectionReason,
+    CoverageBasis,
     CoverageConfirmationFact,
     CoverageConsumabilityVerdict,
     evaluate_coverage_confirmation_consumability,
@@ -65,6 +66,13 @@ def _card(card_id: str, *, card_type: CardType = CardType.NORMAL,
     )
 
 
+def _basis():
+    return CoverageBasis(
+        scenario_spec_id="other-spec", spec_edition=1, scenario_epoch=1,
+        semantic_sha256="sha256:" + "a" * 64, evidence_sha256="b" * 64,
+        amendment_sha256="c" * 64, evidence_ref="tests/test_x.py::test_y")
+
+
 def _fact(**over) -> AmendmentLineageFact:
     """Fully-valid amendment for bug-1 on spec-1, claiming origin-1 (a member of
     the bug authoritative set) and declaring the cross-spec artifact."""
@@ -80,6 +88,7 @@ def _fact(**over) -> AmendmentLineageFact:
         regression_scenario_ids=(CROSS_SPEC_SCENARIO,),
         regression_test_task_ids=("tc-1",),
         automated_regression_refs=(),
+        current_coverage_basis=_basis(),
     )
     base.update(over)
     return AmendmentLineageFact(**base)
@@ -87,6 +96,7 @@ def _fact(**over) -> AmendmentLineageFact:
 
 def _confirmation(scenario_id: str, **over) -> CoverageConfirmationFact:
     base = dict(
+        basis=_basis(),
         validator_id="claude-validator",
         amendment_revision_id="amd-1",
         regression_test_task_id="tc-1",

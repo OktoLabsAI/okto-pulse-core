@@ -127,6 +127,25 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
 @pytest.fixture(scope="module", autouse=True)
 def _global_discovery_graph():
     reset_global_discovery_runtime_for_tests()
+    # The routed Global graph is fail-closed until its backend binding exists;
+    # the composition's explicit initialization door publishes it (inside the
+    # durable writer fence, like any Global mutation) before the runtime
+    # bootstrap can inspect the route.
+    from coordination_fakes import FakeWriteLockPort
+    from global_graph_testing import global_discovery_writer_scope
+    from kg_schema_testing import graph_composition
+    from okto_pulse.core.ports.coordination import (
+        CoordinationProviderMissing,
+        get_write_lock_port,
+        register_coordination_providers,
+    )
+
+    try:
+        get_write_lock_port()
+    except CoordinationProviderMissing:
+        register_coordination_providers(write_lock_port=FakeWriteLockPort())
+    with global_discovery_writer_scope(operation="test_global_route_init"):
+        graph_composition().initialize_global_route()
     bootstrap_global_discovery()
     yield
     reset_global_discovery_runtime_for_tests()
@@ -180,11 +199,10 @@ class _TargetedConsolidationPersistence(CommunitySqlAlchemyConsolidationPersiste
         rows = await super().list_ready_pending(context, now=now)
         return tuple(row for row in rows if row.id in self.target_entry_ids)
 
-    async def list_stale_claims(self, context, *, now, legacy_cutoff):
+    async def list_stale_claims(self, context, *, now):
         rows = await super().list_stale_claims(
             context,
             now=now,
-            legacy_cutoff=legacy_cutoff,
         )
         return tuple(row for row in rows if row.id in self.target_entry_ids)
 
@@ -998,8 +1016,8 @@ async def _seed_done_tree(db_factory, board_id: str):
 
 
 @pytest.mark.asyncio
-async def test_spec_delete_mints_takedown_for_cascaded_sprint(
-    db_factory,
+async def test_spec_delete_mints_only_spec_takedown_without_sprint_lookup(
+    db_factory, monkeypatch,
 ) -> None:
     board_id = await new_board(db_factory, "spec-sprint-cascade-takedown")
     spec_id, _source_ref = await seed_done_spec_canonical(db_factory, board_id)
@@ -1013,8 +1031,15 @@ async def test_spec_delete_mints_takedown_for_cascaded_sprint(
         session.add(sprint)
         await session.commit()
         await session.refresh(sprint)
-        sprint_id = sprint.id
 
+    from okto_pulse.core.services import main
+    original_list = main._application_list
+
+    async def no_sprint_reads(db, artifact_type, **kwargs):
+        assert artifact_type != "sprint", "Spec deletion consulted retired Sprint"
+        return await original_list(db, artifact_type, **kwargs)
+
+    monkeypatch.setattr(main, "_application_list", no_sprint_reads)
     with _registered_targeted_adapters():
         async with db_factory() as session:
             receipt = await SpecService(session).delete_spec(
@@ -1028,10 +1053,8 @@ async def test_spec_delete_mints_takedown_for_cascaded_sprint(
     receipt_payload = receipt.to_dict()
     assert receipt_payload["artifact_type"] == "spec"
     assert receipt_payload["artifact_id"] == spec_id
-    assert [
-        (item["artifact_type"], item["artifact_id"])
-        for item in receipt_payload["descendant_deletions"]
-    ] == [("sprint", sprint_id)]
+    assert receipt.descendant_deletions == ()
+    assert "descendant_deletions" not in receipt_payload
 
     async with db_factory() as session:
         intents = (
@@ -1050,12 +1073,8 @@ async def test_spec_delete_mints_takedown_for_cascaded_sprint(
 
     assert {(intent.artifact_type, intent.artifact_id) for intent in intents} == {
         ("spec", spec_id),
-        ("sprint", sprint_id),
     }
-    sprint_intent = next(
-        intent for intent in intents if intent.artifact_type == "sprint"
-    )
-    assert sprint_intent.payload["source_refs"] == [f"sprint:{sprint_id}"]
+    assert intents[0].payload["source_refs"] == [f"spec:{spec_id}"]
 
 
 @pytest.mark.asyncio

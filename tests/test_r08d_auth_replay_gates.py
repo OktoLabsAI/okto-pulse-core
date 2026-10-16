@@ -109,9 +109,11 @@ async def _seed(tmp: str) -> None:
         register_community_relational_schema_lifecycle,
     )
     from kg_registry_testing import configure_test_kg_registry
-    from sqlalchemy_test_models import Agent, AgentBoard, Board
+    from sqlalchemy_test_models import Agent, AgentBoard, Board, PermissionPreset
+    from native_permission_fixtures import native_permission_flags
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     from okto_pulse.core.runtime_registry import register_unit_of_work_factory
+    from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 
     _db_mod.configure_community_database(
         f"sqlite+aiosqlite:///{Path(tmp) / 'r08d.db'}"
@@ -131,13 +133,15 @@ async def _seed(tmp: str) -> None:
 
     now = datetime.now(timezone.utc)
     async with _db_mod.get_session_factory()() as s:
-        s.add(Board(id="B1", name="Board 1", owner_id="A1", created_at=now, updated_at=now))
-        s.add(Board(id="B2", name="Board 2", owner_id="A2", created_at=now, updated_at=now))
+        s.add(PermissionPreset(id="native-reader", name="Reader", owner_id="owner",
+            flags=native_permission_flags("board.read")))
+        s.add(Board(id="B1", realm_id=LOCAL_REALM_ID, name="Board 1", owner_id="A1", created_at=now, updated_at=now))
+        s.add(Board(id="B2", realm_id=LOCAL_REALM_ID, name="Board 2", owner_id="A2", created_at=now, updated_at=now))
         for aid, key, active in (("A1", "kA1", True), ("A2", "kA2", True), ("IN", "kInact", False)):
             s.add(Agent(
                 id=aid, name=aid, api_key=key, api_key_hash=_HASH(key),
                 is_active=active, created_by="owner", created_at=now,
-                permission_flags=None, permissions=[],
+                preset_id="native-reader", permission_flags={},
             ))
         s.add(AgentBoard(id="AB1", agent_id="A1", board_id="B1", granted_by="owner", granted_at=now))
         s.add(AgentBoard(id="AB2", agent_id="A2", board_id="B2", granted_by="owner", granted_at=now))

@@ -16,7 +16,6 @@ from okto_pulse.core.application.use_cases.policy_governance import (
 )
 from okto_pulse.core.application.use_cases.semantic_guideline_governance import (
     GetCurrentSemanticGuidelineAssessmentCommand,
-    GetCurrentSemanticGuidelineAssessmentUseCase,
 )
 from okto_pulse.core.domain.guideline_semantic_findings_v2 import (
     SemanticAssessmentReceiptProjectionV2,
@@ -36,6 +35,7 @@ from okto_pulse.core.domain.guideline_semantic_v2 import (
     semantic_metric_result_digest_v2,
 )
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
+from okto_pulse.core.ports.guideline_policy import require_writable_policy_subject_type
 from okto_pulse.core.ports.semantic_subject_projection import (
     SemanticAssessmentV2PersistencePort,
     SemanticAssessmentV2CapabilityPort,
@@ -87,12 +87,12 @@ class SealSemanticGuidelineAssessmentV2Result:
 
 
 @dataclass(frozen=True, slots=True)
-class GetCurrentSemanticGuidelineAssessmentAnyResult:
+class GetCurrentSemanticGuidelineAssessmentV2Result:
     contract_version: str
     assessment: object
 
     def __post_init__(self) -> None:
-        if self.contract_version not in {"v1", "v2"}:
+        if self.contract_version != "v2":
             raise TypeError("semantic_assessment_contract_version_invalid")
 
 
@@ -192,8 +192,8 @@ def semantic_assessment_v2_current_projection(
     }
 
 
-class GetCurrentSemanticGuidelineAssessmentAnyUseCase:
-    """Choose the newest live-current receipt across the immutable v1/v2 ledgers."""
+class GetCurrentSemanticGuidelineAssessmentV2UseCase:
+    """Read the live-current native receipt for the exact subject edition."""
 
     async def execute(
         self,
@@ -201,7 +201,7 @@ class GetCurrentSemanticGuidelineAssessmentAnyUseCase:
         *,
         actor: ActorContext,
         uow: "PulseUnitOfWork",
-    ) -> GetCurrentSemanticGuidelineAssessmentAnyResult:
+    ) -> GetCurrentSemanticGuidelineAssessmentV2Result:
         require_policy_governance_capabilities(actor, ASSESSMENTS_READ)
         if await load_accessible_board(uow, command.board_id, actor) is None:
             raise SemanticSubjectProjectionError(
@@ -226,30 +226,14 @@ class GetCurrentSemanticGuidelineAssessmentAnyUseCase:
             binding_id=command.binding_id,
             subject_edition=subject.subject.subject_edition,
         )
-        try:
-            v1_result = await GetCurrentSemanticGuidelineAssessmentUseCase().execute(
-                command,
-                actor=actor,
-                uow=uow,
-            )
-            v1 = v1_result.assessment
-        except EntityNotFoundError:
-            v1 = None
-        if v1 is None and v2 is None:
+        if v2 is None:
             raise EntityNotFoundError(
                 "current_semantic_guideline_assessment",
                 f"{command.subject_id}:{command.binding_id}",
             )
-        if v2 is not None and (
-            v1 is None or v2.recorded_at >= getattr(v1, "recorded_at")
-        ):
-            return GetCurrentSemanticGuidelineAssessmentAnyResult(
-                contract_version="v2",
-                assessment=semantic_assessment_v2_current_projection(v2),
-            )
-        return GetCurrentSemanticGuidelineAssessmentAnyResult(
-            contract_version="v1",
-            assessment=v1,
+        return GetCurrentSemanticGuidelineAssessmentV2Result(
+            contract_version="v2",
+            assessment=semantic_assessment_v2_current_projection(v2),
         )
 
 
@@ -304,6 +288,7 @@ class SealSemanticGuidelineAssessmentV2UseCase:
                 raise SemanticSubjectProjectionError(
                     SemanticSubjectProjectionFailure.FORBIDDEN
                 )
+            require_writable_policy_subject_type(command.draft.subject.entity_type)
             await require_policy_assessment_lifecycle(
                 uow,
                 subject=command.draft.subject,
@@ -318,6 +303,8 @@ class SealSemanticGuidelineAssessmentV2UseCase:
             )
             if not capability_snapshot.writer_active:
                 raise SemanticAssessmentV2WriterUnavailable(capability_snapshot)
+        if actor is None:
+            require_writable_policy_subject_type(command.draft.subject.entity_type)
         if not isinstance(subject_projection, SemanticSubjectProjectionPort):
             raise TypeError("semantic_subject_projection_adapter_missing")
         if not isinstance(persistence, SemanticAssessmentV2PersistencePort):
@@ -393,7 +380,7 @@ __all__ = [
     "SealSemanticGuidelineAssessmentV2Result",
     "SealSemanticGuidelineAssessmentV2UseCase",
     "semantic_assessment_v2_write_projection",
-    "GetCurrentSemanticGuidelineAssessmentAnyResult",
-    "GetCurrentSemanticGuidelineAssessmentAnyUseCase",
+    "GetCurrentSemanticGuidelineAssessmentV2Result",
+    "GetCurrentSemanticGuidelineAssessmentV2UseCase",
     "semantic_assessment_v2_current_projection",
 ]

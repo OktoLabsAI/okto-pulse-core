@@ -387,18 +387,23 @@ async def test_resolve_active_none_when_no_active_template():
 
 
 # ---------------------------------------------------------------------------
-# Card 987b9ac5 — legacy forward-only compatibility + no-active-template fallback.
+# Card 987b9ac5 — forward-only template changes + native no-active-template state.
 # ---------------------------------------------------------------------------
 
 
-async def test_ts_dcd56041_template_changes_forward_only_and_legacy_boards_compatible():
+async def test_ts_dcd56041_template_changes_preserve_boards_created_without_template():
     """ts_dcd56041 (TR4/TR5): activating a new template version does NOT mutate any
     existing board; a snapshot board reports its ORIGINAL applied version and a
-    legacy board (no snapshot) reports legacy_no_snapshot WITHOUT backfill."""
+    board created without a template reports no_template_snapshot without mutation."""
     from okto_pulse.core.infra.database import get_session_factory
 
     async with get_session_factory()() as db:
         svc = DefaultBoardConfigurationService(db)
+        # Create a native Board before any template is active.
+        board_b = await BoardService(db).create_board(
+            USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
+        )
+        assert board_b.default_config_snapshot is None
         v1 = await svc.create_version(
             settings_payload=BoardSettings(max_scenarios_per_card=3),
             actor=USER_ID,
@@ -408,16 +413,6 @@ async def test_ts_dcd56041_template_changes_forward_only_and_legacy_boards_compa
         board_a = await BoardService(db).create_board(
             USER_ID, BoardCreate(name=f"a-{uuid.uuid4().hex[:8]}")
         )
-        # Board B: a pre-existing legacy board with NO snapshot metadata.
-        board_b = Board(
-            name=f"b-{uuid.uuid4().hex[:8]}",
-            owner_id=USER_ID,
-            settings=BoardSettings().model_dump(mode="json"),
-            default_config_snapshot=None,
-        )
-        db.add(board_b)
-        await db.flush()
-
         a_settings_before = dict(board_a.settings)
         a_snapshot_before = dict(board_a.default_config_snapshot)
         b_settings_before = dict(board_b.settings)
@@ -429,7 +424,7 @@ async def test_ts_dcd56041_template_changes_forward_only_and_legacy_boards_compa
             activate=True,
         )
         board_a = await BoardService(db).get_board(board_a.id)
-        await db.refresh(board_b)
+        board_b = await BoardService(db).get_board(board_b.id)
 
         # Forward-only: neither existing board was mutated, no backfill.
         assert board_a.settings == a_settings_before
@@ -446,7 +441,7 @@ async def test_ts_dcd56041_template_changes_forward_only_and_legacy_boards_compa
 
         desc_b = await svc.describe_board_config(board_b)
         assert desc_b == {
-            "state": "legacy_no_snapshot",
+            "state": "no_template_snapshot",
             "board_id": board_b.id,
             "configuration_presence": "null",
             "baseline_available": False,

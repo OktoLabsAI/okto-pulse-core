@@ -1,0 +1,119 @@
+{
+  "scope": "F6 semantic Bug source fingerprint, including linked evidence currentness",
+  "suites": {
+    "bug-source-digest-core": {
+      "tests": 76,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "bug-source-digest-community": {
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Changing linked Test Card evidence changes the source digest even when Bug policy_version stays equal.",
+    "An already qualified snapshot with changed facts fails instead of silently resealing.",
+    "Equivalent mapping order and UTC timestamps produce equal digests.",
+    "Non-finite, unsupported or oversized source facts are refused without truncation.",
+    "Source read remains graph-independent; existing closeout behavior remains covered."
+  ],
+  "limits": [
+    "Fingerprint is not a signature, authorization, semantic approval or receipt authentication.",
+    "Future capture admission must recompute the source within its authorized relational UOW.",
+    "No durable Learning writer, policy gate, transport or materialization is implemented by this increment.",
+    "Installed16 continues on the earlier frozen pair and does not qualify this change."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/bug-source-digest-core.xml": "4a48806731ab3c1983c66a9cbe4a8a65af02e1c7bb78bffdddbf215e30cf302f",
+    "PULSE_REFACTOR/.validation-v040/bug-source-digest-core.log": "a70bdb81ec21ec5f98ec43862450129e438dc610da233e2aa1ea5611e3c3e788",
+    "PULSE_REFACTOR/.validation-v040/bug-source-digest-community.xml": "8dbc3e8cffa61e58edf6c65a14977f0c223c755ce77101abc548f03ba9901e52",
+    "PULSE_REFACTOR/.validation-v040/bug-source-digest-community.log": "49988ef04a69465d4183b20b793254e01e6334f03d744bc2b97101f7159c4c67",
+    "PULSE_REFACTOR/.validation-v040/provenance-bug-source-digest.json": "d77adcc323a718a75f0cdce69de04465b09f78770f82336e6b5f56954a863cab",
+    "PULSE_REFACTOR/.validation-v040/provenance-bug-source-digest-final.json": "a60a44e4e2d68725892a5cedd77d54d52d5aeb71644197cd23b358ce8fb278ce",
+    "PULSE_REFACTOR/.validation-v040/closure-bug-source-digest-final.json": "7ed6992d3c07d27718efe270ddf6712c3e54a881c706f4b41b883cc78261acb7",
+    "PULSE_REFACTOR/.validation-v040/closure-bug-source-digest.json": "f133ac831ada16ec3810b325da4ece3e2edca3cb38ba9c8949a7620171993124",
+    "PULSE_REFACTOR/.validation-v040/bug-source-digest-before.xml": "6043828672ca49c8720210bc6a6c7239805bacf49ae08a9820035a23ea079867",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/bug_cognitive_context.py": "5b9c42673d0b576a9f68b0ec7b1cd265d8a4db4310f9b60281a1fbc81d4ea5bd",
+    "okto_labs_pulse_core/tests/test_bug_cognitive_context_v1.py": "1c8b93828d6a5f4cb24dda1773c77c16961f5947e76a431fbf885e6700f4d2eb",
+    "okto_labs_pulse_community/tests/test_bug_cognitive_context_adapter.py": "97ceb61e1606383f1a13a0d9844c7a32daac7c2c5fd1431ea2542bab7ee8a144",
+    "okto_labs_pulse_core/docs/pulse-simplification/BUG_SEMANTIC_SOURCE.md": "b452f2e6828707cf32465ee7a9d7ff82e63f2597de721f257260fe29859fe49b"
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "review_date": "2026-10-15",
+  "kind": "documentary_reconciliation_not_new_execution",
+  "baseline": {
+    "core": "2c1241a9",
+    "community": "1c18806d",
+    "branch": "feature/v0.4.0"
+  },
+  "scope": "Existing U4 and UV01-UV24 only; U1-U3 not reopened",
+  "observed_previous_spec": {
+    "id": "dcfb20fb-db6d-5628-b861-831d6a2d140d",
+    "board_id": "9f3f3f78-140d-4344-9951-7b929648eccd",
+    "status": "approved",
+    "edition": 1,
+    "version": 14
+  },
+  "observed_previous_cards": [
+    {
+      "id": "ee0caea9-97dd-5b9a-93a1-cf87bf0961ee",
+      "title": "U4 — Verificar normalização e rejeição",
+      "status": "not_started",
+      "priority": "none",
+      "assignee_id": "9000eeea-2ddd-410b-ab72-701c2aa61640",
+      "card_type": "test",
+      "test_scenario_ids": [
+        "ts_cab74a03",
+        "ts_3f770536"
+      ]
+    },
+    {
+      "id": "5e946696-db4d-5205-a47a-9b46f1115157",
+      "title": "U4 — Implementar normalização de rótulo",
+      "status": "not_started",
+      "priority": "none",
+      "assignee_id": "9000eeea-2ddd-410b-ab72-701c2aa61640",
+      "card_type": "normal",
+      "test_scenario_ids": []
+    }
+  ],
+  "existing_test_report": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "1",
+    "skipped": "0",
+    "tests": "153",
+    "time": "24.572",
+    "timestamp": "2026-10-15T19:52:47.854134-03:00",
+    "hostname": "Alienware_m15"
+  },
+  "open_failure": {
+    "test": "test_initial_footprint_under_budget",
+    "observed_metadata_tokens": 51724,
+    "unchanged_limit": 50800
+  },
+  "next_step": "Investigate registry versus public MCP serialization under identical dependencies; preserve closed schemas and unchanged ceilings. Resume existing Approved Spec afterwards.",
+  "new_behavior_tests": false,
+  "runtime_mutations": false,
+  "reinstalled": false,
+  "u4_complete": false,
+  "artifacts": [
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u4-e2e/identity.json",
+      "sha256": "447ca220f0c47d6edf93e5e4ed99e5d4ab60ba8bba5ac890755fbe241b0a7408",
+      "mutable": true
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u4-e2e/resume-parity.json",
+      "sha256": "bd5230b8e69971968168d95acc822291bc685fbbc0a317118b950c38c67599dc",
+      "mutable": false
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u4-e2e/validation-full-context.json",
+      "sha256": "757224ee89592387b0e1195c77ff520a9b2e27ac28a38fe2e5c5caae1c8f59cb",
+      "mutable": false
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u4-e2e/spec-validation-cycle-before.json",
+      "sha256": "c33a2b29f061bc82a067a40a153916a5ebf4a1d8972ea9b74b3a5b04d9711593",
+      "mutable": false
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u4-e2e/validation-checklist-binding.json",
+      "sha256": "e4864d93437c40359f85154cb92af9695cda8b9fabbf5b307216a1afff73c419",
+      "mutable": false
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u4-e2e/allocation-verification.json",
+      "sha256": "320b4e9f1196ab582e442bac71c59d878603ba1d290da215f365e543a192f114",
+      "mutable": false
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u4-e2e/ideation-final-done.json",
+      "sha256": "dbe1abd78f336aa11c420c3f211368ad6e6ff87058efdb1b966cf7d3c7cf96e3",
+      "mutable": false
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u4-e2e/refinement-done.json",
+      "sha256": "ae0ddfa72c25970b043380f868be0b156ffb63948417a38f5da472b40d848d2a",
+      "mutable": false
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u4-e2e/test-create.json",
+      "sha256": "4384ee6c2f1e61999d15cac203313603075591cdbf2da5026693f0554b8cdc28",
+      "mutable": false
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u4-resources-doc-final.xml",
+      "sha256": "30633798a6dcc0b90f0f9cf7e411344a99e0e8f598c75a92e841310393692612",
+      "mutable": false
+    }
+  ]
+}

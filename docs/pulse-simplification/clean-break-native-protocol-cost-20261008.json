@@ -1,0 +1,88 @@
+{
+  "scope": [
+    "BASE:T43",
+    "KG:KG-64",
+    "ARQVER:AC-INT-12"
+  ],
+  "status": "partial",
+  "proof_pair": "dist-native-main90",
+  "evidence": [
+    "Native full-catalog execution tests now consume actual workflow/reference resource bodies in each executor or independent reviewer session.",
+    "All four cases retain the same ordered tools/call names as the prior main90 capture and pass through actual gates to Spec Done.",
+    "Resource costs are included, never silently removed or treated as zero-cost preflight."
+  ],
+  "results": {
+    "passed": 4,
+    "seconds": 28.68,
+    "resource_reads": 76,
+    "resource_payload_bytes": 1528408,
+    "resource_payload_tokens_cl100k_base": 339976
+  },
+  "by_case": {
+    "tests/test_single_agent_spec_execution.py::test_one_agent_preserves_assessments_and_evidence_through_spec_done[False-broad-agent]": {
+      "methods": {
+        "initialize": 1,
+        "tools/list": 1,
+        "resources/read": 10,
+        "tools/call": 23
+      },
+      "tool_sequence_unchanged": true
+    },
+    "tests/test_single_agent_spec_execution.py::test_one_agent_preserves_assessments_and_evidence_through_spec_done[False-separate-reviewer]": {
+      "methods": {
+        "initialize": 4,
+        "tools/list": 4,
+        "resources/read": 28,
+        "tools/call": 23
+      },
+      "tool_sequence_unchanged": true
+    },
+    "tests/test_single_agent_spec_execution.py::test_one_agent_preserves_assessments_and_evidence_through_spec_done[True-broad-agent]": {
+      "methods": {
+        "initialize": 1,
+        "tools/list": 1,
+        "resources/read": 10,
+        "tools/call": 26
+      },
+      "tool_sequence_unchanged": true
+    },
+    "tests/test_single_agent_spec_execution.py::test_one_agent_preserves_assessments_and_evidence_through_spec_done[True-separate-reviewer]": {
+      "methods": {
+        "initialize": 4,
+        "tools/list": 4,
+        "resources/read": 28,
+        "tools/call": 26
+      },
+      "tool_sequence_unchanged": true
+    }
+  },
+  "resource_reads_by_uri": {
+    "okto-pulse://workflows/preflight": 10,
+    "okto-pulse://workflows/specs": 10,
+    "okto-pulse://reference/policy-compliance": 10,
+    "okto-pulse://reference/quality-assessments": 10,
+    "okto-pulse://reference/spec_gates": 10,
+    "okto-pulse://workflows/cards": 6,
+    "okto-pulse://reference/card_types": 6,
+    "okto-pulse://reference/code-traceability": 6,
+    "okto-pulse://reference/knowledge-governance": 4,
+    "okto-pulse://reference/project-structure": 4
+  },
+  "artifact": {
+    "file": "benchmark-native-protocol-cost-main90-20261008.json.gz",
+    "sha256": "e2449f1df8e4379a793c2f37c903debf08f0f049cba42f61c98205cf5ba5ee3c",
+    "raw_sha256": "44b620cc17bdac214cf2a52c9d495f3f0213bda0501f17956c4cbd10f01dc6a9"
+  },
+  "artifacts": {
+    "provenance-native-protocol-cost-20261008.json": "aa0a85a023d289f3fa4cacbe95eb3f432827119e2c460d2ecea30d6ef735c0f0",
+    "native-protocol-cost90-20261008.xml": "ebbb8da6522d65be907c0894433bd67d4ada5fb0e59e90e60e286c6d06cad247",
+    "native-protocol-cost90-20261008.log": "a745e61222c7114976f014bfc065023fbffacb1afa0cc8a2d834e6b2808153c0"
+  },
+  "limits": [
+    "Resource consumption is measured guidance, not proof that every operation described by each document is exercised.",
+    "Initial initiative/Spec/architecture and admitted source facts remain seeded. Public authorship and many-candidate classification comparison remain pending.",
+    "Same tool-name sequence does not mean byte-identical responses: fixture receipt IDs and timestamps differ; no overall savings claimed.",
+    "Token counts use cl100k_base0.14.0 on serialized MCP application payloads, not model billing.",
+    "No acceptance promoted, product/SPA change, old runtime, release or real-data operation."
+  ]
+}

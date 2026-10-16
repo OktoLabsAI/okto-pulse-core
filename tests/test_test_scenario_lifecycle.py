@@ -22,6 +22,7 @@ import logging
 import uuid
 
 import pytest
+from native_subject_testing import record_native_subject_authority
 import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -76,11 +77,12 @@ async def _seed_spec(
             title="S",
             status=status,
             created_by=USER,
-            functional_requirements=["FR1"],
+            functional_requirements=[{"id": "fr_one", "text": "FR1"}],
             acceptance_criteria=acs
             if acs is not None
             else [{"id": "ac_one", "text": "AC one", "status": "active"}],
-            test_scenarios=scenarios or [],
+            test_scenarios=[{"scenario_type": "integration", **item} for item in (scenarios or [])],
+            architecture_adoption={"contract_version": "architecture-adoption/v1", "board_id": board_id, "spec_id": spec_id, "adopted_in_edition": 1, "actor_id": USER, "inherited_resource_ids": []},
         )
         if locked:
             spec_kwargs["validations"] = [{"id": "val_x", "outcome": "success"}]
@@ -98,6 +100,24 @@ async def _seed_spec(
                     created_by=USER,
                     test_scenario_ids=card_scenarios,
                 )
+            )
+        await record_native_subject_authority(db)
+        # Scenarios are separate version-fenced policy subjects in the native
+        # contract; their authority is not inferred from the parent Spec.
+        from datetime import datetime, timezone
+        from okto_pulse.community.adapters.sqlalchemy_semantic_guideline_assessment import (
+            CommunitySqlAlchemySemanticGuidelineAssessment,
+        )
+        from okto_pulse.core.domain.guideline_policy import PolicyEntityType
+        from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
+        adapter = CommunitySqlAlchemySemanticGuidelineAssessment(db)
+        for scenario in scenarios or []:
+            await adapter.record_semantic_subject_mutation(
+                board_id=board_id, entity_type=PolicyEntityType.TEST_SCENARIO,
+                subject_id=scenario["id"], actor_id=USER,
+                idempotency_key=f"native-scenario-fixture:{spec_id}:{scenario['id']}",
+                request_digest=canonical_sha256(scenario),
+                changed_at=datetime.now(timezone.utc),
             )
         await db.commit()
     return board_id, spec_id, card_id
@@ -235,7 +255,7 @@ async def test_update_spec_rejects_board_wide_test_scenario_identity_conflict(
                 title="Second",
                 status=SpecStatus.DRAFT,
                 created_by=USER,
-                functional_requirements=["FR1"],
+                functional_requirements=[{"id": "fr_one", "text": "FR1"}],
                 acceptance_criteria=[
                     {"id": "ac_two", "text": "AC two", "status": "active"}
                 ],
@@ -340,6 +360,18 @@ async def test_update_spec_skip_flag_does_not_bypass_scoped_status_writer(
     assert not any("evidence_gate_skipped" in r.getMessage() for r in caplog.records)
 
 
+@pytest.mark.parametrize("evidence", [None, {"last_run_at": "2026-10-01T12:00:00Z", "output_snippet": "passed"}])
+async def test_unchanged_persisted_invalid_evidence_cannot_bypass_current_gate(db_factory, evidence):
+    original = {"id": "ts_a", "title": "A", "status": "passed", "scenario_type": "integration", "evidence": evidence}
+    _, spec_id, _ = await _seed_spec(db_factory, scenarios=[original])
+    async with db_factory() as db:
+        with pytest.raises(ValueError, match="evidence_required"):
+            await SpecService(db).update_spec(spec_id, USER, SpecUpdate(test_scenarios=[original]))
+        await db.commit()
+    async with db_factory() as db:
+        assert (await SpecService(db).get_spec(spec_id)).test_scenarios == [original]
+
+
 # ====================================================================
 # TC-3 — update_test_scenario (body / clear / no-status / invalidation)
 # ====================================================================
@@ -399,9 +431,62 @@ async def test_update_test_scenario_resolves_linked_criteria(db_factory):
     )
     async with db_factory() as db:
         svc = SpecService(db)
-        await svc.update_test_scenario(spec_id, USER, "ts_a", linked_criteria=["0"])
+        with pytest.raises(ValueError, match="unresolved_criteria"):
+            await svc.update_test_scenario(spec_id, USER, "ts_a", linked_criteria=["0"])
+        assert not (await svc.get_spec(spec_id)).test_scenarios[0].get("linked_criteria")
+        await svc.update_test_scenario(spec_id, USER, "ts_a", linked_criteria=["ac_one"])
         spec = await svc.get_spec(spec_id)
     assert spec.test_scenarios[0]["linked_criteria"] == ["ac_one"]
+
+
+async def test_last_criterion_removal_survives_delayed_event_and_queue_preparation(db_factory):
+    """The event wakes the owner; the worker reads the latest relational links."""
+    from sqlalchemy import select
+    from sqlalchemy_test_models import ConsolidationQueue, DomainEventRow
+    from okto_pulse.core.application.processors.consolidation import _prepare_deterministic_projection
+    from okto_pulse.core.events.handlers.consolidation_enqueuer import ConsolidationEnqueuer
+    from okto_pulse.core.events.types import SpecSemanticChanged
+    from okto_pulse.core.ports.structured_spec import register_structured_spec_store
+    from okto_pulse.community.adapters.sqlalchemy_structured_spec import CommunitySqlAlchemyStructuredSpecStore
+
+    # This exercises the current worker, including architecture classification
+    # reads. The narrow CRUD fake does not implement that projection contract.
+    register_structured_spec_store(CommunitySqlAlchemyStructuredSpecStore())
+
+    board_id, spec_id, _ = await _seed_spec(db_factory,
+        scenarios=[{'id': 'ts_a', 'title': 'A', 'status': 'ready', 'linked_criteria': []}])
+    async with db_factory() as db:
+        await SpecService(db).update_test_scenario(spec_id, USER, 'ts_a', linked_criteria=['ac_one'])
+    async with db_factory() as db:
+        old_row = (await db.execute(select(DomainEventRow).where(
+            DomainEventRow.board_id == board_id,
+            DomainEventRow.event_type == 'spec.semantic_changed',
+        ))).scalar_one()
+        delayed = SpecSemanticChanged(board_id=board_id, actor_id=USER,
+            event_id=old_row.id, occurred_at=old_row.occurred_at, **old_row.payload_json)
+    async with db_factory() as db:
+        await SpecService(db).update_test_scenario(spec_id, USER, 'ts_a', clear=['linked_criteria'])
+    async with db_factory() as db:
+        # Deliver the addition event only after the removal committed. Neither
+        # the event payload nor a retained proposal may resurrect the old link.
+        await ConsolidationEnqueuer().handle(delayed, db)
+        await db.commit()
+    async with db_factory() as db:
+        queued = (await db.execute(select(ConsolidationQueue).where(
+            ConsolidationQueue.board_id == board_id,
+            ConsolidationQueue.artifact_type == 'spec',
+            ConsolidationQueue.artifact_id == spec_id,
+        ))).scalar_one()
+        assert queued.status == 'pending'
+        prepared = await _prepare_deterministic_projection(db, queued)
+        assert isinstance(prepared, tuple)
+        result, _artifact = prepared
+        owned = [intent for intent in result.relational_projection_active_set_intents
+            if intent.namespace == 'scenario_criteria']
+        assert len(owned) == 1 and owned[0].owner_id == spec_id
+        assert owned[0].active_edges == ()
+        assert not any(edge.edge_type == 'tests' for edge in result.edges)
+        assert queued.status == 'pending'  # Preparation is not graph commit or ACK.
 
 
 async def test_update_test_scenario_unresolved_criteria_fails_closed(db_factory):
@@ -414,6 +499,31 @@ async def test_update_test_scenario_unresolved_criteria_fails_closed(db_factory)
             await svc.update_test_scenario(
                 spec_id, USER, "ts_a", linked_criteria=["ghost"]
             )
+
+
+async def test_ambiguous_criteria_edit_preserves_persisted_scenario_and_evidence(db_factory):
+    from copy import deepcopy
+
+    original = {
+        "id": "ts_a", "title": "Original", "status": "passed",
+        "scenario_type": "integration",
+        "linked_criteria": ["ac_one"], "evidence": dict(_VALID_EVIDENCE),
+    }
+    _b, spec_id, _c = await _seed_spec(
+        db_factory, scenarios=[deepcopy(original)],
+        acs=[{"id": "ac_one", "text": "Repeated"}, {"id": "ac_two", "text": "Repeated"}],
+    )
+    async with db_factory() as db:
+        svc = SpecService(db)
+        with pytest.raises(ValueError, match="unresolved_criteria"):
+            await svc.update_test_scenario(
+                spec_id, USER, "ts_a", title="Must not persist", linked_criteria=["Repeated"]
+            )
+        # Commit explicitly: rejection must not leave a partially dirty entity.
+        await db.commit()
+    async with db_factory() as db:
+        persisted = await SpecService(db).get_spec(spec_id)
+        assert persisted.test_scenarios == [original]
 
 
 async def test_semantic_edit_invalidates_evidence_cosmetic_preserves(db_factory):
@@ -712,6 +822,7 @@ async def test_status_path_preserves_non_target_scenarios(db_factory):
     # ts_144b47eb — non-target scenarios stay semantically identical.
     other = {
         "id": "ts_y",
+        "scenario_type": "integration",
         "title": "Y",
         "status": "ready",
         "given": "g",

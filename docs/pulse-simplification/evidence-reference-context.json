@@ -1,0 +1,193 @@
+{
+  "scope": "Authorized current Card scenario-reference diagnostics in GET/PATCH, MCP context/update and Card References UI",
+  "domain_gate_changed": false,
+  "acceptance_promotions": [],
+  "campaigns": [
+    {
+      "file": "learning-reconciliation-k2-reference-context1-core.xml",
+      "counts": {
+        "tests": 16,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "a3e3c21f021bc8c34018bf195a010fc0c8151c7dbf6bdd8a3038334bcd9e91a7"
+    },
+    {
+      "file": "learning-reconciliation-k2-reference-context2-core.xml",
+      "counts": {
+        "tests": 82,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "ff03cb62853342196fd7c4051a1578d33ce71baae8525617778817fad68e73eb"
+    },
+    {
+      "file": "frontend-reference-context-1.xml",
+      "counts": {
+        "tests": 83,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "c570a8f4bb5a1288bcbdc3e04a315c4a7524b6abc8fa07f3cfa82cbc823dc983"
+    }
+  ],
+  "provenance": {
+    "checked_at": "2026-09-30T19:27:43.282345+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 858,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "b03d0583c76c650effe05d7be7aae0725610a816",
+        "dirty": true,
+        "dirty_entry_count": 10,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-reference-context-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "dada3aff5f5c4cbd951baa091ed91bdb3051e4607b2d57e526e74b05766b7889",
+          "size": 3788426
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 921,
+        "byte_identical": true,
+        "aggregate_sha256": "a74767b016e7e90e4bdc198c2895961e06eaa05781221c4c98dbe95da0b01c0c",
+        "chain_hashes": {
+          "source": "a74767b016e7e90e4bdc198c2895961e06eaa05781221c4c98dbe95da0b01c0c",
+          "wheel": "a74767b016e7e90e4bdc198c2895961e06eaa05781221c4c98dbe95da0b01c0c",
+          "site_packages": "a74767b016e7e90e4bdc198c2895961e06eaa05781221c4c98dbe95da0b01c0c"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 373,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "520ec45529f77b816f7e172f0d515e2b9506c2a2",
+        "dirty": true,
+        "dirty_entry_count": 65,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-reference-context-final\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "aa152cb63a955ff6bda2ff2fae79ec96868251b2d29f13f3bf0210656cbc3c98",
+          "size": 4534165
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 458,
+        "byte_identical": true,
+        "aggregate_sha256": "c37ac8ea3c23485c55fb54d2e2ed9e3d4e0a85820c3656bdb01293994cb34b92",
+        "chain_hashes": {
+          "source": "c37ac8ea3c23485c55fb54d2e2ed9e3d4e0a85820c3656bdb01293994cb34b92",
+          "wheel": "c37ac8ea3c23485c55fb54d2e2ed9e3d4e0a85820c3656bdb01293994cb34b92",
+          "site_packages": "c37ac8ea3c23485c55fb54d2e2ed9e3d4e0a85820c3656bdb01293994cb34b92"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "closure": {
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "sha256": "d09a2eb89364b4f4f9741eb0007d09b9bc447a1eb209ceadd16a3d6ad66816a0"
+  },
+  "contracts": [
+    "Six existing permission leaves and Board/realm access precede source reads; foreign Spec metadata never permits reading its scenarios.",
+    "Exact source selectors/targets and stable finding IDs come from the worker shared analyzer; no graph/audit currentness assumption.",
+    "Denial/provider failure/incomplete source never become zero. Optional absent associations create no finding.",
+    "At most 20 complete finding entries within the byte allowance; exact total and truncation remain visible.",
+    "MCP legacy omits the additive context block. Profile budgets reserve complete diagnostic identities.",
+    "Current-source edits can clear the warning before graph projection; this confers no delivery or gate authority."
+  ],
+  "initial_failure": "Adversarial nested context exposed 40765 bytes against advertised 32768; aggregate fallback now finishes the bound after per-container truncation.",
+  "limits": [
+    "Frontend checks are jsdom interaction/render regressions, not a visual browser E2E.",
+    "Read fingerprint describes the authorized read, not a lock or guarantee for a later mutation.",
+    "This scope covers Card scenario references; remaining KG diagnostics/coverage and consolidated acceptance stay open."
+  ]
+}

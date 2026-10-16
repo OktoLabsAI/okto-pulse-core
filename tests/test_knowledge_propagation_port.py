@@ -10,13 +10,11 @@ import pytest
 
 from okto_pulse.core.domain.knowledge_selection import (
     KnowledgeAssignment,
-    KnowledgeOriginClass,
     KnowledgeSelection,
     KnowledgeSelectionState,
 )
 from okto_pulse.core.domain.resource_revision import ResourceRevisionStamp
 from okto_pulse.core.ports.knowledge_propagation import (
-    KnowledgeLegacyAttachment,
     KnowledgeLocalAttachment,
     KnowledgeMutationKind,
     KnowledgeMutationLedgerEntry,
@@ -291,126 +289,42 @@ def test_temporal_window_requires_utc_order_and_coherent_supersession() -> None:
         current.effective_to = NOW  # type: ignore[misc]
 
 
-def test_scope_v2_marker_disables_legacy_fallback_without_erasing_history() -> None:
-    legacy = KnowledgeLegacyAttachment(
-        source_knowledge_id="legacy-kb",
-        revision_stamp=ResourceRevisionStamp(root_id="legacy-root"),
-        origin_class=KnowledgeOriginClass.LEGACY_ALL,
-        effective=False,
+def test_native_scope_distinguishes_omitted_and_explicit_empty() -> None:
+    omitted = KnowledgePropagationScope(
+        target=_target(), scope_revision=0, selection_state="omitted",
     )
-    legacy_scope = KnowledgePropagationScope(
-        target=_target(),
-        scope_revision=0,
-        v2_active=False,
-        selection_state=None,
-        legacy_attachments=(legacy,),
+    empty = KnowledgePropagationScope(
+        target=_target(), scope_revision=1, selection_state="explicit_empty",
     )
-    v2_empty = KnowledgePropagationScope(
-        target=_target(),
-        scope_revision=1,
-        v2_active=True,
-        selection_state=KnowledgeSelectionState.EXPLICIT_EMPTY,
-        legacy_attachments=(legacy,),
-    )
-
-    assert legacy_scope.v2_active is False
-    assert legacy_scope.selection_state is None
-    assert v2_empty.v2_active is True
-    assert v2_empty.selection_state is KnowledgeSelectionState.EXPLICIT_EMPTY
-    assert v2_empty.legacy_attachments == (legacy,)
-    assert v2_empty.legacy_attachments[0].effective is False
-    v2_omitted = KnowledgePropagationScope(
-        target=_target(),
-        scope_revision=1,
-        v2_active=True,
-        selection_state=KnowledgeSelectionState.OMITTED,
-        legacy_attachments=(legacy,),
-    )
-    assert v2_omitted.selection_state is KnowledgeSelectionState.OMITTED
-
-    with pytest.raises(ValueError, match="inactive_scope_state_invalid"):
+    assert omitted.selection_state is KnowledgeSelectionState.OMITTED
+    assert empty.selection_state is KnowledgeSelectionState.EXPLICIT_EMPTY
+    assert omitted.assignments == empty.assignments == ()
+    with pytest.raises(ValueError, match="selection_state"):
         KnowledgePropagationScope(
-            target=_target(),
-            scope_revision=0,
-            v2_active=False,
-            selection_state="explicit_ids",
-        )
-    with pytest.raises(ValueError, match="active_scope_state_invalid"):
-        KnowledgePropagationScope(
-            target=_target(),
-            scope_revision=1,
-            v2_active=True,
-            selection_state=None,
+            target=_target(), scope_revision=0, selection_state=None,
         )
 
 
-def test_scope_carries_immutable_activation_and_local_attachment_evidence() -> None:
-    activation = NOW - timedelta(minutes=2)
+def test_native_scope_carries_immutable_local_attachment_evidence() -> None:
     local = KnowledgeLocalAttachment(
-        source_knowledge_id="local-kb",
-        revision_stamp=_stamp(),
-        attached_at=NOW - timedelta(minutes=1),
-        content_bytes=CONTENT,
+        source_knowledge_id="local-kb", revision_stamp=_stamp(),
+        attached_at=NOW - timedelta(minutes=1), content_bytes=CONTENT,
     )
     scope = KnowledgePropagationScope(
-        target=_target(),
-        scope_revision=3,
-        v2_active=True,
-        selection_state="omitted",
+        target=_target(), scope_revision=0, selection_state="omitted",
         local_attachments=(local,),
-        v2_activated_at=activation,
     )
-
-    assert scope.v2_activated_at == activation
     assert scope.local_attachments == (local,)
-    local_payload = local.to_dict()
-    assert local_payload["attached_at"] == local.attached_at.isoformat()
-    assert local_payload["content_available"] is True
-    assert local_payload["content_size_bytes"] == len(CONTENT)
+    payload = local.to_dict()
+    assert payload["attached_at"] == local.attached_at.isoformat()
+    assert payload["content_available"] is True
+    assert payload["content_size_bytes"] == len(CONTENT)
     with pytest.raises(FrozenInstanceError):
-        scope.v2_activated_at = NOW  # type: ignore[misc]
-
-    with pytest.raises(
-        ValueError,
-        match="local_attachment_predates_v2_activation",
-    ):
-        KnowledgePropagationScope(
-            target=_target(),
-            scope_revision=3,
-            v2_active=True,
-            selection_state="omitted",
-            local_attachments=(local,),
-            v2_activated_at=NOW,
-        )
-
-    boundary_local = KnowledgeLocalAttachment(
-        source_knowledge_id="local-at-boundary",
-        revision_stamp=_stamp(),
-        attached_at=activation,
-        content_bytes=CONTENT,
-    )
-    with pytest.raises(
-        ValueError,
-        match="local_attachment_predates_v2_activation",
-    ):
-        KnowledgePropagationScope(
-            target=_target(),
-            scope_revision=3,
-            v2_active=True,
-            selection_state="omitted",
-            local_attachments=(boundary_local,),
-            v2_activated_at=activation,
-        )
-
-    with pytest.raises(
-        ValueError,
-        match="local_attachment_hash_mismatch",
-    ):
+        scope.local_attachments = ()
+    with pytest.raises(ValueError, match="local_attachment_hash_mismatch"):
         KnowledgeLocalAttachment(
-            source_knowledge_id="tampered-local",
-            revision_stamp=_stamp(),
-            attached_at=NOW,
-            content_bytes=b"tampered",
+            source_knowledge_id="tampered-local", revision_stamp=_stamp(),
+            attached_at=NOW, content_bytes=b"tampered",
         )
 
 
@@ -455,16 +369,12 @@ def test_governance_metadata_is_tolerant_defensive_and_not_technical_payload() -
     assert legacy_shape.governance_metadata == "legacy opaque value"
 
 
-def test_legacy_unresolved_is_always_history_only() -> None:
-    unresolved = KnowledgeLegacyAttachment(
-        source_knowledge_id="legacy-unresolved",
-        revision_stamp=ResourceRevisionStamp(root_id="legacy-root"),
-        origin_class=KnowledgeOriginClass.LEGACY_UNRESOLVED,
-        effective=True,
-    )
-
-    assert unresolved.effective is False
-    assert unresolved.to_dict()["effective"] is False
+def test_native_scope_rejects_imported_attachment_fields() -> None:
+    with pytest.raises(TypeError, match="legacy_attachments"):
+        KnowledgePropagationScope(
+            target=_target(), scope_revision=0, selection_state="omitted",
+            legacy_attachments=(),
+        )
 
 
 def test_scope_allows_only_one_current_assignment_per_root() -> None:
@@ -472,7 +382,6 @@ def test_scope_allows_only_one_current_assignment_per_root() -> None:
         KnowledgePropagationScope(
             target=_target(),
             scope_revision=1,
-            v2_active=True,
             selection_state="explicit_ids",
             assignments=(
                 _assignment(assignment_id="assignment-a"),
@@ -483,7 +392,6 @@ def test_scope_allows_only_one_current_assignment_per_root() -> None:
     scope = KnowledgePropagationScope(
         target=_target(),
         scope_revision=1,
-        v2_active=True,
         selection_state="explicit_ids",
         assignments=(
             _assignment(assignment_id="assignment-current"),
@@ -498,7 +406,6 @@ def test_scope_enforces_current_tombstone_uniqueness_and_global_exclusion() -> N
         KnowledgePropagationScope(
             target=_target(),
             scope_revision=1,
-            v2_active=True,
             selection_state="explicit_ids",
             tombstones=(
                 _tombstone(tombstone_id="tombstone-a"),
@@ -510,7 +417,6 @@ def test_scope_enforces_current_tombstone_uniqueness_and_global_exclusion() -> N
         KnowledgePropagationScope(
             target=_target(),
             scope_revision=1,
-            v2_active=True,
             selection_state="explicit_empty",
             tombstones=(
                 _global_tombstone(),
@@ -521,7 +427,6 @@ def test_scope_enforces_current_tombstone_uniqueness_and_global_exclusion() -> N
     scope = KnowledgePropagationScope(
         target=_target(),
         scope_revision=2,
-        v2_active=True,
         selection_state="explicit_ids",
         tombstones=(
             _tombstone(
@@ -540,7 +445,6 @@ def test_current_snapshot_requires_one_current_snapshot_assignment() -> None:
         KnowledgePropagationScope(
             target=_target(),
             scope_revision=1,
-            v2_active=True,
             selection_state="explicit_ids",
             snapshots=(_snapshot(),),
         )
@@ -552,7 +456,6 @@ def test_current_snapshot_requires_one_current_snapshot_assignment() -> None:
         KnowledgePropagationScope(
             target=_target(),
             scope_revision=1,
-            v2_active=True,
             selection_state="explicit_ids",
             assignments=(_assignment(),),
             snapshots=(_snapshot(),),
@@ -566,7 +469,6 @@ def test_current_snapshot_requires_one_current_snapshot_assignment() -> None:
         KnowledgePropagationScope(
             target=_target(),
             scope_revision=1,
-            v2_active=True,
             selection_state="explicit_ids",
             assignments=(snapshot_assignment,),
             snapshots=(
@@ -579,7 +481,6 @@ def test_current_snapshot_requires_one_current_snapshot_assignment() -> None:
         KnowledgePropagationScope(
             target=_target(),
             scope_revision=1,
-            v2_active=True,
             selection_state="explicit_ids",
             assignments=(snapshot_assignment,),
             snapshots=(_snapshot(root_id="different-root"),),
@@ -588,7 +489,6 @@ def test_current_snapshot_requires_one_current_snapshot_assignment() -> None:
     scope = KnowledgePropagationScope(
         target=_target(),
         scope_revision=1,
-        v2_active=True,
         selection_state="explicit_ids",
         assignments=(snapshot_assignment,),
         snapshots=(

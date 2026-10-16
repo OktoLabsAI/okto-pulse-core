@@ -387,66 +387,19 @@ class BoardSpecAnalyticsUseCase:
         return BoardSpecAnalyticsResult(data)
 
 
-class BoardSprintAnalyticsCommand:
-    __slots__ = ("board_id", "sprint_id")
-
-    def __init__(self, board_id: str, sprint_id: str) -> None:
-        self.board_id = board_id
-        self.sprint_id = sprint_id
 
 
-class BoardSprintAnalyticsResult:
-    __slots__ = ("data",)
-
-    def __init__(self, data: Any) -> None:
-        self.data = data
 
 
-class BoardSprintAnalyticsUseCase:
-    """Per-sprint analytics (read). 404 "Board not found" then "Sprint not found"."""
-
-    async def execute(
-        self, command: BoardSprintAnalyticsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
-    ) -> BoardSprintAnalyticsResult:
-
-        await _ensure_board_access(uow, command.board_id, actor)
-        data = await uow.services.analytics.sprint(command.board_id, command.sprint_id)
-        if data is None:
-            raise EntityNotFoundError("sprint", command.sprint_id)
-        return BoardSprintAnalyticsResult(data)
 
 
-# --- board sprints summary + agents (REST-FU2d) -----------------------------
+# --- board agents (REST-FU2d) -----------------------------
 
 
-class BoardSprintsAnalyticsCommand:
-    __slots__ = ("board_id", "dt_from", "dt_to")
-
-    def __init__(
-        self, board_id: str, *, dt_from: datetime | None = None, dt_to: datetime | None = None
-    ) -> None:
-        self.board_id = board_id
-        self.dt_from = dt_from
-        self.dt_to = dt_to
 
 
-class BoardSprintsAnalyticsResult:
-    __slots__ = ("data",)
-
-    def __init__(self, data: Any) -> None:
-        self.data = data
 
 
-class BoardSprintsAnalyticsUseCase:
-    async def execute(
-        self, command: BoardSprintsAnalyticsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
-    ) -> BoardSprintsAnalyticsResult:
-
-        await _ensure_board_access(uow, command.board_id, actor)
-        return BoardSprintsAnalyticsResult(
-            await uow.services.analytics.sprints(command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
-            )
-        )
 
 
 class BoardAgentsCommand:
@@ -571,10 +524,9 @@ class BoardEntityDetailUseCase:
             "ideation",
             "card",
             "refinement",
-            "sprint",
         }:
             raise CommandValidationError(
-                "entity_type must be one of: spec, ideation, card, refinement, sprint"
+                "entity_type must be one of: spec, ideation, card, refinement"
             )
         data = await uow.services.analytics.entity_detail(
             command.entity_type,

@@ -42,10 +42,12 @@ Create a new card on the board. Every card MUST be linked to a spec.
 Args:
     board_id: Board ID
     title: Card title
-    spec_id: REQUIRED — Spec ID to link this card to. Normal/bug cards
-        are allowed when the spec is approved, in_progress, or done.
-        Test cards are allowed once the spec is approved/validated or
-        later, including regression tests for a bug on a locked spec.
+    spec_id: REQUIRED — Spec ID to link this card to. Normal cards
+        are blocked when the Spec is Done. Bug cards retain their own
+        origin, regression and lifecycle controls.
+        Normal and Test cards may be planned in Draft with status not_started.
+        Test cards are also allowed in approved/validated and later, including
+        regression tests for a bug on a locked spec. Execution maturity gates remain.
         For bug cards, this is auto-resolved from the origin task if not provided.
     description: Card description (optional). Supports Markdown and Mermaid diagrams (```mermaid code blocks).
     details: Card details/rich text (optional). Supports Markdown and Mermaid diagrams.
@@ -91,9 +93,8 @@ Args:
     steps_to_reproduce: Steps to reproduce the bug (optional)
     action_plan: Plan for fixing the bug (optional)
     knowledge_propagation: Optional selective Knowledge contract-v2 envelope.
-        Omit the whole field to preserve legacy v1 card creation and automatic
-        Knowledge copy behavior. Supplying it selects v2, including when
-        selection_state="omitted". Fields:
+        Omission starts with no inherited Knowledge and a new operation key.
+        Supply an envelope with a stable key for replay across requests. Fields:
         - contract_version: 2 (default)
         - selection_state: omitted | explicit_empty | explicit_ids
         - mode: absent for omitted; drop for explicit_empty; reference,
@@ -109,10 +110,7 @@ Args:
           every entity must belong to this card's linked spec.
 
 Returns:
-    Without knowledge_propagation: the unchanged v1 JSON with created card
-    details.
-
-    With knowledge_propagation: `{success, contract_version, card,
+    Always: `{success, contract_version, card,
     operation_id, revision, replayed, selection_state, assignments}`. The
     `card` projection and operation result are rebuilt from the durable
     idempotency receipt. Replaying the exact same request/key returns the same
@@ -138,17 +136,6 @@ Bug regression decision rule:
     okto_pulse_confirm_amendment_coverage. Only then is the regression
     closure-ready; a generic authoring detour without amendment lineage and
     validator coverage confirmation does not satisfy the gate. Do not move a spec directly from in_progress to approved for the simple Path A reuse case.
-
-    Path C is hotfix execution lane ONLY — it does NOT replace the Path B
-    amendment lineage. When a done spec or closed origin sprint blocks bug
-    execution, use the returned next_action (`assign_hotfix_lane` or
-    `activate_hotfix_lane`) to put the bug and its regression test card on an
-    active `lane_type="hotfix"` sprint. Cards are same-spec by default. The exact
-    cross-spec Path B test task may join the original-spec lane only after its
-    non-blocking complete amendment and persisted validator attestation bind the
-    bug, task, scenario and revision spec. The lane only unblocks execution; the
-    regression must still satisfy Path A reuse or the Path B amendment lineage
-    above. Keep the original closed sprint unchanged.
 
 ## `okto_pulse_delete_card`
 
@@ -232,6 +219,46 @@ execution report is required (e.g. moving to on_hold or started).
 card that is already Rejected. It cannot be used to enter Rejected manually;
 the only lifecycle writer for that state is an admitted Task Validation/
 completion decision.
+
+### `delivery_selection` (optional report selection)
+
+On a Validation/Done move that requires an execution report, you may supply
+`{"expected_card_version":7,"expected_spec_edition":1,"expected_delivery_revision":4,"record_ids":["saved-record-id"]}`.
+Read the current per-card revision and bounded `selection` list from Delivery
+Evidence. At most 200 unique persisted record IDs; empty means an explicitly
+empty selection, not all records. Foreign, missing or revoked records fail;
+stale Card/Spec/ledger revisions require refresh. A truncated list is not a
+complete population and must not be selected as one silently.
+
+The server stores a `card-delivery-selection/v2` manifest beside the conclusion,
+with hashes of the actual immutable records, obligation scope and presented
+impact. Do not send client hashes or validity flags. A frozen Card's delivery
+read uses the selected records while still applying all relevant revocations,
+material progress, source/Target heads and latest authenticated test results.
+Selection cannot hide a known failure or authorize completion. Authorized rework
+reads the current ledger again and preserves the old report. Selection is
+optional in the native report contract: when omitted, the delivery read evaluates
+the current ledger without a selected-record restriction. When a manifest is
+present, its v2 contract, hashes and scope must validate; invalid manifests
+never fall back to an unrestricted read.
+
+The existing conclusion, completeness/drift, review authority and impact policy
+remain required. To reuse accumulated impact without retyping it, add
+`"reuse_impact":true` inside `delivery_selection` and omit the manual
+`impact_evidence` block. The server composes only the selected declarations,
+rechecks Card/Spec/ledger revisions and observed source bases under the report
+transaction, and stores the existing impact shape beside a v2 manifest with
+source/receipt provenance. Supplying both impact inputs is refused.
+
+Ambiguous chains, unknown source identity, mismatched source heads or material
+work not covered by a later observation require reconciliation. An empty net
+result cannot satisfy policy `require`. Original claims remain claims: this
+does not authenticate their paths/symbols or approve delivery. A submitted reused
+impact is rechecked by required impact validation; `off`/`advisory` keep their
+posture independently of the Delivery Evidence gate. The Delivery read exposes
+`report_impact` separately, without rewriting the historical report. Manual v1
+reports remain supported. Buffered-observation applicability and recording
+reconciliation corrections remain separate pending work.
 
 ### `impact_evidence` (optional, schema_version=1)
 

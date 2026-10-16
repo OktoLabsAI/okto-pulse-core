@@ -1,0 +1,38 @@
+{
+  "scope": "AC-INT-08/ADV-21 authoritative planning and gate while graph projection is stale",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criteria": [
+    "ARQVER:AC-INT-08",
+    "ARQVER:ADV-21"
+  ],
+  "test": "tests/test_architecture_association_projection.py::test_association_rebuild_and_reclassification_converge[planning]",
+  "terminal_session": 58193,
+  "result": {
+    "passed": 1,
+    "failed": 0,
+    "seconds": 44.64
+  },
+  "evidence": [
+    "Disposable native relational storage and actual Grafx reserved rebuild materialize the original architecture association.",
+    "A governed classification reassociates the candidate to ir_two. Classification detail returns ir_two while Grafx still contains ir_one.",
+    "GetRequirementVerificationUseCase reads the complete relational implementation and verification plan; both normative IRs remain present, delivery is not inferred.",
+    "SpecService.require_execution_contract_ready accepts the complete current plan before graph projection.",
+    "A controlled source-contract change makes the same real gate refuse spec_architecture_classification_incomplete while the graph still contains ir_one.",
+    "Authorized reclassification of the changed contract permits the gate again before graph convergence.",
+    "The ordinary consolidation worker replaces the obsolete edge; a later context_only decision removes the derived edge without deleting normative IRs or requiring any repair tool.",
+    "Source/installed wheel bytes remain identical; product and frontend have not changed since main88 closure and the 69-pass frontend campaign."
+  ],
+  "limits": [
+    "This calls the real first-start contract gate, not an additional full lifecycle move. Assessment approval and start transition are separately covered by existing acceptance tests.",
+    "Initial plan, Cards and contract mutation are controlled fixture inputs. Classification uses the governed use case with a fixture actor; no installed authentication claim.",
+    "The offline harness explicitly enqueues source work; event dispatcher integration is not claimed here.",
+    "No new feature, gate, authority, migration, compatibility path, SPA change or real-data action."
+  ],
+  "artifacts": {
+    "provenance-native-association-gate1.json": "17e4c7ecfba3021b390b8df0ea9a78e061d8b17b42b93265d35ace4f1509ff1e",
+    "native-association-gate1.xml": "7b6be9c2bcd4438c8efa0e63e33dd2412ca5ab6a30e3288ce61756d5c8efca1d",
+    "native-association-frontend1.json": "a0024e43aac38b777fa3ac6194bcbe358d09bcfa9e49e0b26990684bed0d55b2",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

@@ -54,9 +54,6 @@ from okto_pulse.core.services.application_schemas import (
 from okto_pulse.core.services.architecture import (
     stable_architecture_finding_key,
 )
-from okto_pulse.core.services.card_operational_freeze import (
-    require_card_operational_mutation_allowed,
-)
 from okto_pulse.core.domain.human_validation_cycle import require_draft_mutation
 
 
@@ -343,10 +340,10 @@ class CreateArchitectureUseCase:
 # Transport-free reimplementations of five further ``api/architecture.py``
 # endpoints that drove off the request session: ``get`` / ``update`` / ``delete``
 # of a single Architecture Design, the dry-run payload ``validate``, and the
-# read-only ``propagation-legacy-report``. The legacy mechanism is preserved
+# read-only ``propagation-report``. The legacy mechanism is preserved
 # EXACTLY — the ``select``/``db.get``/ORM lives in ``ArchitectureDesignRepository``
 # (get/update/delete/critique/to_response) and in
-# ``build_propagation_legacy_report``; this layer only reproduces the
+# ``build_propagation_report``; this layer only reproduces the
 # lookup → gate → mutate → commit envelope.
 
 
@@ -484,11 +481,12 @@ class UpdateArchitectureDesignUseCase:
 
 
 class DeleteArchitectureDesignCommand:
-    __slots__ = ("design_id", "board_id")
+    __slots__ = ("design_id", "board_id", "expected_version")
 
-    def __init__(self, design_id: str, board_id: str | None = None) -> None:
+    def __init__(self, design_id: str, board_id: str | None = None, expected_version: int | None = None) -> None:
         self.design_id = design_id
         self.board_id = board_id
+        self.expected_version = expected_version
 
 
 class DeleteArchitectureDesignResult:
@@ -513,7 +511,7 @@ class DeleteArchitectureDesignUseCase:
             board_id=command.board_id,
         )
         repo = uow.services.architecture_designs
-        deleted = await repo.delete(command.design_id, actor.actor_id)
+        deleted = await repo.delete(command.design_id, actor.actor_id, expected_version=command.expected_version)
         if not deleted:
             raise EntityNotFoundError("Architecture design", command.design_id)
         await commit(uow)
@@ -719,6 +717,7 @@ class McpValidateArchitecturePayloadUseCase:
             )
         else:
             patch_payload = ArchitectureDesignUpdate(
+                expected_version=loaded.version,
                 **{
                     key: candidate[key]
                     for key in (
@@ -761,10 +760,10 @@ class McpValidateArchitecturePayloadUseCase:
         return McpValidateArchitecturePayloadResult(envelope, parent_type)
 
 
-# --- propagation legacy report (read-only diagnostic) -----------------------
+# --- propagation report (read-only diagnostic) -----------------------
 
 
-class ArchitecturePropagationLegacyReportCommand:
+class ArchitecturePropagationReportCommand:
     __slots__ = (
         "board_id",
         "limit",
@@ -792,27 +791,26 @@ class ArchitecturePropagationLegacyReportCommand:
         self.surface = surface
 
 
-class ArchitecturePropagationLegacyReportResult:
+class ArchitecturePropagationReportResult:
     __slots__ = ("report",)
 
     def __init__(self, report: dict[str, Any]) -> None:
         self.report = report
 
 
-class ArchitecturePropagationLegacyReportUseCase:
-    """Build the bounded, read-only legacy propagation diagnostic (read, no
-    commit). Delegates wholesale to ``build_propagation_legacy_report`` (the scan +
+class ArchitecturePropagationReportUseCase:
+    """Build the bounded, read-only propagation diagnostic (read, no
+    commit). Delegates wholesale to ``build_propagation_report`` (the scan +
     eligibility classification + observability stay in the service), forwarding
-    ``surface="rest"`` and normalizing ``parent_type_filter`` to ``None`` exactly as
-    the legacy endpoint did. Never mutates anything."""
+    the caller surface and the optional parent filter. Never mutates anything."""
 
     async def execute(
         self,
-        command: ArchitecturePropagationLegacyReportCommand,
+        command: ArchitecturePropagationReportCommand,
         *,
         actor: ActorContext,
         uow: PulseUnitOfWork,
-    ) -> ArchitecturePropagationLegacyReportResult:
+    ) -> ArchitecturePropagationReportResult:
         await _require_board_access(
             uow,
             actor,
@@ -821,7 +819,7 @@ class ArchitecturePropagationLegacyReportUseCase:
             entity_id=command.board_id,
             expected_board_id=command.board_id,
         )
-        report = await uow.services.build_propagation_legacy_report(
+        report = await uow.services.build_propagation_report(
             board_id=command.board_id,
             limit=command.limit,
             offset=command.offset,
@@ -829,7 +827,7 @@ class ArchitecturePropagationLegacyReportUseCase:
             parent_type_filter=command.parent_type_filter or None,
             surface=command.surface,
         )
-        return ArchitecturePropagationLegacyReportResult(report)
+        return ArchitecturePropagationReportResult(report)
 
 
 # === FU5-S1C: diagram payload get/update + excalidraw import + diff + copy ====
@@ -934,6 +932,7 @@ class UpdateArchitectureDiagramPayloadCommand:
         "change_summary",
         "architecture_warning_acknowledgement",
         "board_id",
+        "expected_version",
     )
 
     def __init__(
@@ -945,6 +944,7 @@ class UpdateArchitectureDiagramPayloadCommand:
         change_summary: str | None,
         architecture_warning_acknowledgement: Any,
         board_id: str | None = None,
+        expected_version: int | None = None,
     ) -> None:
         self.design_id = design_id
         self.diagram_id = diagram_id
@@ -953,6 +953,7 @@ class UpdateArchitectureDiagramPayloadCommand:
         self.change_summary = change_summary
         self.architecture_warning_acknowledgement = architecture_warning_acknowledgement
         self.board_id = board_id
+        self.expected_version = expected_version
 
 
 class UpdateArchitectureDiagramPayloadResult:
@@ -998,6 +999,7 @@ class UpdateArchitectureDiagramPayloadUseCase:
         updated = await repo.update(
             command.design_id,
             ArchitectureDesignUpdate(
+                expected_version=design.version if command.expected_version is None else command.expected_version,
                 diagrams=diagrams,
                 change_summary=command.change_summary
                 or f"Updated diagram payload {command.diagram_id}",
@@ -1025,6 +1027,7 @@ class ImportExcalidrawArchitectureDiagramCommand:
         "change_summary",
         "architecture_warning_acknowledgement",
         "board_id",
+        "expected_version",
     )
 
     def __init__(
@@ -1039,6 +1042,7 @@ class ImportExcalidrawArchitectureDiagramCommand:
         change_summary: str | None,
         architecture_warning_acknowledgement: Any,
         board_id: str | None = None,
+        expected_version: int | None = None,
     ) -> None:
         self.design_id = design_id
         self.title = title
@@ -1050,6 +1054,7 @@ class ImportExcalidrawArchitectureDiagramCommand:
         self.change_summary = change_summary
         self.architecture_warning_acknowledgement = architecture_warning_acknowledgement
         self.board_id = board_id
+        self.expected_version = expected_version
 
 
 class ImportExcalidrawArchitectureDiagramResult:
@@ -1117,6 +1122,7 @@ class ImportExcalidrawArchitectureDiagramUseCase:
         updated = await repo.update(
             command.design_id,
             ArchitectureDesignUpdate(
+                expected_version=design.version if command.expected_version is None else command.expected_version,
                 diagrams=diagrams,
                 change_summary=command.change_summary or "Imported Excalidraw diagram",
                 architecture_warning_acknowledgement=command.architecture_warning_acknowledgement,
@@ -1249,9 +1255,8 @@ class CopyArchitectureFromSpecToCardUseCase:
         )
         if spec.board_id != card.board_id or getattr(card, "spec_id", None) != spec.id:
             raise EntityNotFoundError("spec", command.spec_id)
-        require_card_operational_mutation_allowed(
-            card,
-            operation="copy_architecture_to_card",
+        await uow.services.cards.require_content_mutation_allowed(
+            card, operation="copy_architecture_to_card",
         )
         service = uow.services.architecture_propagation
         designs, _plan = await service.copy_effective_spec_to_card(

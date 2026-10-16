@@ -16,6 +16,8 @@ human REST endpoint over a seeded open debt.
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.permissions import PermissionSet
+
 from mcp_runtime_testing import register_mcp_test_runtime
 
 import json
@@ -73,7 +75,7 @@ class _Ctx:
     def __init__(self):
         self.agent_id = "mcp-agent"
         self.agent_name = "r5 imp5 agent"
-        self.permissions = {"board:read"}
+        self.permissions = PermissionSet({"board": {"read": True}})
 
 
 async def _call(name: str, **kwargs) -> dict:

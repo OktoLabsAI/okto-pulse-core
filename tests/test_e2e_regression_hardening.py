@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import uuid
+from native_subject_testing import record_native_subject_authority
+from okto_pulse.community.adapters.sqlalchemy_checklist import CommunitySqlAlchemyChecklist
+from okto_pulse.core.domain.checklist import ChecklistBinding, ChecklistMode, ChecklistTargetType, ChecklistPhase
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+from okto_pulse.core.domain.execution_contract import SpecExecutionContract
 
 import pytest
 
@@ -14,18 +19,9 @@ from sqlalchemy_test_models import (
     CardType,
     Spec,
     SpecStatus,
-    Sprint,
-    SprintStatus,
 )
-from okto_pulse.core.models.schemas import CardCreate, CardMove, CardUpdate, SprintMove
-from okto_pulse.core.domain.spec_validation import SpecValidationGateNotReady
-from okto_pulse.core.services.main import (
-    CardOperationError,
-    CardService,
-    SpecService,
-    SprintOperationError,
-    SprintService,
-)
+from okto_pulse.core.models.schemas import CardCreate, CardMove, CardUpdate
+from okto_pulse.core.services.main import CardOperationError, CardService, SpecService
 from okto_pulse.core.services.resource_gate import (
     ResourceGateService,
     ResourceGateViolation,
@@ -44,13 +40,16 @@ def _validation_payload() -> dict:
         "expected_validation_edition": 1,
         "expected_spec_version": 1,
         "expected_head_revision": 0,
-        "completeness": 95,
-        "completeness_justification": "All mandatory checks are satisfied.",
+        "confidence": 95,
+        "confidence_justification": "All mandatory checks are satisfied.",
+        "clarity": 95,
+        "clarity_justification": "The specification is clear and bounded.",
+        "decidability": 95,
+        "decidability_justification": "Every outcome is objectively decidable.",
         "assertiveness": 90,
         "assertiveness_justification": "Statements are deterministic.",
         "ambiguity": 5,
         "ambiguity_justification": "No blocking ambiguity remains.",
-        "general_justification": "Ready for execution.",
         "recommendation": "approve",
     }
 
@@ -70,6 +69,9 @@ def _install_current_external_requirement_lint(monkeypatch) -> None:
             return (object(), object())
 
     class Adapter:
+        def checklists(self, db):
+            return CommunitySqlAlchemyChecklist(db)
+
         def quality_assessments(self, _db):
             return CurrentExternalLint()
 
@@ -89,6 +91,7 @@ async def _seed_board_and_spec(
     board_settings: dict | None = None,
     spec_status: SpecStatus = SpecStatus.APPROVED,
     scenarios: list[dict] | None = None,
+    checklist_mode: ChecklistMode = ChecklistMode.OFF,
 ) -> tuple[str, str]:
     board_id = _id("board")
     spec_id = _id("spec")
@@ -96,6 +99,7 @@ async def _seed_board_and_spec(
         Board(
             id=board_id,
             name=f"E2E hardening {board_id}",
+            realm_id="local",
             owner_id=USER_ID,
             settings=board_settings or {},
         )
@@ -105,6 +109,14 @@ async def _seed_board_and_spec(
             id=spec_id,
             board_id=board_id,
             title=f"E2E hardening spec {spec_id}",
+            architecture_adoption=ArchitectureAdoptionScope(
+                board_id=board_id, spec_id=spec_id, actor_id=USER_ID,
+                adopted_in_edition=1, inherited_resource_ids=(),
+            ).model_dump(mode="json"),
+            execution_contract=SpecExecutionContract(
+                board_id=board_id, spec_id=spec_id, actor_id=USER_ID,
+                adopted_in_edition=1, origin="new_spec",
+            ).model_dump(mode="json"),
             status=spec_status,
             created_by=USER_ID,
             functional_requirements=[],
@@ -115,24 +127,17 @@ async def _seed_board_and_spec(
             technical_requirements=[],
             integration_requirements=[],
             observability_requirements=[],
-            # Spec 4028ebd4 (decision-required gate): submit_spec_validation
-            # demands at least one active Decision before any other gate under
-            # test here (resource/architecture policy) gets a chance to run.
-            # Decision->Task coverage is skipped: that gate has its own suite
-            # (tests/test_task_requirement_link_gate.py) and would otherwise
-            # fire before the contracts under test.
-            decisions=[
-                {
-                    "id": "dec_seed",
-                    "title": "Seed decision",
-                    "rationale": "Fixture decision satisfying the decision-required gate.",
-                    "status": "active",
-                },
-            ],
-            skip_decisions_coverage=True,
+            decisions=[],
         )
     )
-    await db.flush()
+    await record_native_subject_authority(db)
+    checklist = CommunitySqlAlchemyChecklist(db)
+    binding = ChecklistBinding(board_id=board_id, mode=checklist_mode, version=1)
+    await checklist.apply_binding_cas(binding, expected_version=0, expected_digest=None)
+    await checklist.freeze_validation_binding(
+        board_id=board_id, spec_id=spec_id, spec_edition=1,
+        target_type=ChecklistTargetType.SPEC, phase=ChecklistPhase.SPEC_VALIDATION,
+    )
     return board_id, spec_id
 
 
@@ -185,94 +190,8 @@ async def test_card_service_enforces_max_scenarios_on_create_and_update(db_facto
         assert update_exc.value.code == "max_scenarios_per_card_exceeded"
 
 
-@pytest.mark.asyncio
-async def test_sprint_close_blocks_non_terminal_cards(db_factory):
-    async with db_factory() as db:
-        board_id, spec_id = await _seed_board_and_spec(
-            db,
-            spec_status=SpecStatus.IN_PROGRESS,
-        )
-        sprint = Sprint(
-            id=_id("sprint"),
-            board_id=board_id,
-            spec_id=spec_id,
-            title="Sprint with unfinished work",
-            status=SprintStatus.REVIEW,
-            skip_qualitative_validation=True,
-            created_by=USER_ID,
-        )
-        card = Card(
-            id=_id("card"),
-            board_id=board_id,
-            spec_id=spec_id,
-            sprint_id=sprint.id,
-            title="Still open",
-            status=CardStatus.NOT_STARTED,
-            card_type=CardType.NORMAL,
-            created_by=USER_ID,
-        )
-        db.add_all([sprint, card])
-        await db.flush()
-
-        with pytest.raises(SprintOperationError) as exc:
-            await SprintService(db).move_sprint(
-                sprint.id,
-                USER_ID,
-                SprintMove(status=SprintStatus.CLOSED),
-            )
-        assert exc.value.code == "sprint_has_incomplete_cards"
-        assert exc.value.facts["open_cards"][0]["id"] == card.id
 
 
-@pytest.mark.asyncio
-async def test_sprint_close_allows_terminal_cards(db_factory):
-    async with db_factory() as db:
-        board_id, spec_id = await _seed_board_and_spec(
-            db,
-            spec_status=SpecStatus.IN_PROGRESS,
-        )
-        sprint = Sprint(
-            id=_id("sprint"),
-            board_id=board_id,
-            spec_id=spec_id,
-            title="Sprint with complete work",
-            status=SprintStatus.REVIEW,
-            skip_qualitative_validation=True,
-            created_by=USER_ID,
-        )
-        db.add_all(
-            [
-                sprint,
-                Card(
-                    id=_id("card"),
-                    board_id=board_id,
-                    spec_id=spec_id,
-                    sprint_id=sprint.id,
-                    title="Done work",
-                    status=CardStatus.DONE,
-                    card_type=CardType.NORMAL,
-                    created_by=USER_ID,
-                ),
-                Card(
-                    id=_id("card"),
-                    board_id=board_id,
-                    spec_id=spec_id,
-                    sprint_id=sprint.id,
-                    title="Cancelled work",
-                    status=CardStatus.CANCELLED,
-                    card_type=CardType.NORMAL,
-                    created_by=USER_ID,
-                ),
-            ]
-        )
-        await db.flush()
-
-        moved = await SprintService(db).move_sprint(
-            sprint.id,
-            USER_ID,
-            SprintMove(status=SprintStatus.CLOSED),
-        )
-        assert moved.status == SprintStatus.CLOSED
 
 
 @pytest.mark.asyncio
@@ -331,20 +250,16 @@ async def test_spec_validation_blocks_missing_architecture_when_policy_requires_
             },
         )
 
-        with pytest.raises(SpecValidationGateNotReady) as exc:
+        with pytest.raises(ResourceGateViolation) as exc:
             await SpecService(db).submit_spec_validation(
                 spec_id,
                 USER_ID,
                 "Validator",
                 _validation_payload(),
             )
-        assert exc.value.code == "spec_validation_gate_not_ready"
-        assert exc.value.details == {"reason": "ResourceGateViolation"}
-        assert isinstance(exc.value.__cause__, ResourceGateViolation)
-        assert (
-            exc.value.__cause__.code
-            == "resource_gate_spec_missing_architecture"
-        )
+        assert exc.value.code == "resource_gate_spec_missing_architecture"
+        assert exc.value.details["spec_id"] == spec_id
+        assert exc.value.details["blocking_resources"]
 
 
 @pytest.mark.asyncio
@@ -376,7 +291,9 @@ async def test_spec_validation_accepts_architecture_na_and_policy_off(
             "Validator",
             _validation_payload(),
         )
-        assert result["spec_status"] == "validated"
+        assert result["outcome"] == "success"
+        assert result["spec_status"] == "approved"
+        assert result["planning_blockers"] == ["decomposition_approval_missing"]
 
     async with db_factory() as db:
         _, spec_id = await _seed_board_and_spec(
@@ -393,4 +310,6 @@ async def test_spec_validation_accepts_architecture_na_and_policy_off(
             "Validator",
             _validation_payload(),
         )
-        assert result["spec_status"] == "validated"
+        assert result["outcome"] == "success"
+        assert result["spec_status"] == "approved"
+        assert result["planning_blockers"] == ["decomposition_approval_missing"]

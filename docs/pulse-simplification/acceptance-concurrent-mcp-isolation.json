@@ -1,0 +1,131 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE T14 concurrent MCP isolation",
+  "provenance": {
+    "file": "provenance-mcp-concurrency1.json",
+    "sha256": "e0e6f89ee916be370e2d1286b0931e0bdf6e84594a6ef3046b89784da780f341",
+    "identity": {
+      "checked_at": "2026-09-30T21:27:13.776856+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 859,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "aec38650a6f9956f8341fe99d447a9d0645d57f6",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "a6f77fab8288ae5a91690a7d2796ea8d19db5b10c8a7c7263629553ebeff0312",
+            "size": 3793229
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 922,
+          "byte_identical": true,
+          "aggregate_sha256": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+          "chain_hashes": {
+            "source": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "wheel": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "site_packages": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 373,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "935d839086e24455133a2462dab837b0108d9469",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "3d1eb7b80776aa6ba91a8e0e24d194c6d09769d70a4637a6423e0f57872ecd55",
+            "size": 4535175
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 458,
+          "byte_identical": true,
+          "aggregate_sha256": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+          "chain_hashes": {
+            "source": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "wheel": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "site_packages": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "run": {
+    "xml": "learning-reconciliation-mcp-concurrency2-core.xml",
+    "xml_sha256": "8b2fd9fc0fb7448112f22a1884f87f518fa5a65dac00ca5095caba6070ad4abb",
+    "log": "learning-reconciliation-mcp-concurrency2-core.log",
+    "log_sha256": "dbd266c3d07569cece605be19bb365b35ed8b1cf623f45926f202fc5e7e53e62",
+    "suites": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "1",
+        "time": "12.965",
+        "timestamp": "2026-09-30T18:29:31.594119-03:00",
+        "hostname": "Alienware_m15"
+      }
+    ]
+  },
+  "retained_initial_run": {
+    "run": {
+      "xml": "learning-reconciliation-mcp-concurrency1-core.xml",
+      "xml_sha256": "f5598d864644206ab392fcb65ca878e127d1b51388b7f3ff21b2f86c07c9780b",
+      "log": "learning-reconciliation-mcp-concurrency1-core.log",
+      "log_sha256": "a855a19921465b9b7a40cdfbe032599f6b24df15bba43ca544abfe83a068a6ab",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "1",
+          "time": "16.260",
+          "timestamp": "2026-09-30T18:28:26.436023-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    "warning": "Passed assertions but SSE shutdown watcher remained pending; final fixture cancels and drains only newly created watchers."
+  },
+  "criteria": {
+    "BASE:T14": {
+      "status": "verified_by_reviewed_execution",
+      "remaining": null,
+      "covered": "Two overlapping Streamable HTTP MCP sessions authenticate distinct credentials, list schemas, and issue twelve Board calls: six own-Board reads return the exact ID and owner, six cross-Board calls deny without foreign content. Catalog schemas agree and contain neither credentials nor Board names.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_mcp_concurrent_board_isolation.py",
+          "source_sha256": "aef804dfc7a1174c0013d90d52480208ada3e0cdd0b4dbc2bf2b40d673ab6ef9"
+        }
+      ]
+    }
+  },
+  "limits": [
+    "Real HTTP protocol and middleware on in-process ASGI, production Community UoW and disposable database; no live network daemon.",
+    "Actors and explicit Board read grants are fixture inputs. Catalog is a shared static capability schema, not a personalized grant-filtered list.",
+    "Test-only change; no product, frontend or authority modification and no new F16 execution."
+  ]
+}

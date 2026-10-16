@@ -1,0 +1,132 @@
+{
+  "scope": "F6/KG7.3/7.6 independent delivery of explicitly admitted captures",
+  "suites": {
+    "core": {
+      "passed": 65,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 21,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "frontend": {
+      "passed": 24,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Baseline reproduction on byte-proved scoped-recovery-r4 showed a new fingerprint being lost behind a terminal item for the same Bug/Learning/generation.",
+    "New internal capture-v2 work identity includes the immutable capture fingerprint. Legacy v1 parsing and owning-Bug grouping remain compatible.",
+    "Exact redelivery preserves existing v1/v2 items verbatim in pending, in_progress, failed, consolidated and skipped states, including human holds and evidence.",
+    "Distinct capture creates independent pending work; out-of-order delivery does not replace previous decisions.",
+    "Worker rejects a mismatch between reference fingerprint and content_hash before source/graph I/O.",
+    "Real SQL/Grafx outbox-worker flow materializes explicit same-Bug reuse after the first capture finished, preserving source history and avoiding duplicate associations/revisions on replay.",
+    "Frontend contextual action panel regression passed 24 tests; frontend product and compiled SPA unchanged.",
+    "Paired build/install byte proof preceded tests. Final F16 has eight zero budgets and no findings or documentation drift."
+  ],
+  "limits": [
+    "Integration fixture mocks independent completion gates and health as documented in its parent suite; it does not qualify full lifecycle/release acceptance.",
+    "No migration of legacy work or real data. Compatibility uses exact legacy fingerprint in the current work generation; generic cross-generation rebuild behavior is unchanged.",
+    "First F16 round failed only generated README matrix drift; final docs-only rebuild retained identical installed payload aggregates.",
+    "Public supersede authoring, scoped lineage queries, governed supersede graph/source coordinator and final rebuild acceptance remain pending.",
+    "Global acceptance inventory is unchanged; this is a reproduced delivery defect fix within the existing plan."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-capture-work-identity-r2.json": "1a113c89a255d2b79b43ace2f1f03b64acb05e5083ebbc6c1f7db17655bfac4e",
+    "PULSE_REFACTOR/.validation-v040/capture-work-identity-r1-core.xml": "80040cb869049550ecbd4a0a9256284c4765ff8e2e711e572e075aecd81c1651",
+    "PULSE_REFACTOR/.validation-v040/capture-work-identity-r1-community.xml": "2e09facb229f857cf49ea63b86e460ac76d916704121277b3aff239682be8af2",
+    "PULSE_REFACTOR/.validation-v040/capture-work-identity-frontend.xml": "7e0845ed766a3990c74fe15d2a7266c949b3a645a770141145e6690539cd830c",
+    "PULSE_REFACTOR/.validation-v040/provenance-capture-work-identity-r1.json": "f060fecd6612563b7009cfcb8e31f16fafd43a3c778023f38597fc7118fac5e9",
+    "PULSE_REFACTOR/.validation-v040/provenance-capture-work-identity-r2.json": "a36ce4fc326ce81d91f9bc634423c4c3532d4897ac8dffa362217f679bb94e83",
+    "PULSE_REFACTOR/.validation-v040/reproduce_capture_work_collision.py": "47c9b396bc11ea5fb3fd56feb8741a78a7dee09899d1229173f92ed13dbdedab",
+    "PULSE_REFACTOR/.validation-v040/reproduction-capture-work-collision.json": "f5fc681ea67bf77e5a977c6088c03cc4699ff395303438aaa3af8ee94359dadf",
+    "PULSE_REFACTOR/.validation-v040/run_capture_work_identity.py": "c1db9467e1a96b7f807e50ca43e237362e55336a28c48b1823e9644125b9f12d",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/learning_materialization_work.py": "d704ad9ce7e3ad215101c417cb3941e7f36d1778d2664d694375e299bf48377d",
+    "okto_labs_pulse_core/src/okto_pulse/core/events/handlers/learning_capture.py": "654c0137ef617541442b1038b9a9a377c80f160d181d5bea7b1ecae16653fb64",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/cognitive_closeout_production.py": "59abc6f426ac1136285c1ff000b5035916d0c1b86181678bb6a7819e14f3e56d",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_materialization_worker.py": "41038a701d7a240c9f4930f07faba411a09f4316cf131dfa5c2f9d5f8266d105",
+    "okto_labs_pulse_core/tests/test_learning_materialization_work.py": "cdfea21effe4e6ea4a15f767aa2cd56770b9cfe5f674677b3488a3e5f662b291",
+    "okto_labs_pulse_community/tests/test_learning_capture_work_identity.py": "d826dc5b1be2d8fdfae248199033f92d5551dc8a9328929abc9edfe5fb2b4e1c",
+    "okto_labs_pulse_community/tests/test_learning_materialization_worker.py": "7f42bdeef54b401bf22931397a107f322e64423ea53ac1fbdaf795ee0391f7ca"
+  }
+}

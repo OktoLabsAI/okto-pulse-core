@@ -1,0 +1,128 @@
+{
+  "scope": "Owned deterministic TestScenario->Criterion active-set reconciliation",
+  "suites": {
+    "scenario-prune-final-core": {
+      "tests": 196,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "scenario-prune-final-community": {
+      "tests": 45,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "scenario-prune-frontend-r2": {
+      "tests": 20,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "scenario-prune-coexist": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "remove and restore links across real Grafx commits without duplicate nodes or edges",
+    "preserve another Spec and parallel cognitive/manual writers",
+    "refuse foreign desired endpoint before removal",
+    "compensate failure after deletion and repeat compensation in a new Grafx scope",
+    "do not infer an empty desired set from absent source collections"
+  ],
+  "limits": [
+    "Not completion of all KG-16 relation families or KG-24 rebuild/event parity.",
+    "No claim of acceptance for old retained v2 plans or historical unknown writer rules.",
+    "Frontend JSDOM checks are not a canvas pixel-rendering proof.",
+    "Full6 and installed13 encountered C: disk exhaustion; neither qualifies this pair."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/scenario-prune-final-core.xml": "d96d4b4a3e1ce7ffaf1d7b9f5173c810bba60c6f3dc0a3b963d9f2be7c412535",
+    "PULSE_REFACTOR/.validation-v040/scenario-prune-final-community.xml": "1daf1b0836a468e4ebeeeea343f7c7798fc76e9356f23e1f2a6be66ca79f2746",
+    "PULSE_REFACTOR/.validation-v040/scenario-prune-frontend-r2.xml": "05e3d6c716b16ce9c690c0f7b1b039dba9c13b5a6dd7d6b2fd8e59b8915ac47c",
+    "PULSE_REFACTOR/.validation-v040/scenario-prune-coexist.xml": "ecd42079c563d871ad866ec8cbf579ce6bb6d00b37f30762328af02acd679591",
+    "PULSE_REFACTOR/.validation-v040/provenance-scenario-prune-final-r2.json": "6d69eb2c01ae38c9c4137ed0ad40bb084073bf7e44d31c478babaee2fc77dc96",
+    "PULSE_REFACTOR/.validation-v040/closure-scenario-prune-final-r2.json": "2fc102c29126426ff790e8907d71c4ef6a1903536844de87dba74ec44e197f23",
+    "okto_labs_pulse_core/tests/test_kg_spec_children_canonicalization.py": "fa98bf43e304a2d863b275690f266e7f72e33cf6785cc175e285cb38c999cd8e",
+    "okto_labs_pulse_core/tests/test_projection_intent_collection.py": "3e9838621483803973b7194ec285e2e5ff8042a05501a7915fb1ad195d7d4315",
+    "okto_labs_pulse_core/tests/test_skm_spec_dependency_kg_projection.py": "98d40c0beff9c00921ab356a38a68856a0a03aa324485d4449e541fa3b725e1d",
+    "okto_labs_pulse_community/tests/test_grafx_scenario_projection.py": "5c11218fb45988d2dc235cac7da162c96f52d5efd95567341c1830eb57e7c09d"
+  }
+}

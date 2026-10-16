@@ -52,8 +52,9 @@ from okto_pulse.core.mcp.policy_governance_tools import (
     POLICY_GOVERNANCE_CAPABILITY_BY_OPERATION,
     GuidelineRevisionPatchInput,
     SemanticEvidenceRefInput,
-    SemanticMetricAssessmentInput,
-    SemanticPinpointInput,
+    SemanticMetricAssessmentV2Input,
+    SemanticPinpointV2Input,
+    SemanticAnchorV2Input,
     _native,
     register_policy_governance_tools,
 )
@@ -90,7 +91,6 @@ NEW_TOOL_NAMES = (
     "okto_pulse_get_guideline_impact",
     "okto_pulse_list_guideline_impact_items",
     "okto_pulse_adopt_guideline_revision",
-    "okto_pulse_record_semantic_guideline_assessment",
     "okto_pulse_record_semantic_guideline_assessment_v2",
     "okto_pulse_list_semantic_guideline_assessments",
     "okto_pulse_get_semantic_guideline_assessment",
@@ -297,7 +297,7 @@ def test_pagination_projection_and_authoritative_input_contracts_are_closed() ->
         assert forbidden.isdisjoint(schema["properties"])
 
     assessment_properties = schemas[
-        "okto_pulse_record_semantic_guideline_assessment"
+        "okto_pulse_record_semantic_guideline_assessment_v2"
     ]["properties"]
     assert {
         "binding_id",
@@ -307,7 +307,6 @@ def test_pagination_projection_and_authoritative_input_contracts_are_closed() ->
         "guideline_revision_id",
     } <= set(assessment_properties)
     for name in (
-        "okto_pulse_record_semantic_guideline_assessment",
         "okto_pulse_record_semantic_guideline_assessment_v2",
     ):
         assert "expected_subject_edition" in schemas[name]["properties"]
@@ -318,7 +317,6 @@ def test_pagination_projection_and_authoritative_input_contracts_are_closed() ->
         if "binding_id" in schema["properties"]
     }
     assert binding_surfaces == {
-        "okto_pulse_record_semantic_guideline_assessment",
         "okto_pulse_record_semantic_guideline_assessment_v2",
         "okto_pulse_list_semantic_guideline_assessments",
         "okto_pulse_get_current_semantic_guideline_assessment",
@@ -370,8 +368,8 @@ def test_pagination_projection_and_authoritative_input_contracts_are_closed() ->
 async def test_policy_assessment_edition_conflict_is_audited_and_rolled_back(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from okto_pulse.core.application.use_cases import (
-        RecordSemanticGuidelineAssessmentUseCase,
+    from okto_pulse.core.application.use_cases.semantic_guideline_v2 import (
+        SealSemanticGuidelineAssessmentV2UseCase,
     )
 
     reset_ska_metric_samples_for_tests()
@@ -401,7 +399,7 @@ async def test_policy_assessment_edition_conflict_is_audited_and_rolled_back(
         )
 
     monkeypatch.setattr(
-        RecordSemanticGuidelineAssessmentUseCase,
+        SealSemanticGuidelineAssessmentV2UseCase,
         "execute",
         reject_old_edition,
     )
@@ -414,10 +412,11 @@ async def test_policy_assessment_edition_conflict_is_audited_and_rolled_back(
     )
 
     outcome = await catalog._tool_manager._tools[
-        "okto_pulse_record_semantic_guideline_assessment"
+        "okto_pulse_record_semantic_guideline_assessment_v2"
     ].fn(
         board_id="board-1",
-        entity_type="spec",
+        contract_version="v2",
+        subject_type="spec",
         subject_id="spec-1",
         expected_subject_version=7,
         expected_subject_edition=3,
@@ -427,7 +426,8 @@ async def test_policy_assessment_edition_conflict_is_audited_and_rolled_back(
         idempotency_key="assessment-edition-conflict",
         confidence=90,
         metric_results=[
-            SemanticMetricAssessmentInput(
+            SemanticMetricAssessmentV2Input(
+                contract_version="v2",
                 metric_id="metric-1",
                 score=90,
                 rationale="The evidence demonstrates segregation.",
@@ -440,10 +440,11 @@ async def test_policy_assessment_edition_conflict_is_audited_and_rolled_back(
                     )
                 ],
                 pinpoints=[
-                    SemanticPinpointInput(
-                        anchor_type="field",
-                        anchor_ref="description",
-                        excerpt_hash="b" * 64,
+                    SemanticPinpointV2Input(
+                        contract_version="v2", pinpoint_key="boundary",
+                        kind="evidence", title="Explicit boundary",
+                        detail="The description defines the boundary.",
+                        anchor=SemanticAnchorV2Input(anchor_type="field", anchor_ref="description"),
                     )
                 ],
             )
@@ -489,8 +490,8 @@ def test_operation_capability_matrix_covers_public_closed_leaves() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("entity_type", ("sprint", "card", "test_scenario"))
-async def test_non_edition_policy_subjects_preserve_legacy_version_fenced_flow(
+@pytest.mark.parametrize("entity_type", ("card", "test_scenario"))
+async def test_non_edition_policy_subjects_preserve_version_fenced_flow(
     entity_type: str,
 ) -> None:
     from okto_pulse.core.application.use_cases.policy_governance import (
@@ -560,7 +561,7 @@ def test_policy_v1_python_names_and_evaluator_modules_are_removed() -> None:
         "RecordSemanticGuidelineAssessmentCommand",
         "RecordSemanticGuidelineAssessmentResult",
         "RecordSemanticGuidelineAssessmentUseCase",
-    } <= set(policy_governance.__all__)
+    }.isdisjoint(policy_governance.__all__)
     assert {
         "PolicyComplianceFindingListQuery",
         "PolicyComplianceCurrentSnapshotResolver",
@@ -576,10 +577,23 @@ def test_policy_v1_python_names_and_evaluator_modules_are_removed() -> None:
         "assess_policy_receipt_currentness",
         "project_policy_compliance_receipt",
     }.isdisjoint(guideline_compliance.__all__)
+    for removed_name in (
+        "PolicyComplianceCurrentSnapshot", "PolicyCurrentnessReason",
+        "PolicyComplianceFindingPage", "PolicyComplianceReceiptPage",
+        "assess_policy_receipt_currentness", "project_policy_compliance_receipt",
+        "project_policy_compliance_finding",
+        "PolicyWaiverPage", "PolicyWaiverListItem", "project_policy_waiver",
+        "PolicyReceiptPageCursor", "PolicyFindingPageCursor", "PolicyWaiverPageCursor",
+    ):
+        assert not hasattr(guideline_compliance, removed_name)
+    for removed_name in (
+        "PolicyComplianceCurrentSnapshotResolver", "PolicyComplianceReceiptListQuery",
+        "PolicyComplianceFindingListQuery", "PolicyWaiverListQuery",
+    ):
+        assert not hasattr(policy_ports, removed_name)
     assert {
         "GuidelineImpactItemPage",
         "GuidelineRevisionProjectionPage",
-        "PolicyWaiverPage",
     } <= set(guideline_compliance.__all__)
 
 
@@ -639,11 +653,12 @@ _DENIAL_CASES = (
         },
     ),
     (
-        "okto_pulse_record_semantic_guideline_assessment",
+        "okto_pulse_record_semantic_guideline_assessment_v2",
         ASSESSMENTS_RECORD,
         {
             "board_id": "board-1",
-            "entity_type": "spec",
+            "contract_version": "v2",
+            "subject_type": "spec",
             "subject_id": "spec-1",
             "expected_subject_version": 1,
             "expected_subject_edition": 1,
@@ -654,7 +669,8 @@ _DENIAL_CASES = (
             "confidence": 90,
             "model_id": "semantic-agent-v1",
             "metric_results": [
-                SemanticMetricAssessmentInput(
+                SemanticMetricAssessmentV2Input(
+                    contract_version="v2",
                     metric_id="metric-1",
                     score=90,
                     rationale="The evidence demonstrates segregation.",
@@ -667,10 +683,11 @@ _DENIAL_CASES = (
                         )
                     ],
                     pinpoints=[
-                        SemanticPinpointInput(
-                            anchor_type="field",
-                            anchor_ref="description",
-                            excerpt_hash="b" * 64,
+                        SemanticPinpointV2Input(
+                            contract_version="v2", pinpoint_key="boundary",
+                            kind="evidence", title="Explicit boundary",
+                            detail="The description defines the boundary.",
+                            anchor=SemanticAnchorV2Input(anchor_type="field", anchor_ref="description"),
                         )
                     ],
                 )
@@ -782,7 +799,7 @@ async def test_capability_denial_precedes_cursor_factory_and_uow(
     samples = get_governance_metric_samples()
     expected_count = (
         2
-        if tool_name == "okto_pulse_record_semantic_guideline_assessment"
+        if tool_name == "okto_pulse_record_semantic_guideline_assessment_v2"
         else 1
     )
     assert len(samples) == expected_count
@@ -804,9 +821,9 @@ async def test_capability_denial_precedes_cursor_factory_and_uow(
         assert samples[1]["metric_name"] == METRIC_SEMANTIC_ASSESSMENT_WRITES
         assert samples[1]["labels"] == {
             "surface": "mcp",
-            "contract_version": "v1",
+            "contract_version": "v2",
             "outcome": "error",
-            "capability_state": "legacy_v1",
+            "capability_state": "unchecked",
             "reason_code": "permission_denied",
         }
 
@@ -974,16 +991,19 @@ def test_mcp_unknown_errors_use_closed_internal_fallback(
 
 @pytest.mark.asyncio
 async def test_mcp_current_semantic_assessment_forwards_edition_and_closes_reader_error(
-    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    from okto_pulse.core.application.use_cases import (
-        semantic_guideline_governance,
-    )
+    from okto_pulse.core.domain.guideline_policy import PolicyEntityType, PolicySubjectRef
+    from okto_pulse.core.domain.guideline_semantic_assessment import SemanticMetricOutcome
+    from test_skb31_semantic_guideline_v2_findings import _pinpoint, _receipt, _result
 
     active_edition = 7
     reader_calls: list[dict[str, object]] = []
-    legacy_calls: list[str] = []
+    subject = PolicySubjectRef(board_id="board-1", entity_type=PolicyEntityType.SPEC,
+                               subject_id="spec-1", subject_version=3, subject_edition=active_edition)
+    receipt = _receipt(_result("pass", outcome=SemanticMetricOutcome.PASS,
+                               pinpoints=(_pinpoint("warning"),), subject=subject), subject=subject)
+    receipts = [receipt]
     reader_error: list[Exception] = []
 
     class Permissions:
@@ -1027,6 +1047,15 @@ async def test_mcp_current_semantic_assessment_forwards_edition_and_closes_reade
     semantic_port = SemanticPort()
 
     class Reader:
+        async def get_semantic_assessment_v2(self, **kwargs):
+            raise AssertionError("current read must not query history")
+
+        async def list_semantic_assessment_v2_receipts(self, **kwargs):
+            raise AssertionError("current read must not list history")
+
+        async def get_semantic_assessment_v2_currentness(self, receipt):
+            raise AssertionError("current reader already verifies its fence")
+
         async def get_current_semantic_assessment_v2(
             self,
             *,
@@ -1047,7 +1076,7 @@ async def test_mcp_current_semantic_assessment_forwards_edition_and_closes_reade
             )
             if reader_error:
                 raise reader_error[0]
-            return None
+            return receipts[0]
 
     reader = Reader()
 
@@ -1072,24 +1101,6 @@ async def test_mcp_current_semantic_assessment_forwards_edition_and_closes_reade
             assert actor.board_id == "board-1"
             return Uow()
 
-    async def get_legacy_current(
-        _self: object,
-        command: object,
-        *,
-        actor: ActorContext,
-        uow: object,
-    ) -> object:
-        assert getattr(command, "subject_id") == "spec-1"
-        assert actor.actor_id == "agent-1"
-        assert isinstance(uow, Uow)
-        legacy_calls.append("read")
-        return SimpleNamespace(assessment={"receipt_id": "legacy-receipt"})
-
-    monkeypatch.setattr(
-        semantic_guideline_governance.GetCurrentSemanticGuidelineAssessmentUseCase,
-        "execute",
-        get_legacy_current,
-    )
     catalog = CoreMcpCatalog(name="semantic-current-test", version="test")
     factory = UowFactory()
     register_policy_governance_tools(
@@ -1119,12 +1130,15 @@ async def test_mcp_current_semantic_assessment_forwards_edition_and_closes_reade
         "subject_edition": active_edition,
     }
     assert success.kind is McpOutcomeKind.SUCCESS
-    assert success.payload == {
-        "contract_version": "v1",
-        "assessment": {"receipt_id": "legacy-receipt"},
-    }
+    assert success.payload["contract_version"] == "v2"
+    assert success.payload["assessment"]["receipt_id"] == receipt.receipt_id
+    assert success.payload["assessment"]["validation_edition"] == active_edition
     assert reader_calls == [expected_reader_call]
-    assert legacy_calls == ["read"]
+
+    receipts[0] = None
+    missing = await tool(**arguments)
+    assert missing.kind is McpOutcomeKind.ERROR
+    assert missing.code == "not_found"
 
     secret = "reader-dsn=SECRET-DO-NOT-LEAK"
     reader_error.append(
@@ -1135,8 +1149,7 @@ async def test_mcp_current_semantic_assessment_forwards_edition_and_closes_reade
     )
     failure = await tool(**arguments)
 
-    assert reader_calls == [expected_reader_call, expected_reader_call]
-    assert legacy_calls == ["read"]
+    assert reader_calls == [expected_reader_call] * 3
     assert failure.kind is McpOutcomeKind.ERROR
     assert failure.code == "internal_error"
     assert failure.retryable is False
@@ -1230,7 +1243,7 @@ def test_policy_resource_contract_and_pointer_cardinality() -> None:
     ).read_text(encoding="utf-8")
     assert "Pulse never judges semantic adherence" in policy_resource
     assert "`confidence` is reserved and compulsory" in policy_resource
-    assert "`okto_pulse_record_semantic_guideline_assessment`" in (
+    assert "`okto_pulse_record_semantic_guideline_assessment_v2`" in (
         policy_resource
     )
     assert "Human skip is deliberately absent from MCP" in policy_resource
@@ -1244,7 +1257,7 @@ def test_policy_resource_contract_and_pointer_cardinality() -> None:
         "### Canonical agent journey",
         "full context tool named by its workflow",
         "okto_pulse_get_guideline_revision",
-        "okto_pulse_record_semantic_guideline_assessment",
+        "okto_pulse_record_semantic_guideline_assessment_v2",
         "okto_pulse_get_current_semantic_guideline_assessment",
         "If the Current read is missing for the active edition",
         "stable idempotency key. Previous results",
@@ -1258,7 +1271,6 @@ def test_policy_resource_contract_and_pointer_cardinality() -> None:
         resource_root / "workflows" / "ideations.md",
         resource_root / "workflows" / "refinements.md",
         resource_root / "workflows" / "specs.md",
-        resource_root / "workflows" / "sprints.md",
         resource_root / "workflows" / "cards.md",
         resource_root / "workflows" / "preflight.md",
         resource_root / "reference" / "transitions.md",
@@ -1276,7 +1288,7 @@ def test_policy_resource_contract_and_pointer_cardinality() -> None:
 
 
 @pytest.mark.asyncio
-async def test_legacy_unlink_denial_precedes_uow_factory_and_enter(
+async def test_current_unlink_denial_precedes_uow_factory_and_enter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from okto_pulse.core.mcp import server
@@ -1342,50 +1354,10 @@ async def test_legacy_unlink_denial_precedes_uow_factory_and_enter(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("tool_name", "arguments", "capability", "operation"),
-    (
-        (
-            "okto_pulse_create_guideline",
-            {
-                "board_id": "board-1",
-                "title": "Policy",
-                "content": "Content",
-            },
-            REVISIONS_CREATE,
-            "create_guideline",
-        ),
-        (
-            "okto_pulse_update_guideline",
-            {"board_id": "board-1", "guideline_id": "guideline-1"},
-            REVISIONS_CREATE,
-            "update_guideline",
-        ),
-        (
-            "okto_pulse_delete_guideline",
-            {"board_id": "board-1", "guideline_id": "guideline-1"},
-            REVISIONS_RETIRE,
-            "delete_guideline",
-        ),
-        (
-            "okto_pulse_link_guideline_to_board",
-            {"board_id": "board-1", "guideline_id": "guideline-1"},
-            ADOPTION_MANAGE,
-            "link_guideline",
-        ),
-        (
-            "okto_pulse_update_board_guideline_priority",
-            {
-                "board_id": "board-1",
-                "guideline_id": "guideline-1",
-                "priority": "3",
-            },
-            ADOPTION_MANAGE,
-            "update_guideline_priority",
-        ),
-    ),
-)
-async def test_legacy_guideline_mutation_denial_precedes_uow(
+@pytest.mark.parametrize(("tool_name", "arguments", "capability", "operation"), [
+    ("okto_pulse_create_guideline", {"board_id": "board-1", "title": "Policy", "content": "Content"}, REVISIONS_CREATE, "create_guideline"),
+])
+async def test_current_guideline_mutation_denial_precedes_uow(
     monkeypatch: pytest.MonkeyPatch,
     tool_name: str,
     arguments: dict[str, str],
@@ -1411,7 +1383,7 @@ async def test_legacy_guideline_mutation_denial_precedes_uow(
 
     def forbidden_uow() -> object:
         calls["provider"] += 1
-        raise AssertionError("denied legacy mutation resolved a UoW")
+        raise AssertionError("denied mutation resolved a UoW")
 
     monkeypatch.setattr(server, "_get_agent_ctx", get_agent)
     monkeypatch.setattr(
@@ -1433,68 +1405,19 @@ async def test_legacy_guideline_mutation_denial_precedes_uow(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("use_case", "command", "capability"),
-    (
-        pytest.param(
-            "create",
-            SimpleNamespace(data=SimpleNamespace(board_id=None)),
-            REVISIONS_CREATE,
-            id="create",
-        ),
-        pytest.param(
-            "update",
-            SimpleNamespace(guideline_id="guideline-1", data=SimpleNamespace()),
-            REVISIONS_CREATE,
-            id="update",
-        ),
-        pytest.param(
-            "delete",
-            SimpleNamespace(guideline_id="guideline-1"),
-            REVISIONS_RETIRE,
-            id="retire",
-        ),
-        pytest.param(
-            "link",
-            SimpleNamespace(
-                board_id="board-1",
-                data=SimpleNamespace(guideline_id="guideline-1"),
-            ),
-            ADOPTION_MANAGE,
-            id="link",
-        ),
-        pytest.param(
-            "priority",
-            SimpleNamespace(
-                board_id="board-1",
-                guideline_id="guideline-1",
-                priority=3,
-            ),
-            ADOPTION_MANAGE,
-            id="priority",
-        ),
-    ),
-)
-async def test_legacy_guideline_use_cases_repeat_capability_before_uow(
+@pytest.mark.parametrize(("use_case", "command", "capability"), [
+    ("create", SimpleNamespace(data=SimpleNamespace(board_id=None)), REVISIONS_CREATE),
+    ("inline", SimpleNamespace(board_id="board-1", data=SimpleNamespace()), REVISIONS_CREATE),
+])
+async def test_current_guideline_use_cases_repeat_capability_before_uow(
     use_case: str,
     command: object,
     capability: str,
 ) -> None:
     from okto_pulse.core.application.use_cases.guidelines_crud import (
-        CreateGuidelineUseCase,
-        DeleteGuidelineUseCase,
-        LinkOrCreateBoardGuidelineUseCase,
-        UpdateBoardGuidelinePriorityUseCase,
-        UpdateGuidelineUseCase,
+        CreateGuidelineUseCase, CreateBoardGuidelineUseCase,
     )
-
-    implementations = {
-        "create": CreateGuidelineUseCase(),
-        "update": UpdateGuidelineUseCase(),
-        "delete": DeleteGuidelineUseCase(),
-        "link": LinkOrCreateBoardGuidelineUseCase(),
-        "priority": UpdateBoardGuidelinePriorityUseCase(),
-    }
+    implementations = {"create": CreateGuidelineUseCase(), "inline": CreateBoardGuidelineUseCase()}
 
     class Permissions:
         def check(self, required: str) -> str | None:
@@ -1522,7 +1445,7 @@ async def test_legacy_guideline_use_cases_repeat_capability_before_uow(
 
 
 @pytest.mark.asyncio
-async def test_legacy_unlink_allow_preserves_envelope_and_one_uow(
+async def test_current_unlink_allow_preserves_envelope_and_one_uow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from okto_pulse.core.mcp import server
@@ -1638,3 +1561,9 @@ async def test_unlink_use_cases_repeat_capability_check_before_uow_access(
 
     with pytest.raises(PermissionDeniedError):
         await use_case.execute(command, actor=actor, uow=UntouchableUow())
+
+
+def test_retired_sprint_policy_subject_is_refused():
+    from okto_pulse.core.domain.guideline_policy import PolicyEntityType
+    with pytest.raises(ValueError):
+        PolicyEntityType("sprint")

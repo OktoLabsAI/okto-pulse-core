@@ -399,7 +399,7 @@ async def test_recovery_seed_uses_captured_overlay_without_live_ledger_read(
             assert text == "Board Board One"
             return [0.3, 0.4]
 
-    monkeypatch.setattr(partition, "canonical_debt_exclusions", captured_debt)
+    monkeypatch.setattr(partition, "capture_canonical_debt_exclusions", captured_debt)
     monkeypatch.setattr(
         partition,
         "pending_or_debt_exclusions",
@@ -2423,64 +2423,6 @@ def test_workflow_adds_candidate_before_similarity_and_proposal():
     assert "candidate_not_found" in workflow
 
 
-@pytest.mark.parametrize(
-    ("status", "expected"),
-    [
-        ({"state": "delivery_pending"}, True),
-        ({"state": "completed"}, False),
-        ({"state": "rolled_back"}, False),
-        ({"state": "failed"}, False),
-        (None, False),
-    ],
-)
-def test_cancel_cleanup_reopens_delivery_only_after_completed_cutover(status, expected):
-    from okto_pulse.core.mcp.server import (
-        _global_recovery_should_finish_delivery_after_cancel,
-    )
-
-    assert _global_recovery_should_finish_delivery_after_cancel(status) is expected
-
-
-def test_delivery_uses_manifest_board_ids_when_current_inventory_changed():
-    from okto_pulse.core.mcp.server import (
-        _global_recovery_delivery_board_pairs,
-    )
-
-    assert _global_recovery_delivery_board_pairs(
-        {"board_ids": ["b", "a", "b"]}, [("current", "Current", "Summary")]
-    ) == [("a", "a", ""), ("b", "b", "")]
-
-
-@pytest.mark.asyncio
-async def test_async_delivery_cleanup_drains_repeated_cancellation():
-    from okto_pulse.core.mcp.server import _global_recovery_drain_async
-
-    entered = asyncio.Event()
-    release = asyncio.Event()
-    completed = False
-
-    async def operation():
-        nonlocal completed
-        entered.set()
-        await release.wait()
-        completed = True
-        return "done"
-
-    task = asyncio.create_task(
-        _global_recovery_drain_async(operation, task_name="test.delivery.drain")
-    )
-    await entered.wait()
-    task.cancel()
-    await asyncio.sleep(0)
-    task.cancel()
-    await asyncio.sleep(0)
-    assert not task.done()
-    release.set()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert completed is True
-
-
 @pytest.mark.asyncio
 async def test_outbox_writer_uses_same_durable_global_fence():
     from coordination_fakes import FakeWriteLockPort
@@ -2528,90 +2470,6 @@ def test_global_writer_guard_rejects_an_expired_exact_fencing_token():
     with pytest.raises(GlobalDiscoveryWriterFenceLost):
         with lease.guard():
             pass
-
-
-@pytest.mark.asyncio
-async def test_global_recovery_authorization_fails_closed(monkeypatch):
-    from okto_pulse.core.mcp import server
-
-    async def unauthenticated():
-        return None
-
-    monkeypatch.setattr(server, "_get_global_agent_ctx", unauthenticated)
-    ctx, error = await server._global_recovery_authorize()
-    assert ctx is None
-    assert "auth" in error.lower() or "unauthorized" in error.lower()
-
-    async def underprivileged():
-        return server.AgentContext("agent-1", "Agent", "", [])
-
-    monkeypatch.setattr(server, "_get_global_agent_ctx", underprivileged)
-    ctx, error = await server._global_recovery_authorize()
-    assert ctx is None
-    assert "permission" in error.lower()
-
-    async def admin():
-        return server.AgentContext(
-            "agent-1",
-            "Agent",
-            "",
-            ["kg.admin.settings_read"],
-        )
-
-    monkeypatch.setattr(server, "_get_global_agent_ctx", admin)
-    ctx, error = await server._global_recovery_authorize()
-    assert ctx is not None and error is None
-
-
-@pytest.mark.asyncio
-async def test_board_rebuild_preflight_redirects_discovery_only_recovery(
-    monkeypatch,
-):
-    import json
-    from types import SimpleNamespace
-
-    from okto_pulse.core.application.use_cases import RebuildAdmissionGateUseCase
-    from okto_pulse.core.mcp import server
-
-    async def board_ctx(_board_id):
-        return server.AgentContext(
-            "agent-1",
-            "Agent",
-            "board-1",
-            ["kg.admin.wipe_board"],
-        )
-
-    async def execute(_self, _command, **_kwargs):
-        return SimpleNamespace(
-            refusal=None,
-            raw_health={
-                "graph_state": "healthy",
-                "discovery_state": "recovery_needed",
-                "discovery_recovery_required": True,
-            },
-        )
-
-    class Uow:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return None
-
-    monkeypatch.setattr(server, "_get_agent_ctx", board_ctx)
-    monkeypatch.setattr(RebuildAdmissionGateUseCase, "execute", execute)
-    monkeypatch.setattr(
-        server,
-        "get_unit_of_work_factory_for_mcp",
-        lambda: lambda **_kwargs: Uow(),
-    )
-    tool = server.mcp._tool_manager._tools["okto_pulse_kg_rebuild_preflight"].fn
-    result = json.loads(await tool(board_id="board-1"))
-    assert result["error"] == "board_rebuild_wrong_recovery_scope"
-    assert result["outcome"] == "redirected"
-    assert result["action_required"] == (
-        "call_okto_pulse_kg_global_discovery_recovery_preflight"
-    )
 
 
 class _OutboxStore:

@@ -1,0 +1,124 @@
+{
+  "scope": "KG7.5/K3 shared technical canonical-debt transition for candidate verification",
+  "suites": {
+    "core": {
+      "passed": 56,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 9,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "The existing writer and public recovery qualifier use the same pure replacement rule.",
+    "Only the existing technical waiting states qualify, for the exact Board, source and content hash.",
+    "Substantive holds, source absence, unknown versions, DLQ, errors and unrelated historical changes remain rejected.",
+    "Native materialization and relational acknowledgement failure retain the existing compensation and rollback behavior.",
+    "A committed session with unavailable final graph confirmation may own SQL effects; it does not certify completion.",
+    "Both installed wheel pairs were proved byte-identical before validation; final F16 has no findings or documentation drift and all eight budgets are zero."
+  ],
+  "limits": [
+    "The qualifier does not authenticate an execution, grant authority, close a hold or prove SQL/graph ownership by itself.",
+    "Candidate execution and complete SQL/graph delta verification remain pending integration.",
+    "Final rebuild changes only generated README matrices; behavioral suites ran against the byte-proved initial pair.",
+    "No UI change, real-data migration, runtime restart or release occurred.",
+    "Full-plan acceptance is not complete; inventory remains 78 verified / 33 partial / 135 unaudited."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-debt-transition-final-closure.log": "013f419278eacb4e8d293256f984d2e0816e2592531ca8baf76c32b8c1458b8d",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-debt-transition1-closure.log": "5f8865659ee4e2b0e471cf9b7a59730b8827a490e2a00b7eb134bfe29649f5b9",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-debt-transition1-core.xml": "84a7715fdf5689424bbb34a91dedb8ed02bd33d52489ae9d9ae40c13f3f4d0f5",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-debt-transition1-core.log": "281e21449176c3f39e8ed91f0ca893f1ae9334d7ceef3e9e947461245f32173d",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-debt-transition1-community.xml": "de2be0b974e0d65ec483e05c33b2f4603533c8a66c33cd5e838a8daa2280a478",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-debt-transition1-community.log": "79b535a6e5ba5e5a412414312dcde94c99989927f5da1098004d644eb1dec8de",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-debt-transition1.json": "87ba7895e3d6c5183f75625c1c2332cb6304989dd41e37030e6ef76aed393425",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-debt-transition-final.json": "3cbec64bd340dfdfd5bc6d2e690a7ace2c758d5f08823c6a17196d43f0d76a58",
+    "PULSE_REFACTOR/.validation-v040/run_learning_reconciliation.py": "dd9d79aa98ee5d40e13f348c6a5af4ed42d705f6d8090605c7bdd1654c1372cb",
+    "okto_labs_pulse_core/src/okto_pulse/core/services/canonical_debt_service.py": "30dbc680211603b9ea98f4d6eee1965a51084f1438274013bd77e80607dd22cd",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_reconciliation.py": "34fdb0783fad73585e51cb8e1f34294a3bcea40af0e59cdc664dec848552dd47",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/learning_reconciliation.py": "44a2f9ccd0d57a121bee843ddd04b325e364dd14678d09699752392a16acf920",
+    "okto_labs_pulse_core/tests/test_learning_reconciliation_debt_transition.py": "d91b19cd9afeb8d3764b50263909e3de83dcf2da4bd9b66d61ae71f824abe0fc",
+    "okto_labs_pulse_community/tests/test_authored_learning_debt_recovery.py": "22e7d6d064018de969a8c7ef3992fd5a0ad63289d559154f0f6c68f2f3cf1e43",
+    "okto_labs_pulse_core/README.md": "629a101a8a3db327a1e0776a0401a627155a93bf35a01aada73d41ad9bbef5f2",
+    "okto_labs_pulse_community/README.md": "e4cf772bf81229abcb3f87d20b283b130cae377d3319702c3a4da42f492f0b4b"
+  }
+}

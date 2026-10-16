@@ -1,0 +1,46 @@
+{
+  "scope": "C3 remove obsolete cognitive Health compatibility inputs and historical auto-skip enum",
+  "qualified_cases": 66,
+  "source_decision_semantics_changed": false,
+  "main_integration_pending": "Community14 handle64918 active on main1",
+  "budgets": {
+    "import_boundary_baseline": 0,
+    "singleton_baseline": 0,
+    "dependency_temporary_exceptions": 0,
+    "graph_runtime_compatibility": 0,
+    "rebuild_artifact_compatibility": 0,
+    "community_private_reach_ins": 0,
+    "community_adapter_bridges": 0,
+    "af35_relational_residue": 0
+  },
+  "artifacts": {
+    "provenance-native-closeout2.json": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\provenance-native-closeout2.json",
+      "sha256": "91197fe2f626b54a6922c625900a4a20c177db69182fb90f56f20eae2dd9fe21"
+    },
+    "native-closeout2-core.xml": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\native-closeout2-core.xml",
+      "sha256": "224bc5a01ff71fc64b1855d81fc8389ae661feda89f0ed05840bb36aa6b7f28c"
+    },
+    "closure-native-closeout2.json": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\closure-native-closeout2.json",
+      "sha256": "c18c21655f68684b635c58d09ee9a3521f615b9479d5bba6560b56f713fcf7f8"
+    },
+    "closure-native-closeout2.readmes.json": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\closure-native-closeout2.readmes.json",
+      "sha256": "1970658afd2ddbbc3c872953d9861179ff7dee4cdb00764fce09183dee5a8f9a"
+    },
+    "provenance-native-closeout-final.json": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\provenance-native-closeout-final.json",
+      "sha256": "f58252d7a7e33394d7293904e392f93b038d36e0a0c1d494b6dfb912d99d2793"
+    },
+    "closure-native-closeout-final.json": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\closure-native-closeout-final.json",
+      "sha256": "b718ff07a68771e214325673e1b4e309e255b776b6c157959dc093437605d192"
+    }
+  },
+  "wheels": {
+    "okto_pulse-0.4.0-py3-none-any.whl": "85d1bac394273b670e7de49e354b5589ca8579955a4ec46a12357ae78b55ea75",
+    "okto_pulse_core-0.4.0-py3-none-any.whl": "abdd159ba08b218bfd121efae23fcfaf75509ef3336c87a2e9eb180eaaf7b781"
+  }
+}

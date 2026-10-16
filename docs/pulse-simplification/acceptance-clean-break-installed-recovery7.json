@@ -1,0 +1,27 @@
+{
+  "format": "pulse-040-reviewed-execution/v1",
+  "scope": "Native installed Grafx recovery and frozen transport resources",
+  "proof_pair": "dist-native-main25",
+  "provenance_sha256": "07ae27b7cb1bee5a3fedef435b4b97f7b862f79a5ad50bf1a8c2cb005b3f309c",
+  "xml_sha256": "41216956f803bd5be1ee99da91a76c232372b2be61749a4da010598add4fa395",
+  "log_sha256": "08c4348fdbdc1b08eccaa7395f45b975b64b3fe91ed429ffd148980193e773bc",
+  "passed": 8,
+  "seconds": 2304.39,
+  "cases": [
+    "test_installed_runtime_paths_override_parent_campaign",
+    "test_final_wheel_mode_reuses_pair_and_authenticates_grafx_before_install",
+    "test_installed_grafx_candidate_materializes_board_and_global_routes",
+    "test_installed_wheels_serve_exact_frozen_resource_manifest_over_real_http",
+    "test_installed_internal_recovery_and_public_dlq_retirement",
+    "test_installed_z2_unusable_worker_inputs_terminalize_failed[missing-recovery_worker_inputs_missing]",
+    "test_installed_z2_unusable_worker_inputs_terminalize_failed[corrupt-recovery_worker_inputs_invalid]",
+    "test_installed_hard_kill_at_building_is_adopted_charged_and_completes"
+  ],
+  "test_source_sha256": "35f747a540cd1b2b11318dfe873fdc9ab3f6b69032e997c885eb6b7f0c937b00",
+  "observer_change": "prepare observer 660 seconds (product budget 600 + 60 margin); product timeout and 1500 Board census unchanged",
+  "limits": [
+    "Final wheels explicitly selected; processes and isolated runtime started for this run.",
+    "Certifies main25, before next26 relational integrity admission; not final plan delivery.",
+    "Prior recovery6 observer failure retained; no historical failed result reclassified."
+  ]
+}

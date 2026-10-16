@@ -7,7 +7,7 @@ from okto_pulse.core.domain.card_transition import (
     PendingScenario,
     evaluate_card_transition,
 )
-from okto_pulse.core.domain.enums import CardStatus, CardType, SpecStatus, SprintStatus
+from okto_pulse.core.domain.enums import CardStatus, CardType, SpecStatus
 
 
 def _facts(**overrides) -> CardTransitionFacts:  # noqa: ANN003
@@ -28,19 +28,6 @@ def _facts(**overrides) -> CardTransitionFacts:  # noqa: ANN003
     [
         ({"archived": True}, "card_archived"),
         ({"spec_status": SpecStatus.VALIDATED}, "spec_status_too_early"),
-        ({"sprint_count": 1, "sprint_id": None}, "sprint_required"),
-        (
-            {"sprint_count": 1, "sprint_id": "s", "sprint_exists": False},
-            "sprint_not_found",
-        ),
-        (
-            {
-                "sprint_count": 1,
-                "sprint_id": "s",
-                "sprint_status": SprintStatus.DRAFT,
-            },
-            "sprint_not_active",
-        ),
         (
             {
                 "old_status": CardStatus.IN_PROGRESS,
@@ -79,6 +66,36 @@ def test_f05_test_card_can_start_on_validated_spec() -> None:
     assert decision.allowed is True
 
 
+@pytest.mark.parametrize("old,target", [
+    (CardStatus.NOT_STARTED, CardStatus.STARTED),
+    (CardStatus.STARTED, CardStatus.IN_PROGRESS),
+    (CardStatus.ON_HOLD, CardStatus.STARTED),
+    (CardStatus.ON_HOLD, CardStatus.IN_PROGRESS),
+    (CardStatus.REJECTED, CardStatus.IN_PROGRESS),
+    (CardStatus.DONE, CardStatus.IN_PROGRESS),
+])
+@pytest.mark.parametrize("card_type", list(CardType))
+def test_done_spec_normal_execution_gate_preserves_bug_and_test_controls(old, target, card_type):
+    decision = evaluate_card_transition(_facts(
+        old_status=old, new_status=target, card_type=card_type,
+        spec_status=SpecStatus.DONE, has_regression_test_evidence=True,
+    ))
+    assert decision.allowed is (card_type != CardType.NORMAL)
+    if card_type == CardType.NORMAL:
+        assert decision.block.code == "normal_card_spec_done"
+
+
+@pytest.mark.parametrize("old,target", [
+    (CardStatus.DONE, CardStatus.DONE),
+    (CardStatus.IN_PROGRESS, CardStatus.ON_HOLD),
+    (CardStatus.NOT_STARTED, CardStatus.CANCELLED),
+])
+def test_done_spec_gate_does_not_block_ordering_pause_or_cancellation(old, target):
+    assert evaluate_card_transition(_facts(
+        old_status=old, new_status=target, spec_status=SpecStatus.DONE,
+    )).allowed
+
+
 def test_f05_bug_gate_respects_board_severity_threshold() -> None:
     decision = evaluate_card_transition(
         _facts(
@@ -95,10 +112,13 @@ def test_f05_cancellation_does_not_start_execution() -> None:
         _facts(
             new_status=CardStatus.CANCELLED,
             spec_status=SpecStatus.APPROVED,
-            sprint_count=1,
-            sprint_id=None,
             card_type=CardType.BUG,
             has_regression_test_evidence=False,
         )
     )
     assert decision.allowed is True
+
+
+def test_normal_execution_needs_no_sprint_facts():
+    assert evaluate_card_transition(_facts()).allowed
+    assert not any("sprint" in name or "hotfix" in name for name in CardTransitionFacts.__dataclass_fields__)

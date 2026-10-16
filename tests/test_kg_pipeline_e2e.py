@@ -3,18 +3,18 @@
 Exercises the full chain on a tempdir-scoped board:
 
     Board → Spec → Cards → commit_consolidation → ConsolidationQueue →
-    Kùzu per-board → KuzuNodeRef mirror → GlobalUpdateOutbox drain →
+    Grafx per-board → KuzuNodeRef mirror → GlobalUpdateOutbox drain →
     Global discovery DecisionDigest.
 
 After the commit + one outbox-worker tick the test asserts every layer reports
 ``healthy=True`` via :mod:`okto_pulse.core.kg.health`. Any regression in one
-of the previously-fixed layers (Spec 1 Kùzu close, Spec 2 queue drain, Spec 3
+of the previously-fixed layers (Spec 1 Grafx close, Spec 2 queue drain, Spec 3
 embedder readiness, Spec 4.2/4.3 CLI + seed) fails this one test — which is
 exactly the point.
 
 Why marked ``e2e``
 ------------------
-Runs out-of-process primitives, opens Kùzu file handles twice (per-board +
+Runs out-of-process primitives, opens Grafx file handles twice (per-board +
 global), and waits for the background outbox worker to tick. It is the slowest
 test in the suite — skipped by the fast unit path (``pytest -m "not e2e"``).
 """
@@ -54,7 +54,7 @@ def e2e_tempdir(monkeypatch):
     The env vars must be set before any ``okto_pulse.core`` module is imported
     by the test body, which happens inside the fixture (lazy import). The
     teardown calls :func:`close_all_connections` so Windows can rm the
-    ``.kuzu`` directories — without it, the global discovery singleton holds
+    ``.grafx`` directories — without it, the global discovery singleton holds
     the lock past the fixture exit.
     """
     base = Path(tempfile.mkdtemp(prefix="okto_pulse_e2e_"))
@@ -71,7 +71,7 @@ def e2e_tempdir(monkeypatch):
 
     yield base
 
-    # Teardown — the Kùzu per-board + global singletons hold OS-level locks
+    # Teardown — the Grafx per-board + global singletons hold OS-level locks
     # on Windows. Close them before rmtree or the directory cleanup flakes
     # with ``WinError 32``.
     try:
@@ -95,7 +95,7 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
 
     Bound to these acceptance criteria of spec 4aebbbcf:
       - AC-1: pytest -m e2e passes on a clean clone.
-      - FR-1: queue / kuzu / node_refs / outbox / global all assert per layer.
+      - FR-1: queue / grafx / node_refs / outbox / global all assert per layer.
       - FR-9: all checks come from core/kg/health.py (single source of truth).
       - TR-3: close_all_connections() is called by the fixture teardown.
     """
@@ -147,12 +147,35 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
     session_factory = get_session_factory()
     configure_real_graph_and_data_test_kg_registry(session_factory)
 
+    # The routed Global graph is fail-closed until its backend binding exists;
+    # publish the route and bootstrap real storage so the outbox drain can
+    # mirror consolidation events into global discovery.
+    from coordination_fakes import FakeWriteLockPort
+    from global_graph_testing import (
+        bootstrap_global_discovery,
+        global_discovery_writer_scope,
+    )
+    from kg_schema_testing import graph_composition
+    from okto_pulse.core.ports.coordination import (
+        CoordinationProviderMissing,
+        get_write_lock_port,
+        register_coordination_providers,
+    )
+
+    try:
+        get_write_lock_port()
+    except CoordinationProviderMissing:
+        register_coordination_providers(write_lock_port=FakeWriteLockPort())
+    with global_discovery_writer_scope(operation="test_global_route_init"):
+        graph_composition().initialize_global_route()
+    bootstrap_global_discovery()
+
     board_id = str(uuid.uuid4())
     spec_id = str(uuid.uuid4())
     agent_id = "system:layer1_worker"
 
-    # Pre-bootstrap the per-board Kùzu graph. Creating it here up-front means
-    # the first Kùzu open in the pipeline (via `find_similar_for_candidate`
+    # Pre-bootstrap the per-board Grafx graph. Creating it here up-front means
+    # the first Grafx open in the pipeline (via `find_similar_for_candidate`
     # during propose_reconciliation or via commit_consolidation) hits an
     # existing path and skips the implicit bootstrap inside
     # `BoardConnection.__init__` — which otherwise races the file lock on
@@ -161,9 +184,9 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
     gc.collect()
 
     # Stub out the similarity search. On a brand-new graph the HNSW index is
-    # empty and the primary Kùzu vector query returns no rows, which sends
+    # empty and the primary Grafx vector query returns no rows, which sends
     # `find_similar_nodes_by_type` into `_fallback_manual_similarity_search`.
-    # That path opens a second Kùzu `BoardConnection` on the same ``.kuzu``
+    # That path opens a second Grafx `BoardConnection` on the same ``.grafx``
     # directory in quick succession and races the Windows file lock — a known
     # issue in the deterministic search fallback, orthogonal to what the
     # health module is trying to assert. Returning ``[]`` forces the
@@ -199,7 +222,7 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
                 {"title": "TR-1", "text": "All 5 layers must report healthy after commit."}
             ],
             acceptance_criteria=[
-                {"title": "AC-1", "text": "check_queue/kuzu/outbox/global all return healthy=True."}
+                {"title": "AC-1", "text": "check_queue/grafx/outbox/global all return healthy=True."}
             ],
             business_rules=[
                 {"title": "BR-1", "rule": "No orphaned outbox events."}
@@ -354,14 +377,14 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
     # --- assert every layer reports healthy ----------------------------
     async with session_factory() as db:
         queue_h = await check_queue(db, board_id)
-        kuzu_h = check_graph(board_id)
-        refs_h = await check_graph_node_refs(db, board_id, graph_total=kuzu_h.counts.get("total"))
+        graph_h = check_graph(board_id)
+        refs_h = await check_graph_node_refs(db, board_id, graph_total=graph_h.counts.get("total"))
         outbox_h = await check_outbox(db, board_id)
         global_h = check_global(board_id)
 
     assert queue_h.healthy, f"queue unhealthy: {queue_h}"
-    assert kuzu_h.healthy, f"kuzu unhealthy: {kuzu_h}"
-    assert kuzu_h.counts["total"] >= 4, kuzu_h
+    assert graph_h.healthy, f"grafx unhealthy: {graph_h}"
+    assert graph_h.counts["total"] >= 4, graph_h
     assert refs_h.healthy, f"kuzu_node_refs unhealthy: {refs_h}"
     assert outbox_h.healthy, f"outbox unhealthy: {outbox_h}"
     assert outbox_h.counts["pending"] == 0, outbox_h

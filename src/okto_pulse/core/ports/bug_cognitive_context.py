@@ -7,8 +7,11 @@ needed to assemble the contract (relational state and canonical graph state).
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, fields, replace
+from datetime import datetime, timezone
+import hashlib
+import json
+from typing import Protocol, runtime_checkable
 
 from okto_pulse.core.runtime_context import (
     register_runtime_value,
@@ -64,6 +67,10 @@ class BugCognitiveContext:
     provenance_refs: tuple[str, ...] = ()
     load_errors: tuple[str, ...] = ()
     contract_version: str = "bug-cognitive-context/v1"
+    # Relational concurrency fence for semantic capture. This is not a graph
+    # generation or evidence admission: writers must re-read it under their UOW.
+    source_policy_version: int | None = None
+    source_digest: str | None = None
 
     @property
     def eligible_for_closeout(self) -> bool:
@@ -95,6 +102,58 @@ class BugCognitiveContext:
         )
 
 
+BUG_SEMANTIC_SOURCE_MAX_BYTES = 8 * 1024 * 1024
+
+
+def _semantic_source_value(value):
+    if value is None or type(value) in (str, bool, int, float):
+        return value
+    if isinstance(value, datetime):
+        # Existing relational timestamps are UTC, including legacy naive rows.
+        return value.replace(tzinfo=timezone.utc).isoformat() if value.tzinfo is None else value.astimezone(timezone.utc).isoformat()
+    if isinstance(value, Mapping):
+        if any(type(key) is not str for key in value):
+            raise ValueError('bug_semantic_context_encoding_invalid')
+        return {key: _semantic_source_value(item) for key, item in value.items()}
+    if type(value) in (tuple, list):
+        return [_semantic_source_value(item) for item in value]
+    if type(value) is BugLinkedTestTask:
+        return {item.name: _semantic_source_value(getattr(value, item.name)) for item in fields(value)}
+    raise ValueError('bug_semantic_context_encoding_invalid')
+
+
+def qualify_bug_semantic_context(source: BugCognitiveContext) -> BugCognitiveContext:
+    """Core-owned shape qualification; no claim of evidence or write authority."""
+    if type(source) is not BugCognitiveContext or source.contract_version != 'bug-semantic-context/v1':
+        raise ValueError('bug_semantic_context_contract_invalid')
+    errors = list(source.load_errors)
+    if source.card_exists:
+        if type(source.source_policy_version) is not int or source.source_policy_version < 1:
+            errors.append('bug_source_version_unavailable')
+        if source.card_type != 'bug':
+            errors.append('bug_source_type_invalid')
+    if source.canonical_bug_present is not None or any(ref.startswith('kg:') for ref in source.provenance_refs):
+        errors.append('bug_semantic_context_projection_mixed')
+    digest = source.source_digest
+    if source.card_exists and not errors:
+        try:
+            document = {item.name: _semantic_source_value(getattr(source, item.name))
+                for item in fields(source) if item.name != 'source_digest'}
+            encoded = json.dumps(document, ensure_ascii=False, sort_keys=True,
+                separators=(',', ':'), allow_nan=False).encode('utf-8')
+            if len(encoded) > BUG_SEMANTIC_SOURCE_MAX_BYTES:
+                errors.append('bug_semantic_context_size_limit')
+            else:
+                computed = hashlib.sha256(encoded).hexdigest()
+                if digest is not None and digest != computed:
+                    errors.append('bug_semantic_context_fingerprint_mismatch')
+                else:
+                    digest = computed
+        except (TypeError, ValueError, OverflowError):
+            errors.append('bug_semantic_context_encoding_invalid')
+    return replace(source, load_errors=tuple(dict.fromkeys(errors)), source_digest=digest)
+
+
 class BugCognitiveContextAssembler(Protocol):
     async def assemble(
         self,
@@ -104,9 +163,57 @@ class BugCognitiveContextAssembler(Protocol):
         bug_id: str,
     ) -> BugCognitiveContext: ...
 
+    async def assemble_semantic(
+        self,
+        context: object,
+        *,
+        board_id: str,
+        bug_id: str,
+    ) -> BugCognitiveContext:
+        """Read the scoped relational source before or after completion.
+
+        No graph access or canonical eligibility prerequisite. The result uses
+        ``bug-semantic-context/v1``, with a positive source policy version and
+        explicit errors for inaccessible linked sources. Projection remains
+        unknown, not absent or successful. This read authorizes no capture,
+        transition or evidence credit by itself.
+        """
+        ...
+
+
+@runtime_checkable
+class BugSemanticWriteSnapshotReader(Protocol):
+    async def assemble_semantic_for_write(
+        self, context: object, *, board_id: str, bug_id: str,
+    ) -> BugCognitiveContext:
+        """Serialize all relational source writers before assembling facts.
+
+        The caller must authorize before entering this boundary and retain the
+        same UOW through evidence admission, conditional append and commit.
+        Serialize linked evidence as well as the Bug; a Bug-only row lock does
+        not satisfy the contract. Refresh cached facts within that transaction.
+        Never commit/rollback for the caller. Unsupported serialization or a
+        lost transaction snapshot fails closed, with no unguarded fallback.
+        This capability is separate from the ordinary read-only assembler.
+        """
+        ...
+
 
 class CanonicalBugNodeReadPort(Protocol):
     async def exists(self, *, board_id: str, bug_id: str) -> bool: ...
+
+
+@runtime_checkable
+class CanonicalBugNodeResolver(Protocol):
+    def resolve_current(self, *, board_id: str, bug_id: str) -> str | None:
+        """Resolve one active canonical Bug identity in the requested board.
+
+        Ignore working and superseded projections. Return None only for verified
+        absence; ambiguous identity or backend failure must raise. The caller
+        offloads this synchronous read and rechecks eligibility under its writer
+        fence before mutation. A resolved id is not lifecycle authority.
+        """
+        ...
 
 
 _ASSEMBLER_KEY = "ports.bug_cognitive_context.assembler"
@@ -147,10 +254,14 @@ def freeze_mapping_sequence(
 
 __all__ = [
     "BugCognitiveContext",
+    "BUG_SEMANTIC_SOURCE_MAX_BYTES",
     "BugCognitiveContextAssembler",
+    "BugSemanticWriteSnapshotReader",
     "BugLinkedTestTask",
     "CanonicalBugNodeReadPort",
+    "CanonicalBugNodeResolver",
     "freeze_mapping_sequence",
+    "qualify_bug_semantic_context",
     "register_bug_cognitive_context_assembler",
     "register_canonical_bug_node_read_port",
     "reset_bug_cognitive_context_ports_for_tests",

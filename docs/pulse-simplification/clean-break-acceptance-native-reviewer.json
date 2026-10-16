@@ -1,0 +1,48 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_key": "BASE:T02",
+  "disposition": "mantido",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-reviewer22",
+  "provenance_sha256": "22c33f52f64f77fc26d23d7af345c266ec5440be44c7fa1d6677376508179af6",
+  "closure_ok": true,
+  "closure_budgets": {
+    "import_boundary_baseline": 0,
+    "singleton_baseline": 0,
+    "dependency_temporary_exceptions": 0,
+    "graph_runtime_compatibility": 0,
+    "rebuild_artifact_compatibility": 0,
+    "community_private_reach_ins": 0,
+    "community_adapter_bridges": 0,
+    "af35_relational_residue": 0
+  },
+  "reviewed_coverage": {
+    "current_policy": "Missing policy defaults to enforce; malformed policies are refused. Explicit off/warn remain separately governed modes.",
+    "identity": "Native writer seals author_id from the calling identity. Creator, assignee and executor conflicts are evaluated separately; no identity is synthesized.",
+    "denial": "Enforce rejects both approve and reject attempts when the native report identifies the reviewer as executor, before validation/status changes.",
+    "legacy_removal": "actor_id, author_agent_id, author and created_by are not accepted as conclusion authors. Incompatible/missing authors fail closed in every policy mode, rather than being converted or ignored.",
+    "history": "Attempting review over an incompatible conclusion leaves the record, status and validation history unchanged even when the caller commits.",
+    "MCP": "The actual tool projects reviewer_separation_required with action_required and request_independent_task_validator; fixture supplies actor/permissions, not a second identity."
+  },
+  "runs": [
+    {
+      "name": "native-reviewer22-contracts1",
+      "sha256": "8dd90635770db66ec9c0afeda451dcafcb97199997cc7d1a217ebea62eacec43",
+      "tests": 0,
+      "failed": 0,
+      "collection_error": true
+    },
+    {
+      "name": "native-reviewer22-contracts2",
+      "sha256": "5fde75039bab27a8a9a60e97f86d136684e7e92b3d4e4a27d5a4ca568f7dc7d4",
+      "tests": 173,
+      "failed": 0,
+      "collection_error": false
+    }
+  ],
+  "limits": [
+    "Card validation entry state is seeded to isolate reviewer policy; full lifecycle is separately qualified under T01.",
+    "MCP policy tests inject authenticated context and independent completion gates; do not certify credential resolution.",
+    "No frontend changes. Community regressions still active; not a claim of complete C4."
+  ]
+}

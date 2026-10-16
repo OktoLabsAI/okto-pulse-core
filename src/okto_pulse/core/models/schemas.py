@@ -1,10 +1,12 @@
 """Pydantic schemas for API request/response models."""
 
 import re
+import hashlib
+import json
 from collections.abc import Mapping
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any, Generic, Literal, TypeAlias, TypeVar
+from typing import Annotated, Any, Generic, Literal, TypeAlias, TypeVar
 
 from pydantic import (
     AliasChoices,
@@ -12,16 +14,26 @@ from pydantic import (
     ConfigDict,
     Field,
     RootModel,
-    ValidationInfo,
+    StringConstraints,
     computed_field,
     field_validator,
+    field_serializer,
     model_validator,
+    model_serializer,
 )
 
 from okto_pulse.core.discovery_params_schema import (
     DiscoveryParamsSchema,
     normalize_discovery_params_schema,
 )
+from okto_pulse.core.domain.requirement_verification import VerificationQualifiedModel
+from okto_pulse.core.domain.decision_verification import DecisionVerification
+from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
+from okto_pulse.core.domain.learning_submission import LearningSubmission
+from okto_pulse.core.domain.execution_contract import SpecExecutionContract
+from okto_pulse.core.domain.task_validation_policy import ResolvedTaskValidationConfig
+from okto_pulse.core.models.delivery_selection import DeliverySelectionInput, DeliverySelectionManifest
+from okto_pulse.core.models.reference_context import CardScenarioReferenceContext, MissingLinkContext
 from okto_pulse.core.domain.card_completion import (
     REJECTION_CODE_MAX_LENGTH,
     REJECTION_ID_MAX_LENGTH,
@@ -42,8 +54,6 @@ from okto_pulse.core.domain.enums import (
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
-    SprintLaneType,
-    SprintStatus,
     StoryStatus,
     TestScenarioStatus,
 )
@@ -63,12 +73,15 @@ from okto_pulse.core.domain.quality_assessment import (
     AssessmentScaleKind,
     ScoreDirection,
 )
+from okto_pulse.core.domain.verification_report import VerificationReport
 from okto_pulse.core.domain.test_scenarios import (
     DEFAULT_SCENARIO_TYPE,
     SCENARIO_TYPE_DESCRIPTION,
     ScenarioType,
+    VerificationMethod,
 )
 from okto_pulse.core.models.knowledge_propagation import (
+    new_omitted_knowledge_selection,
     CardCreateKnowledgeMutationResponse,
     DeriveSpecKnowledgeMutationResponse,
     KnowledgePropagationEnvelopeV2,
@@ -111,10 +124,11 @@ class KnowledgeGovernanceResponseSchema(BaseSchema):
 class AgentCreate(BaseModel):
     """Schema for creating a new agent."""
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
     objective: str | None = None
-    permissions: list[str] | None = None
     preset_id: str | None = None
     permission_flags: dict[str, Any] | None = None
 
@@ -133,11 +147,12 @@ class AgentCreate(BaseModel):
 class AgentUpdate(BaseModel):
     """Schema for updating an agent."""
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
     objective: str | None = None
     is_active: bool | None = None
-    permissions: list[str] | None = None
     preset_id: str | None = None
     permission_flags: dict[str, Any] | None = None
 
@@ -168,7 +183,6 @@ class AgentResponse(BaseSchema):
     description: str | None
     objective: str | None = None
     is_active: bool
-    permissions: list[str] | None
     preset_id: str | None = None
     permission_flags: dict[str, Any] | None = None
     created_by: str
@@ -375,6 +389,16 @@ class TestEvidenceProvenanceV2(BaseModel):
     environment: str = Field(..., min_length=1)
 
 
+class TestExecutionBasis(BaseModel):
+    """Observed immutable source used by an authenticated external test run."""
+
+    model_config = ConfigDict(extra="forbid")
+    source_ref: str = Field(..., min_length=1)
+    revision: str = Field(..., pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+    runner_ref: str = Field(..., min_length=1)
+    test_ids: list[str] = Field(..., min_length=1, max_length=100)
+
+
 class TestExecutionAttestationV2(BaseModel):
     """Evidence V2 result emitted after exercising the real product runtime.
 
@@ -390,32 +414,32 @@ class TestExecutionAttestationV2(BaseModel):
     run_id: str = Field(..., min_length=1)
     executed_at: str = Field(..., min_length=1)
     scenario_id: str = Field(..., min_length=1)
-    # Optional only for lossless reads of pre-hardening V2 rows. Every new
-    # gated write requires a valid digest in the semantic verifier.
-    scenario_sha256: str | None = None
+    scenario_sha256: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
     outcome: Literal["passed", "failed"]
     product_runtime_exercised: bool
     manifest_sha256: str = Field(..., min_length=1)
     assertions: list[TestEvidenceAssertionV2] = Field(..., min_length=1)
     provenance: TestEvidenceProvenanceV2
+    execution_basis: TestExecutionBasis | None = None
     attestation_sha256: str = Field(..., min_length=1)
 
 
 class TestScenarioEvidence(BaseModel):
-    """Structured proof that a test scenario exists or was executed.
+    """Current execution or observation evidence; admission remains governed."""
 
-    Spec 9e0bf979 — re-executable validation evidence contract. ``evidence_class``
-    classifies the KIND of proof (see ``test_scenario_lifecycle.EVIDENCE_CLASSES``)
-    so a validator can rerun or inspect the artifact instead of trusting a raw
-    run log. All new fields are additive and optional. Legacy evidence stays
-    readable for backward compatibility; specifically, historical free-form
-    MCP manifests are reader-only/unverified until a V2 execution attestation
-    is produced.
-    """
+    model_config = ConfigDict(extra="forbid")
 
-    model_config = ConfigDict(extra="allow")
+    verification_report: VerificationReport | None = None
 
-    # Minimal/legacy fields (NC-9). Preserved verbatim for backward compatibility.
+    @field_serializer("verification_report")
+    def serialize_verification_report(self, value):
+        # Receipts sign the report's canonical JSON representation. Preserve it
+        # through Python-mode dumps used by scoped and whole-Spec writers.
+        return value.model_dump(mode="json") if value is not None else None
+
+    report_author_id: str | None = None
+    scenario_sha256: str | None = None
+    # Current file pointers and execution logs.
     test_file_path: str | None = None
     test_function: str | None = None
     last_run_at: str | None = None
@@ -424,13 +448,7 @@ class TestScenarioEvidence(BaseModel):
     # Re-executable evidence contract (spec 9e0bf979, tr_61dabab8).
     evidence_class: str | None = None
     replay_command: str | None = None
-    # Deprecated reader-only alias. Historical rows may contain either a string
-    # or the free-form object accepted by the old status endpoint. Both remain
-    # serializable so a GET -> SpecUpdate round-trip never loses data, but the
-    # Evidence V2 gate treats them as ``legacy_unverified``.
-    mcp_replay_manifest: str | dict[str, Any] | None = None
-    # Evidence V2 canonical contract. New MCP replay writes use these two
-    # fields; ``manifest_ref`` is always a reference, never an embedded object.
+    # Canonical replay reference, attestation and installation receipt.
     manifest_ref: str | None = None
     execution_attestation: TestExecutionAttestationV2 | None = None
     # Opaque installation-issued receipt. CORE never derives or trusts this
@@ -443,28 +461,31 @@ class TestScenarioEvidence(BaseModel):
 
 
 class TestScenario(BaseModel):
-    """Read-tolerant test scenario projection.
+    """Current scenario projection and authored payload vocabulary."""
 
-    ``scenario_type`` intentionally remains ``str`` here so persisted values
-    from older releases can still be returned explicitly. Write requests use
-    :class:`TestScenarioWrite`, whose JSON schema is the closed five-value
-    taxonomy.
-    """
+    model_config = ConfigDict(extra="forbid")
 
     id: str
     title: str
     linked_criteria: list[str] | None = None  # indices or text of acceptance criteria
-    scenario_type: str = DEFAULT_SCENARIO_TYPE
+    scenario_type: ScenarioType = Field(DEFAULT_SCENARIO_TYPE, description=SCENARIO_TYPE_DESCRIPTION)
+    verification_method: VerificationMethod | None = None
     given: str = ""  # precondition
     when: str = ""  # action
     then: str = ""  # expected result
     notes: str | None = None
-    status: str = "draft"  # draft | ready | automated | passed | failed
+    status: TestScenarioStatus = Field(TestScenarioStatus.DRAFT, validate_default=True)
     linked_task_ids: list[str] | None = (
         None  # card IDs that implement/automate this test
     )
     evidence: TestScenarioEvidence | None = None
-    latest_evidence: TestScenarioEvidence | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_unset_verification_method(self, handler):
+        result = handler(self)
+        if "verification_method" not in self.model_fields_set:
+            result.pop("verification_method", None)
+        return result
 
 
 class TestScenarioWrite(TestScenario):
@@ -475,16 +496,28 @@ class TestScenarioWrite(TestScenario):
     that distinction to default new scenarios and preserve existing scenarios.
     """
 
-    model_config = ConfigDict(extra="forbid")
 
-    scenario_type: ScenarioType = Field(
-        DEFAULT_SCENARIO_TYPE,
-        description=SCENARIO_TYPE_DESCRIPTION,
-    )
-    status: TestScenarioStatus = Field(
-        TestScenarioStatus.DRAFT,
-        validate_default=True,
-    )
+def scenario_collection_snapshot(
+    *, board_id: str, spec_id: str, edition: int, version: int,
+    scenarios: list[TestScenario | dict] | None,
+) -> str:
+    """Bind authoring to the complete public collection, including operational facts.
+
+    This is concurrency metadata, not semantic evidence or an approval. Defaults
+    use the same projection as SpecResponse, so stored and returned forms agree.
+    """
+    items = []
+    for item in scenarios or []:
+        parsed = item if isinstance(item, TestScenario) else TestScenario.model_validate(item)
+        projected = parsed.model_dump(mode="json")
+        projected.setdefault("verification_method", None)
+        items.append(projected)
+    payload = {"contract": "scenario-authoring/v1", "board_id": board_id,
+               "spec_id": spec_id, "edition": edition, "version": version,
+               "scenarios": items}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=False).encode("utf-8")).hexdigest()
+
 
 
 # ============================================================================
@@ -520,6 +553,17 @@ class ScreenMockup(BaseModel):
 
 
 # ============================================================================
+def mockup_collection_snapshot(*, board_id: str, spec_id: str, edition: int,
+                               mockups: list[ScreenMockup | dict] | None) -> str:
+    """Concurrency token for mockup content, whose edits need not bump Spec.version."""
+    items = [(item if isinstance(item, ScreenMockup) else ScreenMockup.model_validate(item)).model_dump(mode="json")
+             for item in mockups or []]
+    payload = {"contract": "mockup-authoring/v1", "board_id": board_id,
+               "spec_id": spec_id, "edition": edition, "mockups": items}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
 # Stories Schemas
 # ============================================================================
 
@@ -656,10 +700,9 @@ _PageItemT = TypeVar("_PageItemT")
 
 
 class PageEnvelope(BaseSchema, Generic[_PageItemT]):
-    """Paginated list envelope (spec 8b33f9a8, FR1/DR9).
+    """Single native list envelope (spec 8b33f9a8, FR1).
 
-    Returned by the list routes ONLY when the caller opts in with
-    ``offset``/``limit``; without them the legacy shapes stay byte-identical.
+    List routes always return this envelope, including with default windows.
     Both totals are ALWAYS server-computed, window-independent (KG
     dec-s05-01): ``total_filtered`` counts the filtered scope that produced
     ``items``; ``total_overall`` counts the base scope (board + archived
@@ -862,26 +905,6 @@ class SpecPageItem(BaseSchema):
     )
 
 
-class SprintPageItem(BaseSchema):
-    """Lean Sprint projection for paginated lists (FR4)."""
-
-    id: str
-    spec_id: str
-    board_id: str
-    title: str
-    description: str | None = None
-    objective: str | None = None
-    expected_outcome: str | None = None
-    status: SprintStatus
-    created_by: str
-    created_at: datetime
-    updated_at: datetime
-    archived: bool = False
-    open_qa_count: int | None = Field(
-        default=None,
-        ge=0,
-        exclude_if=lambda value: value is None,
-    )
 
 
 class StorySummary(BaseSchema):
@@ -927,7 +950,7 @@ class StoryConversionResponse(BaseModel):
 # ============================================================================
 
 
-class BusinessRule(BaseModel):
+class BusinessRule(VerificationQualifiedModel):
     """A business rule that governs system behavior."""
 
     id: str
@@ -945,29 +968,12 @@ class BusinessRule(BaseModel):
 _HTTP_METHODS = frozenset(
     {"GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH"}
 )
-# Legacy non-HTTP method tokens that historically encoded the contract kind in
-# the `method` slot. They migrate to the contract_type discriminator on read so
-# the http verb enum can stay verb-only.
-_LEGACY_METHOD_TO_CONTRACT_TYPE = {
-    "TOOL": "in_process",
-    "COMPONENT": "in_process",
-    "EVENT": "event",
-}
-
 
 class ApiContract(BaseModel):
-    """An API contract describing an endpoint or interaction.
+    """Current API interaction contract, validated equally on read and write.
 
-    The ``contract_type`` discriminator (default ``"http"``) lets a contract
-    model a non-HTTP interaction (in-process call, gRPC, event) without inventing
-    a fake HTTP method/path. For ``contract_type == "http"`` the ``method`` is
-    constrained to a real HTTP verb and ``path`` is required — but that
-    strictness is enforced only on WRITE (the four api-contract entry points pass
-    ``context={"on_write": True}``). Read-back/deserialization stays tolerant so a
-    pre-existing stored contract with an invalid method (e.g. "CALL") still loads
-    and ``list``/``get`` never crash. JSON-field shapes are asymmetric by design:
-    ``response_errors`` is a LIST while ``request_body``/``response_success`` are
-    OBJECTs.
+    Non-HTTP interactions select their contract_type explicitly. HTTP requires
+    a real verb and path. Request/success are objects; errors are a list.
     """
 
     id: str
@@ -986,34 +992,10 @@ class ApiContract(BaseModel):
     status: Literal["active", "superseded", "revoked", "not_applicable"] = "active"
     notes: str | None = None
 
-    @model_validator(mode="before")
-    @classmethod
-    def _infer_contract_type_from_legacy_method(cls, data: Any) -> Any:
-        """Migrate a legacy non-HTTP method token to the contract_type discriminator.
-
-        Runs on every construction (read + write) and is idempotent. Fires only
-        when ``contract_type`` is absent from the input, so an explicit value
-        always wins; the legacy ``method`` value is preserved (being non-http it
-        escapes the verb enum).
-        """
-        if isinstance(data, dict) and not data.get("contract_type"):
-            method = data.get("method")
-            if isinstance(method, str):
-                inferred = _LEGACY_METHOD_TO_CONTRACT_TYPE.get(method.strip().upper())
-                if inferred is not None:
-                    data["contract_type"] = inferred
-        return data
-
     @model_validator(mode="after")
-    def _validate_http_shape(self, info: ValidationInfo) -> "ApiContract":
-        """Enforce real-verb method + required path for http contracts ON WRITE only.
-
-        Gated on the ``on_write`` validation-context flag (the four api-contract
-        write entry points pass it). Read-back/deserialization constructs without
-        the flag and stays tolerant of pre-existing invalid contracts so list/get
-        never crash; a legacy-invalid contract is corrected on its next write.
-        """
-        if self.contract_type == "http" and (info.context or {}).get("on_write"):
+    def _validate_http_shape(self) -> "ApiContract":
+        """Reject invalid HTTP shapes at every boundary without conversion."""
+        if self.contract_type == "http":
             if not self.method:
                 raise ValueError(
                     f"contract_type='http' requires a method (one of {sorted(_HTTP_METHODS)})"
@@ -1051,7 +1033,7 @@ IntegrationRequirementType = Literal[
 ]
 
 
-class IntegrationRequirement(BaseModel):
+class IntegrationRequirement(VerificationQualifiedModel):
     """An integration requirement for APIs, queues, SPs, MCP tools, events, or data contracts."""
 
     id: str
@@ -1093,7 +1075,7 @@ ObservabilitySignalType = Literal[
 ]
 
 
-class ObservabilityRequirement(BaseModel):
+class ObservabilityRequirement(VerificationQualifiedModel):
     """An observability requirement for dashboards, metrics, alerts, and thresholds."""
 
     id: str
@@ -1125,6 +1107,8 @@ class ObservabilityRequirement(BaseModel):
 DecisionStatus = Literal["active", "superseded", "revoked"]
 
 
+
+
 class Decision(BaseModel):
     """A decision formalized on a spec — causal/contextual choice.
 
@@ -1144,6 +1128,8 @@ class Decision(BaseModel):
     linked_task_ids: list[str] | None = None
     status: DecisionStatus = "active"
     notes: str | None = None
+
+    verification: DecisionVerification | None = None
 
 
 # ============================================================================
@@ -1171,6 +1157,12 @@ ArchitectureDiagramFormat = Literal[
 ]
 
 
+ArchitectureBoundaries = Annotated[
+    list[Annotated[str, StringConstraints(strict=True, min_length=1, pattern=r"\S")]],
+    Field(strict=True),
+]
+
+
 class ArchitectureEntity(BaseModel):
     """Structured architecture entity description."""
 
@@ -1178,7 +1170,7 @@ class ArchitectureEntity(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     entity_type: str | None = None
     responsibility: str | None = None
-    boundaries: str | None = None
+    boundaries: ArchitectureBoundaries = Field(default_factory=list)
     technologies: list[str] = Field(default_factory=list)
     relationships: list[str] = Field(default_factory=list)
     notes: str | None = None
@@ -1276,6 +1268,7 @@ class ArchitectureDesignCreate(ArchitectureDesignBase):
 class ArchitectureDesignUpdate(BaseModel):
     """Patch body for Architecture Design updates."""
 
+    expected_version: int | None = Field(None, ge=1, strict=True)
     title: str | None = Field(None, min_length=1, max_length=500)
     global_description: str | None = Field(None, min_length=1)
     entities: list[ArchitectureEntity] | None = None
@@ -2205,17 +2198,17 @@ class SpecCreate(BaseModel):
     context: str | None = Field(
         None, description="Contexto de negocio e tecnico para a spec."
     )
-    functional_requirements: list[str | dict] | None = Field(
+    functional_requirements: list[dict] | None = Field(
         None,
-        description="Lista de requisitos funcionais (FRs) em texto livre ou objetos estruturados {id, text, ...}.",
+        description="Requisitos funcionais em objetos {text, id?, ...}; omitir id cria uma identidade nova.",
     )
-    technical_requirements: list[str | dict] | None = Field(
+    technical_requirements: list[dict] | None = Field(
         None,
-        description="Requisitos tecnicos: string legada ou dict {id, text, linked_task_ids}.",
+        description="Requisitos tecnicos em objetos {text, id?, linked_task_ids?, ...}.",
     )
-    acceptance_criteria: list[str | dict] | None = Field(
+    acceptance_criteria: list[dict] | None = Field(
         None,
-        description="Criterios de aceite em texto livre ou objetos estruturados {id, text, ...}.",
+        description="Criterios de aceite em objetos {text, id?, ...}.",
     )
     test_scenarios: list[TestScenarioWrite] | None = Field(
         None, description="Cenarios de teste vinculados a spec."
@@ -2282,6 +2275,21 @@ class SpecCreate(BaseModel):
 class SpecUpdate(BaseModel):
     """Schema for updating a spec."""
 
+    model_config = ConfigDict(extra="forbid")
+
+    expected_spec_version: int | None = Field(
+        None, strict=True, ge=1,
+        description="Authored Spec version for a test_scenarios or screen_mockups replacement; not a general Spec update precondition.",
+    )
+    expected_scenario_snapshot: str | None = Field(
+        None, strict=True, pattern=r"^[0-9a-f]{64}$",
+        description="scenario_snapshot from the same Spec read as the authored scenario collection; includes operational state.",
+    )
+    expected_mockup_snapshot: str | None = Field(
+        None, strict=True, pattern=r"^[0-9a-f]{64}$",
+        description="mockup_snapshot from the same Spec read as the authored screen_mockups collection.",
+    )
+
     title: str | None = Field(
         None,
         min_length=1,
@@ -2294,14 +2302,14 @@ class SpecUpdate(BaseModel):
     context: str | None = Field(
         None, description="Novo contexto de negocio e tecnico da spec (opcional)."
     )
-    functional_requirements: list[str | dict] | None = Field(
+    functional_requirements: list[dict] | None = Field(
         None, description="Nova lista de requisitos funcionais (substitui a existente)."
     )
-    technical_requirements: list[str | dict] | None = Field(
+    technical_requirements: list[dict] | None = Field(
         None,
-        description="Novos requisitos tecnicos: string legada ou dict {id, text, linked_task_ids}.",
+        description="Novos requisitos tecnicos em objetos {text, id?, linked_task_ids?, ...}.",
     )
-    acceptance_criteria: list[str | dict] | None = Field(
+    acceptance_criteria: list[dict] | None = Field(
         None, description="Novos criterios de aceite (substitui a lista existente)."
     )
     test_scenarios: list[TestScenarioWrite] | None = Field(
@@ -2365,6 +2373,14 @@ class SpecUpdate(BaseModel):
             "Se True, o gate de cobertura da Code Evidence Matrix e ignorado."
         ),
     )
+    skip_delivery_evidence: bool | None = Field(
+        None,
+        description=(
+            "Se True, o gate de delivery evidence do spec→done e ignorado "
+            "(override auditavel no padrao dos demais skip flags; o veredito "
+            "continua visivel na projecao)."
+        ),
+    )
     require_task_validation: bool | None = Field(
         None,
         description="Override da spec para exigir Task Validation; None herda do board.",
@@ -2421,6 +2437,20 @@ class SpecUpdate(BaseModel):
     def _project_structure(cls, value: Any) -> Any:
         del value
         raise ValueError("project_structure_requires_structured_entity_boundary")
+
+    @model_validator(mode="after")
+    def _scenario_version_scope(self) -> "SpecUpdate":
+        if self.expected_spec_version is not None and self.test_scenarios is None and self.screen_mockups is None:
+            raise ValueError("expected_spec_version_requires_test_scenarios_or_screen_mockups")
+        if self.expected_scenario_snapshot is not None and self.test_scenarios is None:
+            raise ValueError("expected_scenario_snapshot_requires_test_scenarios")
+        if self.expected_spec_version is not None and self.test_scenarios is not None and self.expected_scenario_snapshot is None:
+            raise ValueError("expected_scenario_snapshot_required")
+        if self.expected_mockup_snapshot is not None and self.screen_mockups is None:
+            raise ValueError("expected_mockup_snapshot_requires_screen_mockups")
+        if self.expected_spec_version is not None and self.screen_mockups is not None and self.expected_mockup_snapshot is None:
+            raise ValueError("expected_mockup_snapshot_required")
+        return self
 
 
 class SpecMove(BaseModel):
@@ -2811,22 +2841,53 @@ class CardSummaryForSpec(BaseSchema):
     priority: CardPriority
     assignee_id: str | None
     card_type: str = "normal"
-    sprint_id: str | None = None
 
 
 class SpecResponse(BaseSchema):
     """Schema for full spec response."""
+
+    @computed_field
+    @property
+    def mockup_snapshot(self) -> str:
+        return mockup_collection_snapshot(board_id=self.board_id, spec_id=self.id,
+                                          edition=self.edition, mockups=self.screen_mockups)
+
+    @computed_field
+    @property
+    def scenario_snapshot(self) -> str:
+        return scenario_collection_snapshot(
+            board_id=self.board_id, spec_id=self.id, edition=self.edition,
+            version=self.version, scenarios=self.test_scenarios,
+        )
+
+    missing_link_context: MissingLinkContext | None = Field(default=None, json_schema_extra={"readOnly": True})
+
+    @field_validator("functional_requirements", "technical_requirements", "acceptance_criteria")
+    @classmethod
+    def require_current_requirement_identity(cls, items: list[dict] | None) -> list[dict] | None:
+        seen: set[str] = set()
+        for item in items or []:
+            identity, text = item.get("id"), item.get("text")
+            if (
+                not isinstance(identity, str) or not identity.strip()
+                or identity in seen or not isinstance(text, str) or not text.strip()
+            ):
+                raise ValueError("incompatible_spec_requirement: stored children require unique id and text")
+            seen.add(identity)
+        return items
+
+    execution_contract: SpecExecutionContract
 
     id: str
     board_id: str
     title: str
     description: str | None
     context: str | None
-    functional_requirements: list[str | dict] | None
+    functional_requirements: list[dict] | None
     technical_requirements: (
-        list[str | dict] | None
-    )  # str (legacy) or {id, text, linked_task_ids}
-    acceptance_criteria: list[str | dict] | None
+        list[dict] | None
+    )
+    acceptance_criteria: list[dict] | None
     test_scenarios: list[TestScenario] | None = None
     screen_mockups: list[ScreenMockup] | None = None
     business_rules: list[BusinessRule] | None = None
@@ -2848,6 +2909,7 @@ class SpecResponse(BaseSchema):
     skip_ir_coverage: bool = False
     skip_or_coverage: bool = False
     skip_code_evidence_coverage: bool = False
+    skip_delivery_evidence: bool = False
     require_task_validation: bool | None = None
     validation_min_confidence: int | None = None
     validation_min_completeness: int | None = None
@@ -2898,17 +2960,9 @@ class SpecResponse(BaseSchema):
     architecture_designs: list[ArchitectureDesignSummary] = []
     qa_items: list[SpecQAResponse] = []
 
-    @field_validator("project_structure_revision", mode="before")
-    @classmethod
-    def _legacy_project_structure_revision(cls, value: Any) -> Any:
-        """Expose legacy SQL NULL revisions through the public zero baseline."""
-
-        return 0 if value is None else value
-
-
 # Keep the legacy response model untouched while allowing the refinement
 # derive route to declare its authoritative v2 receipt projection.
-DeriveSpecResponse: TypeAlias = SpecResponse | DeriveSpecKnowledgeMutationResponse
+DeriveSpecResponse: TypeAlias = DeriveSpecKnowledgeMutationResponse
 
 
 # ============================================================================
@@ -2922,8 +2976,18 @@ CardInitialStatus: TypeAlias = Literal[
 ]
 
 
+def reject_retired_card_sprint_write(value):
+    """Reject obsolete input explicitly instead of silently dropping an extra."""
+    if isinstance(value, Mapping) and "sprint_id" in value:
+        raise ValueError("card_sprint_link_retired")
+    return value
+
+
 class CardCreate(BaseModel):
     """Schema for creating a card."""
+
+    model_config = ConfigDict(extra="forbid")
+    _retired_sprint_link = model_validator(mode="before")(reject_retired_card_sprint_write)
 
     title: str = Field(
         ...,
@@ -2959,9 +3023,6 @@ class CardCreate(BaseModel):
     )
     spec_id: str | None = Field(
         None, description="ID da spec a qual este card esta vinculado."
-    )
-    sprint_id: str | None = Field(
-        None, description="ID do sprint ao qual este card pertence."
     )
     test_scenario_ids: list[str] | None = Field(
         None,
@@ -3006,18 +3067,20 @@ class CardCreate(BaseModel):
     action_plan: str | None = Field(
         None, description="Plano de acao para correcao do bug (apenas bug cards)."
     )
-    knowledge_propagation: KnowledgePropagationEnvelopeV2 | None = Field(
-        None,
+    knowledge_propagation: KnowledgePropagationEnvelopeV2 = Field(
+        default_factory=new_omitted_knowledge_selection,
         description=(
-            "Selective Knowledge propagation v2. Omitted keeps the complete "
-            "legacy card-create behavior; when supplied this envelope is "
-            "authoritative and v1 Knowledge snapshot writes are disabled."
+            "Governed Knowledge selection. Omission starts with no inherited "
+            "Knowledge; supply a stable idempotency key for request replay."
         ),
     )
 
 
 class CardUpdate(BaseModel):
     """Schema for updating a card."""
+
+    model_config = ConfigDict(extra="forbid")
+    _retired_sprint_link = model_validator(mode="before")(reject_retired_card_sprint_write)
 
     title: str | None = Field(
         None,
@@ -3030,13 +3093,6 @@ class CardUpdate(BaseModel):
     )
     details: str | None = Field(
         None, description="Novos detalhes tecnicos do card (opcional)."
-    )
-    status: CardStatus | None = Field(
-        None,
-        description=(
-            "Reservado para compatibilidade de leitura; update_card rejeita "
-            "alteracoes de status. Use move_card para toda transicao."
-        ),
     )
     priority: CardPriority | None = Field(
         None,
@@ -3055,9 +3111,6 @@ class CardUpdate(BaseModel):
         None, description="Novas tags de categorizacao do card."
     )
     spec_id: str | None = Field(None, description="Novo ID da spec vinculada ao card.")
-    sprint_id: str | None = Field(
-        None, description="Novo ID do sprint ao qual o card pertence."
-    )
     test_scenario_ids: list[str] | None = Field(
         None,
         description=(
@@ -3067,9 +3120,6 @@ class CardUpdate(BaseModel):
     )
     screen_mockups: list[ScreenMockup] | None = Field(
         None, description="Novos mockups de tela vinculados ao card."
-    )
-    knowledge_bases: list[dict] | None = Field(
-        None, description="Base de conhecimento vinculada ao card (lista de dicts)."
     )
     # Bug card fields (only updatable, not card_type or origin_task_id)
     severity: str | None = Field(
@@ -3278,49 +3328,12 @@ class ConclusionEntrySummary(BaseModel):
     text: str
     author_id: str
     created_at: datetime
-    completeness: int = 100  # 0-100
-    completeness_justification: str = ""
-    drift: int = 0  # 0-100
-    drift_justification: str = ""
-    # FR-9: declared provenance fields - legacy conclusions already carry
-    # them in the JSON; declaring them stops the REST projection from
-    # stripping them (the dead Legacy report badge bug).
-    source: str | None = None
-    validation_id: str | None = None
+    completeness: int = Field(ge=0, le=100)
+    completeness_justification: str
+    drift: int = Field(ge=0, le=100)
+    drift_justification: str
+    source: Literal["move_to_validation", "move_to_done"]
 
-    @model_validator(mode="before")
-    @classmethod
-    def normalize_legacy_shapes(cls, value: Any) -> Any:
-        """Accept historical executor/MCP conclusion payload variants.
-
-        `cards.conclusions` is an append-only JSON field and older/newer
-        writers have used `description`/`body` and `author`/`author_agent_id`.
-        The public card response keeps the stable `text` + `author_id` shape.
-        """
-        if not isinstance(value, dict):
-            return value
-        data = dict(value)
-        if not data.get("text"):
-            data["text"] = (
-                data.get("description")
-                or data.get("body")
-                or data.get("summary")
-                or data.get("conclusion")
-                or data.get("message")
-                or ""
-            )
-        if not data.get("author_id"):
-            data["author_id"] = (
-                data.get("author")
-                or data.get("author_agent_id")
-                or data.get("actor_id")
-                or data.get("reviewer_id")
-                or data.get("created_by")
-                or "unknown"
-            )
-        if not data.get("created_at"):
-            data["created_at"] = "1970-01-01T00:00:00+00:00"
-        return data
 
 
 class ConclusionEntry(ConclusionEntrySummary):
@@ -3333,6 +3346,16 @@ class ConclusionEntry(ConclusionEntrySummary):
     """
 
     impact_evidence: ImpactEvidence | None = None
+    delivery_manifest: DeliverySelectionManifest | None = None
+
+    @field_validator("delivery_manifest", mode="before")
+    @classmethod
+    def tolerate_stored_delivery_manifest(cls, value):
+        try:
+            return DeliverySelectionManifest.model_validate(value) if value is not None else None
+        except (TypeError, ValueError):
+            # Domain admission reads the raw report and fails closed on corruption.
+            return None
 
     @model_validator(mode="before")
     @classmethod
@@ -3528,6 +3551,9 @@ class CardMove(BaseModel):
                 raise ValueError(f"card_move_empty_anchor: {name} must be non-blank")
         return self
 
+    learning_submission: LearningSubmission | None = Field(default=None,
+        description="Optional new Learning authored with a Bug execution report; initial source fence and all capture permissions required.")
+    delivery_selection: DeliverySelectionInput | None = None
     conclusion: str | None = Field(
         None,
         description="Resumo obrigatorio ao mover para 'validation' ou 'done': o que foi feito, arquivos, decisoes e testes.",
@@ -3575,10 +3601,20 @@ class CardRejectionCauseResponse(BaseModel):
 class CardResponse(BaseSchema):
     """Schema for card response."""
 
+    missing_link_context: MissingLinkContext | None = Field(default=None, json_schema_extra={"readOnly": True})
+
     id: str
     board_id: str
     spec_id: str | None = None
-    sprint_id: str | None = None
+    scenario_reference_context: CardScenarioReferenceContext | None = Field(
+        default=None, description="Authorized current scenario-reference read; null means not observed.",
+        json_schema_extra={"readOnly": True},
+    )
+    validation_config: ResolvedTaskValidationConfig | None = Field(
+        default=None,
+        description="Effective Core task-validation policy for this read; null when its source is unavailable.",
+        json_schema_extra={"readOnly": True},
+    )
     title: str
     description: str | None
     details: str | None
@@ -3669,11 +3705,11 @@ class CardResponse(BaseSchema):
         ]
 
 
-CardCreateResponse: TypeAlias = CardResponse | CardCreateKnowledgeMutationResponse
+CardCreateResponse: TypeAlias = CardCreateKnowledgeMutationResponse
 
 
 class CardSummary(BaseSchema):
-    """Canonical lean card projection used by all three columns shapes.
+    """Canonical lean card projection used by native column batches and pages.
 
     Persisted fields are explicit at the transport boundary. Sensitive
     projections such as ``open_qa_count`` are omitted when the actor lacks
@@ -3732,7 +3768,6 @@ class CardPageItem(BaseSchema):
     id: str
     board_id: str
     spec_id: str | None
-    sprint_id: str | None
     title: str
     description: str | None
     status: CardStatus
@@ -3783,12 +3818,16 @@ class CardPageItem(BaseSchema):
 class TaskValidationSubmit(BaseModel):
     """Request body for submitting a task validation."""
 
+    model_config = ConfigDict(extra="forbid")
+
+    learning_capture: LearningCaptureSelection | None = Field(
+        default=None,
+        description="Explicit existing Learning capture to bind if this Bug completion succeeds; never approves execution.",
+    )
+
     expected_subject_version: int = Field(
         ...,
         ge=1,
-        validation_alias=AliasChoices(
-            "expected_subject_version", "expected_card_version"
-        ),
         description="Optimistic card subject-version fence.",
     )
     idempotency_key: str = Field(..., min_length=1, max_length=255)
@@ -3837,42 +3876,35 @@ class TaskValidationSubmit(BaseModel):
 class TaskValidationResponse(BaseModel):
     """Response for a task validation."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid")
 
     id: str
     card_id: str
     board_id: str
-    # Historical rows predating the governed validation contract can be sparse.
-    # The submit input remains strict; public history reads are deliberately
-    # tolerant while still stripping all internal ledger fields.
-    reviewer_id: str | None = None
-    reviewer_name: str | None = Field(default=None, max_length=255)
-    evaluator_id: str | None = None
-    evaluator_name: str | None = Field(default=None, max_length=255)
-    confidence: int | None = None
-    confidence_justification: str | None = None
-    estimated_completeness: int | None = None
-    completeness: int | None = None
-    completeness_justification: str | None = None
-    estimated_drift: int | None = None
-    drift: int | None = None
-    drift_justification: str | None = None
-    general_justification: str | None = None
-    summary: str | None = None
-    recommendation: str | None = None
-    outcome: str | None = None
-    verdict: str | None = None
-    validation_outcome: str | None = None
-    completion_outcome: str | None = None
-    threshold_violations: list[str] = Field(default_factory=list)
-    created_at: str | None = None
-    card_status: str | None = None
-    resolved_thresholds: dict | None = None
-    reviewer_separation: dict | None = None
-    expected_subject_version: int | None = None
-    completion_gate_failures: list[dict] = Field(default_factory=list)
+    # Every admitted record is written with the governed contract, including
+    # its immutable response snapshot. Sparse predecessor records are invalid.
+    reviewer_id: str
+    reviewer_name: str = Field(max_length=255)
+    confidence: int = Field(ge=0, le=100)
+    confidence_justification: str
+    estimated_completeness: int = Field(ge=0, le=100)
+    completeness_justification: str
+    estimated_drift: int = Field(ge=0, le=100)
+    drift_justification: str
+    general_justification: str
+    recommendation: Literal["approve", "reject"]
+    outcome: Literal["success", "failed"]
+    validation_outcome: Literal["success", "failed"]
+    completion_outcome: Literal["completed", "rejected"]
+    threshold_violations: list[str]
+    created_at: str
+    card_status: Literal["done", "rejected"]
+    resolved_thresholds: dict
+    reviewer_separation: dict
+    expected_subject_version: int = Field(ge=1)
+    completion_gate_failures: list[dict]
     rejection_cause: CardRejectionCauseResponse | None = None
-    subject_version: int | None = None
+    subject_version: int = Field(ge=1)
     replayed: bool = False
 
 
@@ -3940,11 +3972,9 @@ def project_task_validation_public(
 ) -> dict[str, Any]:
     """Project one persisted Task Validation into its public, replay-stable DTO.
 
-    New entries validate through :class:`TaskValidationResponse`. Historical
-    rows are intentionally read-tolerant: known clean aliases are normalized,
-    context-known card/board identities are filled, and whatever canonical
-    fields are actually present are returned. Ledger plumbing is removed on
-    every path, including legacy nested ``response`` snapshots.
+    The persisted response snapshot preserves the original business result on
+    replay. Ledger plumbing is never public, and an invalid DTO is refused
+    rather than returned as a partially validated mapping.
     """
 
     if isinstance(value, BaseModel):
@@ -3952,7 +3982,7 @@ def project_task_validation_public(
     elif isinstance(value, Mapping):
         raw = dict(value)
     else:
-        return {}
+        raise ValueError("task_validation_response_invalid")
 
     nested = raw.get("response")
     merged = {
@@ -3973,42 +4003,15 @@ def project_task_validation_public(
     if board_id and not merged.get("board_id"):
         merged["board_id"] = board_id
 
-    alias_pairs = (
-        ("reviewer_id", "evaluator_id"),
-        ("reviewer_name", "evaluator_name"),
-        ("estimated_completeness", "completeness"),
-        ("estimated_drift", "drift"),
-        ("general_justification", "summary"),
-    )
-    for canonical, alias in alias_pairs:
-        if merged.get(canonical) is None and merged.get(alias) is not None:
-            merged[canonical] = merged[alias]
-        if merged.get(alias) is None and merged.get(canonical) is not None:
-            merged[alias] = merged[canonical]
-    if merged.get("outcome") is None and merged.get("verdict") in {"pass", "fail"}:
-        merged["outcome"] = "success" if merged["verdict"] == "pass" else "failed"
-    if merged.get("verdict") is None and merged.get("outcome") in {
-        "success",
-        "failed",
-    }:
-        merged["verdict"] = "pass" if merged["outcome"] == "success" else "fail"
-    merged.setdefault("threshold_violations", [])
-    merged.setdefault("completion_gate_failures", [])
     if replayed is not None:
         merged["replayed"] = replayed
     else:
         merged["replayed"] = bool(merged.get("replayed", False))
 
-    try:
-        return TaskValidationResponse.model_validate(merged).model_dump(
-            mode="json",
-            exclude_none=False,
-        )
-    except (TypeError, ValueError):
-        # Legacy task validations can predate required identity/score fields.
-        # Preserve only reviewed public keys; never fall back to the raw dict.
-        allowed = set(TaskValidationResponse.model_fields)
-        return {key: item for key, item in merged.items() if key in allowed}
+    return TaskValidationResponse.model_validate(merged).model_dump(
+        mode="json",
+        exclude_none=False,
+    )
 
 
 # ============================================================================
@@ -4016,7 +4019,7 @@ def project_task_validation_public(
 # ============================================================================
 
 
-class SpecValidationPinpoint(BaseModel):
+class RecordedSpecValidationPinpoint(BaseModel):
     """Closed evaluator-supplied location tagged with one quality metric."""
 
     model_config = ConfigDict(extra="forbid")
@@ -4047,6 +4050,29 @@ class SpecValidationPinpoint(BaseModel):
         return self
 
 
+class SpecValidationPinpoint(BaseModel):
+    """Compact actionable finding; the quoted excerpt is verified before sealing."""
+    model_config = ConfigDict(extra="forbid")
+    metrics: list[Literal["confidence", "clarity", "assertiveness", "decidability", "ambiguity"]] = Field(min_length=1, max_length=5)
+    kind: Literal["problem", "opportunity"]
+    severity: Literal["low", "medium", "high", "critical"]
+    excerpt: str = Field(min_length=1, max_length=1000)
+    detail: str = Field(min_length=1, max_length=1000)
+    recommendation: str = Field(min_length=1, max_length=1000)
+    rationale: str | None = Field(default=None, min_length=1, max_length=1000,
+        description="Evaluator justification: why the quoted issue matters and its concrete impact. Do not restate the issue or recommendation.")
+    anchor_type: Literal["whole_artifact", "field", "structured_child", "qa"]
+    anchor_ref: str | None = Field(default=None, min_length=1, max_length=4096)
+
+    @model_validator(mode="after")
+    def validate_finding(self) -> "SpecValidationPinpoint":
+        from okto_pulse.core.domain.spec_validation import SpecValidationPinpoint as Finding
+        finding = Finding.from_dict(self.model_dump())
+        self.metrics = [m.value for m in finding.metrics]
+        self.anchor_ref = finding.anchor_ref
+        return self
+
+
 class SpecValidationAnchorSnapshotResponse(BaseModel):
     """Immutable human-readable anchor content stored with a validation."""
 
@@ -4055,22 +4081,32 @@ class SpecValidationAnchorSnapshotResponse(BaseModel):
     contract_version: Literal["spec-validation-pinpoint-snapshot/v1"] = (
         "spec-validation-pinpoint-snapshot/v1"
     )
-    availability_at_seal: Literal["available", "legacy_unavailable"]
-    label: str | None = None
-    text: str | None = None
+    availability_at_seal: Literal["available"]
+    label: str
+    text: str
     excerpt: str | None = None
-    source_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    source_version: str | None = None
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_version: str
 
 
 class SpecValidationPinpointResponse(SpecValidationPinpoint):
-    """Read projection; old rows state that no sealed snapshot exists."""
+    """Read projection of a natively sealed validation pinpoint."""
 
-    anchor_snapshot: SpecValidationAnchorSnapshotResponse = Field(
-        default_factory=lambda: SpecValidationAnchorSnapshotResponse(
-            availability_at_seal="legacy_unavailable"
-        )
-    )
+    anchor_snapshot: SpecValidationAnchorSnapshotResponse
+
+
+class RecordedSpecValidationPinpointResponse(RecordedSpecValidationPinpoint):
+    """Immutable native v0.4.0 records: no invented classification or conversion.
+
+    Read only. New submissions exclusively use SpecValidationPinpoint.
+    """
+    anchor_snapshot: SpecValidationAnchorSnapshotResponse
+
+
+from okto_pulse.core.domain.spec_evaluation import SpecEvaluationInput
+
+
+from okto_pulse.core.domain.spec_planning import SpecPlanningManifest
 
 
 class SpecValidationSubmit(BaseModel):
@@ -4078,13 +4114,12 @@ class SpecValidationSubmit(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
+    idempotency_key: str = Field(min_length=1, max_length=128)
+    expected_planning_manifest: SpecPlanningManifest
+
     expected_validation_edition: int = Field(
         ...,
         ge=1,
-        validation_alias=AliasChoices(
-            "expected_validation_edition",
-            "expected_spec_edition",
-        ),
     )
     expected_spec_version: int = Field(..., ge=1)
     expected_head_revision: int = Field(..., ge=0)
@@ -4100,60 +4135,80 @@ class SpecValidationSubmit(BaseModel):
     ambiguity_justification: str = Field(..., min_length=10)
     recommendation: Literal["approve", "reject"]
     pinpoints: list[SpecValidationPinpoint] | None = None
+    decomposition: SpecEvaluationInput | None = None
+
+
+class SpecValidationConclusionResponse(BaseModel):
+    """Operation receipt fields; native assessments retain their own histories."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    validation_id: str
+    validation_edition: int
+    is_current: bool
+    outcome: Literal["success", "failed"]
+    spec_status: Literal["approved", "validated"]
+    planning_result: Literal["ready", "blocked"]
+    decomposition_ids: list[str]
+    planning_blockers: list[str]
+
+
+class SpecValidationThresholds(BaseModel):
+    """The five thresholds recorded by the native writer."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    min_spec_confidence: int = Field(ge=0, le=100)
+    min_spec_clarity: int = Field(ge=0, le=100)
+    min_spec_assertiveness: int = Field(ge=0, le=100)
+    min_spec_decidability: int = Field(ge=0, le=100)
+    max_spec_ambiguity: int = Field(ge=0, le=100)
 
 
 class SpecValidationResponse(BaseModel):
-    """History record; legacy evidence may predate lifecycle editions."""
+    """Native five-metric record; incompatible records are never normalized."""
 
-    id: str | None = None
-    validation_id: str | None = None
-    validation_edition: int | None = Field(default=None, ge=1)
-    is_current: bool = False
-    spec_id: str | None = None
-    board_id: str | None = None
-    reviewer_id: str | None = None
-    reviewer_name: str | None = None
-    score: float | None = None
-    summary: str | None = None
-    confidence: int | None = None
-    confidence_justification: str | None = None
-    clarity: int | None = None
-    clarity_justification: str | None = None
-    decidability: int | None = None
-    decidability_justification: str | None = None
-    completeness: int | None = None
-    completeness_justification: str | None = None
-    assertiveness: int | None = None
-    assertiveness_justification: str | None = None
-    ambiguity: int | None = None
-    ambiguity_justification: str | None = None
-    general_justification: str | None = None
-    recommendation: str | None = None
-    pinpoints: list[SpecValidationPinpointResponse] | None = None
-    outcome: str | None = None
-    receipt_id: str | None = None
-    subject_version: int | None = Field(default=None, ge=1)
-    head_revision: int | None = Field(default=None, ge=1)
-    digests: dict[str, str] | None = None
-    threshold_violations: list[str] | None = None
-    resolved_thresholds: dict | None = None
-    created_at: str | None = None
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    id: str = Field(min_length=1)
+    validation_id: str = Field(min_length=1)
+    validation_edition: int = Field(ge=1, strict=True)
+    is_current: bool
+    spec_id: str = Field(min_length=1)
+    board_id: str = Field(min_length=1)
+    reviewer_id: str = Field(min_length=1)
+    reviewer_name: str | None
+    confidence: int = Field(ge=0, le=100, strict=True)
+    confidence_justification: str = Field(min_length=1)
+    clarity: int = Field(ge=0, le=100, strict=True)
+    clarity_justification: str = Field(min_length=1)
+    decidability: int = Field(ge=0, le=100, strict=True)
+    decidability_justification: str = Field(min_length=1)
+    assertiveness: int = Field(ge=0, le=100, strict=True)
+    assertiveness_justification: str = Field(min_length=1)
+    ambiguity: int = Field(ge=0, le=100, strict=True)
+    ambiguity_justification: str = Field(min_length=1)
+    recommendation: Literal["approve", "reject"]
+    pinpoints: list[SpecValidationPinpointResponse | RecordedSpecValidationPinpointResponse]
+    outcome: Literal["success", "failed"]
+    receipt_id: str = Field(min_length=1)
+    subject_version: int = Field(ge=1, strict=True)
+    head_revision: int = Field(ge=1, strict=True)
+    digests: dict[str, str]
+    threshold_violations: list[str]
+    resolved_thresholds: SpecValidationThresholds
+    created_at: str = Field(min_length=1)
     spec_status: str | None = None
     active: bool | None = None
-    edition: int | None = Field(default=None, ge=1)
-    lifecycle_state: Literal["current", "previous", "history_only"] | None = None
+    edition: int = Field(ge=1, strict=True)
+    lifecycle_state: Literal["current", "previous"] | None = None
 
     @model_validator(mode="after")
-    def require_compatible_identity(self) -> "SpecValidationResponse":
-        if not self.id and not self.validation_id:
-            raise ValueError("spec_validation_identity_required")
-        if self.lifecycle_state == "current" and self.validation_edition is None:
-            raise ValueError("spec_validation_current_edition_required")
-        if (
-            self.lifecycle_state == "history_only"
-            and self.validation_edition is not None
-        ):
-            raise ValueError("spec_validation_history_only_edition_forbidden")
+    def require_native_identity(self) -> "SpecValidationResponse":
+        if self.id != self.validation_id or self.id != self.receipt_id:
+            raise ValueError("spec_validation_identity_mismatch")
+        if self.edition != self.validation_edition:
+            raise ValueError("spec_validation_edition_mismatch")
         return self
 
 
@@ -4173,12 +4228,6 @@ class GuidelineCreate(BaseModel):
     priority: int = Field(default=0, ge=0)
 
 
-class GuidelineUpdate(BaseModel):
-    """Schema for updating a guideline."""
-
-    title: str | None = Field(None, min_length=1, max_length=500)
-    content: str | None = None
-    tags: list[str] | None = None
 
 
 class GuidelineResponse(BaseSchema):
@@ -4195,14 +4244,14 @@ class GuidelineResponse(BaseSchema):
     updated_at: datetime
 
 
-class BoardGuidelineLinkRequest(BaseModel):
-    """Schema for linking a global guideline or creating an inline board guideline."""
+class BoardGuidelineCreate(BaseModel):
+    """Create inline Board context; adoption uses the governed revision contract."""
 
-    guideline_id: str | None = None
-    title: str | None = Field(None, min_length=1, max_length=500)
-    content: str | None = Field(None, min_length=1)
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(..., min_length=1, max_length=500)
+    content: str = Field(..., min_length=1)
     tags: list[str] | None = None
-    priority: int = 0
+    priority: int = Field(default=0, ge=0)
 
 
 # ============================================================================
@@ -4280,27 +4329,6 @@ class CodeTraceabilitySettings(BaseModel):
     ] = "allow_dirty_attestation"
     receipt_content: Literal["metadata_only", "safe_excerpt"] = "safe_excerpt"
 
-    @classmethod
-    def from_persisted(cls, value: object) -> "CodeTraceabilitySettings":
-        """Read one historical policy without reopening the write contract.
-
-        ``off`` and an explicit legacy ``null`` were valid before enforcement
-        became mandatory.  They now resolve to Advisory so existing databases
-        remain readable and agent-mediated checks still run.  Native model
-        validation remains strict, so Board create/update and default-template
-        writes cannot author either compatibility value.
-        """
-
-        if isinstance(value, cls):
-            return value
-        if value is None:
-            return cls()
-        if isinstance(value, Mapping) and value.get("mode") == "off":
-            value = {
-                **value,
-                "mode": CodeTraceabilityEnforcement.ADVISORY.value,
-            }
-        return cls.model_validate(value)
 
 
 FlowHealthOverrideState: TypeAlias = Literal[
@@ -4385,6 +4413,17 @@ class FlowHealthSettingsRestore(BaseModel):
 class BoardSettings(BaseModel):
     """Board-level settings for governance rules."""
 
+    @model_validator(mode="before")
+    @classmethod
+    def refuse_removed_board_settings(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "min_spec_completeness" in value:
+            raise ValueError("min_spec_completeness_removed")
+        if isinstance(value, dict) and "qa_require_role_separation" in value:
+            raise ValueError("qa_require_role_separation_removed")
+        if isinstance(value, dict) and "cognitive_llm_config" in value:
+            raise ValueError("cognitive_llm_config_removed")
+        return value
+
     analytics: AnalyticsSettings = Field(default_factory=AnalyticsSettings)
 
     max_scenarios_per_card: int = 3  # max test scenarios a single card can be linked to
@@ -4416,18 +4455,21 @@ class BoardSettings(BaseModel):
     skip_cognitive_consolidation: bool = (
         False  # if True, done closeout bypasses active cognitive pending blockers
     )
+    # KG §7.4: human policy for durable capture, independent of graph readiness.
+    # Missing legacy values remain advisory; no upgrade activates blocking.
+    bug_learning_closeout: Literal["advisory", "blocking"] = "advisory"
+    # KG §5.5: authoritative semantic references, never graph projection debt.
+    missing_link_gate: Literal["advisory", "blocking"] = "advisory"
+    # KG6.5/D18: human-authored query policy, never a runtime repair control.
+    kg_query_timeout_ms: int = Field(default=15000, ge=1, le=30000, strict=True)
     allow_agent_self_answering: bool = (
         False  # explicit opt-in that permits same-principal Q&A answers
     )
     require_full_context_for_critical_actions: bool = (
         True  # if True, critical mutations must resolve full entity context
     )
-    qa_require_role_separation: bool = False  # if True, a Q&A question cannot be answered by the same principal who asked it
-    # Task-validation and sprint reviewer/executor separation. Missing on legacy
-    # persisted boards is resolved explicitly as ``off``; new boards and new
-    # default-board template versions inject ``enforce`` unless the administrator
-    # chooses another mode.
-    reviewer_separation_mode: Literal["off", "warn", "enforce"] = "off"
+    # Current creation default; an authorized author may select off or warn.
+    reviewer_separation_mode: Literal["off", "warn", "enforce"] = "enforce"
     # Requirement-lint languages for this board's spec content. Each code
     # activates the built-in lexicon of that language; multiple codes are
     # evaluated as a deterministic UNION of lexicons. Empty (the legacy
@@ -4440,8 +4482,7 @@ class BoardSettings(BaseModel):
     # off = no effect; advisory = gated moves succeed but a missing block is
     # recorded in the activity log; require = gated moves reject a conclusion
     # without a minimally populated block. Write-time validation rejects
-    # out-of-enum values; READ-side resolution of persisted legacy/tampered
-    # values is fail-compat ('off') via resolve_impact_evidence_mode.
+    # out-of-enum values. Reads use the same closed contract without conversion.
     impact_evidence_mode: Literal["off", "advisory", "require"] = "off"
     # Design System mockup gate mode (spec 3a006f65 / card 96f76a5f). CANONICAL source
     # of the board's Design System gate mode (the design_system_default_ref only carries
@@ -4449,13 +4490,17 @@ class BoardSettings(BaseModel):
     # advisory = warn/audit; blocking = reject mockups without valid DS evidence. Legacy
     # boards with no field validate as 'off' (TR4 — never breaks an existing board).
     design_system_gate_mode: Literal["off", "advisory", "blocking"] = "off"
-    # Agent-mediated Code Traceability is always evaluated. Historical absent,
-    # null, or ``off`` policies resolve to Advisory on tolerant READ paths and
-    # are converged by Community's startup migration. Native writes are closed
-    # to Advisory or Blocking.
+    # Agent-mediated Code Traceability is always evaluated. Creation defaults
+    # to Advisory; persisted and authored policies share the same closed contract.
     code_traceability: CodeTraceabilitySettings = Field(
         default_factory=CodeTraceabilitySettings
     )
+    # Card-scoped Delivery Evidence gate (spec 793c43d0 / FR-3, FR-5).
+    # One setting governs BOTH card→done and spec→done: blocking rejects
+    # completion without accepted implementation proof; advisory surfaces the
+    # verdict without blocking. Creation defaults to blocking; stored and authored
+    # policy values use the same closed contract.
+    delivery_evidence_gate: Literal["advisory", "blocking"] = "blocking"
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
     require_task_validation: bool = (
         True  # if True, cards must pass validation before moving to done
@@ -4472,9 +4517,6 @@ class BoardSettings(BaseModel):
     min_spec_assertiveness: int = Field(default=80, ge=0, le=100)
     min_spec_decidability: int = Field(default=80, ge=0, le=100)
     max_spec_ambiguity: int = Field(default=30, ge=0, le=100)
-    # Compatibility-only setting for historical three-dimensional records.
-    # It is not part of the canonical five-metric gate.
-    min_spec_completeness: int = Field(default=80, ge=0, le=100)
     # Max ambiguity gate for ideation completion — opt-in (spec 2485780b).
     # When enabled, blocks ONLY the evaluating→done transition if the ideation
     # has no ambiguity score or scope_assessment.ambiguity exceeds the
@@ -4511,13 +4553,6 @@ class BoardSettings(BaseModel):
     # — any status accepted without evidence; audit log records every bypass for
     # forensics.
     skip_test_evidence_global: bool = False
-    # Cognitive Extraction LLM config — opt-in (spec 3d907a87, FR7 / D5).
-    # Schema (free-form dict so it can evolve without a migration):
-    #   {"provider": "openai" | "anthropic" | ..., "model": "...",
-    #    "api_key_env": "OPENAI_API_KEY", "max_tokens": 800, "timeout_s": 30}
-    # Absent or None → CognitiveExtractionHandler skips Learning extraction
-    # and emits log info. Alternative + Assumption (regex) run regardless.
-    cognitive_llm_config: dict | None = None
 
     @field_validator("auto_derive_spec_resource_types")
     @classmethod
@@ -4684,46 +4719,7 @@ def _forbid_shape_fields(
     return value
 
 
-class ColumnsLegacyResponse(BaseSchema):
-    """Literal legacy columns response (no pagination metadata)."""
-
-    model_config = ConfigDict(
-        from_attributes=True,
-        extra="allow",
-        json_schema_extra={
-            "allOf": [
-                {
-                    "not": {
-                        "anyOf": [
-                            {"required": [field]}
-                            for field in (
-                                "columns_meta",
-                                "column",
-                                "items",
-                                "meta",
-                                "next_offset",
-                            )
-                        ]
-                    }
-                }
-            ]
-        },
-    )
-
-    board_id: str
-    columns: dict[str, list[CardSummary]]
-
-    @model_validator(mode="before")
-    @classmethod
-    def _exclude_other_shapes(cls, value: object) -> object:
-        return _forbid_shape_fields(
-            value,
-            forbidden=("columns_meta", "column", "items", "meta", "next_offset"),
-            shape="legacy",
-        )
-
-
-class ColumnsOptInResponse(BaseSchema):
+class ColumnsBatchResponse(BaseSchema):
     """Bounded windows for every column, with batch metadata and facets."""
 
     model_config = ConfigDict(
@@ -4753,7 +4749,7 @@ class ColumnsOptInResponse(BaseSchema):
         return _forbid_shape_fields(
             value,
             forbidden=("column", "items", "next_offset"),
-            shape="opt-in",
+            shape="column batch",
         )
 
 
@@ -4804,9 +4800,9 @@ def _publish_columns_one_of(schema: dict[str, Any]) -> None:
 
 
 class ColumnsResponseUnion(
-    RootModel[ColumnsLegacyResponse | ColumnsOptInResponse | ColumnPageResponse]
+    RootModel[ColumnsBatchResponse | ColumnPageResponse]
 ):
-    """OpenAPI-only union for the three mutually exclusive columns shapes."""
+    """OpenAPI union for native batch and single-column continuation."""
 
     model_config = ConfigDict(json_schema_extra=_publish_columns_one_of)
 
@@ -4837,215 +4833,20 @@ class ActivityLogResponse(BaseSchema):
 # ============================================================================
 
 
-class SprintCreate(BaseModel):
-    """Schema for creating a sprint."""
-
-    title: str = Field(..., min_length=1, max_length=500)
-    description: str | None = None
-    objective: str | None = None
-    expected_outcome: str | None = None
-    spec_id: str
-    lane_type: SprintLaneType = SprintLaneType.NORMAL
-    origin_sprint_id: str | None = None
-    origin_bug_id: str | None = None
-    test_scenario_ids: list[str] | None = None
-    business_rule_ids: list[str] | None = None
-    start_date: datetime | None = None
-    end_date: datetime | None = None
-    labels: list[str] | None = None
 
 
-class SprintUpdate(BaseModel):
-    """Schema for updating a sprint."""
-
-    title: str | None = Field(None, min_length=1, max_length=500)
-    description: str | None = None
-    objective: str | None = None
-    expected_outcome: str | None = None
-    lane_type: SprintLaneType | None = None
-    origin_sprint_id: str | None = None
-    origin_bug_id: str | None = None
-    test_scenario_ids: list[str] | None = None
-    business_rule_ids: list[str] | None = None
-    start_date: datetime | None = None
-    end_date: datetime | None = None
-    labels: list[str] | None = None
-    skip_test_coverage: bool | None = None
-    skip_rules_coverage: bool | None = None
-    skip_qualitative_validation: bool | None = None
-    validation_threshold: int | None = None
-    require_task_validation: bool | None = Field(
-        None,
-        description="Override do sprint para exigir Task Validation; None herda da spec/board.",
-    )
-    validation_min_confidence: int | None = Field(None, ge=0, le=100)
-    validation_min_completeness: int | None = Field(None, ge=0, le=100)
-    validation_max_drift: int | None = Field(None, ge=0, le=100)
-    expected_version: int | None = Field(
-        None,
-        ge=1,
-        description="Optimistic-lock version read by the caller.",
-    )
 
 
-class SprintMove(BaseModel):
-    """Schema for changing sprint status."""
-
-    status: SprintStatus
-    cancellation_reason: str | None = Field(
-        None,
-        description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.",
-    )
-    expected_version: int | None = Field(
-        None,
-        ge=1,
-        description="Optimistic-lock version read by the caller.",
-    )
 
 
-class SprintEvaluationCreate(BaseModel):
-    """Schema for submitting a sprint evaluation (4 dimensions + overall)."""
-
-    breakdown_completeness: int = Field(..., ge=0, le=100)
-    breakdown_justification: str
-    granularity: int = Field(..., ge=0, le=100)
-    granularity_justification: str
-    dependency_coherence: int = Field(..., ge=0, le=100)
-    dependency_justification: str
-    test_coverage_quality: int = Field(..., ge=0, le=100)
-    test_coverage_justification: str
-    overall_score: int = Field(..., ge=0, le=100)
-    overall_justification: str
-    recommendation: str = Field(..., pattern=r"^(approve|request_changes|reject)$")
 
 
-class SprintQACreate(BaseModel):
-    """Schema for asking a question on a sprint."""
-
-    question: str = Field(..., min_length=1)
-    question_type: str = "text"
-    choices: list[dict] | None = None
-    allow_free_text: bool = False
 
 
-class SprintQAAnswer(BaseModel):
-    """Schema for answering a sprint question."""
-
-    answer: str | None = None
-    selected: list[str] | None = None
 
 
-class SprintQAResponse(BaseSchema):
-    """Schema for sprint Q&A item response."""
-
-    id: str
-    sprint_id: str
-    question: str
-    question_type: str
-    choices: list[dict] | None = None
-    allow_free_text: bool = False
-    answer: str | None = None
-    selected: list[str] | None = None
-    asked_by: str
-    answered_by: str | None = None
-    created_at: datetime
-    answered_at: datetime | None = None
 
 
-class SprintHistoryResponse(BaseSchema):
-    """Schema for sprint history entry."""
-
-    id: str
-    sprint_id: str
-    action: str
-    actor_type: str
-    actor_id: str
-    actor_name: str
-    changes: list | None = None
-    summary: str | None = None
-    version: int | None = None
-    created_at: datetime
-
-
-class SprintSummary(BaseSchema):
-    """Schema for sprint summary (used in lists and spec responses)."""
-
-    # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
-    open_qa_count: int | None = Field(
-        default=None,
-        ge=0,
-        exclude_if=lambda value: value is None,
-    )
-    id: str
-    spec_id: str
-    board_id: str
-    title: str
-    description: str | None = None
-    objective: str | None = None
-    expected_outcome: str | None = None
-    status: SprintStatus
-    lane_type: SprintLaneType = SprintLaneType.NORMAL
-    origin_sprint_id: str | None = None
-    origin_bug_id: str | None = None
-    normal_sprint_created: bool = False
-    spec_version: int
-    start_date: datetime | None = None
-    end_date: datetime | None = None
-    test_scenario_ids: list[str] | None = None
-    business_rule_ids: list[str] | None = None
-    version: int
-    labels: list[str] | None = None
-    created_by: str
-    created_at: datetime
-    updated_at: datetime
-    archived: bool = False
-    cancellation_reason: str | None = None
-    cancelled_at: datetime | None = None
-    cancelled_by: str | None = None
-
-
-class SprintResponse(BaseSchema):
-    """Schema for full sprint response."""
-
-    id: str
-    spec_id: str
-    board_id: str
-    title: str
-    description: str | None = None
-    objective: str | None = None
-    expected_outcome: str | None = None
-    status: SprintStatus
-    lane_type: SprintLaneType = SprintLaneType.NORMAL
-    origin_sprint_id: str | None = None
-    origin_bug_id: str | None = None
-    normal_sprint_created: bool = False
-    spec_version: int
-    start_date: datetime | None = None
-    end_date: datetime | None = None
-    test_scenario_ids: list[str] | None = None
-    business_rule_ids: list[str] | None = None
-    evaluations: list | None = None
-    skip_test_coverage: bool = False
-    skip_rules_coverage: bool = False
-    skip_qualitative_validation: bool = False
-    validation_threshold: int | None = None
-    require_task_validation: bool | None = None
-    validation_min_confidence: int | None = None
-    validation_min_completeness: int | None = None
-    validation_max_drift: int | None = None
-    version: int
-    labels: list[str] | None = None
-    archived: bool = False
-    pre_archive_status: str | None = None
-    # Cancellation justification (ITEM 17) — set only while status == cancelled.
-    cancellation_reason: str | None = None
-    cancelled_at: datetime | None = None
-    cancelled_by: str | None = None
-    created_by: str
-    created_at: datetime
-    updated_at: datetime
-    cards: list[CardSummaryForSpec] = []
-    qa_items: list[SprintQAResponse] = []
 
 
 # ============================================================================

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -12,8 +13,6 @@ from okto_pulse.core.application.use_cases.base import (
 from okto_pulse.core.application.use_cases.policy_governance import (
     ADOPTION_MANAGE,
     ASSESSMENTS_RECORD,
-    RecordSemanticGuidelineAssessmentCommand,
-    RecordSemanticGuidelineAssessmentUseCase,
     WAIVER_REVALIDATE,
 )
 from okto_pulse.core.application.use_cases.semantic_guideline_governance import (
@@ -24,7 +23,6 @@ from okto_pulse.core.application.use_cases.semantic_guideline_governance import 
 )
 from okto_pulse.core.domain.guideline_policy import (
     BoardGuidelineBinding,
-    GuidelineBindingState,
     GuidelineEnforcement,
     GuidelineMetric,
     GuidelineMetricDirection,
@@ -35,15 +33,14 @@ from okto_pulse.core.domain.guideline_policy import (
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticAssessmentAssessor,
-    SemanticGuidelineAssessmentContext,
-    SemanticGuidelineAssessmentSubmission,
-    SemanticMetricAssessment,
-    semantic_binding_head_digest_v1,
-    semantic_policy_set_digest_v1,
+)
+from okto_pulse.core.domain.guideline_semantic_v2 import (
+    SemanticAssessmentDraftV2, SemanticMetricAssessmentDraftV2,
+    SemanticPinpointDraftV2, SemanticPinpointKind,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
-    SemanticAssessmentCurrentSnapshot,
-    semantic_assessment_current_snapshot_from_context,
+    NativeSemanticAssessmentCurrentSnapshot,
+    native_semantic_assessment_snapshot,
 )
 from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticMetricWaiverAnchor,
@@ -53,16 +50,12 @@ from okto_pulse.core.domain.guideline_semantic_exceptions import (
     request_semantic_metric_waiver,
     transition_semantic_metric_waiver,
 )
-from okto_pulse.core.domain.guideline_semantic_findings import (
-    project_semantic_metric_findings,
-)
 from okto_pulse.core.domain.quality_assessment import (
     EvidenceRef,
     FindingAnchorType,
     UnboundFindingAnchor,
 )
 from okto_pulse.core.ports.guideline_policy import (
-    GuidelinePolicyDigestConflict,
     GuidelinePolicyIdempotencyConflict,
     SemanticSkipListQuery,
 )
@@ -123,8 +116,8 @@ def _binding(
 def _submission(
     board_id: str = "board-1",
     score: int = 82,
-) -> SemanticGuidelineAssessmentSubmission:
-    return SemanticGuidelineAssessmentSubmission(
+) -> SemanticAssessmentDraftV2:
+    return SemanticAssessmentDraftV2(
         subject=PolicySubjectRef(
             board_id=board_id,
             entity_type=PolicyEntityType.SPEC,
@@ -142,7 +135,7 @@ def _submission(
             model_id="model-1",
         ),
         metric_results=(
-            SemanticMetricAssessment(
+            SemanticMetricAssessmentDraftV2(
                 metric_id="segregation",
                 score=score,
                 rationale="Domain behavior depends only on declared ports.",
@@ -155,9 +148,16 @@ def _submission(
                     ),
                 ),
                 pinpoints=(
-                    UnboundFindingAnchor(
-                        anchor_type=FindingAnchorType.FIELD,
-                        anchor_ref="technical_requirements.architecture",
+                    SemanticPinpointDraftV2(
+                        pinpoint_key="architecture",
+                        kind=SemanticPinpointKind.EVIDENCE,
+                        title="Architecture boundary",
+                        detail="Domain behavior depends only on declared ports.",
+                        severity=None, remediation=None,
+                        anchor=UnboundFindingAnchor(
+                            anchor_type=FindingAnchorType.FIELD,
+                            anchor_ref="technical_requirements.architecture",
+                        ),
                     ),
                 ),
             ),
@@ -188,12 +188,8 @@ class _Port:
         self.finding = None
         self.waiver_save_count = 0
         self.lock_values: list[bool] = []
-        self.replay_lookups: list[dict[str, object]] = []
         self.skip_list_count = 0
 
-    async def get_semantic_assessment_result_by_idempotency(self, **kwargs):
-        self.replay_lookups.append(kwargs)
-        return self.replay
 
     async def resolve_policy_subject_snapshot(self, *, lock=False, **_kwargs):
         self.lock_values.append(lock)
@@ -207,20 +203,10 @@ class _Port:
             captured_at=NOW,
         )
 
-    def _current_snapshot(self) -> SemanticAssessmentCurrentSnapshot:
-        context = SemanticGuidelineAssessmentContext(
-            subject_snapshot=self._subject_snapshot(),
-            binding=self.binding,
-            revision=self.revision,
-            policy_set_digest=semantic_policy_set_digest_v1(
-                (self.binding,),
-                (self.revision,),
-            ),
-            binding_head_digest=semantic_binding_head_digest_v1(
-                self.binding_heads,
-            ),
+    def _current_snapshot(self) -> NativeSemanticAssessmentCurrentSnapshot:
+        return native_semantic_assessment_snapshot(
+            subject=self._subject_snapshot(), binding=self.binding, revision=self.revision,
         )
-        return semantic_assessment_current_snapshot_from_context(context)
 
     async def list_bindings(self, **_kwargs):
         return (self.binding,)
@@ -228,21 +214,6 @@ class _Port:
     async def get_revision(self, **_kwargs):
         return self.revision
 
-    async def save_semantic_assessment_result(
-        self,
-        *,
-        result,
-        request_digest,
-    ):
-        assert request_digest == result.request_digest
-        current = self._current_snapshot()
-        if (
-            result.receipt.policy_set_digest != current.policy_set_digest
-            or result.receipt.binding_head_digest != current.binding_head_digest
-        ):
-            raise GuidelinePolicyDigestConflict("semantic_assessment_policy_set_stale")
-        self.saved = result
-        return result
 
     async def get_semantic_waiver_by_idempotency(self, **_kwargs):
         return self.waiver_replay
@@ -250,16 +221,8 @@ class _Port:
     async def get_semantic_waiver(self, **_kwargs):
         return self.waiver
 
-    async def get_semantic_assessment_receipt(self, **_kwargs):
-        return None if self.saved is None else self.saved.receipt
 
-    async def get_semantic_guideline_finding(self, **_kwargs):
-        return self.finding
 
-    async def get_semantic_metric_result(self, **_kwargs):
-        if self.saved is None:
-            return None
-        return self.saved.receipt.metric_results[0]
 
     async def resolve_semantic_assessment_current_snapshot(
         self,
@@ -269,6 +232,30 @@ class _Port:
     ):
         self.lock_values.append(lock)
         return self._current_snapshot()
+
+    async def get_semantic_assessment_v2(self, **kwargs):
+        return None if self.saved is None else self.saved.receipt
+
+    async def get_semantic_finding_v2(self, **kwargs):
+        return self.finding
+
+    async def get_semantic_metric_result_v2(self, **kwargs):
+        return None if self.saved is None else self.saved.receipt.metric_results[0]
+
+    async def get_semantic_assessment_v2_currentness(self, receipt, *, lock=False):
+        from okto_pulse.core.domain.guideline_semantic_currentness import assess_native_semantic_assessment_currentness
+        self.lock_values.append(lock)
+        return assess_native_semantic_assessment_currentness(receipt,
+            subject=self._subject_snapshot(), binding=self.binding, revision=self.revision)
+
+    async def list_semantic_assessment_v2_receipts(self, **kwargs):
+        raise AssertionError("Unexpected native assessment list")
+
+    async def get_current_semantic_assessment_v2(self, **kwargs):
+        raise AssertionError("Unexpected current assessment read")
+
+    async def list_semantic_findings_v2(self, **kwargs):
+        raise AssertionError("Unexpected native finding list")
 
     async def save_semantic_metric_waiver_mutation(self, *, mutation):
         self.waiver_save_count += 1
@@ -285,6 +272,7 @@ class _Uow:
     def __init__(self, port: _Port) -> None:
         self._board_id = port.board_id
         self.boards = _BoardRepo()
+        self.semantic_assessment_v2_reader = port
         self.services = SimpleNamespace(
             guidelines=SimpleNamespace(
                 policy_persistence=lambda: port,
@@ -321,167 +309,38 @@ def _actor(board_id: str = "board-1") -> ActorContext:
     )
 
 
-@pytest.mark.asyncio
-async def test_record_semantic_assessment_locks_and_persists_atomically() -> None:
-    port = _Port()
-    uow = _Uow(port)
-    result = await RecordSemanticGuidelineAssessmentUseCase(
-        clock=lambda: NOW,
-    ).execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id="board-1",
-            submission=_submission(),
-            receipt_id="receipt-1",
-        ),
-        actor=_actor(),
-        uow=uow,
-    )
-
-    assert result.assessment.receipt.state.value == "passed"
-    assert result.assessment.receipt.metric_results[0].effective_threshold == 75
-    assert result.assessment.receipt.confidence == 90
-    assert port.saved == result.assessment
-    assert port.lock_values == [True, True]
-    assert (uow.commit_count, uow.rollback_count) == (1, 0)
 
 
-@pytest.mark.asyncio
-async def test_record_semantic_assessment_uses_unlinked_binding_head_fence() -> None:
-    port = _Port()
-    unlinked = BoardGuidelineBinding(
-        binding_id="binding-unlinked",
-        board_id="board-1",
-        guideline_id="guideline-unlinked",
-        revision_id="revision-unlinked",
-        semantic_version="1.0.0",
-        revision_digest="d" * 64,
-        priority=1,
-        binding_revision=2,
-        adopted_by="owner-1",
-        adopted_at=NOW,
-        enforcement=GuidelineEnforcement.BLOCKING,
-        minimum_confidence=80,
-        state=GuidelineBindingState.UNLINKED,
-    )
-    port.binding_heads = (port.binding, unlinked)
-
-    result = await RecordSemanticGuidelineAssessmentUseCase(
-        clock=lambda: NOW,
-    ).execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id="board-1",
-            submission=_submission(),
-            receipt_id="receipt-with-unlinked-head",
-        ),
-        actor=_actor(),
-        uow=_Uow(port),
-    )
-
-    expected_head_digest = semantic_binding_head_digest_v1((port.binding, unlinked))
-    assert result.assessment.receipt.binding_head_digest == (expected_head_digest)
-    assert port.saved == result.assessment
 
 
-@pytest.mark.asyncio
-async def test_exact_idempotent_replay_never_rewrites() -> None:
-    port = _Port()
-    first_uow = _Uow(port)
-    first = await RecordSemanticGuidelineAssessmentUseCase(
-        clock=lambda: NOW,
-    ).execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id="board-1",
-            submission=_submission(),
-            receipt_id="receipt-1",
-        ),
-        actor=_actor(),
-        uow=first_uow,
-    )
-    port.replay = first.assessment
-    port.saved = None
-    replay_uow = _Uow(port)
-
-    replay = await RecordSemanticGuidelineAssessmentUseCase().execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id="board-1",
-            submission=_submission(),
-            receipt_id="receipt-1",
-        ),
-        actor=_actor(),
-        uow=replay_uow,
-    )
-
-    assert replay.assessment.replayed is True
-    assert port.saved is None
-    assert replay_uow.commit_count == 0
 
 
-@pytest.mark.asyncio
-async def test_default_receipt_identity_and_replay_are_board_scoped() -> None:
-    use_case = RecordSemanticGuidelineAssessmentUseCase(clock=lambda: NOW)
-    port_one = _Port("board-1")
-    port_two = _Port("board-2")
-
-    first = await use_case.execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id="board-1",
-            submission=_submission("board-1"),
-        ),
-        actor=_actor("board-1"),
-        uow=_Uow(port_one),
-    )
-    second = await use_case.execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id="board-2",
-            submission=_submission("board-2"),
-        ),
-        actor=_actor("board-2"),
-        uow=_Uow(port_two),
-    )
-
-    assert first.assessment.receipt.receipt_id != second.assessment.receipt.receipt_id
-    assert port_one.replay_lookups[-1]["board_id"] == "board-1"
-    assert port_two.replay_lookups[-1]["board_id"] == "board-2"
-
-    port_one.replay = first.assessment
-    replay = await use_case.execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id="board-1",
-            submission=_submission("board-1"),
-        ),
-        actor=_actor("board-1"),
-        uow=_Uow(port_one),
-    )
-    assert replay.assessment.replayed is True
-    assert port_two.replay is None
 
 
 async def _seed_approved_semantic_waiver(
     port: _Port,
     uow: _Uow,
 ):
-    assessment = await RecordSemanticGuidelineAssessmentUseCase(
-        clock=lambda: NOW,
-    ).execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id=port.board_id,
-            submission=_submission(port.board_id, score=50),
-            receipt_id="receipt-failed",
-        ),
-        actor=_actor(port.board_id),
-        uow=uow,
-    )
-    receipt = assessment.assessment.receipt
-    finding = project_semantic_metric_findings(receipt)[0]
+    from test_skb31_semantic_guideline_v2_findings import _receipt, _result, _pinpoint
+    from okto_pulse.core.domain.guideline_semantic_assessment import SemanticMetricOutcome
+    from okto_pulse.core.domain.guideline_semantic_findings_v2 import project_semantic_metric_findings_v2
+    reference = port._subject_snapshot().subject
+    receipt = replace(_receipt(_result("failed", outcome=SemanticMetricOutcome.FAIL,
+        pinpoints=(_pinpoint("boundary"),), subject=reference), subject=reference),
+        recorded_at=NOW, binding_revision=port.binding.binding_revision,
+        binding_configuration_digest=port.binding.configuration_digest,
+        guideline_revision_digest=port.revision.revision_digest)
+    port.saved = SimpleNamespace(receipt=receipt)
+    finding = project_semantic_metric_findings_v2(receipt)[0]
     evidence = receipt.metric_results[0].evidence_refs
     requested = request_semantic_metric_waiver(
         waiver_id="waiver-1",
         event_id="waiver-event-request",
         anchor=SemanticMetricWaiverAnchor.from_finding(
             finding,
-            assessment_assessor_id=receipt.assessor.agent_id,
+            assessment_assessor_id=receipt.assessment_assessor_id,
         ),
-        justification="A bounded migration exception is required.",
+        justification="A bounded policy exception is required.",
         evidence_refs=evidence,
         requested_by="requester-1",
         requested_at=NOW + timedelta(minutes=1),
@@ -597,7 +456,7 @@ async def test_revalidation_use_case_is_append_only_replay_safe_and_atomic() -> 
         "waiver-event-approve"
     )
     assert port.lock_values[-1] is True
-    assert uow.commit_count == 2
+    assert uow.commit_count == 1
 
     port.waiver_replay = port.last_waiver_mutation
     replay_uow = _Uow(port)

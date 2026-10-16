@@ -59,6 +59,12 @@ async def _card_in_progress(db_factory, *, mode: object = None):
         )
         specs[0].status = SpecStatus.IN_PROGRESS
         specs[0].require_task_validation = False
+        from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+        specs[0].architecture_adoption = ArchitectureAdoptionScope(
+            board_id=BOARD_ID, spec_id=specs[0].id,
+            adopted_in_edition=specs[0].edition, actor_id=USER_ID,
+            inherited_resource_ids=(),
+        ).model_dump(mode="json")
         card = await svc.create_card(
             BOARD_ID,
             USER_ID,
@@ -211,18 +217,29 @@ async def test_off_and_absent_preserve_legacy_behavior(db_factory):
             assert await _advisory_entries(db, card_id) == []
 
 
-async def test_tampered_mode_resolves_off_and_never_raises(db_factory):
-    """AC-9 read side: persisted 'banana' resolves to off via the resolver."""
+async def test_invalid_persisted_mode_refuses_move_without_conversion(db_factory):
+    from sqlalchemy_test_models import Card
 
-    card_id = await _card_in_progress(db_factory, mode="banana")
+    card_id = await _card_in_progress(db_factory, mode="off")
     async with db_factory() as db:
-        svc = CardService(db)
-        moved = await svc.move_card(
-            card_id,
-            USER_ID,
-            CardMove(status=CardStatus.VALIDATION, **_REPORT_KWARGS),
-        )
-        assert moved.status == CardStatus.VALIDATION
+        board = await db.get(Board, BOARD_ID)
+        board.settings = {**board.settings, "impact_evidence_mode": "banana"}
+        await db.commit()
+    async with db_factory() as db:
+        before = await db.get(Card, card_id)
+        conclusions = list(before.conclusions or [])
+        with pytest.raises(ValueError, match="impact_evidence"):
+            await CardService(db).move_card(
+                card_id, USER_ID,
+                CardMove(status=CardStatus.VALIDATION, **_REPORT_KWARGS),
+            )
+        await db.rollback()
+    async with db_factory() as db:
+        card = await db.get(Card, card_id)
+        assert card.status == CardStatus.IN_PROGRESS
+        assert list(card.conclusions or []) == conclusions
+        assert (await db.get(Board, BOARD_ID)).settings["impact_evidence_mode"] == "banana"
+        assert await _advisory_entries(db, card_id) == []
 
 
 def test_write_side_rejects_out_of_enum_mode():
@@ -237,28 +254,20 @@ def test_write_side_rejects_out_of_enum_mode():
 
 
 def test_resolver_contract():
-    """TR-4: invalid_value_fail_compat pattern, source is auditable."""
+    from types import SimpleNamespace
 
-    class _B:
-        def __init__(self, settings):
-            self.settings = settings
-
-    assert resolve_impact_evidence_mode(None) == ("off", "legacy_absent_compat")
-    assert resolve_impact_evidence_mode(_B({})) == (
-        "off",
-        "legacy_absent_compat",
-    )
-    assert resolve_impact_evidence_mode(_B({"impact_evidence_mode": "banana"})) == (
-        "off",
-        "invalid_value_fail_compat",
-    )
-    assert resolve_impact_evidence_mode(
-        _B({"impact_evidence_mode": " REQUIRE "})
-    ) == ("require", "board_settings")
+    assert resolve_impact_evidence_mode(None) == ("off", "board_default")
+    assert resolve_impact_evidence_mode(SimpleNamespace(settings={})) == ("off", "board_default")
+    for mode in IMPACT_EVIDENCE_MODES:
+        assert resolve_impact_evidence_mode(SimpleNamespace(settings={"impact_evidence_mode": mode})) == (mode, "board_settings")
+    for invalid in ("banana", " REQUIRE ", None, False):
+        with pytest.raises(ValueError, match="impact_evidence_policy_invalid"):
+            resolve_impact_evidence_mode(SimpleNamespace(settings={"impact_evidence_mode": invalid}))
     assert IMPACT_EVIDENCE_MODES == {"off", "advisory", "require"}
 
 
-async def test_require_exemptions_inherited_from_report_target(db_factory):
+@pytest.mark.parametrize("delivery_ready", [False, True])
+async def test_require_exemptions_inherited_from_report_target(db_factory, monkeypatch, delivery_ready):
     """TS-7/AC-7: under 'require', the two exempt paths never demand the
     block — a TEST card moving to validation (no report gate at all) and
     submit_task_validation approving a card straight to DONE."""
@@ -266,6 +275,12 @@ async def test_require_exemptions_inherited_from_report_target(db_factory):
     from test_card_lifecycle import _mark_all_resources_na
 
     from okto_pulse.core.domain.enums import CardType
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from okto_pulse.core.domain.delivery_evidence import (
+        DeliveryBinding, DeliveryObligation, DeliveryEvidenceSnapshot, DeliveryScope, ImplementationDeliveryFact, DeliveryContribution, ImplementationExecutionProof,
+    )
+    from okto_pulse.core.services import delivery_evidence as delivery_service
 
     await _seed_board(db_factory)
     async with db_factory() as db:
@@ -282,6 +297,12 @@ async def test_require_exemptions_inherited_from_report_target(db_factory):
         )
         specs[0].status = SpecStatus.IN_PROGRESS
         specs[0].require_task_validation = False
+        from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+        specs[0].architecture_adoption = ArchitectureAdoptionScope(
+            board_id=BOARD_ID, spec_id=specs[0].id,
+            adopted_in_edition=specs[0].edition, actor_id=USER_ID,
+            inherited_resource_ids=(),
+        ).model_dump(mode="json")
 
         # Path 1: TEST card -> validation, no conclusion, no block.
         test_card = await svc.create_card(
@@ -312,6 +333,52 @@ async def test_require_exemptions_inherited_from_report_target(db_factory):
             ),
         )
         exec_card.status = CardStatus.IN_PROGRESS
+        # This Core fixture has no delivery ledger. Supply explicit domain facts
+        # through its public seam, keeping the real completion gate active in
+        # both cases. Real receipt/storage admission is covered in Community.
+        scope = DeliveryScope(BOARD_ID, specs[0].id, specs[0].edition)
+        obligations = (DeliveryObligation(DeliveryBinding(f"card:{exec_card.id}", "a" * 64), exec_card.title),)
+        proof = ImplementationDeliveryFact(
+            id="impact-test-proof", scope=scope, card_id=exec_card.id,
+            card_type=CardType.NORMAL, card_status=CardStatus.IN_PROGRESS,
+            bindings=tuple(row.binding for row in obligations),
+            explanation="Test adapter accepted proof",
+            executions=(ImplementationExecutionProof("execution-receipt", "target", 1, "impact-test-source", "a" * 40, "src/x.py", True),),
+            actor_id=USER_ID,
+            contributions=tuple(DeliveryContribution(row.binding, "complete", ("execution-receipt",)) for row in obligations),
+        )
+        from okto_pulse.core.domain.effective_delivery_coverage import (
+            EffectiveDeliveryContext, ScopedImplementationFact, DeliveryScopeAttestation,
+        )
+        from okto_pulse.core.domain.effective_delivery_inventory import (
+            EffectiveDeliveryInventory, EffectiveDeliveryObligation,
+        )
+        from okto_pulse.core.domain.implementation_responsibility import (
+            RequirementContribution, ImplementationResponsibilityPlan,
+        )
+
+        planned = RequirementContribution(
+            exec_card.id, "direct", "whole", (), None, (), "b" * 64,
+        )
+        inventory = EffectiveDeliveryInventory(
+            tuple(EffectiveDeliveryObligation(
+                row.binding, row.binding.obligation_ref.split(":")[0], (planned,), (),
+            ) for row in obligations),
+            ImplementationResponsibilityPlan((), True, ()), True, (),
+        )
+        scoped = ScopedImplementationFact(
+            proof, tuple(DeliveryScopeAttestation(row.binding, planned.scope_sha256) for row in obligations),
+        )
+        snapshot = DeliveryEvidenceSnapshot(
+            scope=scope, obligations=obligations,
+            implementations=(proof,) if delivery_ready else (),
+            complete=True,
+            effective_context=EffectiveDeliveryContext(
+                inventory, (scoped,) if delivery_ready else (), (), frozenset({"automated_test"}),
+            ),
+        )
+        store = SimpleNamespace(load_card_snapshot=AsyncMock(return_value=snapshot))
+        monkeypatch.setattr(delivery_service, "card_delivery_store", lambda _: store)
         await db.commit()
         test_card_id, exec_card_id = test_card.id, exec_card.id
 
@@ -333,6 +400,22 @@ async def test_require_exemptions_inherited_from_report_target(db_factory):
         )
         await db.commit()
         await _mark_all_resources_na(db, "card", exec_card_id)
+        # This direct-service fixture supplies the native writer's semantic head.
+        from datetime import datetime, timezone
+        from okto_pulse.community.adapters.sqlalchemy_semantic_guideline_assessment import (
+            CommunitySqlAlchemySemanticGuidelineAssessment,
+        )
+        from okto_pulse.core.domain.guideline_policy import PolicyEntityType
+        from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
+
+        await db.flush()
+        await CommunitySqlAlchemySemanticGuidelineAssessment(db).record_semantic_subject_mutation(
+            board_id=BOARD_ID, entity_type=PolicyEntityType.CARD,
+            subject_id=exec_card_id, actor_id=USER_ID,
+            idempotency_key="native-impact-" + exec_card_id,
+            request_digest=canonical_sha256({"card_id": exec_card_id}),
+            changed_at=datetime.now(timezone.utc),
+        )
         result = await svc.submit_task_validation(
             exec_card_id,
             "reviewer-exempt",
@@ -357,46 +440,31 @@ async def test_require_exemptions_inherited_from_report_target(db_factory):
         persisted = (
             await db.execute(select(Card).where(Card.id == exec_card_id))
         ).scalar_one()
-        # submit_task_validation set DONE directly WITHOUT demanding a new
-        # impact block (the validator conclusion path is exempt).
-        assert persisted.status == CardStatus.DONE
+        # Exemption from a new impact block does not waive delivery readiness.
+        failures = persisted.validations[-1]["completion_gate_failures"]
+        if delivery_ready:
+            assert persisted.status == CardStatus.DONE, failures
+            assert failures == []
+        else:
+            assert persisted.status == CardStatus.REJECTED
+            assert [row["code"] for row in failures] == ["delivery_evidence_incomplete"]
 
 
-def test_tolerance_is_read_only_write_paths_stay_strict():
-    """Independent review of I2 (F1): the AC-9 read tolerance must NOT leak
-    into write validators. A tampered value in a GLOBAL default-config
-    template would silently disable governance for every new board."""
-
+def test_stored_and_authored_policy_share_one_closed_contract():
+    from copy import deepcopy
     from okto_pulse.core.services.board_governance import BoardGovernanceService
 
-    # READ path (move governance) degrades a persisted/tampered value.
-    resolved = BoardGovernanceService.from_settings(
-        {"impact_evidence_mode": "banana"}
-    )
-    assert resolved.settings["impact_evidence_mode"] == "off"
-
-    # WRITE path (default board config template validation, board create)
-    # stays strict — same as every other enum.
-    with pytest.raises(ValidationError):
-        BoardGovernanceService.normalize_settings(
-            {"impact_evidence_mode": "banana"}
-        )
-
-    # A PATCH that authors the field is strict...
-    with pytest.raises(ValidationError):
-        BoardGovernanceService.merge_settings_patch(
-            {}, {"impact_evidence_mode": "banana"}
-        )
-    # ...while a tampered PERSISTED value never blocks an unrelated edit.
-    merged = BoardGovernanceService.merge_settings_patch(
-        {"impact_evidence_mode": "banana"}, {"max_scenarios_per_card": 3}
-    )
-    assert merged["impact_evidence_mode"] == "off"
-    assert merged["max_scenarios_per_card"] == 3
-    # And a valid authored value is written through.
-    assert (
-        BoardGovernanceService.merge_settings_patch(
-            {}, {"impact_evidence_mode": "require"}
-        )["impact_evidence_mode"]
-        == "require"
-    )
+    raw = {"impact_evidence_mode": "banana"}
+    original = deepcopy(raw)
+    for action in (
+        lambda: BoardGovernanceService.from_settings(raw),
+        lambda: BoardGovernanceService.normalize_settings(raw),
+        lambda: BoardGovernanceService.merge_settings_patch({}, raw),
+        lambda: BoardGovernanceService.merge_settings_patch(raw, {"max_scenarios_per_card": 3}),
+    ):
+        with pytest.raises(ValidationError):
+            action()
+        assert raw == original
+    assert BoardGovernanceService.merge_settings_patch(
+        {}, {"impact_evidence_mode": "require"}
+    )["impact_evidence_mode"] == "require"

@@ -1,0 +1,148 @@
+{
+  "date": "2026-10-15",
+  "scope": "U3/3d Architecture create/import/delete; Resources parent integration remains open",
+  "commits": {
+    "core": "826d5dfa",
+    "community": "d58ee70d"
+  },
+  "tests": {
+    "core_including_catalog": 120,
+    "frontend": 34,
+    "typescript_exit": 0,
+    "eslint_errors": 0,
+    "eslint_preexisting_warnings": 1
+  },
+  "closure": {
+    "ok": true,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    },
+    "evidence": {
+      "af35_s5_ok": true,
+      "community_to_core_import_rows": 1154,
+      "conformance_matrix_ok": true,
+      "core_import_rows": 7860,
+      "dependency_rows": 25,
+      "distribution_report_ok": true,
+      "rebuild_storage_violation_count": 0,
+      "singleton_gate_status": "passed"
+    }
+  },
+  "native": {
+    "api_port": 8200,
+    "mcp_port": 8201,
+    "pid": 38064,
+    "frontend_port": 5274,
+    "spec_id": "dec9410f-d455-4506-a8fd-f791ee31dc77",
+    "design_id": "8d3eaf02-16f9-448f-a47a-2b65706e8278",
+    "observed": [
+      "UI create v1 confirmed by MCP",
+      "MCP concurrent title v2",
+      "MCP stale delete/import rejected",
+      "UI stale import rejected, draft retained",
+      "Explicit reviewed-base import produced v3",
+      "Interrupted detail GET retained receipt",
+      "Read recovery left v3 identical via MCP",
+      "UI delete expected_version=3 returned 204",
+      "Interrupted list GET retained deletion receipt",
+      "Read recovery did not repeat DELETE; MCP confirmed absent"
+    ],
+    "request_lines": [
+      "5572. [POST] http://127.0.0.1:8200/api/v1/specs/dec9410f-d455-4506-a8fd-f791ee31dc77/architecture => [201] Created",
+      "5573. [GET] http://127.0.0.1:8200/api/v1/architecture/8d3eaf02-16f9-448f-a47a-2b65706e8278?include_payloads=true => [200] OK",
+      "5584. [GET] http://127.0.0.1:8200/api/v1/architecture/8d3eaf02-16f9-448f-a47a-2b65706e8278?include_payloads=true => [200] OK",
+      "5609. [POST] http://127.0.0.1:8200/api/v1/architecture/8d3eaf02-16f9-448f-a47a-2b65706e8278/diagrams/import-excalidraw => [409] Conflict",
+      "5613. [GET] http://127.0.0.1:8200/api/v1/architecture/8d3eaf02-16f9-448f-a47a-2b65706e8278?include_payloads=true => [200] OK",
+      "5617. [GET] http://127.0.0.1:8200/api/v1/architecture/8d3eaf02-16f9-448f-a47a-2b65706e8278?include_payloads=true => [200] OK",
+      "5634. [POST] http://127.0.0.1:8200/api/v1/architecture/8d3eaf02-16f9-448f-a47a-2b65706e8278/diagrams/import-excalidraw => [200] OK",
+      "5635. [GET] http://127.0.0.1:8200/api/v1/architecture/8d3eaf02-16f9-448f-a47a-2b65706e8278?include_payloads=true => [FAILED] net::ERR_FAILED",
+      "5643. [GET] http://127.0.0.1:8200/api/v1/architecture/8d3eaf02-16f9-448f-a47a-2b65706e8278?include_payloads=true => [200] OK",
+      "5653. [GET] http://127.0.0.1:8200/api/v1/architecture/8d3eaf02-16f9-448f-a47a-2b65706e8278?include_payloads=true => [200] OK",
+      "5663. [DELETE] http://127.0.0.1:8200/api/v1/architecture/8d3eaf02-16f9-448f-a47a-2b65706e8278?expected_version=3 => [204] No Content",
+      "5664. [POST] http://127.0.0.1:8200/api/v1/workspace-revisions/query => [200] OK"
+    ],
+    "screenshots_inspected": true
+  },
+  "limits": [
+    "Parent Resources watcher and callback integration remain open; this increment proves component/native operations.",
+    "Create response uncertainty and parent read failure are component-tested; native create succeeded normally.",
+    "Initial create fault injection used a wrong URL and did not intercept; no failure recovery claimed for that native create.",
+    "MCP helper initially used wrong import argument name then string instead of object; validation_failed records retained, no mutation repeated.",
+    "Explicit import payload_json dictionary then proved version conflict and byte-equivalent authoritative design.",
+    "Checkout runtime, not installed artifact. Source parity report records Core 26 and Community 12 installed differences.",
+    "No user-home mutation, implementation proof, approval, Done or canonical KG qualification."
+  ],
+  "artifacts": [
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-operations-before.xml",
+      "sha256": "07b98741f51e15161bee851c636f874a311b87d43fe74bccd44df3484495459a"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-operations-core-final.xml",
+      "sha256": "0c7b4b79dbe611e5fa12c6f12cf434835c8f77287666d1110f898e6ffeaf1738"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-operations-core-final.xml.environment.json",
+      "sha256": "40254ca06634d52a55df89b1429cb3b0d1c58048fc508e5c0f4fd535c7ea805a"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-operation-recovery-qualified.xml",
+      "sha256": "33edd9d9ebb5fae6ff5fe537066fd857eab803f694dfe43a466ce301dde7afdb"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/closure-u3-architecture-operations.json",
+      "sha256": "a566e1f9801aff7a41ee3782bf08f71fb871333560cf4d4639c75e2cdd6254b2"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-operations-native-created.json",
+      "sha256": "f2a5aa7a730b4f0f9f40656f0ff0509864a064ef26446d81411dbcd963f035a1"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-operations-native-deleted.json",
+      "sha256": "6406de832fac59a574c5da0fafe4ba67ba0e3161e008b0a804dce3f647b96bd1"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-operations-native-external.json",
+      "sha256": "02954cd5b01c98366d92e8319d516582d15a959ea3b2e8e64325431cb088b4c6"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-operations-native-imported-read-failure.json",
+      "sha256": "fc8d8a136b3310d602a80d28ff1875a7411052ccd60d4307fd699bd8179b1a4e"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-operations-native-imported-recovered.json",
+      "sha256": "fc8d8a136b3310d602a80d28ff1875a7411052ccd60d4307fd699bd8179b1a4e"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-operations-native-stale-import-contract.json",
+      "sha256": "4151edd6bf06a2b28eba0f27b9647c529dd20809ca3fa582e4377437152b6962"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-operations-native-stale-import.json",
+      "sha256": "8a7de6bfbf6db01ee30db0820ba91c01e9696159e0f4b7e620e2f8567912d286"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-architecture-operations-requests.txt",
+      "sha256": "5ffcbf2ecd3673e47f0222d03416c590f0e3e0c47aa617056c4f35fde6e8c1b7"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-architecture-import-conflict.png",
+      "sha256": "f65e3627a0e215e9c5146ca9130539f8c3fe4659ee4fe346cb008d5de2d6acdb"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-architecture-import-saved-read-failure.png",
+      "sha256": "adbb273c2841154e685f5fc9ab5e9b3f5a70def499e5236f834adc91f30a0542"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-architecture-delete-read-failure.png",
+      "sha256": "da7f1c818269f3a7dbd5d7ca4636c4c6b46e56447c22348b6ffd8e6a2905212f"
+    }
+  ]
+}

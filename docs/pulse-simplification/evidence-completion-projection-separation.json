@@ -1,0 +1,4940 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE F6E/T39/T40 supplementary completion and read surfaces",
+  "provenance": {
+    "file": "provenance-completion-projection-separation4.json",
+    "sha256": "7ec089a5a78a3c1ad78d0b93345e55b60ac15569401eb290d2e9d18702ad9abe",
+    "identity": {
+      "checked_at": "2026-09-30T22:49:06.591471+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 859,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "80e60fa0e03e064c58eb8de75010fee63b84a487",
+          "dirty": true,
+          "dirty_entry_count": 10,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-completion-projection-separation4\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "a14197302fd00554c3fc10d80eaec6cde04b7c6292f2fa0d4e8694780d8c875a",
+            "size": 3793194
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 922,
+          "byte_identical": true,
+          "aggregate_sha256": "f75888414b52e7f0ff49dc26a73a69f12673f29aba507231253ffde5f42aa47e",
+          "chain_hashes": {
+            "source": "f75888414b52e7f0ff49dc26a73a69f12673f29aba507231253ffde5f42aa47e",
+            "wheel": "f75888414b52e7f0ff49dc26a73a69f12673f29aba507231253ffde5f42aa47e",
+            "site_packages": "f75888414b52e7f0ff49dc26a73a69f12673f29aba507231253ffde5f42aa47e"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 373,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "69d4b431d3906ef385d6220771fc9bd8be9b6da5",
+          "dirty": true,
+          "dirty_entry_count": 3,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-completion-projection-separation4\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "6ba38d12fcf06944f4c4b0aef6a1d2e1844294a424adef6cba735fcd3a397467",
+            "size": 4535060
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 458,
+          "byte_identical": true,
+          "aggregate_sha256": "1a43c2361a5b389df2c90a4b3d46fae4fabde49eaaa4007b552b2602de632b61",
+          "chain_hashes": {
+            "source": "1a43c2361a5b389df2c90a4b3d46fae4fabde49eaaa4007b552b2602de632b61",
+            "wheel": "1a43c2361a5b389df2c90a4b3d46fae4fabde49eaaa4007b552b2602de632b61",
+            "site_packages": "1a43c2361a5b389df2c90a4b3d46fae4fabde49eaaa4007b552b2602de632b61"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "runs": [
+    {
+      "xml": "learning-reconciliation-completion-projection-separation4-core.xml",
+      "xml_sha256": "a220a37abc4bad3149280926b70402af74e498bd298d5607cbca70ea2266f6b2",
+      "log": "learning-reconciliation-completion-projection-separation4-core.log",
+      "log_sha256": "83786dabe3fcd72d49e6995d8071212c7527c91757d7a3ff969e600667feb5fb",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "186",
+          "time": "32.438",
+          "timestamp": "2026-09-30T19:49:52.112271-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[None-None-dlq]",
+          "time": "1.438",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[None-None-projection_debt]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[pending-cognitive_active-dlq]",
+          "time": "0.032",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[pending-cognitive_active-projection_debt]",
+          "time": "0.035",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[failed-cognitive_active-dlq]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[failed-cognitive_active-projection_debt]",
+          "time": "0.031",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[skipped-skip_expired-dlq]",
+          "time": "0.033",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[skipped-skip_expired-projection_debt]",
+          "time": "0.032",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items0-ready-False-True-False]",
+          "time": "0.042",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items0-ready-False-False-True]",
+          "time": "0.028",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items0-ready-False-True-True]",
+          "time": "0.031",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items1-cognitive_active-True-True-False]",
+          "time": "0.037",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items1-cognitive_active-True-False-True]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items1-cognitive_active-True-True-True]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items2-cognitive_active-True-True-False]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items2-cognitive_active-True-False-True]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items2-cognitive_active-True-True-True]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items3-skip_expired-True-True-False]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items3-skip_expired-True-False-True]",
+          "time": "0.032",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items3-skip_expired-True-True-True]",
+          "time": "0.032",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items4-skip_expired-True-True-False]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items4-skip_expired-True-False-True]",
+          "time": "0.026",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items4-skip_expired-True-True-True]",
+          "time": "0.022",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items5-skip_valid-False-True-False]",
+          "time": "0.018",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items5-skip_valid-False-False-True]",
+          "time": "0.025",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items5-skip_valid-False-True-True]",
+          "time": "0.026",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items6-skip_valid-False-True-False]",
+          "time": "0.025",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items6-skip_valid-False-False-True]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items6-skip_valid-False-True-True]",
+          "time": "0.024",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items7-terminal_history-False-True-False]",
+          "time": "0.022",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items7-terminal_history-False-False-True]",
+          "time": "0.020",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items7-terminal_history-False-True-True]",
+          "time": "0.025",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_task_advisory_does_not_hide_a_real_expired_obligation",
+          "time": "0.022",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_spec_done_blocks_on_direct_spec_cognitive_item",
+          "time": "0.528",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_spec_done_blocks_on_active_decision_child_cognitive_item",
+          "time": "0.142",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_submit_task_validation_records_cognitive_rejection",
+          "time": "1.024",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_move_card_done_blocks_task_test_and_bug_before_status_mutation[normal-task]",
+          "time": "0.176",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_move_card_done_blocks_task_test_and_bug_before_status_mutation[test-test]",
+          "time": "0.182",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_move_card_done_blocks_task_test_and_bug_before_status_mutation[bug-bug]",
+          "time": "0.172",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_board_skip_allows_done_but_keeps_pending_item_visible_and_status_done",
+          "time": "0.286",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_board_policy_defaults_to_advisory",
+          "time": "0.028",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_blocking_active_needs_both_flag_and_policy",
+          "time": "0.026",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_done_preserves_validation_with_only_projection_debt",
+          "time": "0.281",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_done_does_not_require_technical_dlq_maintenance",
+          "time": "0.284",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_advisory_default_board_does_not_block_on_open_debt",
+          "time": "0.285",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_blocking_policy_no_debt_passes",
+          "time": "0.279",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_blocking_active_fails_closed_when_readiness_service_errors",
+          "time": "0.259",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_advisory_default_does_not_instantiate_readiness_service",
+          "time": "0.289",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_blocking_active_fails_closed_when_source_ref_resolution_errors",
+          "time": "0.255",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_rkg06_two_key_policy",
+          "name": "test_ts1_advisory_default_does_not_block_but_visible",
+          "time": "0.170",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_rkg06_two_key_policy",
+          "name": "test_two_keys_preserve_policy_but_projection_alone_does_not_block",
+          "time": "0.133",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_rkg06_two_key_policy",
+          "name": "test_ts3_global_flag_off_reverts_to_advisory_visible",
+          "time": "0.144",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_rkg06_two_key_policy",
+          "name": "test_invalid_policy_fails_closed_to_advisory",
+          "time": "0.138",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_rkg05_health_readiness",
+          "name": "test_ts1_health_summary_preserves_dlq_and_drilldown",
+          "time": "0.263",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_rkg05_health_readiness",
+          "name": "test_ts2_advisory_blocking_distinct_from_would_block_done",
+          "time": "0.132",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_rkg05_health_readiness",
+          "name": "test_ts3_skip_cannot_reduce_or_hide_technical_signal",
+          "time": "0.126",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_rkg05_health_readiness",
+          "name": "test_domains_stay_separate_and_invalid_profile_rejected",
+          "time": "0.113",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_rkg05_health_readiness",
+          "name": "test_mcp_health_readiness_tool_exposes_signals",
+          "time": "0.134",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-False-summary]",
+          "time": "0.044",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-False-full]",
+          "time": "0.033",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-False-legacy]",
+          "time": "0.034",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-True-summary]",
+          "time": "0.035",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-True-full]",
+          "time": "0.031",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-True-legacy]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-False-summary]",
+          "time": "0.032",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-False-full]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-False-legacy]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-True-summary]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-True-full]",
+          "time": "0.032",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-True-legacy]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_persistence_error_text_is_not_copied_to_aggregate",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_no_aggregate_invents_a_signal_for_zero_counts",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-False-summary]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-False-full]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-False-legacy]",
+          "time": "0.031",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-True-summary]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-True-full]",
+          "time": "0.034",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-True-legacy]",
+          "time": "0.032",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-False-summary]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-False-full]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-False-legacy]",
+          "time": "0.026",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-True-summary]",
+          "time": "0.032",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-True-full]",
+          "time": "0.041",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-True-legacy]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-False-summary]",
+          "time": "0.025",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-False-full]",
+          "time": "0.024",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-False-legacy]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-True-summary]",
+          "time": "0.032",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-True-full]",
+          "time": "0.028",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-True-legacy]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-False-summary]",
+          "time": "0.025",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-False-full]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-False-legacy]",
+          "time": "0.031",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-True-summary]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-True-full]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-True-legacy]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-False-summary]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-False-full]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-False-legacy]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-True-summary]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-True-full]",
+          "time": "0.023",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-True-legacy]",
+          "time": "0.028",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-False-summary]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-False-full]",
+          "time": "0.026",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-False-legacy]",
+          "time": "0.031",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-True-summary]",
+          "time": "0.031",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-True-full]",
+          "time": "0.028",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-True-legacy]",
+          "time": "0.031",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-False-summary]",
+          "time": "0.031",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-False-full]",
+          "time": "0.033",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-False-legacy]",
+          "time": "0.031",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-True-summary]",
+          "time": "0.026",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-True-full]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-True-legacy]",
+          "time": "0.031",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-False-summary]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-False-full]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-False-legacy]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-True-summary]",
+          "time": "0.039",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-True-full]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-True-legacy]",
+          "time": "0.028",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-False-summary]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-False-full]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-False-legacy]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-True-summary]",
+          "time": "0.031",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-True-full]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-True-legacy]",
+          "time": "0.028",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-False-summary]",
+          "time": "0.024",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-False-full]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-False-legacy]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-True-summary]",
+          "time": "0.028",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-True-full]",
+          "time": "0.028",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-True-legacy]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-False-summary]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-False-full]",
+          "time": "0.031",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-False-legacy]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-True-summary]",
+          "time": "0.028",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-True-full]",
+          "time": "0.026",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-True-legacy]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-False-summary]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-False-full]",
+          "time": "0.031",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-False-legacy]",
+          "time": "0.024",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-True-summary]",
+          "time": "0.023",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-True-full]",
+          "time": "0.022",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_health_readiness_aggregate_retirement",
+          "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-True-legacy]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_ts0627174f_six_tier_precedence",
+          "time": "0.039",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_skip_does_not_mask_open_debt_in_composition",
+          "time": "0.028",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_ts28af4e42_registry_rejects_unknown_and_technical[technical_dlq]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_ts28af4e42_registry_rejects_unknown_and_technical[canonical_debt_open]",
+          "time": "0.023",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_ts28af4e42_registry_rejects_unknown_and_technical[connectivity_guard]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_ts28af4e42_registry_rejects_unknown_and_technical[made_up]",
+          "time": "0.023",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_ts28af4e42_registry_rejects_unknown_and_technical[]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_revisit_required_needs_future_revisit_at[root_cause_unconfirmed]",
+          "time": "0.023",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_revisit_required_needs_future_revisit_at[evidence_insufficient]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_revisit_required_needs_future_revisit_at[path_b_pending]",
+          "time": "0.026",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_revisit_required_needs_future_revisit_at[external_context_missing]",
+          "time": "0.028",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_terminal_reason_codes_need_no_revisit_at[no_reusable_learning]",
+          "time": "0.026",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_terminal_reason_codes_need_no_revisit_at[duplicate_bug]",
+          "time": "0.026",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_terminal_reason_codes_need_no_revisit_at[trivial_fix]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_ts_d8123753_skip_is_ledger_only",
+          "time": "0.104",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_ts_0bafd8e6_skip_blocked_by_dlq_409_no_write",
+          "time": "0.055",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_skip_blocked_by_open_canonical_debt_409_no_write",
+          "time": "0.064",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_ts_66b34cda_expired_revisit_skip_reblocks",
+          "time": "0.121",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_readiness_s1_2",
+          "name": "test_ts_59247a00_open_debt_blocks_and_advisory",
+          "time": "0.087",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_mcp_tools_s3_2",
+          "name": "test_ts_9862838e_list_all_signals",
+          "time": "0.068",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_mcp_tools_s3_2",
+          "name": "test_ts_e1b66ffa_skip_blocked_by_dlq_409_no_write",
+          "time": "0.036",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_mcp_tools_s3_2",
+          "name": "test_skip_blocked_by_open_debt_409",
+          "time": "0.038",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_mcp_tools_s3_2",
+          "name": "test_ts_87b584b4_reason_code_registry_closed",
+          "time": "0.047",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_mcp_tools_s3_2",
+          "name": "test_revisit_required_needs_future_revisit_at",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_mcp_tools_s3_2",
+          "name": "test_record_then_clear_reopen_central",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_mcp_tools_s3_2",
+          "name": "test_clear_non_skipped_409",
+          "time": "0.032",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_mcp_tools_s3_2",
+          "name": "test_evaluate_tool_mirrors_service",
+          "time": "0.044",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_mcp_tools_s3_2",
+          "name": "test_would_block_done_enforcement",
+          "time": "0.045",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_mcp_tools_s3_2",
+          "name": "test_ts_ee91c90f_mcp_aliases_one_precedence",
+          "time": "0.049",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_mcp_tools_s3_2",
+          "name": "test_ts_d3ae61b3_mcp_all_tiers_task_advisory",
+          "time": "0.045",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_mcp_tools_s3_2",
+          "name": "test_ts_d5d8b99e_bug_twin_in_catalog",
+          "time": "0.042",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_mcp_tools_s3_2",
+          "name": "test_list_invalid_filter_400_via_mcp",
+          "time": "0.033",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_routes_registered",
+          "time": "1.383",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_skip_happy_terminal",
+          "time": "0.131",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_skip_409_by_dlq_no_write",
+          "time": "0.071",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_skip_400_invalid_reason",
+          "time": "0.059",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_skip_400_revisit_required",
+          "time": "0.128",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_clear_reopen",
+          "time": "0.121",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_clear_409_not_skipped",
+          "time": "0.069",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_metrics_bounded",
+          "time": "0.137",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_list_enforcement_annotation",
+          "time": "0.091",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_list_enforcement_active_blocks",
+          "time": "0.096",
+          "failed": true,
+          "skipped": false,
+          "error": false
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-completion-projection-separation-supplement1-core.xml",
+      "xml_sha256": "4dda414f88be546683c69d091c60576959582e384997afabd45d0f1f5d2ab4c1",
+      "log": "learning-reconciliation-completion-projection-separation-supplement1-core.log",
+      "log_sha256": "8d87343cd190c71d76f14ec98b88cd436d792df0d7fabcb65d895a90afa29183",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "24",
+          "time": "12.195",
+          "timestamp": "2026-09-30T19:51:35.936174-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_routes_registered",
+          "time": "2.113",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_skip_happy_terminal",
+          "time": "0.216",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_skip_409_by_dlq_no_write",
+          "time": "0.036",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_skip_400_invalid_reason",
+          "time": "0.061",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_skip_400_revisit_required",
+          "time": "0.089",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_clear_reopen",
+          "time": "0.079",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_clear_409_not_skipped",
+          "time": "0.040",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_metrics_bounded",
+          "time": "0.081",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_list_enforcement_annotation",
+          "time": "0.039",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_list_keeps_projection_visible_without_completion_block",
+          "time": "0.052",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_mcp_skip_parity",
+          "time": "0.513",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_rest_s3_3",
+          "name": "test_rest_routes_via_client",
+          "time": "0.567",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_s3_1",
+          "name": "test_ts_290926c7_read_model_never_writes",
+          "time": "0.090",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_s3_1",
+          "name": "test_ts_c66892f6_debt_terminal_dlq",
+          "time": "0.080",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_s3_1",
+          "name": "test_ts_95b27c55_skip_valid_vs_expired",
+          "time": "0.058",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_s3_1",
+          "name": "test_ts_ee91c90f_card_bug_aliases_one_precedence",
+          "time": "0.074",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_s3_1",
+          "name": "test_ts_d3ae61b3_all_tiers_and_task_advisory",
+          "time": "0.073",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_s3_1",
+          "name": "test_signal_filter_and_pagination",
+          "time": "0.060",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_s3_1",
+          "name": "test_invalid_signal_filter_raises_400",
+          "time": "0.021",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_s3_1",
+          "name": "test_source_failure_raises_503",
+          "time": "0.024",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_s3_1",
+          "name": "test_route_is_registered",
+          "time": "0.014",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_s3_1",
+          "name": "test_rest_happy_path",
+          "time": "0.708",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_s3_1",
+          "name": "test_rest_invalid_filter_400",
+          "time": "1.098",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_action_center_s3_1",
+          "name": "test_rest_source_unavailable_503",
+          "time": "0.636",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-completion-projection-separation4-community.xml",
+      "xml_sha256": "a1c65cc807f3666e4803f8fb9f51b5fa71aba664cfccbb1ddd6ecd32a8c7d55b",
+      "log": "learning-reconciliation-completion-projection-separation4-community.log",
+      "log_sha256": "840e468e0635564d7fc896d591306a2fb3ee0d97949d7e0a4bb80e42060b11fe",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "8",
+          "time": "10.878",
+          "timestamp": "2026-09-30T19:49:53.181251-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_completion_readiness_surfaces",
+          "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[False-False-dlq]",
+          "time": "0.849",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_surfaces",
+          "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[False-False-debt]",
+          "time": "0.030",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_surfaces",
+          "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[False-True-dlq]",
+          "time": "0.033",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_surfaces",
+          "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[False-True-debt]",
+          "time": "0.034",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_surfaces",
+          "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[True-False-dlq]",
+          "time": "0.028",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_surfaces",
+          "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[True-False-debt]",
+          "time": "0.029",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_surfaces",
+          "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[True-True-dlq]",
+          "time": "0.031",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_surfaces",
+          "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[True-True-debt]",
+          "time": "0.028",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        }
+      ]
+    },
+    {
+      "xml": "completion-projection-separation4-frontend.xml",
+      "xml_sha256": "7acda5eb705f2fdcd76bd23b9d3e2c159d4949c88a8c2bfb36725a903b012415",
+      "log": "completion-projection-separation4-frontend.log",
+      "log_sha256": "16cd8e7d42bd6129e2195053c9ce972f3bbce4d1dac28af14dacb51cb80b38e0",
+      "suites": [
+        {
+          "name": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "timestamp": "2026-09-30T22:50:46.776Z",
+          "hostname": "Alienware_m15",
+          "tests": "26",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "4.3452366"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "pending projection points to observation and external support without a repair action",
+          "time": "0.7381178",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "projection diagnostics preserve the backend completion assessment: false",
+          "time": "0.0779163",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "projection diagnostics preserve the backend completion assessment: true",
+          "time": "0.0506729",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "retains a legacy Sprint reference without a live entity lookup or navigation",
+          "time": "0.2596873",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > starts with attention, explains purpose and opens the source through the modal stack",
+          "time": "0.3287705",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > never offers a waiver on historical, running, or technically blocked records",
+          "time": "0.0377417",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > replaced Learning association is history, not a waiver or proof of a new projection",
+          "time": "0.0357705",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > reports failed processing without a repair entry point or write",
+          "time": "0.2907214",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > KG Health navigation uses its supplied callback",
+          "time": "0.4313256",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > does not fetch records or expose actions without read authority",
+          "time": "0.054434",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > metrics failure does not hide available records",
+          "time": "0.0323965",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > server pagination is reachable and changing sections resets the offset",
+          "time": "0.6522576",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > waiver has no default reason, requires justification and validates future reviews",
+          "time": "0.1211099",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > portal help is accessible with focus and Escape without entering the center layout",
+          "time": "0.2455173",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > a late response from the old filter cannot overwrite the new result",
+          "time": "0.0560465",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > switching boards removes the previous board form and ignores late source titles",
+          "time": "0.0678013",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > cross-board titles are never displayed",
+          "time": "0.0456036",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > renderiza linhas, counters e painel de métricas bounded",
+          "time": "0.0581495",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > technical blocker (DLQ) NÃO oferece skip e marca would_block_done",
+          "time": "0.1201446",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > linha cognitiva pending NÃO mostra would_block_done quando advisory",
+          "time": "0.0381223",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > skip via write-path central refaz fetch",
+          "time": "0.0799523",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > skip 409 mostra erro sem mascarar blocker técnico",
+          "time": "0.0928872",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > clear/reopen de skip válido chama o caminho central",
+          "time": "0.3177314",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > empty state",
+          "time": "0.0240112",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > error state quando fetch falha",
+          "time": "0.0305249",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+          "name": "CognitiveActionCenterView > filtro por signal refaz fetch com o signal selecionado",
+          "time": "0.0523165",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        }
+      ]
+    }
+  ],
+  "final_distinct_cases": 234,
+  "final_cases": [
+    {
+      "classname": "tests.test_completion_readiness_projection_separation",
+      "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[None-None-dlq]",
+      "time": "1.438",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_completion_readiness_projection_separation",
+      "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[None-None-projection_debt]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_completion_readiness_projection_separation",
+      "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[pending-cognitive_active-dlq]",
+      "time": "0.032",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_completion_readiness_projection_separation",
+      "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[pending-cognitive_active-projection_debt]",
+      "time": "0.035",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_completion_readiness_projection_separation",
+      "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[failed-cognitive_active-dlq]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_completion_readiness_projection_separation",
+      "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[failed-cognitive_active-projection_debt]",
+      "time": "0.031",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_completion_readiness_projection_separation",
+      "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[skipped-skip_expired-dlq]",
+      "time": "0.033",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_completion_readiness_projection_separation",
+      "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[skipped-skip_expired-projection_debt]",
+      "time": "0.032",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items0-ready-False-True-False]",
+      "time": "0.042",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items0-ready-False-False-True]",
+      "time": "0.028",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items0-ready-False-True-True]",
+      "time": "0.031",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items1-cognitive_active-True-True-False]",
+      "time": "0.037",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items1-cognitive_active-True-False-True]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items1-cognitive_active-True-True-True]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items2-cognitive_active-True-True-False]",
+      "time": "0.027",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items2-cognitive_active-True-False-True]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items2-cognitive_active-True-True-True]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items3-skip_expired-True-True-False]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items3-skip_expired-True-False-True]",
+      "time": "0.032",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items3-skip_expired-True-True-True]",
+      "time": "0.032",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items4-skip_expired-True-True-False]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items4-skip_expired-True-False-True]",
+      "time": "0.026",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items4-skip_expired-True-True-True]",
+      "time": "0.022",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items5-skip_valid-False-True-False]",
+      "time": "0.018",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items5-skip_valid-False-False-True]",
+      "time": "0.025",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items5-skip_valid-False-True-True]",
+      "time": "0.026",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items6-skip_valid-False-True-False]",
+      "time": "0.025",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items6-skip_valid-False-False-True]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items6-skip_valid-False-True-True]",
+      "time": "0.024",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items7-terminal_history-False-True-False]",
+      "time": "0.022",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items7-terminal_history-False-False-True]",
+      "time": "0.020",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items7-terminal_history-False-True-True]",
+      "time": "0.025",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_projection_independent_cognitive_readiness",
+      "name": "test_task_advisory_does_not_hide_a_real_expired_obligation",
+      "time": "0.022",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_spec_done_blocks_on_direct_spec_cognitive_item",
+      "time": "0.528",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_spec_done_blocks_on_active_decision_child_cognitive_item",
+      "time": "0.142",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_submit_task_validation_records_cognitive_rejection",
+      "time": "1.024",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_move_card_done_blocks_task_test_and_bug_before_status_mutation[normal-task]",
+      "time": "0.176",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_move_card_done_blocks_task_test_and_bug_before_status_mutation[test-test]",
+      "time": "0.182",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_move_card_done_blocks_task_test_and_bug_before_status_mutation[bug-bug]",
+      "time": "0.172",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_board_skip_allows_done_but_keeps_pending_item_visible_and_status_done",
+      "time": "0.286",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_board_policy_defaults_to_advisory",
+      "time": "0.028",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_blocking_active_needs_both_flag_and_policy",
+      "time": "0.026",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_done_preserves_validation_with_only_projection_debt",
+      "time": "0.281",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_done_does_not_require_technical_dlq_maintenance",
+      "time": "0.284",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_advisory_default_board_does_not_block_on_open_debt",
+      "time": "0.285",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_blocking_policy_no_debt_passes",
+      "time": "0.279",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_blocking_active_fails_closed_when_readiness_service_errors",
+      "time": "0.259",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_advisory_default_does_not_instantiate_readiness_service",
+      "time": "0.289",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_closeout_service_wiring",
+      "name": "test_blocking_active_fails_closed_when_source_ref_resolution_errors",
+      "time": "0.255",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_rkg06_two_key_policy",
+      "name": "test_ts1_advisory_default_does_not_block_but_visible",
+      "time": "0.170",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_rkg06_two_key_policy",
+      "name": "test_two_keys_preserve_policy_but_projection_alone_does_not_block",
+      "time": "0.133",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_rkg06_two_key_policy",
+      "name": "test_ts3_global_flag_off_reverts_to_advisory_visible",
+      "time": "0.144",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_rkg06_two_key_policy",
+      "name": "test_invalid_policy_fails_closed_to_advisory",
+      "time": "0.138",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_rkg05_health_readiness",
+      "name": "test_ts1_health_summary_preserves_dlq_and_drilldown",
+      "time": "0.263",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_rkg05_health_readiness",
+      "name": "test_ts2_advisory_blocking_distinct_from_would_block_done",
+      "time": "0.132",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_rkg05_health_readiness",
+      "name": "test_ts3_skip_cannot_reduce_or_hide_technical_signal",
+      "time": "0.126",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_rkg05_health_readiness",
+      "name": "test_domains_stay_separate_and_invalid_profile_rejected",
+      "time": "0.113",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_rkg05_health_readiness",
+      "name": "test_mcp_health_readiness_tool_exposes_signals",
+      "time": "0.134",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-False-summary]",
+      "time": "0.044",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-False-full]",
+      "time": "0.033",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-False-legacy]",
+      "time": "0.034",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-True-summary]",
+      "time": "0.035",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-True-full]",
+      "time": "0.031",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-True-legacy]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-False-summary]",
+      "time": "0.032",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-False-full]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-False-legacy]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-True-summary]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-True-full]",
+      "time": "0.032",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-True-legacy]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_persistence_error_text_is_not_copied_to_aggregate",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_no_aggregate_invents_a_signal_for_zero_counts",
+      "time": "0.027",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-False-summary]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-False-full]",
+      "time": "0.027",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-False-legacy]",
+      "time": "0.031",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-True-summary]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-True-full]",
+      "time": "0.034",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-True-legacy]",
+      "time": "0.032",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-False-summary]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-False-full]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-False-legacy]",
+      "time": "0.026",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-True-summary]",
+      "time": "0.032",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-True-full]",
+      "time": "0.041",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-True-legacy]",
+      "time": "0.027",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-False-summary]",
+      "time": "0.025",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-False-full]",
+      "time": "0.024",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-False-legacy]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-True-summary]",
+      "time": "0.032",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-True-full]",
+      "time": "0.028",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-True-legacy]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-False-summary]",
+      "time": "0.025",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-False-full]",
+      "time": "0.027",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-False-legacy]",
+      "time": "0.031",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-True-summary]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-True-full]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-True-legacy]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-False-summary]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-False-full]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-False-legacy]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-True-summary]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-True-full]",
+      "time": "0.023",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-True-legacy]",
+      "time": "0.028",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-False-summary]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-False-full]",
+      "time": "0.026",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-False-legacy]",
+      "time": "0.031",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-True-summary]",
+      "time": "0.031",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-True-full]",
+      "time": "0.028",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-True-legacy]",
+      "time": "0.031",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-False-summary]",
+      "time": "0.031",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-False-full]",
+      "time": "0.033",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-False-legacy]",
+      "time": "0.031",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-True-summary]",
+      "time": "0.026",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-True-full]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-True-legacy]",
+      "time": "0.031",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-False-summary]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-False-full]",
+      "time": "0.027",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-False-legacy]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-True-summary]",
+      "time": "0.039",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-True-full]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-True-legacy]",
+      "time": "0.028",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-False-summary]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-False-full]",
+      "time": "0.027",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-False-legacy]",
+      "time": "0.027",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-True-summary]",
+      "time": "0.031",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-True-full]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-True-legacy]",
+      "time": "0.028",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-False-summary]",
+      "time": "0.024",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-False-full]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-False-legacy]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-True-summary]",
+      "time": "0.028",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-True-full]",
+      "time": "0.028",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-True-legacy]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-False-summary]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-False-full]",
+      "time": "0.031",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-False-legacy]",
+      "time": "0.027",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-True-summary]",
+      "time": "0.028",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-True-full]",
+      "time": "0.026",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-True-legacy]",
+      "time": "0.027",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-False-summary]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-False-full]",
+      "time": "0.031",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-False-legacy]",
+      "time": "0.024",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-True-summary]",
+      "time": "0.023",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-True-full]",
+      "time": "0.022",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_health_readiness_aggregate_retirement",
+      "name": "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-True-legacy]",
+      "time": "0.027",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_ts0627174f_six_tier_precedence",
+      "time": "0.039",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_skip_does_not_mask_open_debt_in_composition",
+      "time": "0.028",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_ts28af4e42_registry_rejects_unknown_and_technical[technical_dlq]",
+      "time": "0.027",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_ts28af4e42_registry_rejects_unknown_and_technical[canonical_debt_open]",
+      "time": "0.023",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_ts28af4e42_registry_rejects_unknown_and_technical[connectivity_guard]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_ts28af4e42_registry_rejects_unknown_and_technical[made_up]",
+      "time": "0.023",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_ts28af4e42_registry_rejects_unknown_and_technical[]",
+      "time": "0.027",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_revisit_required_needs_future_revisit_at[root_cause_unconfirmed]",
+      "time": "0.023",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_revisit_required_needs_future_revisit_at[evidence_insufficient]",
+      "time": "0.027",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_revisit_required_needs_future_revisit_at[path_b_pending]",
+      "time": "0.026",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_revisit_required_needs_future_revisit_at[external_context_missing]",
+      "time": "0.028",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_terminal_reason_codes_need_no_revisit_at[no_reusable_learning]",
+      "time": "0.026",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_terminal_reason_codes_need_no_revisit_at[duplicate_bug]",
+      "time": "0.026",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_terminal_reason_codes_need_no_revisit_at[trivial_fix]",
+      "time": "0.027",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_ts_d8123753_skip_is_ledger_only",
+      "time": "0.104",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_ts_0bafd8e6_skip_blocked_by_dlq_409_no_write",
+      "time": "0.055",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_skip_blocked_by_open_canonical_debt_409_no_write",
+      "time": "0.064",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_ts_66b34cda_expired_revisit_skip_reblocks",
+      "time": "0.121",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_readiness_s1_2",
+      "name": "test_ts_59247a00_open_debt_blocks_and_advisory",
+      "time": "0.087",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_mcp_tools_s3_2",
+      "name": "test_ts_9862838e_list_all_signals",
+      "time": "0.068",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_mcp_tools_s3_2",
+      "name": "test_ts_e1b66ffa_skip_blocked_by_dlq_409_no_write",
+      "time": "0.036",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_mcp_tools_s3_2",
+      "name": "test_skip_blocked_by_open_debt_409",
+      "time": "0.038",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_mcp_tools_s3_2",
+      "name": "test_ts_87b584b4_reason_code_registry_closed",
+      "time": "0.047",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_mcp_tools_s3_2",
+      "name": "test_revisit_required_needs_future_revisit_at",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_mcp_tools_s3_2",
+      "name": "test_record_then_clear_reopen_central",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_mcp_tools_s3_2",
+      "name": "test_clear_non_skipped_409",
+      "time": "0.032",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_mcp_tools_s3_2",
+      "name": "test_evaluate_tool_mirrors_service",
+      "time": "0.044",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_mcp_tools_s3_2",
+      "name": "test_would_block_done_enforcement",
+      "time": "0.045",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_mcp_tools_s3_2",
+      "name": "test_ts_ee91c90f_mcp_aliases_one_precedence",
+      "time": "0.049",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_mcp_tools_s3_2",
+      "name": "test_ts_d3ae61b3_mcp_all_tiers_task_advisory",
+      "time": "0.045",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_mcp_tools_s3_2",
+      "name": "test_ts_d5d8b99e_bug_twin_in_catalog",
+      "time": "0.042",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_mcp_tools_s3_2",
+      "name": "test_list_invalid_filter_400_via_mcp",
+      "time": "0.033",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_rest_s3_3",
+      "name": "test_routes_registered",
+      "time": "2.113",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_rest_s3_3",
+      "name": "test_rest_skip_happy_terminal",
+      "time": "0.216",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_rest_s3_3",
+      "name": "test_rest_skip_409_by_dlq_no_write",
+      "time": "0.036",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_rest_s3_3",
+      "name": "test_rest_skip_400_invalid_reason",
+      "time": "0.061",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_rest_s3_3",
+      "name": "test_rest_skip_400_revisit_required",
+      "time": "0.089",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_rest_s3_3",
+      "name": "test_rest_clear_reopen",
+      "time": "0.079",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_rest_s3_3",
+      "name": "test_rest_clear_409_not_skipped",
+      "time": "0.040",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_rest_s3_3",
+      "name": "test_rest_metrics_bounded",
+      "time": "0.081",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_rest_s3_3",
+      "name": "test_rest_list_enforcement_annotation",
+      "time": "0.039",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_rest_s3_3",
+      "name": "test_rest_list_keeps_projection_visible_without_completion_block",
+      "time": "0.052",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_rest_s3_3",
+      "name": "test_rest_mcp_skip_parity",
+      "time": "0.513",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_rest_s3_3",
+      "name": "test_rest_routes_via_client",
+      "time": "0.567",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_s3_1",
+      "name": "test_ts_290926c7_read_model_never_writes",
+      "time": "0.090",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_s3_1",
+      "name": "test_ts_c66892f6_debt_terminal_dlq",
+      "time": "0.080",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_s3_1",
+      "name": "test_ts_95b27c55_skip_valid_vs_expired",
+      "time": "0.058",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_s3_1",
+      "name": "test_ts_ee91c90f_card_bug_aliases_one_precedence",
+      "time": "0.074",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_s3_1",
+      "name": "test_ts_d3ae61b3_all_tiers_and_task_advisory",
+      "time": "0.073",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_s3_1",
+      "name": "test_signal_filter_and_pagination",
+      "time": "0.060",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_s3_1",
+      "name": "test_invalid_signal_filter_raises_400",
+      "time": "0.021",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_s3_1",
+      "name": "test_source_failure_raises_503",
+      "time": "0.024",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_s3_1",
+      "name": "test_route_is_registered",
+      "time": "0.014",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_s3_1",
+      "name": "test_rest_happy_path",
+      "time": "0.708",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_s3_1",
+      "name": "test_rest_invalid_filter_400",
+      "time": "1.098",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_cognitive_action_center_s3_1",
+      "name": "test_rest_source_unavailable_503",
+      "time": "0.636",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_completion_readiness_surfaces",
+      "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[False-False-dlq]",
+      "time": "0.849",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_completion_readiness_surfaces",
+      "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[False-False-debt]",
+      "time": "0.030",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_completion_readiness_surfaces",
+      "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[False-True-dlq]",
+      "time": "0.033",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_completion_readiness_surfaces",
+      "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[False-True-debt]",
+      "time": "0.034",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_completion_readiness_surfaces",
+      "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[True-False-dlq]",
+      "time": "0.028",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_completion_readiness_surfaces",
+      "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[True-False-debt]",
+      "time": "0.029",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_completion_readiness_surfaces",
+      "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[True-True-dlq]",
+      "time": "0.031",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "tests.test_completion_readiness_surfaces",
+      "name": "test_projection_cannot_hide_expired_skip_in_transport_annotations[True-True-debt]",
+      "time": "0.028",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "pending projection points to observation and external support without a repair action",
+      "time": "0.7381178",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "projection diagnostics preserve the backend completion assessment: false",
+      "time": "0.0779163",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "projection diagnostics preserve the backend completion assessment: true",
+      "time": "0.0506729",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "retains a legacy Sprint reference without a live entity lookup or navigation",
+      "time": "0.2596873",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > starts with attention, explains purpose and opens the source through the modal stack",
+      "time": "0.3287705",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > never offers a waiver on historical, running, or technically blocked records",
+      "time": "0.0377417",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > replaced Learning association is history, not a waiver or proof of a new projection",
+      "time": "0.0357705",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > reports failed processing without a repair entry point or write",
+      "time": "0.2907214",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > KG Health navigation uses its supplied callback",
+      "time": "0.4313256",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > does not fetch records or expose actions without read authority",
+      "time": "0.054434",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > metrics failure does not hide available records",
+      "time": "0.0323965",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > server pagination is reachable and changing sections resets the offset",
+      "time": "0.6522576",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > waiver has no default reason, requires justification and validates future reviews",
+      "time": "0.1211099",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > portal help is accessible with focus and Escape without entering the center layout",
+      "time": "0.2455173",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > a late response from the old filter cannot overwrite the new result",
+      "time": "0.0560465",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > switching boards removes the previous board form and ignores late source titles",
+      "time": "0.0678013",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > cross-board titles are never displayed",
+      "time": "0.0456036",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > renderiza linhas, counters e painel de métricas bounded",
+      "time": "0.0581495",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > technical blocker (DLQ) NÃO oferece skip e marca would_block_done",
+      "time": "0.1201446",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > linha cognitiva pending NÃO mostra would_block_done quando advisory",
+      "time": "0.0381223",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > skip via write-path central refaz fetch",
+      "time": "0.0799523",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > skip 409 mostra erro sem mascarar blocker técnico",
+      "time": "0.0928872",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > clear/reopen de skip válido chama o caminho central",
+      "time": "0.3177314",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > empty state",
+      "time": "0.0240112",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > error state quando fetch falha",
+      "time": "0.0305249",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    },
+    {
+      "classname": "src/components/knowledge/CognitiveActionCenterView.test.tsx",
+      "name": "CognitiveActionCenterView > filtro por signal refaz fetch com o signal selecionado",
+      "time": "0.0523165",
+      "failed": false,
+      "skipped": false,
+      "error": false
+    }
+  ],
+  "criteria": {
+    "BASE:T39": {
+      "status": "partial",
+      "covered": "Active/failed cognitive items retain the legacy closeout gate; expired skips remain enforced even behind technical DLQ/debt. Independent resource/evidence/policy gates are preserved.",
+      "remaining": "Substantive contradictory decision/evidence with the complete authenticated product lifecycle remains to be qualified; these tests do not certify that scenario."
+    },
+    "BASE:T40": {
+      "status": "partial",
+      "covered": "Supplementary completion readiness no longer blocks solely on DLQ or projection debt. Independent cognitive composition reaches lifecycle, MCP and REST; Board technical Health reports no inferred artifact completion verdict. Frontend displays backend completion assessment independently of the technical signal.",
+      "remaining": "Legacy CognitiveCloseoutGate still consults graph_state/generation availability; investigate its separation from authoritative cognitive-source availability. Installed complete product-evidence lifecycle with delayed projection remains outstanding."
+    }
+  },
+  "closure": {
+    "file": "learning-reconciliation-completion-projection-separation4-closure.log",
+    "sha256": "16dbe4ea66be071f062ff14faa02181a5e88874066bbe866df4684db4ec403b4",
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": []
+  },
+  "intermediates": [
+    {
+      "xml": "learning-reconciliation-completion-projection-separation-before1-core.xml",
+      "xml_sha256": "3e68c03c20ae7aa8f64f09dce502bd4e57393cf0eea1c91e7317ab8966bc1767",
+      "log": "learning-reconciliation-completion-projection-separation-before1-core.log",
+      "log_sha256": "24db176281a262278ebbb001efc0c4a2e20694ce52fc988b5a61e28fa0e1aab6",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "1",
+          "time": "7.120",
+          "timestamp": "2026-09-30T19:36:23.194783-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[None-None-dlq]",
+          "time": "2.646",
+          "failed": true,
+          "skipped": false,
+          "error": false
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-completion-projection-separation1-core.xml",
+      "xml_sha256": "a200429aa6efdcf5d17bd8dfd4f8845e0f8524754eeaebbb73ec53ef5c4eee39",
+      "log": "learning-reconciliation-completion-projection-separation1-core.log",
+      "log_sha256": "b26e034a064d86e964ce71c5e2e480701e5ac33f37b7c45b48b38551ee6b8242",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "3",
+          "time": "8.774",
+          "timestamp": "2026-09-30T19:39:34.115724-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[None-None-dlq]",
+          "time": "3.139",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[None-None-projection_debt]",
+          "time": "0.026",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[pending-cognitive_active-dlq]",
+          "time": "0.020",
+          "failed": true,
+          "skipped": false,
+          "error": false
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-completion-projection-separation2-core.xml",
+      "xml_sha256": "860f2e9e90790235f6f426e51f4f511289ebedc39324af32bcec334306f9ef89",
+      "log": "learning-reconciliation-completion-projection-separation2-core.log",
+      "log_sha256": "bd341a470fed6816a5d10dfc1b8a6168189bf7311d659680525f4b1396915e41",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "44",
+          "time": "6.961",
+          "timestamp": "2026-09-30T19:40:57.277793-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[None-None-dlq]",
+          "time": "1.550",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[None-None-projection_debt]",
+          "time": "0.015",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[pending-cognitive_active-dlq]",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[pending-cognitive_active-projection_debt]",
+          "time": "0.018",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[failed-cognitive_active-dlq]",
+          "time": "0.019",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[failed-cognitive_active-projection_debt]",
+          "time": "0.018",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[skipped-skip_expired-dlq]",
+          "time": "0.020",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[skipped-skip_expired-projection_debt]",
+          "time": "0.020",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items0-ready-False-True-False]",
+          "time": "0.032",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items0-ready-False-False-True]",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items0-ready-False-True-True]",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items1-cognitive_active-True-True-False]",
+          "time": "0.019",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items1-cognitive_active-True-False-True]",
+          "time": "0.022",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items1-cognitive_active-True-True-True]",
+          "time": "0.021",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items2-cognitive_active-True-True-False]",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items2-cognitive_active-True-False-True]",
+          "time": "0.016",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items2-cognitive_active-True-True-True]",
+          "time": "0.016",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items3-skip_expired-True-True-False]",
+          "time": "0.021",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items3-skip_expired-True-False-True]",
+          "time": "0.023",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items3-skip_expired-True-True-True]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items4-skip_expired-True-True-False]",
+          "time": "0.019",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items4-skip_expired-True-False-True]",
+          "time": "0.019",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items4-skip_expired-True-True-True]",
+          "time": "0.015",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items5-skip_valid-False-True-False]",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items5-skip_valid-False-False-True]",
+          "time": "0.027",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items5-skip_valid-False-True-True]",
+          "time": "0.019",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items6-skip_valid-False-True-False]",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items6-skip_valid-False-False-True]",
+          "time": "0.016",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items6-skip_valid-False-True-True]",
+          "time": "0.016",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items7-terminal_history-False-True-False]",
+          "time": "0.016",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items7-terminal_history-False-False-True]",
+          "time": "0.020",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items7-terminal_history-False-True-True]",
+          "time": "0.018",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_task_advisory_does_not_hide_a_real_expired_obligation",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_spec_done_blocks_on_direct_spec_cognitive_item",
+          "time": "0.479",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_spec_done_blocks_on_active_decision_child_cognitive_item",
+          "time": "0.083",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_submit_task_validation_records_cognitive_rejection",
+          "time": "0.408",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_move_card_done_blocks_task_test_and_bug_before_status_mutation[normal-task]",
+          "time": "0.118",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_move_card_done_blocks_task_test_and_bug_before_status_mutation[test-test]",
+          "time": "0.080",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_move_card_done_blocks_task_test_and_bug_before_status_mutation[bug-bug]",
+          "time": "0.094",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_board_skip_allows_done_but_keeps_pending_item_visible_and_status_done",
+          "time": "0.179",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_board_policy_defaults_to_advisory",
+          "time": "0.013",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_blocking_active_needs_both_flag_and_policy",
+          "time": "0.012",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_done_preserves_validation_with_only_projection_debt",
+          "time": "0.142",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_done_does_not_require_technical_dlq_maintenance",
+          "time": "0.111",
+          "failed": true,
+          "skipped": false,
+          "error": false
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-completion-projection-separation3-core.xml",
+      "xml_sha256": "e15c7e0c923bb32eb6b0210f663cca3602b701160c06033d1fe54fa49d0ccef1",
+      "log": "learning-reconciliation-completion-projection-separation3-core.log",
+      "log_sha256": "d3c473854198e1238a515d06295093dba9b90f366ca7306f7aade05a82d3fbb7",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "49",
+          "time": "7.788",
+          "timestamp": "2026-09-30T19:41:37.075413-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[None-None-dlq]",
+          "time": "1.924",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[None-None-projection_debt]",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[pending-cognitive_active-dlq]",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[pending-cognitive_active-projection_debt]",
+          "time": "0.016",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[failed-cognitive_active-dlq]",
+          "time": "0.016",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[failed-cognitive_active-projection_debt]",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[skipped-skip_expired-dlq]",
+          "time": "0.016",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_completion_readiness_projection_separation",
+          "name": "test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[skipped-skip_expired-projection_debt]",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items0-ready-False-True-False]",
+          "time": "0.036",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items0-ready-False-False-True]",
+          "time": "0.018",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items0-ready-False-True-True]",
+          "time": "0.018",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items1-cognitive_active-True-True-False]",
+          "time": "0.016",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items1-cognitive_active-True-False-True]",
+          "time": "0.016",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items1-cognitive_active-True-True-True]",
+          "time": "0.020",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items2-cognitive_active-True-True-False]",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items2-cognitive_active-True-False-True]",
+          "time": "0.016",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items2-cognitive_active-True-True-True]",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items3-skip_expired-True-True-False]",
+          "time": "0.019",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items3-skip_expired-True-False-True]",
+          "time": "0.018",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items3-skip_expired-True-True-True]",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items4-skip_expired-True-True-False]",
+          "time": "0.016",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items4-skip_expired-True-False-True]",
+          "time": "0.015",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items4-skip_expired-True-True-True]",
+          "time": "0.014",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items5-skip_valid-False-True-False]",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items5-skip_valid-False-False-True]",
+          "time": "0.018",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items5-skip_valid-False-True-True]",
+          "time": "0.017",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items6-skip_valid-False-True-False]",
+          "time": "0.016",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items6-skip_valid-False-False-True]",
+          "time": "0.018",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items6-skip_valid-False-True-True]",
+          "time": "0.020",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items7-terminal_history-False-True-False]",
+          "time": "0.018",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items7-terminal_history-False-False-True]",
+          "time": "0.014",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_cognitive_verdict_survives_coexisting_projection_debt[items7-terminal_history-False-True-True]",
+          "time": "0.013",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_projection_independent_cognitive_readiness",
+          "name": "test_task_advisory_does_not_hide_a_real_expired_obligation",
+          "time": "0.013",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_spec_done_blocks_on_direct_spec_cognitive_item",
+          "time": "0.310",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_spec_done_blocks_on_active_decision_child_cognitive_item",
+          "time": "0.116",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_submit_task_validation_records_cognitive_rejection",
+          "time": "0.467",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_move_card_done_blocks_task_test_and_bug_before_status_mutation[normal-task]",
+          "time": "0.137",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_move_card_done_blocks_task_test_and_bug_before_status_mutation[test-test]",
+          "time": "0.086",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_move_card_done_blocks_task_test_and_bug_before_status_mutation[bug-bug]",
+          "time": "0.084",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_board_skip_allows_done_but_keeps_pending_item_visible_and_status_done",
+          "time": "0.138",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_board_policy_defaults_to_advisory",
+          "time": "0.016",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_blocking_active_needs_both_flag_and_policy",
+          "time": "0.015",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_done_preserves_validation_with_only_projection_debt",
+          "time": "0.167",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_done_does_not_require_technical_dlq_maintenance",
+          "time": "0.206",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_advisory_default_board_does_not_block_on_open_debt",
+          "time": "0.174",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_blocking_policy_no_debt_passes",
+          "time": "0.155",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_blocking_active_fails_closed_when_readiness_service_errors",
+          "time": "0.119",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_advisory_default_does_not_instantiate_readiness_service",
+          "time": "0.132",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "classname": "tests.test_cognitive_closeout_service_wiring",
+          "name": "test_blocking_active_fails_closed_when_source_ref_resolution_errors",
+          "time": "0.160",
+          "failed": false,
+          "skipped": false,
+          "error": false
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Core campaign4 stopped at obsolete REST expectation after185 passes. Final selection excludes that entire module and uses the final24-case REST/action-center supplement instead; all other176 Core cases plus8 Community and26 frontend cases passed. No failed run is called green.",
+    "Core lifecycle fixture injects independent Delivery acceptance and an allowing legacy gate when isolating readiness. Real cognitive store/gate tests separately cover active items. This is not full authenticated evidence admission E2E.",
+    "Community8 cases exercise real REST/MCP annotation helpers, not transport authorization. Frontend26 uses Vitest/jsdom and API mocks, not browser/live runtime.",
+    "No data migration, policy grant change, history rewrite, live runtime or release; no product frontend change, so no new SPA build needed.",
+    "Health would_block_done=null means artifact completion was not assessed by the Board aggregate; technical counters, reasons and unavailable status remain visible."
+  ]
+}

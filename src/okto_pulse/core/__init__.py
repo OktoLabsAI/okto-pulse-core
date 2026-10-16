@@ -7,7 +7,7 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING
 
-__version__ = "0.3.3"
+__version__ = "0.4.0"
 
 # Public names are resolved LAZILY (PEP 562 module ``__getattr__``) so importing
 # ``okto_pulse.core`` — or any submodule, which runs this ``__init__`` first —
@@ -34,16 +34,16 @@ _LAZY_EXPORTS: dict[str, str] = {
     "get_settings": "okto_pulse.core.infra.config",
     "configure_settings": "okto_pulse.core.infra.config",
     "register_package_version_provider": "okto_pulse.core.infra.config",
+    "resolve_package_version": "okto_pulse.core.infra.config",
     "reset_package_version_provider_for_tests": "okto_pulse.core.infra.config",
     # relational runtime port
     "get_db": "okto_pulse.core.ports.relational_runtime",
     "get_db_session": "okto_pulse.core.ports.relational_runtime",
     "init_db": "okto_pulse.core.ports.relational_runtime",
     "close_db": "okto_pulse.core.ports.relational_runtime",
-    # infra.permissions
-    "Permissions": "okto_pulse.core.infra.permissions",
-    "check_permission": "okto_pulse.core.infra.permissions",
-    "has_permission": "okto_pulse.core.infra.permissions",
+    # domain.permissions
+    "check_permission": "okto_pulse.core.domain.permissions",
+    "has_permission": "okto_pulse.core.domain.permissions",
     # infra.storage
     "DEFAULT_STREAM_CHUNK_SIZE": "okto_pulse.core.infra.storage",
     "StorageProvider": "okto_pulse.core.infra.storage",
@@ -80,6 +80,7 @@ if TYPE_CHECKING:  # static type-checkers / import resolvers see the real symbol
         configure_settings,
         get_settings,
         register_package_version_provider,
+        resolve_package_version,
         reset_package_version_provider_for_tests,
     )
     from okto_pulse.core.ports.relational_runtime import (
@@ -88,8 +89,7 @@ if TYPE_CHECKING:  # static type-checkers / import resolvers see the real symbol
         get_db_session,
         init_db,
     )
-    from okto_pulse.core.infra.permissions import (
-        Permissions,
+    from okto_pulse.core.domain.permissions import (
         check_permission,
         has_permission,
     )

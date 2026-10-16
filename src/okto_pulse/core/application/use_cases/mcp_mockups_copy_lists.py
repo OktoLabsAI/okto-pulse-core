@@ -9,6 +9,7 @@ from __future__ import annotations
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 import hashlib
+import copy
 import re
 import time
 from dataclasses import dataclass
@@ -32,6 +33,7 @@ from okto_pulse.core.application.use_cases._service_payload import (
     payload,
 )
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
+from okto_pulse.core.services.application_schemas import mockup_collection_snapshot
 from okto_pulse.core.domain.human_validation_cycle import require_draft_mutation
 from okto_pulse.core.services.knowledge_governance_projection import (
     serialize_knowledge_base as _serialize_knowledge_base,
@@ -46,6 +48,13 @@ class McpPayloadResult:
 def _require_mockup_parent_draft(entity: Any, entity_type: str) -> None:
     if entity_type in {"ideation", "refinement", "spec"}:
         require_draft_mutation(entity, subject_type=entity_type)
+
+
+def _mockup_authoring_base(entity: Any, entity_type: str) -> dict[str, Any]:
+    if entity_type != "spec":
+        return {}
+    return {"expected_version": entity.version, "expected_snapshot": mockup_collection_snapshot(
+        board_id=entity.board_id, spec_id=entity.id, edition=entity.edition, mockups=entity.screen_mockups)}
 
 
 def _qa_selected_labels(qa: Any) -> list[str]:
@@ -167,10 +176,13 @@ async def _save_entity_mockups(
     agent_id: str,
     screens: list[dict[str, Any]],
     update_class: Any,
+    expected_version: int | None = None,
+    expected_snapshot: str | None = None,
 ) -> None:
     if entity_type == "spec":
         await service.update_spec(
-            entity_id, agent_id, update_class(screen_mockups=screens)
+            entity_id, agent_id, update_class(screen_mockups=screens, expected_spec_version=expected_version,
+                                              expected_mockup_snapshot=expected_snapshot)
         )
     elif entity_type == "ideation":
         await service.update_ideation(
@@ -482,7 +494,6 @@ class McpAddScreenMockupUseCase:
             actor,
             PermissionRequirement(
                 f"{command.entity_type}.mockups.create",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -502,6 +513,7 @@ class McpAddScreenMockupUseCase:
         if not entity:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
         _require_mockup_parent_draft(entity, command.entity_type)
+        authored_base = _mockup_authoring_base(entity, command.entity_type)
 
         screen_id = (
             "sm_"
@@ -531,7 +543,7 @@ class McpAddScreenMockupUseCase:
             )
         except DesignSystemError as exc:
             return McpPayloadResult(exc.to_dict())
-        screens = list(entity.screen_mockups or [])
+        screens = copy.deepcopy(entity.screen_mockups or [])
         screen["order"] = len(screens)
         screens.append(screen)
         await _save_entity_mockups(
@@ -541,6 +553,7 @@ class McpAddScreenMockupUseCase:
             actor.actor_id,
             screens,
             update_class,
+            **authored_base,
         )
         await commit(uow)
         return McpPayloadResult(
@@ -565,7 +578,6 @@ class McpUpdateScreenMockupUseCase:
             actor,
             PermissionRequirement(
                 f"{command.entity_type}.mockups.edit",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -585,7 +597,8 @@ class McpUpdateScreenMockupUseCase:
         if not entity:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
         _require_mockup_parent_draft(entity, command.entity_type)
-        screens = list(entity.screen_mockups or [])
+        authored_base = _mockup_authoring_base(entity, command.entity_type)
+        screens = copy.deepcopy(entity.screen_mockups or [])
         screen = next((s for s in screens if s.get("id") == command.screen_id), None)
         if not screen:
             raise EntityNotFoundError("screen", command.screen_id)
@@ -621,6 +634,7 @@ class McpUpdateScreenMockupUseCase:
             actor.actor_id,
             screens,
             update_class,
+            **authored_base,
         )
         await commit(uow)
         return McpPayloadResult(
@@ -646,7 +660,6 @@ class McpAnnotateMockupUseCase:
             actor,
             PermissionRequirement(
                 f"{command.entity_type}.mockups.annotate",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -661,6 +674,7 @@ class McpAnnotateMockupUseCase:
         if not entity:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
         _require_mockup_parent_draft(entity, command.entity_type)
+        authored_base = _mockup_authoring_base(entity, command.entity_type)
         annotation = {
             "id": "an_"
             + hashlib.md5(
@@ -669,7 +683,7 @@ class McpAnnotateMockupUseCase:
             "text": command.text,
             "author_id": actor.actor_id,
         }
-        screens = list(entity.screen_mockups or [])
+        screens = copy.deepcopy(entity.screen_mockups or [])
         screen = next((s for s in screens if s.get("id") == command.screen_id), None)
         if not screen:
             raise EntityNotFoundError("screen", command.screen_id)
@@ -683,6 +697,7 @@ class McpAnnotateMockupUseCase:
             actor.actor_id,
             screens,
             update_class,
+            **authored_base,
         )
         await commit(uow)
         return McpPayloadResult({"success": True, "annotation": annotation})
@@ -700,7 +715,6 @@ class McpListScreenMockupsUseCase:
             actor,
             PermissionRequirement(
                 f"{command.entity_type}.mockups.read",
-                legacy_operation="board:read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -714,7 +728,7 @@ class McpListScreenMockupsUseCase:
         )
         if not entity:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
-        screens = list(entity.screen_mockups or [])
+        screens = copy.deepcopy(entity.screen_mockups or [])
         if command.screen_type:
             screens = [
                 s for s in screens if s.get("screen_type") == command.screen_type
@@ -749,7 +763,6 @@ class McpDeleteScreenMockupUseCase:
             actor,
             PermissionRequirement(
                 f"{command.entity_type}.mockups.delete",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -764,7 +777,8 @@ class McpDeleteScreenMockupUseCase:
         if not entity:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
         _require_mockup_parent_draft(entity, command.entity_type)
-        screens = list(entity.screen_mockups or [])
+        authored_base = _mockup_authoring_base(entity, command.entity_type)
+        screens = copy.deepcopy(entity.screen_mockups or [])
         original_len = len(screens)
         screens = [s for s in screens if s.get("id") != command.screen_id]
         if len(screens) == original_len:
@@ -776,6 +790,7 @@ class McpDeleteScreenMockupUseCase:
             actor.actor_id,
             screens,
             update_class,
+            **authored_base,
         )
         await commit(uow)
         return McpPayloadResult({"success": True, "screen_id": command.screen_id})

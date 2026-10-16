@@ -47,38 +47,33 @@ _TOOL_CONTRACTS: tuple[_ToolContract, ...] = (
         name="okto_pulse_record_ambiguity_assessment",
         documentation_uri=_QUALITY_DOC,
         permission_policy=(
-            "SPECS_UPDATE",
             "{subject_type}.quality.assess",
         ),
         required_source_tokens=(
-            "Permissions.SPECS_UPDATE",
             ".quality.assess",
         ),
     ),
     _ToolContract(
         name="okto_pulse_record_requirement_lint",
         documentation_uri=_QUALITY_DOC,
-        permission_policy=("SPECS_UPDATE", "spec.quality.assess"),
+        permission_policy=("spec.quality.assess",),
         required_source_tokens=(
-            "Permissions.SPECS_UPDATE",
             '"spec.quality.assess"',
         ),
     ),
     _ToolContract(
         name="okto_pulse_get_requirement_lint_preflight",
         documentation_uri=_QUALITY_DOC,
-        permission_policy=("BOARD_READ", "spec.quality.read"),
+        permission_policy=("spec.quality.read",),
         required_source_tokens=(
-            "Permissions.BOARD_READ",
             '"spec.quality.read"',
         ),
     ),
     _ToolContract(
         name="okto_pulse_get_current_quality_assessment",
         documentation_uri=_QUALITY_DOC,
-        permission_policy=("BOARD_READ", "{subject_type}.quality.read"),
+        permission_policy=("{subject_type}.quality.read",),
         required_source_tokens=(
-            "Permissions.BOARD_READ",
             ".quality.read",
         ),
     ),
@@ -86,65 +81,57 @@ _TOOL_CONTRACTS: tuple[_ToolContract, ...] = (
         name="okto_pulse_get_quality_assessment_receipt",
         documentation_uri=_QUALITY_DOC,
         permission_policy=(
-            "BOARD_READ",
             "resolved receipt subject *.quality.read via preflight",
         ),
         required_source_tokens=(
-            "Permissions.BOARD_READ",
             "GetQualityAssessmentReceiptCommand",
         ),
     ),
     _ToolContract(
         name="okto_pulse_list_quality_assessments",
         documentation_uri=_QUALITY_DOC,
-        permission_policy=("BOARD_READ", "{subject_type}.quality.read"),
+        permission_policy=("{subject_type}.quality.read",),
         required_source_tokens=(
-            "Permissions.BOARD_READ",
             ".quality.read",
         ),
     ),
     _ToolContract(
         name="okto_pulse_list_quality_findings",
         documentation_uri=_QUALITY_DOC,
-        permission_policy=("BOARD_READ", "{subject_type}.quality.read"),
+        permission_policy=("{subject_type}.quality.read",),
         required_source_tokens=(
-            "Permissions.BOARD_READ",
             ".quality.read",
         ),
     ),
     _ToolContract(
         name="okto_pulse_get_checklist_binding",
         documentation_uri=_SPEC_DOC,
-        permission_policy=("BOARD_READ", "spec.checklist.read"),
+        permission_policy=("spec.checklist.read",),
         required_source_tokens=(
-            "Permissions.BOARD_READ",
             '"spec.checklist.read"',
         ),
     ),
     _ToolContract(
         name="okto_pulse_start_checklist_execution",
         documentation_uri=_SPEC_DOC,
-        permission_policy=("SPECS_UPDATE", "spec.checklist.execute"),
+        permission_policy=("spec.checklist.execute",),
         required_source_tokens=(
-            "Permissions.SPECS_UPDATE",
             '"spec.checklist.execute"',
         ),
     ),
     _ToolContract(
         name="okto_pulse_submit_checklist_execution",
         documentation_uri=_SPEC_DOC,
-        permission_policy=("SPECS_UPDATE", "spec.checklist.execute"),
+        permission_policy=("spec.checklist.execute",),
         required_source_tokens=(
-            "Permissions.SPECS_UPDATE",
             '"spec.checklist.execute"',
         ),
     ),
     _ToolContract(
         name="okto_pulse_get_checklist_receipt",
         documentation_uri=_SPEC_DOC,
-        permission_policy=("BOARD_READ", "spec.checklist.read"),
+        permission_policy=("spec.checklist.read",),
         required_source_tokens=(
-            "Permissions.BOARD_READ",
             '"spec.checklist.read"',
         ),
     ),
@@ -152,11 +139,9 @@ _TOOL_CONTRACTS: tuple[_ToolContract, ...] = (
         name="okto_pulse_append_research_decision",
         documentation_uri=_REFINEMENT_DOC,
         permission_policy=(
-            "SPECS_UPDATE",
             "refinement.research_decisions.append",
         ),
         required_source_tokens=(
-            "Permissions.SPECS_UPDATE",
             '"refinement.research_decisions.append"',
         ),
     ),
@@ -164,11 +149,9 @@ _TOOL_CONTRACTS: tuple[_ToolContract, ...] = (
         name="okto_pulse_list_research_decisions",
         documentation_uri=_REFINEMENT_DOC,
         permission_policy=(
-            "BOARD_READ",
             "refinement.research_decisions.read",
         ),
         required_source_tokens=(
-            "Permissions.BOARD_READ",
             '"refinement.research_decisions.read"',
         ),
     ),

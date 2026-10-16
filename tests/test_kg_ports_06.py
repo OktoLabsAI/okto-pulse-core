@@ -1,7 +1,7 @@
 """Spec #06 — KG storage ports.
 
 Core exposes graph ports and test-only in-memory providers. Concrete
-Kuzu/Ladybug runtime behavior is owned by the Community adapter package.
+Concrete graph-runtime behavior is owned by the Community adapter package (Grafx).
 """
 
 from __future__ import annotations
@@ -89,7 +89,7 @@ def test_runtime_store_exposes_memory_storage_state(registry, board):
 
 
 @pytest.mark.asyncio
-async def test_schema_manager_bootstrap_migrate_validate(registry, board):
+async def test_schema_manager_bootstrap_validate(registry, board):
     mgr = registry.graph_schema_manager
     # idempotent ensure (board already bootstrapped) — must not raise
     await mgr.ensure_bootstrapped(board)
@@ -102,9 +102,7 @@ async def test_schema_manager_bootstrap_migrate_validate(registry, board):
     assert result.valid is True
     assert result.current_version == SCHEMA_VERSION
     assert result.issues == ()
-    summary = await mgr.migrate(board)
-    assert summary["board_id"] == board
-    assert "columns_added" in summary and "errors" in summary
+    assert not hasattr(mgr, "migrate")
 
 
 # --------------------------------------------------------------------------- #
@@ -193,17 +191,27 @@ class _RaisingGraphStore:
     def get_schema_version(self, board_id: str) -> str | None:
         raise RuntimeError("boom: schema read failed")
 
+    def vector_search(self, *_args: object, **_kwargs: object):
+        # Present but failing: configure_test_kg_registry wires the Community
+        # reflective providers from the graph store, and those require the
+        # vector_search seam to EXIST (callable) even when this test never
+        # retrieves. Consistent with this fake's character, it fails closed.
+        raise RuntimeError("boom: vector search failed")
+
 
 class _NoVersionGraphStore:
     def get_schema_version(self, board_id: str) -> str | None:
         return None
+
+    def vector_search(self, *_args: object, **_kwargs: object):
+        return ()
 
 
 @pytest.mark.asyncio
 async def test_schema_validate_fails_closed_on_read_error():
     reset_registry_for_tests()
     try:
-        configure_test_kg_registry(graph_store=_RaisingGraphStore())
+        configure_test_kg_registry(graph_store=_RaisingGraphStore(), graph_provider="inmemory")
         result = await get_kg_registry().graph_schema_manager.validate("any-board")
         assert result.valid is False
         assert result.current_version is None
@@ -216,7 +224,7 @@ async def test_schema_validate_fails_closed_on_read_error():
 async def test_schema_validate_invalid_when_no_version_recorded():
     reset_registry_for_tests()
     try:
-        configure_test_kg_registry(graph_store=_NoVersionGraphStore())
+        configure_test_kg_registry(graph_store=_NoVersionGraphStore(), graph_provider="inmemory")
         result = await get_kg_registry().graph_schema_manager.validate("any-board")
         assert result.valid is False
         assert result.current_version is None
@@ -229,7 +237,7 @@ async def test_schema_validate_invalid_when_no_version_recorded():
 async def test_schema_current_version_does_not_mask_read_error():
     reset_registry_for_tests()
     try:
-        configure_test_kg_registry(graph_store=_RaisingGraphStore())
+        configure_test_kg_registry(graph_store=_RaisingGraphStore(), graph_provider="inmemory")
         mgr = get_kg_registry().graph_schema_manager
         with pytest.raises(RuntimeError):
             await mgr.current_version("any-board")  # NOT masked to SCHEMA_VERSION

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from task_validation_native_fixtures import native_entry
+
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
 import json
 import uuid
 from types import SimpleNamespace
@@ -10,7 +14,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from mcp_runtime_testing import register_mcp_test_runtime
 from okto_pulse.community.api.auth_deps import require_user
@@ -28,8 +32,6 @@ from okto_pulse.core.application.use_cases.card_crud import (
     GetCardSeenStatusUseCase,
 )
 from okto_pulse.core.application.use_cases.mcp_card_crud import (
-    McpCopyKnowledgeToCardCommand,
-    McpCopyKnowledgeToCardUseCase,
     McpCreateCardCommand,
     McpCreateCardUseCase,
     McpDeleteCardCommand,
@@ -60,8 +62,6 @@ from okto_pulse.core.application.use_cases.mcp_collaboration import (
 from okto_pulse.core.domain.enums import (
     BugSeverity,
     CardType,
-    SprintLaneType,
-    SprintStatus,
 )
 from okto_pulse.core.ports.knowledge_propagation import (
     KnowledgePropagationScope,
@@ -80,9 +80,7 @@ from sqlalchemy_test_models import (
     Spec,
     SpecKnowledgeBase,
     SpecStatus,
-    Sprint,
 )
-from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
 
 
 class _LegacyKnowledgeScopePort:
@@ -145,6 +143,10 @@ async def _graph(db_factory):
         db.add_all(
             [
                 Spec(
+                    architecture_adoption=ArchitectureAdoptionScope(
+                        board_id=ids["board_a"], spec_id=ids["spec_a"],
+                        adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=(),
+                    ).model_dump(mode="json"),
                     id=ids["spec_a"],
                     board_id=ids["board_a"],
                     title="Card scope spec A",
@@ -163,6 +165,10 @@ async def _graph(db_factory):
                     api_contracts=[],
                 ),
                 Spec(
+                    architecture_adoption=ArchitectureAdoptionScope(
+                        board_id=ids["board_b"], spec_id=ids["spec_b"],
+                        adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=(),
+                    ).model_dump(mode="json"),
                     id=ids["spec_b"],
                     board_id=ids["board_b"],
                     title="Card scope spec B",
@@ -193,7 +199,10 @@ async def _graph(db_factory):
                     created_by=USER_ID,
                     validations=[
                         {
+                            **native_entry(),
                             "id": ids["validation_a"],
+                            "card_id": ids["source_a"],
+                            "board_id": ids["board_a"],
                             "reviewer_id": "reviewer-a",
                             "recommendation": "approve",
                         }
@@ -284,14 +293,14 @@ async def _graph(db_factory):
     return ids
 
 
-async def _call(db_factory, tool_name: str, **kwargs) -> dict:
+async def _call(db_factory, tool_name: str, *, actor_id: str = USER_ID, **kwargs) -> dict:
     board_id = kwargs["board_id"]
     ctx = type(
         "Ctx",
         (),
         {
-            "agent_id": USER_ID,
-            "agent_name": USER_ID,
+            "agent_id": actor_id,
+            "agent_name": actor_id,
             "board_id": board_id,
             "permissions": ["*"],
         },
@@ -445,93 +454,10 @@ async def test_remove_dependency_contains_source_and_target_without_enumeration(
     assert await _edge_ids(db_factory, ids["source_a"]) == {ids["foreign_edge"]}
 
 
-@pytest.mark.asyncio
-async def test_copy_knowledge_requires_source_and_target_on_command_board(
-    db_factory, _graph
-):
-    ids = _graph
-    matrix = (
-        (
-            ids["board_a"],
-            f"missing-{uuid.uuid4().hex}",
-            ids["source_a"],
-            "Spec not found",
-        ),
-        (
-            ids["board_a"],
-            ids["spec_a"],
-            f"missing-{uuid.uuid4().hex}",
-            "Card not found",
-        ),
-        (ids["board_b"], ids["spec_a"], ids["target_b"], "Spec not found"),
-        (ids["board_a"], ids["spec_b"], ids["source_a"], "Spec not found"),
-        (ids["board_a"], ids["spec_a"], ids["target_b"], "Card not found"),
-    )
-    for board_id, spec_id, card_id, error in matrix:
-        result = await _call(
-            db_factory,
-            "okto_pulse_copy_knowledge_to_card",
-            board_id=board_id,
-            spec_id=spec_id,
-            card_id=card_id,
-        )
-        assert result == {"error": error}
-
-    async with db_factory() as db:
-        assert (await db.get(Card, ids["source_a"])).knowledge_bases is None
-        assert (await db.get(Card, ids["target_b"])).knowledge_bases is None
-
-    same_board = await _call(
-        db_factory,
-        "okto_pulse_copy_knowledge_to_card",
-        board_id=ids["board_a"],
-        spec_id=ids["spec_a"],
-        card_id=ids["source_a"],
-    )
-    assert same_board["success"] is True
-    assert same_board["copied"] == 1
 
 
-@pytest.mark.asyncio
-async def test_copy_knowledge_returns_stable_v2_legacy_write_error(
-    db_factory,
-    _graph,
-):
-    ids = _graph
-    register_knowledge_propagation_port(_LegacyKnowledgeScopePort(v2_active=True))
-
-    result = await _call(
-        db_factory,
-        "okto_pulse_copy_knowledge_to_card",
-        board_id=ids["board_a"],
-        spec_id=ids["spec_a"],
-        card_id=ids["source_a"],
-    )
-
-    assert result["error"] == "knowledge_propagation_legacy_write_forbidden"
-    assert result["code"] == "knowledge_propagation_legacy_write_forbidden"
-    assert result["retryable"] is False
-    async with db_factory() as db:
-        assert (await db.get(Card, ids["source_a"])).knowledge_bases is None
 
 
-@pytest.mark.asyncio
-async def test_copy_knowledge_rejects_actor_command_board_mismatch(db_factory, _graph):
-    ids = _graph
-    actor = ActorContext(USER_ID, "mcp", board_id=ids["board_b"])
-    uow_factory = SQLAlchemyUnitOfWorkFactory(db_factory)
-    with pytest.raises(EntityNotFoundError) as exc_info:
-        async with uow_factory(actor=actor) as uow:
-            await McpCopyKnowledgeToCardUseCase().execute(
-                McpCopyKnowledgeToCardCommand(
-                    ids["board_a"], ids["spec_a"], ids["source_a"], None
-                ),
-                actor=actor,
-                uow=uow,
-            )
-    assert exc_info.value.entity_type == "spec"
-    async with db_factory() as db:
-        assert (await db.get(Card, ids["source_a"])).knowledge_bases is None
 
 
 @pytest.mark.asyncio
@@ -605,9 +531,10 @@ async def test_card_children_cross_board_are_not_read_written_or_audited(
 
     ask = await _call(
         db_factory,
-        "okto_pulse_ask_question",
+        "okto_pulse_ask",
         board_id=ids["board_b"],
-        card_id=ids["source_a"],
+        target_type="card",
+        parent_id=ids["source_a"],
         question="foreign question",
     )
     add_comment = await _call(
@@ -683,7 +610,7 @@ async def test_qa_choice_comment_and_upload_children_are_parent_card_scoped(
         board_id=ids["board_b"],
         card_id=ids["source_a"],
         question="must not create a foreign choice",
-        options=["one"],
+        options=[{"label": "one"}],
     )
     respond = await _call(
         db_factory,
@@ -813,7 +740,7 @@ async def test_qa_and_comment_child_flows_keep_same_board_success_envelopes(
         board_id=ids["board_a"],
         card_id=ids["source_a"],
         question="same-board choice",
-        options=["ship", "wait"],
+        options=[{"label": "ship"}, {"label": "wait"}],
     )
     new_choice_id = add_choice["comment"]["id"]
     respond = await _call(
@@ -1069,15 +996,16 @@ async def test_collaboration_commands_reject_actor_command_board_spoof_before_ch
 
 
 @pytest.mark.asyncio
-async def test_same_board_card_children_keep_legacy_success_envelopes(
+async def test_same_board_card_children_keep_native_success_envelopes(
     db_factory, _graph
 ):
     ids = _graph
     ask = await _call(
         db_factory,
-        "okto_pulse_ask_question",
+        "okto_pulse_ask",
         board_id=ids["board_a"],
-        card_id=ids["source_a"],
+        target_type="card",
+        parent_id=ids["source_a"],
         question="same-board question",
     )
     add_comment = await _call(
@@ -1153,6 +1081,7 @@ async def test_mcp_task_validation_submit_list_and_get_hide_ledger_plumbing(
         board_id=ids["board_a"],
         card_id=ids["source_a"],
         expected_subject_version=expected_subject_version,
+        actor_id="independent-reviewer",
         idempotency_key=f"mcp-public-projection-{ids['source_a']}",
         confidence=90,
         confidence_justification="Independent review established high confidence.",
@@ -1169,6 +1098,7 @@ async def test_mcp_task_validation_submit_list_and_get_hide_ledger_plumbing(
         board_id=ids["board_a"],
         card_id=ids["source_a"],
     )
+    assert "id" in submitted, submitted
     fetched = await _call(
         db_factory,
         "okto_pulse_get_task_validation",
@@ -1380,136 +1310,39 @@ async def test_card_activity_and_seen_scope_parent_before_aggregate_readers():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "foreign_keys_enabled",
-    [True, False],
-    ids=["fresh-fk", "legacy-no-fk-enforcement"],
-)
-async def test_delete_bug_referenced_by_hotfix_is_governed_zero_write(
-    db_factory, _graph, foreign_keys_enabled
-):
+@pytest.mark.parametrize("transport", ["mcp", "rest"])
+async def test_delete_bug_has_no_retired_lane_lookup(db_factory, _graph, transport):
+    from okto_pulse.core.services import main as services
+
     ids = _graph
     bug_id = f"card-scope-bug-{uuid.uuid4().hex[:8]}"
-    sprint_id = f"card-scope-hotfix-{uuid.uuid4().hex[:8]}"
-    if not foreign_keys_enabled:
-        async with db_factory() as db:
-            await db.execute(text("PRAGMA foreign_keys=OFF"))
-            assert await db.scalar(text("PRAGMA foreign_keys")) == 0
-            await db.commit()
-
-    try:
-        await _assert_hotfix_origin_blocks_delete(
-            db_factory,
-            ids,
-            bug_id=bug_id,
-            sprint_id=sprint_id,
-        )
-    finally:
-        if not foreign_keys_enabled:
-            async with db_factory() as db:
-                await db.execute(text("PRAGMA foreign_keys=ON"))
-                assert await db.scalar(text("PRAGMA foreign_keys")) == 1
-                await db.commit()
-
-
-async def _assert_hotfix_origin_blocks_delete(
-    db_factory,
-    ids: dict[str, str],
-    *,
-    bug_id: str,
-    sprint_id: str,
-) -> None:
-    await _seed_hotfix_origin(
-        db_factory,
-        ids,
-        bug_id=bug_id,
-        sprint_id=sprint_id,
-    )
-
-    before_activity = await _activity_ids(db_factory, bug_id)
-    result = await _call(
-        db_factory,
-        "okto_pulse_delete_card",
-        board_id=ids["board_a"],
-        card_id=bug_id,
-    )
-
-    assert result["error"] == "hotfix_origin_bug_delete_conflict"
-    assert result["code"] == "hotfix_origin_bug_delete_conflict"
-    assert result["referencing_sprint_ids"] == [sprint_id]
-    assert result["next_action"] == "remove_or_relineage_hotfix_before_bug_delete"
-    assert "relineage" in result["remediation"]
     async with db_factory() as db:
-        assert await db.get(Card, bug_id) is not None
-        sprint = await db.get(Sprint, sprint_id)
-        assert sprint.origin_bug_id == bug_id
-    assert await _activity_ids(db_factory, bug_id) == before_activity
-
-
-async def _seed_hotfix_origin(
-    db_factory,
-    ids: dict[str, str],
-    *,
-    bug_id: str,
-    sprint_id: str,
-) -> None:
-    async with db_factory() as db:
-        db.add(
-            Card(
-                id=bug_id,
-                board_id=ids["board_a"],
-                spec_id=ids["spec_a"],
-                title="Bug that anchors a hotfix",
-                created_by=USER_ID,
-                card_type=CardType.BUG,
-                origin_task_id=ids["target_a"],
-                severity=BugSeverity.MAJOR,
-                expected_behavior="Expected",
-                observed_behavior="Observed",
-            )
-        )
-        await db.flush()
-        db.add(
-            Sprint(
-                id=sprint_id,
-                board_id=ids["board_a"],
-                spec_id=ids["spec_a"],
-                title="Hotfix anchored to bug",
-                spec_version=1,
-                status=SprintStatus.DRAFT,
-                lane_type=SprintLaneType.HOTFIX,
-                origin_bug_id=bug_id,
-                created_by=USER_ID,
-            )
-        )
+        db.add(Card(id=bug_id, board_id=ids["board_a"], spec_id=ids["spec_a"],
+                    title="Bug without execution lane", created_by=USER_ID,
+                    card_type=CardType.BUG, origin_task_id=ids["target_a"],
+                    severity=BugSeverity.MAJOR, expected_behavior="Expected",
+                    observed_behavior="Observed"))
         await db.commit()
+    original_list = services._application_list
 
+    async def no_lane_lookup(db, entity, *args, **kwargs):
+        assert entity != "sprint", "Card deletion must not query a retired lane"
+        return await original_list(db, entity, *args, **kwargs)
 
-@pytest.mark.asyncio
-async def test_rest_delete_bug_hotfix_conflict_maps_to_409(db_factory, _graph):
-    ids = _graph
-    bug_id = f"card-scope-rest-bug-{uuid.uuid4().hex[:8]}"
-    sprint_id = f"card-scope-rest-hotfix-{uuid.uuid4().hex[:8]}"
-    await _seed_hotfix_origin(
-        db_factory,
-        ids,
-        bug_id=bug_id,
-        sprint_id=sprint_id,
-    )
-    before_activity = await _activity_ids(db_factory, bug_id)
-
-    app = FastAPI()
-    app.include_router(cards_router, prefix="/api/v1/cards")
-    app.dependency_overrides[require_user] = lambda: USER_ID
-    register_mcp_test_runtime(db_factory)
-    response = TestClient(app).delete(f"/api/v1/cards/{bug_id}")
-
-    assert response.status_code == 409
-    detail = response.json()["detail"]
-    assert detail["code"] == "hotfix_origin_bug_delete_conflict"
-    assert detail["facts"]["referencing_sprint_ids"] == [sprint_id]
+    with patch.object(services, "_application_list", side_effect=no_lane_lookup):
+        if transport == "mcp":
+            result = await _call(db_factory, "okto_pulse_delete_card",
+                                 board_id=ids["board_a"], card_id=bug_id)
+            assert result.get("success") is True, result
+        else:
+            app = FastAPI()
+            app.include_router(cards_router, prefix="/api/v1/cards")
+            app.dependency_overrides[require_user] = lambda: USER_ID
+            register_mcp_test_runtime(db_factory)
+            response = TestClient(app).delete(f"/api/v1/cards/{bug_id}")
+            assert response.status_code == 204, response.text
     async with db_factory() as db:
-        assert await db.get(Card, bug_id) is not None
-        sprint = await db.get(Sprint, sprint_id)
-        assert sprint.origin_bug_id == bug_id
-    assert await _activity_ids(db_factory, bug_id) == before_activity
+        assert await db.get(Card, bug_id) is None
+        actions = list((await db.scalars(select(ActivityLog.action).where(
+            ActivityLog.card_id == bug_id))).all())
+        assert "card_deleted" in actions

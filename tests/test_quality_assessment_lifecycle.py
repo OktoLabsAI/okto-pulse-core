@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from okto_pulse.core.domain.quality_assessment import (
     AssessmentKind,
+    QualityAssessmentContractError,
     AssessmentSubjectRef,
     AssessmentSubjectType,
 )
@@ -17,7 +19,6 @@ from okto_pulse.core.domain.quality_assessment_lifecycle import (
     AssessmentKgAction,
     AssessmentLifecycleAction,
     AssessmentLifecycleContractError,
-    AssessmentLifecycleCurrentInput,
     AssessmentLifecycleHead,
     AssessmentLifecycleReceipt,
     AssessmentLifecycleSubjectSnapshot,
@@ -28,23 +29,20 @@ from okto_pulse.core.domain.quality_assessment_lifecycle import (
     AssessmentPurgeResource,
     AssessmentPurgeScope,
 )
-from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 from okto_pulse.core.services.quality_assessment_lifecycle import (
     AssessmentLifecycleExecutionError,
     QualityAssessmentLifecycleService,
 )
 
 NOW = datetime(2026, 7, 27, 19, 0, tzinfo=timezone.utc)
-INPUT_DIGEST = canonical_sha256("current-input")
-OTHER_DIGEST = canonical_sha256("stale-input")
 
 
 def _snapshot(
     *,
     version: int = 4,
+    edition: int = 1,
     status: str = "done",
     archived: bool = False,
-    include_input: bool = True,
 ) -> AssessmentLifecycleSubjectSnapshot:
     return AssessmentLifecycleSubjectSnapshot(
         subject=AssessmentSubjectRef(
@@ -52,19 +50,11 @@ def _snapshot(
             subject_type=AssessmentSubjectType.SPEC,
             subject_id="s1",
             subject_version=version,
+            subject_edition=edition,
         ),
         status=status,
         archived=archived,
-        current_inputs=(
-            (
-                AssessmentLifecycleCurrentInput(
-                    assessment_kind=AssessmentKind.SPEC_VALIDATION,
-                    input_digest=INPUT_DIGEST,
-                ),
-            )
-            if include_input
-            else ()
-        ),
+
     )
 
 
@@ -84,7 +74,7 @@ def _receipt(
     receipt_id: str,
     *,
     version: int = 4,
-    digest: str = INPUT_DIGEST,
+    edition: int = 1,
     created_at: datetime = NOW,
 ) -> AssessmentLifecycleReceipt:
     return AssessmentLifecycleReceipt(
@@ -94,9 +84,9 @@ def _receipt(
             subject_type=AssessmentSubjectType.SPEC,
             subject_id="s1",
             subject_version=version,
+            subject_edition=edition,
         ),
         assessment_kind=AssessmentKind.SPEC_VALIDATION,
-        input_digest=digest,
         created_at=created_at,
     )
 
@@ -158,7 +148,7 @@ def test_archive_and_cancel_preserve_history_and_hide_current_projection(
     assert plan.event_and_outbox_same_uow is True
 
 
-def test_restore_recomputes_head_from_latest_exact_current_receipt() -> None:
+def test_restore_recomputes_head_from_latest_current_edition_receipt() -> None:
     transition = _transition(
         AssessmentLifecycleAction.RESTORE,
         before=_snapshot(archived=True),
@@ -166,8 +156,8 @@ def test_restore_recomputes_head_from_latest_exact_current_receipt() -> None:
     )
     receipts = (
         _receipt(
-            "receipt-stale-input",
-            digest=OTHER_DIGEST,
+            "receipt-previous-edition",
+            edition=2,
             created_at=NOW + timedelta(minutes=3),
         ),
         _receipt(
@@ -194,12 +184,10 @@ def test_restore_recomputes_head_from_latest_exact_current_receipt() -> None:
     assert len(plan.head_rebuilds) == 1
     rebuild = plan.head_rebuilds[0]
     assert rebuild.previous_receipt_id == "orphan-head"
-    assert rebuild.selected_receipt_id == "receipt-current-b"
+    assert rebuild.selected_receipt_id == "receipt-old-version"
     assert rebuild.selected_state.value == "current"
     assert rebuild.expected_revision == 7
     assert rebuild.resulting_revision == 8
-    assert rebuild.stale_transition_required is False
-    assert rebuild.stale_transition_key is None
 
 
 def test_restore_keeps_already_correct_head_without_revision_bump() -> None:
@@ -217,14 +205,46 @@ def test_restore_keeps_already_correct_head_without_revision_bump() -> None:
     rebuild = plan.head_rebuilds[0]
     assert rebuild.selected_receipt_id == "receipt-current"
     assert rebuild.resulting_revision == 8
-    assert rebuild.stale_transition_required is False
+
+
+@pytest.mark.parametrize("receipt_edition", [1, 2])
+def test_restore_uses_edition_without_reactivating_previous_history(receipt_edition):
+    before = _snapshot(version=8, archived=True)
+    after = _snapshot(version=8, archived=False)
+    before = replace(before, subject=replace(before.subject, subject_edition=2))
+    after = replace(after, subject=replace(after.subject, subject_edition=2))
+    receipt = _receipt("native-result", version=4)
+    receipt = replace(
+        receipt, subject=replace(receipt.subject, subject_edition=receipt_edition)
+    )
+    transition = _transition(
+        AssessmentLifecycleAction.RESTORE, before=before, after=after
+    )
+    plan = QualityAssessmentLifecycleService().prepare_transition(
+        transition, heads=(_head("native-result"),), receipts=(receipt,)
+    )
+    rebuilt = plan.head_rebuilds[0]
+    assert rebuilt.selected_receipt_id == (
+        "native-result" if receipt_edition == 2 else None
+    )
+    assert (rebuilt.selected_state.value if rebuilt.selected_state else None) == (
+        "current" if receipt_edition == 2 else None
+    )
+    assert plan.preserve_immutable_history is True
+
+
+def test_lifecycle_refuses_missing_edition_instead_of_version_fallback():
+    with pytest.raises(
+        QualityAssessmentContractError, match="assessment_subject_edition_invalid"
+    ):
+        replace(_snapshot().subject, subject_edition=None)
 
 
 def test_reopen_clears_current_head_and_preserves_previous_receipt_identity() -> None:
     transition = _transition(
         AssessmentLifecycleAction.REOPEN,
         before=_snapshot(version=4, status="done"),
-        after=_snapshot(version=5, status="draft"),
+        after=_snapshot(version=5, edition=2, status="draft"),
     )
     service = QualityAssessmentLifecycleService()
     first = service.prepare_transition(
@@ -238,8 +258,6 @@ def test_reopen_clears_current_head_and_preserves_previous_receipt_identity() ->
     assert first_rebuild.selected_receipt_id is None
     assert first_rebuild.selected_state is None
     assert first_rebuild.resulting_revision == 5
-    assert first_rebuild.stale_transition_required is False
-    assert first_rebuild.stale_transition_key is None
 
     # Replaying the same lifecycle operation deterministically yields the same
     # clear-head plan. Immutable receipt history remains addressable as Previous.
@@ -255,7 +273,7 @@ def test_reopen_clears_current_head_and_preserves_previous_receipt_identity() ->
         _transition(
             AssessmentLifecycleAction.REOPEN,
             before=_snapshot(version=4, status="done"),
-            after=_snapshot(version=5, status="draft"),
+            after=_snapshot(version=5, edition=2, status="draft"),
             idempotency_key="lifecycle-op-2",
         ),
         heads=(_head("receipt-v4", revision=4),),
@@ -281,8 +299,6 @@ def test_orphan_head_is_invalidated_but_not_misreported_as_stale() -> None:
     assert rebuild.selected_receipt_id is None
     assert rebuild.selected_state is None
     assert rebuild.resulting_revision == 10
-    assert rebuild.stale_transition_required is False
-    assert rebuild.stale_transition_key is None
 
 
 def test_invalid_transition_and_cross_subject_receipt_fail_closed() -> None:
@@ -308,9 +324,9 @@ def test_invalid_transition_and_cross_subject_receipt_fail_closed() -> None:
             subject_type=AssessmentSubjectType.SPEC,
             subject_id="s1",
             subject_version=4,
+            subject_edition=1,
         ),
         assessment_kind=AssessmentKind.SPEC_VALIDATION,
-        input_digest=INPUT_DIGEST,
         created_at=NOW,
     )
     with pytest.raises(
@@ -323,7 +339,7 @@ def test_invalid_transition_and_cross_subject_receipt_fail_closed() -> None:
         )
 
 
-def test_subject_purge_is_ordered_idempotent_and_preserves_epoch() -> None:
+def test_subject_purge_is_ordered_idempotent_and_scoped() -> None:
     service = QualityAssessmentLifecycleService()
     plan = service.prepare_subject_purge(
         board_id="b1",
@@ -340,13 +356,10 @@ def test_subject_purge_is_ordered_idempotent_and_preserves_epoch() -> None:
         plan.deletion_order.index(AssessmentPurgeResource.QUALITY_HEADS)
         < plan.deletion_order.index(AssessmentPurgeResource.QUALITY_RECEIPTS)
     )
-    assert (
-        AssessmentPurgeResource.LEGACY_IMPORT_CANDIDATES
-        not in plan.deletion_order
-    )
+    assert AssessmentPurgeResource.CHECKLIST_BINDING_VERSIONS not in plan.deletion_order
 
 
-def test_board_purge_requires_permit_and_includes_epoch_last() -> None:
+def test_board_purge_requires_permit_and_removes_board_bindings_last() -> None:
     service = QualityAssessmentLifecycleService()
     plan = service.prepare_board_purge(
         board_id="b1",
@@ -355,17 +368,9 @@ def test_board_purge_requires_permit_and_includes_epoch_last() -> None:
 
     assert plan.target.scope is AssessmentPurgeScope.BOARD
     assert plan.deletion_order == ASSESSMENT_BOARD_PURGE_ORDER
-    assert plan.deletion_order[-3:] == (
-        AssessmentPurgeResource.LEGACY_IMPORT_COMPLETIONS,
-        AssessmentPurgeResource.LEGACY_IMPORT_CANDIDATES,
-        AssessmentPurgeResource.LEGACY_IMPORT_RUNS,
-    )
-    assert plan.deletion_order[-5:] == (
-        AssessmentPurgeResource.LEGACY_IMPORT_RESOLUTIONS,
-        AssessmentPurgeResource.LEGACY_IMPORT_CHECKPOINTS,
-        AssessmentPurgeResource.LEGACY_IMPORT_COMPLETIONS,
-        AssessmentPurgeResource.LEGACY_IMPORT_CANDIDATES,
-        AssessmentPurgeResource.LEGACY_IMPORT_RUNS,
+    assert plan.deletion_order[-2:] == (
+        AssessmentPurgeResource.CHECKLIST_BINDING_HEADS,
+        AssessmentPurgeResource.CHECKLIST_BINDING_VERSIONS,
     )
     assert plan.board_erasure_permit_id == "permit-1"
 
@@ -388,7 +393,6 @@ def test_board_purge_requires_permit_and_includes_epoch_last() -> None:
             zero_orphans=True,
             projections_reconciled=True,
             outbox_reconciled=True,
-            epoch_consistency_preserved=True,
             # Inner purge evidence cannot fabricate the outer permit result.
             board_erasure_permit_released=False,
             verified_at=NOW,
@@ -412,7 +416,6 @@ def _postcondition(plan, *, residual_override=None, **flags):
         "zero_orphans": True,
         "projections_reconciled": True,
         "outbox_reconciled": True,
-        "epoch_consistency_preserved": True,
     }
     values.update(flags)
     return AssessmentPurgePostcondition(
@@ -532,20 +535,12 @@ def test_purge_postcondition_is_complete_zero_orphan_and_retry_safe() -> None:
             lambda plan: _postcondition(plan, outbox_reconciled=False),
             "assessment_purge_outbox_reconciliation_failed",
         ),
-        (
-            lambda plan: _postcondition(
-                plan,
-                epoch_consistency_preserved=False,
-            ),
-            "assessment_purge_epoch_consistency_failed",
-        ),
     ],
     ids=(
         "residual-row",
         "orphan",
         "projection",
         "outbox",
-        "epoch",
     ),
 )
 def test_purge_postcondition_failures_are_closed(
@@ -582,7 +577,6 @@ def test_missing_purge_residual_evidence_fails_closed() -> None:
         zero_orphans=True,
         projections_reconciled=True,
         outbox_reconciled=True,
-        epoch_consistency_preserved=True,
         verified_at=NOW,
     )
 

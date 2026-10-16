@@ -1,0 +1,38 @@
+{
+  "scope": "AC-INT-04: same initiative under broad and separated review configurations",
+  "proof_pair": "dist-native-main87",
+  "criteria": {
+    "ARQVER:AC-INT-04": [
+      "test_one_agent_preserves_assessments_and_evidence_through_spec_done",
+      "test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries",
+      "test_any_denied_permission_prevents_design_body_reads_and_all_writes"
+    ]
+  },
+  "evidence": [
+    "The same full native initiative is parametrized across one broad authenticated agent with reviewer separation off and a separate independent reviewer with enforce. Both variants run Draft→review→approved→validated→in_progress→Done, including lint, Spec validation/evaluation, task implementation report/review, real signed HTTP assertion, Test Card report and final Spec completion.",
+    "Separate review opens another MCP client and authenticates independent identity for each of the three review operations. Stored Spec reviewer/evaluator and task reviewer match that identity; task conclusions, implementation/progress/test records and external lint ownership remain solo.",
+    "Both configurations preserve original assessments and proof payloads. Both refuse Spec completion until the required test evidence exists. The late-link variant also refuses a previously signed receipt after its criterion scope changes.",
+    "Reused current-pair handoff witnesses check real least-authority grants: reviewer cannot submit executor batch capture, executor cannot self-review even with submit under enforce, and exact actor attribution/history survive reject/rework.",
+    "Reused classification suite checks whole-batch permissions, actor-bound replay and immutable policy, with no partial write when any required authority is denied."
+  ],
+  "tests": {
+    "current_campaign_passed": 4,
+    "seconds": 31.11,
+    "new_parameter_variants": 2,
+    "reused": "10 review authority,4 frontend and56 classification cases already recorded; hashes verified, not reexecuted/recounted"
+  },
+  "limits": [
+    "Full-flow reviewer receives the broad preset to isolate identity separation; restricted-grant behavior is separately proven by the handoff suite.",
+    "Credential extraction is supplied in-process to the real authenticator and SQL Agent/AgentBoard grants. Not an installed network authentication E2E.",
+    "External implementation receipt and initial context are fixture inputs. HTTP assertion execution/signature/admission are real in-process. Explicit cognitive skip, impact off and declared resource inapplicability bound the initiative.",
+    "No product/SPA changes; only test parametrization and evidence. Main87 closure applicable with all eight budgets zero. No migration or promotion."
+  ],
+  "artifacts": {
+    "provenance-native-agent-configurations1.json": "e23312c8370bbe41adbe5f9a370dc6c9c90dcdb04649a7dc79983ded748dc07e",
+    "native-agent-configurations1.xml": "61aa8b37ccea86f9b9408358210e4970bca66ca3511a4bf9dd1feba4d0ee7296",
+    "native-review-authority1.xml": "6a9864fbb66d0cf7563c25fa60dab7ebecb15ac49240ca9cb310c50e6d045217",
+    "native-review-authority-frontend1.json": "6583f68caa4626ec2ef1871cba70a473ecaa57c4bb4bb684135c45c377813dc2",
+    "native-classification-batch1.xml": "cb9feceabf87615520809d73395a315f5575dbc9fceb10b2386e17f13b0e9fd7",
+    "closure-native-main87.json": "0b9b185c7e16892769af431ffa471141244468db74ccd447dbcf6af474acbfd4"
+  }
+}

@@ -9,6 +9,7 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from native_subject_testing import record_native_subject_authority
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -284,16 +285,21 @@ async def _seed_fixture() -> tuple[str, str, str, str]:
                 business_rules=[],
                 api_contracts=[],
                 technical_requirements=[],
+                integration_requirements=[],
+                observability_requirements=[],
                 decisions=[
                     {
                         "id": "decision-af23",
                         "title": "Exercise transition preview",
                         "status": "active",
+                        "verification": {"inspection": {"condition": "Transition preview scope is documented",
+                            "scope_refs": [{"kind": "spec", "id": spec_id}]}},
                     }
                 ],
                 skip_decisions_coverage=True,
             )
         )
+        await record_native_subject_authority(db)
         await db.commit()
     return board_id, ideation_id, refinement_id, spec_id
 
@@ -358,6 +364,7 @@ async def test_entity_scoped_read_model_previews_resource_gate_blocker() -> None
                 created_by=USER,
             )
         )
+        await record_native_subject_authority(db)
         await db.commit()
 
     async with get_session_factory()() as db:
@@ -428,6 +435,7 @@ async def test_rest_and_mcp_current_status_policy_subject_required_parity(
                 settings={},
             )
         )
+        await record_native_subject_authority(db)
         await db.commit()
 
     rest = client.get(
@@ -504,6 +512,7 @@ async def test_rest_viewer_share_can_read_allowed_transitions(
                 technical_requirements=[],
             )
         )
+        await record_native_subject_authority(db)
         await db.commit()
 
     response = client.get(
@@ -546,6 +555,7 @@ async def test_policy_preview_is_redacted_without_assessment_leaf_and_full_with_
                 technical_requirements=[],
             )
         )
+        await record_native_subject_authority(db)
         await db.commit()
 
     async def read(permissions: list[str]):
@@ -626,6 +636,7 @@ async def test_mcp_board_context_allows_authorized_non_owner_agent() -> None:
                 technical_requirements=[],
             )
         )
+        await record_native_subject_authority(db)
         await db.commit()
 
     register_mcp_test_runtime(get_session_factory())
@@ -675,6 +686,7 @@ async def test_read_model_does_not_enforce_invalid_backend_moves() -> None:
                 technical_requirements=[],
             )
         )
+        await record_native_subject_authority(db)
         await db.commit()
 
     async with get_session_factory()() as db:
@@ -694,13 +706,15 @@ async def test_read_model_does_not_enforce_invalid_backend_moves() -> None:
             )
 
 
+@pytest.mark.parametrize("entity_type", ["task", "sprint"])
 def test_rest_endpoint_rejects_invalid_type_or_missing_status(
     client: TestClient,
+    entity_type: str,
 ) -> None:
     board_id = _id("af23-board")
     response = client.get(
         f"{PREFIX}/boards/{board_id}/allowed-transitions",
-        params={"entity_type": "task", "current_status": "draft"},
+        params={"entity_type": entity_type, "current_status": "draft"},
     )
     assert response.status_code == 400
     assert "Invalid entity_type" in response.json()["detail"]

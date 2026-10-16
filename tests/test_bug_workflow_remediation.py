@@ -12,7 +12,6 @@ from okto_pulse.core.services.bug_regression_scenarios import (
     EligibleBugRegressionScenario,
 )
 from okto_pulse.core.services.bug_workflow_remediation import (
-    BugWorkflowHotfixLaneStatus,
     BugWorkflowNextAction,
     BugWorkflowRemediationMessageBuilder,
     BugWorkflowRemediationPath,
@@ -165,49 +164,8 @@ def test_builder_formats_path_b_ready_without_regression_card_action():
     assert payload["facts"]["coverage_state"] == "path_b_ready"
 
 
-def test_builder_formats_path_c_hotfix_lane_without_reopen_guidance():
-    message = BugWorkflowRemediationMessageBuilder().build_from_sprint_lane_block(
-        code="sprint_not_active",
-        remediation="activate_hotfix_lane",
-        message="Card's sprint is not active",
-        facts={
-            "card_id": "bug-1",
-            "spec_id": "spec-1",
-            "sprint_id": "sprint-1",
-            "sprint_status": "draft",
-            "lane_type": "hotfix",
-            "next_action": "activate_hotfix_lane",
-        },
-    )
-    payload = message.to_dict()
-
-    assert payload["remediation_path"] == BugWorkflowRemediationPath.PATH_C_HOTFIX_LANE.value
-    assert payload["next_action"] == BugWorkflowNextAction.ACTIVATE_HOTFIX_LANE.value
-    assert payload["hotfix_lane_status"] == BugWorkflowHotfixLaneStatus.INACTIVE.value
-    assert "reopen" not in payload["detail"].lower()
-    assert payload["facts"]["lane_type"] == "hotfix"
 
 
-def test_standard_sprint_message_is_card_type_neutral():
-    payload = (
-        BugWorkflowRemediationMessageBuilder()
-        .build_from_sprint_lane_block(
-            code="sprint_required",
-            remediation="assign_sprint",
-            facts={
-                "card_id": "normal-1",
-                "spec_id": "spec-1",
-                "next_action": "assign_sprint",
-            },
-        )
-        .to_dict()
-    )
-
-    assert payload["remediation_path"] == "standard_sprint"
-    assert "Bug card" not in payload["message"]
-    assert payload["message"] == (
-        "Card cannot advance until its sprint lane is executable."
-    )
 
 
 def test_missing_test_task_with_zero_eligible_scenarios_routes_directly_to_path_b():
@@ -254,7 +212,6 @@ def test_safe_labels_exclude_payload_text():
         "reason_code": "scenario_not_found",
         "remediation_path": "path_b_semantic_gap",
         "next_action": "escalate_semantic_gap",
-        "hotfix_lane_status": "not_applicable",
         "surface": "mcp",
         "outcome": "blocked",
     }
@@ -262,3 +219,15 @@ def test_safe_labels_exclude_payload_text():
     assert "expected_behavior" not in serialized
     assert "observed_behavior" not in serialized
     assert "description" not in serialized
+
+
+def test_remediation_contract_has_no_execution_lane_actions():
+    assert {path.value for path in BugWorkflowRemediationPath} == {
+        "path_a_reuse_existing_scenario", "path_b_semantic_gap", "path_b_amendment_lineage", "none",
+    }
+    assert {action.value for action in BugWorkflowNextAction} == {
+        "create_regression_test_card", "escalate_semantic_gap", "confirm_validator_coverage", "none",
+    }
+    payload = BugWorkflowRemediationMessageBuilder().build_semantic_gap().to_dict()
+    assert "hotfix_lane_status" not in payload
+    assert not hasattr(BugWorkflowRemediationMessageBuilder, "build_from_sprint_lane_block")

@@ -358,16 +358,17 @@ def stub_registry(monkeypatch):
     # contract the registry grows, instead of a local fake that drifts.
     from okto_pulse.core.kg.interfaces.registry import KGProviderRegistry
 
-    reg = KGProviderRegistry(embedding_provider=embedder, graph_store=store)
+    class ConfidenceReader:
+        # These rewrite fixtures have source confidence 1.0; the native
+        # confidence tests cover low/unknown values and provider failures.
+        def execute_read_only(self, board_id, query, params=None, **kwargs):
+            ids = (params or {}).get('ids', [])
+            return {'rows': [[identity] for identity in ids]}
+
+    reg = KGProviderRegistry(embedding_provider=embedder, graph_store=store,
+                             cypher_executor=ConfidenceReader())
     monkeypatch.setattr(
         registry_mod, "get_kg_registry", lambda: reg, raising=True,
-    )
-    # Also patch the _batch_lookup_created_at to return empty (no
-    # temporal filter in these tests).
-    monkeypatch.setattr(
-        tier_power, "_batch_lookup_created_at",
-        lambda board_id, node_ids: {},
-        raising=True,
     )
     # These tests exercise the rewrite strategies, not the graph_layer filter
     # (spec e2598178). Stub the layer lookup so the synthetic nodes are treated

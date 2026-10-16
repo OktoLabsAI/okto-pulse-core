@@ -167,20 +167,20 @@ def test_endpoint_is_read_only_no_mutating_methods_registered() -> None:
     )
 
 
-# -------- AC11 — KG-02 routes still reachable ---------------------------
+# -------- F4 supersedes the old public KG-02 maintenance surface --------
 
 
-def test_kg02_rebuild_routes_still_registered() -> None:
-    """AC11 regression: adding the new router must not unwire existing
-    KG-01/KG-02 endpoints."""
+def test_public_rebuild_routes_retired_while_cognitive_pending_remains() -> None:
+    """The cognitive read model survives without public maintenance writers."""
 
     paths = set(_openapi_paths())
-    for required in (
+    assert "/api/v1/kg/cognitive-pending" in paths
+    for retired in (
         "/api/v1/kg/rebuild/preflight",
         "/api/v1/kg/rebuild/confirm",
         "/api/v1/kg/rebuild/run",
     ):
-        assert required in paths, f"{required} unwired"
+        assert retired not in paths, f"{retired} exposed"
 
 
 # -------- Response shape: api_cce40fa6 ----------------------------------
@@ -204,7 +204,6 @@ def test_response_has_all_required_contract_keys(
         "board_id",
         "selected_kg_generation_id",
         "readonly",
-        "legacy_mode",
         "counts",
         "items",
     }
@@ -290,7 +289,9 @@ def test_safe_payload_no_raw_artifact_body_or_sensitive_fields(
 # -------- legacy_mode wiring --------------------------------------------
 
 
-def test_legacy_mode_true_for_aggregate_only_record(
+@pytest.mark.parametrize("explicit", [True, False])
+def test_aggregate_only_record_is_refused(
+    explicit: bool,
     isolated_base_dir: Path,
     client: TestClient,
 ) -> None:
@@ -312,13 +313,13 @@ def test_legacy_mode_true_for_aggregate_only_record(
 
     body = client.get(
         "/api/v1/kg/cognitive-pending",
-        params={"board_id": BOARD, "kg_generation_id": gen},
+        params={"board_id": BOARD, **({"kg_generation_id": gen} if explicit else {})},
     ).json()
-    assert body["legacy_mode"] is True
-    assert body["counts"]["total"] == 1
+    assert body["detail"]["code"] == "cognitive_pending_unavailable"
+    assert store.artifact_store.read_json(store._record_key(BOARD, gen)) == legacy
 
 
-def test_legacy_mode_false_for_kg03_record(
+def test_native_record_has_no_legacy_mode(
     isolated_base_dir: Path,
     client: TestClient,
 ) -> None:
@@ -327,7 +328,7 @@ def test_legacy_mode_false_for_kg03_record(
         "/api/v1/kg/cognitive-pending",
         params={"board_id": BOARD, "kg_generation_id": gen},
     ).json()
-    assert body["legacy_mode"] is False
+    assert "legacy_mode" not in body
 
 
 # -------- Status filter (bounded enum) ----------------------------------
@@ -518,7 +519,7 @@ def test_omitted_generation_with_no_latest_returns_safe_empty(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["selected_kg_generation_id"] is None
-    assert body["legacy_mode"] is False
+    assert "legacy_mode" not in body
     assert body["items"] == []
     assert body["counts"]["total"] == 0
 

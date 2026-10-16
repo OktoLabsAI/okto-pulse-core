@@ -693,6 +693,7 @@ class ImplementationTargetService:
         accepted = await investigation_service.require_current_receipt(
             board_id=submission.board_id,
             receipt_id=submission.investigation_receipt_id,
+            require_write_head=True,
             store=investigation_store,
             actor_id=actor,
             subject_type=CodeTraceabilitySubjectType.CARD,
@@ -900,6 +901,7 @@ class ImplementationTargetService:
         accepted = await investigation_service.require_current_receipt(
             board_id=submission.board_id,
             receipt_id=submission.result_investigation_receipt_id,
+            require_write_head=True,
             store=investigation_store,
             actor_id=actor,
             subject_type=CodeTraceabilitySubjectType.CARD,

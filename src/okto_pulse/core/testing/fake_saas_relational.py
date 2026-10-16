@@ -316,11 +316,13 @@ class _FakeAgentAuthenticationGateway:
         digest = hashlib.sha256(api_key.encode()).hexdigest()
         for agent in self._adapter._agents.values():
             if agent.api_key_hash == digest and agent.is_active:
+                context = await self.resolve_agent_permission_context(agent.agent_id)
                 return AgentAuthSession(
                     agent_id=agent.agent_id,
                     agent_name=agent.name,
                     is_active=True,
                     metadata={"credential_source": credential_source},
+                    permissions=context.permissions,
                 )
         return None
 
@@ -451,16 +453,23 @@ class FakeSaaSRelationalApplicationAdapter:
             "The SaaS fake does not model code-traceability projections."
         )
 
-    def delivery_forecast_read(self, session: Any) -> Any:
-        _ = session
-        raise NotImplementedError(
-            "The SaaS fake does not model Delivery Forecast evidence."
-        )
 
     def board_kg_analytics_read(self, session: Any) -> Any:
         _ = session
         raise NotImplementedError(
             "The SaaS fake does not model Board KG Analytics evidence."
+        )
+
+    def bug_clusters_read(self, session: Any) -> Any:
+        _ = session
+        raise NotImplementedError(
+            "The SaaS fake does not model Bug cluster projections."
+        )
+
+    def spec_coverage_read(self, session: Any) -> Any:
+        _ = session
+        raise NotImplementedError(
+            "The SaaS fake does not model Spec coverage projections."
         )
 
     def research_decisions(self, session: Any) -> Any:
@@ -477,6 +486,12 @@ class FakeSaaSRelationalApplicationAdapter:
         _ = session
         raise NotImplementedError(
             "The SaaS fake does not model Spec-dependency persistence."
+        )
+
+    def delivery_evidence(self, session: Any) -> Any:
+        _ = session
+        raise NotImplementedError(
+            "The SaaS fake does not model delivery-evidence persistence."
         )
 
     def checklists(self, session: Any) -> Any:

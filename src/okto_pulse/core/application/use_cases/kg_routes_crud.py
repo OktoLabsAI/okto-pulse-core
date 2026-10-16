@@ -1,26 +1,11 @@
-"""KG dashboard "light" REST use cases (SaaS Refactor spec R01A REST-FU5-S2).
+"""Transport-neutral KG readers and governed privacy/semantic operations.
 
-Transport-free reimplementations of the seven ``api/kg_routes.py`` endpoints that
-still bound a raw request session: the two readers (``list_audit``,
-``global_search``) and the five governance delegators (``start_historical``,
-``cancel_historical_endpoint``, ``historical_progress_endpoint``,
-``delete_board_kg``, ``get_settings`` — the last two share the historical-progress
-read). Each use case delegates to the EXISTING relational reader
-(``kg.dashboard_readers``) or governance function (``kg.governance``); the inline
-``select`` lives in those service modules, never here, so this file stays free of
-``select`` / ``AsyncSession`` / ORM imports (the relational ratchet gate over
-``application/use_cases`` would fail otherwise).
-
-The governance writers (start / cancel / erasure) commit the request session
-internally — exactly as the legacy endpoints did when they passed ``db`` straight
-through — so the use cases do NOT issue a second ``commit``. The reads issue no
-commit. ``KGToolError`` raised by the KG service (``query_global`` /
-``normalize_graph_layer``) propagates uncaught for the adapter to map.
+F4 retires the historical backfill start/cancel use cases. Existing privacy
+erasure and cognitive product operations retain their original authorization.
 """
 
 from __future__ import annotations
 
-from contextvars import Context, copy_context
 
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
@@ -28,9 +13,7 @@ from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
-    EntityNotFoundError,
     PermissionDeniedError,
-    commit,
 )
 from okto_pulse.core.application.use_cases.authorization import (
     PermissionRequirement,
@@ -42,8 +25,6 @@ from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
     EvaluateCodeTraceabilityKGReadAccessUseCase,
 )
 from okto_pulse.core.application.scope import ActorScope
-from okto_pulse.core.kg.async_bridge import run_async_blocking
-from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 
 
@@ -99,8 +80,8 @@ async def _authorized_global_query_board_ids(
     visible_board_ids = await _visible_board_ids(uow.services, actor)
     authorized: list[str] = []
     requirements = (
-        PermissionRequirement("board.read", legacy_operation="board:read"),
-        PermissionRequirement("kg.query.global", legacy_operation="board:read"),
+        PermissionRequirement("board.read"),
+        PermissionRequirement("kg.query.global"),
     )
     for board_id in visible_board_ids:
         permissions = await resolve_actor_permissions(actor, uow, board_id)
@@ -145,7 +126,6 @@ class ListAuditUseCase:
             actor,
             PermissionRequirement(
                 "kg.operations.audit.read",
-                legacy_operation="kg.admin.settings_read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -217,7 +197,6 @@ class GlobalSearchUseCase:
             actor,
             PermissionRequirement(
                 "kg.query.global",
-                legacy_operation="board:read",
             ),
             uow=uow,
         )
@@ -231,150 +210,6 @@ class GlobalSearchUseCase:
             graph_layer=layer,
         )
         return GlobalSearchResult(results, layer)
-
-
-# --- historical consolidation: start (write) --------------------------------
-
-
-class StartHistoricalCommand:
-    __slots__ = ("board_id",)
-
-    def __init__(self, board_id: str) -> None:
-        self.board_id = board_id
-
-
-class StartHistoricalResult:
-    __slots__ = ("payload",)
-
-    def __init__(self, payload: dict[str, Any]) -> None:
-        self.payload = payload
-
-
-class StartHistoricalUseCase:
-    """Start the historical backfill for a board (write). Delegates to
-    ``governance.start_historical_consolidation`` (which commits the session
-    internally, exactly as the legacy endpoint relied on) and returns its payload
-    verbatim."""
-
-    async def execute(
-        self,
-        command: StartHistoricalCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> StartHistoricalResult:
-
-        await _require_board_access(uow.services, actor, command.board_id)
-        await require_authorization(
-            actor,
-            PermissionRequirement(
-                "kg.operations.historical.start",
-                legacy_operation="kg.admin.historical_consolidation",
-            ),
-            uow=uow,
-            board_id=command.board_id,
-        )
-        payload = await uow.services.kg.start_historical_consolidation(command.board_id)
-        return StartHistoricalResult(payload)
-
-
-# --- historical consolidation: cancel (write) -------------------------------
-
-
-class CancelHistoricalCommand:
-    __slots__ = ("board_id",)
-
-    def __init__(self, board_id: str) -> None:
-        self.board_id = board_id
-
-
-class CancelHistoricalResult:
-    __slots__ = ("payload",)
-
-    def __init__(self, payload: dict[str, Any]) -> None:
-        self.payload = payload
-
-
-class CancelHistoricalUseCase:
-    """Cancel the historical backfill for a board (write). Delegates to
-    ``governance.cancel_historical`` (which commits internally) and returns its
-    payload verbatim."""
-
-    async def execute(
-        self,
-        command: CancelHistoricalCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> CancelHistoricalResult:
-
-        await _require_board_access(uow.services, actor, command.board_id)
-        await require_authorization(
-            actor,
-            PermissionRequirement(
-                "kg.operations.historical.cancel",
-                legacy_operation="kg.admin.historical_consolidation",
-            ),
-            uow=uow,
-            board_id=command.board_id,
-        )
-        # Authorization opens a SQLite read snapshot.  Release it before the
-        # cancellation write, then quiesce the queue owner through its bounded
-        # drain protocol.  Without these two phases a legacy/in-flight claim
-        # can retain the writer lock and make the HTTP request wait forever.
-        await uow.rollback()
-        from okto_pulse.core.application.runtime_workers import (
-            temporarily_quiesce_runtime_worker,
-        )
-
-        async with temporarily_quiesce_runtime_worker("consolidation_worker"):
-            payload = await uow.services.kg.cancel_historical(command.board_id)
-        return CancelHistoricalResult(payload)
-
-
-# --- historical consolidation: progress (read) ------------------------------
-# Shared by the ``historical_progress_endpoint`` and ``get_settings`` adapters —
-# both read the same governance progress dict.
-
-
-class GetHistoricalProgressCommand:
-    __slots__ = ("board_id",)
-
-    def __init__(self, board_id: str) -> None:
-        self.board_id = board_id
-
-
-class GetHistoricalProgressResult:
-    __slots__ = ("progress",)
-
-    def __init__(self, progress: dict[str, Any]) -> None:
-        self.progress = progress
-
-
-class GetHistoricalProgressUseCase:
-    """Return historical-consolidation progress for a board (read, no commit).
-    Delegates to ``governance.get_historical_progress`` verbatim."""
-
-    async def execute(
-        self,
-        command: GetHistoricalProgressCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> GetHistoricalProgressResult:
-
-        await _require_board_access(uow.services, actor, command.board_id)
-        await require_authorization(
-            actor,
-            PermissionRequirement(
-                "kg.operations.historical.read",
-                legacy_operation="kg.admin.historical_consolidation",
-            ),
-            uow=uow,
-            board_id=command.board_id,
-        )
-        progress = await uow.services.kg.get_historical_progress(command.board_id)
-        return GetHistoricalProgressResult(progress)
 
 
 # --- right to erasure (write) -----------------------------------------------
@@ -413,7 +248,6 @@ class DeleteBoardKgUseCase:
             actor,
             PermissionRequirement(
                 "kg.operations.board.erase",
-                legacy_operation="kg.admin.wipe_board",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -433,369 +267,3 @@ class DeleteBoardKgUseCase:
             )
             erasure.ensure_owned()
         return DeleteBoardKgResult(counts)
-
-
-# ===========================================================================
-# Pending queue (spec R01A REST-FU5-S3 — list_pending / list_pending_tree /
-# retry_pending_entry)
-# ===========================================================================
-
-
-# --- list pending (reader) --------------------------------------------------
-
-
-class ListPendingCommand:
-    __slots__ = ("board_id",)
-
-    def __init__(self, board_id: str) -> None:
-        self.board_id = board_id
-
-
-class ListPendingResult:
-    __slots__ = ("entries",)
-
-    def __init__(self, entries: list[dict[str, Any]]) -> None:
-        self.entries = entries
-
-
-class ListPendingUseCase:
-    """List the board's pending consolidation-queue entries (read, no commit).
-    Delegates the ``select`` + projection to ``dashboard_readers`` so the use case
-    holds no relational symbol; the legacy endpoint's swallow-all error fallback
-    (``{"entries": [], "count": 0}``) is preserved by the adapter, which also
-    derives the ``count`` from the returned entries."""
-
-    async def execute(
-        self, command: ListPendingCommand, *, actor: ActorContext, uow: PulseUnitOfWork
-    ) -> ListPendingResult:
-
-        await _require_board_access(uow.services, actor, command.board_id)
-        await require_authorization(
-            actor,
-            PermissionRequirement(
-                "kg.operations.queue.read",
-                legacy_operation="kg.admin.settings_read",
-            ),
-            uow=uow,
-            board_id=command.board_id,
-        )
-        ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
-            actor=actor,
-            board_id=command.board_id,
-            uow=uow,
-        )
-        entries = (
-            await uow.services.kg.list_pending_entries(command.board_id)
-            if ct_access.allowed
-            else await uow.services.kg.list_pending_entries(
-                command.board_id,
-                include_code_traceability=False,
-            )
-        )
-        return ListPendingResult(entries)
-
-
-# --- list pending tree (reader) ---------------------------------------------
-
-
-class ListPendingTreeCommand:
-    __slots__ = ("board_id", "depth")
-
-    def __init__(self, board_id: str, *, depth: int = 5) -> None:
-        self.board_id = board_id
-        self.depth = depth
-
-
-class ListPendingTreeResult:
-    __slots__ = ("payload",)
-
-    def __init__(self, payload: dict[str, Any]) -> None:
-        self.payload = payload
-
-
-class ListPendingTreeUseCase:
-    """Hierarchical pending-queue view (read, no commit). Delegates the full
-    queue-state fetch + in-Python hierarchy join to ``dashboard_readers`` so the
-    use case holds no relational symbol; returns the stable payload dict verbatim
-    (``{board_id, depth, total_pending, levels, tree}``) for the adapter."""
-
-    async def execute(
-        self,
-        command: ListPendingTreeCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> ListPendingTreeResult:
-
-        await _require_board_access(uow.services, actor, command.board_id)
-        await require_authorization(
-            actor,
-            PermissionRequirement(
-                "kg.operations.queue.read",
-                legacy_operation="kg.admin.settings_read",
-            ),
-            uow=uow,
-            board_id=command.board_id,
-        )
-        payload = await uow.services.kg.build_pending_tree(
-            command.board_id, depth=command.depth
-        )
-        return ListPendingTreeResult(payload)
-
-
-# --- retry pending entry (write) --------------------------------------------
-
-
-class RetryPendingEntryCommand:
-    __slots__ = ("board_id", "queue_entry_id", "recursive")
-
-    def __init__(
-        self, board_id: str, queue_entry_id: str, *, recursive: bool = False
-    ) -> None:
-        self.board_id = board_id
-        self.queue_entry_id = queue_entry_id
-        self.recursive = recursive
-
-
-class RetryPendingEntryResult:
-    __slots__ = ("payload",)
-
-    def __init__(self, payload: dict[str, Any]) -> None:
-        self.payload = payload
-
-
-class RetryPendingEntryUseCase:
-    """Re-queue a failed/done ConsolidationQueue entry (write). Delegates to
-    ``governance.retry_pending_entry`` (which mutates, commits the request session
-    internally and signals the worker, exactly as the legacy endpoint relied on)
-    and returns its payload verbatim. A missing entry (``None`` from governance)
-    is ``EntityNotFoundError("queue_entry")`` (→ adapter maps to 404 "queue entry
-    not found"); the use case issues NO second commit."""
-
-    async def execute(
-        self,
-        command: RetryPendingEntryCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> RetryPendingEntryResult:
-
-        await _require_board_access(uow.services, actor, command.board_id)
-        await require_authorization(
-            actor,
-            PermissionRequirement(
-                "kg.operations.queue.reprocess",
-                legacy_operation="kg.admin.settings_write",
-            ),
-            uow=uow,
-            board_id=command.board_id,
-        )
-        ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
-            actor=actor,
-            board_id=command.board_id,
-            uow=uow,
-        )
-        payload = (
-            await uow.services.kg.retry_pending_entry(
-                command.board_id,
-                command.queue_entry_id,
-                recursive=command.recursive,
-            )
-            if ct_access.allowed
-            else await uow.services.kg.retry_pending_entry(
-                command.board_id,
-                command.queue_entry_id,
-                recursive=command.recursive,
-                include_code_traceability=False,
-            )
-        )
-        if payload is None:
-            raise EntityNotFoundError("queue_entry", command.queue_entry_id)
-        return RetryPendingEntryResult(payload)
-
-
-# ===========================================================================
-# Node relevance boost (spec R01A REST-FU5-S4 — kg_routes.boost_node)
-# ===========================================================================
-
-
-class BoostNodeCommand:
-    __slots__ = ("board_id", "node_id")
-
-    def __init__(self, board_id: str, node_id: str) -> None:
-        self.board_id = board_id
-        self.node_id = node_id
-
-
-class BoostNodeResult:
-    __slots__ = ("payload",)
-
-    def __init__(self, payload: dict[str, Any]) -> None:
-        self.payload = payload
-
-
-class _BoostFenceHandle:
-    """Keep one synchronous guard context alive across async audit finalization."""
-
-    __slots__ = ("closed", "context", "entered", "lease", "manager")
-
-    def __init__(self) -> None:
-        self.context: Context = copy_context()
-        self.manager: Any = None
-        self.lease: Any = None
-        self.entered = False
-        self.closed = False
-
-
-def _mutate_boost_graph_inside_fence(
-    handle: _BoostFenceHandle,
-    *,
-    guard_factory: Any,
-    kg_service: Any,
-    command: BoostNodeCommand,
-    actor: ActorContext,
-) -> object:
-    """Enter the fence and complete graph IO/lifecycle in one worker context."""
-
-    def _run() -> object:
-        handle.manager = guard_factory(
-            command.board_id,
-            operation="kg.node_boost",
-            owner_id=actor.actor_id,
-            mutation_ref=f"node:{command.node_id}:boost",
-        )
-        handle.lease = handle.manager.__enter__()
-        handle.entered = True
-        try:
-            return run_async_blocking(
-                kg_service.mutate_boost_node_graph(
-                    command.board_id,
-                    command.node_id,
-                    actor_id=actor.actor_id,
-                )
-            )
-        finally:
-            # A Ladybug/Kuzu SET may auto-commit before result
-            # materialization raises. Apply the lifecycle on every exit from
-            # the graph service in the same off-loop guard context.
-            handle.lease.ensure_durable()
-
-    return handle.context.run(_run)
-
-
-def _close_boost_fence_sync(
-    handle: _BoostFenceHandle,
-    error: BaseException | None,
-) -> None:
-    """Close the suspended sync context manager in its original Context."""
-
-    if not handle.entered or handle.closed:
-        return
-
-    def _close() -> None:
-        try:
-            if error is None:
-                handle.lease.ensure_owned(failure_phase="after_boost_audit_finalize")
-        except BaseException as ownership_error:
-            try:
-                handle.manager.__exit__(
-                    type(ownership_error),
-                    ownership_error,
-                    ownership_error.__traceback__,
-                )
-            finally:
-                handle.closed = True
-            raise
-        try:
-            handle.manager.__exit__(
-                type(error) if error is not None else None,
-                error,
-                error.__traceback__ if error is not None else None,
-            )
-        finally:
-            handle.closed = True
-
-    handle.context.run(_close)
-
-
-async def _close_boost_fence(
-    handle: _BoostFenceHandle,
-    error: BaseException | None,
-) -> None:
-    await run_blocking_graph_io(
-        lambda: _close_boost_fence_sync(handle, error),
-        task_name="kg.node_boost.fence_exit",
-    )
-
-
-class BoostNodeUseCase:
-    """Boost a KG node's ``relevance_score`` (+0.3, clamp [0, 1.5]) and persist its
-    ``ConsolidationAudit`` row (write). The KG service exposes a graph-only mutation
-    and a no-IO audit-staging step: native graph work runs in a worker, while staging
-    and finalizing the request-owned UnitOfWork remain on the request loop.
-
-    On a successful boost the audit row persists (bug 547a2aa8 fix — the legacy row
-    omitted the NOT-NULL ``artifact_type``/``started_at`` columns, so its commit raised
-    IntegrityError and was silently swallowed). The graph SET, durability lifecycle
-    and relational audit finalization share one board-writer fence. The commit stays
-    best-effort only for a genuinely unexpected failure on the already-durable graph:
-    it rolls back the (audit-only) staged row and the boost still succeeds, preserving
-    the legacy 200/404/500 contract. A missing node (governance returns ``None``) is
-    ``EntityNotFoundError("node", node_id)`` (→ adapter 404 problem);
-    ``BoostPersistError`` from a failed SET propagates uncaught for the adapter
-    (→ 500 ``graph_error``)."""
-
-    async def execute(
-        self, command: BoostNodeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
-    ) -> BoostNodeResult:
-        from okto_pulse.core.domain.code_traceability_kg import (
-            CodeTraceabilityKGWriteViolation,
-        )
-        from okto_pulse.core.kg.guarded_write import guarded_board_write
-
-        await _require_board_access(uow.services, actor, command.board_id)
-        await require_authorization(
-            actor,
-            PermissionRequirement(
-                "kg.operations.node.boost",
-                legacy_operation="kg.admin.settings_write",
-            ),
-            uow=uow,
-            board_id=command.board_id,
-        )
-        handle = _BoostFenceHandle()
-        try:
-            mutation = await run_blocking_graph_io(
-                lambda: _mutate_boost_graph_inside_fence(
-                    handle,
-                    guard_factory=guarded_board_write,
-                    kg_service=uow.services.kg,
-                    command=command,
-                    actor=actor,
-                ),
-                task_name="kg.node_boost.graph",
-            )
-            if mutation is None:
-                raise EntityNotFoundError("node", command.node_id)
-
-            # Staging remains on the request loop: it touches the request-owned
-            # UnitOfWork but performs no graph or relational network IO.
-            payload = uow.services.kg.stage_boost_node_audit(mutation)
-            try:
-                await commit(uow)
-            except Exception:
-                # Historical API contract: the audit is best-effort after a
-                # durable graph boost. Keep the fence until rollback completes.
-                await uow.rollback()
-        except CodeTraceabilityKGWriteViolation as exc:
-            await _close_boost_fence(handle, exc)
-            raise PermissionDeniedError(
-                "Code Traceability KG projections are immutable through "
-                "generic node boost"
-            ) from exc
-        except BaseException as exc:
-            await _close_boost_fence(handle, exc)
-            raise
-        else:
-            await _close_boost_fence(handle, None)
-        return BoostNodeResult(payload)

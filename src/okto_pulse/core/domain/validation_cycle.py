@@ -8,6 +8,9 @@ technical versions are available only through the result-scoped audit read.
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.spec_planning import SpecPlanningManifest
+from okto_pulse.core.domain.spec_planning_readiness import SpecPlanningReadiness
+
 import math
 import re
 from dataclasses import dataclass, field
@@ -377,8 +380,15 @@ class ValidationCycleSummary:
     previous_results: tuple[ValidationCycleResultSummary, ...] = ()
     checks: tuple[ValidationCycleCheckSummary, ...] = ()
     remaining_actions: tuple[str, ...] = ()
+    planning_manifest: SpecPlanningManifest | None = None
+    planning_readiness: SpecPlanningReadiness | None = None
 
     def __post_init__(self) -> None:
+        if self.planning_readiness is not None and (
+            self.subject_type is not AssessmentSubjectType.SPEC
+            or not isinstance(self.planning_readiness, SpecPlanningReadiness)
+        ):
+            raise ValidationCycleContractError("validation_cycle_planning_readiness_invalid")
         if not isinstance(self.subject_type, AssessmentSubjectType):
             raise ValidationCycleContractError("validation_cycle_subject_type_invalid")
         object.__setattr__(
@@ -408,7 +418,7 @@ class ValidationCycleSummary:
         visible_sections = tuple(self.visible_sections)
         allowed_sections = set(default_sections)
         if (
-            not visible_sections
+            (not visible_sections and self.planning_readiness is None)
             or len(set(visible_sections)) != len(visible_sections)
             or any(
                 not isinstance(item, ValidationCycleResultType)
@@ -429,6 +439,17 @@ class ValidationCycleSummary:
             else ValidationCycleResultType.AMBIGUITY_ASSESSMENT
         )
         primary_visible = primary_result_type in visible_sections
+        if self.planning_manifest is not None:
+            if (
+                self.subject_type is not AssessmentSubjectType.SPEC
+                or not primary_visible
+                or not isinstance(self.planning_manifest, SpecPlanningManifest)
+                or self.planning_manifest.spec_id != self.subject_id
+                or self.planning_manifest.edition != edition
+                or not isinstance(self.submission_fence, ValidationSubmissionFence)
+                or self.planning_manifest.spec_version != self.submission_fence.expected_subject_version
+            ):
+                raise ValidationCycleContractError("validation_cycle_planning_manifest_scope_mismatch")
         if primary_visible:
             if not isinstance(self.cycle_state, ValidationCycleState):
                 raise ValidationCycleContractError("validation_cycle_state_invalid")

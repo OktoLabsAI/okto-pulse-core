@@ -59,6 +59,7 @@ def test_provider_and_lifecycle_are_disjoint():
 
 def test_representative_classifications():
     assert classify_function("configure_database_runtime") == "r01b"
+    assert classify_function("database_runtime_scope") == "r01b"
     assert classify_function("create_database") is None
     assert classify_function("get_engine") == "r01b"
     assert classify_function("close_db") == "r01b"

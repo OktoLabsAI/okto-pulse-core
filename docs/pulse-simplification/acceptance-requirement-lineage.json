@@ -1,0 +1,157 @@
+{
+  "scope": "Declared IR->TR and OR->FR/TR emission under qualified schema 0.7.0",
+  "suites": {
+    "requirement-lineage-core": {
+      "tests": 94,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "requirement-lineage-community": {
+      "tests": 90,
+      "failures": 8,
+      "errors": 0,
+      "skipped": 0
+    },
+    "requirement-lineage-core-r2": {
+      "tests": 94,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "requirement-lineage-community-r2": {
+      "tests": 90,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "requirement-lineage-planner": {
+      "tests": 40,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "requirement-lineage-frontend": {
+      "tests": 24,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Exact ID precedence, unique legacy text across FR/TR, ambiguity refusal.",
+    "Partial source never authorizes replacement of the full FR/TR active set.",
+    "Separate OR requirement and integration families with exact writer ownership.",
+    "Seven declared relationship shapes survive real graph create/reorder/clear/restore commits.",
+    "Grafx cleanup and repeated compensation preserve foreign owners, sections, writers and unknown rules.",
+    "Live and rebuild proposal intents match; changing only links invalidates a retained plan.",
+    "Both installed source trees and wheel payloads were byte-proven before behavioral tests."
+  ],
+  "limits": [
+    "Initial campaigns failed on one obsolete None argument and incomplete graph fixtures; results are preserved separately from complete positive reruns.",
+    "No end-to-end event/rebuild/rollback or current installed campaign acceptance claim.",
+    "Source lifecycle and revoked-target historical semantics still require full audit.",
+    "Frontend JSDOM tests do not establish canvas pixel correctness.",
+    "Learning F6, remaining KG families/queries, whole-plan audit, benchmark and paired 0.4.0 release remain open."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/requirement-lineage-core.xml": "9a367abe3811b939cf9733cf0d6d2198dd141266afba953f726c3a69411415f5",
+    "PULSE_REFACTOR/.validation-v040/requirement-lineage-core.log": "8d052f2ede45ab9c814afbc6db99af01435aa54c9d2b5c5317c7645b6b14cae3",
+    "PULSE_REFACTOR/.validation-v040/requirement-lineage-community.xml": "d67b03880c2794c87e62ddd3a50f6028e39eaafd6b28f96c4ca543e8026b19e5",
+    "PULSE_REFACTOR/.validation-v040/requirement-lineage-community.log": "640b8011850c9c5a100dcb4253220af31dab41df813569330dd3843c4393654d",
+    "PULSE_REFACTOR/.validation-v040/requirement-lineage-core-r2.xml": "7822f9fba2f3fb108107ce8c122e5e03b57f58985d0705ea844571558f20a343",
+    "PULSE_REFACTOR/.validation-v040/requirement-lineage-core-r2.log": "1c2c8233acd5818004884fe144bc7f069d416c620af8a4145a469d6e624cc5a9",
+    "PULSE_REFACTOR/.validation-v040/requirement-lineage-community-r2.xml": "57c82a4cd4f1c31524decd01600d30dfd99cbcefb3d04536993327aefd48c9c9",
+    "PULSE_REFACTOR/.validation-v040/requirement-lineage-community-r2.log": "2b7ec9b85fc5fb7d08526dbff39d5015e5a18354202defefacfdd209a446ed69",
+    "PULSE_REFACTOR/.validation-v040/requirement-lineage-planner.xml": "950fe1a73f807b1625418c5b9d844a1e735a9c834b9e9f2aa272e055193ed464",
+    "PULSE_REFACTOR/.validation-v040/requirement-lineage-planner.log": "35bfaf7c21451b5c80a58c55c1b889697349c8af99bdd19c9aecded60d4c25b1",
+    "PULSE_REFACTOR/.validation-v040/requirement-lineage-frontend.xml": "32cfa217a2244abf2f6718fc222008084d1b7e09c52092818f5d2b7833886e1c",
+    "PULSE_REFACTOR/.validation-v040/requirement-lineage-frontend.log": "bd8256b9fd8efa19fd899ae1b3e5b5f20672b7e7934b8b13b019be3dba60415a",
+    "PULSE_REFACTOR/.validation-v040/provenance-requirement-lineage.json": "f6b42f9da87e2d057a5791a67780072a271767ead52fc6a760241b7938c36012",
+    "PULSE_REFACTOR/.validation-v040/closure-requirement-lineage.json": "1a5cb1257118487da6360dff888ddce6ab0561fcd5f7ee4e09c2fa52addad922",
+    "PULSE_REFACTOR/.validation-v040/requirement-lineage-before.xml": "43c147919dc21799e5e64ab092bdf739a2eb15520839ef4adcbf7f4925e685d8",
+    "PULSE_REFACTOR/.validation-v040/probe_requirement_lineage.py": "e4e63f227366b1e763b7d95e9ee7e2ff3a4db214173ef60f26d36eb2ac7f63f8",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/processors/deterministic_kg.py": "b81db27f9555b58efea19feab66c67c3922f1bc9acdafb8b2af09e3c717707ce",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/spec_projection.py": "b5a87ef555f3a011cb4923fb03db35ab5f031ec49765e65596de93a7d55fb923",
+    "okto_labs_pulse_core/tests/test_kg_spec_declared_lineage.py": "07ab499324cfaeedfb22caa306e9f2dbacf7e152e29548de1bcbf6a393218b8e",
+    "okto_labs_pulse_core/tests/test_kg_spec_children_canonicalization.py": "3a670a2bc7a2c0ae654b99c7ed2b83bc75f7f586e02dbeb2b4cb95228ce5f7d5",
+    "okto_labs_pulse_core/tests/test_projection_intent_collection.py": "39b24d6dc1e7e782fdcae8d06aefbaa6bfa3d7bf8b59b040bd9a63fb4471e38a",
+    "okto_labs_pulse_core/tests/test_spec_lineage_graph_reconciliation.py": "a042727420ed69668e868f0cb39e327bc10025113eca4c8089155daf74b73376",
+    "okto_labs_pulse_core/tests/test_deterministic_projection_planner.py": "cd63bfee3e41acbd323a4024f18bc93e38fdb4e2353b9276f2e57dab1ea0d635",
+    "okto_labs_pulse_community/tests/test_grafx_spec_declared_lineage.py": "eb7e6b2fb8b245541b454838f8e97d7ffbe2b0966e576c0445b7077fd6831eaf"
+  }
+}

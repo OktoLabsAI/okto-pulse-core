@@ -1,7 +1,7 @@
 """Local watermark/cursor schema for the steady-state delta publish (spec R3A).
 
 R3A-A owns the *schema* of the per-install watermark, its (de)serialisation,
-the conservative migration of a legacy ``state.json`` and the stable-ordering
+the native state contract and the stable-ordering
 primitive that makes the cursor anchor on a stable event identifier rather than
 on a wall-clock timestamp alone (FR ``fr_55e194c2``; decision ``dec_68f16c0e``
 "Watermark por evento estavel e delta trusted pos-fix").
@@ -53,6 +53,8 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
+from okto_pulse.core.domain.telemetry_modes import validate_watermark_carrier
+
 # --- Storage contract (IR ir_a5df43cf) -------------------------------------
 # The watermark is persisted as these flat top-level keys in state.json. Listed
 # explicitly so the public projection is allowlist-based (never *asdict*), the
@@ -73,7 +75,7 @@ NEXT_BATCH_SEQ_KEY = "next_batch_seq"
 DEFAULT_RETENTION_DAYS = 30  # IR ir_a5df43cf: retention_days_default
 DEFAULT_NEXT_BATCH_SEQ = 1  # send-time sequence starts at 1 (matches sender.py)
 
-# A cursor that sorts before every real event (empty/legacy watermark).
+# A cursor that sorts before every real event (empty watermark).
 _MIN_DT = datetime(1, 1, 1, tzinfo=timezone.utc)
 
 
@@ -124,10 +126,10 @@ class Watermark:
 
     @property
     def is_empty(self) -> bool:
-        """``True`` when no event has been confirmed yet (fresh or legacy state).
+        """``True`` when no event has been confirmed yet (fresh state).
 
         An empty cursor means *nothing* is confirmed — the conservative default
-        after a legacy upgrade, so no pending event is ever silently treated as
+        before the first confirmed send, so no pending event is ever silently treated as
         already sent (scenario ``ts_0d21a342``).
         """
         return self.watermark_event_id is None
@@ -257,24 +259,8 @@ def set_counters(
 
 
 def read_watermark(state: dict[str, Any]) -> Watermark:
-    """Read the watermark from a telemetry ``state`` dict, migrating legacy state.
-
-    A legacy ``state.json`` (one that predates this card) has ``next_batch_seq``
-    and local events but NO ``watermark``/``watermark_event_id`` keys. Migration
-    is deliberately conservative (FR ``fr_55e194c2`` / scenario ``ts_0d21a342``):
-
-    * the cursor is left EMPTY (``watermark``/``watermark_event_id`` = ``None``)
-      so every existing local event stays *pending*. We never seed the cursor
-      from ``last_send_at`` or "now", which would mark genuinely-unsent events as
-      confirmed and silently drop them. Re-sending a confirmed window is harmless
-      (the backend dedupes by nonce/batch_seq); dropping unsent data is not.
-    * ``next_batch_seq`` and ``retention_days`` are carried over from their
-      existing flat keys (so the R1 send-time sequence is preserved), defaulting
-      to 1 and 30 when absent.
-
-    Unknown/extra keys are ignored, and nothing here reads a secret, so the
-    reader cannot break on future extensions or leak a credential.
-    """
+    """Read the native cursor, or initial defaults before any confirmed send."""
+    validate_watermark_carrier(state)
     return Watermark(
         watermark=_coerce_opt_str(state.get("watermark")),
         watermark_event_id=_coerce_opt_str(state.get("watermark_event_id")),

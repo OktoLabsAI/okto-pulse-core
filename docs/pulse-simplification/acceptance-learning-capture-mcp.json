@@ -1,0 +1,121 @@
+{
+  "scope": "F6 MCP source preview and standalone Learning capture using shared authorized UOW",
+  "suites": {
+    "core": {
+      "tests": 94,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "tests": 46,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Live registry functions use real SQL and signed scenario evidence for preview/create/retry.",
+    "Each of thirteen permission denials prevents persistence.",
+    "Missing agent/Board binding, missing Bug, stale source and malformed request are refused.",
+    "Unexpected provider runtime details are not disclosed.",
+    "Generated catalog matches the live MCP registry byte for byte."
+  ],
+  "limits": [
+    "Frontend, listing, reuse/supersedence and other evidence references remain pending.",
+    "Policy/Done binding/outbox/materialization and installed recovery of this pair remain pending.",
+    "Registry function tests do not claim an MCP HTTP transport campaign.",
+    "Suites overlap the previous REST increment; counts are per run, not distinct totals."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-capture-mcp.json": "b49357e10549099f04dfe628da1354a422366b36528eee39d99543c873082982",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-capture-mcp-final.json": "1c0018485473a6596bdf670c9e2e92182b23348683546de74337d5bc6e10bf69",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-capture-mcp-final.json": "8aa2a32aef91f297ada88675689428cf4d6d2f45f1eb9804e05a99c2e942236a",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-capture-mcp.json": "c5a88ec10bcd820d2ce92b64ce106096bc971e48679166401444226465735210",
+    "PULSE_REFACTOR/.validation-v040/run_learning_capture_mcp.py": "5c845a7f2e164b7af1274919451604790f124462661876462dbe5b2f4a85d14d",
+    "PULSE_REFACTOR/.validation-v040/run_learning_capture_mcp_final.py": "bc6837866e2c25d90404bdc7f348b79e108be7159e845569822873a3e5fff7ea",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-mcp-core.xml": "d3df38615564b8a7bad206e64d76f25647330f3bb92d9f387c4b53e89d3a64ba",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-mcp-test-core.log": "ef2d4a094c90bcddefebba4b605f9a9cf0b79ab820444fecdba48cab23ac8789",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-mcp-community.xml": "faff9dcab31c34c97b7b5051dbf622563d448befe5dfeadfe46154860563c219",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-mcp-test-community.log": "d371d02f35e8ce885e6ef10a1856d92da7d1b3015c04afc1ebb0c6912428583a",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/server.py": "d4949459fa9be2117397c122b825bd87fd2f492304e7f6f85d1fb6cb3f133b3d",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/tools_catalog_generator.py": "01bc7a677db4f0f28e7c76266655eeafc34ba5aea889c0b72c324cb786e78f9d",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/resources/reference/tools_catalog.md": "f98a13c81a8f1753b1376f21ed0bca1c9e2275285d9eed74d1cf3fbd14ff4c65",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/resources/reference/tool-docs/kg.md": "ccddb1b713bcb274ca85265391dfbc31c8915c0e47fed69fbcd3ee3d91c6a275",
+    "okto_labs_pulse_community/tests/test_learning_capture_mcp.py": "0db96c26c1d55cbcf7b5b9f2e3f7c35a40dfcb412c0fb6b309d2700b3de6a940"
+  }
+}

@@ -1,0 +1,224 @@
+{
+  "recorded_at": "2026-10-01T10:37:58.956162+00:00",
+  "scope": "KG 6.4/9: Decision impact through existing facade and contextual UI",
+  "status": "partial_plan_delivery",
+  "verified_criterion_keys": [
+    "KG:KG-57"
+  ],
+  "base_pair": {
+    "core": "00f66648",
+    "community": "f7ad3cd8"
+  },
+  "campaigns": [
+    {
+      "name": "learning-reconciliation-decision-impact-public1-core",
+      "sha256": "7654a4de68f74dd34a4de9e7586bfe2c878a4c451cab73d7ed7803ce41c67839",
+      "tests": 166,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "learning-reconciliation-decision-impact-public1-community",
+      "sha256": "ef73f873dd815a9b63a5f8a56c83ab2029ebdc5438253f621adfe5315ca8be6b",
+      "tests": 43,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "frontend-decision-impact-public1",
+      "sha256": "2e58434ca573344218da362dbf899c90dc25b75e54c95860face8aaca936e00b",
+      "tests": 22,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "learning-reconciliation-decision-impact-public-qualified-community",
+      "sha256": "1400fbf55ab3e057fcda9d1d688713556effb8963d896fadb2b3cfa332e238df",
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "campaign_accounting": "248 distinct passing tests: 166 Core + 41 Community behavior/transport + 19 final distribution + 22 frontend. Initial distribution failed because generated assets were not yet staged; final targeted distribution campaign supersedes it. Do not add overlapping reruns.",
+  "provenance": {
+    "checked_at": "2026-10-01T10:35:31.248172+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 878,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "00f66648360b76b50b78042e920ce8ce81ae71fc",
+        "dirty": true,
+        "dirty_entry_count": 15,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-decision-impact-public-qualified\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "7348522f091148ba760379f0763989e8571b3f90029b5b0cc706ef697835efe5",
+          "size": 3833188
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 941,
+        "byte_identical": true,
+        "aggregate_sha256": "cd95b858bf435034ec3e01d268aebdfea25021b2f29cd3228625f63096aea64c",
+        "chain_hashes": {
+          "source": "cd95b858bf435034ec3e01d268aebdfea25021b2f29cd3228625f63096aea64c",
+          "wheel": "cd95b858bf435034ec3e01d268aebdfea25021b2f29cd3228625f63096aea64c",
+          "site_packages": "cd95b858bf435034ec3e01d268aebdfea25021b2f29cd3228625f63096aea64c"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 382,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "f7ad3cd8ceeddce169b76c0e6b23832f36e02001",
+        "dirty": true,
+        "dirty_entry_count": 43,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-decision-impact-public-qualified\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "377158000e9e7ee72e3705333220f85d322e59cd72e64b0f547aca5ab3cabc08",
+          "size": 4557483
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 467,
+        "byte_identical": true,
+        "aggregate_sha256": "2fbd0935ea325071e402c7d84c1c195798b50163c38d841226e5f3f8d59c93c6",
+        "chain_hashes": {
+          "source": "2fbd0935ea325071e402c7d84c1c195798b50163c38d841226e5f3f8d59c93c6",
+          "wheel": "2fbd0935ea325071e402c7d84c1c195798b50163c38d841226e5f3f8d59c93c6",
+          "site_packages": "2fbd0935ea325071e402c7d84c1c195798b50163c38d841226e5f3f8d59c93c6"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "closure": {
+    "ok": true,
+    "findings": [],
+    "documentation_findings": [],
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ]
+  },
+  "source_sha256": {
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/decision_impact.py": "21ddf4214eaef80b80f3cc624100714e31fc2c717c6e9b1982fed3adc1e98e6f",
+    "okto_labs_pulse_core/src/okto_pulse/core/services/decision_impact.py": "f8c44161b9777344842911f1ab0a2fd963d068874cfc3a22eeeddd9416820dab",
+    "okto_labs_pulse_core/src/okto_pulse/core/models/decision_impact.py": "fbd221fecd70b97feee97b99c27dbf04fc1e232d9d3b88fc844b9ba70d761a38",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/decision_impact.py": "b4f66029f3c738259011a9b0ac63c05d4bb58dd27eb62e0978a00485d61a3b03",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/decision_impact.py": "c59cee51faac52b5aad2e33ca2cd4c8d6ec688a085de6a4651ccc504190b8894",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/processors/card_scenario_projection.py": "d56b2a6e019cfbbc211813efd9aa0eff348325bb824f5fcbc6ecf2088ac36203",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/server.py": "ab49ccfee0c8bb5dc70434c8c85c269b8074e7d3b96f24ed91aad2054ea2512e",
+    "okto_labs_pulse_core/tests/test_decision_impact.py": "35892aae84b2bd02fe3b022101d165887ef33f4d28c21aa21dfa4293bf3926ac",
+    "okto_labs_pulse_core/tests/test_decision_impact_authorization.py": "1152138b3b31d10e4e75bc34e94521a6bccdabd99e9f8326efa8ad62c6bc3219",
+    "okto_labs_pulse_core/tests/test_decision_impact_mcp.py": "85d897443fb51f241d2d267a9869041ed9488ead8dc847f1ce8e4b7ed101a5dd",
+    "okto_labs_pulse_community/src/okto_pulse/community/api/decision_impact.py": "2fcce96770cd1e7d09ec3d79b2bae8517752642b83728a65b2666b890509b79e",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_spec_coverage.py": "dbf8f7669d19a82f5dfa05038246f69c8a57df9ecc21f61c06d7540231040800",
+    "okto_labs_pulse_community/tests/test_decision_impact_read.py": "c254b832e168bffa37e80127d4663397552f64c8bf9b1be8ca25479ee63e465c",
+    "okto_labs_pulse_community/tests/test_decision_impact_transport.py": "9efbc4d9bb8f549f84d48c5035729584085acb8d29db00dcdb77a7f567521eb4",
+    "okto_labs_pulse_community/frontend/src/components/specs/DecisionImpactPanel.tsx": "6647523a3dd2323b65858271a62a61087439dbc3ac60ca2133d205502ac27c30",
+    "okto_labs_pulse_community/frontend/src/components/specs/decisionImpactTypes.ts": "2b0621f3c301805858ccd6c13c67c480ba688969ae4a1cf508a43b1911377657",
+    "okto_labs_pulse_community/frontend/src/components/specs/DecisionImpactPanel.test.tsx": "857d887376d4294d028fb2c3d5df29b9eb075001ac78abd243aa36957cf74f4f",
+    "okto_labs_pulse_community/frontend/src/components/specs/DecisionsTab.tsx": "478cc84768cddd3a7605d902dc4d6ac1dab9a2f301179b2faf86d8a4a1eb2746",
+    "okto_labs_pulse_community/frontend/src/services/api.decisionImpact.test.tsx": "324703e2f925231c3c622458ab7e77e9f471dcfc6b0c8515efd91aecac903daa",
+    "okto_labs_pulse_community/src/okto_pulse/community/frontend_dist/pulse-frontend-contract.json": "ea1c64245da382ddbdbb7cc17497a4ed44168cd05205d70b1c886bb677de7644"
+  },
+  "frontend_tree_sha256": "993125f8549ced51508e1140c8c6afbe4ecb8f90932c73952bdee329523a86be",
+  "limits": [
+    "KG-57 exact criterion exercised with real disposable SQL and native Grafx: unrelated scenario through shared Card remains potential, with actual direction/provenance. Public DTO validates that result.",
+    "HTTP/MCP use controlled actors and UOW; native read test is separate. No deployed authenticated E2E claimed.",
+    "Source projectors are reused; no new graph dialect, relation authority, schema or proof admission path.",
+    "KG-11 supersedence history read is covered, but this receipt does not establish mutation/reopen/replay qualification. KG-10 initial co-occurrence excluded from read; no claim of complete removal/rebuild qualification.",
+    "Matching observations remain unknown without full projection checkpoint. Bounded scope is one Spec, default depth 3, maximum 8, explicit frontier/truncation.",
+    "Lineage, benchmark and integrated final acceptance remain original outstanding work; no new goals introduced.",
+    "Legacy SpecModal tests emit React act warnings and build emits chunk-size warnings; new-file ESLint has no warnings.",
+    "No production data migration, runtime restart, release, merge, deployment or tag."
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "scope": "Native Knowledge selections and real Resource Gate in Core context fixtures",
+  "pair": "dist-native-reviewer22",
+  "provenance": "provenance-native-reviewer22.json",
+  "closure": "closure-native-reviewer22.json",
+  "runs": [
+    {
+      "name": "native-reviewer22-context1",
+      "xml_sha256": "2f804061d0932c8f78f7fe679d51331adf1f4c8ead1407917d41c418b6506bfc",
+      "tests": 186,
+      "failed": 8,
+      "failed_cases": [
+        "tests.test_mcp_traceability_report::test_traceability_report_lists_sdlc_chain_without_duplicate_direct_specs",
+        "tests.test_r3_imp2_copy_effective_fallback::test_effective_knowledge_preserves_identity_and_gate_coverage",
+        "tests.test_r3_imp2_copy_effective_fallback::test_effective_knowledge_ignores_ineffective_inherited_na_mark",
+        "tests.test_r3_imp2_copy_effective_fallback::test_all_copy_tools_ignore_ineffective_inherited_na_marks",
+        "tests.test_r3_imp2_copy_effective_fallback::test_retired_knowledge_writer_absent_and_effective_reads_are_isolated",
+        "tests.test_r3_scenarios::test_ts_6e228232_gate_summary_and_copy_share_effective_list",
+        "tests.test_r3_scenarios::test_ts_3524d4ce_card_receives_all_inherited_with_gate_identity",
+        "tests.test_r3_scenarios::test_ts_7cc0dcf9_no_auto_na_and_no_provenance_loss"
+      ]
+    },
+    {
+      "name": "native-context-explicit-selection1",
+      "xml_sha256": "5cb2f916cd85055f599607f49530dbbd9ccfe9f4fe2d2d531e810f0cf1549440",
+      "tests": 31,
+      "failed": 0,
+      "failed_cases": []
+    },
+    {
+      "name": "native-context-explicit-selection2",
+      "xml_sha256": "f727e3d6f376dfd2df78180fad85a40a4d7f7bef68915bfa05206bb5b5b492b7",
+      "tests": 96,
+      "failed": 1,
+      "failed_cases": [
+        "tests.test_r3_imp2_copy_effective_fallback::test_unselected_parent_knowledge_does_not_fan_out_to_task"
+      ]
+    },
+    {
+      "name": "native-context-explicit-selection3",
+      "xml_sha256": "e1ea2f1ebd3b6ef89d69ac14a639ec7f4aca931d481c4351952ba5741152e336",
+      "tests": 32,
+      "failed": 0,
+      "failed_cases": []
+    }
+  ],
+  "qualified_modules": [
+    "tests.test_mcp_traceability_report",
+    "tests.test_r3_imp2_copy_effective_fallback",
+    "tests.test_r3_scenarios"
+  ],
+  "qualified_cases": 32,
+  "findings": [
+    "Empty Knowledge test port hid native assignments in original context campaign",
+    "Test-only Resource Gate adapter inferred parent Knowledge without explicit selection; replaced locally by real Community adapter",
+    "Native service authors reference assignments; source identities/content, advisory gate authority, isolation and absence of physical Card copies asserted",
+    "Unselected parent Knowledge remains absent from effective Task context; original source unchanged"
+  ],
+  "limitations": [
+    "Only tests changed; no production behavior or frontend change",
+    "MCP identity/independent permissions injected as existing fixtures",
+    "Five other helper consumers passed in selection2; its single failure is preserved",
+    "Community16 remains running; installed E2E and C4 not complete"
+  ]
+}

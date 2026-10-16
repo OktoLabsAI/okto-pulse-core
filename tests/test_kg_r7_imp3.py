@@ -72,8 +72,6 @@ from sqlalchemy_test_models import (
 from okto_pulse.core.services.canonical_debt_service import (
     OPEN_STATES,
     list_canonical_debt,
-    schedule_canonical_debt_retry,
-    upsert_canonical_debt,
 )
 from okto_pulse.core.kg.single_writer_lock import (
     KGAdministrativeOperationReservation,
@@ -293,6 +291,7 @@ async def test_rebuild_wrapper_holds_working_only_like_normal_commit(
                     session_id=begin_r.session_id,
                     summary_text="rebuild parity",
                     db=db,
+                    defer_session_finalization=True,
                 )
 
     n_reason = exc_n.value.details["r7_cognitive_hold_candidate"]["reason_code"]
@@ -321,7 +320,11 @@ async def test_rebuild_wrapper_accepts_mixed_like_normal_commit(
                 session_id=begin_r.session_id,
                 summary_text="rebuild mixed",
                 db=db,
+                defer_session_finalization=True,
             )
+            await db.commit()
+        from okto_pulse.core.kg.primitives import finalize_deferred_consolidation
+        await finalize_deferred_consolidation(begin_r.session_id, agent_id=AGENT_ID)
     # Same verdict as normal commit (IMP1 TS2): accepted, working edge deferred.
     assert commit.connectivity["passed"] is True
     advisories = commit.connectivity.get("advisories", [])
@@ -411,8 +414,12 @@ async def test_rebuild_entry_triggers_canonical_partition_maintenance(
         async with db_factory() as db:
             db.add_all([bug, entry])
             await db.flush()
-            ok = await _process_queue_entry(db, entry)
-        await db.commit()
+            deferred = []
+            ok = await _process_queue_entry(db, entry, deferred_session_ids=deferred)
+            await db.commit()
+        from okto_pulse.core.kg.primitives import finalize_deferred_consolidation
+        for session_id in deferred:
+            await finalize_deferred_consolidation(session_id, agent_id=AGENT_ID)
     # Production invokes best-effort maintenance in a separate transaction
     # after ledger/audit/ACK durability. Reproduce that boundary explicitly;
     # a maintenance rollback must never erase the main consolidation ledger.
@@ -469,24 +476,3 @@ async def test_rebuild_maintenance_does_not_close_debt_with_working_evidence(
 # ---------------------------------------------------------------------------
 # Retry REST stays scheduler-only (preserved from IMP2)
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_retry_is_scheduler_only(board_id, agent_id, db_factory):
-    board_id = await _setup_board(db_factory)
-    async with db_factory() as db:
-        debt = await upsert_canonical_debt(
-            db, board_id=board_id, artifact_type="bug",
-            artifact_id="bug-retry", source_ref="bug:bug-retry",
-            content_hash="h-retry", target_status="canonical_learning_partition_integrity",
-            canonical_state="pending", failure_reason="x",
-        )
-        await db.commit()
-        result = await schedule_canonical_debt_retry(
-            db, board_id=board_id, debt_id=debt.id,
-            actor_id="claude-coder", kg_health_state="healthy",
-        )
-    # Schedules only; does NOT consume an attempt or reconcile directly.
-    assert result["ok"] is True
-    assert result["attempt_consumed"] is False
-    assert result["debt"]["canonical_state"] == "retry_scheduled"

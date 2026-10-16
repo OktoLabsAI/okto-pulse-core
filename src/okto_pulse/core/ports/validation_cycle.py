@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from okto_pulse.core.domain.quality_assessment import AssessmentSubjectType
+from okto_pulse.core.domain.workspace_revisions import WorkspaceRevisions, WorkspaceRevisionsQuery
 from okto_pulse.core.domain.realm import RealmScope
 from okto_pulse.core.domain.validation_cycle import (
     ValidationCycleResultType,
@@ -38,6 +39,10 @@ class ValidationCycleReadAccessDenied(ValidationCycleReadError):
     code = "validation_cycle_access_denied"
 
 
+class WorkspaceRevisionsUnavailable(ValidationCycleReadError):
+    code = "workspace_revisions_unavailable"
+
+
 @runtime_checkable
 class ValidationCycleReadPort(Protocol):
     """Resolve bounded summaries without eager-loading technical evidence.
@@ -47,6 +52,12 @@ class ValidationCycleReadPort(Protocol):
     returns the total previous-result count. Technical receipts and digest
     payloads are resolved only by ``get_result_technical_audit``.
     """
+
+    async def get_workspace_revisions(
+        self, query: WorkspaceRevisionsQuery, *, actor_id: str, realm_scope: RealmScope,
+    ) -> WorkspaceRevisions:
+        """Reauthorize and return indexed tokens only, never payloads or gates."""
+        ...
 
     async def get_validation_cycle(
         self,
@@ -58,6 +69,8 @@ class ValidationCycleReadPort(Protocol):
         limit: int,
         actor_id: str,
         realm_scope: RealmScope,
+        board_id: str | None = None,
+        include_planning: bool = False,
     ) -> ValidationCycleSummary: ...
 
     async def get_validation_cycles(
@@ -66,6 +79,7 @@ class ValidationCycleReadPort(Protocol):
         subjects: tuple[ValidationCycleSubjectRef, ...],
         actor_id: str,
         realm_scope: RealmScope,
+        board_id: str | None = None,
     ) -> tuple[ValidationCycleSummary, ...]:
         """Return summary-only cycles for 1..50 subjects in request order."""
 
@@ -111,6 +125,7 @@ __all__ = [
     "ValidationCycleReadPort",
     "ValidationCycleResultNotFound",
     "ValidationCycleSubjectNotFound",
+    "WorkspaceRevisionsUnavailable",
     "get_validation_cycle_reader",
     "register_validation_cycle_reader",
     "reset_validation_cycle_reader_for_tests",

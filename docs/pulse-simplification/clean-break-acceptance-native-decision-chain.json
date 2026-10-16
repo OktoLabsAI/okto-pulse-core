@@ -1,0 +1,28 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_keys": [
+    "KG:KG-11"
+  ],
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main36",
+  "provenance_sha256": "27d034ae2b18d6d840aa519c7bdaa5aa7880aeed979e6300d8e07339068a2e8d",
+  "runs": [
+    {
+      "name": "acceptance-native-decision-chain1",
+      "xml_sha256": "9f4c2d3c7f9b6c0c28afec4540a666bcf18738816db31fb473699951c7c17924",
+      "passed": 1,
+      "cases": [
+        "tests.test_native_decision_chain::test_native_decision_revision_keeps_predecessor_and_idempotent_chain"
+      ]
+    }
+  ],
+  "review": "Native initial reconstruction creates a Decision. Real queue processing of a draft revision with changed rationale creates exactly one successor at generation+1, preserves predecessor content and superseded_by, and public KGService traversal returns the predecessor. Replay adds no node or history mutation. The same successor becomes canonical at Done; another replay preserves the complete observed rows.",
+  "supporting_current_evidence": [
+    "clean-break-acceptance-native-history-contract.json: semantic update guard, native history/provenance and real Grafx store contract.",
+    "acceptance-native-child-consumers1.xml: test_promotion_curated_promotes_maturity_preserves_content and test_promotion_non_curated_promotes_and_updates_content passed; human-curated contents remain protected."
+  ],
+  "limits": [
+    "Lifecycle states are source fixtures: this is projection/history/replay evidence, not permission or lifecycle-admission qualification.",
+    "No product or frontend change. KG-10 authority remains pending and is not inferred from KG-11."
+  ]
+}

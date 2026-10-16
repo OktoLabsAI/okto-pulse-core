@@ -1,0 +1,30 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_key": "BASE:T06",
+  "disposition": "mantido",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-reviewer22",
+  "provenance_sha256": "22c33f52f64f77fc26d23d7af345c266ec5440be44c7fa1d6677376508179af6",
+  "reviewed_coverage": [
+    "Accepted evaluation and validated Spec do not substitute for an implementation contribution or test owner: actual REST start returns spec_execution_plan_incomplete.",
+    "Blocked start preserves assessments, edition, current validation and task state. Repairing only the missing plan fact permits start under the same evaluation.",
+    "Authorized deletion of the only test Card invalidates the plan; both direct readiness and REST start reject without further mutation."
+  ],
+  "runs": [
+    {
+      "name": "acceptance-native-plan-gate-current1",
+      "xml_sha256": "cbe8760d5aebdd00eb31697cd85cf3053b4765725d567d0757f804062bdc1893",
+      "passed": 3,
+      "cases": [
+        "tests.test_architecture_start_transition::test_approved_spec_cannot_start_with_incomplete_decomposition[contribution]",
+        "tests.test_architecture_start_transition::test_approved_spec_cannot_start_with_incomplete_decomposition[test_owner]",
+        "tests.test_architecture_start_transition::test_removing_only_test_card_invalidates_previously_complete_approved_plan"
+      ]
+    }
+  ],
+  "limits": [
+    "Evaluation is seeded and REST identity/grants are fixture inputs; no planning gate substituted.",
+    "Three selected scenarios, four deselected; this run does not independently qualify the entire module.",
+    "No changes to T23 or KG-10 authority."
+  ]
+}

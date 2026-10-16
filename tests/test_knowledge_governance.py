@@ -72,12 +72,12 @@ def test_valid_v1_is_trimmed_and_round_trips_canonically() -> None:
     assert normalize_knowledge_governance_metadata(canonical) == canonical
 
 
-def test_omitted_or_null_metadata_is_legacy_compatible() -> None:
+def test_omitted_or_null_metadata_is_native_optional() -> None:
     assert parse_knowledge_governance_metadata(None) is None
     assert normalize_knowledge_governance_metadata(None) is None
     assert project_knowledge_governance(None).as_dict() == {
         "authority": "advisory",
-        "metadata_status": "legacy_incomplete",
+        "metadata_status": "omitted",
         "missing_fields": ["governance_metadata"],
         "metadata": None,
     }
@@ -91,19 +91,18 @@ def test_complete_projection_uses_one_canonical_shape() -> None:
     assert projection["metadata"] == _valid_metadata()
 
 
-def test_partial_historical_json_remains_raw_without_backfill() -> None:
-    raw = {"contract_version": 7, "purpose": "historical partial payload"}
+@pytest.mark.parametrize("raw", [
+    {"contract_version": 7, "purpose": "incompatible payload"},
+    {"contract_version": 1, "purpose": "incomplete payload"},
+    "encoded metadata",
+])
+def test_invalid_read_metadata_is_refused_without_conversion(raw) -> None:
     before = deepcopy(raw)
-
-    projection = project_knowledge_governance(raw).as_dict()
-
+    with pytest.raises(KnowledgeGovernanceInvalidMetadata) as caught:
+        project_knowledge_governance(raw)
+    assert caught.value.code == "knowledge_governance_invalid_metadata"
     assert raw == before
-    assert projection["metadata"] is raw
-    assert projection["metadata_status"] == "legacy_incomplete"
-    assert projection["authority"] == "advisory"
-    assert projection["missing_fields"] == sorted(set(projection["missing_fields"]))
-    assert "governance_metadata.authority" in projection["missing_fields"]
-    assert "governance_metadata.contract_version" in projection["missing_fields"]
+    assert caught.value.issues
 
 
 def test_unknown_and_missing_fields_fail_with_sorted_issues() -> None:

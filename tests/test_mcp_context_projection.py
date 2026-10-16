@@ -12,7 +12,7 @@ Covers spec ``MCP High-Frequency Response Projection and Dedup`` scenarios:
 - ``ts_85b00d36`` — summary spec context deduplicates resolved references.
 
 Small contexts remain conservative/dedup-first. Oversized task contexts now use
-explicit 32/64 KiB exploration budgets; full/all and legacy remain unchanged,
+explicit 32/64 KiB exploration budgets; full/all remain unchanged,
 while full/gate is the bounded mandatory pre-mutation slice.
 """
 
@@ -25,6 +25,7 @@ import json
 import uuid
 
 import pytest
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
@@ -166,17 +167,17 @@ def _task_result_with_arch_md() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# ts_ffdb99a6 — full/legacy preserve the assembled payload exactly
+# ts_ffdb99a6 — full preserve the assembled payload exactly
 # ---------------------------------------------------------------------------
 
 
-def test_full_and_legacy_preserve_payload_unchanged():
+def test_full_preserve_payload_unchanged():
     src = _full_task_result()
     snapshot = copy.deepcopy(src)
-    for profile in ("full", "legacy"):
+    for profile in ("full",):
         out = project_task_context(src, card_id="c1", profile=profile)
         assert out == snapshot  # byte-for-byte the prior payload
-        assert "projection" not in out  # no envelope injected in full/legacy
+        assert "projection" not in out  # no envelope injected in full
     assert src == snapshot  # input never mutated
 
 
@@ -581,7 +582,7 @@ def test_optional_gate_manifest_does_not_change_non_gate_profiles() -> None:
     source = _full_task_result()
     supplied = {"manifest_version": 2, "sentinel": "bounded-only"}
 
-    for profile in ("summary", "detail", "full", "legacy"):
+    for profile in ("summary", "detail", "full"):
         without_manifest = project_task_context(
             source,
             card_id="c1",
@@ -619,7 +620,7 @@ def test_gate_scope_requires_full_profile_and_rejects_unknown_scope():
 def test_unsupported_profile_returns_supported_list():
     out = project_task_context(_full_task_result(), card_id="c1", profile="verbose")
     assert out["error_code"] == "unsupported_projection"
-    assert out["supported_profiles"] == ["summary", "detail", "full", "legacy"]
+    assert out["supported_profiles"] == ["summary", "detail", "full"]
     # spec context too
     out2 = project_spec_context({"id": "s1"}, profile="weird")
     assert out2["error_code"] == "unsupported_projection"
@@ -666,7 +667,7 @@ def test_other_context_families_share_profiles_metadata_and_error_contract():
         tool_name="okto_pulse_get_ideation_context",
     )
     assert bad["error_code"] == "unsupported_projection"
-    assert bad["supported_profiles"] == ["summary", "detail", "full", "legacy"]
+    assert bad["supported_profiles"] == ["summary", "detail", "full"]
 
 
 # ---------------------------------------------------------------------------
@@ -731,7 +732,7 @@ async def test_get_task_context_default_summary_and_full_passthrough():
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Ctx Proj", owner_id=USER_ID))
         db.add(
-            Spec(
+            Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Spec",
@@ -804,7 +805,7 @@ async def test_get_task_context_default_summary_and_full_passthrough():
             board_id=board_id,
             card_id=card_id,
             profile="full",
-            include_knowledge="false",
+            include_knowledge=False,
         )
         legacy = await _call(
             "okto_pulse_get_task_context",
@@ -844,11 +845,13 @@ async def test_get_task_context_default_summary_and_full_passthrough():
     # include_knowledge=false honored even under the full profile
     assert no_kb["resolved_references"].get("knowledge_bases") == []
 
-    # AC20: the additive block is available to every modern profile, while the
-    # explicit legacy passthrough keeps its historical payload shape.
+    # AC20: current profiles include traceability; the retired profile is refused.
     assert default["code_traceability"]["subject_id"] == card_id
     assert full["code_traceability"]["subject_id"] == card_id
-    assert "code_traceability" not in legacy
+    assert "historical_context_read" not in default
+    assert "historical_context_read" not in full
+    assert "historical_context_read" not in legacy
+    assert legacy["error_code"] == "unsupported_projection"
     assert all(
         call.kwargs["profile"] != "legacy"
         for call in traceability_projection.await_args_list
@@ -869,7 +872,7 @@ async def test_task_context_current_rejection_requires_validation_read():
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Rejected context", owner_id=USER_ID))
         db.add(
-            Spec(
+            Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Spec",
@@ -1009,7 +1012,7 @@ async def test_full_gate_uses_lean_application_queries_and_skips_omitted_bodies(
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Bounded Gate", owner_id=USER_ID))
         db.add(
-            Spec(
+            Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Spec with omitted bodies",
@@ -1216,7 +1219,7 @@ async def test_full_gate_uses_lean_application_queries_and_skips_omitted_bodies(
 
 
 # ---------------------------------------------------------------------------
-# ts_0fb8a3f4 — summary gates decisions_markdown; full/legacy preserve it
+# ts_0fb8a3f4 — summary gates decisions_markdown; full preserve it
 # ---------------------------------------------------------------------------
 
 
@@ -1238,10 +1241,10 @@ def test_summary_gates_decisions_markdown_with_render_follow_up():
     assert src == snapshot  # input untouched
 
 
-def test_full_and_legacy_preserve_decisions_markdown_and_architecture_bodies():
+def test_full_preserve_decisions_markdown_and_architecture_bodies():
     src = _task_result_with_arch_md()
     snapshot = copy.deepcopy(src)
-    for profile in ("full", "legacy"):
+    for profile in ("full",):
         out = project_task_context(src, card_id="c1", profile=profile)
         assert out == snapshot  # byte-for-byte
         assert out["spec"]["decisions_markdown"]  # markdown preserved
@@ -1372,7 +1375,7 @@ def test_context_projection_emits_usage_and_bytes_metrics(caplog):
         project_task_context(_full_task_result(), card_id="c1", profile="full")
 
     messages = [r.getMessage() for r in caplog.records]
-    # Emitted once per projected response — summary AND full/legacy passthrough.
+    # Emitted once per projected response — summary AND full passthrough.
     assert messages.count("mcp_context_projection_usage_total") == 2
     assert messages.count("mcp_context_projection_payload_bytes") == 2
 
@@ -1429,7 +1432,7 @@ def test_telemetry_sink_records_context_projection_fail_closed():
 
 
 @pytest.mark.asyncio
-async def test_get_spec_context_default_summary_full_and_unsupported():
+async def test_get_spec_context_default_summary_full_and_unsupported(monkeypatch):
     from unittest.mock import AsyncMock, patch
 
     db_factory = get_session_factory()
@@ -1446,7 +1449,7 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
             )
         )
         db.add(
-            Spec(
+            Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Spec",
@@ -1458,6 +1461,28 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
             )
         )
         await db.commit()
+
+    # This projection fixture represents an admitted edition with an explicit
+    # frozen OFF binding. It does not synthesize OFF from a missing snapshot.
+    from okto_pulse.core.domain.checklist import ChecklistBinding, ChecklistMode
+    from okto_pulse.core.ports.relational_application import require_relational_application_adapter
+
+    adapter = require_relational_application_adapter()
+    base_checklists = adapter.checklists
+    frozen_binding = ChecklistBinding(board_id=board_id, mode=ChecklistMode.OFF, version=1)
+
+    async def get_validation_binding(**kwargs):
+        assert (kwargs["board_id"], kwargs["spec_id"], kwargs["spec_edition"]) == (
+            board_id, spec_id, 5,
+        )
+        return frozen_binding
+
+    def checklists_with_snapshot(session):
+        persistence = base_checklists(session)
+        persistence.get_validation_binding = get_validation_binding
+        return persistence
+
+    monkeypatch.setattr(adapter, "checklists", checklists_with_snapshot)
 
     traceability_projection = AsyncMock(
         return_value={"subject_type": "spec", "subject_id": spec_id}
@@ -1522,7 +1547,10 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
     assert full["skip_code_evidence_coverage_effective"] is True
     assert default["code_traceability"]["subject_id"] == spec_id
     assert full["code_traceability"]["subject_id"] == spec_id
-    assert "code_traceability" not in legacy
+    assert "historical_context_read" not in default
+    assert "historical_context_read" not in full
+    assert "historical_context_read" not in legacy
+    assert legacy["error_code"] == "unsupported_projection"
     assert all(
         call.kwargs["profile"] != "legacy"
         for call in traceability_projection.await_args_list
@@ -1530,6 +1558,8 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
 
     # unsupported profile → structured error, no silent fallback
     assert bad["error_code"] == "unsupported_projection"
+
+
 
 
 # ---------------------------------------------------------------------------

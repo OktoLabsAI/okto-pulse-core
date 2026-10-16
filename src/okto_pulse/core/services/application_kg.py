@@ -88,14 +88,6 @@ def drain_kg_health_probes(*, timeout_s: float = 30.0) -> int:
     return drain_health_probe_runtime(timeout_s=timeout_s)
 
 
-async def migrate_board_graph_schema(board_id: str) -> dict[str, Any]:
-    """Apply the composed graph schema manager to one board."""
-
-    from okto_pulse.core.kg.interfaces import get_kg_registry
-
-    summary = await get_kg_registry().require_graph_schema_manager().migrate(board_id)
-    summary.setdefault("duration_ms", 0)
-    return summary
 
 
 def get_current_provider_registry() -> Any:
@@ -200,12 +192,6 @@ def query_global(
     )
 
 
-async def start_historical_consolidation(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.governance import (
-        start_historical_consolidation as _start,
-    )
-
-    return await _start(*args, **kwargs)
 
 
 def create_deterministic_worker(*args: Any, **kwargs: Any) -> Any:
@@ -226,111 +212,11 @@ def signal_consolidation_worker() -> None:
     signal_runtime_worker("consolidation_worker")
 
 
-async def cancel_historical(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.governance import cancel_historical as _cancel
-
-    return await _cancel(*args, **kwargs)
 
 
-async def get_historical_progress(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.governance import get_historical_progress as _progress
-
-    return await _progress(*args, **kwargs)
 
 
 async def right_to_erasure(*args: Any, **kwargs: Any) -> Any:
     from okto_pulse.core.kg.governance import right_to_erasure as _erase
 
     return await _erase(*args, **kwargs)
-
-
-async def list_pending_entries(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.dashboard_readers import list_pending_entries as _list
-
-    return await _list(*args, **kwargs)
-
-
-async def build_pending_tree(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.dashboard_readers import build_pending_tree as _build
-
-    return await _build(*args, **kwargs)
-
-
-async def retry_pending_entry(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.governance import retry_pending_entry as _retry
-
-    return await _retry(*args, **kwargs)
-
-
-async def boost_node(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.governance import boost_node as _boost
-
-    return await _boost(*args, **kwargs)
-
-
-async def mutate_boost_node_graph(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.governance import (
-        mutate_boost_node_graph as _mutate,
-    )
-
-    return await _mutate(*args, **kwargs)
-
-
-def stage_boost_node_audit(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.governance import (
-        stage_boost_node_audit as _stage,
-    )
-
-    return _stage(*args, **kwargs)
-
-
-async def list_stale_canonical_parity(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.stale_canonical_parity import (
-        list_stale_canonical_parity as _list,
-    )
-
-    return await _list(*args, **kwargs)
-
-
-async def list_canonical_partition_integrity(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.canonical_partition_integrity import (
-        list_canonical_partition_integrity as _list,
-    )
-
-    return await _list(*args, **kwargs)
-
-
-async def get_canonical_partition_integrity_detail(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.canonical_partition_integrity import (
-        get_canonical_partition_integrity_detail as _get,
-    )
-
-    return await _get(*args, **kwargs)
-
-
-async def list_digest_layer_mismatches(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.global_discovery.layer_parity import (
-        list_digest_layer_mismatches as _list,
-    )
-
-    return await _list(*args, **kwargs)
-
-
-def max_orphan_sample_limit() -> int:
-    from okto_pulse.core.kg.orphan_integrity import MAX_ORPHAN_SAMPLE_LIMIT
-
-    return MAX_ORPHAN_SAMPLE_LIMIT
-
-
-def create_orphan_backfill_reconciler() -> Any:
-    from okto_pulse.core.kg.orphan_integrity import OrphanBackfillReconciler
-
-    return OrphanBackfillReconciler()
-
-
-def audit_originates_from_contract(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.originates_from_audit import (
-        audit_originates_from_contract as _audit,
-    )
-
-    return _audit(*args, **kwargs)

@@ -1,0 +1,25 @@
+{
+  "scope": "KG:KG-30",
+  "status": "partial",
+  "proof_pair": "dist-native-main90",
+  "evidence": [
+    "Public MCP cognitive edge contract refuses layer=fallback even at 0.85 confidence; no candidate is stored.",
+    "Existing source suggestion tests cover validated/in_progress/done: no fallback or normative tests/implements edges, no source mutation, no coverage credit.",
+    "Cognitive policy tests confirm confidence cap and deterministic-edge boundary."
+  ],
+  "results": {
+    "passed": 33,
+    "seconds": 5.26
+  },
+  "limits": [
+    "This proves refusal and unchanged structural coverage, not durable interpretive assertion/navigation or delivery gate end-to-end.",
+    "COMPLEMENTO_KG_RASTREABILIDADE section 5.4 permits delivering source correction/read-only suggestions first when durable interpretation/replay is unsupported, and explicitly forbids claiming fallback implemented.",
+    "PublicEdgeCandidate has no interpretation/provenance write contract. Internal EdgeCandidate/schema metadata and unused confidence clamp do not establish supported durable authored fallback.",
+    "KG-30 remains pending; no generic edge editor, repair tool, compatibility path or new authority added."
+  ],
+  "artifacts": {
+    "provenance-native-fallback-boundary-20261008.json": "2cbb646d9d4f4f3bc54f51ce1f261079cbfa23aa85180254ef16ddc103be7811",
+    "native-fallback-boundary-20261008.xml": "110315e1d0c5e48c8012a1c04365e078547f6c8ed54de90d88420fedbac3f69f",
+    "native-fallback-boundary-20261008.log": "b528e5b934991453eea407e42775b919e4efbf24cdca63ff165338b0b5d96c5c"
+  }
+}

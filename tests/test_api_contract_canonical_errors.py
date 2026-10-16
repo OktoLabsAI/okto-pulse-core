@@ -2,13 +2,12 @@
 Canonical-error coverage for the api-contract write entry points
 (spec 392376ee, AC4 / FR6 / dec_489b56a0 steer-a, dec_a7c8e190).
 
-The four write entry points must reject a malformed contract shape with the
+The current write entry points must reject a malformed contract shape with the
 canonical ``invalid_api_contract`` error and NEVER leak the raw Pydantic
 ``errors.pydantic.dev`` URL surface. They route through two guards, tested here
 at the exact functions each handler executes:
 
 - okto_pulse_add_api_contract       → _validate_api_contract_write (server.py)
-- okto_pulse_update_api_contract    → _validate_api_contract_write (server.py)
 - the update_spec(api_contracts=) bulk path → _canonical_api_contract_error wrap
 - okto_pulse_update_spec_api_contract → StructuredSpecEntityService.
   _validate_payload_for_create / _validate_payload_for_update
@@ -72,8 +71,9 @@ def test_add_update_guard_rejects_non_list_response_errors_canonically() -> None
 def test_add_update_guard_accepts_valid_contract() -> None:
     # negative-wiring: a well-formed contract passes (guard is not always-fail)
     assert _validate_api_contract_write(_good_http()) is None
-    # a legacy token infers a non-http type and is accepted
-    assert _validate_api_contract_write({"id": "api_x", "method": "TOOL"}) is None
+    # Non-HTTP interaction type is explicit; no method-token conversion.
+    assert _validate_api_contract_write({"id": "api_x", "contract_type": "in_process"}) is None
+    assert _validate_api_contract_write({"id": "api_x", "method": "TOOL"}) is not None
 
 
 # ---------------------------------------------------------------------------

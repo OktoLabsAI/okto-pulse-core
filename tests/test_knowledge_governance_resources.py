@@ -14,13 +14,12 @@ def test_canonical_resource_is_catalogued_and_readable() -> None:
 
     assert "# Knowledge Base Governance" in body
     assert "KnowledgeGovernanceMetadataV1" in body
-    assert "legacy_all" in body
-    assert "Selective propagation v2 is active and opt-in" in normalized
-    assert '`selection_state="omitted"` is authoritative v2 state' in normalized
-    assert (
-        "Do not combine legacy selection parameters with a v2 envelope"
-        in normalized
-    )
+    assert "legacy_all" not in body
+    assert "one selection contract" in normalized
+    assert 'selection_state="omitted"' in normalized
+    assert "no inherited Knowledge" in normalized
+    assert "knowledge_governance_invalid_metadata" in body
+    assert "metadata_status=complete" in body
 
 
 def test_quick_navigation_and_workflows_point_to_canonical_policy() -> None:
@@ -63,4 +62,4 @@ def test_canonical_resource_and_tool_docs_define_nested_write_contract() -> None
         assert token in policy
 
     tool_docs = server._load_resource_file("reference/tool-docs/knowledge.md")
-    assert tool_docs.count("governance_metadata: Optional v1 object") == 3
+    assert tool_docs.count("governance_metadata: Optional native v1 object") == 3

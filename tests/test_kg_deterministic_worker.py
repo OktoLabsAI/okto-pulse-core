@@ -6,7 +6,7 @@ Covers:
 - `tests` edges fire on test_scenarios[].linked_criteria matches; missing
   linked_criteria produces a missing_link_candidate (fallback trigger).
 - `implements` edges for api_contracts → FR via linked_requirements.
-- `derives_from` low-confidence co-occurrence edges from `## Decisions`.
+- Structured decisions require declared requirement links.
 - `mentions` via tech_entities.yml whitelist.
 - Content hash deterministic across runs on identical input.
 - `layer=deterministic` + `rule_id` populated on every edge.
@@ -21,7 +21,6 @@ from okto_pulse.core.application.processors.deterministic_kg import (
     DeterministicWorker,
     WORKER_ID,
     WorkerResult,
-    _extract_decisions_from_context,
     _extract_tech_mentions,
     reset_tech_whitelist_cache,
 )
@@ -39,18 +38,23 @@ def _spec_fixture() -> dict:
             "- Cache streaks in Redis with 5min TTL\n"
             "- Badge rules as JSON in DB\n"
         ),
+        "decisions": [
+            {"id": "dec_pg", "title": "Use PostgreSQL for leaderboard", "rationale": "PostgreSQL provides durable ranking", "status": "active"},
+            {"id": "dec_redis", "title": "Cache streaks in Redis with 5min TTL", "rationale": "Redis reduces read latency", "status": "active"},
+            {"id": "dec_badge", "title": "Badge rules as JSON in DB", "rationale": "Rule storage", "status": "active"},
+        ],
         "functional_requirements": [
-            "User earns XP for eco-actions",
-            "User level increases based on XP threshold",
-            "Badge awarded for achievements",
+            {"id": "fr_earn", "text": "User earns XP for eco-actions"},
+            {"id": "fr_fixture_1", "text": "User level increases based on XP threshold"},
+            {"id": "fr_fixture_2", "text": "Badge awarded for achievements"},
         ],
         "technical_requirements": [
-            {"text": "XP calc <100ms"},
-            {"text": "Indexed leaderboard table"},
+            {"id": "tr_fixture_0", "text": "XP calc <100ms"},
+            {"id": "tr_fixture_1", "text": "Indexed leaderboard table"},
         ],
         "acceptance_criteria": [
-            "Level formula: level * 1000 XP",
-            "7-day streak gives 1.5x XP multiplier",
+            {"id": "ac_level", "text": "Level formula: level * 1000 XP"},
+            {"id": "ac_streak", "text": "7-day streak gives 1.5x XP multiplier"},
         ],
         "test_scenarios": [
             {
@@ -59,7 +63,7 @@ def _spec_fixture() -> dict:
                 "given": "User has 900 XP",
                 "when": "Earns 200 XP",
                 "then": "Level becomes 2",
-                "linked_criteria": ["Level formula: level * 1000 XP"],
+                "linked_criteria": ["ac_level"],
             },
             {
                 "id": "ts_2",
@@ -78,13 +82,13 @@ def _spec_fixture() -> dict:
             },
         ],
         "api_contracts": [
-            {
+            {"id": "api_fixture_0",
                 "method": "GET",
                 "path": "/leaderboard",
                 "description": "Top 100 users",
-                "linked_requirements": ["User earns XP for eco-actions"],
+                "linked_requirements": ["fr_earn"],
             },
-            {
+            {"id": "api_fixture_1",
                 "method": "POST",
                 "path": "/streaks",
                 "description": "Streak reset endpoint",
@@ -94,18 +98,10 @@ def _spec_fixture() -> dict:
     }
 
 
-def test_extract_decisions_from_context_tolerates_case():
-    ctx = "# Header\n## DECISIONS\n- Use PG\n- Use Redis\n## Out"
-    assert _extract_decisions_from_context(ctx) == ["Use PG", "Use Redis"]
 
 
-def test_extract_decisions_from_context_supports_star_bullets():
-    ctx = "## Decisions\n* First\n* Second"
-    assert _extract_decisions_from_context(ctx) == ["First", "Second"]
 
 
-def test_extract_decisions_returns_empty_when_header_missing():
-    assert _extract_decisions_from_context("## Other\n- x") == []
 
 
 def test_tech_mentions_matches_canonical_and_alias():
@@ -295,15 +291,6 @@ def test_process_first_line_artifacts_attach_to_board_root_when_board_id_exists(
             "spec_11111111_entity",
         ),
         (
-            "sprint",
-            worker.process_sprint({
-                "id": "sprint-abcdef-123",
-                "board_id": board_id,
-                "title": "Sprint",
-            }),
-            "sprint_sprint-a_entity",
-        ),
-        (
             "card",
             worker.process_card({
                 "id": "card-abcdef-123",
@@ -352,20 +339,20 @@ def test_process_spec_child_source_refs_are_granular():
     assert spec_ref not in child_refs
     assert len(child_refs) == len(set(child_refs))
     assert {
-        f"spec:{spec['id']}:fr:0",
-        f"spec:{spec['id']}:fr:1",
-        f"spec:{spec['id']}:tr:0",
-        f"spec:{spec['id']}:tr:1",
-        f"spec:{spec['id']}:ac:0",
-        f"spec:{spec['id']}:ac:1",
+        f"spec:{spec['id']}:fr:fr_earn",
+        f"spec:{spec['id']}:fr:fr_fixture_1",
+        f"spec:{spec['id']}:tr:tr_fixture_0",
+        f"spec:{spec['id']}:tr:tr_fixture_1",
+        f"spec:{spec['id']}:ac:ac_level",
+        f"spec:{spec['id']}:ac:ac_streak",
         f"spec:{spec['id']}:business_rule:br_xp_cap",
         f"spec:{spec['id']}:test_scenario:ts_1",
         f"spec:{spec['id']}:test_scenario:ts_2",
-        f"spec:{spec['id']}:api_contract:0",
-        f"spec:{spec['id']}:api_contract:1",
-        f"spec:{spec['id']}:decision_legacy:0",
-        f"spec:{spec['id']}:decision_legacy:1",
-        f"spec:{spec['id']}:decision_legacy:2",
+        f"spec:{spec['id']}:api_contract:api_fixture_0",
+        f"spec:{spec['id']}:api_contract:api_fixture_1",
+        f"spec:{spec['id']}:decision:dec_pg",
+        f"spec:{spec['id']}:decision:dec_redis",
+        f"spec:{spec['id']}:decision:dec_badge",
     }.issubset(set(child_refs))
 
 
@@ -380,7 +367,7 @@ def test_process_spec_edges_carry_v2_metadata():
     assert result.deterministic_edge_ratio() == 1.0
 
 
-def test_process_spec_tests_edge_resolves_linked_criterion_by_text():
+def test_process_spec_tests_edge_resolves_linked_criterion_by_id():
     worker = DeterministicWorker()
     result = worker.process_spec(_spec_fixture())
     tests_edges = [e for e in result.edges if e.edge_type == "tests"]
@@ -419,13 +406,12 @@ def test_process_spec_missing_linked_requirements_generates_candidate():
     assert missing_impl[0].reason == "no_requirement_match"
 
 
-def test_process_spec_derives_from_cooccurrence():
+def test_process_spec_unlinked_decisions_do_not_invent_requirement_links():
     worker = DeterministicWorker()
     result = worker.process_spec(_spec_fixture())
     derives = [e for e in result.edges if e.edge_type == "derives_from"]
-    # 3 decisions × 3 FRs = 9 edges, confidence 0.6 each.
-    assert len(derives) == 9
-    assert all(e.confidence == 0.6 for e in derives)
+    assert derives == []
+    assert len([node for node in result.nodes if node.node_type == 'Decision']) == 3
 
 
 def test_process_spec_mentions_tech_whitelist_entities():
@@ -580,63 +566,6 @@ def test_content_hash_changes_when_spec_mutated():
     assert r1.content_hash != r2.content_hash
 
 
-def test_process_sprint_emits_entity_and_outcome_criterion():
-    sprint = {
-        "id": "sprint-1234-5678",
-        "title": "Sprint 1",
-        "description": "First sprint",
-        "objective": "Ship the worker",
-        "expected_outcome": "Worker processes 3 specs successfully",
-    }
-    result = DeterministicWorker().process_sprint(sprint)
-    types = [n.node_type for n in result.nodes]
-    assert "Entity" in types
-    assert "Criterion" in types
-
-
-def test_process_sprint_emits_hierarchy_edge_via_belongs_to():
-    """When the sprint has a spec_id FK, the worker emits a `belongs_to`
-    edge from the sprint Entity to the parent Spec Entity (resolved cross-
-    session at commit time)."""
-    sprint = {
-        "id": "sprint-1234-5678",
-        "title": "Sprint 1",
-        "spec_id": "spec-abcdef-1234-uuid",
-    }
-    result = DeterministicWorker().process_sprint(sprint)
-    hierarchy = [e for e in result.edges if e.edge_type == "belongs_to"
-                 and e.rule_id.startswith("belongs_to/sprint_to_spec")]
-    assert len(hierarchy) == 1
-    # Worker truncates the spec_id to the first 8 chars when building the
-    # cross-session candidate id pointer.
-    assert hierarchy[0].to_candidate_id == "spec_spec-abc_entity"
-
-
-def test_process_sprint_serializes_lane_metadata_into_context_and_hash():
-    base = {
-        "id": "sprint-lane-1234",
-        "title": "Post-closure lane",
-        "description": "Fix a closed delivery bug",
-        "objective": "Close regression",
-        "spec_id": "spec-abcdef-1234-uuid",
-    }
-    normal = DeterministicWorker().process_sprint({**base, "lane_type": "normal"})
-    hotfix = DeterministicWorker().process_sprint({
-        **base,
-        "lane_type": "hotfix",
-        "origin_sprint_id": "closed-sprint-1",
-        "origin_bug_id": "bug-1",
-        "normal_sprint_created": False,
-    })
-
-    assert normal.content_hash != hotfix.content_hash
-    hotfix_entity = next(n for n in hotfix.nodes if n.node_type == "Entity")
-    assert "lane_type=hotfix" in hotfix_entity.context
-    assert "origin_sprint_id=closed-sprint-1" in hotfix.raw_content
-    assert "origin_bug_id=bug-1" in hotfix.raw_content
-    assert "normal_sprint_created=false" in hotfix.raw_content
-
-
 def test_process_card_bug_emits_violates_missing_link():
     bug = {
         "id": "bug-1234-5678",
@@ -707,7 +636,6 @@ def test_process_artifact_dispatches_by_type():
         "ideation_id": "idea-1",
     }).nodes
     assert worker.process_artifact("spec", _spec_fixture()).nodes
-    assert worker.process_artifact("sprint", {"id": "s-1", "title": "s"}).nodes
     assert worker.process_artifact("card", {"id": "c-1", "title": "c"}).nodes
 
 
@@ -754,8 +682,8 @@ def test_ts6_process_card_boost_only_on_root_not_hierarchy():
 
     process_card emits the root Entity/Bug node plus belongs_to edges. No
     *node* other than the root is created by process_card, so the only
-    node carrying a non-zero boost is the root. (Sprint/Spec anchor nodes
-    are created by process_sprint / process_spec, which we test below.)
+    node carrying a non-zero boost is the root. (Spec anchor nodes
+    are created by process_spec, which we test below.)
     """
     card = {
         "id": "card-ts6-hier",
@@ -814,25 +742,7 @@ def test_ts7_process_spec_emits_zero_boost_everywhere():
     )
 
 
-def test_ts7_process_sprint_emits_zero_boost():
-    """Sprints also have no priority source → all derived nodes boost=0.0."""
-    sprint = {
-        "id": "sprint-ts7",
-        "title": "Sprint 99",
-        "description": "d",
-        "objective": "o",
-        "expected_outcome": "e",
-    }
-    result = DeterministicWorker().process_sprint(sprint)
-    assert all(n.priority_boost == 0.0 for n in result.nodes)
-
-
-# ---------------------------------------------------------------------------
-# IMPL-3: fr_id-aware edge resolution (spec R3b cc8e9252)
-# AC4 behavioral tests — validator reproduces each case.
-# ---------------------------------------------------------------------------
-
-
+# IMPL-3: fr_id-aware edge resolution (spec R3b cc8e9252), AC4.
 def _spec_with_fr_ids() -> dict:
     """Spec where functional_requirements carry canonical fr_id fields
     (as persisted by IMPL-1).  linked_requirements on the api_contract and
@@ -855,7 +765,7 @@ def _spec_with_fr_ids() -> dict:
             },
         ],
         "api_contracts": [
-            {
+            {"id": "api_fixture_0",
                 "method": "POST",
                 "path": "/edge-resolution",
                 "description": "Endpoint that implements the first FR by id",
@@ -864,7 +774,7 @@ def _spec_with_fr_ids() -> dict:
             },
         ],
         "decisions": [
-            {
+            {"id": "dec_fixture_0",
                 "title": "Use fr_id for cross-section links",
                 "rationale": "Canonical ids are stable; text changes over time.",
                 "status": "active",
@@ -965,49 +875,50 @@ def test_impl3_decision_derives_from_resolves_via_fr_id():
     )
 
 
-def test_impl3_legacy_text_resolution_still_works():
-    """Regression: specs written before IMPL-1 (no id on FR dict, text refs)
-    must still resolve the `implements` edge via text lookup.
-    """
+def test_api_requirement_text_does_not_replace_native_id():
+    """Display text cannot replace a native requirement ID."""
     spec = {
         "id": "legacy-spec-0000-1111-2222",
         "title": "Legacy spec",
         "description": "Pre-IMPL-1 spec with text-based linked_requirements",
         "context": "",
         "functional_requirements": [
-            "User can log in",  # plain string, no id field
+            {"id": "fr-login", "text": "User can log in"},
         ],
         "api_contracts": [
             {
                 "method": "POST",
                 "path": "/login",
                 "description": "Login endpoint",
+                "id": "api-login",
                 "linked_requirements": ["User can log in"],  # text ref
             },
         ],
     }
     result = DeterministicWorker().process_spec(spec)
     impl_edges = [e for e in result.edges if e.edge_type == "implements"]
-    assert len(impl_edges) == 1
-    assert impl_edges[0].confidence == 1.0
-    assert not [c for c in result.missing_link_candidates if c.edge_type == "implements"]
+    assert not impl_edges
+    spec["api_contracts"][0]["linked_requirements"] = ["fr-login"]
+    native_result = DeterministicWorker().process_spec(spec)
+    native_edges = [e for e in native_result.edges if e.edge_type == "implements"]
+    assert len(native_edges) == 1
+    assert native_edges[0].confidence == 1.0
 
 
-def test_impl3_legacy_int_index_resolution_still_works():
-    """Regression: specs written before IMPL-1 (no id on FR dict, int index
-    refs on decisions) must still resolve `derives_from` via positional int.
-    """
+def test_decision_requirement_position_does_not_replace_native_id():
+    """List position cannot replace a native requirement ID."""
     spec = {
         "id": "legacy-spec-int-3333-4444",
         "title": "Legacy int-index spec",
         "description": "Pre-IMPL-1 spec with int-index linked_requirements on decision",
         "context": "",
         "functional_requirements": [
-            "FR zero",
-            "FR one",
+            {"id": "fr-zero", "text": "FR zero"},
+            {"id": "fr-one", "text": "FR one"},
         ],
         "decisions": [
             {
+                "id": "decision-first",
                 "title": "Only link to first FR by int index",
                 "rationale": "Legacy int-index reference",
                 "status": "active",
@@ -1017,7 +928,10 @@ def test_impl3_legacy_int_index_resolution_still_works():
     }
     result = DeterministicWorker().process_spec(spec)
     derives_edges = [e for e in result.edges if e.edge_type == "derives_from"]
-    # Only one edge (index 0 resolves to fr_0); fr_1 is skipped.
+    assert not derives_edges
+    spec["decisions"][0]["linked_requirements"] = ["fr-zero"]
+    native_result = DeterministicWorker().process_spec(spec)
+    derives_edges = [e for e in native_result.edges if e.edge_type == "derives_from"]
     assert len(derives_edges) == 1
     edge = derives_edges[0]
     assert edge.confidence == 1.0

@@ -2,7 +2,7 @@
 
 The frontend list cards render:
   * an "N open Q&A" badge driven by ``<Summary>.open_qa_count`` on ideation /
-    refinement / spec / sprint / card, and
+    refinement / spec / card, and
   * Domains/Ambiguity/Dependencies score badges driven by
     ``IdeationSummary.scope_assessment`` after evaluation.
 
@@ -52,6 +52,28 @@ def _id() -> str:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def native_application_projection(request):
+    from okto_pulse.community.adapters.sqlalchemy_application_persistence import (
+        CommunitySqlAlchemyApplicationPersistence,
+    )
+    from okto_pulse.core.ports.application_persistence import (
+        register_application_persistence_port,
+    )
+    register_application_persistence_port(CommunitySqlAlchemyApplicationPersistence())
+    from okto_pulse.core.domain.realm import RealmScope
+    factory = get_session_factory()
+    previous_info = dict(factory.kw.get("info", {}))
+    request.addfinalizer(lambda: factory.configure(info=previous_info))
+    factory.configure(info={**previous_info, "realm_scope": RealmScope.local()})
+    from okto_pulse.community.adapters.sqlalchemy_policy_subject_versioning import CommunitySemanticSession
+    previous_session_class = factory.kw.get("sync_session_class")
+    request.addfinalizer(lambda: factory.configure(sync_session_class=previous_session_class))
+    factory.configure(sync_session_class=CommunitySemanticSession)
+
+
 
 
 @pytest.mark.asyncio
@@ -406,77 +428,3 @@ async def test_inherited_answered_qa_does_not_inflate_open_qa_count():
             f"Q&A herdada respondida sem answered_at: {qa.question!r} — "
             "volta a inflar o badge open_qa_count"
         )
-
-
-@pytest.mark.asyncio
-async def test_backfill_qa_answered_at_stamps_only_answered_rows():
-    """O backfill do boot carimba answered_at APENAS nas linhas respondidas
-    órfãs (answer OU selected presentes); abertas reais permanecem NULL.
-    Segunda execução é no-op (idempotente)."""
-    from okto_pulse.core.services.main import backfill_qa_answered_at
-    from sqlalchemy import select
-
-    board_id, spec_id = _id(), _id()
-    db_factory = get_session_factory()
-    async with db_factory() as db:
-        db.add(
-            Board(
-                id=board_id,
-                name="QA Backfill Board",
-                owner_id=USER,
-                realm_id=LOCAL_REALM_ID,
-            )
-        )
-        db.add(
-            Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="Spec with orphan answered QA",
-                status=SpecStatus.DRAFT,
-                version=1,
-                created_by=USER,
-            )
-        )
-        # Linhas pré-fix: respondidas mas sem answered_at (herança antiga).
-        orphan_text = SpecQAItem(
-            spec_id=spec_id,
-            question="Inherited text answer, no timestamp",
-            question_type="text",
-            answer="Inherited answer",
-            asked_by=USER,
-            answered_by=USER,
-        )
-        orphan_choice = SpecQAItem(
-            spec_id=spec_id,
-            question="Inherited choice answer, no timestamp",
-            question_type="single_choice",
-            choices=[{"id": "a", "label": "A"}],
-            selected=["a"],
-            asked_by=USER,
-            answered_by=USER,
-        )
-        genuinely_open = SpecQAItem(
-            spec_id=spec_id,
-            question="Really open — must stay open",
-            question_type="text",
-            asked_by=USER,
-        )
-        db.add_all([orphan_text, orphan_choice, genuinely_open])
-        await db.commit()
-
-        fixed = await backfill_qa_answered_at(db)
-        assert fixed.get("spec_qa_items", 0) >= 2
-
-        rows = (
-            (await db.execute(select(SpecQAItem).where(SpecQAItem.spec_id == spec_id)))
-            .scalars()
-            .all()
-        )
-        by_q = {r.question: r for r in rows}
-        assert by_q["Inherited text answer, no timestamp"].answered_at is not None
-        assert by_q["Inherited choice answer, no timestamp"].answered_at is not None
-        assert by_q["Really open — must stay open"].answered_at is None
-
-        # Idempotência: nada mais a corrigir nesta spec.
-        again = await backfill_qa_answered_at(db)
-        assert again.get("spec_qa_items", 0) == 0 or "spec_qa_items" not in again

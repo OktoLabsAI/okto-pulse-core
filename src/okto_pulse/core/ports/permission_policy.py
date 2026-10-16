@@ -9,7 +9,9 @@ and validate a SaaS adapter without importing Community.
 from __future__ import annotations
 
 import copy
+from collections.abc import Collection
 from typing import Any, Protocol, runtime_checkable
+
 
 from okto_pulse.core.domain.permissions import (
     DefaultPermissionPolicy,
@@ -42,9 +44,6 @@ from okto_pulse.core.domain.permissions import (
     _set_nested,
     evaluate_permission,
     get_builtin_presets,
-    map_legacy_permissions,
-    merge_missing_flags,
-    normalize_agent_permission_overrides,
     permission_flag_overrides,
     resolve_permission_preset_lineage,
     resolve_permissions,
@@ -77,6 +76,54 @@ class PermissionPolicyPort(Protocol):
         ...
 
 
+def board_membership_allows_read(
+    *, owner_id: str | None, actor_id: str, share_permission: str | None = None,
+    verified_agent_board_access: bool = False,
+    allowed_share_permissions: Collection[str] | None = None,
+) -> bool:
+    """Canonical Board membership decision after identity/realm/binding checks.
+
+    Adapters load facts only. A verified agent binding is supplied by the
+    authentication path; this helper never infers it from a role or Board owner.
+    Owner access is independent of a share's optional mutation-role restriction.
+    """
+    return (
+        verified_agent_board_access is True or owner_id == actor_id
+        or (share_permission is not None and (allowed_share_permissions is None
+            or share_permission in allowed_share_permissions))
+    )
+
+
+def direct_permission_review(agent_flags: object, *, preset_id: str | None) -> tuple[bool, str | None]:
+    """Canonical classification of a persisted, preset-less direct document."""
+    if preset_id is not None or agent_flags is None:
+        return False, None
+    if not isinstance(agent_flags, dict):
+        return True, "invalid_agent_flags"
+    try:
+        validate_strict_permission_flags(agent_flags)
+    except (TypeError, ValueError, PermissionContractViolation):
+        return True, "invalid_agent_flags"
+    return (False, None) if agent_flags == PERMISSION_REGISTRY else (True, "unrecognized_direct_permissions")
+
+
+def resolve_agent_permission_facts(
+    *, agent_flags: object, preset_id: str | None,
+    presets: tuple[PermissionPresetLineageNode, ...], board_overrides: object,
+    policy: PermissionPolicyPort | None = None,
+) -> PermissionSet:
+    """Resolve current edition-loaded facts through the canonical agent policy."""
+    review, reason = direct_permission_review(agent_flags, preset_id=preset_id)
+    direct = copy.deepcopy(agent_flags)
+    preset_flags = None
+    if preset_id:
+        lineage = resolve_permission_preset_lineage(preset_id, presets)
+        preset_flags, review, reason = lineage.flags, lineage.owner_review_required, lineage.review_reason
+    effective = (policy or DefaultPermissionPolicy()).resolve(direct, preset_flags, board_overrides,
+        owner_review_required=review, review_reason=reason)
+    return effective
+
+
 def flatten_permission_flags(flags: PermissionFlags) -> list[str]:
     """Return the registered flag paths present in a partial override payload."""
 
@@ -101,10 +148,6 @@ def builtin_preset_name(flags: PermissionFlags) -> str | None:
     return _match_builtin_preset_name(flags)
 
 
-def legacy_permissions_to_flags(values: list[str]) -> PermissionFlags:
-    """Normalize legacy flat permissions into the canonical flag tree."""
-
-    return map_legacy_permissions(values)
 
 
 def resolve_effective_permissions(
@@ -181,13 +224,6 @@ def explicit_permission_overrides(
     return permission_flag_overrides(base, desired)
 
 
-def normalize_agent_permission_layer(
-    agent_flags: PermissionFlags,
-    preset_flags: PermissionFlags | None = None,
-) -> PermissionFlags | None:
-    """Reduce a historical materialized agent snapshot to direct overrides."""
-
-    return normalize_agent_permission_overrides(agent_flags, preset_flags)
 
 
 def validate_permission_flag_values(
@@ -199,15 +235,11 @@ def validate_permission_flag_values(
     return flags
 
 
-def merge_permission_registry_defaults(
-    stored: PermissionFlags,
-) -> tuple[PermissionFlags, int]:
-    """Backfill missing canonical flags without overwriting stored values."""
-
-    return merge_missing_flags(stored, PERMISSION_REGISTRY)
 
 
 __all__ = [
+    "direct_permission_review",
+    "resolve_agent_permission_facts",
     "DefaultPermissionPolicy",
     "GUIDELINE_ADOPTION_MANAGE",
     "GUIDELINE_ASSESSMENTS_READ",
@@ -233,14 +265,12 @@ __all__ = [
     "SKB3_PERMISSION_INTRODUCTION_V1",
     "SKM_PERMISSION_INTRODUCTION_V1",
     "builtin_permission_presets",
+    "board_membership_allows_read",
     "builtin_preset_name",
     "evaluate_permission",
     "explicit_permission_overrides",
     "flatten_permission_flags",
     "get_permission_flag",
-    "legacy_permissions_to_flags",
-    "merge_permission_registry_defaults",
-    "normalize_agent_permission_layer",
     "permission_introduction_manifests",
     "registered_permission_flags",
     "resolve_effective_permissions",

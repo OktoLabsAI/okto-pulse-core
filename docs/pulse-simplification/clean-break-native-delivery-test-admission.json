@@ -1,0 +1,62 @@
+{
+  "scope": "DEI-T25/26/27/29: authenticated test outcomes before delivery credit and truthful historical failures",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "DEI:DEI-T25": [
+      "test_admission_does_not_imply_final_delivery",
+      "test_signed_passing_result_is_admitted_before_done_and_promotes_by_read"
+    ],
+    "DEI:DEI-T26": [
+      "test_failed_signed_result_survives_successor_without_ever_receiving_credit",
+      "test_failed_result_uses_atomic_batch_and_same_replay_contract"
+    ],
+    "DEI:DEI-T27": [
+      "test_later_failed_run_removes_passing_credit_before_new_binding"
+    ],
+    "DEI:DEI-T29": [
+      "test_incremental_admission_remains_fail_closed[signature]",
+      "test_admission_still_requires_authenticated_exact_scope"
+    ]
+  },
+  "review": [
+    "Community _test binds current scenario identity, status, signed receipt, semantic digest and exact implementation set; client result fields are not trusted.",
+    "Admission requires authenticated current facts and eligible Test Card; final rollup separately requires passing and final lifecycle.",
+    "Existing signed evidence producer/verifier and real SQL used, not mocked verified flags."
+  ],
+  "evidence": [
+    "Passing test admitted with implementation/Test Card in_progress. Completing only implementation does not grant final credit; completing Test Card promotes same record without new input.",
+    "Failed signed run is persisted and visible asfailed, never delivery credit. Subsequent success changes currentness without changing the original failure payload; replay preserves original record.",
+    "New failed scenario receipt immediately invalidates old passing record before appending a new binding.",
+    "Forged signature, mismatched result, unknown implementation and frozen Test Card are refused with no extra record.",
+    "Atomic failed-result batch rolls back on an invalid later entry and replays exact receipt after success."
+  ],
+  "tests": {
+    "core_passed": 15,
+    "community_passed": 8,
+    "distinct_backend_passed": 23,
+    "core_seconds": 4.51,
+    "community_seconds": 22.89
+  },
+  "frontend_review": {
+    "artifact": "native-delivery-envelope-frontend1.json",
+    "cases": [
+      "keeps failed outcomes visible alongside the current run without adding delivery credit",
+      "test cards record authenticated passed/failed runs during execution, staged=false/true"
+    ],
+    "status": "Passing main86 evidence retained; same frontend code, no rerun needed."
+  },
+  "limits": [
+    "Optional narrative progress about an unverified attempt remains the existing progress contract; it is not authenticated test evidence.",
+    "Controlled product replay fixture proves cryptographic admission and SQL behavior, not live external harness execution.",
+    "No blanket qualification of E1/E2 replacement or multi-Test-Card union from these scenarios.",
+    "No product/frontend change; main86 byte proof and eight ZERO closure budgets remain applicable.",
+    "No converter, extra ledger, authority relaxation, promotion or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-test-admission1.json": "50b225a8519c65b64659973702c528b92ee8da702b02263d16479fe846040728",
+    "native-delivery-test-admission-core1.xml": "d24fb9154011dc2ab27500feeccabff6a9332688850154f27435777a888e64e9",
+    "native-delivery-test-admission-community1.xml": "1b78e5066f390045ae496687a29c3d48fc78ea5270e374e1f9453fb39f56137d",
+    "native-delivery-envelope-frontend1.json": "a751880c26e35030dc6efc27dfb79d81a4f937cd3ffa9d2bf7f490e31f2d146d",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

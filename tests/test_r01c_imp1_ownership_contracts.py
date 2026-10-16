@@ -99,9 +99,13 @@ def test_schema_importable_without_orm():
 
 def test_enum_serialized_value_parity():
     from okto_pulse.core.domain import enums as de
+    import sqlalchemy_test_models as historical_fixtures
 
     for enum_name, members in _FROZEN_ENUM_VALUES.items():
-        enum_cls = getattr(de, enum_name)
+        # Preserve the original oracle for historical storage; F3 removes these
+        # two types from the live Core rather than changing their old values.
+        source = historical_fixtures if enum_name in {"SprintStatus", "SprintLaneType"} else de
+        enum_cls = getattr(source, enum_name)
         got = {m.name: m.value for m in enum_cls}
         assert got == members, (enum_name, got, members)
 

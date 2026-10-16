@@ -1,0 +1,546 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE T32 mixed event and shared graph preservation",
+  "provenance": {
+    "file": "provenance-retirement-installed-rollback1.json",
+    "sha256": "05caee8f547e4fbe8cd72ae4bacdc2cbe31a71767f1b3ecf3fb7052da4e5f0ff",
+    "identity": {
+      "checked_at": "2026-09-30T22:18:08.464515+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 859,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "5c456a77c6f0a559e7b9b2e397d1a78e857cdbfe",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "a6f77fab8288ae5a91690a7d2796ea8d19db5b10c8a7c7263629553ebeff0312",
+            "size": 3793229
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 922,
+          "byte_identical": true,
+          "aggregate_sha256": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+          "chain_hashes": {
+            "source": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "wheel": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "site_packages": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 373,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "69d4b431d3906ef385d6220771fc9bd8be9b6da5",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "3d1eb7b80776aa6ba91a8e0e24d194c6d09769d70a4637a6423e0f57872ecd55",
+            "size": 4535175
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 458,
+          "byte_identical": true,
+          "aggregate_sha256": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+          "chain_hashes": {
+            "source": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "wheel": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "site_packages": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "runs": [
+    {
+      "edition": "core",
+      "xml": "learning-reconciliation-retirement-mixed-projection1-core.xml",
+      "xml_sha256": "d70eb47e96326c8bdb806d26b843545a9dc5c9d71d784abb94a404e5f361b469",
+      "log": "learning-reconciliation-retirement-mixed-projection1-core.log",
+      "log_sha256": "7319ef8cd6b5b0b000a196381421f75d7e2c22155eae7437eb86fef22781ebb9",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "51",
+          "time": "4.334",
+          "timestamp": "2026-09-30T19:26:44.179489-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_stored_v034_exclusive_contracts_are_eligible_only_for_archived_supersession[sprint.created-payload0]",
+          "time": "2.035"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_stored_v034_exclusive_contracts_are_eligible_only_for_archived_supersession[sprint.moved-payload1]",
+          "time": "0.018"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_stored_v034_exclusive_contracts_are_eligible_only_for_archived_supersession[sprint.closed-payload2]",
+          "time": "0.016"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_stored_v034_exclusive_contracts_are_eligible_only_for_archived_supersession[artifact.archive_changed-payload3]",
+          "time": "0.014"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_stored_v034_exclusive_contracts_are_eligible_only_for_archived_supersession[artifact.archive_changed-payload4]",
+          "time": "0.014"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_real_card_event_preserves_all_facts_and_input_bytes",
+          "time": "0.016"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_unknown_or_mixed_effects_require_investigation[sprint.future-payload0-unknown_sprint_event]",
+          "time": "0.016"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_unknown_or_mixed_effects_require_investigation[sprint.closed-payload1-exclusive_contract_drift]",
+          "time": "0.017"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_unknown_or_mixed_effects_require_investigation[sprint.moved-payload2-exclusive_contract_drift]",
+          "time": "0.018"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_unknown_or_mixed_effects_require_investigation[sprint.created-payload3-exclusive_reference_drift]",
+          "time": "0.021"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_unknown_or_mixed_effects_require_investigation[artifact.archive_changed-payload4-archive_contract_drift]",
+          "time": "0.026"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_unknown_or_mixed_effects_require_investigation[card.created-payload5-unclassified_sprint_reference]",
+          "time": "0.021"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_unknown_or_mixed_effects_require_investigation[other.event-payload6-unclassified_sprint_reference]",
+          "time": "0.020"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_unknown_or_mixed_effects_require_investigation[other.event-payload7-unclassified_sprint_reference]",
+          "time": "0.017"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_invalid_envelopes_and_references_do_not_become_no_work[None]",
+          "time": "0.017"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_invalid_envelopes_and_references_do_not_become_no_work[payload1]",
+          "time": "0.018"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_invalid_envelopes_and_references_do_not_become_no_work[payload2]",
+          "time": "0.018"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_invalid_envelopes_and_references_do_not_become_no_work[payload3]",
+          "time": "0.018"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_invalid_envelopes_and_references_do_not_become_no_work[payload4]",
+          "time": "0.018"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_unrelated_event_is_not_retired_for_a_prose_mention",
+          "time": "0.019"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_reference_walk_is_bounded",
+          "time": "0.023"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_superseded_work_is_preserved_as_history_without_claiming_delivery",
+          "time": "0.020"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_execution_plan_keeps_history_and_refuses_unknown_effects[ConsolidationEnqueuer-pending-supersede]",
+          "time": "0.015"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_execution_plan_keeps_history_and_refuses_unknown_effects[ConsolidationEnqueuer-failed-supersede]",
+          "time": "0.012"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_execution_plan_keeps_history_and_refuses_unknown_effects[ConsolidationEnqueuer-dlq-supersede]",
+          "time": "0.012"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_execution_plan_keeps_history_and_refuses_unknown_effects[ConsolidationEnqueuer-done-preserve]",
+          "time": "0.013"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_execution_plan_keeps_history_and_refuses_unknown_effects[ConsolidationEnqueuer-processing-review]",
+          "time": "0.014"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_execution_plan_keeps_history_and_refuses_unknown_effects[NewHandler-pending-review]",
+          "time": "0.014"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_execution_plan_keeps_history_and_refuses_unknown_effects[ConsolidationEnqueuer-new_status-review]",
+          "time": "0.014"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_queue_exclusivity_is_closed[pending-None-consolidate-supersede]",
+          "time": "0.014"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_queue_exclusivity_is_closed[failed-payload1-stale_reconcile-supersede]",
+          "time": "0.014"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_queue_exclusivity_is_closed[done-None-consolidate-preserve]",
+          "time": "0.034"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_queue_exclusivity_is_closed[claimed-None-consolidate-review]",
+          "time": "0.014"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_queue_exclusivity_is_closed[pending-payload4-consolidate-review]",
+          "time": "0.015"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_queue_exclusivity_is_closed[pending-None-stale_sweep-review]",
+          "time": "0.014"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_falsey_invalid_queue_payload_does_not_become_empty[False]",
+          "time": "0.015"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_falsey_invalid_queue_payload_does_not_become_empty[0]",
+          "time": "0.015"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_falsey_invalid_queue_payload_does_not_become_empty[payload2]",
+          "time": "0.014"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_falsey_invalid_queue_payload_does_not_become_empty[]",
+          "time": "0.014"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_events",
+          "name": "test_new_card_event_does_not_emit_sprint_but_legacy_replay_keeps_card_facts",
+          "time": "0.014"
+        },
+        {
+          "classname": "tests.test_sprint_kg_pipeline_retirement",
+          "name": "test_retired_events_have_no_live_dto_handler_or_projection[sprint.created-SprintCreated]",
+          "time": "0.020"
+        },
+        {
+          "classname": "tests.test_sprint_kg_pipeline_retirement",
+          "name": "test_retired_events_have_no_live_dto_handler_or_projection[sprint.moved-SprintMoved]",
+          "time": "0.015"
+        },
+        {
+          "classname": "tests.test_sprint_kg_pipeline_retirement",
+          "name": "test_retired_events_have_no_live_dto_handler_or_projection[sprint.closed-SprintClosed]",
+          "time": "0.015"
+        },
+        {
+          "classname": "tests.test_sprint_kg_pipeline_retirement",
+          "name": "test_worker_rejects_sprint_instead_of_recreating_nodes",
+          "time": "0.015"
+        },
+        {
+          "classname": "tests.test_sprint_kg_pipeline_retirement",
+          "name": "test_card_projection_is_independent_of_historical_sprint_metadata",
+          "time": "0.016"
+        },
+        {
+          "classname": "tests.test_sprint_kg_pipeline_retirement",
+          "name": "test_legacy_queue_work_cannot_access_graph_or_acknowledge_success[consolidate]",
+          "time": "0.018"
+        },
+        {
+          "classname": "tests.test_sprint_kg_pipeline_retirement",
+          "name": "test_legacy_queue_work_cannot_access_graph_or_acknowledge_success[stale_reconcile]",
+          "time": "0.016"
+        },
+        {
+          "classname": "tests.test_sprint_kg_pipeline_retirement",
+          "name": "test_legacy_queue_work_cannot_access_graph_or_acknowledge_success[stale_sweep]",
+          "time": "0.015"
+        },
+        {
+          "classname": "tests.test_sprint_kg_pipeline_retirement",
+          "name": "test_historical_archive_event_cannot_restore_or_mutate_sprint_graph[True]",
+          "time": "0.016"
+        },
+        {
+          "classname": "tests.test_sprint_kg_pipeline_retirement",
+          "name": "test_historical_archive_event_cannot_restore_or_mutate_sprint_graph[False]",
+          "time": "0.019"
+        },
+        {
+          "classname": "tests.test_sprint_kg_pipeline_retirement",
+          "name": "test_legacy_mixed_card_event_still_projects_card",
+          "time": "0.021"
+        }
+      ]
+    },
+    {
+      "edition": "community",
+      "xml": "learning-reconciliation-retirement-mixed-projection1-community.xml",
+      "xml_sha256": "6efded9272bcd08f10e5a43a4593adff45479f6a40a8fd3dbf8ece8e4dbc838a",
+      "log": "learning-reconciliation-retirement-mixed-projection1-community.log",
+      "log_sha256": "416459ee43a706506035af1daf5c97cacbc6a55b086fdcc32fb9e7a7ced83458",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "28",
+          "time": "286.197",
+          "timestamp": "2026-09-30T19:26:53.533993-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_sprint_work_retirement",
+          "name": "test_supersession_preserves_mixed_events_completed_history_and_original_failures",
+          "time": "6.854"
+        },
+        {
+          "classname": "tests.test_sprint_work_retirement",
+          "name": "test_inflight_or_unknown_effects_block_without_changing_any_work[arguments0]",
+          "time": "3.418"
+        },
+        {
+          "classname": "tests.test_sprint_work_retirement",
+          "name": "test_inflight_or_unknown_effects_block_without_changing_any_work[arguments1]",
+          "time": "3.363"
+        },
+        {
+          "classname": "tests.test_sprint_work_retirement",
+          "name": "test_inflight_or_unknown_effects_block_without_changing_any_work[arguments2]",
+          "time": "3.286"
+        },
+        {
+          "classname": "tests.test_sprint_work_retirement",
+          "name": "test_work_becoming_inflight_after_card_step_still_blocks_retirement",
+          "time": "5.765"
+        },
+        {
+          "classname": "tests.test_sprint_work_retirement",
+          "name": "test_source_and_receipt_drift_are_never_repaired[source]",
+          "time": "5.425"
+        },
+        {
+          "classname": "tests.test_sprint_work_retirement",
+          "name": "test_source_and_receipt_drift_are_never_repaired[card_receipt]",
+          "time": "4.411"
+        },
+        {
+          "classname": "tests.test_sprint_work_retirement",
+          "name": "test_source_and_receipt_drift_are_never_repaired[journal]",
+          "time": "6.193"
+        },
+        {
+          "classname": "tests.test_sprint_work_retirement",
+          "name": "test_source_and_receipt_drift_are_never_repaired[delete]",
+          "time": "6.127"
+        },
+        {
+          "classname": "tests.test_sprint_work_retirement",
+          "name": "test_source_and_receipt_drift_are_never_repaired[resurrect]",
+          "time": "5.339"
+        },
+        {
+          "classname": "tests.test_sprint_work_retirement",
+          "name": "test_failure_rolls_back_statuses_and_journal_together[abort]",
+          "time": "4.992"
+        },
+        {
+          "classname": "tests.test_sprint_work_retirement",
+          "name": "test_failure_rolls_back_statuses_and_journal_together[mixed]",
+          "time": "5.681"
+        },
+        {
+          "classname": "tests.test_sprint_work_retirement",
+          "name": "test_source_writer_cannot_race_retirement",
+          "time": "5.975"
+        },
+        {
+          "classname": "tests.test_sprint_work_retirement",
+          "name": "test_surviving_delivery_may_progress_but_retired_work_cannot_reopen",
+          "time": "5.294"
+        },
+        {
+          "classname": "tests.test_sprint_work_retirement",
+          "name": "test_dlq_replay_is_blocked_before_mutating_a_mixed_selection",
+          "time": "5.793"
+        },
+        {
+          "classname": "tests.test_grafx_sprint_retirement",
+          "name": "test_predecessor_removal_keeps_the_same_closed_selection_and_exact_survivors",
+          "time": "16.350"
+        },
+        {
+          "classname": "tests.test_grafx_sprint_retirement",
+          "name": "test_directed_removal_preserves_neighbors_parallel_edges_and_physical_generation",
+          "time": "23.466"
+        },
+        {
+          "classname": "tests.test_grafx_sprint_retirement",
+          "name": "test_failure_after_first_delete_rolls_back_every_node_and_relation[exception]",
+          "time": "18.665"
+        },
+        {
+          "classname": "tests.test_grafx_sprint_retirement",
+          "name": "test_failure_after_first_delete_rolls_back_every_node_and_relation[survivor_changed]",
+          "time": "16.364"
+        },
+        {
+          "classname": "tests.test_grafx_sprint_retirement",
+          "name": "test_changed_source_or_incorrect_selection_refuses_before_removal[source]",
+          "time": "14.664"
+        },
+        {
+          "classname": "tests.test_grafx_sprint_retirement",
+          "name": "test_changed_source_or_incorrect_selection_refuses_before_removal[receipt]",
+          "time": "13.596"
+        },
+        {
+          "classname": "tests.test_grafx_sprint_retirement",
+          "name": "test_unclassified_sources_or_incident_semantics_require_investigation[unknown_origin]",
+          "time": "12.885"
+        },
+        {
+          "classname": "tests.test_grafx_sprint_retirement",
+          "name": "test_unclassified_sources_or_incident_semantics_require_investigation[child_ref]",
+          "time": "14.840"
+        },
+        {
+          "classname": "tests.test_grafx_sprint_retirement",
+          "name": "test_unclassified_sources_or_incident_semantics_require_investigation[cognitive_writer]",
+          "time": "15.922"
+        },
+        {
+          "classname": "tests.test_grafx_sprint_retirement",
+          "name": "test_unclassified_sources_or_incident_semantics_require_investigation[unknown_edge]",
+          "time": "14.348"
+        },
+        {
+          "classname": "tests.test_grafx_sprint_retirement",
+          "name": "test_session_and_content_mentions_do_not_select_an_unrelated_source",
+          "time": "15.066"
+        },
+        {
+          "classname": "tests.test_grafx_sprint_retirement",
+          "name": "test_write_snapshot_budget_refuses_before_any_removal[_MAX_RECORDS]",
+          "time": "14.184"
+        },
+        {
+          "classname": "tests.test_grafx_sprint_retirement",
+          "name": "test_write_snapshot_budget_refuses_before_any_removal[_MAX_BYTES]",
+          "time": "14.259"
+        }
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "repository": "core",
+      "file": "tests/test_sprint_retirement_events.py",
+      "source_sha256": "b4c0b1a9c02357086c856184f8fca5a9abcbe2ea909c52bb9002e8b38ba16b06"
+    },
+    {
+      "repository": "core",
+      "file": "tests/test_sprint_kg_pipeline_retirement.py",
+      "source_sha256": "77c4b2e7743f1a40b0e8a3019fbdab37ef172ef92871dd3ffffdd77bfa9f73bb"
+    },
+    {
+      "repository": "community",
+      "file": "tests/test_sprint_work_retirement.py",
+      "source_sha256": "f450d90cd7b06308a1eb6124d246cf9c0b7c3096d6f6d2627ddb54a43d210aa9"
+    },
+    {
+      "repository": "community",
+      "file": "tests/test_grafx_sprint_retirement.py",
+      "source_sha256": "e8270156693af90181c9957facbb174065ddafb1f098d20bbff556bafec715e1"
+    }
+  ],
+  "distinct_cases": 79,
+  "criteria": {
+    "BASE:T32": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Historical Card event retains facts and remains deliverable while exclusive Sprint events/queue work become archived superseded history. Unknown or in-flight effects refuse without mutation. Retired work cannot reopen via queue, reconcile intent or DLQ replay; current Card work remains claimable. Live handlers cannot recreate Sprint materialization. Native Grafx cut removes only closed Sprint-owned node/relation selection and retains exact Card/Spec logical payload, shared parent nodes, duplicate surviving edges and database identity across cold reopen and replay. Transaction failures restore all nodes/relations."
+    }
+  },
+  "limits": [
+    "Real disposable SQLite and native Grafx adapters; source fixtures isolate historical data.",
+    "No live migration, product/frontend change or new F16 execution. Existing validated wheel payload remains unchanged; later Core commit bde1decb changes documentation only.",
+    "This certifies T32 only, not all remaining KG ownership/portability requirements or full delivery."
+  ]
+}

@@ -49,6 +49,7 @@ from typing import Any, Callable
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
     RebuildAuditKey,
+    RebuildAuditObservationBudget,
 )
 from okto_pulse.core.kg.query_contract import CognitiveOutcomeType
 from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer
@@ -611,6 +612,11 @@ def normalize_cognitive_artifact_id(source_ref: str) -> str:
     """
 
     ref = str(source_ref or "").strip()
+    from okto_pulse.core.domain.learning_materialization_work import parse_learning_capture_work_ref
+    capture_work = parse_learning_capture_work_ref(ref)
+    if capture_work is not None:
+        # Work identity is per capture; readiness still groups the owning Bug.
+        ref = f'bug:{capture_work.bug_id}'
     if ":" not in ref:
         return ref
     prefix, rest = ref.split(":", 1)
@@ -750,6 +756,16 @@ class CognitivePendingOverlaySnapshotService:
 
     artifact_store: RebuildAuditArtifactStore
 
+    def current_fingerprint_read_only(self) -> str:
+        """Inspect an existing stable fence without initializing or repairing it."""
+        current = self.artifact_store.read_json(_cognitive_overlay_revision_key())
+        if not _valid_stable_cognitive_overlay_revision(current):
+            raise CognitivePendingOverlaySnapshotError(
+                "cognitive_overlay_stable_revision_required",
+                "read-only capture requires an existing stable overlay revision",
+            )
+        return _cognitive_overlay_revision_fingerprint(current)
+
     def current_fingerprint(self) -> str:
         key = _cognitive_overlay_revision_key()
         current = self.artifact_store.read_json(key)
@@ -783,6 +799,18 @@ class CognitivePendingOverlaySnapshotService:
         board_ids: Sequence[str],
         deadline_seconds: float,
     ) -> CognitivePendingOverlaySnapshot:
+        return self._capture(board_ids=board_ids, deadline_seconds=deadline_seconds,
+            fingerprint_reader=self.current_fingerprint)
+
+    def capture_read_only(
+        self, *, board_ids: Sequence[str], deadline_seconds: float,
+    ) -> CognitivePendingOverlaySnapshot:
+        """Capture the same bounded policy without writes to the source fence."""
+        return self._capture(board_ids=board_ids, deadline_seconds=deadline_seconds,
+            fingerprint_reader=self.current_fingerprint_read_only)
+
+    def _capture(self, *, board_ids: Sequence[str], deadline_seconds: float,
+            fingerprint_reader: Callable[[], str]) -> CognitivePendingOverlaySnapshot:
         normalized = tuple(sorted({str(board_id).strip() for board_id in board_ids}))
         if not normalized or any(not board_id for board_id in normalized):
             raise ValueError("board_ids must contain non-empty identifiers")
@@ -799,7 +827,7 @@ class CognitivePendingOverlaySnapshotService:
                 "deadline_seconds must be positive and no greater than 300"
             )
         deadline = time.monotonic() + budget
-        before = self.current_fingerprint()
+        before = fingerprint_reader()
         captured: list[tuple[str, tuple[tuple[str, str], ...]]] = []
         from okto_pulse.core.kg.connectivity_guard import (
             CANONICAL_LEARNING_WORKING_ONLY_REASON,
@@ -879,7 +907,7 @@ class CognitivePendingOverlaySnapshotService:
                                 )
             captured.append((board_id, tuple(sorted(exclusions.items()))))
 
-        after = self.current_fingerprint()
+        after = fingerprint_reader()
         if before != after:
             raise CognitivePendingOverlaySnapshotError(
                 "cognitive_overlay_snapshot_drift",
@@ -1762,8 +1790,7 @@ class CognitiveConsolidationItem:
     revisit_at: str | None = None
     # source_ref_original preserves the untouched ref for audit; artifact_id is
     # the canonical per-artifact grouping key (fr_43ea6e97 / ac_50e4d48e). Both
-    # default safely from source_ref in __post_init__ so legacy rows stay
-    # readable WITHOUT a silent disk mutation (tr_3db366b6).
+    # are derived for new items before persistence; stored rows must supply them.
     source_ref_original: str | None = None
     artifact_id: str = ""
 
@@ -1811,10 +1838,24 @@ class CognitiveConsolidationItem:
 
     @staticmethod
     def from_dict(payload: Mapping[str, Any]) -> "CognitiveConsolidationItem":
+        from dataclasses import fields
+
+        required = {field.name for field in fields(CognitiveConsolidationItem)}
+        identity = ("item_id", "board_id", "kg_generation_id", "source_ref",
+                    "artifact_type", "status", "recorded_at", "source_ref_original", "artifact_id")
+        lists = ("evidence_refs", "generated_candidate_decision_ids", "promoted_formal_decision_ids")
+        if (set(payload) != required
+                or any(not isinstance(payload[name], str) or not payload[name] for name in identity)
+                or payload["status"] not in {status.value for status in CognitiveItemStatus}
+                or any(not isinstance(payload[name], list)
+                       or any(not isinstance(value, str) or not value for value in payload[name])
+                       for name in lists)
+                or any(payload[name] is not None and not isinstance(payload[name], str)
+                       for name in required - set(identity) - set(lists))):
+            raise ValueError("cognitive_item_incompatible")
+
         def _tuple_or_empty(value: Any) -> tuple[str, ...]:
-            if isinstance(value, (list, tuple)):
-                return tuple(str(item) for item in value if item)
-            return ()
+            return tuple(value)
 
         return CognitiveConsolidationItem(
             item_id=str(payload.get("item_id", "")),
@@ -1838,9 +1879,6 @@ class CognitiveConsolidationItem:
                 payload.get("promoted_formal_decision_ids")
             ),
             content_hash=payload.get("content_hash"),
-            # S1: new readiness fields. Absent on legacy rows → safe defaults
-            # (artifact_id/source_ref_original derived in __post_init__) without
-            # rewriting the stored payload (tr_3db366b6).
             reason_code=payload.get("reason_code"),
             justification=payload.get("justification"),
             actor=payload.get("actor"),
@@ -1856,7 +1894,7 @@ class CognitiveConsolidationItemStore:
     records (dec_580b6933 + tr_53caab33).
 
     Layout (extends the existing aggregate file, keeping one JSON per
-    board+generation so backward compat with KG-02 readers is preserved):
+    board+generation):
 
         <base>/rebuild/audit/cognitive_pending/<board>/<gen>.json
         ├── pending_count  (aggregate, KG-02.7)
@@ -1903,26 +1941,18 @@ class CognitiveConsolidationItemStore:
             not callable(revisioned_replace)
             or implementation is RebuildAuditArtifactStore.replace_json_with_revision
         ):
-            # Backward-compatible normal ledger operation for an older edition
-            # adapter.  Mark the overlay explicitly *unfenced* so Global
-            # Discovery recovery remains fail-closed until the adapter is
-            # upgraded; never misrepresent three separate writes as atomic.
-            revision_key = _cognitive_overlay_revision_key()
-            pending, _stable = _next_cognitive_overlay_revision(
-                self.artifact_store.read_json(revision_key)
-            )
-            unfenced = {
-                **pending,
-                "state": "unfenced",
-                "reason": "revisioned_replace_unavailable",
-            }
-            self.artifact_store.write_json_atomic(revision_key, unfenced)
-            target = self.artifact_store.replace_json(key, transform)
-            self.artifact_store.write_json_atomic(revision_key, unfenced)
-            return dict(target)
+            raise ValueError("cognitive_revisioned_replace_unavailable")
+
+        def native_transform(current):
+            if current is not None:
+                self.items_from_record(current, key.board_id, key.kg_generation_id)
+            updated = transform(current)
+            self.items_from_record(updated, key.board_id, key.kg_generation_id)
+            return updated
+
         target, _committed_revision = revisioned_replace(
             key=key,
-            transform=transform,
+            transform=native_transform,
             revision_key=_cognitive_overlay_revision_key(),
             revision_transition=_next_cognitive_overlay_revision,
         )
@@ -1939,21 +1969,13 @@ class CognitiveConsolidationItemStore:
     def load_record(
         self, board_id: str, kg_generation_id: str
     ) -> dict[str, Any] | None:
-        """Read the aggregate + items record. Returns None if not found
-        or unparseable."""
-
-        try:
-            return self.artifact_store.read_json(
-                self._record_key(board_id, kg_generation_id)
-            )
-        except Exception as exc:
-            logger.error(
-                "kg.cognitive_item_store.read_failed board=%s gen=%s err=%s",
-                board_id,
-                kg_generation_id,
-                exc,
-            )
-            return None
+        """Read the native ledger; incompatible/unreadable records fail closed."""
+        record = self.artifact_store.read_json(self._record_key(board_id, kg_generation_id))
+        if record is not None:
+            self.items_from_record(record, board_id, kg_generation_id)
+        elif self.record_exists(board_id, kg_generation_id):
+            raise ValueError("cognitive_record_incompatible")
+        return record
 
     def record_exists(self, board_id: str, kg_generation_id: str) -> bool:
         """True iff a ledger file is on disk for this generation. Used
@@ -1961,18 +1983,6 @@ class CognitiveConsolidationItemStore:
         an empty-but-extant record (api_ae3a932a + api_cce40fa6)."""
 
         return self.artifact_store.exists(self._record_key(board_id, kg_generation_id))
-
-    def is_legacy_record(self, board_id: str, kg_generation_id: str) -> bool:
-        """True iff the persisted record predates KG-03.1 — i.e. it has
-        the KG-02 aggregate ``pending_refs`` but lacks the ``items``
-        array. Adapters surface this as ``legacy_mode=true`` so the UI
-        can hint that statuses are synthesized rather than agent-tracked.
-        """
-
-        record = self.load_record(board_id, kg_generation_id)
-        if record is None:
-            return False
-        return not isinstance(record.get("items"), list)
 
     def list_items(
         self,
@@ -1985,11 +1995,6 @@ class CognitiveConsolidationItemStore:
     ) -> list[CognitiveConsolidationItem]:
         """List items for a generation, optionally filtered by status.
 
-        Backward compat (br_3d985533 + FR10 + AC7): if the record lacks
-        an explicit ``items`` array (legacy KG-02 aggregate-only file),
-        synthesize a list from ``pending_refs`` so MCP/REST callers
-        receive a coherent view without crashing.
-
         Pagination is contract-aligned with api_ae3a932a / api_cce40fa6.
         ``offset`` is applied AFTER the status filter so the caller's
         page numbers refer to the filtered set. ``limit=None`` returns
@@ -1999,39 +2004,24 @@ class CognitiveConsolidationItemStore:
         record = self.load_record(board_id, kg_generation_id)
         if record is None:
             return []
+        return self.items_from_record(
+            record, board_id, kg_generation_id,
+            status_filter=status_filter, limit=limit, offset=offset,
+        )
+
+    @staticmethod
+    def items_from_record(
+        record: Mapping[str, Any], board_id: str, kg_generation_id: str, *,
+        status_filter: str | None = None, limit: int | None = None, offset: int = 0,
+    ) -> list[CognitiveConsolidationItem]:
+        """Shared interpretation for ordinary reads and health observations."""
         items_raw = record.get("items")
-        if items_raw is None:
-            # Legacy aggregate-only — synthesize from pending_refs.
-            recorded_at = str(record.get("recorded_at", ""))
-            event_ref = record.get("event_ref")
-            synth: list[CognitiveConsolidationItem] = []
-            for source_ref in record.get("pending_refs") or []:
-                # Best-effort artifact_type extraction from source_ref
-                # ("spec:1" → "spec"). Falls back to "unknown".
-                artifact_type = "unknown"
-                if isinstance(source_ref, str) and ":" in source_ref:
-                    artifact_type = source_ref.split(":", 1)[0]
-                synth.append(
-                    CognitiveConsolidationItem(
-                        item_id=compute_cognitive_item_id(
-                            board_id, kg_generation_id, str(source_ref)
-                        ),
-                        board_id=board_id,
-                        kg_generation_id=kg_generation_id,
-                        source_ref=str(source_ref),
-                        artifact_type=artifact_type,
-                        status=CognitiveItemStatus.PENDING.value,
-                        recorded_at=recorded_at,
-                        event_ref=event_ref,
-                    )
-                )
-            items = synth
-        else:
-            items = [
-                CognitiveConsolidationItem.from_dict(it)
-                for it in items_raw
-                if isinstance(it, Mapping)
-            ]
+        if (record.get("board_id") != board_id
+                or record.get("kg_generation_id") != kg_generation_id
+                or not isinstance(items_raw, list)
+                or any(not isinstance(item, Mapping) for item in items_raw)):
+            raise ValueError("cognitive_record_incompatible")
+        items = [CognitiveConsolidationItem.from_dict(item) for item in items_raw]
         if status_filter is not None:
             items = [i for i in items if i.status == status_filter]
         if offset:
@@ -2039,6 +2029,48 @@ class CognitiveConsolidationItemStore:
         if limit is not None:
             items = items[:limit]
         return items
+
+    def observe_latest_items(self, board_id: str) -> list[CognitiveConsolidationItem]:
+        """Complete bounded observation; no ordinary-read fallback or cleanup."""
+        return self._observe_cognitive_snapshot(board_id, None, RebuildAuditObservationBudget())[1]
+
+    def read_completion_snapshot(
+        self, board_id: str, kg_generation_id: str | None = None,
+    ) -> tuple[str | None, list[CognitiveConsolidationItem]]:
+        """Read authoritative cognitive state without inferring from graph health.
+
+        Reuse the edition's complete, bounded observation capability. Missing
+        capability, malformed content or an incomplete read must propagate;
+        ordinary best-effort readers cannot certify absence for completion.
+        """
+        return self._observe_cognitive_snapshot(
+            board_id, kg_generation_id, RebuildAuditObservationBudget(timeout_seconds=5),
+        )
+
+    def _observe_cognitive_snapshot(
+        self, board_id: str, kg_generation_id: str | None, budget: RebuildAuditObservationBudget,
+    ) -> tuple[str | None, list[CognitiveConsolidationItem]]:
+        records = self.artifact_store.observe_health_json(
+            RebuildAuditKey(namespace="cognitive_pending", board_id=board_id, kg_generation_id=kg_generation_id),
+            budget=budget,
+        )
+        if not isinstance(records, (list, tuple)):
+            raise ValueError("cognitive_observation_unavailable")
+        for record in records:
+            if (not isinstance(record, Mapping)
+                    or not isinstance(record.get("kg_generation_id"), str)
+                    or not record["kg_generation_id"]
+                    or not isinstance(record.get("recorded_at"), str)
+                    or record.get("board_id", board_id) != board_id
+                    or (kg_generation_id is not None and record["kg_generation_id"] != kg_generation_id)):
+                raise ValueError("cognitive_observation_invalid")
+        if not records:
+            if kg_generation_id is not None:
+                raise ValueError("cognitive_generation_unavailable")
+            return None, []
+        # Preserve the established timestamp + generation-id tie breaker.
+        record = max(records, key=lambda row: (row["recorded_at"], row["kg_generation_id"]))
+        return record["kg_generation_id"], self.items_from_record(record, board_id, record["kg_generation_id"])
 
     def _previous_terminal_state_by_source_ref(
         self,
@@ -2062,14 +2094,16 @@ class CognitiveConsolidationItemStore:
         }
 
         entries: list[tuple[str, str, dict[str, Any]]] = []
-        records = self.artifact_store.list_json(
+        records = self.artifact_store.observe_health_json(
             RebuildAuditKey(
                 namespace="cognitive_pending",
                 board_id=board_id,
-            )
+            ),
+            budget=RebuildAuditObservationBudget(timeout_seconds=5),
         )
         for record in records:
             gen_id = str(record.get("kg_generation_id", ""))
+            self.items_from_record(record, board_id, gen_id)
             if not gen_id or gen_id == exclude_generation_id:
                 continue
             recorded_at = str(record.get("recorded_at", ""))
@@ -2108,13 +2142,15 @@ class CognitiveConsolidationItemStore:
         """
 
         best: tuple[str, str] | None = None
-        for record in self.artifact_store.list_json(
+        for record in self.artifact_store.observe_health_json(
             RebuildAuditKey(
                 namespace="cognitive_pending",
                 board_id=board_id,
-            )
+            ),
+            budget=RebuildAuditObservationBudget(timeout_seconds=5),
         ):
             gen_id = str(record.get("kg_generation_id", ""))
+            self.items_from_record(record, board_id, gen_id)
             if not gen_id:
                 continue
             recorded_at = str(record.get("recorded_at", ""))
@@ -2408,6 +2444,7 @@ class CognitiveConsolidationItemStore:
         actor: str | None = None,
         revisit_at: str | None = None,
         clear_readiness_metadata: bool = False,
+        expected_item: CognitiveConsolidationItem | None = None,
     ) -> CognitiveConsolidationItem | None:
         """Single-item atomic update per br_d544da65 + FR3 + AC6.
 
@@ -2428,31 +2465,15 @@ class CognitiveConsolidationItemStore:
             record = self.load_record(board_id, kg_generation_id)
             if record is None:
                 return None
+            original_record = None
+            if expected_item is not None:
+                from copy import deepcopy
+                revisioned_replace = getattr(type(self.artifact_store), 'replace_json_with_revision', None)
+                if (not callable(revisioned_replace)
+                        or revisioned_replace is RebuildAuditArtifactStore.replace_json_with_revision):
+                    return None
+                original_record = deepcopy(record)
             items_raw = record.get("items")
-            if items_raw is None:
-                # Legacy aggregate-only — synthesize items first so the
-                # update can land somewhere (br_3d985533 — we MUST stay
-                # readable AND mutable on legacy records).
-                items_raw = []
-                for source_ref in record.get("pending_refs") or []:
-                    artifact_type = "unknown"
-                    if isinstance(source_ref, str) and ":" in source_ref:
-                        artifact_type = source_ref.split(":", 1)[0]
-                    items_raw.append(
-                        {
-                            "item_id": compute_cognitive_item_id(
-                                board_id, kg_generation_id, str(source_ref)
-                            ),
-                            "board_id": board_id,
-                            "kg_generation_id": kg_generation_id,
-                            "source_ref": str(source_ref),
-                            "artifact_type": artifact_type,
-                            "status": CognitiveItemStatus.PENDING.value,
-                            "recorded_at": str(record.get("recorded_at", "")),
-                            "event_ref": record.get("event_ref"),
-                        }
-                    )
-
             target_idx = None
             for idx, it in enumerate(items_raw):
                 if it.get("item_id") == item_id:
@@ -2474,6 +2495,8 @@ class CognitiveConsolidationItemStore:
                 else []
             )
             existing = items_raw[target_idx]
+            if expected_item is not None and CognitiveConsolidationItem.from_dict(existing) != expected_item:
+                return None
             src_ref = str(existing.get("source_ref", ""))
             items_raw[target_idx] = {
                 **existing,
@@ -2535,10 +2558,18 @@ class CognitiveConsolidationItemStore:
             record["pending_refs"] = active_refs
 
             key = self._record_key(board_id, kg_generation_id)
-            self._replace_record_with_overlay_revision(
-                key=key,
-                transform=lambda _current: record,
-            )
+            class ConcurrentItemChange(Exception):
+                pass
+
+            def transform(current):
+                if expected_item is not None and current != original_record:
+                    raise ConcurrentItemChange()
+                return record
+
+            try:
+                self._replace_record_with_overlay_revision(key=key, transform=transform)
+            except ConcurrentItemChange:
+                return None
 
             # NOTE (Codex audit val_036cb81e):
             # update_item MUST NOT emit on
@@ -2547,6 +2578,68 @@ class CognitiveConsolidationItemStore:
             # KG-03.3 (``kg_cognitive_item_update_total``), implemented
             # by the MCP update tool that wraps this primitive.
             return CognitiveConsolidationItem.from_dict(items_raw[target_idx])
+
+
+    def open_working_only_hold(
+        self, *, board_id: str, kg_generation_id: str, source_ref: str,
+        artifact_type: str, session_id: str, actor_id: str, reason_code: str,
+    ) -> CognitiveConsolidationItem | None:
+        """Record new technical work without reauthoring an existing decision.
+
+        The source-only key cannot establish that a new observation
+        supersedes a prior restriction, receipt or session. Preserve every
+        existing item until qualified reconciliation proves its exact cause.
+        Selection and insertion share the edition's atomic revision fence.
+        """
+        implementation = getattr(type(self.artifact_store), 'replace_json_with_revision', None)
+        if not callable(implementation) or implementation is RebuildAuditArtifactStore.replace_json_with_revision:
+            return None
+        now = datetime.now(timezone.utc).isoformat()
+        item = CognitiveConsolidationItem(
+            item_id=compute_cognitive_item_id(board_id, kg_generation_id, source_ref),
+            board_id=board_id, kg_generation_id=kg_generation_id, source_ref=source_ref,
+            artifact_type=artifact_type, status=CognitiveItemStatus.PENDING.value,
+            recorded_at=now, event_ref=f'r7_cognitive_hold:{session_id}', updated_at=now,
+            updated_by_agent_id=actor_id, consolidation_session_id=session_id or None,
+            reason_code=reason_code,
+            reason='R7: canonical Learning held — bug evidence is working-only (awaiting canonical Bug).',
+            source_ref_original=source_ref, artifact_id=normalize_cognitive_artifact_id(source_ref),
+        )
+        from okto_pulse.core.kg.refinement_cognitive_guard import assert_deterministic_only_pending
+        assert_deterministic_only_pending(board_id=board_id, items=[item])
+
+        class ExistingHold(Exception):
+            pass
+
+        def transform(current):
+            if current is not None:
+                # Aggregate-only history cannot prove absence of an owned item.
+                if (current.get('board_id') != board_id or current.get('kg_generation_id') != kg_generation_id
+                        or type(current.get('items')) is not list):
+                    raise ExistingHold()
+                rows = current['items']
+                if any(type(row) is not dict or not isinstance(row.get('source_ref'), str) for row in rows):
+                    raise ExistingHold()
+                if any(row.get('item_id') == item.item_id
+                       or normalize_cognitive_artifact_id(row['source_ref']) == item.artifact_id for row in rows):
+                    raise ExistingHold()
+                payload = {**current, 'items': [*rows, item.to_dict()]}
+            else:
+                payload = dict(board_id=board_id, kg_generation_id=kg_generation_id,
+                    event_ref=item.event_ref, recorded_at=now,
+                    status=CognitivePendingStatus.PENDING_MARKED.value, items=[item.to_dict()])
+            refs = sorted({row['source_ref'] for row in payload['items'] if row.get('status') in ACTIVE_ITEM_STATUSES})
+            return {**payload, 'pending_count': len(refs), 'pending_refs': refs}
+
+        try:
+            with self._lock:
+                written = self._replace_record_with_overlay_revision(
+                    key=self._record_key(board_id, kg_generation_id), transform=transform)
+        except ExistingHold:
+            return None
+        _emit_materialized_sample(board_id=board_id,
+            outcome=CognitiveMaterializeOutcome.MATERIALIZED.value, item_count=len(written['items']))
+        return item
 
 
 def _cognitive_hold_artifact_type(
@@ -2579,9 +2672,10 @@ def record_cognitive_working_only_hold(
     """Persist an R7 working-only canonical Learning go-forward HOLD as a
     cognitive pending item (NEVER CanonicalDebt / DLQ / a parallel store).
 
-    Reuses the existing CognitiveConsolidationItemStore: it materializes one
-    pending row for the held source and stamps the R7 ``reason_code`` via
-    ``update_item``. The store is file-backed (rebuild base dir), so this needs
+    Reuses the existing CognitiveConsolidationItemStore: it atomically inserts
+    one pending row only when that source has no existing owned state. A prior
+    hold or outcome is preserved without reopening it.
+    The edition owns storage (rebuild base dir), so this needs
     no SQL db and is safe to call from any caller that catches the structured
     ``KGPrimitiveError`` (MCP commit tool, live consolidation, adapters).
 
@@ -2589,11 +2683,11 @@ def record_cognitive_working_only_hold(
     promotes the ``current`` pointer because of a live hold:
     ``RebuildAuditKGGenerationRepository.get_current`` ->
     ``store.latest_generation`` -> ``generate_kg_generation_id`` (first live
-    ledger). A legacy ``KGGenerationRepository`` fallback remains only when the
-    runtime registry is unavailable in tests/legacy callsites.
+    ledger).
 
-    Returns ``{generation_id, item_id, artifact_type}`` on success, or None
-    when the payload is unusable / the artifact_type is not consolidable (the
+    Returns ``{generation_id, item_id, artifact_type}`` on insertion, or None
+    when existing history must be preserved, the payload is unusable, the
+    artifact_type is not consolidable or atomic revision fencing is absent (the
     structured error has already surfaced to the caller in that case).
     """
     source_ref = str(hold_payload.get("source_ref") or "")
@@ -2635,31 +2729,14 @@ def record_cognitive_working_only_hold(
         or generate_kg_generation_id()
     )
     session_id = str(hold_payload.get("session_id") or "")
-    store.materialize_from_marker(
-        board_id=board_id,
-        kg_generation_id=generation_id,
-        event_ref=f"r7_cognitive_hold:{session_id}",
-        source_set=[{"source_ref": source_ref, "artifact_type": artifact_type}],
-    )
-    item_id = compute_cognitive_item_id(board_id, generation_id, source_ref)
-    updated = store.update_item(
-        board_id=board_id,
-        kg_generation_id=generation_id,
-        item_id=item_id,
-        new_status=CognitiveItemStatus.PENDING.value,
-        updated_by_agent_id=actor_id,
-        consolidation_session_id=session_id or None,
-        reason_code=reason_code,
-        reason=(
-            "R7: canonical Learning held — bug evidence is working-only "
-            "(awaiting canonical Bug)."
-        ),
-    )
+    updated = store.open_working_only_hold(board_id=board_id, kg_generation_id=generation_id,
+        source_ref=source_ref, artifact_type=artifact_type, session_id=session_id,
+        actor_id=actor_id, reason_code=reason_code)
     if updated is None:
         return None
     return {
         "generation_id": generation_id,
-        "item_id": item_id,
+        "item_id": updated.item_id,
         "artifact_type": artifact_type,
     }
 

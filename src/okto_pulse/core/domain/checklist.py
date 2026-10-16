@@ -9,7 +9,7 @@ board binding identities that produced them.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from types import MappingProxyType
@@ -59,12 +59,6 @@ def _strict_positive_int(value: int, code: str) -> int:
     return value
 
 
-def _optional_positive_int(value: int | None, code: str) -> int | None:
-    if value is None:
-        return None
-    return _strict_positive_int(value, code)
-
-
 def _strict_non_negative_int(value: int, code: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise ChecklistContractError(code)
@@ -112,7 +106,6 @@ class ChecklistItemOutcome(str, Enum):
 
 class ChecklistReceiptSource(str, Enum):
     NATIVE = "native"
-    LEGACY_UNVERIFIED = "legacy_unverified"
 
 
 class ChecklistExecutionStatus(str, Enum):
@@ -123,27 +116,14 @@ class ChecklistExecutionStatus(str, Enum):
 class ChecklistReceiptState(str, Enum):
     CURRENT = "current"
     PREVIOUS = "previous"
-    HISTORY_ONLY = "history_only"
 
 
 class ChecklistStaleReason(str, Enum):
     SPEC_EDITION_CHANGED = "spec_edition_changed"
-    SPEC_VERSION_CHANGED = "spec_version_changed"
-    CONTENT_DIGEST_CHANGED = "content_digest_changed"
-    INPUT_DIGEST_CHANGED = "input_digest_changed"
-    TEMPLATE_VERSION_CHANGED = "template_version_changed"
-    TEMPLATE_DIGEST_CHANGED = "template_digest_changed"
-    BINDING_DIGEST_CHANGED = "binding_digest_changed"
 
 
 CHECKLIST_STALE_REASON_ORDER: Final[tuple[ChecklistStaleReason, ...]] = (
     ChecklistStaleReason.SPEC_EDITION_CHANGED,
-    ChecklistStaleReason.SPEC_VERSION_CHANGED,
-    ChecklistStaleReason.CONTENT_DIGEST_CHANGED,
-    ChecklistStaleReason.INPUT_DIGEST_CHANGED,
-    ChecklistStaleReason.TEMPLATE_VERSION_CHANGED,
-    ChecklistStaleReason.TEMPLATE_DIGEST_CHANGED,
-    ChecklistStaleReason.BINDING_DIGEST_CHANGED,
 )
 
 
@@ -472,12 +452,8 @@ class ChecklistBinding:
                 "checklist_binding_revision_invalid",
             )
         )
-        if revision not in (0, version):
+        if revision != version:
             raise ChecklistContractError("checklist_binding_revision_invalid")
-        if revision == 0 and (
-            self.mode is not ChecklistMode.OFF or version != 1
-        ):
-            raise ChecklistContractError("checklist_binding_synthetic_invalid")
         if self.target_type is not ChecklistTargetType.SPEC:
             raise ChecklistContractError("checklist_target_type_unsupported")
         if self.phase is not ChecklistPhase.SPEC_VALIDATION:
@@ -502,25 +478,6 @@ class ChecklistBinding:
         object.__setattr__(self, "revision", revision)
         object.__setattr__(self, "digest", expected_digest)
 
-    @classmethod
-    def synthetic_off(cls, *, board_id: str) -> ChecklistBinding:
-        """Project a legacy board with no persisted binding head.
-
-        The effective contract remains OFF at binding version 1, while
-        ``revision=0`` exposes the real initial CAS revision.  A persisted
-        OFF/v1 row has ``revision=1`` and is therefore unambiguous.
-        """
-
-        return cls(
-            board_id=board_id,
-            mode=ChecklistMode.OFF,
-            version=1,
-            revision=0,
-        )
-
-    @property
-    def is_synthetic(self) -> bool:
-        return self.revision == 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -532,7 +489,7 @@ class ChecklistSpecSnapshot:
     input_digest: str
     status: str
     archived: bool = False
-    spec_edition: int | None = None
+    spec_edition: int = field(kw_only=True)
 
     def __post_init__(self) -> None:
         for field_name in ("board_id", "spec_id", "status"):
@@ -566,7 +523,7 @@ class ChecklistSpecSnapshot:
         object.__setattr__(
             self,
             "spec_edition",
-            _optional_positive_int(
+            _strict_positive_int(
                 self.spec_edition,
                 "checklist_spec_edition_invalid",
             ),
@@ -652,7 +609,7 @@ class ChecklistExecution:
     revision: int = 1
     status: ChecklistExecutionStatus = ChecklistExecutionStatus.OPEN
     receipt_id: str | None = None
-    spec_edition: int | None = None
+    spec_edition: int = field(kw_only=True)
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -682,7 +639,7 @@ class ChecklistExecution:
         object.__setattr__(
             self,
             "spec_edition",
-            _optional_positive_int(
+            _strict_positive_int(
                 self.spec_edition,
                 "checklist_spec_edition_invalid",
             ),
@@ -767,8 +724,7 @@ class ChecklistSubmission:
     expected_head_revision: int
     items: tuple[ChecklistItemResult, ...] = ()
     idempotency_key: str | None = None
-    manual_checklist_ref: str | None = None
-    spec_edition: int | None = None
+    spec_edition: int = field(kw_only=True)
 
     def __post_init__(self) -> None:
         for field_name in ("board_id", "spec_id", "template_version"):
@@ -791,7 +747,7 @@ class ChecklistSubmission:
         object.__setattr__(
             self,
             "spec_edition",
-            _optional_positive_int(
+            _strict_positive_int(
                 self.spec_edition,
                 "checklist_spec_edition_invalid",
             ),
@@ -836,23 +792,9 @@ class ChecklistSubmission:
             self.idempotency_key,
             "checklist_idempotency_key_invalid",
         )
-        manual_ref = _optional_text(
-            self.manual_checklist_ref,
-            "manual_checklist_ref_invalid",
-        )
-        if manual_ref is None and idempotency_key is None:
+        if idempotency_key is None:
             raise ChecklistContractError("checklist_idempotency_key_required")
-        if manual_ref is not None:
-            if idempotency_key is not None:
-                raise ChecklistContractError("manual_checklist_non_replayable")
-            if items:
-                raise ChecklistContractError("manual_checklist_items_forbidden")
         object.__setattr__(self, "idempotency_key", idempotency_key)
-        object.__setattr__(self, "manual_checklist_ref", manual_ref)
-
-    @property
-    def is_legacy_manual(self) -> bool:
-        return self.manual_checklist_ref is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -875,9 +817,8 @@ class ChecklistReceipt:
     created_at: datetime
     head_revision: int
     idempotency_key: str | None = None
-    manual_checklist_ref: str | None = None
     predecessor_receipt_id: str | None = None
-    spec_edition: int | None = None
+    spec_edition: int = field(kw_only=True)
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -906,7 +847,7 @@ class ChecklistReceipt:
         object.__setattr__(
             self,
             "spec_edition",
-            _optional_positive_int(
+            _strict_positive_int(
                 self.spec_edition,
                 "checklist_spec_edition_invalid",
             ),
@@ -955,38 +896,23 @@ class ChecklistReceipt:
             self.idempotency_key,
             "checklist_idempotency_key_invalid",
         )
-        manual_ref = _optional_text(
-            self.manual_checklist_ref,
-            "manual_checklist_ref_invalid",
-        )
         predecessor = _optional_text(
             self.predecessor_receipt_id,
             "checklist_predecessor_receipt_id_invalid",
         )
-        if self.source is ChecklistReceiptSource.NATIVE:
-            if tuple(item.item_id for item in items) != SPECIFY_CHECKLIST_ITEM_IDS:
-                raise ChecklistContractError("checklist_items_incomplete")
-            for result in items:
-                template_item = require_specify_checklist_item(result.item_id)
-                if (
-                    result.outcome is ChecklistItemOutcome.NOT_APPLICABLE
-                    and not template_item.allow_na
-                ):
-                    raise ChecklistContractError("checklist_item_na_not_allowed")
-            if idempotency_key is None:
-                raise ChecklistContractError("checklist_idempotency_key_required")
-            if manual_ref is not None:
-                raise ChecklistContractError("native_checklist_manual_ref_forbidden")
-        else:
-            if items:
-                raise ChecklistContractError("manual_checklist_items_forbidden")
-            if manual_ref is None:
-                raise ChecklistContractError("manual_checklist_ref_required")
-            if idempotency_key is not None:
-                raise ChecklistContractError("manual_checklist_non_replayable")
+        if tuple(item.item_id for item in items) != SPECIFY_CHECKLIST_ITEM_IDS:
+            raise ChecklistContractError("checklist_items_incomplete")
+        for result in items:
+            template_item = require_specify_checklist_item(result.item_id)
+            if (
+                result.outcome is ChecklistItemOutcome.NOT_APPLICABLE
+                and not template_item.allow_na
+            ):
+                raise ChecklistContractError("checklist_item_na_not_allowed")
+        if idempotency_key is None:
+            raise ChecklistContractError("checklist_idempotency_key_required")
         object.__setattr__(self, "items", items)
         object.__setattr__(self, "idempotency_key", idempotency_key)
-        object.__setattr__(self, "manual_checklist_ref", manual_ref)
         object.__setattr__(self, "predecessor_receipt_id", predecessor)
         object.__setattr__(
             self,
@@ -1068,7 +994,7 @@ class ChecklistWriteBundle:
     expected_spec_archived: bool
     receipt: ChecklistReceipt
     next_head: ChecklistExecutionHead
-    expected_spec_edition: int | None = None
+    expected_spec_edition: int
 
     def __post_init__(self) -> None:
         if not isinstance(self.receipt, ChecklistReceipt):
@@ -1104,7 +1030,7 @@ class ChecklistWriteBundle:
         object.__setattr__(
             self,
             "expected_spec_edition",
-            _optional_positive_int(
+            _strict_positive_int(
                 self.expected_spec_edition,
                 "checklist_spec_edition_invalid",
             ),
@@ -1193,7 +1119,7 @@ class ChecklistCommitResult:
     request_digest: str
     head_revision: int
     replayed: bool = False
-    spec_edition: int | None = None
+    spec_edition: int = field(kw_only=True)
 
     def __post_init__(self) -> None:
         for field_name in ("board_id", "spec_id", "receipt_id"):
@@ -1216,7 +1142,7 @@ class ChecklistCommitResult:
         object.__setattr__(
             self,
             "spec_edition",
-            _optional_positive_int(
+            _strict_positive_int(
                 self.spec_edition,
                 "checklist_spec_edition_invalid",
             ),
@@ -1377,11 +1303,7 @@ def checklist_submission_digest_v1(
             "board_id": submission.board_id,
             "spec_id": submission.spec_id,
             "spec_version": submission.spec_version,
-            **(
-                {"spec_edition": submission.spec_edition}
-                if submission.spec_edition is not None
-                else {}
-            ),
+            "spec_edition": submission.spec_edition,
             "content_digest": submission.content_digest,
             "input_digest": submission.input_digest,
             "template_version": submission.template_version,
@@ -1400,7 +1322,6 @@ def checklist_submission_digest_v1(
                 )
             ),
             "idempotency_key": submission.idempotency_key,
-            "manual_checklist_ref": submission.manual_checklist_ref,
         }
     )
 
@@ -1416,7 +1337,7 @@ def checklist_execution_request_digest_v1(
     template_digest: str,
     binding_digest: str,
     actor_id: str,
-    spec_edition: int | None = None,
+    spec_edition: int,
 ) -> str:
     """Hash the semantic identity of one execution-start request.
 
@@ -1432,11 +1353,7 @@ def checklist_execution_request_digest_v1(
             "board_id": board_id,
             "spec_id": spec_id,
             "spec_version": spec_version,
-            **(
-                {"spec_edition": spec_edition}
-                if spec_edition is not None
-                else {}
-            ),
+            "spec_edition": _strict_positive_int(spec_edition, "checklist_spec_edition_invalid"),
             "content_digest": content_digest,
             "input_digest": input_digest,
             "template_version": template_version,
@@ -1454,7 +1371,7 @@ def evaluate_checklist_currentness(
     current_binding: ChecklistBinding,
     current_template: ChecklistTemplate = SPECIFY_CHECKLIST_TEMPLATE_V1,
 ) -> ChecklistCurrentness:
-    """Evaluate all version/digest fences required by the A3 receipt."""
+    """Project human validity by edition; write fences remain separate."""
 
     if not isinstance(receipt, ChecklistReceipt):
         raise ChecklistContractError("checklist_receipt_invalid")
@@ -1474,54 +1391,12 @@ def evaluate_checklist_currentness(
     # Human validity is edition-scoped. Technical version, content, template,
     # and governance drift remain immutable audit/CAS facts and only affect the
     # next lifecycle edition.
-    if current_subject.spec_edition is not None:
-        if receipt.spec_edition == current_subject.spec_edition:
-            return ChecklistCurrentness(current=True, stale_reasons=())
-        return ChecklistCurrentness(
-            current=False,
-            stale_reasons=(ChecklistStaleReason.SPEC_EDITION_CHANGED,),
-        )
-
-    reasons: list[ChecklistStaleReason] = []
-    comparisons = (
-        (
-            receipt.spec_version,
-            current_subject.spec_version,
-            ChecklistStaleReason.SPEC_VERSION_CHANGED,
-        ),
-        (
-            receipt.content_digest,
-            current_subject.content_digest,
-            ChecklistStaleReason.CONTENT_DIGEST_CHANGED,
-        ),
-        (
-            receipt.input_digest,
-            current_subject.input_digest,
-            ChecklistStaleReason.INPUT_DIGEST_CHANGED,
-        ),
-        (
-            receipt.template_version,
-            current_template.version,
-            ChecklistStaleReason.TEMPLATE_VERSION_CHANGED,
-        ),
-        (
-            receipt.template_digest,
-            current_template.digest,
-            ChecklistStaleReason.TEMPLATE_DIGEST_CHANGED,
-        ),
-        (
-            receipt.binding_digest,
-            current_binding.digest,
-            ChecklistStaleReason.BINDING_DIGEST_CHANGED,
-        ),
+    if receipt.spec_edition == current_subject.spec_edition:
+        return ChecklistCurrentness(current=True, stale_reasons=())
+    return ChecklistCurrentness(
+        current=False,
+        stale_reasons=(ChecklistStaleReason.SPEC_EDITION_CHANGED,),
     )
-    reasons.extend(
-        reason for previous, current, reason in comparisons if previous != current
-    )
-    ordered = tuple(
-        reason for reason in CHECKLIST_STALE_REASON_ORDER if reason in reasons
-    )
-    return ChecklistCurrentness(current=not ordered, stale_reasons=ordered)
 
 
 def evaluate_checklist_gate(
@@ -1575,18 +1450,7 @@ def evaluate_checklist_gate(
         return ChecklistGateDecision(
             mode=binding.mode,
             allowed=False,
-            reason=(
-                "checklist_receipt_required"
-                if current_subject.spec_edition is not None
-                else "checklist_receipt_stale"
-            ),
-            currentness=currentness,
-        )
-    if not receipt.verified:
-        return ChecklistGateDecision(
-            mode=binding.mode,
-            allowed=False,
-            reason="manual_checklist_legacy_unverified",
+            reason="checklist_receipt_required",
             currentness=currentness,
         )
     if not receipt.blocking_satisfied:

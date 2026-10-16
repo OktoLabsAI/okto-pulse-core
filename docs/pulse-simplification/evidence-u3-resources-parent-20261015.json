@@ -1,0 +1,244 @@
+{
+  "scope": "U3/3d Resources parent integration; not U3/U4 completion",
+  "date": "2026-10-15",
+  "base": {
+    "core": "44d915b0",
+    "community": "d58ee70d",
+    "branch": "feature/v0.4.0"
+  },
+  "product_commits": {
+    "core": "537eea6",
+    "community": "ccc76df"
+  },
+  "runtime": {
+    "mode": "paired checkouts",
+    "pid": 13996,
+    "api": 8200,
+    "mcp": 8201,
+    "frontend_vite": 5274,
+    "data_home": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collections-home",
+    "health": "healthy/0.4.0",
+    "installed_differences": {
+      "core": 27,
+      "community": 12
+    }
+  },
+  "tests": {
+    "backend": {
+      "distinct_passed": 83,
+      "reports": [
+        {
+          "file": "u3-mockups-snapshot-core-final.xml",
+          "passed": 77,
+          "skipped": 0
+        },
+        {
+          "file": "u3-mockups-snapshot-race.xml",
+          "passed": 1,
+          "skipped": 0
+        },
+        {
+          "file": "u3-resources-catalog.xml",
+          "passed": 5,
+          "skipped": 0
+        }
+      ]
+    },
+    "frontend": {
+      "distinct_passed": 101,
+      "reports": [
+        {
+          "file": "u3-resources-parent.xml",
+          "passed": 98,
+          "skipped": 0
+        },
+        {
+          "file": "u3-resources-parent-qualified-cases.xml",
+          "passed": 3,
+          "skipped": 79
+        }
+      ]
+    },
+    "typescript_exit": 0,
+    "eslint": {
+      "exit": 0,
+      "errors": 0,
+      "preexisting_warnings": 12
+    },
+    "closure": {
+      "ok": true,
+      "budgets_zero": 8,
+      "evidence": {
+        "af35_s5_ok": true,
+        "community_to_core_import_rows": 1154,
+        "conformance_matrix_ok": true,
+        "core_import_rows": 7862,
+        "dependency_rows": 25,
+        "distribution_report_ok": true,
+        "rebuild_storage_violation_count": 0,
+        "singleton_gate_status": "passed"
+      }
+    }
+  },
+  "native": {
+    "board": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec": "dec9410f-d455-4506-a8fd-f791ee31dc77",
+    "architecture": {
+      "id": "dff796ef-47da-438f-a373-f87e0cece5d5",
+      "versions": [
+        3,
+        4,
+        5
+      ],
+      "automatic_refresh_preserved_draft": true,
+      "explicit_review_then_ui_save_confirmed_by_mcp": true
+    },
+    "mockups": {
+      "ids": [
+        "sm_29cc74c0",
+        "mockup_334ef8d1-561e-4890-9a85-50258973f25b"
+      ],
+      "total": 2,
+      "automatic_refresh_preserved_draft": true,
+      "hidden_subtab_preserved_draft": true,
+      "reviewed_ui_save_kept_concurrent_mcp_screen": true
+    },
+    "knowledge": {
+      "id": "1343829d-acd6-47d4-bbf2-54143da1fef1",
+      "hidden_creation_title_preserved": true,
+      "create_confirmed_parent_get_aborted_recovered": true,
+      "delete_confirmed_parent_get_aborted_recovered": true,
+      "native_post_count": 1,
+      "native_delete_count": 1,
+      "final_mcp_count": 0
+    },
+    "disclosure": "After recovery: Architecture 1 direct and Mockups 2 direct Provided; Knowledge Missing advisory.",
+    "screenshots_inspected": 3
+  },
+  "limits": [
+    "Native MCP mockup addition moved Spec version 30 to 31. The helper same-version assertion failed after the successful write; mutation was not repeated. Same-version snapshot refusal is proved by REST/persistence and frontend tests, not this browser probe.",
+    "MCP get_spec summary omits mockup_snapshot; the UI receives it in the native REST Spec response. Dedicated MCP mockup writers capture their initial base internally.",
+    "Unknown-response, revoked-access and late-identity handling have component coverage here; do not claim those native integrated cases from these screenshots.",
+    "No installation/build qualification, full validation-cycle completion, Card delivery progress or canonical KG claim in this increment.",
+    "The first README-renderer invocation lacked __file__ and did not write files; corrected invocation used the official renderer. Initial closure failed only generated README counts.",
+    "One CLI multiline fill and network alias were invalid; no mutation resulted. A TypeScript invocation used a nonexistent tsconfig.app.json; corrected npx tsc --noEmit exited 0."
+  ],
+  "artifacts": [
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-mockups-snapshot-core-final.xml",
+      "sha256": "9bf01a49f7567481ac429c39c752fcd9e7e442c2cc4754c03e783e638ed156e8"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-mockups-snapshot-race.xml",
+      "sha256": "5f4809486faa8da28d1c448ad509bd3b2f419e9d4ef0994eb43cbbe75f81e428"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-resources-catalog.xml",
+      "sha256": "61deba1c87cefe440c660bbb78cc57b98902f696e89d36f415bc49b85a4c7735"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-resources-parent.xml",
+      "sha256": "3a75fc5605c425039a25d656c89c0e64fce797aee89e681838c81490ab72c417"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-resources-parent-qualified-cases.xml",
+      "sha256": "9baf9667e117429fa067d32391bcbd37d23d248eb3ce4b4c1efc52fae7d99999"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-mockups-snapshot-core-final.xml.environment.json",
+      "sha256": "acf498a92a26bc5023daafb8ea4aa482aaa521ea31708b8e4eb25e26fee8aa93"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-mockups-snapshot-race.xml.environment.json",
+      "sha256": "acf498a92a26bc5023daafb8ea4aa482aaa521ea31708b8e4eb25e26fee8aa93"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-resources-catalog.xml.environment.json",
+      "sha256": "7544f1e64588cc35a89d9fc08d727a4e1d88376eea4475b65bfa026ceef452c2"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-resources-native-mockups-before.json",
+      "sha256": "932844945b242219138b57dddf6b78f58c8ca7bcdee1b6e071820278c75a2446"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-resources-native-mockups-external.json",
+      "sha256": "55bc7e20db7d0c6193439d39c2b64f8d61bc912fffd5664172864c5a2c6a1eda"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-resources-native-mockups-saved.json",
+      "sha256": "a3b692a044d6f405d2e656b501147c7784d3aa920b195d30ab919c019d8543ef"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-resources-native-architecture-external.json",
+      "sha256": "146c7569e460b5d3d9a9357a5f800d3a2d96367e21bb6adde03f22b39f0f77b0"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-resources-native-architecture-saved.json",
+      "sha256": "551608ea6061e11d71c1fab3acac6271191d3bb7d25de0f0ca671e3a3bdbf2f8"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-resources-native-knowledge-saved.json",
+      "sha256": "37c7ac32104035ada7629ed87fc7b4896d3dbda0454d641096388b5d4fe09594"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-resources-native-knowledge-deleted.json",
+      "sha256": "27c9900b91b465d7ee36b820b67301fe4349c86900f5df6393d690087b170f2b"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\closure-u3-resources-final.json",
+      "sha256": "cd5c0f157e829b313135bd60493bddebe2f0a7c3034fc414f0e7e91d59349f55"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-collections-runtime-process.json",
+      "sha256": "91b2e8fe6a66b04c98b754ab762e991172f2a8ddf146f73e196075609b1264fe"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-resources-architecture-conflict.yml",
+      "sha256": "359045ef965f731fbc0feb4fa7d3b54add59f5346ccb5a75e85642deb192b349"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-resources-architecture-conflict.png",
+      "sha256": "6fd901e34d8d68b7b3480d441b627c58b1e6cf98532ccd7422f8d3a950c88631"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-resources-mockup-conflict.yml",
+      "sha256": "62a4179775f0c5cb35e7b451d6dacd92055d80590e66a67f0f312efce2e7ca3d"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-resources-mockup-review.yml",
+      "sha256": "d54f643f1146a1f2e17129ce1be56b586904cba74c53d08b7ed15c606873adb5"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-resources-knowledge-read-failure.yml",
+      "sha256": "a8b5da73269b542b7ee803c684ecc0428e53b35754b644cd9a6ed61d421f013a"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-resources-knowledge-confirmed.png",
+      "sha256": "130fbe01940a83097507c65dc7fae60441eece06420eb40dd26295d8a1ae4c4a"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-resources-knowledge-delete-read-failure.yml",
+      "sha256": "e547548d9c98e9d5f1d70de1e1ba5339563b38a188fbdf185add4c6057fc6b29"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-resources-knowledge-recovered.png",
+      "sha256": "152faf77476913042db34d7f0ab3ca0209c28a8dd5be1d15e43ad2410e5fa4ac"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-resources-knowledge-requests-before-recovery.txt",
+      "sha256": "74d84119d9e58415c18b947c70e03ee2981cda7954cc8500d9c0911763a37473"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-resources-knowledge-requests-recovered.txt",
+      "sha256": "7709f339de5abf5f6ff07597095db5555b3717c74f8b2aac35614246cedf381e"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-resources-knowledge-requests-final.txt",
+      "sha256": "b0a4b2c04fd9f19147ce0ff19c5ae24a50b6c1661379b955c034528d1b466098"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-resources-disclosure.yml",
+      "sha256": "600a6b261b6c40a338dd8b7bea3d3f70f04e095d6ef83124b8f457a9b3a9d63f"
+    }
+  ]
+}

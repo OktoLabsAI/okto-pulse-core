@@ -22,6 +22,8 @@ from typing import Any
 from okto_pulse.core.kg.interfaces.graph_errors import GraphCapabilityUnavailable
 from okto_pulse.core.kg.interfaces.graph_transaction import (
     GraphNodePropertyBeforeImage,
+    LearningBugAssociationReceipt,
+    LearningBugAssociationTransaction,
     ProjectionActiveSetIntent,
     ProjectionActiveSetReceipt,
     ProjectionActiveSetReconciliationError,
@@ -32,6 +34,8 @@ from okto_pulse.core.kg.interfaces.graph_transaction import (
     is_spec_lineage_rule_id,
 )
 from okto_pulse.core.kg.schema_contract import resolve_relationship_endpoint_pair
+from okto_pulse.core.ports.projection_effects import ProjectionPropertyEffects
+from okto_pulse.core.ports.card_projection import is_card_projection_writer
 
 _SPEC_DEPENDENCY_RULE_PREFIX = "precedes/spec_dependency/"
 
@@ -50,8 +54,9 @@ def _projection_edge_identity(
     prerequisite may precede one owner under more than one rule.  Leaving the rule out would
     let a dependency the session just wrote cancel a completely different one that merely
     shares endpoints -- and the one cancelled would be the one the before-image vouches for.
-    Every other relationship is identified by its endpoints, and demanding a rule it may not
-    declare would split identities that are actually the same.
+    Closed Card projections also carry their rule: changing observed provenance must not
+    cancel the prior relation restored by compensation. Other relationships keep their
+    existing endpoint identity.
     """
 
     dependency = (
@@ -66,7 +71,9 @@ def _projection_edge_identity(
         to_type,
         from_id,
         to_id,
-        rule_id if dependency else "",
+        rule_id if dependency or is_card_projection_writer(edge_type=edge_type,
+            source_type=from_type, target_type=to_type, rule_id=rule_id,
+            layer='deterministic', created_by='worker_layer1') else "",
     )
 
 
@@ -337,6 +344,7 @@ class GraphWriteRecord:
     lineage_progress_preserved: bool = False
     property_before_image: GraphNodePropertyBeforeImage | None = None
     projection_receipt: ProjectionActiveSetReceipt | None = None
+    learning_association_receipt: LearningBugAssociationReceipt | None = None
 
 
 @dataclass
@@ -360,6 +368,7 @@ class CommitCounters:
     nodes_merged: int = 0
     nodes_noop: int = 0
     merge_audit_items: list[dict[str, Any]] = field(default_factory=list)
+    projection_property_effects: ProjectionPropertyEffects | None = None
 
 
 class CompensationError(Exception):
@@ -415,6 +424,30 @@ class TransactionOrchestrator:
         if params is None:
             return self.graph_scope.execute(stmt)
         return self.graph_scope.execute(stmt, params)
+
+    def replace_learning_bug_association(self, previous_learning_id: str,
+        replacement_learning_id: str, bug_id: str) -> LearningBugAssociationReceipt:
+        """Remove an old scoped association only after the new one is present.
+
+        Semantic qualification and the joint source CAS belong to the caller.
+        Record before mutation so even a post-write exception is compensable.
+        """
+        self._guard_fresh()
+        if not isinstance(self.graph_scope, LearningBugAssociationTransaction):
+            raise GraphCapabilityUnavailable('learning_association_replacement_unavailable')
+        receipt = self.graph_scope.snapshot_learning_bug_association(
+            previous_learning_id, replacement_learning_id, bug_id)
+        if (receipt.board_id, receipt.previous_learning_id, receipt.replacement_learning_id, receipt.bug_id) != (
+                self.board_id, previous_learning_id, replacement_learning_id, bug_id):
+            raise ValueError('learning_association_receipt_invalid')
+        # Restoration feeds the existing generic session cleanup with exact
+        # edge before-images; require that capability before removing anything.
+        if receipt.removed_edges:
+            self._resolve_preserving_cleanup([], list(receipt.removed_edges))
+            self.records.append(GraphWriteRecord(kind='learning_association', entity_type='validates',
+                entity_id=previous_learning_id, learning_association_receipt=receipt))
+        self.graph_scope.remove_learning_bug_association(receipt)
+        return receipt
 
     # ------------------------------------------------------------------
     # Graph write phase
@@ -713,14 +746,19 @@ class TransactionOrchestrator:
             and rule_id.startswith("precedes/spec_dependency/")
             else None
         )
-        if self._edge_exists(
+        card_projection = is_card_projection_writer(edge_type=edge_type,
+            source_type=from_type, target_type=to_type, rule_id=rule_id,
+            layer=edge_attrs.get('layer'), created_by=edge_attrs.get('created_by'))
+        exists = (self.graph_scope.edge_exists(edge_type, from_type, to_type, from_id, to_id,
+            rule_id, layer='deterministic', created_by='worker_layer1') if card_projection else self._edge_exists(
             edge_type,
             from_type,
             to_type,
             from_id,
             to_id,
             rule_id=dependency_rule_id,
-        ):
+        ))
+        if exists:
             logger.info(
                 "kg.transaction.edge_exists session=%s edge=%s from=%s(%s) to=%s(%s)",
                 self.session_id, edge_type, from_type, from_id, to_type, to_id,
@@ -1052,6 +1090,16 @@ class TransactionOrchestrator:
         # session's own effect survive its compensation.  Union first, subtract second --
         # picking one receipt cannot express either half.
         restored_projection_edges: list[ProjectionEdgeBeforeImage] = []
+        for record in reversed(self.records):
+            receipt = record.learning_association_receipt
+            if receipt is None:
+                continue
+            try:
+                self.graph_scope.restore_learning_bug_association(receipt)
+            except Exception as exc:
+                raise CompensationError('Learning association restoration failed before session cleanup',
+                    original_exc=exc, failed_records=[record]) from exc
+            restored_projection_edges.extend(receipt.removed_edges)
         for receipt in projection_receipts:
             try:
                 self.graph_scope.compensate_projection_active_set(receipt)
@@ -1133,12 +1181,19 @@ class TransactionOrchestrator:
                     )
                 )
 
-        property_records = [
-            record
-            for record in reversed(self.records)
-            if record.property_before_image is not None
-        ]
-        for record in property_records:
+        # A property snapshot taken after this session created the node is
+        # not a pre-session before-image. A transactional rollback may already
+        # have removed that node; an auto-committing backend will remove it in
+        # the session cleanup below. Preserve snapshots BEFORE any create.
+        created_nodes = set()
+        property_records = []
+        for record in self.records:
+            key = (record.entity_type, record.entity_id)
+            if record.kind == 'node':
+                created_nodes.add(key)
+            elif record.property_before_image is not None and key not in created_nodes:
+                property_records.append(record)
+        for record in reversed(property_records):
             try:
                 self.graph_scope.restore_node_properties(
                     record.property_before_image

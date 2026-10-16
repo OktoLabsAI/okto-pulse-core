@@ -1,0 +1,49 @@
+{
+  "criterion": "KG:KG-52",
+  "qualification": "partial_current_pair_review",
+  "proof_pair": "dist-native-main70",
+  "changes": [
+    "Q15 refuses stored string and id-less FR/TR/AC through existing current-storage validation; no conversion or persistence.",
+    "Q15 preserves canonical FR/AC references across reordering; removed legacy rendering and TR identity fallback.",
+    "Real relational Q15 witness verifies Board isolation, excluded cancelled Specs, retained Done gaps and inactive archived/cancelled Card links; repeated reads issue SELECT only."
+  ],
+  "tests": {
+    "core_discovery_passed": 42,
+    "community_relational_lineage_passed": 7,
+    "core_source_retirement_passed": 23,
+    "frontend_passed": 16,
+    "total_distinct_passed": 88,
+    "initial_expected_regression_failures": 7
+  },
+  "closure": {
+    "ok": true,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    },
+    "findings": [],
+    "documentation_findings": []
+  },
+  "limits": [
+    "No whole-plan completion claim. KG52 remains pending for remaining source/query/saved-state review.",
+    "Source inspection still found Sprint activity labels and sprint-plan description in Discovery; review and remove obsolete support next.",
+    "UI Sprint navigation guards are refusal behavior, not migration; retain unless current contract evidence shows otherwise.",
+    "Frontend 16 component tests rerun; no live browser or production runtime claim. Packaged SPA unchanged from main69.",
+    "No promotion, user-data conversion or deletion."
+  ],
+  "artifacts": {
+    "provenance-native-main70.json": "8c92e17c45e364bc86bd2d4a5af0cffd5d4a2c1ac624d25d5f2d4bb6abd026e7",
+    "native-q15-old-shape-repro1.xml": "1a643d56dcc1ef0d69636f1320da2f4ee3b6d1a000523bedcbe8508545b01a86",
+    "native-q15-current2.xml": "28d05d3f2db9354b1a40deaeac9470243c57daa423cb8a9672fcfea3aa6bf221",
+    "native-q15-relational2.xml": "0b39f1543c4b6d84b4ea0dfff7c8a0d7a49cdb787a2d7c5a3bdb828c0e9b640b",
+    "native-q15-sources1.xml": "29fda8148d9418f9090bb8907ed9b26ff8e0ca6f60b1dcceccf8b12e5102d0d4",
+    "native-q15-frontend1.json": "4fd29c4979672c5d7fa64fd1bfaa4ec75f132c3af070d8881625935d0d8cf57f",
+    "closure-native-main70-final.json": "e140ae608bcf77f3cda02cb23642c452067780ffa0cbd3ffa106ea5dbc1e3307"
+  }
+}

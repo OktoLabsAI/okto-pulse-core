@@ -1,16 +1,7 @@
-"""RKG-05 — non-maskable technical KG signals in health/readiness.
+"""BASE F6E: technical Health remains visible without predicting completion.
 
-Real integration tests: seed a real ConsolidationDeadLetter (technical signal) and
-prove the canonical /kg/health-readiness projection + the kg_health summary
-profile never mask it, that advisory distinguishes blocking vs would_block_done,
-and that the OR counter okto_pulse_kg_cognitive_technical_signal_total fires.
-
-Coverage:
-  TS1 ts_802a9a69 (integration): health summary preserves DLQ + drill_down_tool.
-  TS2 ts_fcf6300e (integration): advisory with a technical blocker -> blocking=true,
-     would_block_done=false, not declared ready.
-  TS3 ts_2ef50880 (integration): the technical signal is derived from health, so a
-     cognitive skip/no_action cannot reduce or hide it.
+Existing policy activation is preserved. Artifact lifecycle gates, not Board
+technical aggregates, determine product completion.
 """
 
 from __future__ import annotations
@@ -31,7 +22,7 @@ from okto_pulse.core.services.kg_health_readiness_service import (
 )
 from okto_pulse.core.services.kg_health_service import get_kg_health
 
-_DLQ_TOOL = "okto_pulse_kg_dead_letter_list"
+_DLQ_TOOL = None
 
 
 async def _seed_board_with_dlq(db_factory, *, artifact_id=None):
@@ -77,7 +68,8 @@ async def test_ts1_health_summary_preserves_dlq_and_drilldown(db_factory):
         assert hr["technical_signals"]["technical_dlq_count"] >= 1
         items = [i for i in hr["non_maskable_items"] if i["signal"] == "technical_dlq"]
         assert items and items[0]["drill_down_tool"] == _DLQ_TOOL
-        assert items[0]["next_action"] and items[0]["remediation"]
+        assert items[0]["next_action"] == "none"
+        assert items[0]["limitation"]
 
 
 @pytest.mark.asyncio
@@ -91,7 +83,7 @@ async def test_ts2_advisory_blocking_distinct_from_would_block_done(db_factory):
     assert hr["cognitive_enforcement_mode"] == "advisory"
     r = hr["readiness"]
     assert r["blocking"] is True            # a technical problem IS visible
-    assert r["would_block_done"] is False   # advisory -> the gate does not block
+    assert r["would_block_done"] is None   # artifact completion is not evaluated here
     assert "technical_dlq" in r["reasons"]
     assert r["policy_reason"]               # not declared ready; reason given
 
@@ -103,16 +95,20 @@ async def test_ts3_skip_cannot_reduce_or_hide_technical_signal(db_factory):
     ref = f"spec:{aid}"
 
     # The signal is derived from health, NOT from any cognitive verdict, so even
-    # scoped to the (potentially skipped) artifact the DLQ is fully surfaced.
+    # when an artifact is skipped, the Board DLQ is fully surfaced.
     async with db_factory() as db:
         hr = await build_health_readiness(
-            board_id, db, profile="summary", artifact_ref=ref)
+            board_id, db, profile="summary")
 
     items = hr["non_maskable_items"]
-    assert any(i["artifact_ref"] == ref and i["signal"] == "technical_dlq" for i in items)
-    item = next(i for i in items if i["artifact_ref"] == ref)
-    assert item["last_error"] and item["error_text"]
-    assert item["next_action"] and item["remediation"] and item["drill_down_tool"]
+    assert any(i["artifact_ref"] == f"board:{board_id}" and i["signal"] == "technical_dlq" for i in items)
+    item = next(i for i in items if i["signal"] == "technical_dlq")
+    assert item["count"] >= 1
+    assert "last_error" not in item and "error_text" not in item
+    assert ref not in json.dumps(items)
+    assert item["next_action"] == "none"
+    assert item["limitation"]
+    assert item["drill_down_tool"] is None
     # technical counter still non-zero (no masking).
     assert hr["technical_signals"]["technical_dlq_count"] >= 1
 
@@ -155,10 +151,10 @@ async def test_mcp_health_readiness_tool_exposes_signals(db_factory, monkeypatch
     data = json.loads(await tool.fn(board_id=board_id, profile="summary"))
     assert data["technical_signals"]["technical_dlq_count"] >= 1
     assert data["readiness"]["blocking"] is True
-    assert data["readiness"]["would_block_done"] is False
+    assert data["readiness"]["would_block_done"] is None
     assert any(i["signal"] == "technical_dlq" for i in data["non_maskable_items"])
 
     # Invalid profiles use the shared MCP projection error (not silent summary).
     bad = json.loads(await tool.fn(board_id=board_id, profile="bogus"))
     assert bad.get("error_code") == "unsupported_projection"
-    assert bad.get("supported_profiles") == ["summary", "detail", "full", "legacy"]
+    assert bad.get("supported_profiles") == ["summary", "detail", "full"]

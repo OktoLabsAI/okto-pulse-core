@@ -1,0 +1,115 @@
+{
+  "scope": "single native Health response contract and Grafx route observation",
+  "proof_pair": "dist-native-main80",
+  "changes": [
+    "Removed schema_version=1.0 response alias and LEGACY_HEALTH_SCHEMA_VERSION constant; required health_schema_version=1.3 in REST.",
+    "Readiness refuses missing/incompatible Health version instead of silently assigning 1.3.",
+    "Frontend no longer falls back to old alias or renders duplicate version row; missing current version remains incompatible even if old alias is present.",
+    "Storage route contract advertises only Grafx; retired backend observation reports unavailable without opening/converting/deleting storage.",
+    "Preserved graph_schema_version, graph statistics schema and probe_diagnostics.schema_version; these are separate graph contracts, not Health aliases."
+  ],
+  "tests": {
+    "core_passed": 129,
+    "community_passed": 21,
+    "frontend_passed": 55,
+    "total_distinct_passed": 205
+  },
+  "frontend": {
+    "files": 79,
+    "assets": 78,
+    "tree_sha256": "f16b97f71718938ca3966b458e31cebe0eee1398f31f8d4ffec8841dd079ab6b",
+    "build": "npm run build and verify:frontend-dist passed"
+  },
+  "closure": {
+    "ok": true,
+    "findings": [],
+    "documentation_findings": [],
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ]
+  },
+  "limits": [
+    "Breaking response cleanup authorized for v0.4.0; no migration or alternative reader added.",
+    "Frontend fixtures initially removed unrelated KGStats schema and malformed-input test needed explicit type escape; corrected before final build.",
+    "Frontend component tests plus API/model/Core tests; no installed live-browser claim.",
+    "Acceptance counts unchanged:98 verified/137 pending/11 superseded."
+  ],
+  "artifacts": {
+    "provenance-native-main80.json": "3fbde93bccd9ad8d82c4cddd50b2e634c6dd9090b36b4cc9085fa1152333dfd6",
+    "native-health-single-contract1.xml": "0b976405fcb356f5b93e2af87bf922753042bfeb3f00d028c1731a7d2938fd9f",
+    "native-health-single-contract-rest1.xml": "828ac16b13d1f4fca30c59b0d86d570c64becd05d42e41e4bd1ccbe1dd3630f6",
+    "native-health-single-contract-frontend2.json": "b7e035871da8ca6b1d96f591b6cba63b2aff984d891d3e74a115667e117fbe22",
+    "closure-native-main80.json": "847e9924ef3293a01f2b6aab3161a0717296d4d14bf0142d7f0462b853c87ec4"
+  }
+}

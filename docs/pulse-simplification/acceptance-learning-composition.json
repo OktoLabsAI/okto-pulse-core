@@ -1,0 +1,147 @@
+{
+  "scope": "K3/K4 exact Learning capture composition and disposable installation",
+  "campaigns": {
+    "learning-composition2-core": 51,
+    "learning-composition2-community": 21,
+    "learning-composition-activation3-community": 2,
+    "empty-retirement2-community": 70
+  },
+  "counts_overlap": true,
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "reproductions_before_correction": {
+    "empty-retirement-repro-community": "Complete empty archive census was rejected by the data journal.",
+    "empty-retirement1-community": "Census comparison counted its own newly committed checkpoint as source drift.",
+    "learning-composition-activation2-community": "Schema cutover still required a nonempty archive after verified empty data preservation."
+  },
+  "verified": [
+    "Core composes complete selection, authenticated materialization and fresh applicability for exact Board/origin/Learning/generation/fingerprint.",
+    "Unresolved selection, unmaterialized work, missing binding and unrelated cognitive source cannot gain capture credit.",
+    "Detailed capture proof and unmatched count must agree; summary flags cannot conceal missing or duplicated proof.",
+    "New projection v9 and reconciliation v19 retain prior observations; v6/v7/v8 and pending v18 never gain unobserved qualifications.",
+    "Fresh source-backed native candidate passes completion; reused and superseded unknown historical authorship still block through existing Core gates.",
+    "Private installation, cold resume and runtime admission are tested on the source-backed Learning candidate without altering original data.",
+    "The complete empty Sprint population is bound to its journal without fabricated entities, archives or history; omitted live population is refused and every committed data step resumes.",
+    "The fresh native coordinator reaches installation without a synthetic Sprint; the older non-Learning installation remains supported.",
+    "Installed paired bytes proved before behavior and final F16 reports eight zero budgets without drift."
+  ],
+  "limits": [
+    "Evidence covers the named source-backed and negative-history cases; it is not a claim of full-plan acceptance or a real historical census.",
+    "No real-data migration, live-process restart, release, tag, merge or deployment.",
+    "Full-plan acceptance inventory remains 78 verified / 33 partial / 135 unaudited."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-composition-final-closure.log": "38a47d9a2fd1ca75ff66da1b9a774be79be1d06cf3268ef041a0c9ab549ff2a5",
+    "PULSE_REFACTOR/.validation-v040/record_learning_composition.py": "d2e9d4fc2ca82cc811db10e59537c0299cf9b77907fed4530397945bf4fb7d4e",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-composition2.json": "0b9a1d632f6355746c8bbb4e76f09d29fd8c1a5ab1e5fed0bb46d8c72336042f",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-composition-activation2.json": "a7e3b0aa6fa848b5baf70eb3eba157bae8ed741bc17f1a2a9f200a1c873ae62d",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-composition-activation3.json": "4bf744d3823894422e667390de8fba4f2329b85ef1fa07f63b286210b6b3cc2d",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-composition-final.json": "08f1f879dd7ae962f1cde43a0c84833cbb785c2822f81fcdd9f8ac0415481ffc",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-empty-retirement-repro-community.xml": "c039cace74da64dd498cd9642f2301a917c0ead993d332efb3030e55d110944f",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-empty-retirement-repro-community.log": "6df29f7a5f930c1f2ab2a39c5b496d0508468c8edcfaafa1467c21ce241d5d33",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-empty-retirement1-community.xml": "3a908d967fe65d31ff5ba53f7de390191e1fe2381174340f33f19605b9768323",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-empty-retirement1-community.log": "2848d68ea940a3a5112bdd1c74317bb3e70051dcc9d8887672a2fdeec97a2c84",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-composition-activation2-community.xml": "33094add3912bbf7f13496464e906c45a8ceaedffc90e662589d210834ee7f1f",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-composition-activation2-community.log": "702191fe8b650cdd2c66c6e7641733b7f8d0b21d869852331aeb621c025a2e8e",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-composition2-core.xml": "61ab97fdff8038dfd0fc397a7e28b7ca4f2246bad676403c1c7750bf96d231a9",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-composition2-core.log": "ec5c92c4622f97526a1e6e2821255819aa6a2a83ab248ac8f49299e36da77e7c",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-composition2-community.xml": "f3dcb6bb5e9474b1a2bec2c956573351dbf0cb43b2e22cdba9b0250ca54801c5",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-composition2-community.log": "3b36e556b8e9f7c4178e4b9a7beb7aeeeaef431a662c481f77d93eafe3b7a80c",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-composition-activation3-community.xml": "1f2d9294b4f3636d2899b082521b9f0d829239408db888eac0bc306dee90290a",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-learning-composition-activation3-community.log": "a6017488d4b369d90d718f0cf32f5250e32bad2ed0aaa54d2131b83568c2069a",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-empty-retirement2-community.xml": "240b594328658f6c220131b4267b3410a9c46c292bc3bdd7399a1e8a506b0cec",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-empty-retirement2-community.log": "43a45124d9b2d83c25ccefc171702f4f74994efac9032a840f529acf35390ea9",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_reconciliation_qualification.py": "1dae92ce54d967a29c5f86f4151e9284997885781987f6ca2f48ade8787913a3",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/learning_reconciliation.py": "8081c2b259c99212cdecd4abbfc5bd88a91115b1b064d56c6eef0f2c41f5f30c",
+    "okto_labs_pulse_core/tests/test_learning_reconciliation_qualification.py": "e85abc971539a8bc695d76a6428c4fca48707454a0fb70d423b1223a60465413",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_learning_qualification.py": "cdf3b5993c3027b81cbac8aa7aac517353f5935a4800f2ed2fe25a1e0c55f404",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_completion.py": "54af17e916bd774d53f871e2f9ab155d1b4c87f4c1f9f1e98eed4bb10a45ddfb",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_checkpoint.py": "ff30ac0f74ad181c158de2087a7d5940532b3da8ba1117568d8e6d9041c64bd9",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_graph_reconciliation.py": "f46302bc36e03b989e5a810bb4eb46884da3a4a23362235ef92a76b7428a5181",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_graph_candidate.py": "3c62a14ad6e5b8a140887734941cfcb55d13c16521c322b5318980b9b2591339",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_activation.py": "ac8f68707ec49263da6ed942f3a9ab28e1f94dd97694973ec25ad38182533c03",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_empty_context.py": "78716db4588a6d00b99ad222ef3632b23ae5d25ef21501ac64408eaf752d3e71",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_schema_cutover.py": "c0ea389561ed39bbef270dc34914109753404cb2e6af02c00ef32922c2dec410",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_data_journal.py": "d159d2900e8edbba42a1efad993af5ec52a42c6d83cbaa06566abf534e76cdea",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/context_disposition_retirement.py": "d23894e5f25a0f8a416f6879d2504ff8b6f73ec7a2f4c0a2d566e755c0c4de51",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/card_validation_retirement.py": "76a7b1323eacb39b03bf742665a475fcd2ef6f81d0ab1e9aa5359bc56058f1e5",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/sprint_work_retirement.py": "49f8cab6bb01d7b2f69835a6d4f85eb84f00507f292d2f0579efb5bed0863493",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_offline_run.py": "104742194a7d21a6f8a08836c2c397e46a9e88dbd57f7cd42569e729159d725d",
+    "okto_labs_pulse_community/tests/test_retirement_learning_execution.py": "ef610f7878ab92c691baa73bce0a3078798d5f61c08a5d5596265b51cabb9b2e",
+    "okto_labs_pulse_community/tests/test_retirement_cognitive_completion.py": "8d5ef3349e44070086daeb9b437cf6087069c5350debea21b21f4b4e711ac21b",
+    "okto_labs_pulse_community/tests/retirement_learning_activation_support.py": "b5d1eff51d138aa2894623dd427071360d561ec6f7b921be74b8233d8a140202",
+    "okto_labs_pulse_community/tests/test_retirement_empty_population.py": "70e65a41f42c352f422f95f028271b88ff6d12c69b834e695a33006b3665fbb3"
+  }
+}

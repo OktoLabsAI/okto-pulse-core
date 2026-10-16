@@ -50,6 +50,31 @@ class _UnsupportedEntityExportReadPort:
         raise NotImplementedError("entity export reader is not configured")
 
 
+class _UnsupportedHistoricalArchiveGrants:
+    async def has_current_board_access(self, **kwargs: object) -> None:
+        raise NotImplementedError("historical archive reader is not configured")
+
+    async def read_section(self, **kwargs: object) -> None:
+        raise NotImplementedError("historical archive reader is not configured")
+
+    async def get(self, **kwargs: object) -> None:
+        raise NotImplementedError("historical archive grants are not configured")
+
+    async def revoke(self, **kwargs: object) -> None:
+        raise NotImplementedError("historical archive grants are not configured")
+
+
+class _UnsupportedHistoricalContextReader:
+    async def has_current_target_access(self, **kwargs: object) -> None:
+        raise NotImplementedError("historical context reader is not configured")
+
+    async def list_bindings(self, **kwargs: object) -> None:
+        raise NotImplementedError("historical context reader is not configured")
+
+    async def read_binding(self, **kwargs: object) -> None:
+        raise NotImplementedError("historical context reader is not configured")
+
+
 class SQLAlchemyUnitOfWork:
     """PulseUnitOfWork backed by a SQLAlchemy AsyncSession."""
 
@@ -87,6 +112,14 @@ class SQLAlchemyUnitOfWork:
         # Export adapters are edition-owned. This relational test UoW only
         # exercises the public Core UoW shape, not export materialization.
         self.entity_exports = _UnsupportedEntityExportReadPort()
+        from okto_pulse.community.adapters.sqlalchemy_spec_validation_receipts import CommunitySpecValidationReceiptStore
+
+        self.spec_validation_receipts = CommunitySpecValidationReceiptStore(session, self.realm_scope)
+        from okto_pulse.community.adapters.sqlalchemy_spec_planning_manifest import CommunitySpecPlanningManifest
+        self.spec_planning_manifest = CommunitySpecPlanningManifest(session, self.realm_scope)
+        self.historical_archive_grants = _UnsupportedHistoricalArchiveGrants()
+        self.historical_archive_reader = self.historical_archive_grants
+        self.historical_context_reader = _UnsupportedHistoricalContextReader()
 
     async def __aenter__(self) -> "SQLAlchemyUnitOfWork":
         return self
@@ -108,6 +141,14 @@ class SQLAlchemyUnitOfWork:
 
     async def rollback(self) -> None:
         await get_application_persistence_port().rollback(self._session)
+
+    async def begin_write(self) -> None:
+        """Exercise the edition's real write-intent implementation in tests."""
+        from okto_pulse.community.adapters.sqlalchemy_unit_of_work import CommunityUnitOfWork
+
+        # This method only needs the session; do not construct another UoW and
+        # replace this fixture's scoped persistence registry/record mappings.
+        await CommunityUnitOfWork.begin_write(self)
 
     async def begin_consistent_read(self) -> None:
         """Test-adapter implementation of the explicit composite-read port."""

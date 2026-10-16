@@ -106,6 +106,8 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
         required_headings=(
             "# Tool docs — Code Traceability",
             "## `okto_pulse_get_delivery_evidence`",
+            "## `okto_pulse_get_decision_reviews`",
+            "## `okto_pulse_record_decision_reviews`",
             "## `okto_pulse_record_delivery_evidence`",
             "## Technical Evidence versus Technical Anchors",
             "## Mandatory operation and fence order",
@@ -289,11 +291,6 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
             "okto-pulse://reference/tool-docs/quality",
             "okto-pulse://reference/policy-compliance",
         ),
-    ),
-    _ResourceContract(
-        uri="okto-pulse://workflows/sprints",
-        required_headings=("# Sprints Workflow — Lifecycle & Evaluation",),
-        required_cross_links=("okto-pulse://reference/policy-compliance",),
     ),
 )
 

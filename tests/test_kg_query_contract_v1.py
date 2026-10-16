@@ -81,7 +81,10 @@ def test_query_contract_covers_layers_related_context_and_edge_endpoints():
         "edge_endpoints"
     ]["relates_to"]
     assert contract["edge_endpoints"]["precedes"] == [
-        {"from": "Entity", "to": "Entity"}
+        {"from": "Entity", "to": "Entity"},
+        {"from": "Entity", "to": "Bug"},
+        {"from": "Bug", "to": "Entity"},
+        {"from": "Bug", "to": "Bug"},
     ]
     assert contract["edge_endpoints"]["depends_on"] == [
         {"from": "Decision", "to": "Decision"}
@@ -89,6 +92,12 @@ def test_query_contract_covers_layers_related_context_and_edge_endpoints():
 
 
 def test_schema_info_exposes_the_same_machine_readable_contract():
+    # The registry's graph store is the routed Community adapter; materialize
+    # the board graph so live introspection has a bootstrapped graph to read
+    # (the retired in-memory fake answered any board id without one).
+    from kg_schema_testing import bootstrap_board_graph
+
+    bootstrap_board_graph("contract-board")
     result = get_schema_info("contract-board")
 
     assert result["query_contract"] == query_contract_document()

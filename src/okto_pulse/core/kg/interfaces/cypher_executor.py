@@ -10,9 +10,14 @@ from collections.abc import Sequence
 class CypherExecutor(Protocol):
     def execute_read_only(
         self, board_id: str, cypher: str, params: dict[str, Any] | None = None,
-        *, max_rows: int = 1000,
+        *, max_rows: int = 1000, timeout_ms: int | None = None,
     ) -> dict:
-        """Execute a validated read-only Cypher query. Returns dict with rows, row_count, etc."""
+        """Execute a validated read-only query, honoring an optional native deadline.
+
+        A supplied timeout bounds the whole operation, including retries. Return
+        or raise only after native execution and its read resources have ended.
+        A paired read shares this budget across both statements and one snapshot.
+        """
         ...
 
     def is_supported(self) -> bool:
@@ -33,5 +38,6 @@ class ReadOnlyBatchCypherExecutor(Protocol):
     def execute_read_only_batch(
         self, board_id: str,
         statements: Sequence[tuple[str, dict[str, Any] | None, int]],
+        *, timeout_ms: int | None = None,
     ) -> Sequence[dict[str, Any]]:
         ...

@@ -18,6 +18,7 @@ from okto_pulse.core.ports.kg_cognitive_source import (
     latest_cognitive_source_records,
     register_cognitive_source_store,
     require_cognitive_source_store,
+    require_cognitive_source_head,
     reset_cognitive_source_store_for_tests,
     resolve_cognitive_source_store,
 )
@@ -78,6 +79,33 @@ def test_register_resolve_require_roundtrip():
 
 def test_fake_satisfies_protocol():
     assert isinstance(_FakeStore(), CognitiveSourceStore)
+
+
+@pytest.mark.parametrize('field,value', [('board_id', 'foreign'), ('node_type', 'Decision'),
+    ('node_id', 'different'), ('generation', 1)])
+def test_conditional_source_head_never_crosses_semantic_scope(field, value):
+    current = CognitiveSourceRecord(node_id='learning', board_id='board', node_type='Learning',
+        generation=0, payload={'title': 'Original'})
+    other = dataclasses.replace(current, **{field: value}, record_fingerprint='')
+    with pytest.raises(CognitiveSourceConflict, match='cognitive_source_scope_conflict'):
+        require_cognitive_source_head(other, expected_fingerprint=current.record_fingerprint, history=(current,))
+
+
+@pytest.mark.parametrize('expected', ['', 'A' * 64, True, 42, 'not-a-fingerprint'])
+def test_conditional_source_head_requires_exact_fingerprint_shape(expected):
+    record = CognitiveSourceRecord(node_id='learning', board_id='board', node_type='Learning',
+        generation=0, payload={'title': 'Original'})
+    with pytest.raises(ValueError, match='cognitive_source_precondition_invalid'):
+        require_cognitive_source_head(record, expected_fingerprint=expected, history=())
+
+
+def test_conditional_source_head_validates_old_revisions_before_comparing_latest():
+    first = CognitiveSourceRecord(node_id='learning', board_id='board', node_type='Learning',
+        generation=0, payload={'title': 'Original'})
+    latest = dataclasses.replace(first, source_revision=1, payload={'title': 'Current'}, record_fingerprint='')
+    first.payload['title'] = 'Tampered history'
+    with pytest.raises(CognitiveSourceConflict, match='cognitive_source_fingerprint_mismatch'):
+        require_cognitive_source_head(latest, expected_fingerprint=latest.record_fingerprint, history=(first, latest))
 
 
 @pytest.mark.parametrize("optimized", [False, True])

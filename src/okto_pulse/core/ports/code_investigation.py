@@ -18,7 +18,6 @@ from okto_pulse.core.domain.code_traceability import (
     CodeInvestigationHead,
     CodeInvestigationHeadConflict,
     CodeInvestigationIdempotencyConflict,
-    CodeInvestigationOutcome,
     ContextualInvestigationOutcomeV2,
     CodeInvestigationReceipt,
     CodeInvestigationReceiptCommitResult,
@@ -105,8 +104,7 @@ class CodeInvestigationReceiptQuery:
     subject_type: CodeTraceabilitySubjectType | None = None
     subject_id: str | None = None
     source_ref: str | None = None
-    outcome: CodeInvestigationOutcome | None = None
-    contextual_outcome: ContextualInvestigationOutcomeV2 | None = None
+    outcome: ContextualInvestigationOutcomeV2 | None = None
     cursor: CodeTraceabilityPageCursor | None = None
     limit: int = 50
 
@@ -153,28 +151,14 @@ class CodeInvestigationReceiptQuery:
             ),
         )
         outcome = self.outcome
-        if outcome is not None and not isinstance(outcome, CodeInvestigationOutcome):
+        if outcome is not None and not isinstance(outcome, ContextualInvestigationOutcomeV2):
             try:
-                outcome = CodeInvestigationOutcome(outcome)
+                outcome = ContextualInvestigationOutcomeV2(outcome)
             except (TypeError, ValueError) as exc:
                 raise CodeTraceabilityContractError(
                     "code_investigation_query_outcome_invalid"
                 ) from exc
         object.__setattr__(self, "outcome", outcome)
-        contextual_outcome = self.contextual_outcome
-        if contextual_outcome is not None and not isinstance(
-            contextual_outcome,
-            ContextualInvestigationOutcomeV2,
-        ):
-            try:
-                contextual_outcome = ContextualInvestigationOutcomeV2(
-                    contextual_outcome
-                )
-            except (TypeError, ValueError) as exc:
-                raise CodeTraceabilityContractError(
-                    "code_investigation_query_contextual_outcome_invalid"
-                ) from exc
-        object.__setattr__(self, "contextual_outcome", contextual_outcome)
         if self.cursor is not None and not isinstance(
             self.cursor, CodeTraceabilityPageCursor
         ):

@@ -1,50 +1,344 @@
 ---
-version: "1.2"
+version: "1.4"
 ---
 
 # Tool docs — Code Traceability
 
 ## `okto_pulse_get_delivery_evidence`
 
+Use `view="readiness"` for the current Spec or an optional `card_id`. The
+response has `contract_version="delivery-readiness/v1"`, independent
+implementation and verification metrics, native lifecycle status, causes and
+up to three next actions. Card verification includes associated proof from
+other Cards. A low score is a successful diagnostic read, not a query error.
+`metrics_version=2` is required by new readers. Each known phase uses
+`floor(100 * satisfied / applicable)`; waivers stay in the denominator without
+proof credit. Normal/Bug units are assigned contribution obligations, Test Card
+verification units are linked scenarios (implementation N/A), and Spec units are
+unique global obligations. Full formulas, examples and minimal action flow:
+`okto-pulse://reference/code-traceability`, **Current delivery readiness**.
+
+`phase` (`all`, `implementation`, `verification`, `lifecycle`) filters issues
+without changing metrics or gates. `limit` is 1..20 (default 20). Follow
+`page.next_cursor` with the same scope/filter/limit. Use an issue's
+`detail_query` unchanged to retrieve its paged facts, evidence and pinpoints;
+detail requires both `issue_id` and `snapshot_id`. Restart the query after
+`readiness_cursor_stale` or `readiness_snapshot_changed`. Every page reloads
+current permissions and facts; no cursor grants access or write authority.
+
+For inherited responsibility, `expected` facts retain the destination
+`obligation_ref`, Card and contribution digest together with
+`source_obligation_ref` and `source_scope_sha256`. This is the qualified native
+FR-to-BR path, not a new allocation or evidence requirement. Material-change
+issues identify the actual checkpoint records and affected Target/execution in
+`observed`, evidence references and pinpoints. Follow detail pagination to recover
+all entries; the compact legacy progress list is not the complete diagnostic.
+
+Readiness rejects `record_id` and `edition`. `phase` other than `all`,
+`issue_id` and `snapshot_id` are exclusive to readiness. `progress` remains
+the default: without `card_id`, it returns the existing Spec projection;
+with a Card it pages checkpoints. `ledger` pages all Card records and
+`resume` provides accumulated Card context. Use the history views for previous
+editions or an original `record_id`; historical records gain no current credit.
+
+`percent: null` means unknown or not applicable, according to metric status.
+Neither a waiver nor Done creates proof. Done history is preserved when proof
+becomes stale; current qualification and diagnostics show the divergence.
+This read never executes tests, creates evidence, writes events or changes
+lifecycle. Subsequent mutations always reauthorize and recheck native gates.
+
+When the current state has no public direct transition to Done, the lifecycle
+issue is `lifecycle_transition_required`, not missing completion permission.
+Follow its read-only `inspect_lifecycle` action to
+`okto_pulse_get_allowed_transitions` with the supplied entity arguments, then
+use the native transition workflow and its gates. Repeating readiness cannot
+advance the lifecycle. This issue does not reduce either proof percentage.
+
+A rejected delivery transition includes `readiness_summary` and a valid
+`readiness_query`. Its `assessment_snapshot_id` fingerprints the factual
+assessment used by the rejected mutation; it is not a readiness cursor token.
+Run the supplied query after rejection to establish the current authorized
+snapshot before requesting details. Errors never embed the entire evidence
+population or automatically execute a recovery action.
+
+Decisions have a separate adherence result. They reuse explicitly selected
+obligation proofs and/or an authenticated inspection; they do not require their
+own implementation or Test Card. A pending Decision cannot be completed by an
+unrelated passing scenario or a contextual task link.
+
+## `okto_pulse_get_decision_reviews`
+
+Read the current Decision results, exact native inspection sources, edition,
+Spec version and review revision before recording an observation. Sources bind
+the observable scope and current delivery facts; the server supplies their
+references, revisions and digests. Missing or unresolved metadata is pending.
+History retains observations, outcomes, author, timestamp, expected condition,
+sources and reconciliation. Prior editions never gain current credit.
+
+## `okto_pulse_record_decision_reviews`
+
+Requires `spec.validation.submit`, Spec/evidence reads and interaction in the
+current Spec state. This does not submit Spec Validation. Pass the observed
+condition, outcome and exact sources returned by the read operation. At most
+50 Decisions and 128 KiB per atomic batch, up to 20 sources per observation.
+The server owns actor/time and admission. A signed-in declaration establishes
+who reported the observation, not that Pulse executed the inspection.
+
+Reviewer separation follows the Board's off/warn/enforce setting and checks
+native Decision authors and scope executors; unknown authorship cannot prove
+independence. Both selected obligation proof and inspection must pass. Results
+failed, inconclusive, aborted, unavailable, revoked or materially stale remain
+pending. Conflicting results for the same base require explicit `reconciles`
+listing all current observation IDs; a newer passing report alone is insufficient.
+Use the same idempotency key and identical payload after timeout. Refresh scope
+after a version/review conflict. The existing human-only waiver/revoke operations
+remain separate. No invented sources, fake scenarios, implicit waivers or migration.
+
+## Delivery evidence read details
+
 Inputs: `board_id`, `spec_id`. Requires `code_traceability.evidence.read` and board
 access. Returns current `edition`, `version`, complete obligation rows with semantic
 digests, implementation/test association IDs, separate waiver IDs, `allowed`,
-`blockers`, rejected IDs, eligible completed-card receipt candidates and audit
-history. Read-only: no test execution, implicit waiver, graph mutation or reopen.
+`blockers`, rejected IDs, eligible receipt candidates, per-card obligations and
+audit history. Implementation receipts are selectable before card completion;
+authenticated passed/failed test candidates are selectable during execution too.
+Candidate availability is not final coverage credit. Read-only: no test
+execution, implicit waiver, graph mutation or reopen.
+
+Each `per_card` also carries its current `card_version` and a bounded `progress`
+summary: at most 20 recent checkpoints, original authors, remaining work and
+declared source state. `total`, `truncated` and shortened-text markers disclose
+omissions. Revoked checkpoints remain labeled history. This is not a complete
+resume manifest; `recovery_verified` is always false. Check your own access to
+the declared workspace before claiming that earlier changes were recovered.
+
+The existing projection retains deprecated `delivery_completeness`; new consumers
+must use readiness metrics. Normal tasks expose `delivery_completeness`: equal-weight assigned obligations
+at exclusive stages `planned` (0), `implemented` (50), `verified` (80),
+`accepted` (100), plus `total`, `percent` and `scope_sha256`. The percentage is
+the floored average. Verification needs current authenticated test evidence
+bound to the implementation; acceptance also requires the lifecycle gates.
+The percentage is informational, never a lifecycle approval or an executor/reviewer score. Partial declarations,
+progress notes and waivers add no credit. Revocation, stale receipts or changed
+scope remove credit. Missing explicit obligations or incomplete scope return
+`percent: null` with `scope_missing` or `scope_incomplete`, never a guessed zero.
+Those stages describe only the deprecated contract. Independent readiness proof
+does not wait for Done; its lifecycle assessment still reports open Cards/gates.
 
 ## `okto_pulse_record_delivery_evidence`
 
-Inputs: `board_id`, `spec_id`, and closed object `evidence`:
+To atomically save the last batch and submit the existing Card execution report,
+use `contract_version: "card-delivery-report/v1"` with `expected_card_status`
+(`started` or `in_progress`), `batch` (the unchanged card-delivery-batch/v1 body),
+and `report` (the existing Card move fields for `validation` or `done`, including
+conclusion/completeness/drift and their justifications). Do not put a
+`delivery_selection` inside `report`: the server selects every new batch record
+plus optional `existing_record_ids`. Set `reuse_impact: true` to reuse selected
+impact; otherwise the normal manual impact policy applies. A Test Card moving to
+Validation does not have an execution report and cannot use this composition.
+
+The aggregate remains capped at 128 KiB and 200 selected records. All batch,
+source-admission and lifecycle permissions/gates apply before commit. A report
+rejection rolls back the batch, inline receipts and events. The same batch key
+is bound to the entire request, including report fields and selection. An exact
+authorized retry returns the original entries and `report` receipt (submitted
+status, manifest hash and delivery revision); it never moves a Card again, even
+after rework. This receipt describes the historical submission, not the current
+Card status. Do not retry with changed fields under the same key. Ordinary
+checkpoints remain independent and never move the Card.
+
+Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
 
 ```json
 {
-  "expected_edition": 1,
-  "expected_version": 7,
+  "expected_spec_edition": 1,
+  "expected_card_version": 7,
   "idempotency_key": "delivery-task-42-v1",
   "kind": "implementation",
-  "obligation_refs": ["fr:fr_42", "ac:ac_42"],
-  "card_id": "task-id",
+  "bindings": [
+    {"obligation_ref": "fr:fr_42", "contribution": "partial"},
+    {"obligation_ref": "ac:ac_42", "contribution": "complete"}
+  ],
   "execution_id": "accepted-target-execution-id",
   "justification": "The committed parser implements these input/output obligations."
 }
 ```
 
-- `implementation`: done task/bug `card_id` + accepted `execution_id`, with clean,
-  immutable Git result revision and actual path. A planned Target is insufficient.
-- `test`: done TEST `card_id`, linked passed `scenario_id`, nonempty
+- `implementation`: task/bug + accepted `execution_id`, with clean, immutable Git
+  result revision and actual path. Record the binding before completing the card;
+  final rollup credit still requires Done. A planned Target is insufficient.
+  Use `bindings` to declare `partial` or `complete` separately for each obligation;
+  omit `obligation_refs` with this form. A partial binding retains its accepted
+  receipt but cannot satisfy the Card DoD or final implementation/test rollup.
+  An authenticated test may record its result against that partial contribution.
+  Multiple partial records do not add up to completion. Complete is still an
+  executor declaration, subject to the existing proof and review requirements.
+  Exact replay cannot change a declaration; a later declaration is a new record.
+  New records do not silently revoke or replace earlier records. Implementation
+  entries require explicit `bindings`; an `obligation_refs`-only implementation
+  or a record without its contribution declaration is refused.
+  This extension does not adopt ARQ/VER, redefine assigned contribution scope
+  or seal the final selection.
+  For multiple Targets, supply a nonempty `execution_refs` set on **each** binding:
+  `[{"execution_id":"execution-A"},{"execution_id":"execution-B"}]`.
+  Omit envelope `execution_id`, `execution_submission` and `execution_client_ref`
+  in that form. Each binding independently selects its receipts; no Cartesian
+  Target×obligation expansion is inferred. Within a set, receipts must have the
+  same observed source and immutable revision (`delivery_execution_base_conflict`
+  otherwise); obtain compatible observations rather than assuming Git ancestry.
+  In a batch, a set can use `{"client_ref":"earlier-proof"}` for an earlier
+  single-execution implementation entry. Composite entries cannot act as a
+  single-execution alias. Referenced execution sets count toward the aggregate
+  200-link limit. A stale member invalidates only bindings using it; tests must
+  name the exact implementation record and satisfy chronology for every receipt
+  in the bindings they verify. No previous test transfers to a new set.
+- `progress`: executing, unarchived normal/bug/Test card; requires
+  `card.conclusion.write`. Use `justification` as the work summary and provide
+  `progress` with `contract_version: "delivery-progress/v2"`, `remaining`,
+  `material_change: "none"|"targets"|"source"|"unknown"`, and
+  `source_state: {"workspace_state":"dirty","recoverability":"external_workspace"}`
+  (or both values `unknown`). No execution/test receipt or commit is required;
+  omit their fields. Optional `target_ids` must belong to this Card; a supplied
+  opaque `source_ref` must be known to this board. `impact_delta` uses the existing
+  closed ImpactEvidence contract and is a claim. Progress never counts as
+  implementation/test proof, approval or completion. It does not start rework.
+  When a delta has a known base, also provide `impact_base_revision` (full
+  40/64-character hexadecimal revision), with the source and result revision in
+  `source_state`. This declares a base→result edge, not authenticated ancestry.
+  Omit the base when unknown; do not fabricate one. The per-card read exposes
+  `accumulated_impact`: it composes explicit revision chains, keeps create→delete
+  out of the net result and preserves the complete work history. Divergent,
+  disconnected, missing or conflicting declarations return bounded
+  `needs_reconciliation` items. Repo labels and source identities remain distinct.
+  This preview is claim-only; `composed` does not mean current, verified or ready.
+  A report can select these records with `delivery_selection.reuse_impact=true`
+  to avoid retyping the impact block. The report revalidates the exact selected
+  set and its observed bases; the whole-card preview alone is not approval.
+  Deltas capture the known source identity on the server. Missing provenance
+  cannot be inferred from the source's current identity.
+  Validation/rejected/done/on_hold/not_started cards cannot accept a new checkpoint.
+  Record significant results or a deliberate pause; no fixed time/command cadence.
+  `none` is a context note without a material delta. `targets` requires exact
+  affected `target_ids`; `source` requires `source_ref` and no Target list.
+  `unknown` narrows by declared Targets/source when available, otherwise this
+  Card's work is uncertain. Target/source combinations must agree. An affected
+  execution stops proving the current result until its accepted receipt observes
+  the work strictly after the checkpoint. Rebinding an old receipt, appending a
+  clean note or comparing commit hashes cannot restore it. Independent Targets
+  stay eligible; tests never transfer to a new implementation record.
+  Only `delivery-progress/v2` is accepted; incompatible payloads are refused
+  without conversion. The full active checkpoint population governs currentness
+  even when the resume summary is capped at 20 records.
+- `test`: executing or done TEST `card_id`, linked passed/failed `scenario_id`, nonempty
   `implementation_ids` returned from implementation associations. Uses the current
   authenticated scenario receipt; clients cannot supply `verified` or hashes. Only
-  select records this run actually tested. Multiple tests may jointly cover code.
-- `waiver`: authorized human only, `phase` = `implementation` or `test`, exact
-  obligation refs, justification. No card/receipt fields. Not a passing test.
+  select records this run actually tested. Current, accepted implementation
+  records can be named before Done, including partial contributions. Admission
+  preserves the authenticated outcome and exact bindings; final credit still
+  requires current passing proof, complete contributions and completed cards.
+  Promotion is by read: do not re-record a result just because a card reaches Done.
+  A newer failed run invalidates earlier passing coverage even before its new
+  association is saved. New records retain their original outcome when the live
+  scenario changes. Every native association retains its authenticated run history.
+  Frozen states remain frozen. Multiple tests may jointly cover code.
 - `revoke`: authorized human only, `record_id`, empty `obligation_refs`,
-  justification. Appends a tombstone; cannot erase or restore revoked history.
+  justification. Revokes a record of this card. Appends a tombstone; cannot erase
+  or restore revoked history.
 
-Every write requires edition/version and a nonempty audit explanation. At most
+Waivers remain on the human-only Spec REST surface, using `phase` =
+`implementation` or `test`, exact obligation refs and justification. That surface
+also revokes native records. Neither operation creates a passing test.
+
+Every card write requires Spec edition/card version and a nonempty explanation. At most
 1,000 refs/implementation IDs, 20,000 explanation characters; unknown fields and
 duplicate refs fail validation. Same actor/key/payload replays `{id,replayed:true}`;
 changing that payload yields `delivery_idempotency_conflict`. Normal acceptance
 returns `{id,replayed:false}`. Refresh after acceptance; read `allowed` separately.
+Progress has a 128 KiB aggregate request limit, at most 200 obligation refs,
+100 Target IDs and 8,000 remaining-work characters. Reuse the same key/content
+after uncertain failure; do not create another key simply because of a timeout.
+
+For one or several entries, use the same endpoint/tool with this envelope:
+
+```json
+{
+  "contract_version": "card-delivery-batch/v1",
+  "expected_card_version": 7,
+  "expected_spec_edition": 1,
+  "expected_delivery_revision": 0,
+  "idempotency_key": "parser-checkpoints-1",
+  "entries": [{
+    "client_ref": "parser",
+    "kind": "progress",
+    "justification": "Parser changed; normalization remains.",
+    "progress": {
+      "contract_version": "delivery-progress/v2",
+      "material_change": "unknown",
+      "source_state": {"workspace_state": "dirty", "recoverability": "external_workspace"},
+      "remaining": "Implement normalization and run scenarios."
+    }
+  }]
+}
+```
+
+Read `per_card.delivery_revision`; zero is valid only for an empty ledger.
+The revision includes every record in this Card/Spec/edition, including native
+appends and revocations. A batch has 1–50 entries, unique `client_ref` (80 ASCII
+letters/digits/underscore/hyphen), at most 200 reference uses across entries and
+128 KiB serialized bytes. Each entry uses its existing progress/implementation/test
+contract and permission; waiver/revoke remain separate. Implementation/test
+admission still requires the existing authenticated source records. Implementation entries require an explicit partial/complete
+declaration on each binding, including inside a batch.
+
+Within a batch, an implementation may use `execution_client_ref: "earlier-proof"`
+instead of execution_id/execution_submission. This references the accepted execution
+of an earlier implementation entry; it does not create another execution or grant
+attestation authority. Missing, forward, cyclic and wrong-kind references are rejected.
+The response includes the canonical execution_id for inline and alias entries.
+
+Any progress/implementation/test entry may cite `progress_refs` with either
+`{"record_id": "saved-progress"}` or, in a batch, `{"client_ref": "earlier-progress"}`.
+Each reference has exactly one identity. Persisted progress must belong to the same
+Card/Spec/edition and board. Local references resolve only to earlier progress in
+this request. The ledger stores canonical IDs. These are historical references:
+they neither supersede/revoke progress nor declare its remaining work complete.
+They grant no proof credit, even when the cited historical progress was revoked.
+All references count against the aggregate budget and share the batch rollback.
+
+An implementation entry may replace `execution_id` with `execution_submission`:
+
+```json
+{
+  "client_ref": "parser-proof",
+  "kind": "implementation",
+  "obligation_refs": ["fr:parser"],
+  "justification": "Implemented the parser and observed the committed result.",
+  "execution_submission": {
+    "target_id": "target-parser",
+    "result_investigation_receipt_id": "accepted-result-receipt",
+    "disposition": "touched",
+    "actual_relative_path": "src/parser.py"
+  }
+}
+```
+
+The same variant is accepted as a single entry without `client_ref`. Supply
+exactly one of execution_id/execution_submission. Board/Card/actor, idempotency
+and justification come from the enclosing request. The origin Target service
+validates disposition, current Target scope, ownership, trust, freshness and
+committed proof; its receipt, event and Delivery binding share one transaction.
+The accepted execution ID is returned with the binding ID, including on replay.
+An inline execution does not create an investigation attestation or consume a new
+challenge: obtain the accepted result-state investigation first, covering the final
+Target revisions. Tests continue to reference results authenticated by their runtime.
+
+The server returns `entries: [{client_ref,id}]`, the accepted `delivery_revision`
+and `replayed`. IDs are server-owned. Every entry succeeds or none persists,
+including when a later proof fails. The first immutable entry holds the envelope
+receipt; retry the complete unchanged envelope. Adding/removing/reordering entries
+under that key conflicts. A stale revision requires reading/reviewing the current
+ledger. An entry error includes `entry_index`, `client_ref` and a bounded cause
+code. These identifiers do not grant access to another Card or another actor's proof.
 
 Implementation writes require `code_traceability.target.execution_submit`; test
 associations require `spec.tests.execute` (QA need not have implementation-write
@@ -55,13 +349,21 @@ Agents must ask the human rather than forge an actor or authorization receipt.
 
 Errors: `delivery_version_conflict`/`delivery_edition_conflict` → reread and review;
 `delivery_obligation_not_found` → use the current inventory;
-`delivery_accepted_committed_task_execution_required` → finish the task/receipt;
+`delivery_accepted_committed_task_execution_required` → obtain a valid committed execution receipt;
 `delivery_current_verified_test_and_implementation_required` → fix ownership or
 rerun against the current implementation; `delivery_evidence_incomplete` on Done
-→ address the projection's missing rows, not Skip settings. Corrected requests
-need a new idempotency key. REST equivalent: GET/POST
-`/api/v1/boards/{board_id}/specs/{spec_id}/delivery-evidence`; POST body is exactly
-`evidence` (board/Spec IDs belong to the path).
+→ address the projection's missing rows. Existing `delivery_evidence_gate`
+advisory/blocking policy and the authorized `skip_delivery_evidence` override
+affect transitions, never the factual coverage verdict. Corrected requests need
+a new idempotency key.
+
+REST read: GET `/api/v1/boards/{board_id}/specs/{spec_id}/delivery-evidence`.
+Card write: POST
+`/api/v1/boards/{board_id}/cards/{card_id}/specs/{spec_id}/delivery-evidence`;
+the body is exactly `evidence`. The old Spec POST accepts only human-authorized
+`waiver`/`revoke`, with `expected_edition`/`expected_version`. An old
+`implementation`/`test` body returns 422 `delivery_card_scope_required`; use the
+card route and its current fences. Historical records remain readable/revocable.
 
 These tools accept bounded observations from an authenticated external agent.
 Pulse never clones, opens, searches, or resolves a repository. Read
@@ -170,10 +472,8 @@ Do not stop after this call when access exists. The accepted receipt is the
 attestation fence for the Code Evidence or Target Resolution that communicates
 the investigation result.
 
-V1 `accessible|partial|unavailable` receipts remain readable only. They do not
-prove contextual applicability. If the live MCP schema does not advertise the
-V2 discriminator/outcomes, stop and surface the missing capability rather than
-using V1 for a new write.
+Receipts require the current contextual contract. The result exposes
+`contextual_outcome`; earlier outcome formats are rejected without conversion.
 
 ## `okto_pulse_get_code_investigation_receipt`
 
@@ -200,8 +500,7 @@ Args:
     claim: Standalone human assertion explaining what was observed. “See file”
         and an ID alone are not useful Evidence.
     source_role: `current_implementation`, `existing_scaffold`,
-        `existing_constraint`, or `reference_pattern`. Never author
-        `uncategorized_legacy`.
+        `existing_constraint`, or `reference_pattern`.
     relevance_summary/scope_relation/source_origin: Required bounded context
         that makes the observation understandable to a clean-context consumer.
     interpretation_limit: Required for `existing_scaffold` and
@@ -250,48 +549,14 @@ okto_pulse_submit_code_evidence(
 )
 ```
 
-These V2-only fields must be present in the live inbound schema. A legacy MCP
-shape is not permission to omit them; stop rather than create ambiguous V1
-Evidence.
+All contextual fields above are required by the current inbound contract.
+Immutable Evidence is projected through `source_context` and
+`source_context_items` with `context_origin=authored` and complete role counts.
+Summary/gate and detail/full projections retain their permission boundaries.
 
-## Effective context and explicit actor classification
-
-`okto_pulse_get_code_evidence` and `okto_pulse_list_code_evidence` expose the
-immutable Evidence record. The entity context's `source_context` and
-`source_context_items` expose effective contextual meaning, including
-`context_origin=authored|human_legacy_classification|unclassified_legacy`,
-complete role counts, and classification state. The middle origin is a
-compatibility label for an actor-authored overlay. Summary/gate projections
-omit classifier identity; detail/full may expose it for authorized audit.
-
-An authorized human may use the UI/REST batch and an authorized agent may use
-`okto_pulse_classify_legacy_code_evidence`. Both are governed by
-`code_traceability.evidence.classify_legacy`; each correction appends a new
-revision over the immutable Evidence payload. Agents must consume the exact
-server-authored classification inputs and must request human input when the
-available context does not support a defensible classification.
-
-A derived Spec keeps the source-context manifest frozen at its exact
-Refinement snapshot. Live Evidence or human-classification changes do not
-rewrite it. Adopt a later snapshot only through the governed preview/apply
-rebase and its exact `preview_sha256`; when that surface is not available over
-MCP, request the authorized UI/REST action.
-
-## `okto_pulse_classify_legacy_code_evidence`
-
-Append one atomic classification batch over legacy Evidence.
-
-Args:
-    board_id: Board owning every Evidence item.
-    items: Complete classification items using the exact projected
-        `expected_evidence_payload_sha256`, `expected_classification_revision`,
-        and `baseline_provenance`, plus explicit source role, relevance, scope,
-        origin, and any required interpretation limit.
-    justification: Plain-language reason supporting the batch decision.
-    idempotency_key: Reuse only for a byte-for-byte retry.
-
-The tool never edits the original Evidence. A stale payload or classification
-revision fails closed; refresh the current Refinement context before retrying.
+A derived Spec pins the source-context manifest of its exact Refinement
+snapshot. Later Evidence does not rewrite that history. Adopt a later snapshot
+only through governed preview/apply rebase with its exact `preview_sha256`.
 
 ## `okto_pulse_get_code_evidence`
 

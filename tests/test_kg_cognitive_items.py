@@ -3,7 +3,7 @@
 Covers:
 * AC1 — Given 3 consolidable + 1 non-consolidable sources, marker writes 3
   pending item rows and aggregate pending_count=3.
-* AC7 — Legacy aggregate-only record (no items[]) loads OK via compatibility
+* Clean break — Aggregate-only records are refused without conversion
   adapter.
 * FR1 — Marker materializes per-item records preserving KG-02 aggregate.
 * FR8 — Rebuild/Marker can ONLY write pending status (never consolidated).
@@ -211,11 +211,11 @@ def test_incremental_same_generation_materialization_preserves_unrelated_work(
 # -------- AC7 — legacy aggregate-only compat -----------------------------
 
 
-def test_ac7_legacy_aggregate_only_record_loads_via_compatibility_adapter(
+def test_aggregate_only_record_is_refused_without_conversion(
     base_dir: Path,
 ) -> None:
     """AC7: Legacy KG-02 aggregate record (pending_refs + no items array)
-    must load via compatibility adapter without crashing."""
+    must be refused without conversion or deletion."""
 
     gen = generate_kg_generation_id()
     record_dir = (
@@ -235,18 +235,13 @@ def test_ac7_legacy_aggregate_only_record_loads_via_compatibility_adapter(
     (record_dir / f"{gen}.json").write_text(json.dumps(legacy), encoding="utf-8")
 
     store = CognitiveConsolidationItemStore(base_dir=base_dir)
-    items = store.list_items(BOARD, gen)
-    # Synthesized from pending_refs
-    assert len(items) == 2
-    assert {i.source_ref for i in items} == {"spec:legacy1", "refinement:legacy2"}
-    for i in items:
-        assert i.status == CognitiveItemStatus.PENDING.value
-        assert i.event_ref == "evt_legacy"
-        # artifact_type recovered from "spec:..." prefix
-        if i.source_ref.startswith("spec:"):
-            assert i.artifact_type == "spec"
-        if i.source_ref.startswith("refinement:"):
-            assert i.artifact_type == "refinement"
+    before = (record_dir / f"{gen}.json").read_bytes()
+    with pytest.raises(ValueError, match="cognitive_record_incompatible"):
+        store.list_items(BOARD, gen)
+    with pytest.raises(ValueError, match="cognitive_record_incompatible"):
+        store.materialize_from_marker(board_id=BOARD, kg_generation_id=gen,
+            event_ref="new", source_set=[])
+    assert (record_dir / f"{gen}.json").read_bytes() == before
 
 
 # -------- TR tr_746090f6 — atomic write ----------------------------------
@@ -798,11 +793,10 @@ def test_update_item_returns_none_for_unknown_item_id(base_dir: Path) -> None:
     assert result is None
 
 
-def test_update_item_on_legacy_record_synthesizes_then_updates(
+def test_update_item_refuses_aggregate_only_without_conversion(
     base_dir: Path,
 ) -> None:
-    """If a legacy aggregate-only record exists, update_item must
-    synthesize items from pending_refs and then apply the update."""
+    """An incompatible ledger must not be converted by an update."""
 
     gen = generate_kg_generation_id()
     record_dir = (
@@ -822,18 +816,14 @@ def test_update_item_on_legacy_record_synthesizes_then_updates(
 
     store = CognitiveConsolidationItemStore(base_dir=base_dir)
     target_id = compute_cognitive_item_id(BOARD, gen, "spec:l1")
-    updated = store.update_item(
-        board_id=BOARD,
-        kg_generation_id=gen,
-        item_id=target_id,
-        new_status=CognitiveItemStatus.SKIPPED.value,
-        updated_by_agent_id="agent-1",
-        reason="legacy handoff",
-    )
-    assert updated is not None
-    assert updated.status == CognitiveItemStatus.SKIPPED.value
-    # File is now item-aware
-    payload = json.loads((record_dir / f"{gen}.json").read_text(encoding="utf-8"))
-    assert "items" in payload
-    assert payload["pending_count"] == 0
-    assert payload["pending_refs"] == []
+    before = (record_dir / f"{gen}.json").read_bytes()
+    with pytest.raises(ValueError, match="cognitive_record_incompatible"):
+        store.update_item(
+            board_id=BOARD,
+            kg_generation_id=gen,
+            item_id=target_id,
+            new_status=CognitiveItemStatus.SKIPPED.value,
+            updated_by_agent_id="agent-1",
+            reason="legacy handoff",
+        )
+    assert (record_dir / f"{gen}.json").read_bytes() == before

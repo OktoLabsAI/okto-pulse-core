@@ -1,0 +1,33 @@
+{
+  "scope": "Native compound Learning submission, effective MCP resources and projection parity",
+  "pair": "dist-native-main20",
+  "run": "community14-native-final2",
+  "handle": 65213,
+  "exit_code": 0,
+  "passed": 75,
+  "xml_sha256": "97896ba0a9074b141bd8c9ae7728516e310e17c9f0899596ab6d8dc3e42a9b1d",
+  "modules": {
+    "test_learning_submission_writer": 47,
+    "test_mcp_resource_effective_overlay_sprint_b": 10,
+    "test_projection_materialized_parity": 18
+  },
+  "provenance": "provenance-native-main20.json",
+  "closure": "closure-native-main20.json",
+  "closure_ok": true,
+  "closure_budgets": {
+    "import_boundary_baseline": 0,
+    "singleton_baseline": 0,
+    "dependency_temporary_exceptions": 0,
+    "graph_runtime_compatibility": 0,
+    "rebuild_artifact_compatibility": 0,
+    "community_private_reach_ins": 0,
+    "community_adapter_bridges": 0,
+    "af35_relational_residue": 0
+  },
+  "next_selection": "clean-break-full-run15-community",
+  "qualified_modules_excluded": 423,
+  "limits": [
+    "Remaining Community modules and installed E2E not yet qualified",
+    "C4 criterion review incomplete"
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "scope": "AC-ARQ-01/02: adopted candidates and independent refinement completion",
+  "proof_pair": "dist-native-main87",
+  "criteria": {
+    "ARQVER:AC-ARQ-01": [
+      "test_new_derive_persists_selection_for_candidates_coverage_and_card_context"
+    ],
+    "ARQVER:AC-ARQ-02": [
+      "test_refinement_with_design_finishes_without_spec_candidate_approval",
+      "test_pending_cognitive_item_blocks_refinement_done",
+      "test_store_unavailable_fails_closed_with_value_error"
+    ]
+  },
+  "evidence": [
+    "Actual derivation commits selection from two source Designs; a fresh session resolves only adopted roots. Actual classification review reports exactly that population pending, no IR or Card created by derivation or review.",
+    "Selection cases cover copy, explicit empty, reference-only, omitted native selection, prefix normalization and deduplication; foreign selection writes nothing. This is native resource propagation, not legacy storage conversion.",
+    "An approved native refinement with a provided Design and no derived Spec reaches Done through the real service, creates its immutable snapshot and preserves its Design. No Spec or Card is manufactured; no candidate/IR approval is requested.",
+    "Existing pending/in_progress/failed cognition and unavailable-store negatives preserve status/snapshots. Existing non-Done routing and traceability-fence assertions also pass."
+  ],
+  "tests": {
+    "community_passed": 12,
+    "community_seconds": 25.98,
+    "core_distinct_passed": 12,
+    "core_runs": [
+      {
+        "campaign": "native-refinement-adoption1",
+        "passed": 11,
+        "failed": 1,
+        "seconds": 6.36
+      },
+      {
+        "campaign": "native-refinement-adoption2",
+        "passed": 0,
+        "failed": 1,
+        "seconds": 5.68
+      },
+      {
+        "campaign": "native-refinement-adoption3",
+        "passed": 1,
+        "failed": 0,
+        "seconds": 4.49
+      }
+    ],
+    "frontend": "No frontend or product behavior changed in this milestone; backend acceptance witnesses only."
+  },
+  "investigation": "The new refinement fixture initially lacked current subject authority after direct Design seeding. The helper defaults to session.new; an empty default call after flush did not seal the edited parent. Explicit parent rows and a distinct seed revision fixed setup. No product gate, assertion or authority requirement was weakened.",
+  "limits": [
+    "Direct SQL fixture seeds approved state and valid Design; the completion service and resource/cognitive controls are real. This is not installed authentication or full refinement authoring E2E.",
+    "The traceability-fence test instruments its evaluator to assert repeat invocation; do not claim full traceability admission from that case.",
+    "No product/wheel/SPA edits. Main87 closure remains applicable, eight budgets zero. No migration, promotion or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-adoption-review1.json": "1bdc3b77ebb579cefbace8fa21707fc7fe47aa9f490354b01d36c8119b41c3f5",
+    "native-adoption-review1.xml": "3f57e52d68a99a770feca7943eb727586de4fbac4244123361acce78333e5d21",
+    "native-refinement-adoption1.xml": "c4c081b36b8c26cef558905d7f842ada6a3f0f344021e3aba06378fb469d45a8",
+    "native-refinement-adoption2.xml": "807e6731b05055f3cca15a5515697a0efd93c4309bf1a1be083f4c0840261f89",
+    "native-refinement-adoption3.xml": "6cc34a8088c8ad77e142f6f920bc7a7567aeb3db5d957f34a82a89b5ef786444",
+    "closure-native-main87.json": "0b9b185c7e16892769af431ffa471141244468db74ccd447dbcf6af474acbfd4"
+  }
+}

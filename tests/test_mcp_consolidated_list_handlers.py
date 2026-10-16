@@ -30,9 +30,6 @@ from sqlalchemy_test_models import (
     Agent,
     AgentBoard,
     Board,
-    Card,
-    CardStatus,
-    CardType,
     Ideation,
     IdeationComplexity,
     IdeationStatus,
@@ -40,9 +37,6 @@ from sqlalchemy_test_models import (
     RefinementStatus,
     Spec,
     SpecStatus,
-    Sprint,
-    SprintLaneType,
-    SprintStatus,
 )
 
 
@@ -171,7 +165,7 @@ async def seeded_board(db_factory):
 
         import copy
         from okto_pulse.core.services.main import AgentService
-        from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
+        from okto_pulse.core.domain.permissions import PERMISSION_REGISTRY
 
         db.add(
             Board(id=BOARD_ID, name="Consolidated List Test Board", owner_id="owner-1")
@@ -301,7 +295,7 @@ def test_validate_filters_valid_derivation_pending_key_ok():
 
     ok, err = validate_filters(
         "refinement",
-        {"ideation_id": "parent", "derivation_pending": "true"},
+        {"ideation_id": "parent", "derivation_pending": True},
         scope="by_board",
     )
     assert ok is True
@@ -331,7 +325,7 @@ def test_supported_entity_types():
     assert "spec" in types_by_board
     assert "ideation" in types_by_board
     assert "refinement" in types_by_board
-    assert "sprint" in types_by_board
+    assert "sprint" not in types_by_board
     assert "story" in types_by_board
     assert "topic" in types_by_board
 
@@ -469,10 +463,8 @@ async def test_list_knowledge_invalid_filter_key():
 
 
 @pytest.mark.asyncio
-async def test_list_by_board_accepts_filters_as_json_string():
-    """Regression for bug eb782ae4: filters passed as JSON string must be
-    auto-decoded by the handler. MCP transports often serialise complex
-    parameters as strings."""
+async def test_list_by_board_rejects_filters_as_json_string():
+    """String filters are rejected without decoding or treating them as omitted."""
     result = await _call_tool(
         "okto_pulse_list_by_board",
         board_id=BOARD_ID,
@@ -480,21 +472,14 @@ async def test_list_by_board_accepts_filters_as_json_string():
         filters='{"status": "draft"}',
     )
     data = _parse(result)
-    # The handler must not return a Pydantic dict_type validation error.
-    # It may return items, an empty list, or a permission/auth error —
-    # but NOT 'Input should be a valid dictionary'.
-    assert "Input should be a valid dictionary" not in str(data)
-    # If it returns a structured error, it should NOT be about filter shape.
-    if data.get("error_code"):
-        assert data["error_code"] != "invalid_filter" or "Invalid JSON" not in data.get(
-            "detail", ""
-        )
+    assert data.get("error_code") == "invalid_filter"
+    assert "native object" in data.get("error", "")
+
 
 
 @pytest.mark.asyncio
 async def test_list_by_board_rejects_malformed_filters_json():
-    """Regression for bug eb782ae4: an invalid JSON string must produce a
-    structured_error with error_code='invalid_filter', not crash Pydantic."""
+    """String filters are rejected without decoding or treating them as omitted."""
     result = await _call_tool(
         "okto_pulse_list_by_board",
         board_id=BOARD_ID,
@@ -503,14 +488,13 @@ async def test_list_by_board_rejects_malformed_filters_json():
     )
     data = _parse(result)
     assert data.get("error_code") == "invalid_filter"
-    assert "Invalid JSON" in data.get("detail", "") or "Invalid JSON" in data.get(
-        "error", ""
-    )
+    assert "native object" in data.get("error", "")
+
 
 
 @pytest.mark.asyncio
-async def test_list_qa_accepts_filters_as_json_string():
-    """Regression for bug eb782ae4: list_qa must also accept filters as JSON string."""
+async def test_list_qa_rejects_filters_as_json_string():
+    """String filters are rejected without decoding or treating them as omitted."""
     result = await _call_tool(
         "okto_pulse_list_qa",
         board_id=BOARD_ID,
@@ -519,7 +503,9 @@ async def test_list_qa_accepts_filters_as_json_string():
         filters='{"asked_by": "anyone"}',
     )
     data = _parse(result)
-    assert "Input should be a valid dictionary" not in str(data)
+    assert data.get("error_code") == "invalid_filter"
+    assert "native object" in data.get("error", "")
+
 
 
 # ---------------------------------------------------------------------------
@@ -629,8 +615,8 @@ async def test_list_qa_invalid_status_value_returns_structured_error():
 
 
 @pytest.mark.asyncio
-async def test_list_knowledge_accepts_filters_as_json_string():
-    """Regression for bug eb782ae4: list_knowledge must also accept filters as JSON string."""
+async def test_list_knowledge_rejects_filters_as_json_string():
+    """String filters are rejected without decoding or treating them as omitted."""
     result = await _call_tool(
         "okto_pulse_list_knowledge",
         board_id=BOARD_ID,
@@ -639,13 +625,14 @@ async def test_list_knowledge_accepts_filters_as_json_string():
         filters='{"mime_type": "text/markdown"}',
     )
     data = _parse(result)
-    assert "Input should be a valid dictionary" not in str(data)
+    assert data.get("error_code") == "invalid_filter"
+    assert "native object" in data.get("error", "")
+
 
 
 @pytest.mark.asyncio
-async def test_list_by_board_accepts_empty_string_filters():
-    """Regression for bug eb782ae4: an empty/whitespace filters string must be
-    treated as no filter, not as a JSON parse error."""
+async def test_list_by_board_rejects_empty_string_filters():
+    """String filters are rejected without decoding or treating them as omitted."""
     result = await _call_tool(
         "okto_pulse_list_by_board",
         board_id=BOARD_ID,
@@ -653,8 +640,9 @@ async def test_list_by_board_accepts_empty_string_filters():
         filters="   ",
     )
     data = _parse(result)
-    assert "Invalid JSON" not in str(data)
-    assert "Input should be a valid dictionary" not in str(data)
+    assert data.get("error_code") == "invalid_filter"
+    assert "native object" in data.get("error", "")
+
 
 
 # ---------------------------------------------------------------------------
@@ -1016,7 +1004,7 @@ async def test_list_by_board_filters_refinement_derivation_pending(
         filters={
             "ideation_id": ideation_id,
             "labels": label,
-            "derivation_pending": "true",
+            "derivation_pending": True,
         },
     )
     data = _parse(result)
@@ -1085,79 +1073,16 @@ async def test_list_by_board_valid_status_filter(seeded_board):
 
 
 @pytest.mark.asyncio
-async def test_list_by_board_sprint_requires_spec_id():
+async def test_list_by_board_sprint_is_retired():
     result = await _call_tool(
         "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="sprint",
     )
     data = _parse(result)
-    assert data.get("error_code") == "missing_required_filter"
+    assert data.get("error_code") == "unsupported_entity"
 
 
-@pytest.mark.asyncio
-async def test_list_by_board_sprint_includes_lane_metadata(seeded_board, db_factory):
-    spec_id = seeded_board["spec_id"]
-    origin_sprint_id = f"mcp-origin-sprint-{uuid.uuid4().hex[:8]}"
-    origin_bug_id = f"mcp-origin-bug-{uuid.uuid4().hex[:8]}"
-    hotfix_sprint_id = f"mcp-hotfix-sprint-{uuid.uuid4().hex[:8]}"
-
-    async with db_factory() as db:
-        db.add(
-            Sprint(
-                id=origin_sprint_id,
-                board_id=BOARD_ID,
-                spec_id=spec_id,
-                title="MCP origin sprint",
-                status=SprintStatus.CLOSED,
-                lane_type=SprintLaneType.NORMAL,
-                created_by=AGENT_ID,
-            )
-        )
-        db.add(
-            Card(
-                id=origin_bug_id,
-                board_id=BOARD_ID,
-                spec_id=spec_id,
-                title="MCP hotfix origin bug",
-                status=CardStatus.NOT_STARTED,
-                card_type=CardType.BUG,
-                created_by=AGENT_ID,
-            )
-        )
-        await db.flush()
-        db.add(
-            Sprint(
-                id=hotfix_sprint_id,
-                board_id=BOARD_ID,
-                spec_id=spec_id,
-                title="MCP visible hotfix lane",
-                status=SprintStatus.DRAFT,
-                lane_type=SprintLaneType.HOTFIX,
-                origin_sprint_id=origin_sprint_id,
-                origin_bug_id=origin_bug_id,
-                created_by=AGENT_ID,
-            )
-        )
-        await db.commit()
-
-    result = await _call_tool(
-        "okto_pulse_list_by_board",
-        board_id=BOARD_ID,
-        entity_type="sprint",
-        filters={"spec_id": spec_id},
-    )
-    data = _parse(result)
-    by_id = {item["id"]: item for item in data["items"]}
-
-    assert by_id[origin_sprint_id]["lane_type"] == "normal"
-    assert by_id[origin_sprint_id]["origin_sprint_id"] is None
-    assert by_id[origin_sprint_id]["origin_bug_id"] is None
-    assert by_id[origin_sprint_id]["normal_sprint_created"] is True
-    assert by_id[hotfix_sprint_id]["lane_type"] == "hotfix"
-    assert by_id[hotfix_sprint_id]["origin_sprint_id"] == origin_sprint_id
-    assert by_id[hotfix_sprint_id]["origin_bug_id"] == origin_bug_id
-    assert by_id[hotfix_sprint_id]["normal_sprint_created"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -1210,32 +1135,31 @@ async def test_list_snapshots_refinement(seeded_board):
 
 
 def test_list_by_board_description_documents_filters_per_entity_type():
-    """Discoverability regression guard (ITEM 18): the live tools/list
-    description of okto_pulse_list_by_board must enumerate the allowed filter
-    keys per entity_type — sourced from filters.py so the docstring cannot
-    silently drift — highlight derivation_pending with a copy-pastable inline
-    example, document the invalid_filter behaviour, and point at the lazy
-    list_tools resource, all within the R1.1 per-tool budget (900 chars)."""
+    """The compact tool must lead to the complete, current filter contract."""
     import okto_pulse.core.mcp.server as _srv
     from okto_pulse.core.mcp.filters import ALLOWED_FILTERS_BY_BOARD
 
     tool = _srv.mcp._tool_manager._tools.get("okto_pulse_list_by_board")
     assert tool is not None, "okto_pulse_list_by_board not registered"
     desc = tool.description or ""
+    assert "okto-pulse://reference/tool-docs/board" in desc
+    board_docs = _srv._load_resource_file("reference/tool-docs/board.md")
+    assert "okto-pulse://reference/list_tools" in board_docs
+    filter_docs = _srv._load_resource_file("reference/list_tools.md")
 
     for entity_type, allowed in ALLOWED_FILTERS_BY_BOARD.items():
-        assert entity_type in desc, f"description missing entity_type {entity_type!r}"
+        assert entity_type in desc.lower(), f"description missing entity_type {entity_type!r}"
+        row = next(line for line in filter_docs.splitlines() if line.startswith(f"| `{entity_type}` |"))
         for key in allowed:
-            assert key in desc, (
-                f"description missing filter key {key!r} for entity_type={entity_type!r}"
+            assert f"`{key}`" in row, (
+                f"lazy contract missing filter key {key!r} for entity_type={entity_type!r}"
             )
 
     # derivation_pending triage carries a copy-pastable example.
-    assert '{"derivation_pending": true}' in desc
+    assert "derivation_pending" in desc
+    assert '{"derivation_pending": true}' in filter_docs
     # Unknown-filter behaviour is documented.
-    assert "invalid_filter" in desc
-    # Lazy long-form docs remain referenced.
-    assert "okto-pulse://reference/list_tools" in desc
+    assert "invalid_filter" in filter_docs
     # R1.1 compaction budget still holds (see test_r1_tool_compaction.py).
     assert len(desc) <= 900, f"description is {len(desc)} chars (budget 900)"
 

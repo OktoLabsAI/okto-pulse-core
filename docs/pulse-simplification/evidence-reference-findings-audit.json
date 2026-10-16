@@ -1,0 +1,210 @@
+{
+  "scope": "Transactional source-reference snapshot persistence in existing consolidation audit",
+  "production_hook": false,
+  "storage_implemented": true,
+  "gate_changed": false,
+  "acceptance_promotions": [],
+  "campaigns": [
+    {
+      "round_id": "k2-findings-audit1",
+      "edition": "core",
+      "counts": {
+        "tests": 25,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "xml_sha256": "b95127ac94c4c40c6261b4d7c90ef6abb437919d0774c9658424f1058a49b01b"
+    },
+    {
+      "round_id": "k2-findings-audit1",
+      "edition": "community",
+      "counts": {
+        "tests": 20,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "xml_sha256": "2d468c3c0d596bec31260292150217da70a5a8683104c6a9b485f80e412dc5e5"
+    },
+    {
+      "round_id": "k2-findings-audit2",
+      "edition": "community",
+      "counts": {
+        "tests": 50,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "xml_sha256": "11efd7a63c332f746574a2f927f9581cc17f882fd8c313b378f26c5a29ebf935"
+    },
+    {
+      "round_id": "k2-findings-audit3",
+      "edition": "community",
+      "counts": {
+        "tests": 90,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "xml_sha256": "3395edba5c987b7dc00191834307a5bc082a2bcdf027a3e1fec92e2a57ce9f4e"
+    }
+  ],
+  "provenance": {
+    "checked_at": "2026-09-30T17:46:55.148458+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 856,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "bdc6d926ffa433fe0777f1678bce30a49bc39db1",
+        "dirty": true,
+        "dirty_entry_count": 6,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-findings-audit3\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "945d8d93ab9f3be8feeef8b03d38dfe527163dc93255ae3b05daab922cec1f87",
+          "size": 3784253
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 919,
+        "byte_identical": true,
+        "aggregate_sha256": "6a77c89c086d7f2a59cf54e067fdd33ac393790be2c00fdc41aa9d4a42546bec",
+        "chain_hashes": {
+          "source": "6a77c89c086d7f2a59cf54e067fdd33ac393790be2c00fdc41aa9d4a42546bec",
+          "wheel": "6a77c89c086d7f2a59cf54e067fdd33ac393790be2c00fdc41aa9d4a42546bec",
+          "site_packages": "6a77c89c086d7f2a59cf54e067fdd33ac393790be2c00fdc41aa9d4a42546bec"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 373,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "c813c1a3044f106c8d1124a1a8448aef14accb4f",
+        "dirty": true,
+        "dirty_entry_count": 14,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-findings-audit3\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "ee9e0e6769d20b8ba77accf68128fb68914c43bf277866df158467f4a464ceb2",
+          "size": 4533114
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 458,
+        "byte_identical": true,
+        "aggregate_sha256": "77ae79664ec27561876f45d70595559b2291de827dfef87d17a1c717d6caf40c",
+        "chain_hashes": {
+          "source": "77ae79664ec27561876f45d70595559b2291de827dfef87d17a1c717d6caf40c",
+          "wheel": "77ae79664ec27561876f45d70595559b2291de827dfef87d17a1c717d6caf40c",
+          "site_packages": "77ae79664ec27561876f45d70595559b2291de827dfef87d17a1c717d6caf40c"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "closure": {
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": [],
+    "sha256": "5e6ea2d40acfcf0a001fae1da1e71d00d8dcea00ed399e82ed202e2ec24a19b7"
+  },
+  "migration": "Nullable JSON column; predecessor audit values unchanged, no backfill; incompatible existing column fails closed.",
+  "recovery": "Old sealed outbox column bags accepted after addition only when all new values are SQL NULL; any written diagnostic rejects old replay. Exact and cognitive SQL delta reject unqualified snapshots.",
+  "limits": [
+    "Reader receipt is not currentness or authority; caller must authorize and revalidate source.",
+    "No UI changes in this increment; no frontend campaign.",
+    "Tests run in fresh processes with proven installed paired wheels; dependency environment is not hermetic.",
+    "No real-data migration, runtime restart, release, merge or deployment."
+  ],
+  "remaining": [
+    "Worker/session integration and exact source-plan recovery qualification",
+    "Known-removal cleanup, pending endpoint handling and CAS recovery",
+    "Permission-scoped context/coverage visibility and frontend verification"
+  ]
+}

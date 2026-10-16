@@ -45,6 +45,7 @@ from okto_pulse.core.runtime_registry import (
 #: Adapter-neutral relational runtime port functions retained by Core.
 R01B_PROVIDER_FUNCTIONS: frozenset[str] = frozenset({
     "configure_database_runtime",
+    "database_runtime_scope",
     "get_engine",
     "get_session_factory",
     "is_database_runtime_configured",

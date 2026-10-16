@@ -1,0 +1,58 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-next25",
+  "provenance_sha256": "3e0ba5869cd133f5b4dbce01186a3eb2e3cd6ebbb632161b7a116d5d339da422",
+  "runs": [
+    {
+      "name": "acceptance-native-auth-current1",
+      "xml_sha256": "40b62a96749327723fa56bb0c924f72b11efb88394f7d193354be64aa3b49cb4",
+      "passed": 17,
+      "cases": [
+        "tests.test_cached_mcp_revocation::test_cached_catalog_cannot_authorize_revoked_access[inactive]",
+        "tests.test_cached_mcp_revocation::test_cached_catalog_cannot_authorize_revoked_access[rotated_key]",
+        "tests.test_cached_mcp_revocation::test_cached_catalog_cannot_authorize_revoked_access[board_grant]",
+        "tests.test_mcp_concurrent_board_isolation::test_overlapping_http_mcp_sessions_do_not_leak_board_data_or_discovery",
+        "tests.test_grouped_tool_variant_permissions::test_grouped_link_task_denies_only_missing_variant_grant_before_uow[scenario-card.link_to.scenario]",
+        "tests.test_grouped_tool_variant_permissions::test_grouped_link_task_denies_only_missing_variant_grant_before_uow[rule-card.link_to.rule]",
+        "tests.test_grouped_tool_variant_permissions::test_grouped_link_task_denies_only_missing_variant_grant_before_uow[fr-spec.structured_entity.functional_requirement.link_task]",
+        "tests.test_grouped_tool_variant_permissions::test_grouped_link_task_denies_only_missing_variant_grant_before_uow[decision-spec.structured_entity.decision.link_task]",
+        "tests.test_grouped_tool_variant_permissions::test_grouped_link_task_denies_only_missing_variant_grant_before_uow[tr-card.link_to.tr]",
+        "tests.test_grouped_tool_variant_permissions::test_grouped_link_task_denies_only_missing_variant_grant_before_uow[contract-card.link_to.contract]",
+        "tests.test_grouped_tool_variant_permissions::test_grouped_link_task_denies_only_missing_variant_grant_before_uow[ir-spec.integration_requirements.link_task]",
+        "tests.test_grouped_tool_variant_permissions::test_grouped_link_task_denies_only_missing_variant_grant_before_uow[ir-card.link_to.ir]",
+        "tests.test_grouped_tool_variant_permissions::test_grouped_link_task_denies_only_missing_variant_grant_before_uow[or-spec.observability_requirements.link_task]",
+        "tests.test_grouped_tool_variant_permissions::test_grouped_link_task_denies_only_missing_variant_grant_before_uow[or-card.link_to.or]",
+        "tests.test_grouped_tool_variant_permissions::test_grouped_link_task_denies_only_missing_variant_grant_before_uow[spec-card.entity.link_spec]",
+        "tests.test_r01a_cards_lifecycle_uow::test_submit_validation_exact_retry_replays_after_rejected",
+        "tests.test_r01a_cards_lifecycle_uow::test_submit_validation_exact_retry_replays_after_done"
+      ]
+    },
+    {
+      "name": "acceptance-native-replay-effects1",
+      "xml_sha256": "9e5d0f1f50be603e8072768114a3378ec87af1dec7d824e2946787bfcb636774",
+      "passed": 1,
+      "cases": [
+        "tests.test_r01a_cards_lifecycle_uow::test_submit_validation_exact_retry_replays_after_rejected"
+      ]
+    }
+  ],
+  "criteria": {
+    "BASE:T12": "Real REST rejection admission creates exactly one validation and one rejection; exact retry returns same identity and leaves the entire Card, Board activity and outbox unchanged. Changed payload returns typed idempotency conflict and preserves the same snapshot.",
+    "BASE:T13": "Same materialized MCP client reuses cached tool after inactive credential, rotated key or removed Board grant. Each request rechecks authority, denies without Board content, and preserves agent state.",
+    "BASE:T14": "Two overlapping HTTP MCP sessions make six own-Board reads and six cross-Board denials; exact Board id/owner and content isolation checked. Shared static schemas contain no credentials or Board names.",
+    "BASE:T15": "Eleven leaf denials across nine grouped variants stop before UOW lookup; granted sibling and then precise original leaf reach the persistence boundary."
+  },
+  "source_sha256": {
+    "tests/test_cached_mcp_revocation.py": "8109a3be26a742205a39e706fba1a976cfb063779e4a329a442706b93d17fb47",
+    "tests/test_mcp_concurrent_board_isolation.py": "41bba06b8cbb24f38b7ca6e5bfabae24985b8109962f20c26246b33c865a6434",
+    "tests/test_grouped_tool_variant_permissions.py": "42dfab138a6c883a695ca1545b49b72d4390dd0c7be3dd6e7205cec9dfa768cc",
+    "tests/test_r01a_cards_lifecycle_uow.py": "44e8d41c2b229d4d9c114a9102a7a1f7e915befc1eab0b363f593ca0eec3fec1"
+  },
+  "limits": [
+    "Auth fixtures supply credentials/actors; production authenticator, MCP host, UOW and SQL execute. HTTP sessions use in-process ASGI, not a network daemon.",
+    "T15 uses a raising persistence sentinel, proves denial ordering and permission dispatch, not successful writes.",
+    "Done replay supplementary case substitutes completion blockers; T12 qualification rests on unmodified rejection path and durable equality assertions.",
+    "No product/frontend change. Installed E2E remains separately active."
+  ]
+}

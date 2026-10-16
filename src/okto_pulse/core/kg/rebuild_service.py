@@ -50,32 +50,16 @@ None on outcomes other than COMPLETED.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import sys
 import threading
 import time
 from contextlib import ExitStack
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Mapping, Sequence
 
-from okto_pulse.core.application.rebuild_processor import (
-    RebuildCommand as F06RebuildCommand,
-)
-from okto_pulse.core.application.rebuild_processor import (
-    RebuildEffectReceipt as F06RebuildEffectReceipt,
-)
-from okto_pulse.core.application.rebuild_processor import (
-    RebuildOutcome as F06RebuildOutcome,
-)
-from okto_pulse.core.application.rebuild_processor import (
-    canonicalize_legacy_manual_restore_queue_only_intent_receipt,
-)
-from okto_pulse.core.application.rebuild_processor import (
-    validate_legacy_manual_restore_queue_only_outcome,
-)
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
     RebuildAuditKey,
@@ -93,31 +77,6 @@ REBUILD_DIRNAME = "rebuild"
 AUDIT_DIRNAME = "audit"
 MAX_REBUILD_CONFIRMATION_RECEIPT_BYTES = 128 * 1024
 REBUILD_CONFIRMATION_RECEIPT_SCHEMA = "kg_rebuild_confirmation_receipt.v1"
-
-
-def _canonical_f06_rebuild_command(
-    command: F06RebuildCommand,
-) -> F06RebuildCommand:
-    if type(command) is not F06RebuildCommand:
-        raise RuntimeError("legacy_manual_restore_queue_only_command_type_invalid")
-    try:
-        encoded = json.dumps(
-            list(command.source_rows),
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        )
-        decoded = json.loads(encoded)
-    except (TypeError, ValueError) as exc:
-        raise RuntimeError(
-            "legacy_manual_restore_queue_only_command_noncanonical"
-        ) from exc
-    if not isinstance(decoded, list) or any(
-        not isinstance(row, dict) for row in decoded
-    ):
-        raise RuntimeError("legacy_manual_restore_queue_only_command_noncanonical")
-    return replace(command, source_rows=tuple(dict(row) for row in decoded))
 
 
 class RebuildConfirmationReceiptIntegrityError(RuntimeError):
@@ -814,17 +773,6 @@ class RebuildStepInput:
     # resolving live sources or starting any fresh rebuild effect.
     recovery_failure_code: str | None = None
     recovery_failure_detail: str | None = None
-    # A proved v1/v2 -> current-schema rebaseline must materialize the fresh
-    # live projection whose compatibility hash was checked, never the legacy
-    # rows persisted in the old manifest. Both fields are set together only
-    # after the run-bound rebaseline evidence is durably recorded under R+A.
-    rebaseline_source_rows: tuple[Mapping[str, Any], ...] | None = field(
-        default=None,
-        repr=False,
-        compare=False,
-    )
-    rebaseline_evidence_id: str | None = None
-    rebaseline_target_source_set_hash: str | None = None
     # Canonical non-secret fingerprint of the confirmation that authorized
     # this run. Keep new fields at the tail to preserve positional consumers.
     # Exact queue reservation lineage includes it so a later run for the same
@@ -848,39 +796,9 @@ class RebuildStepResult:
     counts: dict[str, int] = field(default_factory=dict)
     reconciliation_decisions: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     drilldown: dict[str, Any] = field(default_factory=dict)
-    rebaseline_evidence_id: str | None = None
-    rebaseline_target_source_set_hash: str | None = None
 
 
 RebuildStepAdapter = Callable[[RebuildStepInput], RebuildStepResult]
-
-
-@dataclass(frozen=True, slots=True)
-class LegacyManualRestoreQueueOnlyInput:
-    """Exact adapter input for the offline legacy queue-only lane.
-
-    The adapter receives no confirmation, manifest-store, lifecycle,
-    quarantine, report, event, generation or audit primitive. It may only
-    re-prove the nominal intent and drive the F06 queue-only reconciliation
-    under the two live administrative fences.
-    """
-
-    board_id: str
-    intent_id: str
-    actor_id: str
-    reason: str
-    owner_token: str = field(repr=False)
-    command: F06RebuildCommand
-    intent_receipt: F06RebuildEffectReceipt
-    lease_renew: Callable[[], bool] = field(repr=False, compare=False)
-    orchestration_renew: Callable[[], bool] = field(repr=False, compare=False)
-    mutation_guard: Callable[[], bool] = field(repr=False, compare=False)
-
-
-LegacyManualRestoreQueueOnlyAdapter = Callable[
-    [LegacyManualRestoreQueueOnlyInput],
-    F06RebuildOutcome,
-]
 
 
 def _default_step_adapter(req: RebuildStepInput) -> RebuildStepResult:
@@ -1162,9 +1080,6 @@ class KGRebuildService:
     lease_reacquire_poll_interval_seconds: float = 0.05
     operation_reservation: Any | None = None
     artifact_store: RebuildAuditArtifactStore | None = None
-    legacy_manual_restore_queue_only_adapter: (
-        LegacyManualRestoreQueueOnlyAdapter | None
-    ) = None
 
     def __post_init__(self) -> None:
         if (
@@ -1186,279 +1101,6 @@ class KGRebuildService:
         )
 
     # --- public API --------------------------------------------------------
-
-    def legacy_manual_restore_queue_only(
-        self,
-        *,
-        board_id: str,
-        intent_id: str,
-        actor_id: str,
-        reason: str,
-        command: F06RebuildCommand,
-        intent_receipt: F06RebuildEffectReceipt,
-        recovery_capability: object | None = None,
-    ) -> F06RebuildOutcome:
-        """Reconcile one legacy post-enqueue queue without touching the graph.
-
-        This internal recovery-only seam deliberately bypasses ``run`` and
-        ``resume_authorized_run``. A governed manual restore already handled
-        the old graph candidate, so confirmation, manifest revalidation,
-        lifecycle, quarantine, generation/report/event and run-audit paths are
-        forbidden here. The only adapter call occurs under an opaque one-run
-        recovery capability, administrative reservation, graph writer and
-        same-thread safe-write guard.
-        """
-
-        from okto_pulse.core.kg.recovery_execution import (
-            validate_recovery_execution_capability,
-        )
-        from okto_pulse.core.kg.single_writer_lock import (
-            KGAdministrativeOperationReservation,
-        )
-        from okto_pulse.core.kg.write_barrier import under_safe_write
-
-        original_command = command
-        original_intent_receipt = intent_receipt
-        if (
-            type(command) is not F06RebuildCommand
-            or type(intent_receipt) is not F06RebuildEffectReceipt
-        ):
-            raise RuntimeError("legacy_manual_restore_queue_only_binding_invalid")
-        command = _canonical_f06_rebuild_command(command)
-        intent_receipt = canonicalize_legacy_manual_restore_queue_only_intent_receipt(
-            intent_receipt
-        )
-        normalized_board_id = str(board_id).strip()
-        normalized_intent_id = str(intent_id).strip()
-        normalized_actor_id = str(actor_id).strip()
-        normalized_reason = str(reason).strip()
-        adapter = self.legacy_manual_restore_queue_only_adapter
-        if adapter is None:
-            raise RuntimeError("legacy_manual_restore_queue_only_adapter_required")
-        if (
-            not normalized_board_id
-            or len(normalized_intent_id) != 64
-            or any(
-                character not in "0123456789abcdef"
-                for character in normalized_intent_id
-            )
-            or not normalized_actor_id
-            or not normalized_reason
-            or str(getattr(command, "board_id", "")) != normalized_board_id
-            or dict(getattr(intent_receipt, "details", {})).get("intent_digest")
-            != normalized_intent_id
-        ):
-            raise RuntimeError("legacy_manual_restore_queue_only_binding_invalid")
-
-        operation_run_id = f"legacy_manual_restore_queue_only:{normalized_intent_id}"
-
-        def _recovery_valid() -> bool:
-            return validate_recovery_execution_capability(
-                recovery_capability,
-                board_id=normalized_board_id,
-                run_id=operation_run_id,
-            )
-
-        if not _recovery_valid():
-            raise RuntimeError("legacy_manual_restore_queue_only_authority_required")
-
-        bind_write_lock_port = getattr(
-            self.single_writer_lock,
-            "bind_write_lock_port",
-            None,
-        )
-        bound_write_lock_port = (
-            bind_write_lock_port() if callable(bind_write_lock_port) else None
-        )
-        operation_reservation = self.operation_reservation
-        if operation_reservation is None:
-            operation_reservation = KGAdministrativeOperationReservation(
-                base_dir=self.base_dir,
-                write_lock_port=bound_write_lock_port,
-            )
-        bind_reservation_port = getattr(
-            operation_reservation,
-            "bind_write_lock_port",
-            None,
-        )
-        if callable(bind_reservation_port):
-            bind_reservation_port()
-
-        reservation = operation_reservation.acquire(
-            board_id=normalized_board_id,
-            operation=f"kg02_rebuild_reservation:{operation_run_id}",
-            owner_id=normalized_actor_id,
-            ttl_seconds=self.lock_ttl_seconds,
-            admin_lane=True,
-        )
-        if not reservation.acquired or not reservation.owner_token:
-            raise RuntimeError("legacy_manual_restore_queue_only_lock_contention")
-        reservation_token = reservation.owner_token
-        heartbeat_interval_seconds = (
-            self.lease_heartbeat_interval_seconds
-            if self.lease_heartbeat_interval_seconds is not None
-            else max(0.1, min(30.0, self.lock_ttl_seconds / 3))
-        )
-        reservation_heartbeat = _RebuildLeaseHeartbeat(
-            lambda: (
-                _recovery_valid()
-                and operation_reservation.renew(
-                    board_id=normalized_board_id,
-                    owner_token=reservation_token,
-                    ttl_seconds=self.lock_ttl_seconds,
-                )
-            ),
-            board_id=normalized_board_id,
-            interval_seconds=heartbeat_interval_seconds,
-        )
-        writer_heartbeat: _RebuildLeaseHeartbeat | None = None
-        owner_token: str | None = None
-        guard_stack = ExitStack()
-        primary_error: BaseException | None = None
-        try:
-            reservation_heartbeat.start()
-            deadline = time.monotonic() + self.lease_reacquire_timeout_seconds
-            while True:
-                if not reservation_heartbeat.renew_now():
-                    raise RuntimeError(
-                        "legacy_manual_restore_queue_only_reservation_lost"
-                    )
-                acquisition = self.single_writer_lock.acquire(
-                    board_id=normalized_board_id,
-                    operation=f"kg02_rebuild:{operation_run_id}",
-                    owner_id=normalized_actor_id,
-                    ttl_seconds=self.lock_ttl_seconds,
-                    admin_lane=True,
-                )
-                if acquisition.acquired and acquisition.owner_token:
-                    owner_token = acquisition.owner_token
-                    break
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise RuntimeError(
-                        "legacy_manual_restore_queue_only_writer_contention"
-                    )
-                time.sleep(min(self.lease_reacquire_poll_interval_seconds, remaining))
-            assert owner_token is not None
-
-            writer_heartbeat = _RebuildLeaseHeartbeat(
-                lambda: self.single_writer_lock.renew(
-                    board_id=normalized_board_id,
-                    owner_token=owner_token,
-                    ttl_seconds=self.lock_ttl_seconds,
-                ),
-                board_id=normalized_board_id,
-                interval_seconds=heartbeat_interval_seconds,
-            )
-            writer_heartbeat.start()
-
-            def _writer_renew() -> bool:
-                return bool(
-                    writer_heartbeat is not None and writer_heartbeat.renew_now()
-                )
-
-            def _reservation_renew() -> bool:
-                return bool(_recovery_valid() and reservation_heartbeat.renew_now())
-
-            def _mutation_guard() -> bool:
-                return bool(_reservation_renew() and _writer_renew())
-
-            if not _mutation_guard():
-                raise RuntimeError("legacy_manual_restore_queue_only_fence_lost")
-            try:
-                command_still_current = (
-                    _canonical_f06_rebuild_command(original_command) == command
-                )
-                intent_still_current = (
-                    canonicalize_legacy_manual_restore_queue_only_intent_receipt(
-                        original_intent_receipt
-                    )
-                    == intent_receipt
-                )
-            except RuntimeError:
-                command_still_current = False
-                intent_still_current = False
-            if not command_still_current or not intent_still_current:
-                raise RuntimeError("legacy_manual_restore_queue_only_binding_changed")
-            guard_stack.enter_context(
-                under_safe_write(
-                    normalized_board_id,
-                    owner_token,
-                    operation_run_id,
-                )
-            )
-            adapter_command = _canonical_f06_rebuild_command(command)
-            adapter_intent = (
-                canonicalize_legacy_manual_restore_queue_only_intent_receipt(
-                    intent_receipt
-                )
-            )
-            outcome = adapter(
-                LegacyManualRestoreQueueOnlyInput(
-                    board_id=normalized_board_id,
-                    intent_id=normalized_intent_id,
-                    actor_id=normalized_actor_id,
-                    reason=normalized_reason,
-                    owner_token=owner_token,
-                    command=adapter_command,
-                    intent_receipt=adapter_intent,
-                    lease_renew=_writer_renew,
-                    orchestration_renew=_reservation_renew,
-                    mutation_guard=_mutation_guard,
-                )
-            )
-            if (
-                _canonical_f06_rebuild_command(adapter_command) != command
-                or canonicalize_legacy_manual_restore_queue_only_intent_receipt(
-                    adapter_intent
-                )
-                != intent_receipt
-            ):
-                raise RuntimeError(
-                    "legacy_manual_restore_queue_only_adapter_binding_mutated"
-                )
-            try:
-                validate_legacy_manual_restore_queue_only_outcome(
-                    outcome,
-                    command=command,
-                    intent_receipt=intent_receipt,
-                )
-            except RuntimeError as exc:
-                raise RuntimeError(
-                    "legacy_manual_restore_queue_only_outcome_invalid"
-                ) from exc
-            if not _mutation_guard():
-                raise RuntimeError(
-                    "legacy_manual_restore_queue_only_post_effect_fence_lost"
-                )
-            return outcome
-        except BaseException as exc:
-            primary_error = exc
-            raise
-        finally:
-            _cleanup_rebuild_leases(
-                board_id=normalized_board_id,
-                context="legacy_queue_only",
-                writer_heartbeat=writer_heartbeat,
-                reservation_heartbeat=reservation_heartbeat,
-                close_write_guard=guard_stack.close,
-                release_writer=(
-                    (
-                        lambda: _release_writer_or_prove_relinquished(
-                            single_writer_lock=self.single_writer_lock,
-                            board_id=normalized_board_id,
-                            owner_token=owner_token,
-                        )
-                    )
-                    if owner_token is not None
-                    else None
-                ),
-                release_reservation=lambda: operation_reservation.release(
-                    board_id=normalized_board_id,
-                    owner_token=reservation_token,
-                ),
-                primary_error=primary_error,
-            )
 
     def resume_authorized_run(
         self,
@@ -2654,11 +2296,6 @@ class KGRebuildService:
                 **kwargs,
             )
 
-        rebaseline_evidence_proved = False
-        rebaseline_source_rows: tuple[Mapping[str, Any], ...] | None = None
-        rebaseline_evidence_id: str | None = None
-        rebaseline_target_source_set_hash: str | None = None
-
         def _revalidate_current_manifest(*, phase: str):
             """Re-enumerate only while both administrative fences are held.
 
@@ -2669,9 +2306,6 @@ class KGRebuildService:
             """
 
             nonlocal recovery_failure_code, recovery_failure_detail
-            nonlocal rebaseline_evidence_proved
-            nonlocal rebaseline_evidence_id, rebaseline_source_rows
-            nonlocal rebaseline_target_source_set_hash
             if recovery_failure_code is not None:
                 # This invocation is authorized only to compensate the
                 # persisted checkpoint. Never consult mutable live sources or
@@ -2695,82 +2329,6 @@ class KGRebuildService:
                     f"manifest_revalidation_exception:{phase}:{type(exc).__name__}"
                 )
                 return None
-            from okto_pulse.core.kg.rebuild_sources import SourceSetRevalidation
-
-            if revalidation.outcome is SourceSetRevalidation.REBASELINE:
-                if (
-                    rebaseline_target_source_set_hash is not None
-                    and revalidation.to_source_set_hash
-                    != rebaseline_target_source_set_hash
-                ):
-                    from okto_pulse.core.kg.rebuild_sources import (
-                        RevalidationResult,
-                    )
-
-                    logger.warning(
-                        "kg.rebuild_service.spec_manifest_rebaseline_target_drift "
-                        "board=%s run=%s phase=%s expected=%s observed=%s",
-                        board_id,
-                        run_id,
-                        phase,
-                        rebaseline_target_source_set_hash,
-                        revalidation.to_source_set_hash,
-                    )
-                    return RevalidationResult(SourceSetRevalidation.MANIFEST_DRIFT)
-                # The compatibility hash proves semantic equivalence; this is
-                # a schema migration, not content drift.  Keep the phase in the
-                # audit log because a post-drain rebaseline is independently
-                # fenced and intentional.
-                logger.info(
-                    "kg.rebuild_service.spec_manifest_rebaseline board=%s "
-                    "run=%s phase=%s from_manifest_version=%d "
-                    "rebaselined_count=%d rebaselined_source_refs=%s",
-                    board_id,
-                    run_id,
-                    phase,
-                    manifest.manifest_schema_version,
-                    len(revalidation.rebaselined_source_refs),
-                    list(revalidation.rebaselined_source_refs)[:50],
-                )
-                if phase == "pre_step" and not rebaseline_evidence_proved:
-                    evidence_id = f"{run_id}:{manifest_ref}"
-                    self.manifest_store.record_rebaseline(
-                        manifest=manifest,
-                        result=revalidation,
-                        evidence_id=evidence_id,
-                        # This callback runs inside the artifact-store
-                        # transaction.  It therefore linearizes the evidence
-                        # append against erasure instead of trusting the
-                        # pre-call heartbeat observation.
-                        fence_valid=lambda: bool(
-                            lease_active
-                            and _renew_operation_reservation()
-                            and _renew_current_lease()
-                        ),
-                    )
-                    rows: list[Mapping[str, Any]] = []
-                    for row in current_source_set.materializable_sources:
-                        payload = row.to_dict()
-                        payload["_rebuild_manifest_created_at"] = manifest.created_at
-                        payload["_rebuild_rebaseline_evidence_id"] = evidence_id
-                        rows.append(payload)
-                    for row in current_source_set.skipped_expired_working:
-                        if (
-                            row.artifact_type != "code_evidence"
-                            or row.source_artifact_status != "superseded"
-                        ):
-                            continue
-                        payload = row.to_dict()
-                        payload["_rebuild_manifest_created_at"] = manifest.created_at
-                        payload["_rebuild_dependency_closure_candidate"] = (
-                            "code_evidence_supersedence"
-                        )
-                        payload["_rebuild_rebaseline_evidence_id"] = evidence_id
-                        rows.append(payload)
-                    rebaseline_source_rows = tuple(rows)
-                    rebaseline_evidence_id = evidence_id
-                    rebaseline_target_source_set_hash = revalidation.to_source_set_hash
-                    rebaseline_evidence_proved = True
             return revalidation
 
         # 5. Run inside admin guard + safe lifecycle.
@@ -3149,36 +2707,6 @@ class KGRebuildService:
                         phase="pre_step"
                     )
                 except Exception as exc:
-                    from okto_pulse.core.kg.rebuild_sources import (
-                        RebaselineEvidenceFenceLostError,
-                    )
-
-                    if isinstance(exc, RebaselineEvidenceFenceLostError):
-                        return _finalise_with_release(
-                            run_id=run_id,
-                            outcome=RebuildOutcome.REBUILD_FAILED,
-                            reason=RebuildBlockReason.LEASE_LOST,
-                            board_id=board_id,
-                            actor_id=actor_id,
-                            operation=operation,
-                            confirmation_id=confirmation_id,
-                            manifest_ref=manifest_ref,
-                            user_reason=reason,
-                            started_at=started_at,
-                            owner_token=owner_token,
-                            affected_files=(),
-                            previous_kg_generation_id=previous_generation,
-                            current_kg_generation_id=None,
-                            detail="rebaseline evidence fence lost",
-                            triggered_by=actor_id,
-                            step_result=None,
-                            candidate_kg_generation_id=candidate_generation_id,
-                            lease_heartbeat=lease_heartbeat,
-                            operation_reservation=operation_reservation,
-                            reservation_token=reservation_token,
-                            reservation_heartbeat=reservation_heartbeat,
-                            writer_fenced=False,
-                        )
                     logger.exception(
                         "kg.rebuild.manifest_revalidation_failed board=%s "
                         "run=%s phase=pre_step",
@@ -3280,37 +2808,9 @@ class KGRebuildService:
                     source_revalidate=_inner_source_revalidate,
                     recovery_failure_code=recovery_failure_code,
                     recovery_failure_detail=recovery_failure_detail,
-                    rebaseline_source_rows=rebaseline_source_rows,
-                    rebaseline_evidence_id=rebaseline_evidence_id,
-                    rebaseline_target_source_set_hash=(
-                        rebaseline_target_source_set_hash
-                    ),
                 )
                 try:
                     step_result = self.rebuild_step_adapter(step_input)
-                    if rebaseline_evidence_id is not None:
-                        if step_result.rebaseline_evidence_id not in (
-                            None,
-                            rebaseline_evidence_id,
-                        ) or step_result.rebaseline_target_source_set_hash not in (
-                            None,
-                            rebaseline_target_source_set_hash,
-                        ):
-                            raise RuntimeError(
-                                "rebuild_step_rebaseline_binding_mismatch"
-                            )
-                        step_result = replace(
-                            step_result,
-                            rebaseline_evidence_id=rebaseline_evidence_id,
-                            rebaseline_target_source_set_hash=(
-                                rebaseline_target_source_set_hash
-                            ),
-                        )
-                    elif (
-                        step_result.rebaseline_evidence_id is not None
-                        or step_result.rebaseline_target_source_set_hash is not None
-                    ):
-                        raise RuntimeError("rebuild_step_unproved_rebaseline_binding")
                 except Exception as exc:
                     logger.exception(
                         "kg.rebuild.step_adapter_failed board=%s run=%s",
@@ -4124,7 +3624,7 @@ class KGRebuildService:
             if candidate_terminal == RebuildOutcome.FAILED_ORPHAN_VALIDATION.value:
                 final_outcome = RebuildOutcome.FAILED_ORPHAN_VALIDATION
                 final_reason = RebuildBlockReason.ORPHAN_VALIDATION_FAILED
-                operator_action = operator_action or "run_orphan_backfill"
+                operator_action = operator_action or "inspect_kg_health"
             else:
                 final_outcome = outcome
                 final_reason = reason
@@ -4247,15 +3747,6 @@ class KGRebuildService:
                 "manifest_ref": manifest_ref,
                 "run_id": run_id,
             }
-            if step_result and step_result.rebaseline_evidence_id is not None:
-                event_payload.update(
-                    {
-                        "rebaseline_evidence_id": (step_result.rebaseline_evidence_id),
-                        "rebaseline_target_source_set_hash": (
-                            step_result.rebaseline_target_source_set_hash
-                        ),
-                    }
-                )
             _require_terminal_fence("terminal_event")
             try:
                 emit_result = self.event_emitter(event_payload)
@@ -4480,8 +3971,6 @@ __all__ = [
     "ClosedRebuildReconciliation",
     "KGRebuildService",
     "KGRebuiltEventEmitter",
-    "LegacyManualRestoreQueueOnlyAdapter",
-    "LegacyManualRestoreQueueOnlyInput",
     "OrphanScanProvider",
     "REBUILD_DIRNAME",
     "RebuildBlockReason",

@@ -18,8 +18,7 @@ from okto_pulse.core.application.boundary.source_read_consumer_gate import (
 )
 from okto_pulse.core.kg.board_source_store import (
     REFINEMENT_CONTENT_COLUMNS,
-    SPEC_CONTENT_COLUMNS_V1,
-    SPEC_CONTENT_COLUMNS_V2,
+    SPEC_CONTENT_COLUMNS,
     SPEC_SOURCE_MANIFEST_VERSION,
     _canonical_content_hash,
     projected_root_content_hash,
@@ -28,9 +27,8 @@ from okto_pulse.core.kg.interfaces.board_source_reader import (
     BoardSourceSnapshot,
     SourceReadError,
 )
-from okto_pulse.core.services.quality_projection_currentness import (
-    legacy_spec_validation_digest_set_v1,
-    legacy_spec_validation_versions_v1,
+from okto_pulse.core.domain.quality_assessment import (
+    AssessmentDigestSet, AssessmentVersionSet,
 )
 
 _board_source_reader = pytest.importorskip(
@@ -82,11 +80,11 @@ def _source_db(tmp_path: Path) -> Path:
         conn.execute(
             "INSERT INTO cards "
             "(id, board_id, status, created_at, updated_at, title, description, "
-            "details, priority, card_type, spec_id, sprint_id, test_scenario_ids, "
-            "conclusions, screen_mockups, knowledge_bases, validations, "
+            "details, priority, card_type, spec_id, test_scenario_ids, "
+            "conclusions, screen_mockups, validations, "
             "origin_task_id, severity, expected_behavior, observed_behavior, "
             "steps_to_reproduce, action_plan, linked_test_task_ids) VALUES ("
-            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 "bug1",
                 "b1",
@@ -99,8 +97,6 @@ def _source_db(tmp_path: Path) -> Path:
                 "high",
                 "bug",
                 "s1",
-                None,
-                "[]",
                 "[]",
                 "[]",
                 "[]",
@@ -151,14 +147,9 @@ def test_community_reader_preserves_source_contract_fields(tmp_path: Path) -> No
     assert spec["source_artifact_status"] == "done"
     assert spec["source_manifest_version"] == SPEC_SOURCE_MANIFEST_VERSION
     assert spec["working_ttl_days"] == 7
-    assert spec["content_hash_v1"] == _canonical_content_hash(
-        _spec_hash_row(), SPEC_CONTENT_COLUMNS_V1
-    )
-    content_hash_v2 = _canonical_content_hash(
-        _spec_hash_row(), SPEC_CONTENT_COLUMNS_V2
-    )
-    assert spec["content_hash_v2"] == content_hash_v2
-    assert spec["content_hash"] == projected_root_content_hash(content_hash_v2)
+    base_hash = _canonical_content_hash(_spec_hash_row(), SPEC_CONTENT_COLUMNS)
+    assert spec["content_hash"] == projected_root_content_hash(base_hash)
+    assert "content_hash_v1" not in spec and "content_hash_v2" not in spec
 
     decision = next(row for row in rows if row["artifact_type"] == "decision")
     assert decision["source_ref"] == "decision:s1:dec1"
@@ -211,20 +202,16 @@ def _insert_mapping(
 def _seed_current_projection_heads(
     connection: sqlite3.Connection,
 ) -> None:
-    quality_subject = {
-        field_name: (
-            json.loads(value)
-            if isinstance(value, str)
-            and value.lstrip().startswith(("[", "{"))
-            else value
-        )
-        for field_name, value in _spec_hash_row().items()
-    }
-    quality_digests = legacy_spec_validation_digest_set_v1(
-        subject=quality_subject,
-        qa_items=(),
+    # Explicit native receipt fixture: no import or inferred legacy identity.
+    quality_digests = AssessmentDigestSet(
+        content_digest="1" * 64, clarification_digest="2" * 64,
+        ruleset_digest="3" * 64, taxonomy_digest="4" * 64,
+        policy_digest="5" * 64,
     )
-    quality_versions = legacy_spec_validation_versions_v1()
+    quality_versions = AssessmentVersionSet(
+        "spec-validation/v1", "spec-validation-taxonomy/v1",
+        "reviewer/v1", "spec-validation-policy/v1",
+    )
     refinement = {
         column: None for column in REFINEMENT_CONTENT_COLUMNS
     }
@@ -264,9 +251,9 @@ def _seed_current_projection_heads(
                 "subject_version": 2,
                 "subject_edition": 1,
                 "assessment_kind": "spec_validation",
-                "origin": "legacy_import",
-                "source": "legacy_migration",
-                "channel": "legacy_import",
+                "origin": "spec_validation",
+                "source": "native",
+                "channel": "mcp",
                 "outcome": "recorded",
                 "scale_kind": "percentage",
                 "scale_minimum": 0.0,
@@ -501,9 +488,9 @@ def test_kg_rebuild_build_source_store_uses_registry_reader() -> None:
 
     configure_test_kg_registry(board_source_reader=_Reader())
 
-    from okto_pulse.community.api.kg_rebuild import _build_source_store
+    from okto_pulse.core.application.kg_rebuild import build_source_store
 
-    assert _build_source_store()("b-reg") == [{"artifact_type": "spec", "id": "b-reg"}]
+    assert build_source_store()("b-reg") == [{"artifact_type": "spec", "id": "b-reg"}]
 
 
 def test_source_read_gate_passes_real_core_and_blocks_direct_consumer(

@@ -10,7 +10,7 @@ e rotula a ausência como ``legacy_unknown`` (nunca canonical implícito).
   * TS1 (ts_772ec35d) — canonical-only EXCLUI o node sem classificação, em TODAS
     as superfícies reais de leitura: get_all_nodes, count_all_nodes,
     get_related_context (GET_RELATED_CONTEXT) e o /subgraph?center
-    (kuzu_graph_store).
+    (grafx_graph_store).
   * TS6 (ts_323672ab) — include_working/all ROTULA o node sem classificação como
     ``legacy_unknown`` (não 'canonical', não raw null).
 
@@ -35,6 +35,7 @@ os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_failclosed
 
 from okto_pulse.community.api.kg_routes import get_subgraph
 from okto_pulse.core.application.use_cases.base import ActorContext
+from okto_pulse.core.domain.permissions import PermissionSet
 from okto_pulse.core.kg import cypher_templates as tpl
 from okto_pulse.core.kg.cypher_templates import (
     layer_filter_clause,
@@ -65,7 +66,7 @@ def _seed_layered_board() -> str:
     with open_board_connection(board_id) as (_db, conn):
         for nid, ref, title, layer in _NODES:
             if layer is None:
-                # Sem a propriedade graph_layer → NULL/ausente no Kuzu.
+                # Sem a propriedade graph_layer → NULL/ausente no Grafx.
                 conn.execute(
                     "CREATE (n:Decision {id:$id, title:$t, source_artifact_ref:$r, "
                     "source_confidence:1.0, relevance_score:0.9, "
@@ -109,7 +110,7 @@ async def _subgraph(board_id: str, **kw):
             "kg-layer-test",
             "rest",
             board_id=board_id,
-            permissions=["board:read"],
+            permissions=PermissionSet({"board": {"read": True}, "kg": {"query": {"related_context": True}}}),
         ),
         uow=SimpleNamespace(),
     )

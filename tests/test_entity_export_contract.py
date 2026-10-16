@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
@@ -32,6 +33,11 @@ from okto_pulse.core.domain.spec_dependency import SpecDependencyRecord
 
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=timezone.utc)
+
+
+def test_retired_sprint_is_not_an_operational_export_type():
+    with pytest.raises(ValueError):
+        EntityExportType("sprint")
 
 
 def _bundle(*, observed_at: datetime = NOW) -> EntityExportBundle:

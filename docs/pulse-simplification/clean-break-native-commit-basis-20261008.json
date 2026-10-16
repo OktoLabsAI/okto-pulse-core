@@ -1,0 +1,51 @@
+{
+  "scope": "DEI-T24 opaque commit bases, divergent branches and revert",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "DEI:DEI-T24",
+  "result": {
+    "passed": 15,
+    "failed": 0,
+    "new_cases": 10,
+    "regression_cases": 5,
+    "seconds": 28.96,
+    "terminal_session": 24511
+  },
+  "evidence": [
+    "Native schema and coherent accepted predecessor/head lineage provide two current execution proofs on distinct Targets.",
+    "Six SQL admission cases combine equal, lexically lower and lexically higher commit identities, with both execution-reference orders. Different bases refuse delivery_execution_base_conflict with zero records even after commit; same-base controls succeed.",
+    "Four additional cases construct real disposable Git history: sibling divergent branches share only the baseline; revert is a descendant of feature while restoring baseline content with a distinct commit.",
+    "The domain proof predicate rejects both real commit pairs in both orders. It does not infer an integrated base from lexical order, a later observation, ancestry or restored file contents.",
+    "Existing five native currentness/disposition cases pass again after parameterizing the helper revision."
+  ],
+  "attempts": [
+    {
+      "campaign": "native-commit-basis-20261008-1",
+      "passed": 5,
+      "failed": 6,
+      "seconds": 23.09,
+      "reason": "New test insertion accidentally attached the previous disposition test tail to the new function. Corrected test placement; no product change."
+    },
+    {
+      "campaign": "native-commit-basis-20261008-2",
+      "passed": 11,
+      "failed": 0,
+      "seconds": 22.04,
+      "reason": "Native SQL matrix before four real-Git domain cases were added."
+    }
+  ],
+  "limits": [
+    "Real Git hashes are supplied as controlled domain proof facts, not persisted as falsely authenticated source receipts. Native SQL admission separately uses coherent synthetic accepted origin facts.",
+    "Same-base admission control is not a claim that implementation evidence alone satisfies test/lifecycle/governance gates.",
+    "Installed wheel/source parity proved before behavior campaigns. No product/frontend changes. Frontend44 reused after hash verification and empty source diff, not rerun or counted.",
+    "No real-data operation or promotion; main88 closure remains applicable with eight zero budgets."
+  ],
+  "artifacts": {
+    "provenance-native-commit-basis-20261008-1.json": "c35630f14439f6ddab5cff73c9542c2c13027cc3a7c4ef2267cea4cd59829414",
+    "native-commit-basis-20261008-1.xml": "2f11f3e6287995b4881f46d6bdf12fc55afa036564b0f91fd82c5ae5f4a9f2ac",
+    "native-commit-basis-20261008-2.xml": "dfb4e61e9fec62c593da25d0c63182ade22bb7ca3dc6a6f9d70f2b47791ce8ee",
+    "native-commit-basis-20261008-3.xml": "4451fd5a4e60730e911e636896fca914f9a00db37f29edf132d229c7a0ec49ee",
+    "native-delivery-envelope-frontend1.json": "a751880c26e35030dc6efc27dfb79d81a4f937cd3ffa9d2bf7f490e31f2d146d",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

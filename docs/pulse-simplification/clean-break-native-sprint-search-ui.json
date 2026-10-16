@@ -1,0 +1,44 @@
+{
+  "criterion": "KG:KG-52",
+  "qualification": "partial_current_pair_review",
+  "proof_pair": "dist-native-main69",
+  "change": "Removed the disabled Sprint dimension from actual Global Discovery search results. No replacement planning entity or compatibility path added.",
+  "reproduction": "Current test failed with the + sprint button in the rendered result panel before the change; the same assertion passes after removal.",
+  "tests": {
+    "frontend_passed": 16,
+    "initial_expected_regression_failure": 1
+  },
+  "frontend": {
+    "packaged_files": 79,
+    "assets": 78,
+    "tree_sha256": "0c3dcfbf8a2269ff1f15946199ade9eac1af7007ee23bbc1fddf51eb276a6508",
+    "build": "tsc/vite/contract/sync terminal0",
+    "verify_frontend_dist": "terminal0"
+  },
+  "closure": {
+    "ok": true,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    },
+    "findings": [],
+    "documentation_findings": []
+  },
+  "limits": [
+    "KG52 remains pending: source/query/saved-state and Q15 requirement-without-Card coverage must be reviewed together.",
+    "Python product unchanged; frontend artifact rebuilt and both wheels installed in the disposable validation environment.",
+    "No production promotion, real runtime changes or data conversion."
+  ],
+  "artifacts": {
+    "provenance-native-main69.json": "98714aca95d031ab832569408a5a8403595c6a1bfee8e4e8b606d0f5853c217b",
+    "closure-native-main69.json": "2c8583953abaa36836bdd3938fe150a915d6b3a480dea4da4ab9ae21569c205f",
+    "native-sprint-search-repro1.json": "9fe9f9fd9538b01bda45bae7e12a0a2e00722c5a01cf1062de74c271d3831cd7",
+    "native-sprint-search-frontend2.json": "2853394933b71aff1f0378a2f1d9c0df43a299622e0482b911522567c8feb154"
+  }
+}

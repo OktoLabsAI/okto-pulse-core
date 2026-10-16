@@ -1,8 +1,4 @@
-"""Documentary guards for contextual Code Evidence agent guidance.
-
-These tests keep the bundled MCP resources aligned with the contextual V2
-contract without pretending that human-only REST/UI mutations are MCP tools.
-"""
+"""Documentary guards for the native contextual Code Evidence contract."""
 
 from __future__ import annotations
 
@@ -29,7 +25,6 @@ def test_canonical_guidance_separates_as_is_evidence_from_to_be_intent() -> None
         "existing_scaffold",
         "existing_constraint",
         "reference_pattern",
-        "uncategorized_legacy",
     ):
         assert f"`{source_role}`" in canonical
     for field in (
@@ -47,7 +42,7 @@ def test_canonical_guidance_separates_as_is_evidence_from_to_be_intent() -> None
     assert "planned, omit this call and describe it as TO-BE" in canonical
 
 
-def test_greenfield_absence_is_complete_outcome_and_v1_fails_closed() -> None:
+def test_greenfield_absence_is_complete_and_earlier_formats_are_rejected() -> None:
     canonical = _read("reference/code_traceability.md")
     preflight = _read("workflows/preflight.md")
 
@@ -58,57 +53,39 @@ def test_greenfield_absence_is_complete_outcome_and_v1_fails_closed() -> None:
     assert "finding, not an access failure" in canonical
     assert "with complete source identity" in canonical
     assert "and no omissions" in canonical
-    assert "V1 receipts and Evidence remain readable for compatibility" in canonical
-    assert "New governed work must not author V1" in canonical
-    assert "live inbound schema exposes only the legacy shape, stop" in canonical
-    assert "If the\nlive inbound surface exposes only V1, stop" in preflight
+    assert "Earlier formats are rejected without conversion." in canonical
+    assert "earlier formats are rejected without conversion." in preflight
 
 
-def test_legacy_classification_is_actor_governed_append_only_and_exposed_to_mcp() -> None:
-    canonical = _read("reference/code_traceability.md")
-    tool_docs = _read("reference/tool-docs/code-traceability.md")
-
-    assert "authorized human may use the UI/REST batch" in canonical
-    assert "authorized\nagent may use `okto_pulse_classify_legacy_code_evidence`" in canonical
-    assert "`code_traceability.evidence.classify_legacy`" in canonical
-    assert "Classification is an append-only overlay" in canonical
-    assert "original Evidence payload is never edited" in canonical
-    assert "does not turn its V1 investigation receipt into a V2 receipt" in canonical
-    assert "## `okto_pulse_classify_legacy_code_evidence`" in tool_docs
-    assert "must request human input when the" in tool_docs
-
+def test_removed_classification_is_not_an_operational_instruction() -> None:
+    for path in (
+        "reference/code_traceability.md", "reference/tool-docs/code-traceability.md",
+        "workflows/preflight.md", "workflows/cards.md", "workflows/specs.md",
+        "workflows/refinements.md", "reference/tool-docs/refinement.md",
+        "reference/tool-docs/spec.md",
+    ):
+        content = _read(path)
+        assert "okto_pulse_classify_legacy_code_evidence" not in content
+        assert "code_traceability.evidence.classify_legacy" not in content
     documented_tools = re.findall(
-        r"^## `(?P<name>okto_pulse_[^`]+)`$", tool_docs, re.MULTILINE
+        r"^## `(?P<name>okto_pulse_[^`]+)`$",
+        _read("reference/tool-docs/code-traceability.md"), re.MULTILINE,
     )
     assert documented_tools
-    assert "okto_pulse_classify_legacy_code_evidence" in documented_tools
     assert not any("rebase" in name for name in documented_tools)
 
 
 def test_effective_projection_and_frozen_spec_rebase_are_explicit() -> None:
     canonical = _read("reference/code_traceability.md")
     specs = _read("workflows/specs.md")
-
-    for origin in (
-        "authored",
-        "human_legacy_classification",
-        "unclassified_legacy",
+    for fragment in (
+        "context_origin=authored", "complete effective evidence set even when",
+        "do not silently rewrite an existing\nSpec", "`preview_sha256`",
+        "A stale preview fails closed", "`contextual_evidence_coverage`",
+        "`projection_complete=false`", "bounded lower bounds",
     ):
-        assert f"`{origin}`" in canonical
-    assert "complete effective evidence set even when" in canonical
-    assert "classification revision/digest" in canonical
-    assert "do not silently rewrite an existing\nSpec" in canonical
-    assert "`preview_sha256`" in canonical
-    assert "A stale preview fails closed" in canonical
+        assert fragment in canonical
     assert "apply that exact\n`preview_sha256`" in specs
-    assert "`source_context_classification_inputs`" in canonical
-    assert "current Refinement only" in canonical
-    assert "always empty for `summary`, gate scope,\nSpec, and Card" in canonical
-    assert "`provenance_note_required=true`" in canonical
-    assert "`contextual_evidence_coverage`" in canonical
-    assert "do not\nreinterpret the legacy `coverage` field" in canonical
-    assert "`projection_complete=false`" in canonical
-    assert "bounded lower bounds" in canonical
 
 
 def test_workflows_and_tool_docs_carry_the_contextual_contract() -> None:
@@ -118,7 +95,6 @@ def test_workflows_and_tool_docs_carry_the_contextual_contract() -> None:
             "contextual V2 Code Traceability investigation",
             "no_relevant_existing_implementation",
             "TO-BE paths",
-            "okto_pulse_classify_legacy_code_evidence",
         ),
         "workflows/specs.md": (
             "Establish delivery context, then investigate AS-IS source",
@@ -131,20 +107,17 @@ def test_workflows_and_tool_docs_carry_the_contextual_contract() -> None:
             "effective `source_context`",
             "TO-BE Target intent",
             "existing_scaffold",
-            "code_traceability.evidence.classify_legacy",
         ),
         "reference/tool-docs/refinement.md": (
             "delivery_context",
             "contextual V2 receipt",
             "Evidence is AS-IS only",
             "no_relevant_existing_implementation",
-            "okto_pulse_classify_legacy_code_evidence",
         ),
         "reference/tool-docs/spec.md": (
             "delivery_context_override_reason",
             "inherits and pins the exact delivery-context provenance",
             "effective `source_context`",
-            "classification is append-only",
             "preview_sha256",
         ),
     }
@@ -163,8 +136,6 @@ def test_agent_bootstrap_contains_the_clean_context_safety_summary() -> None:
         "contextual V2 and AS-IS only",
         "Greenfield scaffold/base/reference",
         "planned TO-BE structure",
-        "okto_pulse_classify_legacy_code_evidence",
-        "code_traceability.evidence.classify_legacy",
         "derived Spec remains frozen",
     ):
         assert fragment in instructions

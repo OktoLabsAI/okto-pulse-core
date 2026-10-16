@@ -8,18 +8,23 @@ import inspect
 import json
 import logging
 import re
-import threading
 import warnings
 import uuid as _uuid
 from collections.abc import Mapping
 from contextlib import AsyncExitStack
 from dataclasses import replace as dataclass_replace
-from datetime import datetime, timezone
+from datetime import datetime
+from okto_pulse.core.models.bug_clusters import BugClustersRequest
+from okto_pulse.core.models.spec_coverage_query import SpecCoverageRequest
+from okto_pulse.core.models.decision_impact import DecisionImpactRequest
+from okto_pulse.core.domain.decision_verification import DecisionVerification
+from okto_pulse.core.models.schemas import SpecValidationPinpoint as SpecValidationPinpointSchema
+from okto_pulse.core.models.lineage_query import LineageRequest
 from importlib.resources import files as package_files
 from types import SimpleNamespace
 from typing import Annotated, Any, Callable, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PlainValidator, WithJsonSchema
+from pydantic import BaseModel, ConfigDict, Field, PlainValidator, StrictBool, WithJsonSchema
 from pydantic_core import PydanticCustomError
 
 from okto_pulse.core import __version__ as _CORE_PACKAGE_VERSION
@@ -30,7 +35,6 @@ from okto_pulse.core.runtime_context import (
     runtime_state,
 )
 
-from okto_pulse.core.application.scope import ActorScope
 from okto_pulse.core.application.use_cases.base import PermissionDeniedError
 from okto_pulse.core.application.history_pagination import (
     HistoryReadValidationError,
@@ -38,7 +42,6 @@ from okto_pulse.core.application.history_pagination import (
 from okto_pulse.core.application.ideation_scope import (
     IdeationScopeValidationError,
 )
-from okto_pulse.core.domain.datetime_utils import isoformat_utc
 from okto_pulse.core.domain.human_validation_cycle import (
     SubjectEditRequiresDraftError,
 )
@@ -46,35 +49,40 @@ from okto_pulse.core.domain.spec_dependency import (
     SPEC_DEPENDENCY_CURSOR_MAX_LENGTH,
     SPEC_DEPENDENCY_REMOVAL_REASON_MAX_LENGTH,
 )
-from okto_pulse.core.domain.code_traceability_kg import (
-    KGDeadLetterReprocessScope,
-)
 from okto_pulse.core.domain.test_scenarios import (
     DEFAULT_SCENARIO_TYPE,
     SCENARIO_TYPE_DESCRIPTION,
     ScenarioType,
     VALID_SCENARIO_TYPES,
+    VerificationMethod,
 )
 from okto_pulse.core.infra.config import get_settings
-from okto_pulse.core.infra.permissions import Permissions, check_permission
-from okto_pulse.core.mcp.catalog import CoreMcpCatalog, CoreMcpResource
+from okto_pulse.core.domain.permissions import check_permission
+from okto_pulse.core.mcp.catalog import CoreMcpCatalog, CoreMcpResource, closed_mcp_schema
+from okto_pulse.core.domain.architecture_classification import ArchitectureClassificationBatch
+from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
+from okto_pulse.core.domain.learning_submission import LearningSubmission
+from okto_pulse.core.domain.learning_intent import LearningIntentRequest
+from okto_pulse.core.ports.learning_capture import LearningCaptureTargetConflict
 from okto_pulse.core.mcp.cancellation_projection import project_cancellation
 from okto_pulse.core.mcp.filters import (
     BoardEntityType,
     KnowledgeEntityType,
     QaEntityType,
     SnapshotEntityType,
-    parse_filter_payload,
+    validate_filter_payload,
 )
 from okto_pulse.core.mcp.helpers import (
     ChoiceOptionInput,
     _structured_error,
-    coerce_to_list_str,
-    parse_multi_value,
-    parse_options_json,
+    validate_string_list,
+    validate_choice_options,
 )
 from okto_pulse.core.mcp.kg_authorization import kg_permission_error
 from okto_pulse.core.mcp.outcome import McpToolOutcome
+from okto_pulse.core.ports.guideline_policy import (
+    GuidelinePolicyPersistenceError,
+)
 from okto_pulse.core.ports.application_persistence import (
     ApplicationFilter,
     ApplicationQuery,
@@ -99,6 +107,7 @@ from okto_pulse.core.ports.mcp_auth import (
     principal_from_auth_session,
     require_authenticator,
 )
+from okto_pulse.core.models.delivery_selection import DeliverySelectionInput
 from okto_pulse.core.models.schemas import (
     ArchitectureDesignCreate,
     ArchitectureDesignUpdate,
@@ -195,33 +204,14 @@ KnowledgePropagationEnvelopeInput = Annotated[
 
 # Keep the MCP transport schema exact and compact.  The shared command performs
 # the cross-field anchor invariant validation after host-level shape validation.
+from okto_pulse.core.domain.spec_evaluation import SpecEvaluationInput
+from okto_pulse.core.domain.spec_planning import SpecPlanningManifest
+from okto_pulse.core.ports.spec_planning_manifest import SpecPlanningManifestUnavailable
+
+
 SpecValidationPinpointInput = Annotated[
     dict[str, Any],
-    WithJsonSchema(
-        {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "metric": {
-                    "type": "string",
-                    "enum": [
-                        "confidence",
-                        "clarity",
-                        "assertiveness",
-                        "decidability",
-                        "ambiguity",
-                    ],
-                },
-                "anchor_type": {
-                    "type": "string",
-                    "enum": ["whole_artifact", "field", "structured_child", "qa"],
-                },
-                "anchor_ref": {"type": ["string", "null"]},
-                "detail": {"type": "string"},
-            },
-            "required": ["metric", "anchor_type", "detail"],
-        }
-    ),
+    WithJsonSchema(SpecValidationPinpointSchema.model_json_schema()),
 ]
 
 
@@ -247,18 +237,6 @@ SpecDependencyCursorInput = Annotated[
     str,
     Field(max_length=SPEC_DEPENDENCY_CURSOR_MAX_LENGTH),
 ]
-
-
-def _trs_to_objects(trs: list[str] | None) -> list | None:
-    """Convert TR strings to objects with IDs for task linkage traceability."""
-    if not trs:
-        return None
-    return [
-        {"id": f"tr_{_uuid.uuid4().hex[:8]}", "text": tr, "linked_task_ids": []}
-        if isinstance(tr, str)
-        else tr
-        for tr in trs
-    ]
 
 
 def _resolve_linked_requirement_tokens_to_fr_or_tr_ids(
@@ -409,6 +387,7 @@ def _build_mcp_catalog() -> CoreMcpCatalog:
 # The core input family is already closed (extra="forbid"), so the published
 # tool schema carries the full nested contract instead of a loose dict.
 ImpactEvidenceParam = ImpactEvidence | None
+DeliverySelectionParam = DeliverySelectionInput | None
 
 mcp = runtime_state("mcp.catalog", _build_mcp_catalog)
 
@@ -449,11 +428,6 @@ _CORE_RESOURCE_TABLE = [
         "okto-pulse://workflows/cards",
         "workflows/cards.md",
         "Cards workflow — impl/bug/test execution.",
-    ),
-    (
-        "okto-pulse://workflows/sprints",
-        "workflows/sprints.md",
-        "Sprints workflow — lifecycle e evaluation.",
     ),
     (
         "okto-pulse://workflows/kg",
@@ -498,7 +472,7 @@ _CORE_RESOURCE_TABLE = [
     (
         "okto-pulse://reference/transitions",
         "reference/transitions.md",
-        "Status transitions matrix — cards/sprints/specs.",
+        "Status transitions matrix — cards/specs.",
     ),
     (
         "okto-pulse://reference/list_tools",
@@ -513,7 +487,7 @@ _CORE_RESOURCE_TABLE = [
     (
         "okto-pulse://reference/projection-profiles",
         "reference/projection_profiles.md",
-        "Projection profiles (summary/detail/full/legacy) + response envelope (SC1).",
+        "Projection profiles (summary/detail/full) + response envelope (SC1).",
     ),
     (
         "okto-pulse://reference/kg-health",
@@ -673,11 +647,6 @@ _CORE_RESOURCE_TABLE = [
         "Full long-form docs for story tools (args/returns/examples).",
     ),
     (
-        "okto-pulse://reference/tool-docs/sprint",
-        "reference/tool-docs/sprint.md",
-        "Full long-form docs for sprint tools (args/returns/examples).",
-    ),
-    (
         "okto-pulse://reference/tool-docs/test-scenario",
         "reference/tool-docs/test-scenario.md",
         "Full long-form docs for test-scenario tools (args/returns/examples).",
@@ -702,7 +671,7 @@ _CORE_RESOURCE_TABLE = [
     (
         "okto-pulse://reference/tool-families/qa_ask",
         "reference/tool-families/qa_ask.md",
-        "R4 consolidated Q&A ask: target_types, aliases, sprint asymmetry.",
+        "R4 consolidated Q&A ask: target_types and per-target authorization.",
     ),
 ]
 
@@ -961,7 +930,6 @@ _TOOL_DOCS_FAMILY_RULES = [
     ("policy_compliance", "guideline"),
     ("policy_waiver", "guideline"),
     ("guideline", "guideline"),
-    ("sprint", "sprint"),
     ("spec", "spec"),
     ("ideation", "ideation"),
     ("refinement", "refinement"),
@@ -985,9 +953,10 @@ _TOOL_DOCS_FAMILY_RULES = [
 _CODE_TRACEABILITY_TOOL_NAMES = frozenset(
     {
         "okto_pulse_get_delivery_evidence",
+        "okto_pulse_get_decision_reviews",
+        "okto_pulse_record_decision_reviews",
         "okto_pulse_record_delivery_evidence",
         "okto_pulse_acknowledge_implementation_overlap",
-        "okto_pulse_classify_legacy_code_evidence",
         "okto_pulse_clear_code_traceability_not_applicable",
         "okto_pulse_create_implementation_target",
         "okto_pulse_get_code_evidence",
@@ -1012,6 +981,12 @@ _CODE_TRACEABILITY_TOOL_NAMES = frozenset(
 
 def tool_docs_family(tool_name: str) -> str:
     """Deterministic tool-docs family for a tool name (R1.1 / api_fd7c5878)."""
+    if tool_name == "okto_pulse_get_requirement_verification":
+        return "spec"
+    if tool_name == "okto_pulse_admit_test_verification_report":
+        return "test-scenario"
+    if tool_name == "okto_pulse_associate_amendment_revision_artifacts":
+        return "card"
     if tool_name in _CODE_TRACEABILITY_TOOL_NAMES:
         return "code-traceability"
     if "kg" in tool_name.split("_"):
@@ -1264,7 +1239,7 @@ async def _get_agent_ctx_for_credential(
     """Authenticate a provided MCP credential and verify board access.
 
     Resolves granular PermissionSet (agent_flags ∩ board_overrides) with 60s
-    cache. Falls back to legacy flat permissions if permission_flags is not set.
+    cache. Preset lineage and direct flags use the canonical permission policy.
     """
     auth_session = await _authenticate_mcp_session(credential)
     if auth_session is None:
@@ -1410,28 +1385,6 @@ def _canonical_api_contract_error(exc) -> str:
     return json.dumps({"error": "invalid_api_contract", "detail": details})
 
 
-def _canonical_sprint_validation_error(exc) -> str:
-    """Render a SprintCreate/SprintUpdate ValidationError as a canonical MCP error.
-
-    S-LANE-01: a ``lane_type`` enum failure becomes the shared
-    ``invalid_lane_type`` envelope — identical to the REST surface — so the agent
-    never sees the raw Pydantic text (no ``errors.pydantic.dev`` URL, class name,
-    or traceback). Any other field failure becomes a clean, non-leaking error via
-    ``errors(include_url=False)`` (mirrors ``_canonical_api_contract_error``).
-    """
-    from okto_pulse.core.inbound.enum_error_envelope import canonical_enum_error
-
-    envelope = canonical_enum_error(exc.errors())
-    if envelope is not None:
-        return json.dumps(envelope)
-    details = "; ".join(
-        ((".".join(str(p) for p in e.get("loc", ())) + ": ") if e.get("loc") else "")
-        + str(e.get("msg", "invalid value"))
-        for e in exc.errors(include_url=False)
-    )
-    return json.dumps({"error": "invalid_sprint", "detail": details})
-
-
 def _validate_api_contract_write(contract: dict) -> str | None:
     """Validate one api-contract dict as a WRITE and surface a canonical error.
 
@@ -1454,26 +1407,18 @@ def _validate_api_contract_write(contract: dict) -> str | None:
 
 
 def _project_api_contract(contract: dict[str, Any]) -> dict[str, Any]:
-    """Normalize the discriminator for tolerant legacy contract reads."""
+    """Validate current stored contracts without inferring an interaction type."""
+    from okto_pulse.core.models.schemas import ApiContract
 
-    projected = dict(contract)
-    if not projected.get("contract_type"):
-        method = str(projected.get("method") or "").strip().upper()
-        projected["contract_type"] = {
-            "TOOL": "in_process",
-            "COMPONENT": "in_process",
-            "EVENT": "event",
-        }.get(method, "http")
-    return projected
+    return ApiContract.model_validate(contract).model_dump(mode="json")
 
 
-def _project_api_contracts(contracts: Any) -> list[Any]:
-    """Project every mapping while keeping malformed legacy rows readable."""
-
-    return [
-        _project_api_contract(contract) if isinstance(contract, dict) else contract
-        for contract in (contracts or [])
-    ]
+def _project_api_contracts(contracts: Any) -> list[dict[str, Any]]:
+    if contracts is None:
+        return []
+    if not isinstance(contracts, list):
+        raise ValueError("invalid_api_contract_collection")
+    return [_project_api_contract(contract) for contract in contracts]
 
 
 def _auth_error() -> str:
@@ -1515,7 +1460,6 @@ async def _authorize_kg_operation(
     actor: Any,
     *,
     operation: str,
-    legacy_operation: str,
     board_id: str | None = None,
 ) -> str | None:
     """Authorize one canonical KG operation before adapter-owned work."""
@@ -1529,7 +1473,6 @@ async def _authorize_kg_operation(
         await AuthorizeOperationUseCase().execute(
             AuthorizeOperationCommand(
                 operation,
-                legacy_operation=legacy_operation,
                 board_id=board_id,
             ),
             actor=actor,
@@ -1575,37 +1518,22 @@ def _mcp_permission_error_response(msg: str) -> str:
 def _mcp_check_permission(
     permissions: Any,
     granular_permission: str,
-    legacy_permission: str | None = None,
 ) -> str | None:
-    """Check granular flags while keeping legacy flat permissions working."""
-    if permissions is None:
-        return None
-
-    from okto_pulse.core.infra.permissions import PermissionSet
-
-    if isinstance(permissions, PermissionSet):
-        return permissions.check(granular_permission)
+    """Check the exact canonical operation supplied by the tool."""
     if isinstance(permissions, (list, tuple, set)) and "*" in permissions:
-        # The authenticated MCP principal uses this legacy token as the same
-        # explicit trusted sentinel recognized by the central Core policy.
-        return None
-    if check_permission(permissions, granular_permission) is None:
-        return None
-    if legacy_permission and check_permission(permissions, legacy_permission) is None:
-        return None
-    return f"Permission denied: requires '{granular_permission}'"
+        permissions = None
+    return check_permission(permissions, granular_permission)
 
 
 def _mcp_check_story_state_permission(
     permissions: Any,
     granular_permission: str | None,
     story: Any,
-    legacy_permission: str | None = None,
 ) -> str | None:
     if not granular_permission:
         return None
 
-    from okto_pulse.core.infra.permissions import PermissionSet
+    from okto_pulse.core.domain.permissions import PermissionSet
 
     if isinstance(permissions, PermissionSet):
         return permissions.check_with_state(
@@ -1613,15 +1541,9 @@ def _mcp_check_story_state_permission(
             "story",
             story_state(story.status, archived=bool(getattr(story, "archived", False))),
         )
-    return _mcp_check_permission(permissions, granular_permission, legacy_permission)
+    return _mcp_check_permission(permissions, granular_permission)
 
 
-def _mcp_architecture_legacy_permission(parent_type: str, action: str) -> str:
-    if action == "read":
-        return Permissions.BOARD_READ
-    if parent_type == "card":
-        return Permissions.CARDS_UPDATE
-    return Permissions.SPECS_UPDATE
 
 
 def _mcp_check_architecture_permission(
@@ -1632,7 +1554,6 @@ def _mcp_check_architecture_permission(
     return _mcp_check_permission(
         permissions,
         f"{parent_type}.architecture.{action}",
-        _mcp_architecture_legacy_permission(parent_type, action),
     )
 
 
@@ -1640,16 +1561,9 @@ def _mcp_check_architecture_copy_permission(permissions: Any) -> str | None:
     return _mcp_check_permission(
         permissions,
         "card.copy_from_spec.architecture",
-        Permissions.CARDS_UPDATE,
     )
 
 
-def _mcp_resource_gate_legacy_permission(entity_type: str, action: str) -> str:
-    if action == "read":
-        return Permissions.BOARD_READ
-    if entity_type == "card":
-        return Permissions.CARDS_UPDATE
-    return Permissions.SPECS_UPDATE
 
 
 def _mcp_check_resource_gate_permission(
@@ -1661,7 +1575,6 @@ def _mcp_check_resource_gate_permission(
     return _mcp_check_permission(
         permissions,
         f"{entity_type}.entity.{capability}",
-        _mcp_resource_gate_legacy_permission(entity_type, action),
     )
 
 
@@ -1677,8 +1590,6 @@ def _resource_gate_error_response(exc: ResourceGateError) -> str:
     )
 
 
-BoolInput = bool | Literal["true", "false", "1", "0", "yes", "no"]
-OptionalBoolInput = BoolInput | None
 
 _GATE_CONTENT_VALUE_MISSING = object()
 
@@ -1703,7 +1614,6 @@ _TASK_GATE_CARD_SELECT_FIELDS = (
     "origin_task_id",
     "linked_test_task_ids",
     "spec_id",
-    "sprint_id",
     "current_rejection_kind",
     "current_rejection_id",
     "current_rejection_code",
@@ -1730,26 +1640,13 @@ _TASK_GATE_SPEC_SELECT_FIELDS = (
     "validation_max_drift",
 )
 _TASK_GATE_BOARD_SELECT_FIELDS = ("id", "settings")
-_TASK_GATE_SPRINT_SELECT_FIELDS = (
-    "id",
-    "require_task_validation",
-    "validation_min_confidence",
-    "validation_min_completeness",
-    "validation_max_drift",
-)
 
 
-def _flag_enabled(value: BoolInput) -> bool:
-    """Parse the temporary string compatibility form without truthiness."""
-
-    if isinstance(value, bool):
-        return value
-    normalized = value.strip().lower()
-    if normalized in {"true", "1", "yes"}:
-        return True
-    if normalized in {"false", "0", "no"}:
-        return False
-    raise ValueError(f"invalid boolean literal {value!r}; expected true/false or 1/0")
+def _require_boolean(value: bool) -> bool:
+    """Require a native boolean, including on untyped filter boundaries."""
+    if not isinstance(value, bool):
+        raise ValueError("expected a native boolean")
+    return value
 
 
 def _card_subject_version(card: object) -> int:
@@ -1940,7 +1837,6 @@ async def _mcp_code_traceability_projection(
         "summary": CodeTraceabilityProjectionProfile.SUMMARY,
         "detail": CodeTraceabilityProjectionProfile.DETAIL,
         "full": CodeTraceabilityProjectionProfile.FULL,
-        "legacy": CodeTraceabilityProjectionProfile.FULL,
     }.get(profile, CodeTraceabilityProjectionProfile.SUMMARY)
     resolved_scope = (
         CodeTraceabilityContextScope.GATE
@@ -2015,45 +1911,34 @@ def _mcp_spec_coverage_summary(spec: Any) -> dict[str, Any]:
     }
 
 
-def _legacy_coverage_default() -> bool:
-    return bool(getattr(get_settings(), "mcp_legacy_coverage", False))
-
-
-def _saturation_or_coverage(coverage_dict: dict[str, Any]) -> dict[str, Any]:
-    """Pack the minimal saturation envelope (Ideação token-optimization Story 1).
-
-    Returns {"saturation": {"pct", "blocking"}} by default — ~60 bytes vs ~1.5KB
-    of the full coverage block. When OKTO_PULSE_LEGACY_COVERAGE=1, also
-    includes the verbose "coverage" block for backwards compatibility.
-    """
+def _saturation_response(coverage_dict: dict[str, Any]) -> dict[str, Any]:
+    """Expose the current saturation contract for mutation responses."""
     from okto_pulse.core.services.analytics_service import spec_saturation_envelope
 
-    out: dict[str, Any] = {"saturation": spec_saturation_envelope(coverage_dict)}
-    if _legacy_coverage_default():
-        out["coverage"] = coverage_dict
-    return out
+    return {"saturation": spec_saturation_envelope(coverage_dict)}
 
 
-def _parse_json_arg(value: Any, default: Any) -> tuple[Any, str | None]:
-    if value is None or value == "":
+
+def _validate_native_json_arg(
+    value: Any, default: Any, kind: Literal["object", "array"],
+) -> tuple[Any, str | None]:
+    """Validate native structured inputs without decoding strings."""
+    if value is None:
         return default, None
-    if isinstance(value, (dict, list)):
-        return value, None
-    try:
-        return json.loads(value), None
-    except Exception as exc:
-        return None, f"Invalid JSON argument: {exc}"
+    expected = dict if kind == "object" else list
+    if not isinstance(value, expected):
+        return None, f"expected a native {kind}"
+    if kind == "array" and any(not isinstance(item, dict) for item in value):
+        return None, "expected native object items"
+    return value, None
 
 
-def _parse_knowledge_governance_arg(
-    value: dict[str, Any] | str | None,
+def _validate_knowledge_governance_arg(
+    value: dict[str, Any] | None,
 ) -> tuple[Any, str | None]:
     if value is None or isinstance(value, dict):
         return value, None
-    try:
-        return json.loads(value), None
-    except (TypeError, ValueError, json.JSONDecodeError) as exc:
-        error = f"Invalid JSON argument: {exc}"
+    error = "governance_metadata must be a native object"
     return None, json.dumps(
         {
             "code": "knowledge_governance_invalid_metadata",
@@ -2069,6 +1954,10 @@ def _parse_knowledge_governance_arg(
 
 
 def _mcp_architecture_error(exc: Exception) -> str:
+    from okto_pulse.core.services.architecture import ArchitectureVersionConflict
+
+    if isinstance(exc, ArchitectureVersionConflict):
+        return json.dumps({"success": False, **exc.to_payload()})
     if isinstance(exc, ArchitectureWarningAcknowledgementRequired):
         return json.dumps({"success": False, **exc.to_payload()}, default=str)
     return json.dumps({"error": str(exc)})
@@ -2254,6 +2143,45 @@ def _detect_nested_parameter_xml(value: Any) -> bool:
     return bool(_SUSPICIOUS_XML_PATTERNS.search(value))
 
 
+def _guideline_policy_persistence_outcome(
+    error: GuidelinePolicyPersistenceError,
+) -> McpToolOutcome:
+    """Project a guideline-policy persistence failure into the MCP envelope.
+
+    Single boundary projection shared by every registered tool: the canonical
+    mapper owns code/retryability/next action, and the bounded ``reason_code``
+    is surfaced in the message so agents can act without parsing details.
+    """
+
+    from okto_pulse.core.inbound.guideline_policy_error import (
+        UnsupportedGuidelinePolicyError,
+        project_guideline_policy_error,
+    )
+
+    try:
+        projected = project_guideline_policy_error(error)
+    except UnsupportedGuidelinePolicyError:
+        return McpToolOutcome.error(
+            code="internal_error",
+            message="The guideline policy operation could not be completed.",
+            retryable=False,
+            next_action="report_error",
+        )
+
+    details = dict(projected.get("details") or {})
+    reason = str(details.get("reason_code") or error).strip()
+    message = str(projected["message"])
+    if reason and reason not in message:
+        message = f"{message} (reason_code: {reason})"
+    return McpToolOutcome.error(
+        code=str(projected["code"]),
+        message=message,
+        retryable=bool(projected["retryable"]),
+        next_action=projected.get("next_action"),
+        details=details,
+    )
+
+
 def _xml_safety_log_decorator(func):
     """Apply the common MCP boundary checks and error projection to one tool."""
 
@@ -2277,6 +2205,12 @@ def _xml_safety_log_decorator(func):
             # projects its transport-neutral denial into the historical tool
             # envelope, including state-aware denials raised after lookup.
             return _perm_error(str(exc))
+        except GuidelinePolicyPersistenceError as exc:
+            # Guideline-policy persistence failures (CAS/subject/version
+            # conflicts) are domain outcomes, not protocol faults.  Project
+            # them once, here, so every tool answers with the canonical
+            # retryable envelope instead of raising through the transport.
+            return _guideline_policy_persistence_outcome(exc)
 
     wrapper._xml_safety_wrapped = True  # type: ignore[attr-defined]
     return wrapper
@@ -2361,7 +2295,7 @@ async def okto_pulse_get_my_profile() -> str:
     if not agent:
         return json.dumps({"error": "Authentication failed"})
 
-    from okto_pulse.core.infra.permissions import generate_role_summary
+    from okto_pulse.core.domain.permissions import generate_role_summary
 
     return json.dumps(
         {
@@ -2370,7 +2304,7 @@ async def okto_pulse_get_my_profile() -> str:
             "description": agent.description,
             "objective": agent.objective,
             "is_active": agent.is_active,
-            "permissions": agent.permissions,
+            "permissions": agent.permissions.flags if agent.permissions is not None else None,
             "role_summary": generate_role_summary(agent.permissions),
             "created_at": agent.created_at.isoformat() if agent.created_at else None,
             "last_used_at": (
@@ -2396,7 +2330,6 @@ async def okto_pulse_update_my_profile(
     perm_err = _mcp_check_permission(
         agent.permissions,
         "profile.update",
-        Permissions.SELF_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -2519,7 +2452,6 @@ async def okto_pulse_get_publish_health() -> str:
         await AuthorizeOperationUseCase().execute(
             AuthorizeOperationCommand(
                 "metrics.publish_health.read",
-                legacy_operation="board.read",
             ),
             actor=actor,
         )
@@ -2532,7 +2464,7 @@ async def okto_pulse_get_publish_health() -> str:
 
 @mcp.tool()
 async def okto_pulse_list_my_mentions(
-    board_id: str, include_seen: BoolInput = False
+    board_id: str, include_seen: StrictBool = False
 ) -> str:
     """
     List comments and Q&A items where you are mentioned via @name.
@@ -2552,7 +2484,7 @@ async def okto_pulse_list_my_mentions(
         result = await McpListMyMentionsUseCase().execute(
             McpListMyMentionsCommand(
                 board_id,
-                include_seen=_flag_enabled(include_seen),
+                include_seen=_require_boolean(include_seen),
             ),
             actor=actor,
             uow=uow,
@@ -2570,7 +2502,7 @@ async def okto_pulse_list_my_mentions(
 
 
 @mcp.tool()
-async def okto_pulse_mark_as_seen(board_id: str, item_ids: list[str] | str) -> str:
+async def okto_pulse_mark_as_seen(board_id: str, item_ids: list[str]) -> str:
     """
     Mark one or more items as seen so they won't appear in list_my_mentions.
     Use this after processing mentions to avoid seeing them again."""
@@ -2579,7 +2511,7 @@ async def okto_pulse_mark_as_seen(board_id: str, item_ids: list[str] | str) -> s
         return _auth_error()
 
     try:
-        ids = coerce_to_list_str(item_ids)
+        ids = validate_string_list(item_ids)
     except ValueError as e:
         return json.dumps({"error": f"Invalid item_ids: {e}"})
     if not ids:
@@ -2664,7 +2596,7 @@ async def okto_pulse_get_board(board_id: str, include: str = "") -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
     wanted = _parse_include(include)
@@ -2793,18 +2725,23 @@ async def okto_pulse_get_allowed_transitions(
 ) -> str:
     """
     Return allowed lifecycle transitions for story, ideation, refinement, spec,
-    card, sprint, or test_scenario from the same Core SDLC registry used by
+    card, or test_scenario from the same Core SDLC registry used by
     mutations. Each edge includes gates, preconditions, capabilities, effects,
     reason codes, and additive Policy Compliance metadata. Pass entity_id for
     an entity-scoped Policy Compliance decision. A current_status-only request
     keeps lifecycle discovery safe by returning state=policy_subject_required
     on gated edges instead of advertising an unscoped pass.
     """
+    if entity_type == "sprint":
+        return _structured_error("unsupported_entity",
+            ["story", "ideation", "refinement", "spec", "card", "test_scenario"],
+            None, "entity_type='sprint' is not supported by lifecycle discovery")
+
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -2855,7 +2792,6 @@ async def okto_pulse_list_agents(board_id: str) -> str:
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.application.use_cases.base import PermissionDeniedError
-    from okto_pulse.core.infra.permissions import generate_role_summary
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
@@ -2876,7 +2812,7 @@ async def okto_pulse_list_agents(board_id: str) -> str:
                     "description": a.description,
                     "objective": a.objective,
                     "is_active": a.is_active,
-                    "role_summary": generate_role_summary(a.permissions),
+                    "role_summary": a.role_summary,
                     "created_at": a.created_at.isoformat(),
                     "last_used_at": (
                         a.last_used_at.isoformat() if a.last_used_at else None
@@ -3008,7 +2944,7 @@ async def okto_pulse_get_activity_log(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -3265,15 +3201,17 @@ async def _mcp_create_card_v2(
     )
 
 
-async def _mcp_derive_spec_from_refinement_v2(
+async def _mcp_derive_spec_with_knowledge(
     *,
     ctx: Any,
     board_id: str,
-    refinement_id: str,
+    source_id: str,
+    source_type: str,
     envelope: KnowledgePropagationEnvelopeV2,
     mockup_ids: list[str] | None,
     architecture_design_ids: list[str] | None,
     architecture_propagation_mode: str,
+    delivery_context: Any = None,
 ) -> str:
     from okto_pulse.core.application.use_cases import (
         EntityNotFoundError,
@@ -3295,10 +3233,10 @@ async def _mcp_derive_spec_from_refinement_v2(
             async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
                 result = await McpDeriveSpecUseCase().execute(
                     McpDeriveSpecCommand(
-                        "refinement",
-                        refinement_id,
+                        source_type,
+                        source_id,
                         mockup_ids=mockup_ids,
-                        kb_ids=None,
+                        delivery_context=delivery_context,
                         architecture_design_ids=architecture_design_ids,
                         architecture_propagation_mode=(architecture_propagation_mode),
                         knowledge_propagation=envelope,
@@ -3321,7 +3259,7 @@ async def _mcp_derive_spec_from_refinement_v2(
             await _append_knowledge_attempt_after_rollback(error)
             return _knowledge_propagation_error(error)
         except EntityNotFoundError:
-            return json.dumps({"error": "Refinement not found"})
+            return json.dumps({"error": f"{source_type.capitalize()} not found"})
         except ArtifactResourceSelectionError as error:
             return json.dumps(error.to_error_dict())
         except ArchitectureDesignSelectionError as error:
@@ -3357,10 +3295,10 @@ async def okto_pulse_create_card(
     status: Literal["not_started", "started"] = "not_started",
     priority: str = "none",
     assignee_id: str = "",
-    labels: list[str] | str = "",
-    test_scenario_ids: list[str] | str = "",
-    functional_requirement_ids: list[str] | str = "",
-    business_rule_ids: list[str] | str = "",
+    labels: list[str] | None = None,
+    test_scenario_ids: list[str] | None = None,
+    functional_requirement_ids: list[str] | None = None,
+    business_rule_ids: list[str] | None = None,
     card_type: str = "normal",
     origin_task_id: str = "",
     severity: str = "",
@@ -3371,8 +3309,8 @@ async def okto_pulse_create_card(
     knowledge_propagation: KnowledgePropagationEnvelopeInput = None,  # type: ignore[assignment]
 ) -> str:
     """Create a new card on the board. Every card MUST be linked to a spec.
-    The spec must be approved/in_progress/done (test cards also accept
-    validated); create test cards BEFORE requesting spec validation.
+    Normal work is blocked in Spec Done. Bug/regression cards retain their
+    own controls; create test cards BEFORE requesting Spec validation.
 
     For card_type='test', test_scenario_ids is mandatory and limited by the
     board setting max_scenarios_per_card (default 3); split larger scenario
@@ -3445,173 +3383,73 @@ async def okto_pulse_create_card(
                 {"error": f"Bug cards require non-empty: {', '.join(missing)}"}
             )
 
-    from okto_pulse.core.application.use_cases import (
-        McpCreateCardCommand,
-        McpCreateCardUseCase,
+
+    from okto_pulse.core.models.knowledge_propagation import new_omitted_knowledge_selection
+
+    if knowledge_propagation is None:
+        knowledge_propagation = new_omitted_knowledge_selection()
+    try:
+        if not isinstance(
+            knowledge_propagation,
+            KnowledgePropagationEnvelopeV2,
+        ):
+            knowledge_propagation = KnowledgePropagationEnvelopeV2.model_validate(
+                knowledge_propagation
+            )
+    except (TypeError, ValueError) as error:
+        # Validation happens before opening the creation UoW.  The parameter
+        # adapter keeps object/null validation and the published envelope
+        # schema at the host, while deferring the exception-bearing domain
+        # validation to this serialisation-safe boundary.
+        return _knowledge_propagation_request_error(error)
+    _desc_v2 = description.replace("\\n", "\n") if description else None
+    _details_v2 = details.replace("\\n", "\n") if details else None
+    try:
+        scenario_ids_v2 = validate_string_list(test_scenario_ids) or None
+        labels_v2 = validate_string_list(labels) or None
+        fr_ids_v2 = validate_string_list(functional_requirement_ids) or None
+        br_ids_v2 = validate_string_list(business_rule_ids) or None
+    except ValueError as error:
+        return json.dumps(
+            {"error": "invalid_multi_value_input", "detail": str(error)}
+        )
+    card_create_v2 = CardCreate(
+        title=title,
+        description=_desc_v2,
+        details=_details_v2,
+        status=card_status,
+        priority=card_priority,
+        assignee_id=assignee_id or None,
+        labels=labels_v2,
+        spec_id=spec_id,
+        test_scenario_ids=scenario_ids_v2,
+        functional_requirement_ids=fr_ids_v2,
+        business_rule_ids=br_ids_v2,
+        card_type=_card_type_value,
+        origin_task_id=origin_task_id or None,
+        severity=(severity.strip().lower() if severity else None),
+        expected_behavior=(
+            expected_behavior.replace("\\n", "\n") if expected_behavior else None
+        ),
+        observed_behavior=(
+            observed_behavior.replace("\\n", "\n") if observed_behavior else None
+        ),
+        steps_to_reproduce=(
+            steps_to_reproduce.replace("\\n", "\n") if steps_to_reproduce else None
+        ),
+        action_plan=(action_plan.replace("\\n", "\n") if action_plan else None),
+        knowledge_propagation=knowledge_propagation,
     )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    if knowledge_propagation is not None:
-        try:
-            if not isinstance(
-                knowledge_propagation,
-                KnowledgePropagationEnvelopeV2,
-            ):
-                knowledge_propagation = KnowledgePropagationEnvelopeV2.model_validate(
-                    knowledge_propagation
-                )
-        except (TypeError, ValueError) as error:
-            # Validation happens before opening the creation UoW.  The parameter
-            # adapter keeps object/null validation and the published envelope
-            # schema at the host, while deferring the exception-bearing domain
-            # validation to this serialisation-safe boundary.
-            return _knowledge_propagation_request_error(error)
-        _desc_v2 = description.replace("\\n", "\n") if description else None
-        _details_v2 = details.replace("\\n", "\n") if details else None
-        try:
-            scenario_ids_v2 = coerce_to_list_str(test_scenario_ids) or None
-            labels_v2 = coerce_to_list_str(labels) or None
-            fr_ids_v2 = coerce_to_list_str(functional_requirement_ids) or None
-            br_ids_v2 = coerce_to_list_str(business_rule_ids) or None
-        except ValueError as error:
-            return json.dumps(
-                {"error": "invalid_multi_value_input", "detail": str(error)}
-            )
-        card_create_v2 = CardCreate(
-            title=title,
-            description=_desc_v2,
-            details=_details_v2,
-            status=card_status,
-            priority=card_priority,
-            assignee_id=assignee_id or None,
-            labels=labels_v2,
-            spec_id=spec_id,
-            test_scenario_ids=scenario_ids_v2,
-            functional_requirement_ids=fr_ids_v2,
-            business_rule_ids=br_ids_v2,
-            card_type=_card_type_value,
-            origin_task_id=origin_task_id or None,
-            severity=(severity.strip().lower() if severity else None),
-            expected_behavior=(
-                expected_behavior.replace("\\n", "\n") if expected_behavior else None
-            ),
-            observed_behavior=(
-                observed_behavior.replace("\\n", "\n") if observed_behavior else None
-            ),
-            steps_to_reproduce=(
-                steps_to_reproduce.replace("\\n", "\n") if steps_to_reproduce else None
-            ),
-            action_plan=(action_plan.replace("\\n", "\n") if action_plan else None),
-            knowledge_propagation=knowledge_propagation,
-        )
-        return await _mcp_create_card_v2(
-            ctx=ctx,
-            board_id=board_id,
-            spec_id=spec_id,
-            card_create=card_create_v2,
-            scenario_ids_list=scenario_ids_v2,
-            title=title,
-            status=status,
-            priority=priority,
-        )
-
-    # MCP-FU6 strangler: the full create orchestration (create skip_ownership →
-    # commit → scenario backlink → card_created log → commit; 2 commits + flush)
-    # moves into McpCreateCardUseCase over the MCP UoW; the adapter keeps the
-    # coercion + envelope + resp_card. Tool no longer opens get_db_for_mcp nor
-    # builds CardService.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        # Normalize escaped newlines (MCP clients may send \\n instead of real newlines)
-        _desc = description.replace("\\n", "\n") if description else None
-        _details = details.replace("\\n", "\n") if details else None
-
-        try:
-            scenario_ids_list = coerce_to_list_str(test_scenario_ids) or None
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-        try:
-            _labels_list = coerce_to_list_str(labels) or None
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-        try:
-            _fr_ids = coerce_to_list_str(functional_requirement_ids) or None
-            _br_ids = coerce_to_list_str(business_rule_ids) or None
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-
-        card_create = CardCreate(
-            title=title,
-            description=_desc,
-            details=_details,
-            status=card_status,
-            priority=card_priority,
-            assignee_id=assignee_id or None,
-            labels=_labels_list,
-            spec_id=spec_id,
-            test_scenario_ids=scenario_ids_list,
-            functional_requirement_ids=_fr_ids,
-            business_rule_ids=_br_ids,
-            card_type=_card_type_value,
-            origin_task_id=origin_task_id or None,
-            severity=(severity.strip().lower() if severity else None),
-            expected_behavior=expected_behavior.replace("\\n", "\n")
-            if expected_behavior
-            else None,
-            observed_behavior=observed_behavior.replace("\\n", "\n")
-            if observed_behavior
-            else None,
-            steps_to_reproduce=steps_to_reproduce.replace("\\n", "\n")
-            if steps_to_reproduce
-            else None,
-            action_plan=action_plan.replace("\\n", "\n") if action_plan else None,
-        )
-
-        try:
-            card = (
-                await McpCreateCardUseCase().execute(
-                    McpCreateCardCommand(
-                        board_id,
-                        spec_id,
-                        card_create,
-                        scenario_ids_list,
-                        {"title": title, "status": status, "priority": priority},
-                    ),
-                    actor=actor,
-                    uow=uow,
-                )
-            ).card
-        except CardOperationError as e:
-            # Preserve the legacy MCP envelope for max_scenarios_per_card_exceeded
-            # while CardService remains the canonical enforcement point.
-            return json.dumps({"error": e.code, **e.to_dict(), **e.facts})
-        except ValueError as e:
-            return json.dumps({"error": str(e)})
-
-        if not card:
-            return json.dumps({"error": "Failed to create card"})
-
-        resp_card = {
-            "id": card.id,
-            "title": card.title,
-            "description": card.description,
-            "status": card.status.value,
-            "priority": card.priority.value,
-            "position": card.position,
-            "card_type": getattr(card, "card_type", "normal"),
-        }
-        if getattr(card, "card_type", "normal") == "bug":
-            resp_card.update(
-                {
-                    "origin_task_id": card.origin_task_id,
-                    "severity": getattr(card, "severity", None),
-                    "expected_behavior": card.expected_behavior,
-                    "observed_behavior": card.observed_behavior,
-                    "spec_id": card.spec_id,
-                }
-            )
-
-        return json.dumps({"success": True, "card": resp_card}, default=str)
+    return await _mcp_create_card_v2(
+        ctx=ctx,
+        board_id=board_id,
+        spec_id=spec_id,
+        card_create=card_create_v2,
+        scenario_ids_list=scenario_ids_v2,
+        title=title,
+        status=status,
+        priority=priority,
+    )
 
 
 @mcp.tool()
@@ -3621,7 +3459,7 @@ async def okto_pulse_get_card(board_id: str, card_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -3715,28 +3553,27 @@ async def okto_pulse_get_card(board_id: str, card_id: str) -> str:
 async def okto_pulse_resolve_bug_regression_scenarios(
     board_id: str,
     bug_id: str,
-    affected_task_ids: list[str] | str = "",
-    candidate_scenario_ids: list[str] | str = "",
+    affected_task_ids: list[str] | None = None,
+    candidate_scenario_ids: list[str] | None = None,
 ) -> str:
     """
     Preview reusable regression scenarios for a bug without mutating the spec.
 
     Provide ``affected_task_ids`` when the incident spans additional tasks.
     Provide ``candidate_scenario_ids`` to classify a proposed set, including
-    unrelated or cross-spec candidates. Both inputs accept a JSON array, a
-    pipe-delimited string, or a native MCP string list.
+    unrelated or cross-spec candidates. Both inputs require a native array of strings.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
     try:
-        affected_ids = coerce_to_list_str(affected_task_ids)
-        candidate_ids = coerce_to_list_str(candidate_scenario_ids)
+        affected_ids = validate_string_list(affected_task_ids)
+        candidate_ids = validate_string_list(candidate_scenario_ids)
     except ValueError as exc:
         return json.dumps(
             {
@@ -3769,17 +3606,17 @@ async def okto_pulse_resolve_bug_regression_scenarios(
 async def okto_pulse_get_task_context(
     board_id: str,
     card_id: str,
-    include_knowledge: BoolInput = True,
-    include_mockups: BoolInput = True,
-    include_qa: BoolInput = True,
-    include_comments: BoolInput = True,
-    include_architecture: BoolInput = True,
-    include_superseded: BoolInput = False,
+    include_knowledge: StrictBool = True,
+    include_mockups: StrictBool = True,
+    include_qa: StrictBool = True,
+    include_comments: StrictBool = True,
+    include_architecture: StrictBool = True,
+    include_superseded: StrictBool = False,
     profile: Annotated[
         str,
         Field(
             description=(
-                "summary | detail | full | legacy — use full with "
+                "summary | detail | full — use full with "
                 "context_scope=gate before any status-changing move"
             )
         ),
@@ -3806,7 +3643,7 @@ async def okto_pulse_get_task_context(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
     can_read_task_validations = (
@@ -3839,12 +3676,12 @@ async def okto_pulse_get_task_context(
             )
         )
 
-    _inc_kb = _flag_enabled(include_knowledge)
-    _inc_mockups = _flag_enabled(include_mockups)
-    _inc_qa = _flag_enabled(include_qa)
-    _inc_comments = _flag_enabled(include_comments)
-    _inc_architecture = _flag_enabled(include_architecture)
-    _inc_superseded = _flag_enabled(include_superseded)
+    _inc_kb = _require_boolean(include_knowledge)
+    _inc_mockups = _require_boolean(include_mockups)
+    _inc_qa = _require_boolean(include_qa)
+    _inc_comments = _require_boolean(include_comments)
+    _inc_architecture = _require_boolean(include_architecture)
+    _inc_superseded = _require_boolean(include_superseded)
     _gate_scope = _resolved_context_scope == "gate"
     _gate_manifest_inventory: dict[str, dict[str, Any]] = {}
 
@@ -4129,7 +3966,6 @@ async def okto_pulse_get_task_context(
                         _mcp_check_permission(
                             ctx.permissions,
                             "spec.integration_requirements.read",
-                            Permissions.BOARD_READ,
                         )
                         is None
                     )
@@ -4143,7 +3979,6 @@ async def okto_pulse_get_task_context(
                         _mcp_check_permission(
                             ctx.permissions,
                             "spec.observability_requirements.read",
-                            Permissions.BOARD_READ,
                         )
                         is None
                     )
@@ -4210,7 +4045,6 @@ async def okto_pulse_get_task_context(
                         _mcp_check_permission(
                             ctx.permissions,
                             "spec.integration_requirements.read",
-                            Permissions.BOARD_READ,
                         )
                         is None
                     ):
@@ -4221,7 +4055,6 @@ async def okto_pulse_get_task_context(
                         _mcp_check_permission(
                             ctx.permissions,
                             "spec.observability_requirements.read",
-                            Permissions.BOARD_READ,
                         )
                         is None
                     ):
@@ -4367,7 +4200,7 @@ async def okto_pulse_get_task_context(
             else:
                 result["validations"] = list(_task_validations)
 
-        # Validation gate config (resolved from sprint -> spec -> board hierarchy)
+        # Live policy uses migration-only Card preservation, then Spec/Board.
         board_obj = await _gate_select_application_record(
             uow.services,
             entity="board",
@@ -4385,18 +4218,8 @@ async def okto_pulse_get_task_context(
             spec_for_gate = await uow.services.get_application_record(
                 entity="spec", record_id=card.spec_id, includes=()
             )
-        sprint_for_gate = (
-            await _gate_select_application_record(
-                uow.services,
-                entity="sprint",
-                record_id=card.sprint_id,
-                select_fields=_TASK_GATE_SPRINT_SELECT_FIELDS,
-            )
-            if card.sprint_id
-            else None
-        )
         result["validation_config"] = card_service._resolve_validation_config(
-            card, spec_for_gate, sprint_for_gate, board_settings
+            card, spec_for_gate, board_settings
         )
         from okto_pulse.core.services.reviewer_separation import (
             evaluate_task_reviewer_separation,
@@ -4458,6 +4281,26 @@ async def okto_pulse_get_task_context(
                 ),
             )
             result["test_card_operational_flow"] = operational_flow
+            if not _gate_scope:
+                from okto_pulse.core.domain.test_card_verification_context import (
+                    build_test_card_verification_context,
+                )
+                from okto_pulse.core.ports.test_evidence import supported_test_verification_methods
+
+                # Derive from the same authorized source as my_test_scenarios;
+                # never persist another copy or infer verification from status.
+                result["test_verification_context"] = {
+                    "board_id": board_id, "card_id": card.id,
+                    "spec_id": card.spec_id,
+                    "spec_version": spec.version if spec is not None else None,
+                    "spec_edition": getattr(spec, "edition", None),
+                    **build_test_card_verification_context(
+                        scenario_ids=card.test_scenario_ids,
+                        scenarios=spec.test_scenarios if spec is not None else None,
+                        criteria=spec.acceptance_criteria if spec is not None else None,
+                        admitted_methods=supported_test_verification_methods(),
+                    ),
+                }
 
         # R4-IMP4: read-only gate/readiness block — surfaces the SAME enforcement /
         # cognitive verdict / gate fields the done-gate enforces (parity by
@@ -4481,20 +4324,22 @@ async def okto_pulse_get_task_context(
             cognitive_verdict=cognitive_verdict,
             operational_flow=operational_flow,
         )
-        # ``legacy`` is a byte-shape compatibility contract. New semantic blocks
-        # are additive only on the profiled surfaces and must not leak through
-        # the legacy passthrough projector.
-        if _resolved_profile != "legacy":
-            result["code_traceability"] = await _mcp_code_traceability_projection(
-                uow=uow,
-                actor=actor,
-                board_id=board_id,
-                subject_type="card",
-                subject_id=card.id,
-                subject_version=_card_subject_version(card),
-                profile=_resolved_profile,
-                context_scope=_resolved_context_scope,
-            )
+        from okto_pulse.core.application.use_cases.card_reference_context import GetCardScenarioReferenceContextUseCase
+        result["scenario_reference_context"] = (await GetCardScenarioReferenceContextUseCase().execute(
+            board_id=board_id, card_id=card.id, actor=actor, uow=uow)).model_dump(mode='json')
+        from okto_pulse.core.application.use_cases.missing_link_context import GetMissingLinkContextUseCase
+        result["missing_link_context"] = (await GetMissingLinkContextUseCase().execute(
+            board_id=board_id, entity_type="card", entity_id=card.id, actor=actor, uow=uow)).model_dump(mode='json')
+        result["code_traceability"] = await _mcp_code_traceability_projection(
+            uow=uow,
+            actor=actor,
+            board_id=board_id,
+            subject_type="card",
+            subject_id=card.id,
+            subject_version=_card_subject_version(card),
+            profile=_resolved_profile,
+            context_scope=_resolved_context_scope,
+        )
 
         if not can_read_task_validations:
             result.pop("validations", None)
@@ -4583,7 +4428,7 @@ async def okto_pulse_get_task_conclusions(board_id: str, card_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -4640,20 +4485,19 @@ async def okto_pulse_update_card(
     details: str = "",
     priority: str = "",
     assignee_id: str = "",
-    labels: list[str] | str = "",
-    test_scenario_ids: list[str] | str = "",
+    labels: list[str] | None = None,
+    test_scenario_ids: list[str] | None = None,
     severity: str = "",
     expected_behavior: str = "",
     observed_behavior: str = "",
     steps_to_reproduce: str = "",
     action_plan: str = "",
-    linked_test_task_ids: list[str] | str = "",
+    linked_test_task_ids: list[str] | None = None,
 ) -> str:
     """Update card details. Pass only the fields you want to change; omit the rest.
 
-    Multi-value fields (labels, test_scenario_ids, linked_test_task_ids): prefer
-    native list; legacy pipe-separated string is also accepted. Comma-only strings
-    are REJECTED. For bidirectional scenario linking, use
+    Multi-value fields (labels, test_scenario_ids, linked_test_task_ids) require
+    native arrays. String inputs are rejected. For bidirectional scenario linking, use
     okto_pulse_link_task(target_type='scenario', ...).
     """
     ctx = await _get_agent_ctx(board_id)
@@ -4695,14 +4539,14 @@ async def okto_pulse_update_card(
             update_data["assignee_id"] = assignee_id
         if labels:
             try:
-                update_data["labels"] = coerce_to_list_str(labels)
+                update_data["labels"] = validate_string_list(labels)
             except ValueError as e:
                 return json.dumps(
                     {"error": "invalid_multi_value_input", "detail": str(e)}
                 )
         if test_scenario_ids:
             try:
-                update_data["test_scenario_ids"] = coerce_to_list_str(test_scenario_ids)
+                update_data["test_scenario_ids"] = validate_string_list(test_scenario_ids)
             except ValueError as e:
                 return json.dumps(
                     {"error": "invalid_multi_value_input", "detail": str(e)}
@@ -4728,7 +4572,7 @@ async def okto_pulse_update_card(
             update_data["action_plan"] = action_plan.replace("\\n", "\n")
         if linked_test_task_ids:
             try:
-                update_data["linked_test_task_ids"] = coerce_to_list_str(
+                update_data["linked_test_task_ids"] = validate_string_list(
                     linked_test_task_ids
                 )
             except ValueError as e:
@@ -4752,9 +4596,18 @@ async def okto_pulse_update_card(
         except ValueError as e:
             return json.dumps({"error": str(e)})
 
+        reference_context = {}
+        from okto_pulse.core.application.use_cases.missing_link_context import GetMissingLinkContextUseCase
+        reference_context['missing_link_context'] = (await GetMissingLinkContextUseCase().execute(
+            board_id=board_id, entity_type="card", entity_id=updated.id, actor=actor, uow=uow)).model_dump(mode='json')
+        if "test_scenario_ids" in update_data:
+            from okto_pulse.core.application.use_cases.card_reference_context import GetCardScenarioReferenceContextUseCase
+            reference_context['scenario_reference_context'] = (await GetCardScenarioReferenceContextUseCase().execute(
+                board_id=board_id, card_id=updated.id, actor=actor, uow=uow)).model_dump(mode='json')
         return json.dumps(
             {
                 "success": True,
+                **reference_context,
                 "card": {
                     "id": updated.id,
                     "title": updated.title,
@@ -4809,6 +4662,11 @@ async def okto_pulse_move_card(
             )
         ),
     ] = None,
+    delivery_selection: Annotated[
+        DeliverySelectionParam,
+        Field(description="Optional exact Card ledger selection sealed into this execution report; requires Card/Spec/delivery revisions and persisted record IDs. Does not approve proof or waive impact policy."),
+    ] = None,
+    learning_submission: LearningSubmission | None = None,
 ) -> str:
     """Move a card to a different column/position on the board.
 
@@ -4822,6 +4680,10 @@ async def okto_pulse_move_card(
     Errors: resource_gate_missing_resources;
     missing_regression_test_task (bug -> in_progress);
     impact_evidence_required (mode 'require' without a populated block).
+    Optional learning_submission authors a new Bug Learning with this report.
+    Its initial source digest/version must match; all capture and report write
+    permissions apply. The report, capture, transition and outbox share a UOW.
+    Exact retries preserve one authored record; this never approves execution.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -4855,7 +4717,7 @@ async def okto_pulse_move_card(
         McpMoveCardUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.domain.guideline_policy_transition import (
+    from okto_pulse.core.domain.guideline_semantic_transition import (
         PolicyTransitionRejected,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
@@ -4876,6 +4738,8 @@ async def okto_pulse_move_card(
             drift_justification=drift_justification or None,
             cancellation_reason=cancellation_reason or None,
             impact_evidence=impact_evidence,
+            delivery_selection=delivery_selection,
+            learning_submission=learning_submission,
         )
 
         try:
@@ -4886,6 +4750,8 @@ async def okto_pulse_move_card(
                     uow=uow,
                 )
             ).card
+        except PermissionDeniedError as e:
+            return MCPAdapterContract.error(e)
         except EntityNotFoundError:
             return json.dumps({"error": "Card not found"})
         except CardOperationError as e:
@@ -4904,7 +4770,12 @@ async def okto_pulse_move_card(
             return json.dumps({"error": e.code, **e.to_dict()})
         except PolicyTransitionRejected as e:
             return MCPAdapterContract.error(e)
+        except LearningCaptureTargetConflict as e:
+            return json.dumps({'error': e.code, **e.to_dict(), 'blocked_by_dependencies': False})
         except ValueError as e:
+            from okto_pulse.core.application.delivery_errors import DeliveryGateBlocked
+            if isinstance(e, DeliveryGateBlocked):
+                return MCPAdapterContract.error(e)
             return json.dumps({"error": str(e), "blocked_by_dependencies": False})
 
         if not updated:
@@ -5358,8 +5229,8 @@ async def okto_pulse_list_spec_dependencies(
     limit: PageWindowInput = 25,
     active_state: Literal["active", "removed", "all"] = "active",
     satisfaction: Literal["satisfied", "unmet", "all"] = "all",
-    retrospective: OptionalBoolInput = None,
-    related_statuses: str | list[str] | None = None,
+    retrospective: StrictBool | None = None,
+    related_statuses: list[str] | None = None,
     lineage: Literal["same_ideation", "cross_ideation", "all"] = "all",
 ) -> str:
     """List outgoing prerequisites or incoming dependents with an opaque cursor."""
@@ -5385,10 +5256,10 @@ async def okto_pulse_list_spec_dependencies(
     try:
         statuses = tuple(
             SpecStatus(value)
-            for value in coerce_to_list_str(related_statuses, strict_mode=True)
+            for value in validate_string_list(related_statuses)
         )
         retrospective_value = (
-            _flag_enabled(retrospective) if retrospective is not None else None
+            _require_boolean(retrospective) if retrospective is not None else None
         )
         lifecycle_filter = SpecDependencyLifecycleFilter(active_state)
         satisfaction_filter = (
@@ -5545,7 +5416,7 @@ async def okto_pulse_list_cards_by_status(
     spec_id: str = "",
     priority: str = "",
     assignee_id: str = "",
-    include_archived: BoolInput = False,
+    include_archived: StrictBool = False,
     offset: PageWindowInput = 0,
     limit: PageWindowInput = 50,
 ) -> str:
@@ -5574,15 +5445,15 @@ async def okto_pulse_list_cards_by_status(
             f"priority={priority!r} is not a valid card priority filter",
         )
     try:
-        include_archived_value = _flag_enabled(include_archived)
+        include_archived_value = _require_boolean(include_archived)
     except ValueError as exc:
-        return _structured_error("invalid_filter", ["true", "false"], None, str(exc))
+        return _structured_error("invalid_filter", [True, False], None, str(exc))
 
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -5666,33 +5537,14 @@ async def okto_pulse_list_cards_by_status(
 # ============================================================================
 
 
-@mcp.tool()
-async def okto_pulse_ask_question(board_id: str, card_id: str, question: str) -> str:
-    """
-    Add a question to a card's Q&A board."""
-    return await _ask_question_impl(
-        board_id,
-        "card",
-        card_id,
-        question,
-        alias_kind="legacy",
-        tool_name="okto_pulse_ask_question",
-    )
 
 
 # ============================================================================
 # R4 — consolidated Q&A ASK (spec 452cb4d5, card R4.1)
 #
-# qa_ask is the second assertiveness-gate-eligible family: the five legacy ask_*
-# tools have IDENTICAL (board_id, parent_id, question) signatures — only the
+# qa_ask is the second assertiveness-gate-eligible family: supported question targets have identical (board_id, parent_id, question) signatures — only the
 # parent-id param NAME differed, which the closed target_type enum restores. The
-# legacy tools are PRESERVED as additive aliases that delegate here (fr_af4b5c6e /
-# tr_b25890c4). DEDICATED ROUTING preserves the remaining SPRINT asymmetry:
-# SprintQAService takes a raw string and performs no activity-log write. Every
-# target now uses its canonical ``{target}.qa.ask`` permission leaf.
-# ============================================================================
-
-
+# Each supported target retains its authorization and activity log.
 async def _ask_question_impl(
     board_id: str,
     target_type: str,
@@ -5702,10 +5554,7 @@ async def _ask_question_impl(
     alias_kind: str,
     tool_name: str,
 ) -> str:
-    """Shared implementation behind okto_pulse_ask and the five legacy ask_*
-    aliases. Replicates each legacy tool's behavior (per-type service/schema,
-    activity-log action, error message, and the remaining sprint asymmetry) and emits safe
-    alias-usage telemetry (or_4e57890f)."""
+    """Dispatch the canonical question tool with target-specific authorization."""
     from okto_pulse.core.mcp.tool_family_registry import (
         REGISTRY,
         VIOLATION_UNKNOWN_TARGET_TYPE,
@@ -5779,10 +5628,7 @@ async def okto_pulse_ask(
 ) -> str:
     """
     Consolidated Q&A ask (R4). `target_type` is one of: `card`, `ideation`,
-    `refinement`, `spec`, `sprint`; `parent_id` is that work item's id. Equivalent
-    to the per-type tools (`okto_pulse_ask_question`/`_ideation_question`/
-    `_refinement_question`/`_spec_question`/`_sprint_question`), which remain as
-    aliases. Use `@Name` to direct the question. An unsupported `target_type`
+    `refinement`, `spec`; `parent_id` is that work item's id. Use `@Name` to direct the question. An unsupported `target_type`
     returns a structured error listing the allowed values (no mutation).
     See `okto-pulse://reference/tool-families/qa_ask`."""
     return await _ask_question_impl(
@@ -5878,16 +5724,16 @@ async def okto_pulse_add_choice_comment(
     board_id: str,
     card_id: str,
     question: str,
-    options: list[str] | str = "",
+    options: list[ChoiceOptionInput],
     comment_type: str = "choice",
-    allow_free_text: BoolInput = False,
-    options_json: list[ChoiceOptionInput] | str = "",
+    allow_free_text: StrictBool = False,
 ) -> str:
     """
         Add a choice board (poll) to a card. Responders can select from the options.
-
-    options_json (optional, takes precedence): JSON array of option objects, e.g. '[{"label":"A","recommended":true,"tradeoff":"costs more"}]'. When present and non-empty, options is ignored. Each object requires a non-empty label; recommended defaults to false; tradeoff defaults to null.
-    Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
+    options: Required native array of objects with a non-empty label, optional
+    recommended boolean (default false), and tradeoff string/null (default null).
+    Format: okto-pulse://reference/multivalue.
+"""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5895,31 +5741,19 @@ async def okto_pulse_add_choice_comment(
     from okto_pulse.core.models.schemas import ChoiceOption
 
     try:
-        parsed_objects = parse_options_json(options_json or None)
+        parsed_objects = validate_choice_options(options)
     except ValueError as e:
-        return json.dumps({"error": f"Invalid options_json: {e}"})
+        return json.dumps({"error": f"Invalid options: {e}"})
 
-    if parsed_objects is not None:
-        choice_list = [
-            ChoiceOption(
-                id=f"opt_{i}",
-                label=obj["label"],
-                recommended=obj["recommended"],
-                tradeoff=obj["tradeoff"],
-            )
-            for i, obj in enumerate(parsed_objects)
-        ]
-    else:
-        try:
-            option_labels = coerce_to_list_str(options)
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-        if not option_labels:
-            return json.dumps({"error": "At least one option is required"})
-        choice_list = [
-            ChoiceOption(id=f"opt_{i}", label=label)
-            for i, label in enumerate(option_labels)
-        ]
+    choice_list = [
+        ChoiceOption(
+            id=f"opt_{i}",
+            label=obj["label"],
+            recommended=obj["recommended"],
+            tradeoff=obj["tradeoff"],
+        )
+        for i, obj in enumerate(parsed_objects)
+    ]
 
     from okto_pulse.core.application.use_cases.mcp_collaboration import (
         McpAddChoiceCommentCommand,
@@ -5936,7 +5770,7 @@ async def okto_pulse_add_choice_comment(
                 question,
                 comment_type,
                 choice_list,
-                _flag_enabled(allow_free_text),
+                _require_boolean(allow_free_text),
             ),
             actor=actor,
             uow=uow,
@@ -5948,19 +5782,19 @@ async def okto_pulse_add_choice_comment(
 async def okto_pulse_respond_to_choice(
     board_id: str,
     comment_id: str,
-    selected: list[str] | str,
+    selected: list[str],
     free_text: str = "",
 ) -> str:
     """
         Respond to a choice board comment by selecting one or more options.
 
-    Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
+    selected: Native array of option IDs. Strings are not accepted. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
 
     try:
-        selected_ids = coerce_to_list_str(selected)
+        selected_ids = validate_string_list(selected)
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
     if not selected_ids:
@@ -6019,7 +5853,7 @@ async def okto_pulse_list_comments(board_id: str, card_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -6155,7 +5989,7 @@ async def okto_pulse_list_attachments(board_id: str, card_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -6624,7 +6458,7 @@ async def okto_pulse_create_story(
     actor: str = "",
     goal: str = "",
     benefit: str = "",
-    labels: list[str] | str = "",
+    labels: list[str] | None = None,
     status: str = "draft",
 ) -> str:
     """Create a lightweight Story before Ideation."""
@@ -6632,7 +6466,7 @@ async def okto_pulse_create_story(
     if not ctx:
         return _auth_error()
     perm_err = _mcp_check_permission(
-        ctx.permissions, "story.entity.create", Permissions.SPECS_CREATE
+        ctx.permissions, "story.entity.create"
     )
     if perm_err:
         return _mcp_permission_error_response(perm_err)
@@ -6641,7 +6475,7 @@ async def okto_pulse_create_story(
 
     try:
         story_status = StoryStatus(status)
-        label_list = coerce_to_list_str(labels) or None
+        label_list = validate_string_list(labels) or None
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
@@ -6688,7 +6522,7 @@ async def okto_pulse_update_story(
     actor: str = "",
     goal: str = "",
     benefit: str = "",
-    labels: list[str] | str = "",
+    labels: list[str] | None = None,
 ) -> str:
     """Update editable Story fields through MCP."""
     ctx = await _get_agent_ctx(board_id)
@@ -6709,9 +6543,9 @@ async def okto_pulse_update_story(
         update_data["goal"] = goal
     if benefit:
         update_data["benefit"] = benefit
-    if labels != "":
+    if labels is not None:
         try:
-            update_data["labels"] = coerce_to_list_str(labels) or []
+            update_data["labels"] = validate_string_list(labels) or []
         except ValueError as e:
             return json.dumps({"error": str(e)})
     if not update_data:
@@ -6856,7 +6690,6 @@ async def okto_pulse_link_story_to_ideation(
     board_id: str,
     story_id: str,
     ideation_id: str,
-    mark_converted: BoolInput = True,
 ) -> str:
     """Link a Story to one Ideation; multiple Stories may feed the same Ideation."""
     ctx = await _get_agent_ctx(board_id)
@@ -6895,7 +6728,6 @@ async def okto_pulse_link_story_to_ideation(
                         "ideation_id": link.ideation_id,
                     },
                     "story": _story_payload(story) if story else None,
-                    "mark_converted_input_ignored": not _flag_enabled(mark_converted),
                 },
                 default=str,
             )
@@ -6906,28 +6738,28 @@ async def okto_pulse_link_story_to_ideation(
 @mcp.tool()
 async def okto_pulse_convert_stories_to_ideation(
     board_id: str,
-    story_ids: list[str] | str,
+    story_ids: list[str],
     ideation_id: str = "",
     title: str = "",
     description: str = "",
     problem_statement: str = "",
     proposed_approach: str = "",
-    mockup_ids: list[str] | str = "",
+    mockup_ids: list[str] | None = None,
 ) -> str:
     """Create a new Ideation or link an existing Ideation from selected Stories."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
     perm_err = _mcp_check_permission(
-        ctx.permissions, "story.conversion.to_ideation", Permissions.SPECS_CREATE
+        ctx.permissions, "story.conversion.to_ideation"
     )
     if perm_err:
         return _mcp_permission_error_response(perm_err)
     from okto_pulse.core.models.schemas import StoryConversionRequest
 
     try:
-        story_id_list = coerce_to_list_str(story_ids)
-        mockup_id_list = coerce_to_list_str(mockup_ids) if mockup_ids else None
+        story_id_list = validate_string_list(story_ids)
+        mockup_id_list = validate_string_list(mockup_ids) if mockup_ids else None
     except ValueError as e:
         return json.dumps({"error": str(e)})
     if not story_id_list:
@@ -7010,7 +6842,7 @@ async def okto_pulse_create_ideation(
     problem_statement: str = "",
     proposed_approach: str = "",
     assignee_id: str = "",
-    labels: list[str] | str = "",
+    labels: list[str] | None = None,
 ) -> str:
     """
     Create a new ideation on the board. Ideations are the starting point — raw ideas that may be
@@ -7022,7 +6854,6 @@ async def okto_pulse_create_ideation(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "ideation.entity.create",
-        Permissions.SPECS_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -7047,7 +6878,7 @@ async def okto_pulse_create_ideation(
         if proposed_approach
         else None,
         assignee_id=assignee_id or None,
-        labels=coerce_to_list_str(labels) or None,
+        labels=validate_string_list(labels) or None,
     )
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
@@ -7080,7 +6911,7 @@ async def okto_pulse_get_ideation(board_id: str, ideation_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -7168,10 +6999,10 @@ async def okto_pulse_get_ideation(board_id: str, ideation_id: str) -> str:
 async def okto_pulse_get_ideation_context(
     board_id: str,
     ideation_id: str,
-    include_knowledge: BoolInput = True,
-    include_mockups: BoolInput = True,
-    include_qa: BoolInput = True,
-    include_architecture: BoolInput = True,
+    include_knowledge: StrictBool = True,
+    include_mockups: StrictBool = True,
+    include_qa: StrictBool = True,
+    include_architecture: StrictBool = True,
     profile: str = "full",
 ) -> str:
     """
@@ -7183,14 +7014,14 @@ async def okto_pulse_get_ideation_context(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
-    _inc_kb = _flag_enabled(include_knowledge)
-    _inc_mockups = _flag_enabled(include_mockups)
-    _inc_qa = _flag_enabled(include_qa)
-    _inc_architecture = _flag_enabled(include_architecture)
+    _inc_kb = _require_boolean(include_knowledge)
+    _inc_mockups = _require_boolean(include_mockups)
+    _inc_qa = _require_boolean(include_qa)
+    _inc_architecture = _require_boolean(include_architecture)
 
     from okto_pulse.core.application.use_cases import (
         McpGetIdeationCommand,
@@ -7334,7 +7165,7 @@ async def okto_pulse_update_ideation(
     problem_statement: str = "",
     proposed_approach: str = "",
     assignee_id: str = "",
-    labels: list[str] | str = "",
+    labels: list[str] | None = None,
 ) -> str:
     """
     Update an ideation's fields. Content changes bump the version. Only non-empty fields are updated."""
@@ -7355,7 +7186,6 @@ async def okto_pulse_update_ideation(
         perm_err = _mcp_check_permission(
             ctx.permissions,
             granular_permission,
-            Permissions.SPECS_UPDATE,
         )
         if perm_err:
             return _perm_error(perm_err)
@@ -7375,7 +7205,7 @@ async def okto_pulse_update_ideation(
         update_kwargs["assignee_id"] = assignee_id
     if labels:
         try:
-            update_kwargs["labels"] = coerce_to_list_str(labels)
+            update_kwargs["labels"] = validate_string_list(labels)
         except ValueError as e:
             return json.dumps({"error": f"Invalid labels: {e}"})
 
@@ -7465,7 +7295,7 @@ async def okto_pulse_move_ideation(
         MoveIdeationCommand,
         MoveIdeationUseCase,
     )
-    from okto_pulse.core.domain.guideline_policy_transition import (
+    from okto_pulse.core.domain.guideline_semantic_transition import (
         PolicyTransitionRejected,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
@@ -7557,7 +7387,6 @@ async def okto_pulse_delete_ideation(board_id: str, ideation_id: str) -> str:
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "ideation.entity.delete",
-        Permissions.SPECS_DELETE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -7606,7 +7435,6 @@ async def okto_pulse_evaluate_ideation(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "ideation.entity.evaluate",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -7671,14 +7499,14 @@ async def okto_pulse_evaluate_ideation(
 async def okto_pulse_derive_spec_from_ideation(
     board_id: str,
     ideation_id: str,
-    mockup_ids: str = "",
-    kb_ids: str = "",
-    architecture_design_ids: list[str] | str = "",
+    mockup_ids: list[str] | None = None,
+    architecture_design_ids: list[str] | None = None,
     architecture_propagation_mode: str = "copy",
     delivery_context: str = "",
+    knowledge_propagation: KnowledgePropagationEnvelopeInput = None,  # type: ignore[assignment]
 ) -> str:
     """Derive a draft spec from a DONE ideation; parent context and selected
-    resources propagate (default all).
+    resources propagate. Omitted Knowledge selects no sources.
     Full docs: okto-pulse://reference/tool-docs/spec."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -7687,15 +7515,13 @@ async def okto_pulse_derive_spec_from_ideation(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "ideation.specs_derive",
-        Permissions.SPECS_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
 
-    _mockup_ids = parse_multi_value(mockup_ids) or None
-    _kb_ids = parse_multi_value(kb_ids) or None
+    _mockup_ids = validate_string_list(mockup_ids) or None
     try:
-        _architecture_ids = coerce_to_list_str(architecture_design_ids) or None
+        _architecture_ids = validate_string_list(architecture_design_ids) or None
     except ValueError as e:
         return json.dumps({"error": f"Invalid architecture_design_ids: {e}"})
     from okto_pulse.core.domain.code_traceability import DeliveryContext
@@ -7710,53 +7536,23 @@ async def okto_pulse_derive_spec_from_ideation(
             }
         )
 
-    from okto_pulse.core.application.use_cases import (
-        McpDeriveSpecCommand,
-        McpDeriveSpecUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.models.knowledge_propagation import new_omitted_knowledge_selection
 
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            _result = await McpDeriveSpecUseCase().execute(
-                McpDeriveSpecCommand(
-                    "ideation",
-                    ideation_id,
-                    mockup_ids=_mockup_ids,
-                    kb_ids=_kb_ids,
-                    architecture_design_ids=_architecture_ids,
-                    architecture_propagation_mode=architecture_propagation_mode,
-                    delivery_context=_delivery_context,
-                ),
-                actor=actor,
-                uow=uow,
-            )
-            spec = _result.spec
-            return json.dumps(
-                {
-                    "success": True,
-                    "ideation_id": ideation_id,
-                    "spec": {
-                        "id": spec.id,
-                        "title": spec.title,
-                        "status": spec.status.value,
-                        "edition": int(getattr(spec, "edition", 1) or 1),
-                        "version": spec.version,
-                    },
-                    "resource_propagation": _result.resource_propagation,
-                },
-                default=str,
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Ideation not found"})
-    except ArtifactResourceSelectionError as e:
-        return json.dumps(e.to_error_dict())
-    except ArchitectureDesignSelectionError as e:
-        return json.dumps(e.to_error_dict())
-    except ValueError as e:
-        return json.dumps({"error": str(e)})
+        envelope = (
+            new_omitted_knowledge_selection()
+            if knowledge_propagation is None
+            else KnowledgePropagationEnvelopeV2.model_validate(knowledge_propagation)
+        )
+    except (TypeError, ValueError) as error:
+        return _knowledge_propagation_request_error(error)
+    return await _mcp_derive_spec_with_knowledge(
+        ctx=ctx, board_id=board_id, source_id=ideation_id, source_type="ideation",
+        envelope=envelope, mockup_ids=_mockup_ids,
+        architecture_design_ids=_architecture_ids,
+        architecture_propagation_mode=architecture_propagation_mode,
+        delivery_context=_delivery_context,
+    )
 
 
 @mcp.tool()
@@ -7771,7 +7567,7 @@ async def okto_pulse_get_ideation_snapshot(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -7829,7 +7625,7 @@ async def okto_pulse_get_ideation_history(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -7905,7 +7701,7 @@ async def okto_pulse_get_ideation_knowledge(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -7940,7 +7736,7 @@ async def okto_pulse_add_ideation_knowledge(
     description: str = "",
     mime_type: str = "text/markdown",
     content_reference: str | None = None,
-    governance_metadata: dict[str, Any] | str | None = None,
+    governance_metadata: dict[str, Any] | None = None,
 ) -> str:
     """
     Add a knowledge base item to an ideation.
@@ -7959,7 +7755,7 @@ async def okto_pulse_add_ideation_knowledge(
     if err:
         return json.dumps({"error": err})
 
-    parsed_governance, governance_error = _parse_knowledge_governance_arg(
+    parsed_governance, governance_error = _validate_knowledge_governance_arg(
         governance_metadata
     )
     if governance_error:
@@ -8043,20 +7839,6 @@ async def okto_pulse_delete_ideation_knowledge(
 # ============================================================================
 
 
-@mcp.tool()
-async def okto_pulse_ask_ideation_question(
-    board_id: str, ideation_id: str, question: str
-) -> str:
-    """
-    Ask a question on an ideation's Q&A board. Use @Name to direct the question."""
-    return await _ask_question_impl(
-        board_id,
-        "ideation",
-        ideation_id,
-        question,
-        alias_kind="legacy",
-        tool_name="okto_pulse_ask_ideation_question",
-    )
 
 
 @mcp.tool()
@@ -8064,16 +7846,16 @@ async def okto_pulse_ask_ideation_choice_question(
     board_id: str,
     ideation_id: str,
     question: str,
-    options: list[str] | str = "",
+    options: list[ChoiceOptionInput],
     question_type: str = "choice",
-    allow_free_text: BoolInput = False,
-    options_json: list[ChoiceOptionInput] | str = "",
+    allow_free_text: StrictBool = False,
 ) -> str:
     """
         Ask a choice question (poll/form) on an ideation's Q&A board.
-
-    options_json (optional, takes precedence): JSON array of option objects, e.g. '[{"label":"A","recommended":true,"tradeoff":"costs more"}]'. When present and non-empty, options is ignored. Each object requires a non-empty label; recommended defaults to false; tradeoff defaults to null.
-    Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
+    options: Required native array of objects with a non-empty label, optional
+    recommended boolean (default false), and tradeoff string/null (default null).
+    Format: okto-pulse://reference/multivalue.
+"""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8081,7 +7863,6 @@ async def okto_pulse_ask_ideation_choice_question(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "ideation.qa.ask_choice",
-        Permissions.QA_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -8089,31 +7870,19 @@ async def okto_pulse_ask_ideation_choice_question(
     from okto_pulse.core.models.schemas import IdeationQAChoiceOption, IdeationQACreate
 
     try:
-        parsed_objects = parse_options_json(options_json or None)
+        parsed_objects = validate_choice_options(options)
     except ValueError as e:
-        return json.dumps({"error": f"Invalid options_json: {e}"})
+        return json.dumps({"error": f"Invalid options: {e}"})
 
-    if parsed_objects is not None:
-        choice_list = [
-            IdeationQAChoiceOption(
-                id=f"opt_{i}",
-                label=obj["label"],
-                recommended=obj["recommended"],
-                tradeoff=obj["tradeoff"],
-            )
-            for i, obj in enumerate(parsed_objects)
-        ]
-    else:
-        try:
-            option_labels = coerce_to_list_str(options)
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-        if not option_labels:
-            return json.dumps({"error": "At least one option is required"})
-        choice_list = [
-            IdeationQAChoiceOption(id=f"opt_{i}", label=label)
-            for i, label in enumerate(option_labels)
-        ]
+    choice_list = [
+        IdeationQAChoiceOption(
+            id=f"opt_{i}",
+            label=obj["label"],
+            recommended=obj["recommended"],
+            tradeoff=obj["tradeoff"],
+        )
+        for i, obj in enumerate(parsed_objects)
+    ]
 
     data = IdeationQACreate(
         question=question,
@@ -8121,7 +7890,7 @@ async def okto_pulse_ask_ideation_choice_question(
         if question_type in ("choice", "single_choice", "multi_choice")
         else "choice",
         choices=choice_list,
-        allow_free_text=_flag_enabled(allow_free_text),
+        allow_free_text=_require_boolean(allow_free_text),
     )
 
     from okto_pulse.core.application.use_cases import (
@@ -8132,7 +7901,7 @@ async def okto_pulse_ask_ideation_choice_question(
 
     # MCP-FU6 strangler (ideation Q&A ask, ATOMIC activity-log): create + the
     # ideation_choice_question_added log + commit run atomically in the use case; the
-    # adapter parses options_json / coerces options into the IdeationQACreate.
+    # adapter validates native options into the IdeationQACreate.
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         try:
@@ -8167,13 +7936,13 @@ async def okto_pulse_answer_ideation_question(
     ideation_id: str,
     qa_id: str,
     answer: str = "",
-    selected: list[str] | str = "",
+    selected: list[str] | None = None,
 ) -> str:
     """
         Answer a question on an ideation's Q&A board.
         For text questions, provide answer. For choice questions, provide selected option IDs.
 
-    Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
+    selected: Native array of option IDs. Strings are not accepted. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8181,7 +7950,6 @@ async def okto_pulse_answer_ideation_question(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "ideation.qa.answer",
-        Permissions.QA_ANSWER,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -8189,7 +7957,7 @@ async def okto_pulse_answer_ideation_question(
     from okto_pulse.core.models.schemas import IdeationQAAnswer
 
     try:
-        selected_list = coerce_to_list_str(selected) if selected else None
+        selected_list = validate_string_list(selected) if selected else None
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -8262,15 +8030,15 @@ async def okto_pulse_create_refinement(
     ideation_id: str,
     title: str,
     description: str = "",
-    in_scope: list[str] | str = "",
-    out_of_scope: list[str] | str = "",
+    in_scope: list[str] | None = None,
+    out_of_scope: list[str] | None = None,
     analysis: str = "",
-    decisions: list[str] | str = "",
+    decisions: list[str] | None = None,
     assignee_id: str = "",
-    labels: list[str] | str = "",
-    mockup_ids: str = "",
-    kb_ids: str = "",
-    architecture_design_ids: list[str] | str = "",
+    labels: list[str] | None = None,
+    mockup_ids: list[str] | None = None,
+    kb_ids: list[str] | None = None,
+    architecture_design_ids: list[str] | None = None,
     architecture_propagation_mode: str = "copy",
     delivery_context: str = "",
 ) -> str:
@@ -8290,7 +8058,6 @@ async def okto_pulse_create_refinement(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.entity.create",
-        Permissions.SPECS_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -8309,11 +8076,11 @@ async def okto_pulse_create_refinement(
         )
 
     try:
-        in_scope_list = coerce_to_list_str(in_scope) or None
-        out_of_scope_list = coerce_to_list_str(out_of_scope) or None
-        decisions_list = coerce_to_list_str(decisions) or None
-        label_list = coerce_to_list_str(labels) or None
-        architecture_ids = coerce_to_list_str(architecture_design_ids) or None
+        in_scope_list = validate_string_list(in_scope) or None
+        out_of_scope_list = validate_string_list(out_of_scope) or None
+        decisions_list = validate_string_list(decisions) or None
+        label_list = validate_string_list(labels) or None
+        architecture_ids = validate_string_list(architecture_design_ids) or None
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -8328,8 +8095,8 @@ async def okto_pulse_create_refinement(
         delivery_context=resolved_delivery_context,
         assignee_id=assignee_id or None,
         labels=label_list,
-        mockup_ids=parse_multi_value(mockup_ids) or None,
-        kb_ids=parse_multi_value(kb_ids) or None,
+        mockup_ids=validate_string_list(mockup_ids) or None,
+        kb_ids=validate_string_list(kb_ids) or None,
         architecture_design_ids=architecture_ids,
         architecture_propagation_mode=architecture_propagation_mode,
     )
@@ -8389,7 +8156,7 @@ async def okto_pulse_get_refinement(board_id: str, refinement_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -8468,10 +8235,10 @@ async def okto_pulse_get_refinement(board_id: str, refinement_id: str) -> str:
 async def okto_pulse_get_refinement_context(
     board_id: str,
     refinement_id: str,
-    include_knowledge: BoolInput = True,
-    include_mockups: BoolInput = True,
-    include_qa: BoolInput = True,
-    include_architecture: BoolInput = True,
+    include_knowledge: StrictBool = True,
+    include_mockups: StrictBool = True,
+    include_qa: StrictBool = True,
+    include_architecture: StrictBool = True,
     profile: str = "full",
 ) -> str:
     """
@@ -8483,14 +8250,14 @@ async def okto_pulse_get_refinement_context(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
-    _inc_kb = _flag_enabled(include_knowledge)
-    _inc_mockups = _flag_enabled(include_mockups)
-    _inc_qa = _flag_enabled(include_qa)
-    _inc_architecture = _flag_enabled(include_architecture)
+    _inc_kb = _require_boolean(include_knowledge)
+    _inc_mockups = _require_boolean(include_mockups)
+    _inc_qa = _require_boolean(include_qa)
+    _inc_architecture = _require_boolean(include_architecture)
 
     from okto_pulse.core.application.use_cases import (
         McpGetRefinementCommand,
@@ -8608,16 +8375,15 @@ async def okto_pulse_get_refinement_context(
         if not _inc_architecture:
             resolved_references["architecture_designs"] = []
         result["resolved_references"] = resolved_references
-        if profile != "legacy":
-            result["code_traceability"] = await _mcp_code_traceability_projection(
-                uow=uow,
-                actor=actor,
-                board_id=board_id,
-                subject_type="refinement",
-                subject_id=refinement.id,
-                subject_version=refinement.version,
-                profile=profile,
-            )
+        result["code_traceability"] = await _mcp_code_traceability_projection(
+            uow=uow,
+            actor=actor,
+            board_id=board_id,
+            subject_type="refinement",
+            subject_id=refinement.id,
+            subject_version=refinement.version,
+            profile=profile,
+        )
 
         from okto_pulse.core.mcp.context_projection import project_entity_context
 
@@ -8637,13 +8403,13 @@ async def okto_pulse_update_refinement(
     refinement_id: str,
     title: str = "",
     description: str = "",
-    in_scope: list[str] | str = "",
-    out_of_scope: list[str] | str = "",
+    in_scope: list[str] | None = None,
+    out_of_scope: list[str] | None = None,
     analysis: str = "",
-    decisions: list[str] | str = "",
+    decisions: list[str] | None = None,
     delivery_context: str = "",
     assignee_id: str = "",
-    labels: list[str] | str = "",
+    labels: list[str] | None = None,
 ) -> str:
     """
     Update a refinement's fields. Content changes bump the version. Only non-empty fields are updated."""
@@ -8674,7 +8440,6 @@ async def okto_pulse_update_refinement(
         perm_err = _mcp_check_permission(
             ctx.permissions,
             granular_permission,
-            Permissions.SPECS_UPDATE,
         )
         if perm_err:
             return _perm_error(perm_err)
@@ -8688,19 +8453,19 @@ async def okto_pulse_update_refinement(
         update_kwargs["description"] = description.replace("\\n", "\n")
     if in_scope:
         try:
-            update_kwargs["in_scope"] = coerce_to_list_str(in_scope)
+            update_kwargs["in_scope"] = validate_string_list(in_scope)
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
     if out_of_scope:
         try:
-            update_kwargs["out_of_scope"] = coerce_to_list_str(out_of_scope)
+            update_kwargs["out_of_scope"] = validate_string_list(out_of_scope)
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
     if analysis:
         update_kwargs["analysis"] = analysis.replace("\\n", "\n")
     if decisions:
         try:
-            update_kwargs["decisions"] = coerce_to_list_str(decisions)
+            update_kwargs["decisions"] = validate_string_list(decisions)
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
     if delivery_context:
@@ -8723,7 +8488,7 @@ async def okto_pulse_update_refinement(
         update_kwargs["assignee_id"] = assignee_id
     if labels:
         try:
-            update_kwargs["labels"] = coerce_to_list_str(labels)
+            update_kwargs["labels"] = validate_string_list(labels)
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -8823,7 +8588,7 @@ async def okto_pulse_move_refinement(
         McpMoveRefinementUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.domain.guideline_policy_transition import (
+    from okto_pulse.core.domain.guideline_semantic_transition import (
         PolicyTransitionRejected,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
@@ -8878,7 +8643,6 @@ async def okto_pulse_delete_refinement(board_id: str, refinement_id: str) -> str
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.entity.delete",
-        Permissions.SPECS_DELETE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -8908,15 +8672,13 @@ async def okto_pulse_delete_refinement(board_id: str, refinement_id: str) -> str
 async def okto_pulse_derive_spec_from_refinement(
     board_id: str,
     refinement_id: str,
-    mockup_ids: str = "",
-    kb_ids: str | list[str] | None = None,
-    architecture_design_ids: list[str] | str = "",
+    mockup_ids: list[str] | None = None,
+    architecture_design_ids: list[str] | None = None,
     architecture_propagation_mode: str = "copy",
     knowledge_propagation: KnowledgePropagationEnvelopeInput = None,  # type: ignore[assignment]
 ) -> str:
     """Derive a draft spec from a DONE refinement; analysis, parent context,
-    and selected resources propagate (default all). Knowledge v2 needs a
-    complete envelope. Full docs: okto-pulse://reference/tool-docs/spec."""
+    and selected resources propagate. Omitted Knowledge selects no sources. Full docs: okto-pulse://reference/tool-docs/spec."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8924,101 +8686,39 @@ async def okto_pulse_derive_spec_from_refinement(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.specs_derive",
-        Permissions.SPECS_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
 
-    if knowledge_propagation is not None:
-        if kb_ids is not None:
-            from okto_pulse.core.services.knowledge_propagation import (
-                KnowledgePropagationServiceError,
-            )
+    from okto_pulse.core.models.knowledge_propagation import new_omitted_knowledge_selection
 
-            return _knowledge_propagation_error(
-                KnowledgePropagationServiceError(
-                    "conflicting_propagation_parameters",
-                    "legacy kb_ids and knowledge_propagation v2 are mutually exclusive",
-                )
-            )
-        try:
-            if not isinstance(
-                knowledge_propagation,
-                KnowledgePropagationEnvelopeV2,
-            ):
-                knowledge_propagation = KnowledgePropagationEnvelopeV2.model_validate(
-                    knowledge_propagation
-                )
-        except (TypeError, ValueError) as error:
-            return _knowledge_propagation_request_error(error)
-        mockup_ids_v2 = parse_multi_value(mockup_ids) or None
-        try:
-            architecture_ids_v2 = coerce_to_list_str(architecture_design_ids) or None
-        except ValueError as error:
-            return json.dumps({"error": f"Invalid architecture_design_ids: {error}"})
-        return await _mcp_derive_spec_from_refinement_v2(
-            ctx=ctx,
-            board_id=board_id,
-            refinement_id=refinement_id,
-            envelope=knowledge_propagation,
-            mockup_ids=mockup_ids_v2,
-            architecture_design_ids=architecture_ids_v2,
-            architecture_propagation_mode=architecture_propagation_mode,
-        )
-
-    _mockup_ids = parse_multi_value(mockup_ids) or None
-    _kb_ids = parse_multi_value(kb_ids) or None
+    if knowledge_propagation is None:
+        knowledge_propagation = new_omitted_knowledge_selection()
     try:
-        _architecture_ids = coerce_to_list_str(architecture_design_ids) or None
-    except ValueError as e:
-        return json.dumps({"error": f"Invalid architecture_design_ids: {e}"})
-
-    from okto_pulse.core.application.use_cases import (
-        McpDeriveSpecCommand,
-        McpDeriveSpecUseCase,
+        if not isinstance(
+            knowledge_propagation,
+            KnowledgePropagationEnvelopeV2,
+        ):
+            knowledge_propagation = KnowledgePropagationEnvelopeV2.model_validate(
+                knowledge_propagation
+            )
+    except (TypeError, ValueError) as error:
+        return _knowledge_propagation_request_error(error)
+    mockup_ids_v2 = validate_string_list(mockup_ids) or None
+    try:
+        architecture_ids_v2 = validate_string_list(architecture_design_ids) or None
+    except ValueError as error:
+        return json.dumps({"error": f"Invalid architecture_design_ids: {error}"})
+    return await _mcp_derive_spec_with_knowledge(
+        ctx=ctx,
+        board_id=board_id,
+        source_id=refinement_id,
+        source_type="refinement",
+        envelope=knowledge_propagation,
+        mockup_ids=mockup_ids_v2,
+        architecture_design_ids=architecture_ids_v2,
+        architecture_propagation_mode=architecture_propagation_mode,
     )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            _result = await McpDeriveSpecUseCase().execute(
-                McpDeriveSpecCommand(
-                    "refinement",
-                    refinement_id,
-                    mockup_ids=_mockup_ids,
-                    kb_ids=_kb_ids,
-                    architecture_design_ids=_architecture_ids,
-                    architecture_propagation_mode=architecture_propagation_mode,
-                ),
-                actor=actor,
-                uow=uow,
-            )
-            spec = _result.spec
-            return json.dumps(
-                {
-                    "success": True,
-                    "refinement_id": refinement_id,
-                    "spec": {
-                        "id": spec.id,
-                        "title": spec.title,
-                        "status": spec.status.value,
-                        "edition": int(getattr(spec, "edition", 1) or 1),
-                        "version": spec.version,
-                    },
-                    "resource_propagation": _result.resource_propagation,
-                },
-                default=str,
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Refinement not found"})
-    except ArtifactResourceSelectionError as e:
-        return json.dumps(e.to_error_dict())
-    except ArchitectureDesignSelectionError as e:
-        return json.dumps(e.to_error_dict())
-    except ValueError as e:
-        return json.dumps({"error": str(e)})
 
 
 @mcp.tool()
@@ -9035,7 +8735,7 @@ async def okto_pulse_get_refinement_history(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -9260,20 +8960,11 @@ async def okto_pulse_record_ambiguity_assessment(
         return _quality_mcp_error(exc)
     # Proposed questions stay immutable inside the assessment receipt; they do
     # not create subject Q&A and therefore require no qa.ask permission.
-    required_permissions = [
-        (
-            f"{parsed_subject_type.value}.quality.assess",
-            Permissions.SPECS_UPDATE,
-        )
-    ]
-    for granular_permission, legacy_permission in required_permissions:
-        perm_err = _mcp_check_permission(
-            ctx.permissions,
-            granular_permission,
-            legacy_permission,
-        )
-        if perm_err:
-            return _quality_mcp_permission_error(perm_err)
+    perm_err = _mcp_check_permission(
+        ctx.permissions, f"{parsed_subject_type.value}.quality.assess",
+    )
+    if perm_err:
+        return _quality_mcp_permission_error(perm_err)
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     correlation_id = str(_uuid.uuid4())
@@ -9383,7 +9074,6 @@ async def okto_pulse_record_requirement_lint(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.quality.assess",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _quality_mcp_permission_error(perm_err)
@@ -9461,7 +9151,7 @@ async def okto_pulse_get_requirement_lint_preflight(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    for permission in (Permissions.BOARD_READ, "spec.quality.read"):
+    for permission in ("board.read", "spec.quality.read"):
         perm_err = check_permission(ctx.permissions, permission)
         if perm_err:
             return _quality_mcp_permission_error(perm_err)
@@ -9549,7 +9239,7 @@ async def okto_pulse_get_current_quality_assessment(
             assessment_kind,
         )
         for permission in (
-            Permissions.BOARD_READ,
+            "board.read",
             f"{parsed_subject_type.value}.quality.read",
         ):
             perm_err = check_permission(ctx.permissions, permission)
@@ -9594,7 +9284,7 @@ async def okto_pulse_get_quality_assessment_receipt(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _quality_mcp_permission_error(perm_err)
 
@@ -9699,7 +9389,7 @@ async def okto_pulse_list_quality_assessments(
         if parsed_kind is not None:
             _quality_subject_kind(subject_type, assessment_kind)
         for permission in (
-            Permissions.BOARD_READ,
+            "board.read",
             f"{parsed_subject_type.value}.quality.read",
         ):
             perm_err = check_permission(ctx.permissions, permission)
@@ -9803,7 +9493,7 @@ async def okto_pulse_list_quality_findings(
         if parsed_kind is not None:
             _quality_subject_kind(subject_type, assessment_kind)
         for permission in (
-            Permissions.BOARD_READ,
+            "board.read",
             f"{parsed_subject_type.value}.quality.read",
         ):
             perm_err = check_permission(ctx.permissions, permission)
@@ -9866,18 +9556,18 @@ class _ChecklistItemResultInput(BaseModel):
 
 
 def _checklist_receipt_outcome(receipt) -> Literal["pass", "fail"]:
-    """Project aggregate truth without treating legacy empty items as a pass."""
+    """Project the aggregate outcome of the complete native receipt."""
 
     return "pass" if receipt.blocking_satisfied else "fail"
 
 
 @mcp.tool()
-async def okto_pulse_get_checklist_binding(board_id: str) -> str:
-    """Read the effective /specify checklist binding for one board."""
+async def okto_pulse_get_checklist_binding(board_id: str, spec_id: str | None = None) -> str:
+    """Read Board configuration, or the effective binding for a Spec edition."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    for permission in (Permissions.BOARD_READ, "spec.checklist.read"):
+    for permission in ("board.read", "spec.checklist.read"):
         perm_err = check_permission(ctx.permissions, permission)
         if perm_err:
             return _perm_error(perm_err)
@@ -9899,7 +9589,7 @@ async def okto_pulse_get_checklist_binding(board_id: str) -> str:
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             binding = await GetChecklistBindingUseCase().execute(
-                GetChecklistBindingCommand(board_id),
+                GetChecklistBindingCommand(board_id=board_id, spec_id=spec_id),
                 actor=actor,
                 uow=uow,
             )
@@ -9950,7 +9640,6 @@ async def okto_pulse_start_checklist_execution(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.checklist.execute",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -10037,7 +9726,6 @@ async def okto_pulse_submit_checklist_execution(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.checklist.execute",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -10138,7 +9826,7 @@ async def okto_pulse_get_checklist_receipt(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    for permission in (Permissions.BOARD_READ, "spec.checklist.read"):
+    for permission in ("board.read", "spec.checklist.read"):
         perm_err = check_permission(ctx.permissions, permission)
         if perm_err:
             return _perm_error(perm_err)
@@ -10239,8 +9927,8 @@ async def okto_pulse_append_research_decision(
     ],
     anchor_ref: str,
     status: Literal["open", "investigating", "resolved", "deferred"] = "open",
-    evidence_refs: list[str] | str = "",
-    alternatives: list[str] | str = "",
+    evidence_refs: list[str] | None = None,
+    alternatives: list[str] | None = None,
     decision: str = "",
     rationale: str = "",
     confidence: float | None = None,
@@ -10263,7 +9951,6 @@ async def okto_pulse_append_research_decision(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.research_decisions.append",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -10296,8 +9983,8 @@ async def okto_pulse_append_research_decision(
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
-        parsed_evidence_refs = coerce_to_list_str(evidence_refs)
-        parsed_alternatives = coerce_to_list_str(alternatives)
+        parsed_evidence_refs = validate_string_list(evidence_refs)
+        parsed_alternatives = validate_string_list(alternatives)
         operation_is_supersede = bool(ledger_id.strip() or supersedes_entry_id.strip())
         if operation_is_supersede and not (
             ledger_id.strip() and supersedes_entry_id.strip()
@@ -10379,7 +10066,7 @@ async def okto_pulse_list_research_decisions(
         return _auth_error()
 
     for permission in (
-        Permissions.BOARD_READ,
+        "board.read",
         "refinement.research_decisions.read",
     ):
         perm_err = check_permission(ctx.permissions, permission)
@@ -10452,20 +10139,6 @@ async def okto_pulse_list_research_decisions(
 # ============================================================================
 
 
-@mcp.tool()
-async def okto_pulse_ask_refinement_question(
-    board_id: str, refinement_id: str, question: str
-) -> str:
-    """
-    Ask a question on a refinement's Q&A board. Use @Name to direct the question."""
-    return await _ask_question_impl(
-        board_id,
-        "refinement",
-        refinement_id,
-        question,
-        alias_kind="legacy",
-        tool_name="okto_pulse_ask_refinement_question",
-    )
 
 
 @mcp.tool()
@@ -10473,16 +10146,16 @@ async def okto_pulse_ask_refinement_choice_question(
     board_id: str,
     refinement_id: str,
     question: str,
-    options: list[str] | str = "",
+    options: list[ChoiceOptionInput],
     question_type: str = "choice",
-    allow_free_text: BoolInput = False,
-    options_json: list[ChoiceOptionInput] | str = "",
+    allow_free_text: StrictBool = False,
 ) -> str:
     """
         Ask a choice question (poll/form) on a refinement's Q&A board.
-
-    options_json (optional, takes precedence): JSON array of option objects, e.g. '[{"label":"A","recommended":true,"tradeoff":"costs more"}]'. When present and non-empty, options is ignored. Each object requires a non-empty label; recommended defaults to false; tradeoff defaults to null.
-    Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
+    options: Required native array of objects with a non-empty label, optional
+    recommended boolean (default false), and tradeoff string/null (default null).
+    Format: okto-pulse://reference/multivalue.
+"""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10490,7 +10163,6 @@ async def okto_pulse_ask_refinement_choice_question(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.qa.ask_choice",
-        Permissions.QA_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -10501,31 +10173,19 @@ async def okto_pulse_ask_refinement_choice_question(
     )
 
     try:
-        parsed_objects = parse_options_json(options_json or None)
+        parsed_objects = validate_choice_options(options)
     except ValueError as e:
-        return json.dumps({"error": f"Invalid options_json: {e}"})
+        return json.dumps({"error": f"Invalid options: {e}"})
 
-    if parsed_objects is not None:
-        choice_list = [
-            RefinementQAChoiceOption(
-                id=f"opt_{i}",
-                label=obj["label"],
-                recommended=obj["recommended"],
-                tradeoff=obj["tradeoff"],
-            )
-            for i, obj in enumerate(parsed_objects)
-        ]
-    else:
-        try:
-            option_labels = coerce_to_list_str(options)
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-        if not option_labels:
-            return json.dumps({"error": "At least one option is required"})
-        choice_list = [
-            RefinementQAChoiceOption(id=f"opt_{i}", label=label)
-            for i, label in enumerate(option_labels)
-        ]
+    choice_list = [
+        RefinementQAChoiceOption(
+            id=f"opt_{i}",
+            label=obj["label"],
+            recommended=obj["recommended"],
+            tradeoff=obj["tradeoff"],
+        )
+        for i, obj in enumerate(parsed_objects)
+    ]
 
     data = RefinementQACreate(
         question=question,
@@ -10533,7 +10193,7 @@ async def okto_pulse_ask_refinement_choice_question(
         if question_type in ("choice", "single_choice", "multi_choice")
         else "choice",
         choices=choice_list,
-        allow_free_text=_flag_enabled(allow_free_text),
+        allow_free_text=_require_boolean(allow_free_text),
     )
 
     from okto_pulse.core.application.use_cases import (
@@ -10578,13 +10238,13 @@ async def okto_pulse_answer_refinement_question(
     refinement_id: str,
     qa_id: str,
     answer: str = "",
-    selected: list[str] | str = "",
+    selected: list[str] | None = None,
 ) -> str:
     """
         Answer a question on a refinement's Q&A board.
         For text questions, provide answer. For choice questions, provide selected option IDs.
 
-    Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
+    selected: Native array of option IDs. Strings are not accepted. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10592,7 +10252,6 @@ async def okto_pulse_answer_refinement_question(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.qa.answer",
-        Permissions.QA_ANSWER,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -10600,7 +10259,7 @@ async def okto_pulse_answer_refinement_question(
     from okto_pulse.core.models.schemas import RefinementQAAnswer
 
     try:
-        selected_list = coerce_to_list_str(selected) if selected else None
+        selected_list = validate_string_list(selected) if selected else None
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -10673,12 +10332,12 @@ async def okto_pulse_create_spec(
     title: str,
     description: str = "",
     context: str = "",
-    functional_requirements: list[str] | str = "",
-    technical_requirements: list[str] | str = "",
-    acceptance_criteria: list[str] | str = "",
+    functional_requirements: list[dict[str, Any]] | None = None,
+    technical_requirements: list[dict[str, Any]] | None = None,
+    acceptance_criteria: list[dict[str, Any]] | None = None,
     status: str = "draft",
     assignee_id: str = "",
-    labels: list[str] | str = "",
+    labels: list[str] | None = None,
     ideation_id: str = "",
     refinement_id: str = "",
     delivery_context: str = "",
@@ -10694,7 +10353,6 @@ async def okto_pulse_create_spec(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.entity.create",
-        Permissions.SPECS_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -10732,10 +10390,7 @@ async def okto_pulse_create_spec(
         )
 
     try:
-        frs_list = coerce_to_list_str(functional_requirements) or None
-        trs_list = coerce_to_list_str(technical_requirements) or None
-        acs_list = coerce_to_list_str(acceptance_criteria) or None
-        label_list = coerce_to_list_str(labels) or None
+        label_list = validate_string_list(labels) or None
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -10756,9 +10411,9 @@ async def okto_pulse_create_spec(
             title=title,
             description=description.replace("\\n", "\n") if description else None,
             context=context.replace("\\n", "\n") if context else None,
-            functional_requirements=frs_list,
-            technical_requirements=_trs_to_objects(trs_list),
-            acceptance_criteria=acs_list,
+            functional_requirements=functional_requirements,
+            technical_requirements=technical_requirements,
+            acceptance_criteria=acceptance_criteria,
             status=spec_status,
             assignee_id=assignee_id or None,
             labels=label_list,
@@ -10815,7 +10470,7 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -10862,7 +10517,7 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
             "acceptance_criteria": spec.acceptance_criteria,
             "project_structure": getattr(spec, "project_structure", None),
             "project_structure_revision": int(
-                getattr(spec, "project_structure_revision", 0) or 0
+                spec.project_structure_revision
             ),
             "project_structure_digest": getattr(spec, "project_structure_digest", None),
             "test_scenarios": spec.test_scenarios or [],
@@ -10918,7 +10573,6 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
             _mcp_check_permission(
                 ctx.permissions,
                 "spec.integration_requirements.read",
-                Permissions.BOARD_READ,
             )
             is None
         ):
@@ -10929,7 +10583,6 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
             _mcp_check_permission(
                 ctx.permissions,
                 "spec.observability_requirements.read",
-                Permissions.BOARD_READ,
             )
             is None
         ):
@@ -10943,20 +10596,20 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
 async def okto_pulse_get_spec_context(
     board_id: str,
     spec_id: str,
-    include_knowledge: BoolInput = True,
-    include_mockups: BoolInput = True,
-    include_qa: BoolInput = True,
-    include_architecture: BoolInput = True,
-    include_superseded: BoolInput = False,
+    include_knowledge: StrictBool = True,
+    include_mockups: StrictBool = True,
+    include_qa: StrictBool = True,
+    include_architecture: StrictBool = True,
+    include_superseded: StrictBool = False,
     profile: Annotated[
         str,
         Field(
-            description="summary | detail | full | legacy — full is MANDATORY before any status-changing move"
+            description="summary | detail | full — full is MANDATORY before any status-changing move"
         ),
     ] = "summary",
 ) -> str:
     """Consolidated spec context: requirements, scenarios, rules, contracts,
-    IR/OR, decisions, resources, Q&A, evaluations, cards and sprints. Use
+    IR/OR, decisions, resources, Q&A, evaluations and cards. Use
     `summary` for exploration and `profile="full"` before evaluating, moving,
     or deriving cards. Includes read-only `gate_readiness` for spec transition
     gates; cognitive readiness is per-card — call okto_pulse_get_task_context
@@ -10967,7 +10620,7 @@ async def okto_pulse_get_spec_context(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -10982,11 +10635,11 @@ async def okto_pulse_get_spec_context(
     if _resolved_profile is None:
         return json.dumps(_unsupported_projection_error(profile))
 
-    _inc_kb = _flag_enabled(include_knowledge)
-    _inc_mockups = _flag_enabled(include_mockups)
-    _inc_qa = _flag_enabled(include_qa)
-    _inc_architecture = _flag_enabled(include_architecture)
-    _inc_superseded = _flag_enabled(include_superseded)
+    _inc_kb = _require_boolean(include_knowledge)
+    _inc_mockups = _require_boolean(include_mockups)
+    _inc_qa = _require_boolean(include_qa)
+    _inc_architecture = _require_boolean(include_architecture)
+    _inc_superseded = _require_boolean(include_superseded)
 
     from okto_pulse.core.application.use_cases import (
         McpGetSpecContextCommand,
@@ -10998,7 +10651,7 @@ async def okto_pulse_get_spec_context(
     # MCP-FU6 strangler (spec VARIANT): board-scope + get_spec move into the pure
     # McpGetSpecContextUseCase; the heavy presentation aggregation below stays in the
     # adapter through the F12 legacy presentation context (server helpers /
-    # the sprint swallow / gate_readiness stay here, NOT pushed into the core).
+    # gate_readiness stay here, NOT pushed into the core).
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with AsyncExitStack() as stack:
         uow = await stack.enter_async_context(
@@ -11074,7 +10727,7 @@ async def okto_pulse_get_spec_context(
             # Optional aggregate: preserve not-authored (null) versus authored-empty ([]).
             "project_structure": getattr(spec, "project_structure", None),
             "project_structure_revision": int(
-                getattr(spec, "project_structure_revision", 0) or 0
+                spec.project_structure_revision
             ),
             "project_structure_digest": getattr(spec, "project_structure_digest", None),
             # Structured sections — gated by their own granular read flags when available.
@@ -11117,19 +10770,15 @@ async def okto_pulse_get_spec_context(
                     "priority": c.priority.value,
                     "assignee_id": c.assignee_id,
                     "card_type": c.card_type.value if c.card_type else "normal",
-                    "sprint_id": c.sprint_id,
                     "test_scenario_ids": c.test_scenario_ids or [],
                 }
                 for c in spec.cards
             ],
-            # Sprints — loaded separately to avoid lazy-load issues
-            "sprints": [],
         }
         if (
             _mcp_check_permission(
                 ctx.permissions,
                 "spec.integration_requirements.read",
-                Permissions.BOARD_READ,
             )
             is None
         ):
@@ -11140,7 +10789,6 @@ async def okto_pulse_get_spec_context(
             _mcp_check_permission(
                 ctx.permissions,
                 "spec.observability_requirements.read",
-                Permissions.BOARD_READ,
             )
             is None
         ):
@@ -11198,31 +10846,6 @@ async def okto_pulse_get_spec_context(
         )
 
         result["coverage_summary"] = _mcp_spec_coverage_summary(spec)
-
-        # Load sprints separately to avoid lazy-load error
-        try:
-            sprint_service = uow.services.sprints
-            sprints = await sprint_service.list_board_sprints(board_id, spec_id=spec_id)
-            await uow.commit()
-            result["sprints"] = [
-                {
-                    "id": s.id,
-                    "title": s.title,
-                    "status": s.status.value,
-                    "description": s.description,
-                    "objective": getattr(s, "objective", None),
-                    "expected_outcome": getattr(s, "expected_outcome", None),
-                    "lane_type": s.lane_type.value
-                    if getattr(s, "lane_type", None)
-                    else "normal",
-                    "origin_sprint_id": getattr(s, "origin_sprint_id", None),
-                    "origin_bug_id": getattr(s, "origin_bug_id", None),
-                    "normal_sprint_created": getattr(s, "normal_sprint_created", True),
-                }
-                for s in sprints
-            ]
-        except Exception:
-            pass
 
         # R4-IMP4: read-only gate/readiness block. Spec context does NOT aggregate
         # per-card cognitive verdicts (codex Q1) — cognitive readiness is per-card and
@@ -11309,18 +10932,21 @@ async def okto_pulse_get_spec_context(
             dependency_readiness=dependency_readiness,
             **checklist_readiness,
         )
-        if _resolved_profile != "legacy":
-            result["code_traceability"] = await _mcp_code_traceability_projection(
-                uow=uow,
-                actor=actor,
-                board_id=board_id,
-                subject_type="spec",
-                subject_id=spec.id,
-                subject_version=spec.version,
-                profile=_resolved_profile,
-            )
+        result["code_traceability"] = await _mcp_code_traceability_projection(
+            uow=uow,
+            actor=actor,
+            board_id=board_id,
+            subject_type="spec",
+            subject_id=spec.id,
+            subject_version=spec.version,
+            profile=_resolved_profile,
+        )
 
         from okto_pulse.core.mcp.context_projection import project_spec_context
+
+        from okto_pulse.core.application.use_cases.missing_link_context import GetMissingLinkContextUseCase
+        result["missing_link_context"] = (await GetMissingLinkContextUseCase().execute(
+            board_id=board_id, entity_type="spec", entity_id=spec.id, actor=actor, uow=uow)).model_dump(mode='json')
 
         projected = project_spec_context(result, profile=profile)
         return json.dumps(projected, default=str)
@@ -11333,17 +10959,17 @@ async def okto_pulse_update_spec(
     title: str = "",
     description: str = "",
     context: str = "",
-    functional_requirements: list[str] | str = "",
-    technical_requirements: list[str] | str = "",
-    acceptance_criteria: list[str] | str = "",
+    functional_requirements: list[dict[str, Any]] | None = None,
+    technical_requirements: list[dict[str, Any]] | None = None,
+    acceptance_criteria: list[dict[str, Any]] | None = None,
     delivery_context: str = "",
     delivery_context_override_reason: str = "",
     assignee_id: str = "",
-    labels: list[str] | str = "",
+    labels: list[str] | None = None,
 ) -> str:
     """
     Update a spec's fields. Content changes (description, context, requirements, criteria) bump the version.
-    Only non-empty fields are updated."""
+    Requirement collections are omitted with null; an empty list clears the collection. Other fields use non-empty patches under the existing content edit authority."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11354,9 +10980,9 @@ async def okto_pulse_update_spec(
             title,
             description,
             context,
-            functional_requirements,
-            technical_requirements,
-            acceptance_criteria,
+            functional_requirements is not None,
+            technical_requirements is not None,
+            acceptance_criteria is not None,
             delivery_context,
             delivery_context_override_reason,
         )
@@ -11372,7 +10998,6 @@ async def okto_pulse_update_spec(
         perm_err = _mcp_check_permission(
             ctx.permissions,
             granular_permission,
-            Permissions.SPECS_UPDATE,
         )
         if perm_err:
             return _perm_error(perm_err)
@@ -11387,27 +11012,13 @@ async def okto_pulse_update_spec(
         update_kwargs["description"] = description.replace("\\n", "\n")
     if context:
         update_kwargs["context"] = context.replace("\\n", "\n")
-    if functional_requirements:
-        try:
-            update_kwargs["functional_requirements"] = coerce_to_list_str(
-                functional_requirements
-            )
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-    if technical_requirements:
-        try:
-            update_kwargs["technical_requirements"] = _trs_to_objects(
-                coerce_to_list_str(technical_requirements)
-            )
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-    if acceptance_criteria:
-        try:
-            update_kwargs["acceptance_criteria"] = coerce_to_list_str(
-                acceptance_criteria
-            )
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
+    for field_name, values in (
+        ("functional_requirements", functional_requirements),
+        ("technical_requirements", technical_requirements),
+        ("acceptance_criteria", acceptance_criteria),
+    ):
+        if values is not None:
+            update_kwargs[field_name] = values
     if delivery_context_override_reason and not delivery_context:
         return json.dumps(
             {
@@ -11441,7 +11052,7 @@ async def okto_pulse_update_spec(
         update_kwargs["assignee_id"] = assignee_id
     if labels:
         try:
-            update_kwargs["labels"] = coerce_to_list_str(labels)
+            update_kwargs["labels"] = validate_string_list(labels)
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -11475,9 +11086,13 @@ async def okto_pulse_update_spec(
                     McpUpdateSpecCommand(spec_id, spec_update), actor=actor, uow=uow
                 )
             ).spec
+            from okto_pulse.core.application.use_cases.missing_link_context import GetMissingLinkContextUseCase
+            diagnostic = await GetMissingLinkContextUseCase().execute(
+                board_id=board_id, entity_type="spec", entity_id=spec.id, actor=actor, uow=uow)
             return json.dumps(
                 {
                     "success": True,
+                    "missing_link_context": diagnostic.model_dump(mode='json'),
                     "spec": {
                         "id": spec.id,
                         "title": spec.title,
@@ -11489,7 +11104,7 @@ async def okto_pulse_update_spec(
                         "acceptance_criteria": spec.acceptance_criteria,
                         "project_structure": getattr(spec, "project_structure", None),
                         "project_structure_revision": int(
-                            getattr(spec, "project_structure_revision", 0) or 0
+                            spec.project_structure_revision
                         ),
                         "project_structure_digest": getattr(
                             spec, "project_structure_digest", None
@@ -11534,6 +11149,7 @@ async def okto_pulse_move_spec(
         return _auth_error()
 
     from okto_pulse.core.domain.enums import SpecStatus
+    from okto_pulse.core.domain.code_traceability import CodeTraceabilityContractError
     from okto_pulse.core.models.schemas import SpecMove
 
     try:
@@ -11550,7 +11166,7 @@ async def okto_pulse_move_spec(
         McpMoveSpecUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.domain.guideline_policy_transition import (
+    from okto_pulse.core.domain.guideline_semantic_transition import (
         PolicyTransitionRejected,
     )
     from okto_pulse.core.domain.human_validation_cycle import (
@@ -11598,7 +11214,17 @@ async def okto_pulse_move_spec(
         return MCPAdapterContract.error(e)
     except LifecycleTransitionConflictError as e:
         return MCPAdapterContract.error(e)
+    except ResourceGateError as e:
+        return _resource_gate_error_response(e)
     except ValueError as e:
+        from okto_pulse.core.application.delivery_errors import DeliveryGateBlocked
+        from okto_pulse.core.domain.spec_dependency import SpecDependencyOperationError
+        if isinstance(e, CodeTraceabilityContractError):
+            return json.dumps(e.as_dict())
+        if isinstance(e, SpecDependencyOperationError):
+            return _spec_dependency_error_payload(e)
+        if isinstance(e, DeliveryGateBlocked):
+            return MCPAdapterContract.error(e)
         return json.dumps({"error": str(e)})
 
 
@@ -11619,12 +11245,15 @@ async def okto_pulse_add_test_scenario(
         ScenarioType,
         Field(description=SCENARIO_TYPE_DESCRIPTION),
     ] = DEFAULT_SCENARIO_TYPE,
-    linked_criteria: str = "",
+    linked_criteria: list[str] | None = None,
     notes: str = "",
+    verification_method: VerificationMethod | None = None,
 ) -> str:
     """Add a Given/When/Then scenario to a spec. ``scenario_type`` is closed to
     unit, integration, e2e, manual, or negative; negative models an expected
     rejection/failure path. Invalid values fail validation without mutation.
+    verification_method is independent of the scenario type. Unsupported
+    admission methods remain pending; selecting one never grants proof credit.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -11633,7 +11262,6 @@ async def okto_pulse_add_test_scenario(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.tests.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -11665,9 +11293,10 @@ async def okto_pulse_add_test_scenario(
                     then.replace("\\n", "\n"),
                     scenario_type=scenario_type,
                     linked_criteria_tokens=(
-                        parse_multi_value(linked_criteria) if linked_criteria else None
+                        validate_string_list(linked_criteria) if linked_criteria else None
                     ),
                     notes=notes.replace("\\n", "\n") if notes else None,
+                    verification_method=verification_method,
                 ),
                 actor=actor,
                 uow=uow,
@@ -11706,7 +11335,7 @@ async def okto_pulse_add_test_scenario(
         {
             "success": True,
             "scenario": _r.scenario,
-            **_saturation_or_coverage(_r.coverage),
+            **_saturation_response(_r.coverage),
         },
         default=str,
     )
@@ -11717,7 +11346,7 @@ async def okto_pulse_list_test_scenarios(
     board_id: str,
     spec_id: str,
     status: str = "",
-    scenario_type: str = "",
+    scenario_type: ScenarioType | None = None,
     linked: str = "",
     offset: PageWindowInput = 0,
     limit: PageWindowInput = 50,
@@ -11728,7 +11357,7 @@ async def okto_pulse_list_test_scenarios(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -11817,24 +11446,6 @@ async def okto_pulse_list_test_scenarios(
                         for t in VALID_SCENARIO_TYPES
                         if any(s.get("scenario_type") == t for s in all_scenarios)
                     },
-                    # Historical/invalid persisted scenario_types are surfaced
-                    # EXPLICITLY (spec ac16b3c9 FR5/AC5) rather than silently
-                    # folded into a supported bucket or dropped — so a stale value
-                    # like 'regression'/'exploratory' is visible for deliberate
-                    # remediation. New writes already fail closed (card 58844a26).
-                    "unsupported_types": {
-                        st: sum(
-                            1 for s in all_scenarios if s.get("scenario_type") == st
-                        )
-                        for st in sorted(
-                            {
-                                s.get("scenario_type")
-                                for s in all_scenarios
-                                if isinstance(s.get("scenario_type"), str)
-                                and not is_valid_scenario_type(s.get("scenario_type"))
-                            }
-                        )
-                    },
                     "linked": sum(1 for s in all_scenarios if s.get("linked_task_ids")),
                     "unlinked": sum(
                         1 for s in all_scenarios if not s.get("linked_task_ids")
@@ -11862,7 +11473,6 @@ from okto_pulse.core.services.test_scenario_lifecycle import (  # noqa: E402
     InvalidScenarioTypeError,
     StatusNotMutableError,
     VALID_SCENARIO_STATUSES,
-    is_valid_scenario_type,
     validate_test_scenario_evidence,
 )
 
@@ -11880,7 +11490,7 @@ async def okto_pulse_execute_test_scenario_evidence(
         str,
         Field(
             description=(
-                "Legacy/advanced mode: relative JSON path under the installation "
+                "Installation-managed mode: relative JSON path under the installation "
                 "evidence/manifests root; leave empty when replay is supplied"
             )
         ),
@@ -11889,8 +11499,9 @@ async def okto_pulse_execute_test_scenario_evidence(
         str,
         Field(
             description=(
-                "Preferred MCP-only mode: JSON object with optional description "
-                "and required GET-only steps; server adds all trusted bindings"
+                "JSON with GET-only steps, or {runner_ref, revision} selecting a "
+                "locally registered external test runner and full Git commit; "
+                "server executes and adds all trusted bindings"
             )
         ),
     ] = "",
@@ -11901,11 +11512,16 @@ async def okto_pulse_execute_test_scenario_evidence(
     can provide only bounded GET/assertion steps: the edition runtime validates
     them, adds board/spec/scenario/semantic bindings, persists a canonical
     manifest atomically, executes it, and issues the receipt. ``manifest_ref``
-    remains compatible for installation-managed manifests. Exactly one source
+    selects an installation-managed manifest. Exactly one source
     is required. Pass returned ``evidence`` unchanged to
     ``okto_pulse_update_test_scenario_status``. Traversal, duplicate JSON keys,
     malformed/oversized input, unreachable runtime and unsigned observations
     fail closed.
+    External project tests use replay={"runner_ref":"registered-name",
+    "revision":"full Git commit"}. The host operator first registers the scoped
+    runner with `okto-pulse test-runner`; callers cannot supply commands or paths.
+    The receipt binds the observed source/revision. Delivery accepts a binding
+    only to implementation evidence from that exact clean revision.
     Docs: okto-pulse://reference/tool-docs/test-scenario.
     """
 
@@ -11950,6 +11566,40 @@ async def okto_pulse_execute_test_scenario_evidence(
         },
         default=str,
     )
+
+
+@mcp.tool()
+async def okto_pulse_admit_test_verification_report(
+    board_id: str, spec_id: str, scenario_id: str,
+    report: Annotated[dict[str, Any], Field(description="Closed verification-report/v1 external observation: static_analysis, inspection or demonstration. No author/approval fields.")],
+) -> str:
+    """Authenticate an external verification report using the current scenario.
+
+    Requires spec.tests.execute. Does not run commands, fetch observations,
+    approve work or mutate scenario state. The report must cover exactly the
+    scenario's linked criteria and supply versioned sources, observations and
+    method-specific context. Authorship comes from the authenticated caller.
+    Pass returned evidence unchanged to okto_pulse_update_test_scenario_status;
+    Test Card, independent review and evaluation gates remain applicable.
+    Docs: okto-pulse://reference/tool-docs/test-scenario.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    from okto_pulse.core.application.use_cases.spec_crud import AdmitTestVerificationReportCommand, AdmitTestVerificationReportUseCase
+    from okto_pulse.core.application.use_cases import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await AdmitTestVerificationReportUseCase().execute(
+                AdmitTestVerificationReportCommand(spec_id, scenario_id, report), actor=actor, uow=uow)
+    except EntityNotFoundError as exc:
+        return json.dumps({"error": "not_found", "entity": exc.entity_type, "message": str(exc)})
+    except ValueError as exc:
+        return json.dumps({"error": "verification_report_rejected", "message": str(exc)})
+    return json.dumps({"success": True, "scenario_persisted": False, "evidence": result.evidence,
+                       "next_tool": "okto_pulse_update_test_scenario_status"}, default=str)
 
 
 @mcp.tool()
@@ -12011,7 +11661,7 @@ async def okto_pulse_update_test_scenario_status(
         SetTestScenarioStatusCommand,
         SetTestScenarioStatusUseCase,
     )
-    from okto_pulse.core.domain.guideline_policy_transition import (
+    from okto_pulse.core.domain.guideline_semantic_transition import (
         PolicyTransitionRejected,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
@@ -12045,7 +11695,7 @@ async def okto_pulse_update_test_scenario_status(
         msg = str(exc)
         if msg.startswith("evidence_required"):
             _ok, missing = validate_test_scenario_evidence(
-                status, evidence_dict, for_write=True
+                status, evidence_dict
             )
             return json.dumps(
                 {
@@ -12096,21 +11746,24 @@ async def okto_pulse_update_test_scenario(
             )
         ),
     ] = None,  # type: ignore[assignment]  # omitted sentinel; explicit null is invalid
-    linked_criteria: str = "",
+    linked_criteria: list[str] | None = None,
     notes: str = "",
-    clear: str = "",
+    clear: list[str] | None = None,
+    verification_method: VerificationMethod | None = None,
+    expected_spec_version: Annotated[int, Field(strict=True, ge=1)] | None = None,
 ) -> str:
     """Edit scenario body fields; status remains exclusive to the status tool.
     Omit fields, including ``scenario_type``, to preserve them. Explicit null,
     empty, or unknown scenario types are invalid. ``clear`` may clear notes or
-    linked criteria. Semantic edits reset evidenced scenarios to ``ready`` and
+    linked criteria or verification_method. Method edits are semantic; absent
+    methods do not adopt the new contract. Semantic edits reset evidenced scenarios to ``ready`` and
     drop evidence; title/notes edits preserve both. Respects the content lock.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    clear_fields = parse_multi_value(clear) if clear else None
-    lc = parse_multi_value(linked_criteria) if linked_criteria else None
+    clear_fields = validate_string_list(clear) if clear else None
+    lc = validate_string_list(linked_criteria) if linked_criteria else None
 
     from okto_pulse.core.application.use_cases import (
         McpUpdateTestScenarioCommand,
@@ -12138,6 +11791,8 @@ async def okto_pulse_update_test_scenario(
                         linked_criteria_tokens=lc,
                         notes=notes,
                         clear_fields=clear_fields,
+                        verification_method=verification_method,
+                        expected_spec_version=expected_spec_version,
                     ),
                     actor=actor,
                     uow=uow,
@@ -12327,7 +11982,6 @@ async def _link_task_to_scenario_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "card.link_to.scenario",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -12369,7 +12023,7 @@ async def _link_task_to_scenario_internal(
             "success": True,
             "scenario_id": result.scenario_id,
             "card_id": result.card_id,
-            **_saturation_or_coverage(result.coverage),
+            **_saturation_response(result.coverage),
         }
     )
 
@@ -12387,7 +12041,6 @@ async def _link_task_to_rule_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "card.link_to.rule",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -12425,7 +12078,7 @@ async def _link_task_to_rule_internal(
             "card_id": card_id,
             "link_changed": bool(result.link.changed),
             "idempotent": result.link.idempotent,
-            **_saturation_or_coverage(cov),
+            **_saturation_response(cov),
         }
     )
 
@@ -12441,7 +12094,6 @@ async def _link_task_to_fr_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.structured_entity.functional_requirement.link_task",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -12489,7 +12141,7 @@ async def _link_task_to_fr_internal(
                 "Direct FR task link persisted. The FR coverage gate is still "
                 "computed from business_rules[].linked_requirements."
             ),
-            **_saturation_or_coverage(cov),
+            **_saturation_response(cov),
         }
     )
 
@@ -12534,7 +12186,6 @@ async def _link_task_to_contract_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "card.link_to.contract",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -12581,7 +12232,7 @@ async def _link_task_to_contract_internal(
                 "success": True,
                 "contract_id": contract_id,
                 "card_id": card_id,
-                **_saturation_or_coverage(cov),
+                **_saturation_response(cov),
             }
         )
 
@@ -12597,7 +12248,6 @@ async def _link_task_to_tr_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "card.link_to.tr",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -12680,7 +12330,7 @@ async def _link_task_to_tr_internal(
                 "card_id": card_id,
                 "traceability_only": traceability_only,
                 "link_changed": link_changed,
-                **_saturation_or_coverage(cov),
+                **_saturation_response(cov),
             }
         )
 
@@ -12710,7 +12360,6 @@ async def okto_pulse_archive_tree(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         f"{entity_type}.entity.archive",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -12767,7 +12416,6 @@ async def okto_pulse_restore_tree(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         f"{entity_type}.entity.restore",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -12803,11 +12451,187 @@ async def okto_pulse_restore_tree(
 
 
 @mcp.tool()
+async def okto_pulse_list_architecture_candidates(
+    board_id: str, spec_id: str, offset: int = 0, limit: int = 25,
+    candidate_id: str = "", source_digest: str = "",
+) -> str:
+    """Page adopted contract summaries/digests for one Spec edition (limit 1..100).
+
+    Reports incomplete sources and conflicting variants explicitly. Reading does
+    not classify candidates, create IRs, refresh sources or authorize execution.
+    schema_ref is returned as data and is never fetched by this operation.
+    Supply candidate_id and source_digest together for the full current contract.
+    Global counts and issues cover all sources, not just this page of variants.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    from okto_pulse.core.domain.architecture_candidates import ArchitectureCandidateReadError
+    from okto_pulse.core.application.use_cases.architecture_candidates import (
+        GetArchitectureCandidatesCommand, GetArchitectureCandidatesUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError, PermissionDeniedError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await GetArchitectureCandidatesUseCase().execute(
+                GetArchitectureCandidatesCommand(
+                    board_id, spec_id, offset, limit, candidate_id or None, source_digest or None,
+                ), actor=actor, uow=uow,
+            )
+    except EntityNotFoundError:
+        return json.dumps({"error": "Spec not found"})
+    except PermissionDeniedError as exc:
+        return _perm_error(exc.message)
+    except ArchitectureCandidateReadError as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps({"success": True, **result})
+
+
+
+
+@mcp.tool()
+@closed_mcp_schema
+async def okto_pulse_get_requirement_verification(
+    board_id: Annotated[str, Field(min_length=1, max_length=255)],
+    spec_id: Annotated[str, Field(min_length=1, max_length=255)],
+    offset: Annotated[int, Field(strict=True, ge=0, le=2**63 - 1)] = 0,
+    limit: Annotated[int, Field(strict=True, ge=1, le=100)] = 25,
+    requirement_type: Literal["functional_requirement", "technical_requirement", "integration_requirement", "observability_requirement", "business_rule"] | None = None,
+    requirement_id: Annotated[str, Field(min_length=1, max_length=255)] | None = None,
+    paths_offset: Annotated[int, Field(strict=True, ge=0, le=2**63 - 1)] = 0,
+) -> str:
+    """Read requirement qualifications, inheritance paths and whole-population counts.
+    Requires Spec/IR/OR reads; planning also requires Test/Card reads. Missing facts
+    remain unknown; inspect truncation and page paths for a selected requirement.
+    Returns current source digests/default proposals and prospective obligations,
+    methods and Card contributions. These are planning facts, not proof, approval,
+    readiness or ARQ/VER adoption; credit follows the adopted delivery contract.
+    Author verification and implementation-plan/v1 via Draft structured entity
+    writes. BR links do not imply inheritance or verified coverage.
+    Read okto-pulse://reference/tool-docs/spec for fields, scopes and limits."""
+    from okto_pulse.core.application.use_cases.requirement_verification import (
+        GetRequirementVerificationCommand, GetRequirementVerificationUseCase, RequirementVerificationReadError,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    try:
+        command = GetRequirementVerificationCommand(board_id, spec_id, offset, limit, requirement_type, requirement_id, paths_offset)
+        ctx = await _get_agent_ctx(board_id)
+        if not ctx:
+            return _auth_error()
+        actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await GetRequirementVerificationUseCase().execute(command, actor=actor, uow=uow)
+    except EntityNotFoundError:
+        return json.dumps({"success": False, "error": "Spec not found", "status_code": 404})
+    except PermissionDeniedError:
+        return json.dumps({"success": False, "error": "permission_denied", "status_code": 403})
+    except RequirementVerificationReadError as exc:
+        return json.dumps({"success": False, "error": str(exc), "status_code": 503 if str(exc) == "verification_snapshot_unavailable" else 422})
+    return json.dumps({"success": True, **result})
+
+
+@mcp.tool()
+@closed_mcp_schema
+async def okto_pulse_list_architecture_classifications(
+    board_id: Annotated[str, Field(min_length=1, max_length=255)],
+    spec_id: Annotated[str, Field(min_length=1, max_length=255)],
+    offset: Annotated[int, Field(strict=True, ge=0, le=2**63 - 1)] = 0,
+    limit: Annotated[int, Field(strict=True, ge=1, le=100)] = 25,
+    candidate_id: str = "", source_digest: str = "",
+    state: Literal["pending", "current", "review_required", "unresolved", "retired", "unavailable"] | None = None,
+) -> str:
+    """Page classification currentness across all adopted contracts and retired witnesses.
+
+    Requires Spec, architecture and IR reads. Counts include candidates outside
+    this page; unavailable enumeration has unknown total. Optional state filters
+    do not narrow global counts. Supply candidate_id and source_digest together
+    for current/analyzed contracts, changed paths, authorship and IR bindings.
+    A retired item retains its analyzed digest for detail lookup; normative IRs
+    remain obligations. Reading never fetches schema_ref or writes decisions.
+    Classification completeness is not readiness, semantic approval or rollout.
+    """
+    from okto_pulse.core.application.use_cases.architecture_classification_review import (
+        GetArchitectureClassificationsCommand, GetArchitectureClassificationsUseCase,
+    )
+    from okto_pulse.core.inbound.architecture_classification import (
+        CLASSIFICATION_REQUEST_ERRORS, classification_error,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await GetArchitectureClassificationsUseCase().execute(
+                GetArchitectureClassificationsCommand(board_id, spec_id, offset, limit, candidate_id or None, source_digest or None, state),
+                actor=actor, uow=uow,
+            )
+    except CLASSIFICATION_REQUEST_ERRORS as exc:
+        projected = classification_error(exc)
+        return json.dumps({"success": False, **projected.payload(), "status_code": projected.status_code})
+    return json.dumps({"success": True, **result})
+
+
+@mcp.tool()
+@closed_mcp_schema
+async def okto_pulse_classify_architecture_candidates(
+    board_id: Annotated[str, Field(min_length=1, max_length=255)],
+    spec_id: Annotated[str, Field(min_length=1, max_length=255)],
+    batch: ArchitectureClassificationBatch,
+) -> str:
+    """Classify 1..50 adopted contract decisions atomically (batch <=256 KiB).
+
+    Supply expected_spec_version, expected_spec_edition, actor-bound idempotency_key
+    and decisions with candidate_ref and expected_source_digest. Dispositions:
+    promote_to_ir with explicitly authored integration_requirements (including
+    integration_type); associate_existing_ir with active local IR references;
+    context_only with a reason. Partial named-member scope_paths require a
+    remainder_reason. Contracts/schema_ref are never fetched or inferred.
+    Requires Spec/architecture/IR reads and spec.entity.edit_fields, plus IR create
+    for promotion or IR update for association. Draft and content lock apply.
+    Replay returns the original receipt; classification does not waive existing
+    requirements, evaluate readiness or authorize Spec execution.
+    """
+    from okto_pulse.core.application.use_cases.architecture_classification import (
+        ClassifyArchitectureCandidatesCommand, ClassifyArchitectureCandidatesUseCase,
+    )
+    from okto_pulse.core.inbound.architecture_classification import (
+        CLASSIFICATION_REQUEST_ERRORS, classification_error,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    try:
+        # Direct catalog callers and transport callers share strict validation
+        # before authentication can open a UoW. Never trust model_construct().
+        batch = ArchitectureClassificationBatch.model_validate(
+            batch.model_dump(mode="json") if isinstance(batch, ArchitectureClassificationBatch) else batch,
+        )
+        ctx = await _get_agent_ctx(board_id)
+        if not ctx:
+            return _auth_error()
+        actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await ClassifyArchitectureCandidatesUseCase().execute(
+                ClassifyArchitectureCandidatesCommand(board_id, spec_id, batch), actor=actor, uow=uow,
+            )
+    except CLASSIFICATION_REQUEST_ERRORS as exc:
+        projected = classification_error(exc)
+        return json.dumps({"success": False, **projected.payload(), "status_code": projected.status_code})
+    return json.dumps({"success": True, **result})
+
+
+@mcp.tool()
 async def okto_pulse_list_architecture_designs(
     board_id: str,
     parent_type: str,
     parent_id: str,
-    include_payloads: BoolInput = False,
+    include_payloads: StrictBool = False,
 ) -> str:
     """
     List Architecture Designs for an ideation, refinement, spec, or card."""
@@ -12815,7 +12639,7 @@ async def okto_pulse_list_architecture_designs(
     if not ctx:
         return _auth_error()
 
-    action = "render" if _flag_enabled(include_payloads) else "read"
+    action = "render" if _require_boolean(include_payloads) else "read"
     perm_err = _mcp_check_architecture_permission(ctx.permissions, parent_type, action)
     if perm_err:
         return _perm_error(perm_err)
@@ -12834,7 +12658,7 @@ async def okto_pulse_list_architecture_designs(
                 ListArchitectureCommand(
                     parent_type,
                     parent_id,
-                    include_payloads=_flag_enabled(include_payloads),
+                    include_payloads=_require_boolean(include_payloads),
                     board_id=board_id,
                 ),
                 actor=actor,
@@ -12849,16 +12673,16 @@ async def okto_pulse_list_architecture_designs(
 
 
 @mcp.tool()
-async def okto_pulse_list_architecture_propagation_legacy(
+async def okto_pulse_list_architecture_propagation_report(
     board_id: str,
     limit: int = 100,
     offset: int = 0,
-    include_clean: BoolInput = False,
+    include_clean: StrictBool = False,
     parent_type_filter: str = "",
 ) -> str:
-    """List legacy Architecture Design snapshots whose SOURCE is now ineligible for
+    """List propagated Architecture Design snapshots whose SOURCE is now ineligible for
     propagation (Spec C). READ-ONLY / forward-only: never backfills, resolves findings,
-    mutates snapshots, or changes SDLC status. Each item carries legacy_status
+    mutates snapshots, or changes SDLC status. Each item carries source_status
     (source_blocked|verdict_missing|source_unavailable), source identity, finding_keys and
     remediation. architecture_warning_acknowledgement is audit-only and is NOT a
     propagation bypass."""
@@ -12871,7 +12695,7 @@ async def okto_pulse_list_architecture_propagation_legacy(
         return _perm_error(perm_err)
 
     try:
-        # Reject an offset above int64 before it reaches the legacy report's
+        # Reject an offset above int64 before it reaches the propagation report's
         # SQL OFFSET binding, which would otherwise raise a raw OverflowError.
         offset = bounded_page_offset(offset)
     except (TypeError, ValueError):
@@ -12883,19 +12707,19 @@ async def okto_pulse_list_architecture_propagation_legacy(
         )
 
     from okto_pulse.core.application.use_cases.architecture_crud import (
-        ArchitecturePropagationLegacyReportCommand,
-        ArchitecturePropagationLegacyReportUseCase,
+        ArchitecturePropagationReportCommand,
+        ArchitecturePropagationReportUseCase,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = await ArchitecturePropagationLegacyReportUseCase().execute(
-            ArchitecturePropagationLegacyReportCommand(
+        result = await ArchitecturePropagationReportUseCase().execute(
+            ArchitecturePropagationReportCommand(
                 board_id,
                 limit=limit,
                 offset=offset,
-                include_clean=_flag_enabled(include_clean),
+                include_clean=_require_boolean(include_clean),
                 parent_type_filter=parent_type_filter,
                 surface="mcp",
             ),
@@ -12909,7 +12733,7 @@ async def okto_pulse_list_architecture_propagation_legacy(
 async def okto_pulse_get_architecture_design(
     board_id: str,
     design_id: str,
-    include_payloads: BoolInput = False,
+    include_payloads: StrictBool = False,
 ) -> str:
     """
     Get one Architecture Design by ID."""
@@ -12930,7 +12754,7 @@ async def okto_pulse_get_architecture_design(
             result = await GetArchitectureDesignUseCase().execute(
                 GetArchitectureDesignCommand(
                     design_id,
-                    include_payloads=_flag_enabled(include_payloads),
+                    include_payloads=_require_boolean(include_payloads),
                     board_id=board_id,
                 ),
                 actor=actor,
@@ -12938,7 +12762,7 @@ async def okto_pulse_get_architecture_design(
             )
     except EntityNotFoundError:
         return json.dumps({"error": "Architecture design not found"})
-    action = "render" if _flag_enabled(include_payloads) else "read"
+    action = "render" if _require_boolean(include_payloads) else "read"
     parent_type = getattr(result.response, "parent_type", None)
     perm_err = _mcp_check_architecture_permission(ctx.permissions, parent_type, action)
     if perm_err:
@@ -12963,7 +12787,7 @@ async def okto_pulse_get_architecture_design_schema(board_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = _mcp_check_permission(ctx.permissions, Permissions.BOARD_READ, None)
+    perm_err = _mcp_check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -12980,10 +12804,10 @@ async def okto_pulse_validate_architecture_design_payload(
     design_id: str = "",
     title: str = "",
     global_description: str = "",
-    entities: list[dict] | str = "",
-    interfaces: list[dict] | str = "",
-    diagrams: list[dict] | str = "",
-    architecture_warning_acknowledgement: dict | str = "",
+    entities: list[dict] | None = None,
+    interfaces: list[dict] | None = None,
+    diagrams: list[dict] | None = None,
+    architecture_warning_acknowledgement: dict | None = None,
     commit: bool = False,
     include_design: bool = False,
 ) -> str:
@@ -13004,12 +12828,12 @@ async def okto_pulse_validate_architecture_design_payload(
         ("interfaces", interfaces),
         ("diagrams", diagrams),
     ):
-        parsed, err = _parse_json_arg(raw, None)
+        parsed, err = _validate_native_json_arg(raw, None, "array")
         if err:
             return json.dumps({"error": f"Invalid {field_name}: {err}"})
         if parsed is not None:
             parsed_fields[field_name] = parsed
-    acknowledgement, err = _parse_json_arg(architecture_warning_acknowledgement, None)
+    acknowledgement, err = _validate_native_json_arg(architecture_warning_acknowledgement, None, "object")
     if err:
         return json.dumps(
             {"error": f"Invalid architecture_warning_acknowledgement: {err}"}
@@ -13093,10 +12917,10 @@ async def okto_pulse_add_architecture_design(
     parent_id: str,
     title: str,
     global_description: str,
-    entities: list[dict] | str = "",
-    interfaces: list[dict] | str = "",
-    diagrams: list[dict] | str = "",
-    architecture_warning_acknowledgement: dict | str = "",
+    entities: list[dict] | None = None,
+    interfaces: list[dict] | None = None,
+    diagrams: list[dict] | None = None,
+    architecture_warning_acknowledgement: dict | None = None,
 ) -> str:
     """Create an Architecture Design on an ideation, refinement, or spec (card
     designs are read-only governed snapshots — use
@@ -13120,16 +12944,16 @@ async def okto_pulse_add_architecture_design(
     if perm_err:
         return _perm_error(perm_err)
 
-    ents, err = _parse_json_arg(entities, [])
+    ents, err = _validate_native_json_arg(entities, [], "array")
     if err:
         return json.dumps({"error": f"Invalid entities: {err}"})
-    ifaces, err = _parse_json_arg(interfaces, [])
+    ifaces, err = _validate_native_json_arg(interfaces, [], "array")
     if err:
         return json.dumps({"error": f"Invalid interfaces: {err}"})
-    diags, err = _parse_json_arg(diagrams, [])
+    diags, err = _validate_native_json_arg(diagrams, [], "array")
     if err:
         return json.dumps({"error": f"Invalid diagrams: {err}"})
-    acknowledgement, err = _parse_json_arg(architecture_warning_acknowledgement, None)
+    acknowledgement, err = _validate_native_json_arg(architecture_warning_acknowledgement, None, "object")
     if err:
         return json.dumps(
             {"error": f"Invalid architecture_warning_acknowledgement: {err}"}
@@ -13183,13 +13007,19 @@ async def okto_pulse_update_architecture_design(
     design_id: str,
     title: str = "",
     global_description: str = "",
-    entities: list[dict] | str = "",
-    interfaces: list[dict] | str = "",
-    diagrams: list[dict] | str = "",
+    entities: list[dict] | None = None,
+    interfaces: list[dict] | None = None,
+    diagrams: list[dict] | None = None,
     change_summary: str = "",
-    architecture_warning_acknowledgement: dict | str = "",
+    architecture_warning_acknowledgement: dict | None = None,
+    expected_version: Annotated[int, Field(strict=True, ge=1)] | None = None,
 ) -> str:
-    """Update an Architecture Design; omitted fields are left unchanged. For large or
+    """Update an Architecture Design; omitted fields are left unchanged.
+    Supply expected_version from the design used to author the update; a mismatch
+    returns architecture_version_conflict without writing. Reload and explicitly
+    review the current design before submitting revised content. Without this field,
+    only concurrent changes after this operation reads the design are fenced.
+    For large or
     generated updates, call okto_pulse_get_architecture_design_schema once per session
     then okto_pulse_validate_architecture_design_payload first. The update is critiqued
     against the full resulting design before saving — prefer replacing
@@ -13210,14 +13040,14 @@ async def okto_pulse_update_architecture_design(
         ("interfaces", interfaces),
         ("diagrams", diagrams),
     ):
-        parsed, err = _parse_json_arg(raw, None)
+        parsed, err = _validate_native_json_arg(raw, None, "array")
         if err:
             return json.dumps({"error": f"Invalid {field_name}: {err}"})
         if parsed is not None:
             patch[field_name] = parsed
     if change_summary:
         patch["change_summary"] = change_summary
-    acknowledgement, err = _parse_json_arg(architecture_warning_acknowledgement, None)
+    acknowledgement, err = _validate_native_json_arg(architecture_warning_acknowledgement, None, "object")
     if err:
         return json.dumps(
             {"error": f"Invalid architecture_warning_acknowledgement: {err}"}
@@ -13226,6 +13056,9 @@ async def okto_pulse_update_architecture_design(
         patch["architecture_warning_acknowledgement"] = acknowledgement
     if not patch:
         return json.dumps({"error": "No fields provided for update"})
+
+    if expected_version is not None:
+        patch["expected_version"] = expected_version
 
     from okto_pulse.core.application.use_cases.architecture_crud import (
         GetArchitectureDesignCommand,
@@ -13274,8 +13107,12 @@ async def okto_pulse_update_architecture_design(
 
 
 @mcp.tool()
-async def okto_pulse_delete_architecture_design(board_id: str, design_id: str) -> str:
+async def okto_pulse_delete_architecture_design(
+    board_id: str, design_id: str,
+    expected_version: Annotated[int, Field(strict=True, ge=1)] | None = None,
+) -> str:
     """Delete an Architecture Design. Permanent, no undo.
+    Supply the reviewed expected_version to reject deletion after a concurrent edit.
     Docs: okto-pulse://reference/destructive_ops
     """
     ctx = await _get_agent_ctx(board_id)
@@ -13308,7 +13145,7 @@ async def okto_pulse_delete_architecture_design(board_id: str, design_id: str) -
             if perm_err:
                 return _perm_error(perm_err)
             await DeleteArchitectureDesignUseCase().execute(
-                DeleteArchitectureDesignCommand(design_id, board_id=board_id),
+                DeleteArchitectureDesignCommand(design_id, board_id=board_id, expected_version=expected_version),
                 actor=actor,
                 uow=uow,
             )
@@ -13318,6 +13155,8 @@ async def okto_pulse_delete_architecture_design(board_id: str, design_id: str) -
         return _mcp_entity_not_found_error(exc)
     except ConflictError as exc:
         return _mcp_architecture_conflict_error(exc)
+    except ValueError as exc:
+        return _mcp_architecture_error(exc)
     return json.dumps({"success": True})
 
 
@@ -13326,20 +13165,23 @@ async def okto_pulse_import_excalidraw_architecture_diagram(
     board_id: str,
     design_id: str,
     title: str,
-    payload_json: dict | str,
+    payload_json: dict,
     diagram_type: str = "other",
     replace_diagram_id: str = "",
     description: str = "",
     order_index: int = 0,
     change_summary: str = "",
+    expected_version: Annotated[int, Field(strict=True, ge=1)] | None = None,
 ) -> str:
     """
-    Import an Excalidraw JSON scene into an Architecture Design."""
+    Import an Excalidraw JSON scene into an Architecture Design.
+    Supply the authored expected_version; conflicts require reload and explicit review.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
 
-    payload, err = _parse_json_arg(payload_json, None)
+    payload, err = _validate_native_json_arg(payload_json, None, "object")
     if err or payload is None:
         return json.dumps(
             {"error": f"Invalid payload_json: {err or 'payload is required'}"}
@@ -13382,6 +13224,7 @@ async def okto_pulse_import_excalidraw_architecture_diagram(
                     change_summary,
                     None,
                     board_id=board_id,
+                    expected_version=expected_version,
                 ),
                 actor=actor,
                 uow=uow,
@@ -13393,7 +13236,7 @@ async def okto_pulse_import_excalidraw_architecture_diagram(
     except ConflictError as exc:
         return _mcp_architecture_conflict_error(exc)
     except Exception as exc:
-        return json.dumps({"error": str(exc)})
+        return _mcp_architecture_error(exc)
     return json.dumps(
         {"success": True, "architecture_design": _dump_model(result.response)},
         default=str,
@@ -13468,18 +13311,18 @@ async def okto_pulse_copy_architecture_to_card(
     board_id: str,
     spec_id: str,
     card_id: str,
-    design_ids: list[str] | str = "",
-    architecture_warning_acknowledgement: dict | str = "",
+    design_ids: list[str] | None = None,
+    architecture_warning_acknowledgement: dict | None = None,
     profile: Annotated[
         str,
         Field(
-            description="summary | full | legacy (copy tools have no detail profile)"
+            description="summary | full (copy tools have no detail profile)"
         ),
     ] = "summary",
 ) -> str:
     """Copy Architecture Designs from a spec to a card/task as deep-copy
     snapshots. profile=summary (default) returns copy metadata only (copied,
-    design_ids, total_on_card + the projection envelope); full/legacy include
+    design_ids, total_on_card + the projection envelope); full include
     the complete copied architecture_designs. Bodies are persisted on the
     card regardless of profile — read them with
     okto_pulse_get_task_context(profile=full, context_scope=all).
@@ -13504,10 +13347,10 @@ async def okto_pulse_copy_architecture_to_card(
         return json.dumps(unsupported_copy_profile_error(profile))
 
     try:
-        ids = coerce_to_list_str(design_ids) if design_ids else None
+        ids = validate_string_list(design_ids) if design_ids else None
     except ValueError as exc:
         return json.dumps({"error": f"Invalid design_ids: {exc}"})
-    acknowledgement, err = _parse_json_arg(architecture_warning_acknowledgement, None)
+    acknowledgement, err = _validate_native_json_arg(architecture_warning_acknowledgement, None, "object")
     if err:
         return json.dumps(
             {"error": f"Invalid architecture_warning_acknowledgement: {err}"}
@@ -13568,7 +13411,7 @@ async def okto_pulse_copy_architecture_to_card(
 
 @mcp.tool()
 async def okto_pulse_copy_mockups_to_card(
-    board_id: str, spec_id: str, card_id: str, screen_ids: list[str] | str = ""
+    board_id: str, spec_id: str, card_id: str, screen_ids: list[str] | None = None
 ) -> str:
     """
     Copy screen mockups from a spec to a card. Use this when creating implementation
@@ -13582,7 +13425,7 @@ async def okto_pulse_copy_mockups_to_card(
         return _auth_error()
 
     try:
-        id_filter = coerce_to_list_str(screen_ids) if screen_ids else None
+        id_filter = validate_string_list(screen_ids) if screen_ids else None
     except ValueError as e:
         return json.dumps({"error": f"Invalid screen_ids: {e}"})
 
@@ -13663,90 +13506,10 @@ def _effective_empty_copy_response(resource_type: str, plan: dict) -> str:
     )
 
 
-@mcp.tool()
-async def okto_pulse_copy_knowledge_to_card(
-    board_id: str, spec_id: str, card_id: str, knowledge_ids: list[str] | str = ""
-) -> str:
-    """
-    Copy knowledge base entries from a spec to a card as inline card KEs.
-    Each copied entry is stored in Card.knowledge_bases with stable provenance.
-
-    R3-IMP2: when the spec has no DIRECT knowledge base, falls back to the
-    effective inherited resource (refinement/ideation) so a card linked to a
-    manual/legacy spec still carries the gate-required knowledge with an identity
-    the Resource Gate reads (``source_kb_id``)."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    try:
-        id_filter = coerce_to_list_str(knowledge_ids) if knowledge_ids else None
-    except ValueError as e:
-        return json.dumps({"error": f"Invalid knowledge_ids: {e}"})
-
-    from okto_pulse.core.application.use_cases import (
-        McpCopyKnowledgeToCardCommand,
-        McpCopyKnowledgeToCardUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-    from okto_pulse.core.services.effective_resource_propagation import (
-        ResourceLineageResolutionError,
-    )
-    from okto_pulse.core.ports.knowledge_propagation import (
-        KnowledgePropagationPortError,
-    )
-    from okto_pulse.core.services.knowledge_propagation import (
-        KnowledgePropagationServiceError,
-    )
-
-    # MCP-FU6 strangler: the spec/card lookup + R3-IMP2 effective fallback + dedup +
-    # update + commit move into McpCopyKnowledgeToCardUseCase over the MCP UoW. The
-    # adapter keeps the exact envelopes: spec/card not-found, the resolver
-    # exc.to_error_dict(), the empty-plan _effective_empty_copy_response, and the
-    # success payload. Tool no longer opens get_db_for_mcp nor builds the services.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            result = await McpCopyKnowledgeToCardUseCase().execute(
-                McpCopyKnowledgeToCardCommand(board_id, spec_id, card_id, id_filter),
-                actor=actor,
-                uow=uow,
-            )
-    except EntityNotFoundError as e:
-        return json.dumps(
-            {
-                "error": (
-                    "Spec not found" if e.entity_type == "spec" else "Card not found"
-                )
-            }
-        )
-    except ArtifactResourceSelectionError as exc:
-        return json.dumps(exc.to_error_dict())
-    except ResourceLineageResolutionError as exc:
-        return json.dumps(exc.to_error_dict())
-    except (
-        KnowledgePropagationPortError,
-        KnowledgePropagationServiceError,
-    ) as exc:
-        return _knowledge_propagation_error(exc)
-
-    if result.empty_plan is not None:
-        return _effective_empty_copy_response("knowledge_base", result.empty_plan)
-
-    return json.dumps(
-        {
-            "success": True,
-            "copied": result.copied,
-            "knowledge_ids": result.copied_ids,
-            "total_on_card": result.total_on_card,
-            "fallback": result.fallback,
-        }
-    )
 
 
 # ============================================================================
-# Card.knowledge_bases — inline JSONB lifecycle (symmetric to spec_knowledge)
+# Card Knowledge — effective native governed assignments
 # ============================================================================
 
 
@@ -13821,7 +13584,6 @@ async def okto_pulse_replace_card_knowledge_assignments(
     permission_error = _mcp_check_permission(
         ctx.permissions,
         "card.copy_from_spec.knowledge",
-        Permissions.CARDS_UPDATE,
     )
     if permission_error:
         return _perm_error(permission_error)
@@ -13859,7 +13621,6 @@ async def okto_pulse_drop_card_knowledge_assignments(
     permission_error = _mcp_check_permission(
         ctx.permissions,
         "card.copy_from_spec.knowledge",
-        Permissions.CARDS_UPDATE,
     )
     if permission_error:
         return _perm_error(permission_error)
@@ -13897,7 +13658,6 @@ async def okto_pulse_refresh_card_knowledge_assignments(
     permission_error = _mcp_check_permission(
         ctx.permissions,
         "card.copy_from_spec.knowledge",
-        Permissions.CARDS_UPDATE,
     )
     if permission_error:
         return _perm_error(permission_error)
@@ -13931,7 +13691,7 @@ async def okto_pulse_get_card_knowledge_propagation(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    permission_error = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    permission_error = check_permission(ctx.permissions, "board.read")
     if permission_error:
         return _perm_error(permission_error)
 
@@ -13981,23 +13741,6 @@ async def okto_pulse_get_card_knowledge_propagation(
     )
 
 
-@mcp.tool()
-async def okto_pulse_add_card_knowledge(
-    board_id: str,
-    card_id: str,
-    title: str,
-    content: str,
-    description: str = "",
-    mime_type: str = "text/markdown",
-    source: str = "manual",
-) -> str:
-    """
-    Deprecated: card Knowledge Base resources are read-only governed snapshots.
-    Use okto_pulse_copy_knowledge_to_card to refresh card context from the spec."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-    return _card_resource_read_only_error()
 
 
 @mcp.tool()
@@ -14031,32 +13774,8 @@ async def okto_pulse_get_card_knowledge(
     return json.dumps(result.payload, default=str)
 
 
-@mcp.tool()
-async def okto_pulse_update_card_knowledge(
-    board_id: str,
-    card_id: str,
-    knowledge_id: str,
-    title: str = "",
-    description: str = "",
-    content: str = "",
-    mime_type: str = "",
-) -> str:
-    """Deprecated: card Knowledge Base resources are read-only governed snapshots."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-    return _card_resource_read_only_error()
 
 
-@mcp.tool()
-async def okto_pulse_delete_card_knowledge(
-    board_id: str, card_id: str, knowledge_id: str
-) -> str:
-    """Deprecated: card Knowledge Base resources are read-only governed snapshots."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-    return _card_resource_read_only_error()
 
 
 @mcp.tool()
@@ -14106,7 +13825,7 @@ async def okto_pulse_get_analytics(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -14151,7 +13870,7 @@ async def okto_pulse_list_blockers(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -14220,11 +13939,6 @@ StructuredSpecOperation = Literal[
     "unlink_evidence",
 ]
 
-_STRUCTURED_SPEC_ENTITY_LEGACY_WARNING = (
-    "This legacy per-type mutation surface is compatibility-only. Prefer "
-    "okto_pulse_update_spec_entity or okto_pulse_update_spec_api_contract for "
-    "atomic structured spec child edits."
-)
 
 
 def _parse_expected_spec_version(raw: int | str | None) -> int | None:
@@ -14255,7 +13969,7 @@ async def _mcp_apply_structured_spec_entity(
     entity_type: StructuredSpecEntityType | Literal["api_contract"],
     operation: StructuredSpecOperation,
     entity_id: str = "",
-    payload_json: dict[str, Any] | str = "",
+    payload_json: dict[str, Any] | None = None,
     expected_spec_version: int | str | None = None,
     expected_structure_revision: int | str | None = None,
     task_id: str = "",
@@ -14285,17 +13999,9 @@ async def _mcp_apply_structured_spec_entity(
             {"error": f"Unsupported structured spec entity type: {entity_type}"}
         )
 
-    if isinstance(payload_json, dict):
-        payload = payload_json
-    elif payload_json:
-        try:
-            payload = json.loads(payload_json)
-        except json.JSONDecodeError as exc:
-            return json.dumps({"error": f"Invalid payload_json: {exc}"})
-    else:
-        payload = {}
-    if not isinstance(payload, dict):
-        return json.dumps({"error": "payload_json must decode to an object."})
+    payload, payload_error = _validate_native_json_arg(payload_json, {}, "object")
+    if payload_error:
+        return json.dumps({"error": f"Invalid payload_json: {payload_error}"})
     try:
         expected = _parse_expected_spec_version(expected_spec_version)
         expected_revision = _parse_expected_structure_revision(
@@ -14355,7 +14061,7 @@ async def okto_pulse_update_spec_entity(
     entity_type: StructuredSpecEntityType,
     operation: StructuredSpecOperation,
     entity_id: str = "",
-    payload_json: dict[str, Any] | str = "",
+    payload_json: dict[str, Any] | None = None,
     expected_spec_version: int | str | None = None,
     expected_structure_revision: int | str | None = None,
     task_id: str = "",
@@ -14366,15 +14072,16 @@ async def okto_pulse_update_spec_entity(
     idempotency_key: str = "",
     ack_token: str = "",
 ) -> str:
-    """
-    Polymorphic structured spec entity mutation tool for FR, BR, TR, Decision,
-    AC, IR, OR and Project structure nodes. Project structure writes require
-    expected_spec_version, expected_structure_revision and idempotency_key;
-    batch operations are atomic.
-
-    API Contracts intentionally use okto_pulse_update_spec_api_contract so the richer
-    payload shape remains explicit while still delegating to StructuredSpecEntityService.
-    """
+    """Mutate FR/BR/TR/Decision/AC/IR/OR or Project structure through existing permissions
+    and content locks. Structure writes require expected_spec_version,
+    expected_structure_revision and idempotency_key; batches are atomic.
+    Verification profiles, canonical requirement links, selected inheritance and
+    implementation plans declare obligations, not proof, approval or start readiness.
+    Read current digests/default proposals with get_requirement_verification;
+    BR links do not infer proof. Use exact same-Spec IDs, not indices or text.
+    API Contracts use update_spec_api_contract.
+    Read okto-pulse://reference/tool-docs/spec and
+    okto-pulse://reference/project-structure before authoring their detailed payloads."""
     return await _mcp_apply_structured_spec_entity(
         board_id=board_id,
         spec_id=spec_id,
@@ -14401,7 +14108,7 @@ async def okto_pulse_update_spec_api_contract(
     spec_id: str,
     contract_id: str,
     operation: StructuredSpecOperation = "update",
-    payload_json: dict[str, Any] | str = "",
+    payload_json: dict[str, Any] | None = None,
     expected_spec_version: int | str | None = None,
     task_id: str = "",
     ack_token: str = "",
@@ -14434,7 +14141,7 @@ async def okto_pulse_add_business_rule(
     rule: str,
     when: str,
     then: str,
-    linked_requirements: str = "",
+    linked_requirements: list[str] | None = None,
     notes: str = "",
 ) -> str:
     """
@@ -14448,7 +14155,6 @@ async def okto_pulse_add_business_rule(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.rules.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -14465,7 +14171,7 @@ async def okto_pulse_add_business_rule(
     # MCP-FU6 strangler (spec sub-entity, Codex-corrected): the fetch + fail-closed FR
     # token resolution + JSON-list build/persist live in McpAddBusinessRuleUseCase
     # (domain). The adapter keeps ONLY parse/coercion, the unresolved-token message
-    # (via the api-layer _structured_ref_id) and the _saturation_or_coverage envelope.
+    # (via the api-layer _structured_ref_id) and the _saturation_response envelope.
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
@@ -14478,7 +14184,7 @@ async def okto_pulse_add_business_rule(
                     when.replace("\\n", "\n"),
                     then.replace("\\n", "\n"),
                     notes.replace("\\n", "\n") if notes else None,
-                    parse_multi_value(linked_requirements)
+                    validate_string_list(linked_requirements)
                     if linked_requirements
                     else None,
                 ),
@@ -14512,132 +14218,14 @@ async def okto_pulse_add_business_rule(
         {
             "success": True,
             "business_rule": _r.business_rule,
-            **_saturation_or_coverage(_r.coverage),
+            **_saturation_response(_r.coverage),
         },
         default=str,
     )
 
 
-@mcp.tool()
-async def okto_pulse_update_business_rule(
-    board_id: str,
-    spec_id: str,
-    rule_id: str,
-    title: str = "",
-    rule: str = "",
-    when: str = "",
-    then: str = "",
-    linked_requirements: str = "",
-    notes: str = "",
-) -> str:
-    """
-    Update an existing business rule on a spec. linked_requirements accepts
-    0-based FR indices, fr_ ids, or exact FR text; display labels like FR-1
-    are rejected."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = _mcp_check_permission(
-        ctx.permissions,
-        "spec.rules.edit",
-        Permissions.SPECS_UPDATE,
-    )
-    if perm_err:
-        return _perm_error(perm_err)
-
-    from okto_pulse.core.application.use_cases import (
-        McpUpdateBusinessRuleCommand,
-        McpUpdateBusinessRuleUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU6 strangler (spec sub-entity, Codex-corrected): locate-by-id + apply edits/
-    # CLEAR + fail-closed token resolution + persist live in McpUpdateBusinessRuleUseCase.
-    # The adapter pre-coerces (\n, parse_multi_value), detects the CLEAR sentinels, and
-    # renders the envelopes (not-found / unresolved via _structured_ref_id / saturation).
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            _r = await McpUpdateBusinessRuleUseCase().execute(
-                McpUpdateBusinessRuleCommand(
-                    spec_id,
-                    rule_id,
-                    title=title,
-                    rule=rule.replace("\\n", "\n") if rule else "",
-                    when=when.replace("\\n", "\n") if when else "",
-                    then=then.replace("\\n", "\n") if then else "",
-                    notes=(
-                        notes.replace("\\n", "\n")
-                        if (notes and notes != "CLEAR")
-                        else ""
-                    ),
-                    notes_clear=(notes == "CLEAR"),
-                    linked_requirement_tokens=(
-                        parse_multi_value(linked_requirements)
-                        if (linked_requirements and linked_requirements != "CLEAR")
-                        else None
-                    ),
-                    linked_clear=(linked_requirements == "CLEAR"),
-                ),
-                actor=actor,
-                uow=uow,
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Spec not found"})
-    except SpecLockedError as exc:
-        return _spec_locked_error(exc)
-    except SubjectEditRequiresDraftError as exc:
-        return _subject_edit_requires_draft_mcp_error(exc)
-    except ValueError as exc:
-        return json.dumps({"error": str(exc)})
-
-    if _r.not_found:
-        return json.dumps({"error": f"Business rule '{rule_id}' not found"})
-    if _r.unresolved_tokens is not None:
-        frs = _r.frs
-        _available_fr_ids = [fid for fid in (_structured_ref_id(f) for f in frs) if fid]
-        return json.dumps(
-            {
-                "error": (
-                    f"Unresolved linked_requirements token(s): {_r.unresolved_tokens}. "
-                    f"Valid indices: 0..{max(0, len(frs) - 1)}. "
-                    f"Available fr_ids: {_available_fr_ids}. "
-                    f"No business rule was updated."
-                )
-            }
-        )
-
-    return json.dumps(
-        {
-            "success": True,
-            "business_rule": _r.business_rule,
-            "deprecation_warning": _STRUCTURED_SPEC_ENTITY_LEGACY_WARNING,
-            **_saturation_or_coverage(_r.coverage),
-        },
-        default=str,
-    )
 
 
-@mcp.tool()
-async def okto_pulse_remove_business_rule(
-    board_id: str,
-    spec_id: str,
-    rule_id: str,
-) -> str:
-    """Remove a business rule from a spec. Permanent, no undo — FR->BR coverage
-    provided by this rule is lost.
-    Docs: okto-pulse://reference/destructive_ops
-    """
-    return await _remove_spec_entity_impl(
-        board_id,
-        spec_id,
-        "business_rule",
-        rule_id,
-        alias_kind="legacy",
-        tool_name="okto_pulse_remove_business_rule",
-    )
 
 
 # ============================================================================
@@ -14654,7 +14242,7 @@ async def okto_pulse_remove_business_rule(
 async def okto_pulse_list_integration_requirements(
     board_id: str,
     spec_id: str,
-    include_inactive: BoolInput = False,
+    include_inactive: StrictBool = False,
 ) -> str:
     """List Integration Requirements (IR) for a spec."""
     ctx = await _get_agent_ctx(board_id)
@@ -14663,7 +14251,6 @@ async def okto_pulse_list_integration_requirements(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.integration_requirements.read",
-        Permissions.BOARD_READ,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -14682,7 +14269,7 @@ async def okto_pulse_list_integration_requirements(
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             _r = await McpListIntegrationRequirementsUseCase().execute(
                 McpListIntegrationRequirementsCommand(
-                    spec_id, board_id, _flag_enabled(include_inactive)
+                    spec_id, board_id, _require_boolean(include_inactive)
                 ),
                 actor=actor,
                 uow=uow,
@@ -14708,9 +14295,9 @@ async def okto_pulse_add_integration_requirement(
     contract_ref: str = "",
     endpoint: str = "",
     method: str = "",
-    data_contract_json: dict | str = "",
-    linked_requirements: str = "",
-    linked_api_contracts: list[str] | str = "",
+    data_contract_json: dict | None = None,
+    linked_requirements: list[str] | None = None,
+    linked_api_contracts: list[str] | None = None,
     notes: str = "",
 ) -> str:
     """
@@ -14726,7 +14313,6 @@ async def okto_pulse_add_integration_requirement(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.integration_requirements.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -14750,15 +14336,15 @@ async def okto_pulse_add_integration_requirement(
     import uuid as _uuid
 
     data_contract = None
-    if data_contract_json:
-        data_contract, json_err = _parse_json_arg(data_contract_json, None)
+    if data_contract_json is not None:
+        data_contract, json_err = _validate_native_json_arg(data_contract_json, None, "object")
         if json_err:
             return json.dumps({"error": json_err})
 
     linked_api_contracts_list = None
     if linked_api_contracts:
         try:
-            linked_api_contracts_list = coerce_to_list_str(linked_api_contracts) or None
+            linked_api_contracts_list = validate_string_list(linked_api_contracts) or None
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -14789,9 +14375,9 @@ async def okto_pulse_add_integration_requirement(
                     contract_ref=contract_ref,
                     endpoint=endpoint,
                     method=method,
-                    data_contract=data_contract,
+                    data_contract=data_contract or None,
                     linked_requirement_tokens=(
-                        parse_multi_value(linked_requirements)
+                        validate_string_list(linked_requirements)
                         if linked_requirements
                         else None
                     ),
@@ -14825,7 +14411,7 @@ async def okto_pulse_add_integration_requirement(
         {
             "success": True,
             "integration_requirement": _r.requirement,
-            **_saturation_or_coverage(_r.coverage),
+            **_saturation_response(_r.coverage),
         },
         default=str,
     )
@@ -14844,14 +14430,12 @@ async def _link_task_to_integration_requirement_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.integration_requirements.link_task",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "card.link_to.ir",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -14900,7 +14484,7 @@ async def _link_task_to_integration_requirement_internal(
                 "requirement_id": requirement_id,
                 "card_id": card_id,
                 "linked_tasks": task_ids,
-                **_saturation_or_coverage(coverage),
+                **_saturation_response(coverage),
             },
             default=str,
         )
@@ -14910,7 +14494,7 @@ async def _link_task_to_integration_requirement_internal(
 async def okto_pulse_list_observability_requirements(
     board_id: str,
     spec_id: str,
-    include_inactive: BoolInput = False,
+    include_inactive: StrictBool = False,
 ) -> str:
     """List Observability Requirements (OR) for a spec."""
     ctx = await _get_agent_ctx(board_id)
@@ -14919,7 +14503,6 @@ async def okto_pulse_list_observability_requirements(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.observability_requirements.read",
-        Permissions.BOARD_READ,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -14938,7 +14521,7 @@ async def okto_pulse_list_observability_requirements(
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             _r = await McpListObservabilityRequirementsUseCase().execute(
                 McpListObservabilityRequirementsCommand(
-                    spec_id, board_id, _flag_enabled(include_inactive)
+                    spec_id, board_id, _require_boolean(include_inactive)
                 ),
                 actor=actor,
                 uow=uow,
@@ -14964,8 +14547,8 @@ async def okto_pulse_add_observability_requirement(
     threshold: str = "",
     severity: str = "",
     owner: str = "",
-    linked_requirements: str = "",
-    linked_integration_requirements: list[str] | str = "",
+    linked_requirements: list[str] | None = None,
+    linked_integration_requirements: list[str] | None = None,
     notes: str = "",
 ) -> str:
     """
@@ -14978,7 +14561,6 @@ async def okto_pulse_add_observability_requirement(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.observability_requirements.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -14995,7 +14577,7 @@ async def okto_pulse_add_observability_requirement(
     if linked_integration_requirements:
         try:
             linked_irs_list = (
-                coerce_to_list_str(linked_integration_requirements) or None
+                validate_string_list(linked_integration_requirements) or None
             )
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
@@ -15028,7 +14610,7 @@ async def okto_pulse_add_observability_requirement(
                     severity=severity,
                     owner=owner,
                     linked_requirement_tokens=(
-                        parse_multi_value(linked_requirements)
+                        validate_string_list(linked_requirements)
                         if linked_requirements
                         else None
                     ),
@@ -15062,7 +14644,7 @@ async def okto_pulse_add_observability_requirement(
         {
             "success": True,
             "observability_requirement": _r.requirement,
-            **_saturation_or_coverage(_r.coverage),
+            **_saturation_response(_r.coverage),
         },
         default=str,
     )
@@ -15081,14 +14663,12 @@ async def _link_task_to_observability_requirement_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.observability_requirements.link_task",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "card.link_to.or",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -15137,7 +14717,7 @@ async def _link_task_to_observability_requirement_internal(
                 "requirement_id": requirement_id,
                 "card_id": card_id,
                 "linked_tasks": task_ids,
-                **_saturation_or_coverage(coverage),
+                **_saturation_response(coverage),
             },
             default=str,
         )
@@ -15150,10 +14730,11 @@ async def okto_pulse_add_decision(
     title: str,
     rationale: str,
     context: str = "",
-    alternatives_considered: list[str] | str = "",
+    alternatives_considered: list[str] | None = None,
     supersedes_decision_id: str = "",
-    linked_requirements: list[str] | str = "",
+    linked_requirements: list[str] | None = None,
     notes: str = "",
+    verification: DecisionVerification | None = None,
 ) -> str:
     """Add a formalized Decision to a spec.
 
@@ -15161,9 +14742,10 @@ async def okto_pulse_add_decision(
     path over alternatives. Different from BusinessRule (which is a NORM, a
     prescriptive "MUST" statement): use a Decision to capture design
     intent, tradeoffs, or team consensus. The KG extracts Decisions into
-    queryable nodes, and the optional coverage gate (opt-in) can require each
-    Decision to have >=1 linked task. linked_requirements accepts FR refs and
-    structured TR refs.
+    queryable nodes. Verification selects exact obligations and/or a direct
+    inspection; both declared paths must pass. Contextual task and requirement
+    links do not constitute proof. A complete verification plan is required
+    before validation/start; inspection results are required at completion.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -15171,7 +14753,6 @@ async def okto_pulse_add_decision(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.structured_entity.decision.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -15179,7 +14760,6 @@ async def okto_pulse_add_decision(
         perm_err = _mcp_check_permission(
             ctx.permissions,
             "spec.structured_entity.decision.supersede",
-            Permissions.SPECS_UPDATE,
         )
         if perm_err:
             return _perm_error(perm_err)
@@ -15187,14 +14767,14 @@ async def okto_pulse_add_decision(
     alts = None
     if alternatives_considered:
         try:
-            alts = coerce_to_list_str(alternatives_considered) or None
+            alts = validate_string_list(alternatives_considered) or None
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
     linked_requirement_tokens = None
     if linked_requirements:
         try:
-            linked_requirement_tokens = coerce_to_list_str(linked_requirements) or None
+            linked_requirement_tokens = validate_string_list(linked_requirements) or None
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -15224,6 +14804,7 @@ async def okto_pulse_add_decision(
                     supersedes_decision_id=supersedes_decision_id,
                     linked_requirement_tokens=linked_requirement_tokens,
                     notes=notes.replace("\\n", "\n") if notes else None,
+                    verification=verification.model_dump(mode="json") if verification else None,
                 ),
                 actor=actor,
                 uow=uow,
@@ -15265,192 +14846,8 @@ async def okto_pulse_add_decision(
     )
 
 
-@mcp.tool()
-async def okto_pulse_update_decision(
-    board_id: str,
-    spec_id: str,
-    decision_id: str,
-    title: str = "",
-    rationale: str = "",
-    context: str = "",
-    alternatives_considered: list[str] | str = "",
-    supersedes_decision_id: str = "",
-    linked_requirements: str = "",
-    notes: str = "",
-    status: str = "",
-) -> str:
-    """
-    Update an existing Decision. Only non-empty fields are changed; pass "CLEAR"
-    to wipe optional string/list fields. linked_requirements accepts FR refs
-    and structured TR refs."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-    requested_permissions: list[str] = []
-    content_update_requested = any(
-        (
-            title,
-            rationale,
-            context,
-            alternatives_considered,
-            linked_requirements,
-            notes,
-        )
-    )
-    supersedes_clear_requested = (
-        bool(supersedes_decision_id)
-        and supersedes_decision_id.strip().upper() == "CLEAR"
-    )
-    if content_update_requested or supersedes_clear_requested:
-        requested_permissions.append("spec.structured_entity.decision.update")
-    if supersedes_decision_id and not supersedes_clear_requested:
-        requested_permissions.append("spec.structured_entity.decision.supersede")
-    status_permission = {
-        "active": "spec.structured_entity.decision.restore",
-        "superseded": "spec.structured_entity.decision.supersede",
-        "revoked": "spec.structured_entity.decision.revoke",
-    }.get(status)
-    if status_permission:
-        requested_permissions.append(status_permission)
-    if not requested_permissions:
-        requested_permissions.append("spec.structured_entity.decision.update")
-    for granular_permission in dict.fromkeys(requested_permissions):
-        perm_err = _mcp_check_permission(
-            ctx.permissions,
-            granular_permission,
-            Permissions.SPECS_UPDATE,
-        )
-        if perm_err:
-            return _perm_error(perm_err)
-
-    from okto_pulse.core.application.use_cases import (
-        McpUpdateDecisionCommand,
-        McpUpdateDecisionUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU6 strangler (spec sub-entity decision update, Codex opt-C): locate-by-id,
-    # in-place apply, supersede flip, FR/TR resolution, status validation and persist
-    # live in McpUpdateDecisionUseCase. The adapter pre-encodes CLEAR sentinels (via
-    # .strip().upper()) and coerces alternatives into field_updates.
-    field_updates: dict = {}
-    if title:
-        field_updates["title"] = title
-    if rationale:
-        field_updates["rationale"] = rationale.replace("\\n", "\n")
-    if context:
-        field_updates["context"] = (
-            None if context.strip().upper() == "CLEAR" else context.replace("\\n", "\n")
-        )
-    if alternatives_considered:
-        if (
-            isinstance(alternatives_considered, str)
-            and alternatives_considered.strip().upper() == "CLEAR"
-        ):
-            field_updates["alternatives_considered"] = None
-        else:
-            try:
-                field_updates["alternatives_considered"] = (
-                    coerce_to_list_str(alternatives_considered) or None
-                )
-            except ValueError as e:
-                return json.dumps(
-                    {"error": "invalid_multi_value_input", "detail": str(e)}
-                )
-    if notes:
-        field_updates["notes"] = (
-            None if notes.strip().upper() == "CLEAR" else notes.replace("\\n", "\n")
-        )
-
-    supersedes_clear = (
-        bool(supersedes_decision_id)
-        and supersedes_decision_id.strip().upper() == "CLEAR"
-    )
-    supersedes_value = (
-        supersedes_decision_id
-        if (supersedes_decision_id and not supersedes_clear)
-        else ""
-    )
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            _r = await McpUpdateDecisionUseCase().execute(
-                McpUpdateDecisionCommand(
-                    spec_id,
-                    decision_id,
-                    field_updates=field_updates,
-                    supersedes_clear=supersedes_clear,
-                    supersedes_value=supersedes_value,
-                    status=status,
-                    linked_requirement_tokens=(
-                        parse_multi_value(linked_requirements)
-                        if linked_requirements
-                        else None
-                    ),
-                ),
-                actor=actor,
-                uow=uow,
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Spec not found"})
-    except SpecLockedError as exc:
-        return _spec_locked_error(exc)
-    except SubjectEditRequiresDraftError as exc:
-        return _subject_edit_requires_draft_mcp_error(exc)
-
-    if _r.not_found:
-        return json.dumps({"error": f"Decision '{decision_id}' not found"})
-    if _r.unresolved_tokens is not None:
-        return json.dumps(
-            {
-                "error": (
-                    f"Unresolved linked_requirements token(s): {_r.unresolved_tokens}. "
-                    f"Valid FR indices: 0..{max(0, _r.fr_count - 1)}. "
-                    f"Available fr_ids: {_r.available_fr_ids}. "
-                    f"Available tr_ids: {_r.available_tr_ids}. "
-                    f"No decision was updated."
-                )
-            }
-        )
-    if _r.invalid_status is not None:
-        return json.dumps(
-            {
-                "error": f"Invalid status '{_r.invalid_status}'. Use active/superseded/revoked."
-            }
-        )
-
-    return json.dumps(
-        {
-            "success": True,
-            "decision": _r.decision,
-            "deprecation_warning": _STRUCTURED_SPEC_ENTITY_LEGACY_WARNING,
-        },
-        default=str,
-    )
 
 
-@mcp.tool()
-async def okto_pulse_remove_decision(
-    board_id: str,
-    spec_id: str,
-    decision_id: str,
-) -> str:
-    """
-    Remove a Decision (soft-delete: status becomes "revoked").
-
-    Preserves history so the KG still surfaces the decision with its
-    revocation reason. Use okto_pulse_update_decision with status=active to
-    restore."""
-    return await _remove_spec_entity_impl(
-        board_id,
-        spec_id,
-        "decision",
-        decision_id,
-        alias_kind="legacy",
-        tool_name="okto_pulse_remove_decision",
-    )
 
 
 async def _link_task_to_decision_internal(
@@ -15460,9 +14857,9 @@ async def _link_task_to_decision_internal(
     card_id: str,
 ) -> str:
     """Internal helper for link_task target_type='decision'. Idempotent —
-    re-linking the same card is a no-op. Populates decision.linked_task_ids so
-    the opt-in coverage gate (skip_decisions_coverage=False) can verify each
-    active Decision has at least one linked task.
+    re-linking the same card is a no-op. Populates contextual traceability in
+    decision.linked_task_ids. Decision verification uses its explicit plan
+    and current evidence, never this task link as approval.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -15470,7 +14867,6 @@ async def _link_task_to_decision_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.structured_entity.decision.link_task",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -15544,78 +14940,18 @@ async def _link_task_to_decision_internal(
                 "linked_tasks": task_ids,
                 "traceability_only": traceability_only,
                 "link_changed": link_changed,
-                **_saturation_or_coverage(cov),
+                **_saturation_response(cov),
             }
         )
 
 
-@mcp.tool()
-async def okto_pulse_migrate_spec_decisions(
-    board_id: str,
-    spec_id: str,
-) -> str:
-    """
-    One-shot migrator: extract "## Decisions" markdown bullets from spec.context
-    into structured spec.decisions[] entries, then remove the block from context.
-
-    Idempotent — running twice on a migrated spec is a no-op. Existing
-    decisions are preserved; only the markdown-sourced ones are added, and
-    duplicates (same title) are skipped."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-    perm_err = _mcp_check_permission(
-        ctx.permissions,
-        "spec.structured_entity.decision.create",
-        Permissions.SPECS_UPDATE,
-    )
-    if perm_err:
-        return _perm_error(perm_err)
-
-    from okto_pulse.core.application.use_cases import (
-        McpMigrateSpecDecisionsCommand,
-        McpMigrateSpecDecisionsUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU6 strangler (spec migrate_spec_decisions): the extract / build / persist
-    # migration logic is domain, so it lives in McpMigrateSpecDecisionsUseCase; this
-    # adapter is a thin auth + render shell. ``no_block`` -> "nothing to migrate".
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            _r = await McpMigrateSpecDecisionsUseCase().execute(
-                McpMigrateSpecDecisionsCommand(spec_id), actor=actor, uow=uow
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Spec not found"})
-
-    if _r.no_block:
-        return json.dumps(
-            {
-                "success": True,
-                "decisions_added": 0,
-                "context_modified": False,
-                "note": "No '## Decisions' block found — nothing to migrate.",
-            }
-        )
-
-    return json.dumps(
-        {
-            "success": True,
-            "decisions_added": _r.decisions_added,
-            "context_modified": _r.context_modified,
-            "added": _r.added,
-        }
-    )
 
 
 @mcp.tool()
 async def okto_pulse_list_business_rules(
     board_id: str,
     spec_id: str,
-    include_inactive: BoolInput = False,
+    include_inactive: StrictBool = False,
 ) -> str:
     """
     List all business rules for a spec with linked functional requirements resolved as text."""
@@ -15637,7 +14973,7 @@ async def okto_pulse_list_business_rules(
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         try:
             _r = await McpListBusinessRulesUseCase().execute(
-                McpListBusinessRulesCommand(spec_id, _flag_enabled(include_inactive)),
+                McpListBusinessRulesCommand(spec_id, _require_boolean(include_inactive)),
                 actor=actor,
                 uow=uow,
             )
@@ -15708,21 +15044,21 @@ async def okto_pulse_list_business_rules(
 async def okto_pulse_add_api_contract(
     board_id: str,
     spec_id: str,
-    method: str,
-    path: str,
+    method: str = "",
+    path: str = "",
     description: str = "",
-    request_body_json: dict | str = "",
-    response_success_json: dict | str = "",
-    response_errors_json: list[dict] | str = "",
-    linked_requirements: str = "",
-    linked_rules: list[str] | str = "",
+    request_body_json: dict | None = None,
+    response_success_json: dict | None = None,
+    response_errors_json: list[dict] | None = None,
+    linked_requirements: list[str] | None = None,
+    linked_rules: list[str] | None = None,
     notes: str = "",
+    contract_type: Literal["http", "in_process", "grpc", "event"] = "http",
 ) -> str:
     """Add an API contract to a spec. API contracts define endpoints,
     request/response shapes, and link to FR/TR requirements and business
     rules. method must be an HTTP verb (GET/POST/..., upper-cased); for
-    non-HTTP contracts pass method=TOOL/COMPONENT/EVENT, which infers
-    contract_type. Docs: okto-pulse://reference/tool-docs/api-contract.
+    non-HTTP contracts select contract_type explicitly. Docs: okto-pulse://reference/tool-docs/api-contract.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -15731,7 +15067,6 @@ async def okto_pulse_add_api_contract(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.contracts.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -15751,40 +15086,24 @@ async def okto_pulse_add_api_contract(
     # the JSON parse, the multi-value coercion, _canonical_api_contract_error (F10)
     # and the envelopes (it renders unresolved with the use case's available ids,
     # never re-reading the spec).
-    request_body = None
-    if request_body_json:
-        if isinstance(request_body_json, dict):
-            request_body = request_body_json
-        else:
-            try:
-                request_body = json.loads(request_body_json)
-            except json.JSONDecodeError as e:
-                return json.dumps({"error": f"Invalid request_body_json: {e}"})
-
-    response_success = None
-    if response_success_json:
-        if isinstance(response_success_json, dict):
-            response_success = response_success_json
-        else:
-            try:
-                response_success = json.loads(response_success_json)
-            except json.JSONDecodeError as e:
-                return json.dumps({"error": f"Invalid response_success_json: {e}"})
-
-    response_errors = None
-    if response_errors_json:
-        if isinstance(response_errors_json, list):
-            response_errors = response_errors_json
-        else:
-            try:
-                response_errors = json.loads(response_errors_json)
-            except json.JSONDecodeError as e:
-                return json.dumps({"error": f"Invalid response_errors_json: {e}"})
+    structured_fields = {}
+    for field_name, raw, kind in (
+        ("request_body_json", request_body_json, "object"),
+        ("response_success_json", response_success_json, "object"),
+        ("response_errors_json", response_errors_json, "array"),
+    ):
+        value, error = _validate_native_json_arg(raw, None, kind)
+        if error:
+            return json.dumps({"error": f"Invalid {field_name}: {error}"})
+        structured_fields[field_name] = value or None
+    request_body = structured_fields["request_body_json"]
+    response_success = structured_fields["response_success_json"]
+    response_errors = structured_fields["response_errors_json"]
 
     linked_rule_tokens = None
     if linked_rules:
         try:
-            linked_rule_tokens = coerce_to_list_str(linked_rules)
+            linked_rule_tokens = validate_string_list(linked_rules)
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -15798,11 +15117,12 @@ async def okto_pulse_add_api_contract(
                     method,
                     path,
                     description.replace("\\n", "\n") if description else "",
+                    contract_type=contract_type,
                     request_body=request_body,
                     response_success=response_success,
                     response_errors=response_errors,
                     linked_requirement_tokens=(
-                        parse_multi_value(linked_requirements)
+                        validate_string_list(linked_requirements)
                         if linked_requirements
                         else None
                     ),
@@ -15824,7 +15144,6 @@ async def okto_pulse_add_api_contract(
             {
                 "error": (
                     f"Unresolved linked_requirements token(s): {_r.unresolved_tokens}. "
-                    f"Valid FR indices: 0..{max(0, _r.fr_count - 1)}. "
                     f"Available fr_ids: {_r.available_fr_ids}. "
                     f"Available tr_ids: {_r.available_tr_ids}. "
                     f"No API contract was appended."
@@ -15842,190 +15161,22 @@ async def okto_pulse_add_api_contract(
         {
             "success": True,
             "api_contract": _project_api_contract(_r.contract),
-            **_saturation_or_coverage(_r.coverage),
+            **_saturation_response(_r.coverage),
         },
         default=str,
     )
 
 
-@mcp.tool()
-async def okto_pulse_update_api_contract(
-    board_id: str,
-    spec_id: str,
-    contract_id: str,
-    method: str = "",
-    path: str = "",
-    description: str = "",
-    request_body_json: dict | str = "",
-    response_success_json: dict | str = "",
-    response_errors_json: list[dict] | str = "",
-    linked_requirements: str = "",
-    linked_rules: list[str] | str = "",
-    notes: str = "",
-) -> str:
-    """
-    Update an existing API contract on a spec. linked_requirements accepts
-    FR index/fr_id/text and structured TR id/text."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = _mcp_check_permission(
-        ctx.permissions,
-        "spec.contracts.edit",
-        Permissions.SPECS_UPDATE,
-    )
-    if perm_err:
-        return _perm_error(perm_err)
-
-    from okto_pulse.core.application.use_cases import (
-        McpUpdateApiContractCommand,
-        McpUpdateApiContractUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU6 strangler (spec sub-entity api_contract update, Codex opt-C): the
-    # locate-by-id, in-place apply, FR/TR resolution (core), linked_rules existence,
-    # F9 on-write validation and persist live in McpUpdateApiContractUseCase. The
-    # adapter pre-parses JSON / CLEAR sentinels into field_updates and canonicalizes.
-    field_updates: dict = {}
-    if description == "CLEAR":
-        field_updates["description"] = ""
-    elif description:
-        field_updates["description"] = description.replace("\\n", "\n")
-
-    if isinstance(request_body_json, dict):
-        field_updates["request_body"] = request_body_json
-    elif request_body_json == "CLEAR":
-        field_updates["request_body"] = None
-    elif request_body_json:
-        try:
-            field_updates["request_body"] = json.loads(request_body_json)
-        except json.JSONDecodeError as e:
-            return json.dumps({"error": f"Invalid request_body_json: {e}"})
-
-    if isinstance(response_success_json, dict):
-        field_updates["response_success"] = response_success_json
-    elif response_success_json == "CLEAR":
-        field_updates["response_success"] = None
-    elif response_success_json:
-        try:
-            field_updates["response_success"] = json.loads(response_success_json)
-        except json.JSONDecodeError as e:
-            return json.dumps({"error": f"Invalid response_success_json: {e}"})
-
-    if isinstance(response_errors_json, list):
-        field_updates["response_errors"] = response_errors_json
-    elif response_errors_json == "CLEAR":
-        field_updates["response_errors"] = None
-    elif response_errors_json:
-        try:
-            field_updates["response_errors"] = json.loads(response_errors_json)
-        except json.JSONDecodeError as e:
-            return json.dumps({"error": f"Invalid response_errors_json: {e}"})
-
-    if notes == "CLEAR":
-        field_updates["notes"] = None
-    elif notes:
-        field_updates["notes"] = notes.replace("\\n", "\n")
-
-    linked_rule_clear = isinstance(linked_rules, str) and linked_rules == "CLEAR"
-    linked_rule_tokens = None
-    if not linked_rule_clear and linked_rules:
-        try:
-            linked_rule_tokens = coerce_to_list_str(linked_rules)
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            _r = await McpUpdateApiContractUseCase().execute(
-                McpUpdateApiContractCommand(
-                    spec_id,
-                    contract_id,
-                    method=method,
-                    path=path,
-                    field_updates=field_updates,
-                    linked_req_clear=(linked_requirements == "CLEAR"),
-                    linked_requirement_tokens=(
-                        parse_multi_value(linked_requirements)
-                        if (linked_requirements and linked_requirements != "CLEAR")
-                        else None
-                    ),
-                    linked_rule_clear=linked_rule_clear,
-                    linked_rule_tokens=linked_rule_tokens,
-                ),
-                actor=actor,
-                uow=uow,
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Spec not found"})
-    except SpecLockedError as exc:
-        return _spec_locked_error(exc)
-    except SubjectEditRequiresDraftError as exc:
-        return _subject_edit_requires_draft_mcp_error(exc)
-
-    if _r.not_found:
-        return json.dumps({"error": f"API contract '{contract_id}' not found"})
-    if _r.unresolved_tokens is not None:
-        return json.dumps(
-            {
-                "error": (
-                    f"Unresolved linked_requirements token(s): {_r.unresolved_tokens}. "
-                    f"Valid FR indices: 0..{max(0, _r.fr_count - 1)}. "
-                    f"Available fr_ids: {_r.available_fr_ids}. "
-                    f"Available tr_ids: {_r.available_tr_ids}. "
-                    f"No API contract was updated."
-                )
-            }
-        )
-    if _r.bad_rule_token is not None:
-        return json.dumps(
-            {"error": f"Business rule '{_r.bad_rule_token}' not found in spec"}
-        )
-    if _r.invalid_contract_exc is not None:
-        return _canonical_api_contract_error(_r.invalid_contract_exc)
-
-    return json.dumps(
-        {
-            "success": True,
-            "api_contract": _project_api_contract(_r.contract),
-            "deprecation_warning": _STRUCTURED_SPEC_ENTITY_LEGACY_WARNING,
-        },
-        default=str,
-    )
 
 
-@mcp.tool()
-async def okto_pulse_remove_api_contract(
-    board_id: str,
-    spec_id: str,
-    contract_id: str,
-) -> str:
-    """Remove an API contract from a spec. Permanent, no undo — contract
-    coverage links are lost. Docs: okto-pulse://reference/destructive_ops
-    """
-    return await _remove_spec_entity_impl(
-        board_id,
-        spec_id,
-        "api_contract",
-        contract_id,
-        alias_kind="legacy",
-        tool_name="okto_pulse_remove_api_contract",
-    )
 
 
 # ============================================================================
 # R4 — consolidated spec-entity REMOVE (spec 452cb4d5, card R4.1)
 #
 # spec_entity_remove is one of the two assertiveness-gate-eligible families
-# (owner decision after the R4 audit): the three legacy remove_* tools have
-# IDENTICAL (board_id, spec_id, <id>) signatures, so consolidation loses ZERO
-# per-type field schema. The legacy tools are PRESERVED as additive aliases that
-# delegate here (fr_af4b5c6e / tr_b25890c4 — one shared impl, no duplicated
-# logic). DEDICATED ROUTING preserves the per-type behavioral asymmetry: decision
+# (owner decision after the R4 audit): all three targets use the same identifier
+# parameters. DEDICATED ROUTING preserves the behavioral asymmetry: decision
 # is a SOFT-delete (status=revoked, restorable) while business_rule/api_contract
 # are hard removals.
 # ============================================================================
@@ -16040,9 +15191,7 @@ async def _remove_spec_entity_impl(
     alias_kind: str,
     tool_name: str,
 ) -> str:
-    """Shared implementation behind okto_pulse_remove_spec_entity and the three
-    legacy remove_* aliases. Replicates each legacy tool's exact behavior and
-    response shape (parity), and emits safe alias-usage telemetry (or_4e57890f)."""
+    """Dispatch canonical removal, preserving per-type deletion semantics."""
     from okto_pulse.core.mcp.tool_family_registry import (
         REGISTRY,
         VIOLATION_UNKNOWN_TARGET_TYPE,
@@ -16092,7 +15241,6 @@ async def _remove_spec_entity_impl(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         granular_permission,
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         _telemetry("error")
@@ -16148,7 +15296,7 @@ async def _remove_spec_entity_impl(
             "success": True,
             "removed": entity_id,
             "remaining": _r.remaining,
-            **_saturation_or_coverage(_r.coverage),
+            **_saturation_response(_r.coverage),
         }
     )
 
@@ -16162,10 +15310,8 @@ async def okto_pulse_remove_spec_entity(
 ) -> str:
     """
     Consolidated spec-entity removal (R4). `target_type` is one of: `business_rule`,
-    `api_contract`, `decision`. Equivalent to the per-type tools
-    (`okto_pulse_remove_business_rule`/`_api_contract`/`_decision`), which remain as
-    aliases. Note the asymmetry: `decision` is a SOFT-delete (status becomes
-    `revoked`, restorable via `okto_pulse_update_decision`), while `business_rule`
+    `api_contract`, `decision`. Note the asymmetry: `decision` is a SOFT-delete (status becomes
+    `revoked`, restorable via `okto_pulse_update_spec_entity` with operation=restore), while `business_rule`
     and `api_contract` are hard removals. An unsupported `target_type` returns a
     structured error listing the allowed values (no mutation).
     See `okto-pulse://reference/tool-families/spec_entity_remove`."""
@@ -16183,7 +15329,7 @@ async def okto_pulse_remove_spec_entity(
 async def okto_pulse_list_api_contracts(
     board_id: str,
     spec_id: str,
-    include_inactive: BoolInput = False,
+    include_inactive: StrictBool = False,
 ) -> str:
     """
     List all API contracts for a spec with linked business rules resolved."""
@@ -16205,7 +15351,7 @@ async def okto_pulse_list_api_contracts(
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         try:
             _r = await McpListApiContractsUseCase().execute(
-                McpListApiContractsCommand(spec_id, _flag_enabled(include_inactive)),
+                McpListApiContractsCommand(spec_id, _require_boolean(include_inactive)),
                 actor=actor,
                 uow=uow,
             )
@@ -16646,19 +15792,18 @@ async def okto_pulse_delete_screen_mockup(
 # ============================================================================
 
 
-def _authorize_legacy_guideline_mcp(
+def _authorize_guideline_mcp(
     ctx: object,
     *,
     board_id: str,
     operation: str,
 ) -> tuple[object | None, str | None]:
-    """Fence legacy guideline tools with the canonical SK-B capability."""
+    """Authorize guideline identity creation and binding unlink with their capabilities."""
 
     from okto_pulse.core.application.use_cases.base import PermissionDeniedError
     from okto_pulse.core.application.use_cases.policy_governance import (
         ADOPTION_MANAGE,
         REVISIONS_CREATE,
-        REVISIONS_RETIRE,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.mcp.policy_governance_tools import (
@@ -16667,11 +15812,7 @@ def _authorize_legacy_guideline_mcp(
 
     capability_by_operation = {
         "create_guideline": REVISIONS_CREATE,
-        "update_guideline": REVISIONS_CREATE,
-        "delete_guideline": REVISIONS_RETIRE,
-        "link_guideline": ADOPTION_MANAGE,
         "unlink_guideline": ADOPTION_MANAGE,
-        "update_guideline_priority": ADOPTION_MANAGE,
     }
     capability = capability_by_operation[operation]
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
@@ -16686,21 +15827,6 @@ def _authorize_legacy_guideline_mcp(
     return actor, None
 
 
-def _legacy_guideline_adoption_preview_required() -> str:
-    """Return the canonical migration response without opening a UoW."""
-
-    from okto_pulse.core.inbound.guideline_policy_error import (
-        project_guideline_policy_error,
-    )
-    from okto_pulse.core.ports.guideline_policy import (
-        GuidelinePolicyBindingConflict,
-    )
-
-    return json.dumps(
-        project_guideline_policy_error(
-            GuidelinePolicyBindingConflict("guideline_impact_preview_required")
-        )
-    )
 
 
 @mcp.tool()
@@ -16714,7 +15840,7 @@ async def okto_pulse_get_board_guidelines(board_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -16750,7 +15876,7 @@ async def okto_pulse_list_guidelines(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -16801,7 +15927,7 @@ async def okto_pulse_create_guideline(
     board_id: str,
     title: str,
     content: str,
-    tags: list[str] | str = "",
+    tags: list[str] | None = None,
     scope: str = "global",
 ) -> str:
     """
@@ -16811,7 +15937,7 @@ async def okto_pulse_create_guideline(
     if not ctx:
         return _auth_error()
 
-    actor, permission_error = _authorize_legacy_guideline_mcp(
+    actor, permission_error = _authorize_guideline_mcp(
         ctx,
         board_id=board_id,
         operation="create_guideline",
@@ -16821,7 +15947,7 @@ async def okto_pulse_create_guideline(
     assert actor is not None
 
     try:
-        tag_list = coerce_to_list_str(tags) or None
+        tag_list = validate_string_list(tags) or None
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -16863,163 +15989,10 @@ async def okto_pulse_create_guideline(
     )
 
 
-@mcp.tool()
-async def okto_pulse_update_guideline(
-    board_id: str,
-    guideline_id: str,
-    title: str = "",
-    content: str = "",
-    tags: list[str] | str = "",
-) -> str:
-    """
-    Update a guideline's title, content, or tags."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    actor, permission_error = _authorize_legacy_guideline_mcp(
-        ctx,
-        board_id=board_id,
-        operation="update_guideline",
-    )
-    if permission_error is not None:
-        return permission_error
-    assert actor is not None
-
-    if tags:
-        try:
-            tags_list = coerce_to_list_str(tags) or None
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-    else:
-        tags_list = None
-
-    from okto_pulse.core.application.use_cases import (
-        UpdateGuidelineCommand,
-        UpdateGuidelineUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.models.schemas import GuidelineUpdate
-
-    data = GuidelineUpdate(
-        title=title or None,
-        content=content or None,
-        tags=tags_list,
-    )
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            result = await UpdateGuidelineUseCase().execute(
-                UpdateGuidelineCommand(guideline_id, data),
-                actor=actor,
-                uow=uow,
-            )
-            guideline = result.guideline
-    except EntityNotFoundError:
-        return json.dumps({"error": "Guideline not found or not owned by actor"})
-
-    return json.dumps(
-        {
-            "id": guideline.id,
-            "title": guideline.title,
-            "content": guideline.content,
-            "tags": guideline.tags,
-            "scope": guideline.scope,
-        },
-        default=str,
-    )
 
 
-@mcp.tool()
-async def okto_pulse_delete_guideline(board_id: str, guideline_id: str) -> str:
-    """Retire a guideline through the legacy compatibility name.
-
-    Immutable revisions and binding history remain auditable.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    actor, permission_error = _authorize_legacy_guideline_mcp(
-        ctx,
-        board_id=board_id,
-        operation="delete_guideline",
-    )
-    if permission_error is not None:
-        return permission_error
-    assert actor is not None
-
-    from okto_pulse.core.application.use_cases import (
-        DeleteGuidelineCommand,
-        DeleteGuidelineUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            await DeleteGuidelineUseCase().execute(
-                DeleteGuidelineCommand(guideline_id),
-                actor=actor,
-                uow=uow,
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Guideline not found or not owned by actor"})
-
-    return json.dumps({"success": True})
 
 
-@mcp.tool()
-async def okto_pulse_link_guideline_to_board(
-    board_id: str,
-    guideline_id: str,
-    priority: str = "0",
-) -> str:
-    """
-    Deprecated direct-adoption shim. Preview impact, then adopt the exact
-    revision with its receipt; this tool never mutates governed bindings."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    actor, permission_error = _authorize_legacy_guideline_mcp(
-        ctx,
-        board_id=board_id,
-        operation="link_guideline",
-    )
-    if permission_error is not None:
-        return permission_error
-    assert actor is not None
-
-    from okto_pulse.core.application.use_cases import (
-        McpLinkGuidelineToBoardCommand,
-        McpLinkGuidelineToBoardUseCase,
-    )
-    from okto_pulse.core.ports.guideline_policy import (
-        GuidelinePolicyBindingConflict,
-    )
-
-    try:
-        priority_value = int(priority)
-    except (TypeError, ValueError):
-        return json.dumps(
-            {
-                "error": "invalid_priority",
-                "detail": "priority must be an integer",
-            }
-        )
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            await McpLinkGuidelineToBoardUseCase().execute(
-                McpLinkGuidelineToBoardCommand(
-                    board_id,
-                    guideline_id,
-                    priority_value,
-                ),
-                actor=actor,
-                uow=uow,
-            )
-    except GuidelinePolicyBindingConflict:
-        return _legacy_guideline_adoption_preview_required()
-    raise AssertionError("legacy guideline link unexpectedly mutated state")
 
 
 @mcp.tool()
@@ -17038,7 +16011,7 @@ async def okto_pulse_unlink_guideline_from_board(
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
 
-    actor, permission_error = _authorize_legacy_guideline_mcp(
+    actor, permission_error = _authorize_guideline_mcp(
         ctx,
         board_id=board_id,
         operation="unlink_guideline",
@@ -17058,59 +16031,6 @@ async def okto_pulse_unlink_guideline_from_board(
     return json.dumps({"success": True})
 
 
-@mcp.tool()
-async def okto_pulse_update_board_guideline_priority(
-    board_id: str,
-    guideline_id: str,
-    priority: str,
-) -> str:
-    """
-    Deprecated direct-priority shim. Preview impact, then adopt the exact
-    revision with its receipt; this tool never mutates governed bindings."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    actor, permission_error = _authorize_legacy_guideline_mcp(
-        ctx,
-        board_id=board_id,
-        operation="update_guideline_priority",
-    )
-    if permission_error is not None:
-        return permission_error
-    assert actor is not None
-
-    from okto_pulse.core.application.use_cases import (
-        McpUpdateBoardGuidelinePriorityCommand,
-        McpUpdateBoardGuidelinePriorityUseCase,
-    )
-    from okto_pulse.core.ports.guideline_policy import (
-        GuidelinePolicyBindingConflict,
-    )
-
-    try:
-        priority_value = int(priority)
-    except (TypeError, ValueError):
-        return json.dumps(
-            {
-                "error": "invalid_priority",
-                "detail": "priority must be an integer",
-            }
-        )
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            await McpUpdateBoardGuidelinePriorityUseCase().execute(
-                McpUpdateBoardGuidelinePriorityCommand(
-                    board_id,
-                    guideline_id,
-                    priority_value,
-                ),
-                actor=actor,
-                uow=uow,
-            )
-    except GuidelinePolicyBindingConflict:
-        return _legacy_guideline_adoption_preview_required()
-    raise AssertionError("legacy guideline priority update unexpectedly mutated state")
 
 
 @mcp.tool()
@@ -17125,7 +16045,6 @@ async def okto_pulse_delete_spec(board_id: str, spec_id: str) -> str:
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.entity.delete",
-        Permissions.SPECS_DELETE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -17164,7 +16083,6 @@ async def _link_card_to_spec_internal(board_id: str, spec_id: str, card_id: str)
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "card.entity.link_spec",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -17213,7 +16131,7 @@ async def okto_pulse_submit_spec_evaluation(
     recommendation: str,
 ) -> str:
     """
-    Submit a qualitative evaluation for a spec in 'validated' status.
+    Submit a decomposition evaluation in 'approved' or 'validated' status.
     Multiple evaluators can submit independent evaluations."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -17222,7 +16140,6 @@ async def okto_pulse_submit_spec_evaluation(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.evaluations.submit",
-        Permissions.SPECS_EVALUATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -17300,70 +16217,33 @@ async def okto_pulse_submit_spec_evaluation(
 
 
 @mcp.tool()
-async def okto_pulse_list_spec_evaluations(board_id: str, spec_id: str) -> str:
-    """
-    List all qualitative evaluations for a spec, with stale indication."""
+async def okto_pulse_list_spec_evaluations(
+    board_id: str, spec_id: str, view: Literal["all", "current", "previous"] = "all",
+    offset: int = 0, limit: int = 25,
+) -> str:
+    """Page native decomposition opinions with Current/Previous edition semantics."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
-
-    from okto_pulse.core.application.use_cases import GetSpecCommand, GetSpecUseCase
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.application.use_cases.spec_crud import (
+        ListSpecEvaluationsCommand, ListSpecEvaluationsUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
+        command = ListSpecEvaluationsCommand(spec_id, view=view, offset=offset, limit=limit)
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            spec = (
-                await GetSpecUseCase().execute(
-                    GetSpecCommand(spec_id), actor=actor, uow=uow
-                )
-            ).spec
-            evaluations = spec.evaluations or []
-    except EntityNotFoundError:
-        return json.dumps({"error": "Spec not found"})
-
-    non_stale = [e for e in evaluations if not e.get("stale")]
-    approvals = [e for e in non_stale if e.get("recommendation") == "approve"]
-
-    summary = {
-        "total": len(evaluations),
-        "non_stale": len(non_stale),
-        "approvals": len(approvals),
-        "rejections": len(
-            [e for e in non_stale if e.get("recommendation") == "reject"]
-        ),
-        "request_changes": len(
-            [e for e in non_stale if e.get("recommendation") == "request_changes"]
-        ),
-        "avg_score_approvals": (
-            sum(e.get("overall_score", 0) for e in approvals) / len(approvals)
-            if approvals
-            else 0
-        ),
-        "stale_count": len(evaluations) - len(non_stale),
-    }
-
-    # Return summary view (without full dimensions)
-    eval_list = [
-        {
-            "id": e.get("id"),
-            "evaluator_id": e.get("evaluator_id"),
-            "evaluator_name": e.get("evaluator_name"),
-            "evaluator_type": e.get("evaluator_type"),
-            "overall_score": e.get("overall_score"),
-            "recommendation": e.get("recommendation"),
-            "stale": e.get("stale", False),
-            "created_at": e.get("created_at"),
-        }
-        for e in evaluations
-    ]
-
-    return json.dumps({"evaluations": eval_list, "summary": summary}, default=str)
+            result = await ListSpecEvaluationsUseCase().execute(command, actor=actor, uow=uow)
+        return json.dumps(result.data, default=str)
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
 
 
 @mcp.tool()
@@ -17376,7 +16256,7 @@ async def okto_pulse_get_spec_evaluation(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -17415,7 +16295,6 @@ async def okto_pulse_delete_spec_evaluation(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.evaluations.delete",
-        Permissions.SPECS_EVALUATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -17475,7 +16354,7 @@ async def okto_pulse_get_spec_history(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -17539,22 +16418,6 @@ async def okto_pulse_get_spec_history(
 # ============================================================================
 
 
-@mcp.tool()
-async def okto_pulse_ask_spec_question(
-    board_id: str, spec_id: str, question: str
-) -> str:
-    """
-    Ask a question on a spec's Q&A board. Use @Name to direct the question.
-    Both humans and agents can ask questions — this is for clarifying spec requirements
-    BEFORE work begins on tasks."""
-    return await _ask_question_impl(
-        board_id,
-        "spec",
-        spec_id,
-        question,
-        alias_kind="legacy",
-        tool_name="okto_pulse_ask_spec_question",
-    )
 
 
 @mcp.tool()
@@ -17562,20 +16425,17 @@ async def okto_pulse_ask_spec_choice_question(
     board_id: str,
     spec_id: str,
     question: str,
-    options: list[str] | str = "",
+    options: list[ChoiceOptionInput],
     question_type: str = "choice",
-    allow_free_text: BoolInput = False,
-    options_json: list[ChoiceOptionInput] | str = "",
+    allow_free_text: StrictBool = False,
 ) -> str:
     """Ask a choice question (poll/form) on a spec's Q&A board — the respondent
     picks from predefined options. Use for structured answers, e.g. "Which
-    auth approach?". options_json (optional, takes precedence over options):
-    JSON array of option objects, each requiring a non-empty label;
-    recommended defaults to false, tradeoff to null. Multi-value params
-    (options/selected): JSON array (preferred — safe for labels containing
-    commas) or pipe-separated string. Format rules:
-    okto-pulse://reference/multivalue.
-    """
+    auth approach?".
+    options: Required native array of objects with a non-empty label, optional
+    recommended boolean (default false), and tradeoff string/null (default null).
+    Format: okto-pulse://reference/multivalue.
+"""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -17583,7 +16443,6 @@ async def okto_pulse_ask_spec_choice_question(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.qa.ask_choice",
-        Permissions.QA_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -17596,31 +16455,19 @@ async def okto_pulse_ask_spec_choice_question(
     from okto_pulse.core.models.schemas import SpecQAChoiceOption, SpecQACreate
 
     try:
-        parsed_objects = parse_options_json(options_json or None)
+        parsed_objects = validate_choice_options(options)
     except ValueError as e:
-        return json.dumps({"error": f"Invalid options_json: {e}"})
+        return json.dumps({"error": f"Invalid options: {e}"})
 
-    if parsed_objects is not None:
-        choice_list = [
-            SpecQAChoiceOption(
-                id=f"opt_{i}",
-                label=obj["label"],
-                recommended=obj["recommended"],
-                tradeoff=obj["tradeoff"],
-            )
-            for i, obj in enumerate(parsed_objects)
-        ]
-    else:
-        try:
-            option_labels = coerce_to_list_str(options)
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-        if not option_labels:
-            return json.dumps({"error": "At least one option is required"})
-        choice_list = [
-            SpecQAChoiceOption(id=f"opt_{i}", label=label)
-            for i, label in enumerate(option_labels)
-        ]
+    choice_list = [
+        SpecQAChoiceOption(
+            id=f"opt_{i}",
+            label=obj["label"],
+            recommended=obj["recommended"],
+            tradeoff=obj["tradeoff"],
+        )
+        for i, obj in enumerate(parsed_objects)
+    ]
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
@@ -17635,7 +16482,7 @@ async def okto_pulse_ask_spec_choice_question(
             if question_type in ("choice", "single_choice", "multi_choice")
             else "choice",
             choices=choice_list,
-            allow_free_text=_flag_enabled(allow_free_text),
+            allow_free_text=_require_boolean(allow_free_text),
         )
         try:
             qa = await service.create_question(spec_id, ctx.agent_id, data)
@@ -17680,13 +16527,13 @@ async def okto_pulse_answer_spec_question(
     spec_id: str,
     qa_id: str,
     answer: str = "",
-    selected: list[str] | str = "",
+    selected: list[str] | None = None,
 ) -> str:
     """
         Answer a question on a spec's Q&A board.
         For text questions, provide answer. For choice questions, provide selected option IDs.
 
-    Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
+    selected: Native array of option IDs. Strings are not accepted. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -17694,7 +16541,6 @@ async def okto_pulse_answer_spec_question(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.qa.answer",
-        Permissions.QA_ANSWER,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -17711,7 +16557,7 @@ async def okto_pulse_answer_spec_question(
     )
 
     try:
-        selected_list = coerce_to_list_str(selected) if selected else None
+        selected_list = validate_string_list(selected) if selected else None
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -17796,24 +16642,56 @@ async def okto_pulse_get_traceability_report(
     board_id: str,
     ideation_id: str = "",
     spec_id: str = "",
-    include_artifacts: BoolInput = False,
+    include_artifacts: StrictBool = False,
+    query: Annotated[BugClustersRequest | SpecCoverageRequest | DecisionImpactRequest | LineageRequest, Field(discriminator='view')] | None = None,
 ) -> str:
     """
     okto_pulse_get_traceability_report — return a consolidated SDLC traceability report:
-    ideation → refinement → spec → sprint → card/test/bug → artifacts.
+    ideation → refinement → spec → card/test/bug → artifacts.
 
     Use this at the end of an E2E flow to verify whether the agent can answer
     what was implemented in each flow and whether KBs, mockups, architecture,
-    tests, bugs, cards, and parent references stayed queryable."""
+    tests, bugs, cards, and parent references stayed queryable.
+
+    Optional query.view=bugs reads bounded informational clusters instead of the
+    SDLC report. Do not combine query with SDLC filters. Reuse response.window
+    as date_from/date_to with a cursor; unknown graph freshness is not absence.
+    query.view=coverage with subject_ref=spec:<id> separates structural links,
+    graph observations and admitted delivery proof. It never approves a gate.
+    query.view=impact with subject_ref=spec:<id>:decision:<id> returns bounded
+    explicit paths, potential reach and supersedence history; no execution.
+    query.view=lineage reads declared workflow origins, work dependencies and
+    amendments with bounded depth, direction, frontier and pagination."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
-    _include_artifacts = _flag_enabled(include_artifacts)
+    _include_artifacts = _require_boolean(include_artifacts)
+
+    if query is not None:
+        if ideation_id or spec_id or _include_artifacts:
+            return json.dumps({'error': 'Do not combine a query variant with SDLC filters',
+                               'code': 'traceability_query_scope_ambiguous'})
+        if isinstance(query, LineageRequest) or isinstance(query, dict) and query.get('view') == 'lineage':
+            from okto_pulse.core.mcp.lineage_query import query_lineage
+            return await query_lineage(board_id, query, context=ctx,
+                uow_factory=get_unit_of_work_factory_for_mcp())
+        if isinstance(query, DecisionImpactRequest) or isinstance(query, dict) and query.get('view') == 'impact':
+            from okto_pulse.core.mcp.decision_impact import query_decision_impact
+            return await query_decision_impact(board_id, query, context=ctx,
+                uow_factory=get_unit_of_work_factory_for_mcp())
+        if isinstance(query, SpecCoverageRequest) or isinstance(query, dict) and query.get('view') == 'coverage':
+            from okto_pulse.core.mcp.spec_coverage_query import query_spec_coverage
+            return await query_spec_coverage(board_id, query, context=ctx,
+                uow_factory=get_unit_of_work_factory_for_mcp())
+        from okto_pulse.core.mcp.bug_cluster_query import query_bug_clusters
+
+        return await query_bug_clusters(board_id, query, context=ctx,
+            uow_factory=get_unit_of_work_factory_for_mcp())
 
     async with get_unit_of_work_factory_for_mcp()() as uow:
         from okto_pulse.core.ports.traceability import TraceabilityReadError
@@ -17879,7 +16757,7 @@ async def okto_pulse_get_spec_knowledge(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -17915,7 +16793,7 @@ async def okto_pulse_add_spec_knowledge(
     description: str = "",
     mime_type: str = "text/markdown",
     content_reference: str | None = None,
-    governance_metadata: dict[str, Any] | str | None = None,
+    governance_metadata: dict[str, Any] | None = None,
 ) -> str:
     """
     Add a knowledge base item to a spec. Use this to attach reference documents,
@@ -17929,7 +16807,6 @@ async def okto_pulse_add_spec_knowledge(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.knowledge.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -17940,7 +16817,7 @@ async def okto_pulse_add_spec_knowledge(
     if err:
         return json.dumps({"error": err})
 
-    parsed_governance, governance_error = _parse_knowledge_governance_arg(
+    parsed_governance, governance_error = _validate_knowledge_governance_arg(
         governance_metadata
     )
     if governance_error:
@@ -18003,7 +16880,6 @@ async def okto_pulse_delete_spec_knowledge(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.knowledge.delete",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -18046,7 +16922,7 @@ async def okto_pulse_get_refinement_snapshot(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -18109,7 +16985,7 @@ async def okto_pulse_get_refinement_knowledge(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -18148,7 +17024,7 @@ async def okto_pulse_add_refinement_knowledge(
     description: str = "",
     mime_type: str = "text/markdown",
     content_reference: str | None = None,
-    governance_metadata: dict[str, Any] | str | None = None,
+    governance_metadata: dict[str, Any] | None = None,
 ) -> str:
     """
     Add a knowledge base item to a refinement. Use this to attach reference documents,
@@ -18162,7 +17038,6 @@ async def okto_pulse_add_refinement_knowledge(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.knowledge.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -18173,7 +17048,7 @@ async def okto_pulse_add_refinement_knowledge(
     if err:
         return json.dumps({"error": err})
 
-    parsed_governance, governance_error = _parse_knowledge_governance_arg(
+    parsed_governance, governance_error = _validate_knowledge_governance_arg(
         governance_metadata
     )
     if governance_error:
@@ -18233,7 +17108,6 @@ async def okto_pulse_delete_refinement_knowledge(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.knowledge.delete",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -18266,774 +17140,8 @@ async def okto_pulse_delete_refinement_knowledge(
 
 
 # ============================================================================
-# SPRINT TOOLS
+# Q&A DELETE TOOLS
 # ============================================================================
-
-
-@mcp.tool()
-async def okto_pulse_create_sprint(
-    board_id: str,
-    spec_id: str,
-    title: str,
-    description: str = "",
-    objective: str = "",
-    expected_outcome: str = "",
-    lane_type: str = "normal",
-    origin_sprint_id: str = "",
-    origin_bug_id: str = "",
-    test_scenario_ids: list[str] | str = "",
-    business_rule_ids: list[str] | str = "",
-    start_date: str = "",
-    end_date: str = "",
-    labels: list[str] | str = "",
-) -> str:
-    """
-    Create a new sprint for a spec. Sprints break specs into incremental
-    deliverables. lane_type accepts normal or hotfix; release_validation is an
-    objective/label on a normal sprint, not a lane."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    from pydantic import ValidationError
-
-    from okto_pulse.core.models.schemas import SprintCreate
-    from okto_pulse.core.services.main import SprintOperationError
-
-    # S-LANE-01: build the DTO under its own guard so an invalid lane_type surfaces the
-    # canonical envelope (fail-closed: no service call, nothing persists) instead of
-    # leaking raw Pydantic text. A non-validation ValueError (coerce) keeps its shape.
-    try:
-        data = SprintCreate(
-            title=title,
-            description=description or None,
-            spec_id=spec_id,
-            objective=objective or None,
-            expected_outcome=expected_outcome or None,
-            lane_type=lane_type or "normal",
-            origin_sprint_id=origin_sprint_id or None,
-            origin_bug_id=origin_bug_id or None,
-            test_scenario_ids=coerce_to_list_str(test_scenario_ids) or None,
-            business_rule_ids=coerce_to_list_str(business_rule_ids) or None,
-            start_date=start_date or None,
-            end_date=end_date or None,
-            labels=coerce_to_list_str(labels) or None,
-        )
-    except ValidationError as exc:
-        return _canonical_sprint_validation_error(exc)
-    except ValueError as e:
-        return json.dumps({"error": str(e)})
-
-    from okto_pulse.core.application.use_cases import (
-        McpCreateSprintCommand,
-        McpCreateSprintUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU6 strangler (sprint create, VARIANT): McpCreateSprintUseCase runs the
-    # skip_ownership create + commit (the service only flushes + emits its own log/
-    # history/event). The adapter keeps the permission gate, the S-LANE-01 DTO build
-    # and the SprintOperationError-before-ValueError envelopes.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            _r = await McpCreateSprintUseCase().execute(
-                McpCreateSprintCommand(board_id, data), actor=actor, uow=uow
-            )
-            if not _r.sprint:
-                return json.dumps(
-                    {"error": "Failed to create sprint (spec not found or wrong board)"}
-                )
-            sprint = _r.sprint
-            return json.dumps(
-                {
-                    "success": True,
-                    "sprint": {
-                        "id": sprint.id,
-                        "title": sprint.title,
-                        "description": sprint.description,
-                        "objective": sprint.objective,
-                        "expected_outcome": sprint.expected_outcome,
-                        "status": sprint.status.value,
-                        "spec_id": sprint.spec_id,
-                        "version": sprint.version,
-                        "start_date": sprint.start_date.isoformat()
-                        if sprint.start_date
-                        else None,
-                        "end_date": sprint.end_date.isoformat()
-                        if sprint.end_date
-                        else None,
-                        "lane_type": sprint.lane_type.value
-                        if sprint.lane_type
-                        else "normal",
-                        "origin_sprint_id": sprint.origin_sprint_id,
-                        "origin_bug_id": sprint.origin_bug_id,
-                        "normal_sprint_created": sprint.normal_sprint_created,
-                    },
-                }
-            )
-    except SprintOperationError as e:
-        return json.dumps({"error": e.code, **e.to_dict()})
-    except ValueError as e:
-        return json.dumps({"error": str(e)})
-
-
-@mcp.tool()
-async def okto_pulse_update_sprint(
-    board_id: str,
-    sprint_id: str,
-    title: str = "",
-    description: str = "",
-    objective: str = "",
-    expected_outcome: str = "",
-    test_scenario_ids: list[str] | str = "",
-    business_rule_ids: list[str] | str = "",
-    labels: list[str] | str = "",
-    lane_type: str = "",
-    origin_sprint_id: str = "",
-    origin_bug_id: str = "",
-    skip_test_coverage: OptionalBoolInput = None,
-    skip_rules_coverage: OptionalBoolInput = None,
-    skip_qualitative_validation: OptionalBoolInput = None,
-    validation_threshold: int = 0,
-    start_date: str = "",
-    end_date: str = "",
-    expected_version: int = 0,
-) -> str:
-    """
-    Update sprint fields. lane_type accepts normal or hotfix; release_validation
-    is an objective/label on a normal sprint, not a lane."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    from okto_pulse.core.models.schemas import SprintUpdate
-    from okto_pulse.core.services.main import SprintOperationError
-
-    kwargs = {}
-    if title:
-        kwargs["title"] = title
-    if description:
-        kwargs["description"] = description
-    if objective:
-        kwargs["objective"] = objective
-    if expected_outcome:
-        kwargs["expected_outcome"] = expected_outcome
-    if test_scenario_ids:
-        try:
-            kwargs["test_scenario_ids"] = coerce_to_list_str(test_scenario_ids)
-        except ValueError as e:
-            return json.dumps({"error": f"Invalid test_scenario_ids: {e}"})
-    if business_rule_ids:
-        try:
-            kwargs["business_rule_ids"] = coerce_to_list_str(business_rule_ids)
-        except ValueError as e:
-            return json.dumps({"error": f"Invalid business_rule_ids: {e}"})
-    if labels:
-        try:
-            kwargs["labels"] = coerce_to_list_str(labels)
-        except ValueError as e:
-            return json.dumps({"error": f"Invalid labels: {e}"})
-    if lane_type:
-        kwargs["lane_type"] = lane_type
-    if origin_sprint_id:
-        kwargs["origin_sprint_id"] = origin_sprint_id
-    if origin_bug_id:
-        kwargs["origin_bug_id"] = origin_bug_id
-    if skip_test_coverage is not None:
-        kwargs["skip_test_coverage"] = _flag_enabled(skip_test_coverage)
-    if skip_rules_coverage is not None:
-        kwargs["skip_rules_coverage"] = _flag_enabled(skip_rules_coverage)
-    if skip_qualitative_validation is not None:
-        kwargs["skip_qualitative_validation"] = _flag_enabled(
-            skip_qualitative_validation
-        )
-    if validation_threshold:
-        kwargs["validation_threshold"] = validation_threshold
-    if start_date:
-        kwargs["start_date"] = start_date
-    if end_date:
-        kwargs["end_date"] = end_date
-    if expected_version:
-        kwargs["expected_version"] = expected_version
-
-    # S-LANE-01: fail-closed DTO build (an invalid lane_type surfaces the canonical
-    # envelope, nothing persists) BEFORE the use case.
-    from pydantic import ValidationError
-
-    try:
-        data = SprintUpdate(**kwargs)
-    except ValidationError as exc:
-        return _canonical_sprint_validation_error(exc)
-    except ValueError as e:
-        return json.dumps({"error": str(e)})
-
-    from okto_pulse.core.application.use_cases import (
-        UpdateSprintCommand,
-        UpdateSprintUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU6 strangler (sprint update, REUSE:UpdateSprintUseCase — the service self-
-    # commits; a None result is EntityNotFoundError -> "Sprint not found"; ValueError
-    # (archived / lane-in-draft / invalid scoped ids) -> {"error": str}).
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            sprint = (
-                await UpdateSprintUseCase().execute(
-                    UpdateSprintCommand(sprint_id, data), actor=actor, uow=uow
-                )
-            ).sprint
-            return json.dumps(
-                {
-                    "success": True,
-                    "sprint": {
-                        "id": sprint.id,
-                        "title": sprint.title,
-                        "description": sprint.description,
-                        "objective": sprint.objective,
-                        "expected_outcome": sprint.expected_outcome,
-                        "status": sprint.status.value,
-                        "version": sprint.version,
-                        "start_date": sprint.start_date.isoformat()
-                        if sprint.start_date
-                        else None,
-                        "end_date": sprint.end_date.isoformat()
-                        if sprint.end_date
-                        else None,
-                        "lane_type": sprint.lane_type.value
-                        if sprint.lane_type
-                        else "normal",
-                        "origin_sprint_id": sprint.origin_sprint_id,
-                        "origin_bug_id": sprint.origin_bug_id,
-                        "normal_sprint_created": sprint.normal_sprint_created,
-                    },
-                }
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Sprint not found"})
-    except SprintOperationError as e:
-        return json.dumps({"error": e.code, **e.to_dict()})
-    except ValueError as e:
-        return json.dumps({"error": str(e)})
-
-
-@mcp.tool()
-async def okto_pulse_move_sprint(
-    board_id: str,
-    sprint_id: str,
-    status: str,
-    cancellation_reason: str = "",
-    expected_version: int = 0,
-) -> str:
-    """
-    Move a sprint to a new status. State machine: draft→active→review→closed.
-    Gates: draft→active requires cards, active→review requires scoped test
-    scenarios in passed status, review→closed requires evaluation. Automated
-    test pointers alone do not satisfy sprint review.
-    status='cancelled' requires cancellation_reason; reopening clears it."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    from okto_pulse.core.domain.enums import SprintStatus
-    from okto_pulse.core.models.schemas import SprintMove
-    from okto_pulse.core.services.main import SprintOperationError
-
-    try:
-        sprint_status = SprintStatus(status)
-    except ValueError:
-        return json.dumps(
-            {
-                "error": f"Invalid status. Must be one of: {[s.value for s in SprintStatus]}"
-            }
-        )
-
-    from okto_pulse.core.application.use_cases import (
-        MoveSprintCommand,
-        MoveSprintUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.domain.guideline_policy_transition import (
-        PolicyTransitionRejected,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU6 strangler (sprint move, REUSE:MoveSprintUseCase — the service self-commits,
-    # runs the BG-01 critical-context guard + the state-machine gates internally; a None
-    # result is EntityNotFoundError -> "Sprint not found"; ValueError (incl. the
-    # SprintOperationError subclass) -> {"error": str(e)} — the single except matches the
-    # legacy, which does NOT surface to_dict() for move).
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            sprint = (
-                await MoveSprintUseCase().execute(
-                    MoveSprintCommand(
-                        sprint_id,
-                        SprintMove(
-                            status=sprint_status,
-                            cancellation_reason=cancellation_reason or None,
-                            expected_version=expected_version or None,
-                        ),
-                    ),
-                    actor=actor,
-                    uow=uow,
-                )
-            ).sprint
-            return json.dumps(
-                {
-                    "success": True,
-                    "sprint": {
-                        "id": sprint.id,
-                        "title": sprint.title,
-                        "status": sprint.status.value,
-                        "version": sprint.version,
-                        "cancellation_reason": sprint.cancellation_reason,
-                        "cancelled_by": sprint.cancelled_by,
-                        "cancelled_at": isoformat_utc(sprint.cancelled_at),
-                    },
-                }
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Sprint not found"})
-    except CancellationReasonRequiredError as e:
-        return json.dumps({"error": e.code, **e.to_dict()})
-    except SprintOperationError as e:
-        return json.dumps({"error": e.code, **e.to_dict()})
-    except PolicyTransitionRejected as e:
-        return MCPAdapterContract.error(e)
-    except ValueError as e:
-        return json.dumps({"error": str(e)})
-
-
-@mcp.tool()
-async def okto_pulse_get_sprint(board_id: str, sprint_id: str) -> str:
-    """
-    Get full sprint details including cards, evaluations, and Q&A."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    from okto_pulse.core.application.use_cases import (
-        McpGetSprintCommand,
-        McpGetSprintUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU6 strangler (sprint get, Clean Core): McpGetSprintUseCase builds the full
-    # presentation dict (cards/qa_items) in the application layer; the adapter stays
-    # THIN — call + render (no composed read query in the wrapper, no direct service).
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        _r = await McpGetSprintUseCase().execute(
-            McpGetSprintCommand(sprint_id), actor=actor, uow=uow
-        )
-
-    if _r.not_found:
-        return json.dumps({"error": "Sprint not found"})
-    return json.dumps(_r.result, default=str)
-
-
-@mcp.tool()
-async def okto_pulse_get_sprint_context(
-    board_id: str,
-    sprint_id: str,
-    include_spec: BoolInput = True,
-    profile: str = "full",
-) -> str:
-    """
-    Get the FULL consolidated context of a sprint. Returns sprint data plus
-    the parent spec's structured sections (requirements, test scenarios, BRs,
-    contracts) for scope resolution and evaluation.
-
-    **Always call this before evaluating, moving, or reviewing a sprint.**"""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    _inc_spec = _flag_enabled(include_spec)
-
-    from okto_pulse.core.application.use_cases import (
-        McpGetSprintContextCommand,
-        McpGetSprintContextUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU6 strangler (sprint get_context, Clean Core): McpGetSprintContextUseCase
-    # builds the WHOLE aggregation (sprint dict + the CROSS-FAMILY parent-spec read +
-    # the scoped-item filtering) in the application layer; the adapter stays THIN —
-    # parse include_spec + call + render (no composed read / cross-family leak here).
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            _r = await McpGetSprintContextUseCase().execute(
-                McpGetSprintContextCommand(sprint_id, board_id, _inc_spec),
-                actor=actor,
-                uow=uow,
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Sprint not found"})
-
-    from okto_pulse.core.mcp.context_projection import project_entity_context
-
-    return json.dumps(
-        project_entity_context(
-            _r.result,
-            profile=profile,
-            tool_name="okto_pulse_get_sprint_context",
-        ),
-        default=str,
-    )
-
-
-@mcp.tool()
-async def okto_pulse_assign_tasks_to_sprint(
-    board_id: str,
-    sprint_id: str,
-    card_ids: list[str] | str,
-) -> str:
-    """
-    Assign cards to a sprint. Cards must belong to the same spec as the sprint."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    try:
-        ids = coerce_to_list_str(card_ids)
-    except ValueError as e:
-        return json.dumps({"error": f"Invalid card_ids: {e}"})
-    if not ids:
-        return json.dumps({"error": "No card IDs provided"})
-
-    from okto_pulse.core.application.use_cases import (
-        AssignSprintTasksCommand,
-        AssignSprintTasksUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-    from okto_pulse.core.services.main import SprintOperationError
-
-    # MCP-FU6 strangler (sprint assign, REUSE:AssignSprintTasksUseCase — assign +
-    # commit + re-fetch live in the use case; the service logs/records-history
-    # atomically inside the txn). The adapter keeps the pre-UoW coerce/empty-guard, the
-    # lane SUCCESS envelope shaped from the returned sprint (a scalar, no query), and
-    # the SprintOperationError-before-ValueError order (the typed e.code/to_dict must
-    # not be shadowed by the bare ValueError).
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            _r = await AssignSprintTasksUseCase().execute(
-                AssignSprintTasksCommand(sprint_id, ids), actor=actor, uow=uow
-            )
-            count = _r.assigned
-            sprint = _r.sprint
-            lane_type = sprint.lane_type.value if sprint else None
-            accepted_card_types = (
-                ["bug", "test"] if lane_type == "hotfix" else ["normal", "test", "bug"]
-            )
-            return json.dumps(
-                {
-                    "success": True,
-                    "assigned": count,
-                    "assigned_count": count,
-                    "lane_type": lane_type,
-                    "accepted_card_types": accepted_card_types,
-                }
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Sprint not found"})
-    except SprintOperationError as e:
-        return json.dumps({"error": e.code, **e.to_dict()})
-    except ValueError as e:
-        return json.dumps({"error": str(e)})
-
-
-@mcp.tool()
-async def okto_pulse_submit_sprint_evaluation(
-    board_id: str,
-    sprint_id: str,
-    breakdown_completeness: int,
-    breakdown_justification: str,
-    granularity: int,
-    granularity_justification: str,
-    dependency_coherence: int,
-    dependency_justification: str,
-    test_coverage_quality: int,
-    test_coverage_justification: str,
-    overall_score: int,
-    overall_justification: str,
-    recommendation: str,
-) -> str:
-    """
-    Submit a qualitative evaluation for a sprint in 'review' status."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    if recommendation not in ("approve", "request_changes", "reject"):
-        return json.dumps(
-            {"error": "recommendation must be: approve, request_changes, or reject"}
-        )
-
-    evaluation = {
-        "dimensions": {
-            "breakdown_completeness": {
-                "score": breakdown_completeness,
-                "justification": breakdown_justification,
-            },
-            "granularity": {
-                "score": granularity,
-                "justification": granularity_justification,
-            },
-            "dependency_coherence": {
-                "score": dependency_coherence,
-                "justification": dependency_justification,
-            },
-            "test_coverage_quality": {
-                "score": test_coverage_quality,
-                "justification": test_coverage_justification,
-            },
-        },
-        "overall_score": overall_score,
-        "overall_justification": overall_justification,
-        "recommendation": recommendation,
-    }
-
-    from okto_pulse.core.application.use_cases import (
-        SubmitSprintEvaluationCommand,
-        SubmitSprintEvaluationUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError, commit
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-    from okto_pulse.core.services.critical_context_guard import FullContextGuardError
-    from okto_pulse.core.services.main import SprintOperationError
-
-    # MCP-FU6 strangler (sprint submit_evaluation, REUSE:SubmitSprintEvaluationUseCase —
-    # the service self-commits + logs/records-history). The recommendation validation +
-    # the evaluation dict are built above (input parsing). A None result is
-    # EntityNotFoundError -> "Sprint not found".
-    #
-    # FullContextGuardError IS a ValueError subclass (the critical-context guard persists
-    # a denial-decision audit, then raises). It MUST be caught BEFORE the generic
-    # ValueError so it is not swallowed into the bare {error: str(e)}. We mirror the MCP
-    # sibling okto_pulse_submit_spec_evaluation EXACTLY: commit the persisted decision
-    # then surface the guard's reason + decision audit as a STRUCTURED envelope. (move_*
-    # tools, by contrast, intentionally convert the guard via ValueError -> {error}.)
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            try:
-                _r = await SubmitSprintEvaluationUseCase().execute(
-                    SubmitSprintEvaluationCommand(sprint_id, evaluation),
-                    actor=actor,
-                    uow=uow,
-                )
-            except FullContextGuardError as exc:
-                await commit(uow)
-                return json.dumps(
-                    {
-                        "error": str(exc),
-                        "reason": exc.reason,
-                        "decision": exc.decision.audit_details(),
-                    }
-                )
-            sprint = _r.sprint
-            last_eval = sprint.evaluations[-1] if sprint.evaluations else {}
-            return json.dumps(
-                {
-                    "success": True,
-                    "evaluation_id": last_eval.get("id"),
-                    "overall_score": overall_score,
-                    "recommendation": recommendation,
-                }
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Sprint not found"})
-    except SprintOperationError as e:
-        return json.dumps({"error": e.code, **e.to_dict()})
-    except ValueError as e:
-        return json.dumps({"error": str(e)})
-
-
-@mcp.tool()
-async def okto_pulse_list_sprint_evaluations(board_id: str, sprint_id: str) -> str:
-    """
-    List all evaluations for a sprint."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    from okto_pulse.core.application.use_cases import (
-        McpListSprintEvaluationsCommand,
-        McpListSprintEvaluationsUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU6 strangler (sprint list_evaluations, Clean Core): the aggregation lives in
-    # the use case; the adapter stays thin — call + render.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        _r = await McpListSprintEvaluationsUseCase().execute(
-            McpListSprintEvaluationsCommand(sprint_id), actor=actor, uow=uow
-        )
-
-    if _r.not_found:
-        return json.dumps({"error": "Sprint not found"})
-    return json.dumps(_r.result)
-
-
-@mcp.tool()
-async def okto_pulse_get_sprint_evaluation(
-    board_id: str,
-    sprint_id: str,
-    evaluation_id: str,
-) -> str:
-    """
-    Get full details of a specific sprint evaluation."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    from okto_pulse.core.application.use_cases import (
-        McpGetSprintEvaluationCommand,
-        McpGetSprintEvaluationUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU6 strangler (sprint get_evaluation, Clean Core): the scan lives in the use
-    # case; the adapter stays thin — call + render (the eval dict is returned UNWRAPPED).
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        _r = await McpGetSprintEvaluationUseCase().execute(
-            McpGetSprintEvaluationCommand(sprint_id, evaluation_id),
-            actor=actor,
-            uow=uow,
-        )
-
-    if _r.sprint_not_found:
-        return json.dumps({"error": "Sprint not found"})
-    if _r.eval_not_found:
-        return json.dumps({"error": f"Evaluation '{evaluation_id}' not found"})
-    return json.dumps(_r.evaluation)
-
-
-@mcp.tool()
-async def okto_pulse_delete_sprint_evaluation(
-    board_id: str,
-    sprint_id: str,
-    evaluation_id: str,
-) -> str:
-    """Delete your own sprint evaluation. Permanent, no undo.
-    Docs: okto-pulse://reference/destructive_ops
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    from okto_pulse.core.application.use_cases import (
-        McpDeleteSprintEvaluationCommand,
-        McpDeleteSprintEvaluationUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU6 strangler (sprint delete_evaluation, Clean Core, option A): the load +
-    # ownership gate + the Sprint.evaluations JSON mutation + the dirty-flag live in the
-    # new SprintService.delete_evaluation; the use case commits iff "deleted"; the
-    # adapter only maps the status to the legacy envelopes.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        _r = await McpDeleteSprintEvaluationUseCase().execute(
-            McpDeleteSprintEvaluationCommand(sprint_id, evaluation_id),
-            actor=actor,
-            uow=uow,
-        )
-
-    if _r.status == "sprint_not_found":
-        return json.dumps({"error": "Sprint not found"})
-    if _r.status == "eval_not_found":
-        return json.dumps({"error": f"Evaluation '{evaluation_id}' not found"})
-    if _r.status == "not_owner":
-        return json.dumps({"error": "You can only delete your own evaluations"})
-    return json.dumps({"success": True})
-
-
-@mcp.tool()
-async def okto_pulse_ask_sprint_question(
-    board_id: str,
-    sprint_id: str,
-    question: str,
-) -> str:
-    """
-    Ask a question on a sprint."""
-    return await _ask_question_impl(
-        board_id,
-        "sprint",
-        sprint_id,
-        question,
-        alias_kind="legacy",
-        tool_name="okto_pulse_ask_sprint_question",
-    )
-
-
-@mcp.tool()
-async def okto_pulse_answer_sprint_question(
-    board_id: str,
-    sprint_id: str,
-    qa_id: str,
-    answer: str,
-) -> str:
-    """
-    Answer a question on a sprint."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    from okto_pulse.core.application.use_cases import (
-        McpAnswerSprintQuestionCommand,
-        McpAnswerSprintQuestionUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU6 strangler (sprint answer Q&A, VARIANT): NO activity log (unique among
-    # the Q&A-answer family), a plain answer string, and an UNCONDITIONAL
-    # commit (the use case commits even on a None qa — legacy parity). Self-answer ->
-    # {error, detail}; a None result -> "Q&A item not found".
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        _r = await McpAnswerSprintQuestionUseCase().execute(
-            McpAnswerSprintQuestionCommand(board_id, sprint_id, qa_id, answer),
-            actor=actor,
-            uow=uow,
-        )
-        if _r.self_answer_error is not None:
-            return json.dumps(
-                {
-                    "error": _r.self_answer_error.reason,
-                    "detail": str(_r.self_answer_error),
-                }
-            )
-        if _r.qa_not_found:
-            return json.dumps({"error": "Q&A item not found"})
-        qa = _r.qa
-        return json.dumps(
-            {
-                "success": True,
-                "qa": {
-                    "id": qa.id,
-                    "question": qa.question,
-                    "answer": qa.answer,
-                    "answered_by": qa.answered_by,
-                },
-            }
-        )
 
 
 @mcp.tool()
@@ -19061,7 +17169,6 @@ async def okto_pulse_delete_spec_question(
     await AuthorizeOperationUseCase().execute(
         AuthorizeOperationCommand(
             "spec.qa.delete",
-            legacy_operation="qa:delete",
             board_id=board_id,
         ),
         actor=actor,
@@ -19158,79 +17265,6 @@ async def okto_pulse_delete_refinement_question(
     return json.dumps({"success": True})
 
 
-@mcp.tool()
-async def okto_pulse_delete_sprint_question(
-    board_id: str, sprint_id: str, qa_id: str
-) -> str:
-    """
-    Delete a Q&A item from a sprint. Use this to invalidate outdated questions
-    or remove resolved clarifications that no longer apply."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    from okto_pulse.core.application.use_cases import (
-        McpDeleteSprintQuestionCommand,
-        McpDeleteSprintQuestionUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU6 strangler (sprint delete Q&A, VARIANT): the sprint_question_deleted log +
-    # commit run ATOMICALLY in the use case; a falsy delete short-circuits (no log/
-    # commit). The canonical authorization gate is owned by the Core use case.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        _r = await McpDeleteSprintQuestionUseCase().execute(
-            McpDeleteSprintQuestionCommand(board_id, sprint_id, qa_id),
-            actor=actor,
-            uow=uow,
-        )
-
-    if _r.qa_not_found:
-        return json.dumps({"error": "Q&A item not found"})
-    return json.dumps({"success": True})
-
-
-@mcp.tool()
-async def okto_pulse_suggest_sprints(
-    board_id: str,
-    spec_id: str,
-    threshold: int = 8,
-) -> str:
-    """
-    Suggest a sprint breakdown for a spec based on tasks, FRs, and dependencies.
-    Does NOT create sprints — returns suggestions for review."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    from okto_pulse.core.application.use_cases import (
-        SuggestSprintsCommand,
-        SuggestSprintsUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU6 strangler (sprint suggest, REUSE:SuggestSprintsUseCase — read). Missing or
-    # cross-board specs map to the same not-found envelope; readiness ValueError keeps
-    # its established {error: str} shape.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            _r = await SuggestSprintsUseCase().execute(
-                SuggestSprintsCommand(spec_id, threshold, board_id=board_id),
-                actor=actor,
-                uow=uow,
-            )
-            return json.dumps(
-                {"suggestions": _r.suggestions, "count": len(_r.suggestions)}
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Spec not found"})
-    except ValueError as e:
-        return json.dumps({"error": str(e)})
-
-
 # ============================================================================
 # TASK VALIDATION TOOLS
 # ============================================================================
@@ -19250,24 +17284,31 @@ async def okto_pulse_submit_task_validation(
     drift_justification: Annotated[str, Field(min_length=10)],
     general_justification: Annotated[str, Field(min_length=20)],
     recommendation: Literal["approve", "reject"],
+    learning_capture: LearningCaptureSelection | None = None,
 ) -> str:
     """
     Submit a task validation for a card in 'validation' status.
 
     Evaluates the implementation quality of a completed task against three
     dimensions: confidence, completeness, and drift. The system applies
-    threshold checks (resolved from sprint → spec → board hierarchy) and
+    threshold checks (preserved Card migration override → Spec → Board) and
     applies the board's reviewer-separation policy to task creator, assignee,
     and executor conflicts. ``enforce`` returns
     ``reviewer_separation_required`` as an actionable outcome; ``warn`` and
-    ``off`` accept the submission and persist the complete decision. Legacy
-    boards with no setting resolve to ``off`` with
-    ``source=legacy_absent_compat``. The system then
+    ``off`` accept the submission and persist the complete decision. An omitted
+    policy uses the current ``enforce`` creation default; invalid values are refused.
+    The system then
     automatically routes the card: successful completion → done; a failed
     validation or other admitted completion blocker → rejected. Rejected is a
     rework handoff: an executor must first move it to in_progress. Exact
     retries use ``idempotency_key`` and are resolved before the mutable status
-    check; ``expected_subject_version`` is the optimistic concurrency fence."""
+    check; ``expected_subject_version`` is the optimistic concurrency fence.
+    Optional ``learning_capture`` selects an existing authored Bug capture by
+    Learning identity/generation/fingerprint. Requires all capture-source reads
+    and kg.query.learning_from_bugs. It is bound only on successful completion,
+    with source/evidence revalidation and atomic rollback on failure. It never
+    approves implementation or bypasses another completion gate. A new execution
+    report requires a capture of that new basis, not requalification of an old one."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -19295,6 +17336,8 @@ async def okto_pulse_submit_task_validation(
         "drift_justification": drift_justification,
         "general_justification": general_justification,
         "recommendation": recommendation,
+        **({"learning_capture": learning_capture.model_dump()}
+            if learning_capture is not None else {}),
     }
 
     from okto_pulse.core.application.use_cases import (
@@ -19302,7 +17345,7 @@ async def okto_pulse_submit_task_validation(
         SubmitTaskValidationCommand,
         SubmitTaskValidationUseCase,
     )
-    from okto_pulse.core.domain.guideline_policy_transition import (
+    from okto_pulse.core.domain.guideline_semantic_transition import (
         PolicyTransitionRejected,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
@@ -19316,6 +17359,8 @@ async def okto_pulse_submit_task_validation(
                 uow=uow,
             )
         return json.dumps(result.validation, default=str)
+    except PermissionDeniedError as e:
+        return MCPAdapterContract.error(e)
     except EntityNotFoundError as e:
         if e.entity_type == "card":
             return json.dumps({"error": "Card not found"})
@@ -19873,8 +17918,8 @@ async def okto_pulse_create_default_board_config_version(
     REST twin: POST /default-board-config/versions. Validated as BoardSettings;
     guideline defaults must be global and each native ref must include the exact
     revision_id, revision_number, semantic_version, and revision_digest (priority
-    defaults to zero). This native tool rejects guideline_version/legacy_*; those
-    aliases are reserved for versioned import/migration, not head selection.
+    defaults to zero). All writes and imports reject guideline_version/legacy_* aliases;
+    revisions must be selected explicitly.
     design_system gate_mode must be valid. activate=True activates it
     (single-active enforced). Pin changes also need guidelines.adoption.manage."""
     ctx = await _get_agent_ctx(board_id)
@@ -20026,7 +18071,7 @@ async def okto_pulse_list_default_guideline_candidates(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
@@ -20070,8 +18115,8 @@ async def okto_pulse_update_default_guideline_refs(
     Native refs use the closed shape ``{guideline_id, priority, revision_id,
     revision_number, semantic_version, revision_digest}``; priority may be omitted
     and defaults to zero, while all four revision fields are required. The
-    native tool rejects guideline_version/legacy_*; those aliases are reserved
-    for versioned import/migration. Returns the EFFECTIVE template. Requires
+    tool and versioned import reject guideline_version/legacy_* aliases.
+    Returns the EFFECTIVE template. Requires
     SPECS_UPDATE and guidelines.adoption.manage."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -20551,12 +18596,56 @@ async def okto_pulse_get_task_validation(
 
 
 @mcp.tool()
+async def okto_pulse_get_spec_validation_cycle(
+    board_id: str, spec_id: str, include_previous: bool = False,
+    offset: int = 0, limit: int = 25,
+    include_planning: bool = False,
+) -> str:
+    """Read current native validation components and the planning submission manifest.
+
+    Reads are limited to the authenticated Board and each component's read
+    permission. A manifest is a freshness token, never an approval. Pass it
+    unchanged as expected_planning_manifest when concluding planning.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, "board.read")
+    if perm_err:
+        return _perm_error(perm_err)
+    from okto_pulse.core.application.use_cases.validation_cycle import (
+        GetValidationCycleCommand, ValidationCycleReadUseCases,
+    )
+    from okto_pulse.core.domain.quality_assessment import AssessmentSubjectType
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.models.validation_cycle import project_validation_cycle
+    from okto_pulse.core.ports.validation_cycle import (
+        ValidationCycleReadError, get_validation_cycle_reader,
+    )
+
+    try:
+        cycle = await ValidationCycleReadUseCases(reader=get_validation_cycle_reader()).get_cycle(
+            GetValidationCycleCommand(AssessmentSubjectType.SPEC, spec_id, include_previous, offset, limit, include_planning),
+            actor=MCPAdapterContract.actor(ctx, board_id=board_id),
+        )
+        return json.dumps({"outcome": "success", "data": project_validation_cycle(cycle)})
+    except SpecPlanningManifestUnavailable as exc:
+        return json.dumps(exc.to_error_dict())
+    except ValidationCycleReadError as exc:
+        return json.dumps({"outcome": "error", "error_code": exc.code, "retryable": False})
+    except (TypeError, ValueError) as exc:
+        return MCPAdapterContract.error(exc)
+
+
+@mcp.tool()
 async def okto_pulse_submit_spec_validation(
     board_id: str,
     spec_id: str,
+    idempotency_key: str,
     expected_validation_edition: int,
     expected_spec_version: int,
     expected_head_revision: int,
+    expected_planning_manifest: SpecPlanningManifest,
     confidence: int,
     confidence_justification: str,
     clarity: int,
@@ -20569,16 +18658,26 @@ async def okto_pulse_submit_spec_validation(
     ambiguity_justification: str,
     recommendation: Literal["approve", "reject"],
     pinpoints: list[SpecValidationPinpointInput] | None = None,
+    decomposition: SpecEvaluationInput | None = None,
 ) -> str:
-    """Record five evaluator scores, rationales and optional metric pinpoints."""
+    """Conclude planning with native quality scores and optional decomposition review.
+
+    Both review permissions are required when decomposition is supplied. Otherwise
+    consumes Current independent reviews. Negative results remain in native history;
+    promotion requires every applicable gate, not just passing quality scores.
+    Retry the same idempotency_key and payload for the original receipt; changed
+    input with that key conflicts. Replay rechecks read access and never promotes.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
 
     data = {
+        "idempotency_key": idempotency_key,
         "expected_validation_edition": expected_validation_edition,
         "expected_spec_version": expected_spec_version,
         "expected_head_revision": expected_head_revision,
+        "expected_planning_manifest": expected_planning_manifest.model_dump(mode="json"),
     }
     data.update(
         {
@@ -20594,6 +18693,7 @@ async def okto_pulse_submit_spec_validation(
             "ambiguity_justification": ambiguity_justification,
             "recommendation": recommendation,
             **({"pinpoints": pinpoints} if pinpoints is not None else {}),
+            **({"decomposition": decomposition.model_dump()} if decomposition is not None else {}),
         }
     )
 
@@ -20602,7 +18702,7 @@ async def okto_pulse_submit_spec_validation(
         SubmitSpecValidationCommand,
         SubmitSpecValidationUseCase,
     )
-    from okto_pulse.core.domain.guideline_policy_transition import (
+    from okto_pulse.core.domain.guideline_semantic_transition import (
         PolicyTransitionRejected,
     )
     from okto_pulse.core.domain.spec_validation import (
@@ -20627,16 +18727,18 @@ async def okto_pulse_submit_spec_validation(
                 uow=uow,
             )
         payload = result.payload
+        from okto_pulse.core.models.schemas import SpecValidationConclusionResponse
+
         return json.dumps(
-            {
-                "validation_id": payload["validation_id"],
-                "validation_edition": payload["validation_edition"],
-                "is_current": payload["is_current"],
-            },
+            SpecValidationConclusionResponse.model_validate({
+                key: payload[key] for key in SpecValidationConclusionResponse.model_fields
+            }).model_dump(),
             default=str,
         )
     except EntityNotFoundError:
         return json.dumps({"error": "Spec not found"})
+    except SpecPlanningManifestUnavailable as exc:
+        return json.dumps(exc.to_error_dict())
     except SpecValidationConflictError as exc:
         _observe_mcp_validation_edition_conflict(
             exc,
@@ -20647,6 +18749,8 @@ async def okto_pulse_submit_spec_validation(
             correlation_id=correlation_id,
         )
         return json.dumps(exc.to_error_dict())
+    except ResourceGateError as e:
+        return _resource_gate_error_response(e)
     except PolicyTransitionRejected as e:
         return MCPAdapterContract.error(e)
     except ValueError as e:
@@ -20659,7 +18763,7 @@ async def okto_pulse_list_spec_validations(
     spec_id: str,
     limit: int = 50,
     offset: int = 0,
-    lifecycle_state: Literal["all", "current", "previous", "history_only"] = "all",
+    lifecycle_state: Literal["all", "current", "previous"] = "all",
 ) -> str:
     """List Spec validations. Docs: okto-pulse://reference/tool-docs/spec."""
     ctx = await _get_agent_ctx(board_id)
@@ -20783,7 +18887,7 @@ async def okto_pulse_kg_health(board_id: str, profile: str = "summary") -> str:
     memory_pressure_status, recent_events — plus operational scalars,
     decay_scheduler_diagnostics and storage_footprint_proxy. Scheduler debt is
     operational and does not by itself require graph recovery. profile=full
-    (or legacy) adds the complete dashboard payload.
+    adds the complete dashboard payload.
     Profiles: okto-pulse://reference/projection-profiles.
     Docs: okto-pulse://reference/tool-docs/kg.
     """
@@ -20830,7 +18934,7 @@ async def okto_pulse_kg_health(board_id: str, profile: str = "summary") -> str:
     except BoardNotFoundError as exc:
         return json.dumps({"error": str(exc)})
     # FR4: slim default projection — keep the stop-rule fields, omit verbose
-    # diagnostics until profile=full/legacy is requested.
+    # diagnostics until profile=full is requested.
     visible_health = mask_code_traceability_graph_metrics(
         result.data,
         ct_access,
@@ -20843,7 +18947,6 @@ async def okto_pulse_kg_health(board_id: str, profile: str = "summary") -> str:
 async def okto_pulse_kg_health_readiness(
     board_id: str,
     profile: str = "summary",
-    artifact_ref: str = "",
 ) -> str:
     """Canonical NON-MASKABLE KG health/readiness. REST twin: GET
     /api/v1/kg/health-readiness (RKG-05). Both summary and full expose
@@ -20851,9 +18954,9 @@ async def okto_pulse_kg_health_readiness(
     / canonical_debt_open_count / active_queue_count — SEPARATE domains),
     readiness (blocking vs would_block_done + reasons + policy_reason),
     top-level cognitive_enforcement_mode / enforcement_active, and
-    non_maskable_items (per-item drill_down_tool / last_error / next_action).
+    non_maskable_items (bounded Board aggregates, without row IDs or raw errors).
     A summary never hides a technical blocker; full adds prose health_issues +
-    root_cause. Optional artifact_ref scopes items.
+    root_cause. Signals remain Board-scoped.
     Profiles: okto-pulse://reference/projection-profiles.
     Docs: okto-pulse://reference/tool-docs/kg.
     """
@@ -20907,7 +19010,6 @@ async def okto_pulse_kg_health_readiness(
                     board_id,
                     profile=profile,
                     surface="mcp",
-                    artifact_ref=(artifact_ref or None),
                     scheduler_control=get_scheduler_control_for_mcp(),
                 ),
                 actor=actor,
@@ -20924,410 +19026,16 @@ async def okto_pulse_kg_health_readiness(
     return json.dumps(result.data, default=str)
 
 
-@mcp.tool()
-async def okto_pulse_kg_canonical_debt_list(
-    board_id: str,
-    artifact_type: str | None = None,
-    state: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
-) -> str:
-    """
-    List canonical-debt ledger rows for KG health drill-down.
-
-    Use this when `okto_pulse_kg_health` reports `canonical_debt.open_count`
-    and you need to inspect which artifacts are pending, blocked, failed, or
-    retry-scheduled before deciding whether a rebuild or retry is appropriate.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    from okto_pulse.core.services.canonical_debt_service import (
-        CanonicalDebtFilterError,
-        validate_canonical_debt_filters,
-    )
-
-    try:
-        validate_canonical_debt_filters(
-            artifact_type=artifact_type,
-            state=state,
-        )
-    except CanonicalDebtFilterError as exc:
-        return _structured_error(
-            exc.code,
-            list(exc.allowed),
-            None,
-            str(exc),
-            invalid_keys=[exc.field],
-        )
-
-    bounded_limit, bounded_offset, pagination_error = _kg_pagination_window(
-        limit, offset
-    )
-    if pagination_error is not None:
-        return pagination_error
-
-    from okto_pulse.core.application.use_cases import (
-        ListCanonicalDebtCommand,
-        ListCanonicalDebtUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU5 strangler: obtain a PulseUnitOfWork from the MCP UnitOfWorkFactory
-    # instead of opening a raw get_db_for_mcp() session — the tool no longer calls
-    # get_db_for_mcp directly. The use case delegates to the same reader so the
-    # payload (items/counts/total) stays byte-identical. Read-only: no commit.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = (
-            await ListCanonicalDebtUseCase().execute(
-                ListCanonicalDebtCommand(
-                    board_id,
-                    artifact_type=artifact_type,
-                    state=state,
-                    limit=bounded_limit,
-                    offset=bounded_offset,
-                ),
-                actor=actor,
-                uow=uow,
-            )
-        ).data
-
-    from okto_pulse.core.kg.rebuild_audit import emit_operational_inspection_sample
-
-    emit_operational_inspection_sample(
-        signal="canonical_debt",
-        surface="mcp",
-        outcome="success",
-        board_id=board_id,
-        item_count=len(result.items),
-    )
-    return json.dumps(
-        {
-            "board_id": board_id,
-            "items": result.items,
-            "counts": result.counts,
-            "total": result.total,
-            "limit": bounded_limit,
-            "offset": bounded_offset,
-        },
-        default=str,
-    )
 
 
-@mcp.tool()
-async def okto_pulse_kg_canonical_partition_integrity_list(
-    board_id: str,
-    reason_code: str | None = None,
-    graph_layer: str | None = None,
-    source_ref: str | None = None,
-    node_id: str | None = None,
-    status: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
-) -> str:
-    """List canonical Learning partition-integrity signals for KG health
-    drill-down (R7). READ-ONLY: cognitive holds, canonical debt,
-    mixed-evidence deferred and provenance-only Learnings. Each item carries
-    an S-KG-02 classification (missing_source, unresolved_source,
-    canonical_learning_resolved, weak_provenance, invalid_orphan_learning) +
-    a classification_counts census. REST twin: GET
-    /api/v1/kg/{board_id}/canonical-partition-integrity. NEVER skips, clears
-    or resolves an R7 hold/debt — human-only. Filters: reason_code,
-    graph_layer, source_ref, node_id, status.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    bounded_limit, bounded_offset, pagination_error = _kg_pagination_window(
-        limit, offset
-    )
-    if pagination_error is not None:
-        return pagination_error
-
-    from okto_pulse.core.application.use_cases import (
-        ListCanonicalPartitionIntegrityCommand,
-        ListCanonicalPartitionIntegrityUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-    from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessError
-
-    # MCP-FU5 strangler: UoW factory instead of get_db_for_mcp(); the use case
-    # lets CognitiveReadinessError propagate so the tool keeps its legacy
-    # exc.to_dict() envelope. Read-only: no commit.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            result = (
-                await ListCanonicalPartitionIntegrityUseCase().execute(
-                    ListCanonicalPartitionIntegrityCommand(
-                        board_id,
-                        reason_code=reason_code or None,
-                        graph_layer=graph_layer or None,
-                        source_ref=source_ref or None,
-                        node_id=node_id or None,
-                        status=status or None,
-                        limit=bounded_limit,
-                        offset=bounded_offset,
-                    ),
-                    actor=actor,
-                    uow=uow,
-                )
-            ).data
-    except CognitiveReadinessError as exc:
-        return json.dumps(exc.to_dict())
-
-    # OR1 metric (kg_canonical_partition_integrity_total) is emitted inside
-    # list_canonical_partition_integrity (the single enumeration point), so REST
-    # and MCP share the same dedicated signal without double-emitting here.
-    return json.dumps(result, default=str)
 
 
-@mcp.tool()
-async def okto_pulse_kg_digest_layer_mismatch_list(
-    board_id: str,
-    limit: int = 50,
-    offset: int = 0,
-) -> str:
-    """
-    List Global Discovery DecisionDigest rows whose published graph_layer diverges
-    from the expected_digest_layer recomputed from the board graph
-    (digest_vs_board_layer_mismatch, R1). READ-ONLY drill-down for the KG Health
-    issue. Mirrors REST `GET /api/v1/kg/{board_id}/digest-layer-mismatch`. Each
-    item carries board_id, digest_id, original_node_id, node_type, expected_layer,
-    actual_layer, source_artifact_ref. NEVER mutates / remediates (the R1-IMP1
-    reconciler corrects mismatches on drain).
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    bounded_limit, bounded_offset, pagination_error = _kg_pagination_window(
-        limit, offset
-    )
-    if pagination_error is not None:
-        return pagination_error
-
-    from okto_pulse.core.application.use_cases import (
-        ListDigestLayerMismatchCommand,
-        ListDigestLayerMismatchUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU5 strangler: UoW factory instead of get_db_for_mcp(). Read-only: no
-    # commit. The use case delegates to the same reader (single metric-emit point).
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = (
-            await ListDigestLayerMismatchUseCase().execute(
-                ListDigestLayerMismatchCommand(
-                    board_id,
-                    limit=bounded_limit,
-                    offset=bounded_offset,
-                ),
-                actor=actor,
-                uow=uow,
-            )
-        ).data
-    # kg_discovery_digest_layer_mismatch_total is emitted inside
-    # list_digest_layer_mismatches (single enumeration point) so REST + MCP share
-    # the metric without double-emitting here.
-    return json.dumps(result, default=str)
 
 
-@mcp.tool()
-async def okto_pulse_kg_digest_layer_reconcile(
-    board_id: str,
-    reason: Annotated[
-        str,
-        Field(
-            description=(
-                "Required 3-128 character audit code (lowercase letters, digits, "
-                "dot, colon, underscore or hyphen)."
-            )
-        ),
-    ],
-) -> McpToolOutcome:
-    """Enqueue board-scoped DecisionDigest layer reconciliation.
-
-    Administrative WRITE. Use after the mismatch drill-down reports drift while
-    the operational queue is idle. The command emits the established durable
-    zero-reference parity event; it does not rebuild the KG or mutate the
-    read-only mismatch tool. The worker keyset-inventories publishable board
-    sources with duplicate detection, guards stale prune against derived edges,
-    repairs identities/Board links, and backfills missing digests. It ACKs each
-    board independently only after source revalidation and a post-flush
-    fresh-handle proof of one stable digest and one correct inbound Board edge.
-    Repeated calls are idempotent by effect.
-    Requires ``kg.operations.integrity.reconcile`` under the canonical
-    introduction contract (historical ceiling: ``kg.admin.settings_write``).
-    Docs: okto-pulse://reference/tool-docs/kg.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return McpToolOutcome.error(
-            code="authentication_required",
-            message="Authentication failed or board access denied",
-        )
-
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    operation = "kg.operations.integrity.reconcile"
-    authorization_error = await _authorize_kg_operation(
-        actor,
-        operation=operation,
-        legacy_operation="kg.admin.settings_write",
-        board_id=board_id,
-    )
-    if authorization_error is not None:
-        payload = json.loads(authorization_error)
-        return McpToolOutcome.error(
-            code="permission_denied",
-            message=str(payload["message"]),
-            details={"required_permission": operation},
-        )
-
-    from okto_pulse.core.application.use_cases import (
-        CommandValidationError,
-        EntityNotFoundError,
-        ReconcileDigestLayerCommand,
-        ReconcileDigestLayerUseCase,
-    )
-
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            result = await ReconcileDigestLayerUseCase().execute(
-                ReconcileDigestLayerCommand(board_id, reason=reason),
-                actor=actor,
-                uow=uow,
-            )
-    except CommandValidationError as exc:
-        return McpToolOutcome.error(
-            code="validation_failed",
-            message=str(exc),
-        )
-    except EntityNotFoundError:
-        return McpToolOutcome.error(
-            code="not_found",
-            message="Board not found or access denied",
-        )
-
-    return McpToolOutcome.success(result.data)
 
 
-@mcp.tool()
-async def okto_pulse_kg_originates_from_contract_audit(
-    board_id: str,
-    limit: int = 50,
-    offset: int = 0,
-    include_ok: bool = False,
-) -> str:
-    """
-    Read-only advisory audit for persisted KG `originates_from` edges whose
-    endpoint labels violate the Bug->Entity contract. Unknown/missing endpoint
-    labels are returned as low-confidence advisory warnings. This tool never
-    mutates, rebuilds, reprocesses, skips, or remediates graph data.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    bounded_limit, bounded_offset, pagination_error = _kg_pagination_window(
-        limit, offset
-    )
-    if pagination_error is not None:
-        return pagination_error
-
-    from okto_pulse.core.application.use_cases import (
-        AuditOriginatesFromContractCommand,
-        AuditOriginatesFromContractUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = (
-            await AuditOriginatesFromContractUseCase().execute(
-                AuditOriginatesFromContractCommand(
-                    board_id,
-                    limit=bounded_limit,
-                    offset=bounded_offset,
-                    include_ok=bool(include_ok),
-                ),
-                actor=actor,
-                uow=uow,
-            )
-        ).data
-    return json.dumps(result, default=str)
 
 
-@mcp.tool()
-async def okto_pulse_kg_stale_canonical_parity_list(
-    board_id: str,
-    limit: int = 50,
-    offset: int = 0,
-) -> str:
-    """
-    List stale-canonical parity signals for KG health drill-down (R2). READ-ONLY:
-    canonical deterministic board-graph nodes whose SQL source regressed below
-    canonical eligibility, each annotated with whether its Global Discovery digest
-    is also stale (R1 parity). Mirrors REST
-    `GET /api/v1/kg/{board_id}/stale-canonical-parity`. Items carry board_graph_stale,
-    global_discovery_stale_digest, expected_graph_layer, expected_maturity_status,
-    current_source_status, recommended_action. NEVER demotes/reconciles/syncs — this
-    is a diagnostic only (no mutating path).
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    bounded_limit, bounded_offset, pagination_error = _kg_pagination_window(
-        limit, offset
-    )
-    if pagination_error is not None:
-        return pagination_error
-
-    from okto_pulse.core.application.use_cases import (
-        ListStaleCanonicalParityCommand,
-        ListStaleCanonicalParityUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # Spec R01A IMP5 (MCP strangler): obtain a PulseUnitOfWork from the MCP
-    # UnitOfWorkFactory instead of opening a raw get_db_for_mcp() session — this
-    # tool no longer calls get_db_for_mcp. The transport-free use case (shared with
-    # the REST endpoint migrated in R01A IMP4) reads the parity signals; the
-    # payload, the pagination bounds and the ``_get_agent_ctx`` permission-cache
-    # path are unchanged.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = await ListStaleCanonicalParityUseCase().execute(
-            ListStaleCanonicalParityCommand(
-                board_id, limit=bounded_limit, offset=bounded_offset
-            ),
-            actor=actor,
-            uow=uow,
-        )
-    return json.dumps(result.data, default=str)
 
 
 @mcp.tool()
@@ -21358,7 +19066,6 @@ async def okto_pulse_kg_takedown_status(
     authorization_error = await _authorize_kg_operation(
         actor,
         operation="kg.operations.audit.read",
-        legacy_operation="kg.admin.settings_read",
         board_id=board_id,
     )
     if authorization_error is not None:
@@ -21397,6 +19104,133 @@ async def okto_pulse_kg_takedown_status(
             }
         )
     return json.dumps(result, default=str)
+
+
+def _learning_capture_mcp_error(exc: Exception) -> str:
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceConflict
+    from okto_pulse.core.ports.learning_capture import LearningCaptureTargetConflict
+
+    if isinstance(exc, PermissionDeniedError):
+        return json.dumps({'error': 'permission_denied', 'code': 'permission_denied'})
+    if isinstance(exc, EntityNotFoundError):
+        return json.dumps({'error': 'bug_not_found', 'code': 'bug_not_found'})
+    if isinstance(exc, LearningCaptureTargetConflict):
+        return json.dumps({'error': 'learning_capture_target_changed', 'code': 'learning_capture_target_changed',
+            'current_target': exc.current_target})
+    if isinstance(exc, CognitiveSourceConflict):
+        code = exc.failure_reason
+    elif str(exc) in {
+        'learning_capture_transaction_capability_unavailable',
+        'bug_semantic_source_serialization_unsupported', 'bug_semantic_source_serialization_failed',
+        'learning_capture_source_changed_or_unavailable', 'learning_capture_idempotency_conflict',
+        'learning_capture_request_invalid', 'learning_capture_payload_invalid', 'learning_capture_payload_limit',
+        'learning_capture_evidence_ambiguous', 'learning_capture_evidence_not_authenticated',
+        'learning_capture_page_invalid',
+        'learning_capture_intent_invalid', 'learning_capture_target_not_eligible',
+        'learning_capture_reuse_content_changed', 'learning_capture_target_replaced_in_scope',
+        'learning_capture_candidate_query_invalid',
+    }:
+        code = str(exc)
+    else:
+        code = 'learning_capture_unavailable'
+    return json.dumps({'error': code, 'code': code})
+
+
+@mcp.tool()
+async def okto_pulse_kg_get_learning_capture_context(board_id: str, bug_id: str, candidate_query: str | None = None) -> str:
+    """Read the current Bug source and authenticated scenario choices for Learning authorship.
+
+    Returns source_digest/source_policy_version for the create request. This
+    preview is neither admission nor permission to close the Bug.
+    Optional candidate_query adds up to three source-qualified cosine suggestions
+    and requires kg.query.learning_from_bugs. Search is never mandatory for create.
+    Full docs: okto-pulse://reference/tool-docs/kg.
+    """
+    from okto_pulse.core.application.use_cases.learning_capture import GetLearningCaptureSourceUseCase
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceError
+
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await GetLearningCaptureSourceUseCase().execute(
+                board_id=board_id, bug_id=bug_id, actor=actor, uow=uow, candidate_query=candidate_query)
+        return json.dumps(result)
+    except (PermissionDeniedError, EntityNotFoundError, ValueError, RuntimeError, CognitiveSourceError) as exc:
+        return _learning_capture_mcp_error(exc)
+
+
+@mcp.tool()
+async def okto_pulse_kg_list_learning_captures(
+    board_id: str, bug_id: str, cursor: str | None = None, limit: int = 20,
+) -> str:
+    """Read paginated durable Learning captures for a Bug, including older revisions.
+
+    Requires source read and kg.query.learning_from_bugs authority. Captures
+    do not attest current applicability, execution approval or materialization.
+    Full docs: okto-pulse://reference/tool-docs/kg.
+    """
+    from okto_pulse.core.application.use_cases.learning_capture import ListLearningCapturesUseCase
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceError
+
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await ListLearningCapturesUseCase().execute(board_id=board_id, bug_id=bug_id,
+                actor=actor, uow=uow, cursor=cursor, limit=limit)
+        return json.dumps(result)
+    except (PermissionDeniedError, EntityNotFoundError, ValueError, RuntimeError, CognitiveSourceError) as exc:
+        return _learning_capture_mcp_error(exc)
+
+
+@mcp.tool()
+async def okto_pulse_kg_create_learning_capture(
+    board_id: str, bug_id: str, capture_id: str, expected_source_digest: str,
+    expected_source_version: int, content: str, context: str, applicability: str,
+    scenario_ids: list[str], intent: LearningIntentRequest | None = None,
+) -> str:
+    """Persist authored Learning content against the current authenticated Bug evidence.
+
+    Reuse capture_id only for an exact retry. The result acknowledges durable
+    capture pending materialization, not implementation approval or Bug Done.
+    Requires source read and KG begin/add-node/add-edge/commit authority.
+    Optional explicit reuse or source_bug supersede also requires Learning read
+    authority and an exact target fingerprint. Similarity grants no authority.
+    Full docs: okto-pulse://reference/tool-docs/kg.
+    """
+    from pydantic import ValidationError
+    from okto_pulse.core.application.use_cases.learning_capture import CreateLearningCaptureUseCase
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.models.learning_capture import LearningCaptureCreateRequest
+    from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceError
+
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        request = LearningCaptureCreateRequest(board_id=board_id, capture_id=capture_id,
+            expected_source_digest=expected_source_digest, expected_source_version=expected_source_version,
+            content=content, context=context, applicability=applicability, scenario_ids=scenario_ids, intent=intent)
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            record = await CreateLearningCaptureUseCase().execute(request.command(bug_id), actor=actor, uow=uow)
+        return json.dumps({'capture_id': record.payload['capture_id'], 'learning_id': record.node_id,
+            'fingerprint': record.record_fingerprint, 'status': 'captured_pending_materialization'})
+    except ValidationError:
+        return json.dumps({'error': 'learning_capture_request_invalid', 'code': 'learning_capture_request_invalid'})
+    except (PermissionDeniedError, EntityNotFoundError, ValueError, RuntimeError, CognitiveSourceError) as exc:
+        return _learning_capture_mcp_error(exc)
 
 
 @mcp.tool()
@@ -21513,16 +19347,10 @@ async def _cognitive_enforcement_active(kg_operations, board_id: str) -> bool:
 
 
 def _would_block_done(item_or_tier, enforcement_active: bool) -> bool:
-    """``blocking`` means a pending/unresolved verdict; it does NOT by itself mean
-    the done-gate will block (S3.1 validator carry-forward). The gate only
-    enforces GATE_BLOCKING_TIERS, and only when the board policy is active."""
-    from okto_pulse.core.kg.cognitive_readiness import GATE_BLOCKING_TIERS
+    """Supplementary completion enforcement, independent of projection tiers."""
+    from okto_pulse.core.kg.cognitive_readiness import completion_would_block_done
 
-    if isinstance(item_or_tier, dict):
-        tier = (item_or_tier.get("precedence_explanation") or {}).get("tier")
-    else:
-        tier = item_or_tier
-    return bool(enforcement_active and tier in GATE_BLOCKING_TIERS)
+    return completion_would_block_done(item_or_tier, enforcement_active)
 
 
 async def _evaluate_card_cognitive_verdict(
@@ -21573,7 +19401,7 @@ async def _evaluate_card_cognitive_verdict(
         "blocking": bool(getattr(verdict, "blocking", False)),
         "revisit_at": getattr(verdict, "revisit_at", None),
         "would_block_done": _would_block_done(
-            getattr(verdict, "tier", None), enforcement_active
+            verdict, enforcement_active
         ),
     }
 
@@ -21705,7 +19533,7 @@ async def okto_pulse_kg_evaluate_cognitive_readiness(
     enforcement_active = uc_result.enforcement_active
 
     payload = verdict.to_api()
-    payload["would_block_done"] = _would_block_done(verdict.tier, enforcement_active)
+    payload["would_block_done"] = _would_block_done(verdict, enforcement_active)
     payload["enforcement_active"] = enforcement_active
     return json.dumps(payload, default=str)
 
@@ -21767,94 +19595,6 @@ async def okto_pulse_kg_clear_cognitive_skip(
     )
 
 
-@mcp.tool()
-async def okto_pulse_kg_list_cognitive_dlq(
-    board_id: str,
-    limit: int = 50,
-    offset: int = 0,
-) -> str:
-    """
-    List the board's TECHNICAL dead-letter (DLQ) blockers for cognitive
-    consolidation — diagnosis + action surface, no UI dependency.
-
-    Each row carries the normalized `artifact_id`, the `errors` history, and the
-    central readiness framing (`error_cause`=technical_dlq, `signal`=dlq,
-    `readiness_effect`=blocking_technical). A technical DLQ is NEVER a selectable
-    cognitive reason_code; resolve it (don't skip it). Open canonical-debt
-    blockers are surfaced by `okto_pulse_kg_list_cognitive_readiness_items`
-    (signal=open_canonical_debt) and `okto_pulse_kg_canonical_debt_list`.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    bounded_limit, bounded_offset, pagination_error = _kg_pagination_window(
-        limit, offset
-    )
-    if pagination_error is not None:
-        return pagination_error
-
-    from okto_pulse.core.application.use_cases import (
-        ListCognitiveDlqCommand,
-        ListCognitiveDlqUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-    from okto_pulse.core.kg.cognitive_readiness import TECHNICAL_DLQ_SIGNAL
-    from okto_pulse.core.kg.rebuild_audit import normalize_cognitive_artifact_id
-
-    # Spec R01A MCP-FU3B (MCP strangler): the inline DLQ query is now a dedicated
-    # reader behind the transport-free use case + MCP UnitOfWorkFactory — this tool
-    # no longer issues SQL or opens a raw get_db_for_mcp() session. The row
-    # projection below (normalized artifact id, technical_dlq framing) is unchanged.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        uc_result = await ListCognitiveDlqUseCase().execute(
-            ListCognitiveDlqCommand(
-                board_id, limit=bounded_limit, offset=bounded_offset
-            ),
-            actor=actor,
-            uow=uow,
-        )
-    total = uc_result.total
-    rows = uc_result.rows
-
-    items = []
-    for row in rows:
-        ref = f"{row.artifact_type}:{row.artifact_id}"
-        items.append(
-            {
-                "id": row.id,
-                "artifact_type": str(row.artifact_type or ""),
-                "artifact_id": normalize_cognitive_artifact_id(ref),
-                "source_ref_original": ref,
-                "original_queue_id": getattr(row, "original_queue_id", None),
-                "attempts": getattr(row, "attempts", None),
-                "errors": getattr(row, "errors", None),
-                "signal": "dlq",
-                "signal_source": "dlq",
-                "error_cause": TECHNICAL_DLQ_SIGNAL,
-                "readiness_effect": "blocking_technical",
-                "blocking": True,
-            }
-        )
-    return json.dumps(
-        {
-            "board_id": board_id,
-            "items": items,
-            "total": total,
-            "limit": bounded_limit,
-            "offset": bounded_offset,
-            "note": (
-                "Technical DLQ — resolve/reprocess; never skippable as a cognitive "
-                "reason_code. Open canonical debt is in the readiness list "
-                "(signal=open_canonical_debt) and okto_pulse_kg_canonical_debt_list."
-            ),
-        },
-        default=str,
-    )
 
 
 # ============================================================================
@@ -21862,1119 +19602,9 @@ async def okto_pulse_kg_list_cognitive_dlq(
 # ============================================================================
 
 
-def _kg_orphan_graph_unavailable_payload(
-    board_id: str, exc: Exception
-) -> dict[str, Any]:
-    return {
-        "error": "kg_orphan_graph_unavailable",
-        "board_id": board_id,
-        "error_type": type(exc).__name__,
-        "operator_action": "inspect_kg_health",
-    }
-
-
-async def _kg_orphan_backfill_health_refusal(board_id: str) -> dict[str, Any] | None:
-    async with get_unit_of_work_factory_for_mcp()() as uow:
-        health = await uow.services.kg.health(
-            board_id,
-            scheduler_control=get_scheduler_control_for_mcp(),
-        )
-    state = str(health.get("overall_state") or health.get("graph_state") or "")
-    if state in {"recovery_needed", "quarantined"}:
-        return {
-            "error": "kg_orphan_backfill_refused_by_health",
-            "board_id": board_id,
-            "overall_state": health.get("overall_state"),
-            "graph_state": health.get("graph_state"),
-            "operator_action": "inspect_kg_health_recovery_flow",
-        }
-    return None
-
-
-@mcp.tool()
-async def okto_pulse_kg_orphan_report(
-    board_id: str,
-    generation_id: str | None = None,
-    limit: int = 25,
-) -> str:
-    """
-    Return a bounded safe orphan-node report for a board KG.
-
-    The payload intentionally contains only safe identifiers and aggregate
-    counts: board_id, generation_id, orphan_count_by_type, safe samples,
-    unresolved_reasons, backfill_summary and correlation_id. Raw node text,
-    embeddings, prompts and payload bodies are never returned.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    authorization_error = await _authorize_kg_operation(
-        actor,
-        operation="kg.operations.integrity.read",
-        legacy_operation="kg.admin.settings_read",
-        board_id=board_id,
-    )
-    if authorization_error is not None:
-        return authorization_error
-
-    from okto_pulse.core.kg.orphan_integrity import (
-        DEFAULT_ORPHAN_SAMPLE_LIMIT,
-        MAX_ORPHAN_SAMPLE_LIMIT,
-        OrphanNodeScanner,
-    )
-
-    bounded_limit = max(
-        0,
-        min(
-            int(limit or DEFAULT_ORPHAN_SAMPLE_LIMIT),
-            MAX_ORPHAN_SAMPLE_LIMIT,
-        ),
-    )
-    try:
-        report = OrphanNodeScanner().scan(
-            board_id=board_id,
-            generation_id=generation_id,
-            limit=bounded_limit,
-        )
-    except Exception as exc:
-        return json.dumps(_kg_orphan_graph_unavailable_payload(board_id, exc))
-
-    payload = report.to_safe_dict()
-    payload["backfill_summary"] = {
-        "status": "not_run",
-        "dry_run": None,
-        "detected": None,
-        "connected": None,
-        "noop": None,
-        "unresolved": None,
-        "ambiguous": None,
-        "semantic_pending": None,
-    }
-    return json.dumps(payload, default=str)
-
-
-@mcp.tool()
-async def okto_pulse_kg_orphan_backfill(
-    board_id: str,
-    generation_id: str | None = None,
-    dry_run: bool = True,
-    node_ids: list[str] | str = "",
-    limit: int = 25,
-) -> str:
-    """
-    Run explicit orphan backfill for structurally resolvable nodes.
-
-    Defaults to dry_run=True. node_ids accepts the standard MCP multi-value
-    format: JSON array, native list, or pipe-separated string. Backfill is
-    refused when KG Health is recovery_needed/quarantined so operators use the
-    recovery flow instead of mutating a degraded graph.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    authorization_error = await _authorize_kg_operation(
-        actor,
-        operation="kg.operations.integrity.backfill",
-        legacy_operation="kg.admin.settings_write",
-        board_id=board_id,
-    )
-    if authorization_error is not None:
-        return authorization_error
-
-    try:
-        parsed_node_ids = coerce_to_list_str(node_ids) or None
-    except ValueError as exc:
-        return json.dumps(
-            {
-                "error": "invalid_node_ids",
-                "reason": str(exc),
-                "expected_format": "JSON array, native list, or pipe-separated string",
-            }
-        )
-
-    try:
-        refusal = await _kg_orphan_backfill_health_refusal(board_id)
-    except Exception as exc:
-        return json.dumps(_kg_orphan_graph_unavailable_payload(board_id, exc))
-    if refusal is not None:
-        return json.dumps(refusal, default=str)
-
-    from okto_pulse.core.kg.orphan_integrity import (
-        DEFAULT_ORPHAN_SAMPLE_LIMIT,
-        MAX_ORPHAN_SAMPLE_LIMIT,
-        OrphanBackfillReconciler,
-    )
-
-    bounded_limit = max(
-        0,
-        min(
-            int(limit or DEFAULT_ORPHAN_SAMPLE_LIMIT),
-            MAX_ORPHAN_SAMPLE_LIMIT,
-        ),
-    )
-    try:
-        result = OrphanBackfillReconciler().run(
-            board_id=board_id,
-            generation_id=generation_id,
-            dry_run=dry_run,
-            node_ids=parsed_node_ids,
-            limit=bounded_limit,
-        )
-    except Exception as exc:
-        return json.dumps(_kg_orphan_graph_unavailable_payload(board_id, exc))
-
-    return json.dumps(
-        {
-            "board_id": board_id,
-            "generation_id": generation_id,
-            "dry_run": dry_run,
-            "backfill_summary": result.to_safe_dict(),
-            "correlation_id": result.correlation_id,
-        },
-        default=str,
-    )
-
-
 # ============================================================================
-# DEAD LETTER INSPECTOR (spec ed17b1fe — Wave 2 NC 1ede3471)
+# Public schema migration retired (F4); release/startup owns schema compatibility.
 # ============================================================================
-
-
-@mcp.tool()
-async def okto_pulse_kg_dead_letter_list(
-    board_id: str,
-    limit: int = 50,
-    offset: int = 0,
-) -> str:
-    """
-    List dead-lettered consolidation rows.
-
-    Use this when `okto_pulse_kg_health` reports `dead_letter_count > 0`
-    and you need to inspect which artifacts failed, what error repeated, and
-    how many attempts were made. Each row includes the full `errors` array:
-    one entry per attempt with error_type, message, occurred_at, and optional
-    traceback.
-
-    After fixing the root cause (schema migration, WAL recovery, code fix, or
-    transient lock contention), call `okto_pulse_kg_dead_letter_reprocess` to
-    move selected rows back to the consolidation queue."""
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    try:
-        # Reject an offset above int64 before it reaches the DLQ reader, whose
-        # ``limit + offset`` would otherwise overflow SQLite's LIMIT binding.
-        offset = bounded_page_offset(offset)
-    except (TypeError, ValueError):
-        return json.dumps(
-            {
-                "error": "invalid_pagination",
-                "detail": f"offset must be an int in 0..{PAGE_OFFSET_MAX}",
-            }
-        )
-
-    from okto_pulse.core.application.use_cases import (
-        ListDeadLetterRowsCommand,
-        ListDeadLetterRowsUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # Spec R01A IMP3 (MCP strangler): obtain a PulseUnitOfWork from the MCP
-    # UnitOfWorkFactory instead of opening a raw get_db_for_mcp() session — this
-    # tool no longer calls get_db_for_mcp. The transport-free use case (shared
-    # with the REST endpoint migrated in R01A IMP2) reads the DLQ rows; the
-    # payload, the audit sample and the ``_get_agent_ctx`` permission-cache path
-    # are unchanged.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = await ListDeadLetterRowsUseCase().execute(
-            ListDeadLetterRowsCommand(board_id, limit=limit, offset=offset),
-            actor=actor,
-            uow=uow,
-        )
-    data = result.data
-    from okto_pulse.core.kg.rebuild_audit import emit_operational_inspection_sample
-
-    emit_operational_inspection_sample(
-        signal="dead_letter",
-        surface="mcp",
-        outcome="success",
-        board_id=board_id,
-        item_count=len(data.get("rows", [])),
-    )
-    return json.dumps(data, default=str)
-
-
-@mcp.tool()
-async def okto_pulse_kg_queue_drilldown(board_id: str) -> str:
-    """Drill down into the ACTIVE operational queue depth (R6-IMP2). Read-only.
-    Use when okto_pulse_kg_health reports an active_queue backlog and you need
-    to know WHERE the depth comes from. Returns worker_mode,
-    total_active_depth, a classification (transient|stuck|backpressure|idle)
-    and per-source breakdowns (consolidation_queue by status + artifact
-    category + oldest_age_seconds; global_update_outbox pending depth +
-    oldest_age_seconds). ACTIVE queue only — dead-letter (DLQ), outbox
-    dead_letter and canonical debt are TERMINAL and NOT counted here; inspect
-    those via okto_pulse_kg_dead_letter_list /
-    okto_pulse_kg_canonical_debt_list.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    from okto_pulse.core.application.use_cases import (
-        GetQueueDrilldownCommand,
-        GetQueueDrilldownUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # Spec R01A IMP5 (MCP strangler): PulseUnitOfWork from the MCP UnitOfWorkFactory
-    # instead of a raw get_db_for_mcp() session — this tool no longer calls
-    # get_db_for_mcp. The transport-free use case (shared with the REST endpoint
-    # migrated in R01A IMP4) computes the active-queue drilldown; the payload, the
-    # BOARD_READ permission check above and the ``_get_agent_ctx`` permission-cache
-    # path are unchanged.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = await GetQueueDrilldownUseCase().execute(
-            GetQueueDrilldownCommand(board_id), actor=actor, uow=uow
-        )
-    return json.dumps(result.data, default=str)
-
-
-@mcp.tool()
-async def okto_pulse_kg_dead_letter_reprocess(
-    board_id: str,
-    dead_letter_ids: list[str] | str = "",
-    limit: int = 50,
-    process_now: BoolInput = True,
-    scope: KGDeadLetterReprocessScope = KGDeadLetterReprocessScope.GENERIC,
-) -> str:
-    """
-    okto_pulse_kg_dead_letter_reprocess — requeue dead-lettered KG
-    consolidation rows after the root cause is fixed.
-
-    Use this after `okto_pulse_kg_migrate_schema`, WAL recovery, or a code fix
-    when DLQ rows should be retried. The tool is idempotent: if a matching
-    pending queue row already exists for the same board/artifact, it resets that
-    row and removes the DLQ entry instead of creating duplicates. Code
-    Traceability replay is an explicit scope, requires exact IDs and the four
-    CT read leaves, and never performs repository/source investigation."""
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    authorization_error = await _authorize_kg_operation(
-        actor,
-        operation="kg.operations.queue.reprocess",
-        legacy_operation="kg.admin.settings_write",
-        board_id=board_id,
-    )
-    if authorization_error is not None:
-        return authorization_error
-
-    try:
-        ids = coerce_to_list_str(dead_letter_ids) if dead_letter_ids else []
-    except ValueError as exc:
-        return json.dumps({"error": f"Invalid dead_letter_ids: {exc}"})
-
-    from okto_pulse.core.application.use_cases import (
-        ReprocessDeadLetterRowsCommand,
-        ReprocessDeadLetterRowsUseCase,
-    )
-
-    # Spec R01A MCP-FU2 (MCP strangler): requeue DLQ rows via the transport-free use
-    # case + MCP UnitOfWorkFactory instead of a raw get_db_for_mcp() session. The
-    # explicit commit is preserved inside the use case; the process_now worker
-    # signalling below is unchanged.
-    command = ReprocessDeadLetterRowsCommand(
-        board_id,
-        dead_letter_ids=ids or None,
-        limit=limit,
-        scope=scope,
-    )
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = await ReprocessDeadLetterRowsUseCase().execute(
-            command,
-            actor=actor,
-            uow=uow,
-        )
-    data = result.data
-
-    if _flag_enabled(process_now) and bool(
-        data.get("mutated", int(data.get("selected") or 0) > 0)
-    ):
-        from okto_pulse.core.application.runtime_workers import (
-            process_runtime_worker_once,
-            runtime_worker_is_running,
-            signal_runtime_worker,
-        )
-
-        worker_running = runtime_worker_is_running("consolidation_worker")
-        signal_runtime_worker("consolidation_worker")
-        data["worker_running"] = worker_running
-        if worker_running:
-            data["processed_now_count"] = 0
-            data["process_now_mode"] = "signalled_app_runner"
-        else:
-            data["processed_now_count"] = await process_runtime_worker_once(
-                "consolidation_worker"
-            )
-            data["process_now_mode"] = "app_runner_direct_batch"
-
-    return json.dumps(data, default=str)
-
-
-# ============================================================================
-# RKG-04 — connectivity-guard technical_dlq class: diagnose / reprocess / verify
-# (fail-closed, class-scoped; never a broad reprocess of unanalysed DLQs).
-# ============================================================================
-
-
-@mcp.tool()
-async def okto_pulse_kg_connectivity_dlq_diagnose(board_id: str) -> str:
-    """okto_pulse_kg_connectivity_dlq_diagnose — diagnose the LIVE connectivity-
-    guard technical_dlq class (RKG-04) BEFORE any reprocess. Read-only.
-
-    Returns each member's dead_letter_id, artifact_id, attempts, errors,
-    last_error, the source_artifact_ref involved, the probable root cause and the
-    next_action — the input you must feed to
-    `okto_pulse_kg_connectivity_dlq_reprocess` (which only accepts in-class ids)."""
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    from okto_pulse.core.application.use_cases import (
-        DiagnoseConnectivityDlqCommand,
-        DiagnoseConnectivityDlqUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # Spec R01A MCP-FU2 (MCP strangler): read-only diagnose via the transport-free
-    # use case + MCP UnitOfWorkFactory instead of a raw get_db_for_mcp() session.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = await DiagnoseConnectivityDlqUseCase().execute(
-            DiagnoseConnectivityDlqCommand(board_id), actor=actor, uow=uow
-        )
-    return json.dumps(result.data, default=str)
-
-
-@mcp.tool()
-async def okto_pulse_kg_connectivity_dlq_reprocess(
-    board_id: str,
-    dead_letter_ids: list[str] | str = "",
-    process_now: BoolInput = True,
-) -> str:
-    """Fail-closed reprocess of the connectivity-guard technical_dlq class
-    (RKG-04). Requires EXPLICIT in-class dead_letter_ids from
-    okto_pulse_kg_connectivity_dlq_diagnose — it is NEVER a broad reprocess.
-    On success it reuses the idempotent DLQ->queue path (ConsolidationQueue
-    dedup) and, with process_now, runs one worker batch.
-    Errors (each blocks, removing NO DLQ): no_dlq_selected,
-    selected_dlq_missing, selected_dlq_out_of_class, rkg02_rkg03_not_applied,
-    kg_quarantined.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    authorization_error = await _authorize_kg_operation(
-        actor,
-        operation="kg.operations.queue.reprocess",
-        legacy_operation="kg.admin.settings_write",
-        board_id=board_id,
-    )
-    if authorization_error is not None:
-        return authorization_error
-
-    try:
-        ids = coerce_to_list_str(dead_letter_ids) if dead_letter_ids else []
-    except ValueError as exc:
-        return json.dumps({"error": f"Invalid dead_letter_ids: {exc}"})
-
-    from okto_pulse.core.application.use_cases import (
-        ReprocessConnectivityDlqCommand,
-        ReprocessConnectivityDlqUseCase,
-    )
-
-    # Spec R01A MCP-FU2 (MCP strangler): fail-closed reprocess via the transport-free
-    # use case + MCP UnitOfWorkFactory instead of a raw get_db_for_mcp() session. The
-    # use case commits ONLY when the service did not block (a blocked selection
-    # removes no DLQ and must not commit) — identical to the legacy tool. The
-    # process_now worker signalling below is unchanged.
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = await ReprocessConnectivityDlqUseCase().execute(
-            ReprocessConnectivityDlqCommand(board_id, ids), actor=actor, uow=uow
-        )
-    data = result.data
-
-    if not data.get("blocked") and _flag_enabled(process_now):
-        from okto_pulse.core.application.runtime_workers import (
-            process_runtime_worker_once,
-            runtime_worker_is_running,
-            signal_runtime_worker,
-        )
-
-        worker_running = runtime_worker_is_running("consolidation_worker")
-        signal_runtime_worker("consolidation_worker")
-        data["worker_running"] = worker_running
-        if not worker_running:
-            data["processed_now_count"] = await process_runtime_worker_once(
-                "consolidation_worker"
-            )
-            data["process_now_mode"] = "app_runner_direct_batch"
-        else:
-            data["processed_now_count"] = 0
-            data["process_now_mode"] = "signalled_app_runner"
-
-    return json.dumps(data, default=str)
-
-
-@mcp.tool()
-async def okto_pulse_kg_connectivity_dlq_verify(
-    board_id: str,
-    artifact_refs: list[str] | str = "",
-) -> str:
-    """okto_pulse_kg_connectivity_dlq_verify — after the worker drains the queue,
-    confirm the connectivity-guard class is cleared for the given
-    `artifact_refs` (or the whole class when empty). Read-only.
-
-    A member that returned to the DLQ stays VISIBLE (`class_cleared=false` +
-    `remaining_dlq`) — partial success is never masked."""
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    try:
-        refs = coerce_to_list_str(artifact_refs) if artifact_refs else None
-    except ValueError as exc:
-        return json.dumps({"error": f"Invalid artifact_refs: {exc}"})
-
-    from okto_pulse.core.application.use_cases import (
-        VerifyConnectivityClassCommand,
-        VerifyConnectivityClassUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # Spec R01A MCP-FU2 (MCP strangler): read-only verify via the transport-free use
-    # case + MCP UnitOfWorkFactory instead of a raw get_db_for_mcp() session.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = await VerifyConnectivityClassUseCase().execute(
-            VerifyConnectivityClassCommand(board_id, artifact_refs=refs),
-            actor=actor,
-            uow=uow,
-        )
-    return json.dumps(result.data, default=str)
-
-
-# ============================================================================
-# SCHEMA MIGRATION SELF-HEAL (spec 818748f2 — FR5)
-# ============================================================================
-
-
-@mcp.tool()
-async def okto_pulse_kg_migrate_schema(
-    board_id: str = "",
-    all_boards: bool = False,
-) -> str:
-    """Force-apply schema migrations to fix legacy boards (pre v0.3.2). REST
-    twin: POST /api/v1/kg/{board_id}/migrate-schema. Use when consolidation
-    fails with `Binder exception: Cannot find property X for n` — usually an
-    ALTER ADD missed on a board bootstrapped before that version. Idempotent:
-    re-running on an already-migrated board returns migrated=true with empty
-    columns_added (no-op). NEVER delete the KG's persistent storage to "fix"
-    a board — that destroys the board's whole KG; use this tool instead.
-    """
-    if not board_id and not all_boards:
-        return json.dumps({"error": "missing_board_or_all_boards"})
-
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
-
-    if all_boards:
-        ctx = await _get_global_agent_ctx()
-        if ctx is None:
-            return _auth_error()
-        actor = MCPAdapterContract.actor(ctx)
-        authorization_error = await _authorize_kg_operation(
-            actor,
-            operation="kg.operations.schema.migrate",
-            legacy_operation="kg.admin.settings_write",
-        )
-        if authorization_error is not None:
-            return authorization_error
-        actor_scope = ActorScope.from_context(actor)
-        schema_manager = get_kg_registry().graph_schema_manager
-
-        from okto_pulse.core.ports.application_persistence import ApplicationQuery
-
-        results: list[dict[str, Any]] = []
-        async with get_unit_of_work_factory_for_mcp()() as uow:
-            boards = await uow.services.list_application_records(
-                ApplicationQuery(entity="board", order_by=(("name", False),)),
-            )
-            board_pairs = [(board.id, board.name) for board in boards]
-        query_scope = actor_scope.query_scope(
-            allowed_board_ids=[bid for bid, _name in board_pairs],
-            require_ownership=False,
-        )
-        for bid, _bname in board_pairs:
-            if not query_scope.allows_board_id(bid):
-                continue
-            try:
-                summary = await schema_manager.migrate(bid)
-                results.append(summary)
-            except Exception as exc:
-                results.append(
-                    {
-                        "board_id": bid,
-                        "migrated": False,
-                        "columns_added": {},
-                        "errors": [f"unhandled: {exc}"],
-                        "duration_ms": 0,
-                    }
-                )
-        return json.dumps({"results": results}, default=str)
-
-    # Single board path
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    authorization_error = await _authorize_kg_operation(
-        actor,
-        operation="kg.operations.schema.migrate",
-        legacy_operation="kg.admin.settings_write",
-        board_id=board_id,
-    )
-    if authorization_error is not None:
-        return authorization_error
-    actor_scope = ActorScope.from_context(actor)
-    query_scope = actor_scope.query_scope(
-        target_board_id=board_id,
-        allowed_board_ids=[board_id],
-        require_ownership=False,
-    )
-    if not query_scope.allows_board_id(board_id):
-        return _perm_error("Permission denied: board outside query scope")
-    schema_manager = get_kg_registry().graph_schema_manager
-    summary = await schema_manager.migrate(board_id)
-    return json.dumps(summary, default=str)
-
-
-# ============================================================================
-# KG TICK CONTROLLABILITY (spec 54399628 — Wave 2 NC f9732afc)
-# ============================================================================
-
-# E2E spec c2115d15 — TS-E descobriu NameError "name 'logger' is not defined"
-# em okto_pulse_kg_tick_run_now: a função usa logger.info mas o módulo só
-# definia loggers nomeados específicos (_XML_SAFETY_LOGGER, _evidence_logger).
-# Logger dedicado para audit do tick.
-_tick_logger = logging.getLogger("okto_pulse.mcp.tick")
-
-
-@mcp.tool()
-async def okto_pulse_kg_tick_run_now(
-    board_id: str = "",
-    force_full_rebuild: bool = False,
-) -> str:
-    """Trigger the KG decay tick manually. REST twin: POST
-    /api/v1/kg/tick/run-now. Runs an immediate tick without waiting for the
-    periodic cron: use after mass node rescoring, when default_score_ratio is
-    above 0.7 and stale ranking is suspected, or when debugging a specific
-    board's scoring (pass board_id). force_full_rebuild=true clears
-    last_recomputed_at before the tick (ignores the staleness threshold) —
-    per-trigger ONLY, never a persisted setting.
-    Errors: tick_already_running (concurrent cron/manual calls — the first
-    caller wins the advisory lock).
-    """
-    # Authorize before resolving the lease provider or opening a UoW. A global
-    # tick is an administrative cross-board write and therefore must use the
-    # global effective permission context; a raw authenticated principal is not
-    # sufficient.
-    if board_id:
-        ctx = await _get_agent_ctx(board_id)
-        if ctx is None:
-            return _auth_error()
-    else:
-        ctx = await _get_global_agent_ctx()
-        if ctx is None:
-            return _auth_error()
-
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id or None)
-    authorization_error = await _authorize_kg_operation(
-        actor,
-        operation="kg.operations.tick.run",
-        legacy_operation="kg.admin.settings_write",
-        board_id=board_id or None,
-    )
-    if authorization_error is not None:
-        return authorization_error
-    triggered_by = getattr(ctx, "agent_id", None) or (
-        ctx.agent.id if hasattr(ctx, "agent") else "agent-mcp"
-    )
-
-    from okto_pulse.core.ports.coordination import (
-        CoordinationProviderMissing,
-        get_lease_provider,
-    )
-
-    try:
-        lease_provider = get_lease_provider()
-    except CoordinationProviderMissing as exc:
-        return json.dumps(
-            {
-                "error": exc.code,
-                "provider": exc.provider_key,
-                "message": "Tick lease provider is not configured",
-            }
-        )
-
-    lease = await lease_provider.try_acquire("kg_daily_tick", ttl_seconds=300)
-    if lease is None:
-        return json.dumps(
-            {
-                "error": "tick_already_running",
-                "message": "Tick already running, retry shortly",
-            }
-        )
-
-    tick_id: str | None = None
-    tick_ids: list[str] = []
-    committed = False
-    try:
-        from okto_pulse.core.application.kg_tick import (
-            KGTickAdmissionDeferred,
-            refuse_tick_if_degraded as _refuse_tick_if_degraded,
-        )
-
-        # F17 admission gate (gemelar): refuse a degraded concrete board with
-        # the SAME structured graph_recovery_needed refusal as the REST
-        # endpoint, via the SAME shared _refuse_tick_if_degraded gate (one
-        # predicate, no MCP-side duplication). The MCP path owns no request
-        # session, so probe under a short-lived one. Runs after the lease check,
-        # before tick_id allocation.
-        if board_id:
-            async with get_unit_of_work_factory_for_mcp()() as uow:
-                refusal = await _refuse_tick_if_degraded(
-                    board_id,
-                    uow,
-                    scheduler_control=get_scheduler_control_for_mcp(),
-                )
-            if refusal is not None:
-                return json.dumps(refusal)
-
-        import uuid as _uuid
-        from datetime import datetime, timezone
-
-        tick_id = str(_uuid.uuid4())
-        scheduled_at = datetime.now(timezone.utc).isoformat()
-
-        _tick_logger.info(
-            "kg.tick.manual_triggered tick_id=%s user=%s board=%s force=%s source=mcp",
-            tick_id,
-            triggered_by,
-            board_id or None,
-            force_full_rebuild,
-            extra={
-                "event": "kg.tick.manual_triggered",
-                "tick_id": tick_id,
-                "triggered_by_user_id": triggered_by,
-                "board_id": board_id or None,
-                "force_full_rebuild": force_full_rebuild,
-                "source": "mcp",
-            },
-        )
-
-        try:
-            async with get_unit_of_work_factory_for_mcp()() as uow:
-                dispatched = await uow.services.kg.dispatch_manual_tick(
-                    tick_id=tick_id,
-                    board_id=board_id or None,
-                    force_full_rebuild=force_full_rebuild,
-                    scheduled_at=scheduled_at,
-                )
-                tick_ids = list(dispatched or ([tick_id] if board_id else []))
-                await uow.commit()
-                committed = True
-        except KGTickAdmissionDeferred as exc:
-            _tick_logger.info(
-                "kg.tick.manual_deferred reason=%s board=%s source=mcp",
-                exc.reason_code,
-                board_id or None,
-                extra={
-                    "event": "kg.tick.manual_deferred",
-                    "reason": exc.reason_code,
-                    "board_id": board_id or None,
-                    "source": "mcp",
-                },
-            )
-            return json.dumps(
-                {
-                    "error": exc.code,
-                    "reason": exc.reason_code,
-                    "retryable": exc.retryable,
-                    "message": (
-                        "KG tick deferred while Global Discovery recovery "
-                        "owns the mutation fence"
-                    ),
-                }
-            )
-        except Exception as exc:
-            _tick_logger.error(
-                "kg.tick.manual_schedule_failed tick_id=%s err=%s source=mcp",
-                tick_id,
-                exc,
-                extra={
-                    "event": "kg.tick.manual_schedule_failed",
-                    "tick_id": tick_id,
-                    "board_id": board_id or None,
-                    "force_full_rebuild": force_full_rebuild,
-                    "source": "mcp",
-                    "error": str(exc),
-                },
-            )
-            return json.dumps(
-                {
-                    "error": "tick_schedule_failed",
-                    "message": (
-                        "Failed to persist the KG tick event. "
-                        "No background tick was scheduled."
-                    ),
-                    "detail": str(exc),
-                }
-            )
-
-        return json.dumps(
-            {
-                "tick_id": tick_id,
-                "correlation_id": tick_id,
-                "tick_ids": tick_ids,
-                "status": "running",
-                "scheduled_at": scheduled_at,
-            }
-        )
-    finally:
-        try:
-            await lease_provider.release(lease)
-        except Exception as exc:
-            # The event commit is authoritative. A coordination cleanup
-            # failure must not turn an already-durable schedule into an
-            # apparent request failure that invites duplicate client retries.
-            _tick_logger.exception(
-                "kg.tick.lease_release_failed "
-                "tick_id=%s board=%s committed=%s source=mcp err=%s",
-                tick_id,
-                board_id or None,
-                committed,
-                exc,
-                extra={
-                    "event": "kg.tick.lease_release_failed",
-                    "tick_id": tick_id,
-                    "board_id": board_id or None,
-                    "committed": committed,
-                    "source": "mcp",
-                    "error_type": type(exc).__name__,
-                },
-            )
-
-
-# ============================================================================
-# GLOBAL DISCOVERY RECOVERY
-#
-# Separate global scope from board rebuild.  This is the governed escape hatch
-# for an unreadable discovery.lbug/WAL while authoritative board graphs remain
-# healthy. Source inventory/preparation uses the cancellation-safe blocking
-# bridge; physical candidate construction/cutover belongs to the owned edition
-# worker and never to the MCP request lifetime.
-# ============================================================================
-
-_global_recovery_logger = logging.getLogger("okto_pulse.mcp.global_discovery_recovery")
-_GLOBAL_RECOVERY_PREFLIGHT_TIMEOUT_SECONDS = 2.0
-
-
-async def _global_recovery_authorize(
-    operation: str = "kg.operations.global_recovery.read",
-    legacy_operation: str = "kg.admin.settings_read",
-):
-    ctx = await _get_global_agent_ctx()
-    if ctx is None:
-        return None, _auth_error()
-
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx)
-    authorization_error = await _authorize_kg_operation(
-        actor,
-        operation=operation,
-        legacy_operation=legacy_operation,
-    )
-    if authorization_error is not None:
-        return None, authorization_error
-    return ctx, None
-
-
-def _global_recovery_service():
-    from okto_pulse.core.kg.global_discovery_recovery import (
-        GlobalDiscoveryRecoveryService,
-    )
-    from okto_pulse.core.kg.interfaces import get_kg_registry
-
-    registry = get_kg_registry()
-    return GlobalDiscoveryRecoveryService(
-        recovery=registry.require_global_discovery_recovery(),
-        artifact_store=registry.require_rebuild_audit_artifact_store(),
-    )
-
-
-def _global_recovery_control_plane():
-    from okto_pulse.core.kg.global_discovery_recovery_control import (
-        resolve_recovery_control_plane,
-    )
-
-    return resolve_recovery_control_plane()
-
-
-def _global_recovery_control_error(exc: Exception) -> str:
-    """Serialize the closed control-plane error vocabulary without leakage."""
-
-    from okto_pulse.core.kg.global_discovery_recovery_control import (
-        RecoveryAuditReasonInvalid,
-        RecoveryBindingConflict,
-        RecoveryCheckpointConflict,
-        RecoveryControlPlaneUnavailable,
-        RecoveryDispatchClaimConflict,
-        RecoveryInProgress,
-        RecoveryPhaseIncoherent,
-        RecoveryProgressInvariantViolation,
-        RecoveryResumeRejected,
-        RecoveryRunNotFound,
-    )
-
-    if isinstance(exc, RecoveryCheckpointConflict):
-        return json.dumps(
-            {
-                "error": exc.code,
-                "run_id": exc.run_id,
-                "expected_epoch": exc.expected_epoch,
-                "actual_epoch": exc.actual_epoch,
-                "expected_progress_seq": exc.expected_progress_seq,
-                "actual_progress_seq": exc.actual_progress_seq,
-            }
-        )
-    if isinstance(exc, RecoveryRunNotFound):
-        return json.dumps({"error": exc.code, "run_id": exc.run_id})
-    if isinstance(exc, RecoveryBindingConflict):
-        return json.dumps({"error": exc.code, "run_id": exc.run_id})
-    if isinstance(exc, RecoveryResumeRejected):
-        return json.dumps({"error": exc.code, "run_id": exc.run_id, "epoch": exc.epoch})
-    if isinstance(exc, RecoveryDispatchClaimConflict):
-        return json.dumps({"error": exc.code, "run_id": exc.run_id, "epoch": exc.epoch})
-    if isinstance(exc, RecoveryInProgress):
-        return json.dumps({"error": exc.code})
-    if isinstance(exc, RecoveryPhaseIncoherent):
-        return json.dumps({"error": exc.code, "state": exc.state, "phase": exc.phase})
-    if isinstance(exc, RecoveryAuditReasonInvalid):
-        return json.dumps({"error": exc.code})
-    if isinstance(exc, RecoveryProgressInvariantViolation):
-        return json.dumps({"error": exc.code})
-    if isinstance(exc, RecoveryControlPlaneUnavailable):
-        return json.dumps({"error": exc.code})
-    if isinstance(exc, ValueError):
-        return json.dumps({"error": "invalid_recovery_control_request"})
-    raise exc
-
-
-def _global_recovery_status(*, control, run_id: str):
-    """Return one global run after the caller passed global-admin auth."""
-
-    return control.status(run_id)
-
-
-async def _global_recovery_delivery(
-    ctx,
-    board_pairs: list[tuple[str, str, str]],
-    *,
-    run_id: str,
-) -> dict[str, object]:
-    from okto_pulse.core.application.runtime_workers import signal_runtime_worker
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = await uow.services.kg.recover_global_discovery_delivery(
-            run_id=run_id,
-            board_ids=[board_id for board_id, _name, _summary in board_pairs],
-            dead_letter_limit=5000,
-        )
-        await uow.commit()
-    return {**result, "worker_signaled": signal_runtime_worker("outbox_worker")}
-
-
-async def _global_recovery_finish_delivery(
-    ctx,
-    board_pairs: list[tuple[str, str, str]],
-    *,
-    run_id: str,
-    manifest_ref: str,
-    preflight_hash: str,
-) -> dict[str, object]:
-    from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
-
-    delivery = await _global_recovery_delivery(
-        ctx,
-        board_pairs,
-        run_id=run_id,
-    )
-    return await run_blocking_graph_io(
-        lambda: _global_recovery_service().finalize_delivery(
-            run_id=run_id,
-            actor_id=ctx.agent_id,
-            manifest_ref=manifest_ref,
-            preflight_hash=preflight_hash,
-            delivery=delivery,
-        ),
-        task_name="mcp.global_discovery_recovery.finalize_delivery",
-    )
-
-
-async def _global_recovery_drain_async(operation, *, task_name: str):
-    """Drain an owned async UoW/finalization task across repeated cancellation."""
-
-    task = asyncio.create_task(operation(), name=task_name)
-    cancelled: asyncio.CancelledError | None = None
-    while True:
-        try:
-            result = await asyncio.shield(task)
-            break
-        except asyncio.CancelledError as exc:
-            cancelled = cancelled or exc
-            if task.done():
-                break
-            continue
-    if task.cancelled():
-        raise cancelled or asyncio.CancelledError()
-    error = task.exception()
-    if error is not None:
-        if cancelled is not None:
-            _global_recovery_logger.exception(
-                "global recovery drained delivery failed after cancellation",
-                exc_info=error,
-            )
-            raise cancelled
-        raise error
-    result = task.result()
-    if cancelled is not None:
-        raise cancelled
-    return result
-
-
-def _global_recovery_should_finish_delivery_after_cancel(
-    status: dict[str, object] | None,
-) -> bool:
-    """Never reopen DLQ when cancelled native work failed or rolled back."""
-
-    return bool(status is not None and status.get("state") == "delivery_pending")
-
-
-def _global_recovery_delivery_board_pairs(
-    status: dict[str, object] | None,
-    fallback: list[tuple[str, str, str]],
-) -> list[tuple[str, str, str]]:
-    raw_ids = status.get("board_ids") if status is not None else None
-    if not isinstance(raw_ids, list):
-        return fallback
-    board_ids = sorted(
-        {value.strip() for value in raw_ids if isinstance(value, str) and value.strip()}
-    )
-    return [(board_id, board_id, "") for board_id in board_ids] or fallback
-
-
-_global_outbox_dead_letter_logger = logging.getLogger(
-    "okto_pulse.mcp.global_outbox_dead_letter"
-)
-
-
-def _global_outbox_dead_letter_error_response(
-    operation: str,
-    exc: Exception,
-    *,
-    mutation: bool,
-) -> str:
-    """Serialize the closed DLQ error vocabulary without backend leakage."""
-
-    from okto_pulse.core.application.global_outbox_dead_letter import (
-        GlobalOutboxDeadLetterError,
-    )
-
-    if isinstance(exc, GlobalOutboxDeadLetterError):
-        return json.dumps(exc.to_dict())
-
-    error_text = str(exc).lower()
-    if type(exc).__name__ == "OperationalError" and any(
-        marker in error_text
-        for marker in (
-            "database is locked",
-            "database is busy",
-            "database table is locked",
-        )
-    ):
-        _global_outbox_dead_letter_logger.warning(
-            "global-outbox DLQ operation=%s rejected because the relational "
-            "store is busy",
-            operation,
-        )
-        return json.dumps({"error": "global_outbox_busy", "mutated": False})
-
-    _global_outbox_dead_letter_logger.error(
-        "global-outbox DLQ operation=%s failed with %s",
-        operation,
-        type(exc).__name__,
-        exc_info=(type(exc), exc, exc.__traceback__),
-    )
-    payload: dict[str, object] = {
-        "error": f"global_outbox_dead_letter_{operation}_failed"
-    }
-    if mutation:
-        payload["mutated"] = False
-    return json.dumps(payload)
 
 
 def _subject_edit_requires_draft_mcp_error(error: Exception) -> str:
@@ -22990,883 +19620,6 @@ def _subject_edit_requires_draft_mcp_error(error: Exception) -> str:
     return json.dumps(project_subject_edit_requires_draft_error(error))
 
 
-@mcp.tool()
-async def okto_pulse_kg_global_outbox_dead_letter_list(
-    limit: Annotated[
-        int,
-        Field(ge=1, le=100, description="Page size from 1 through 100"),
-    ] = 50,
-    cursor: str | None = None,
-    classification: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Optional global_open_failure, board_source_failure, or "
-                "unclassified_failure filter"
-            )
-        ),
-    ] = None,
-) -> str:
-    """KG docs."""
-
-    ctx, error = await _global_recovery_authorize(
-        "kg.operations.global_outbox.read",
-        "kg.admin.settings_read",
-    )
-    if error is not None:
-        return error
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
-                EvaluateCodeTraceabilityKGReadAccessUseCase,
-            )
-
-            ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
-                actor=actor,
-                board_id=actor.board_id,
-                uow=uow,
-            )
-            kwargs = {
-                "limit": limit,
-                "cursor": cursor,
-                "classification": classification,
-            }
-            if not ct_access.allowed:
-                kwargs["include_code_traceability"] = False
-            result = await uow.services.kg.list_global_outbox_dead_letters(**kwargs)
-    except Exception as exc:
-        return _global_outbox_dead_letter_error_response("list", exc, mutation=False)
-    return json.dumps(result, default=str)
-
-
-@mcp.tool()
-async def okto_pulse_kg_global_outbox_dead_letter_reprocess(
-    dead_letter_ids: list[str],
-    reason: str,
-    process_now: bool = False,
-) -> str:
-    """KG docs."""
-
-    ctx, error = await _global_recovery_authorize(
-        "kg.operations.global_outbox.reprocess",
-        "kg.admin.settings_write",
-    )
-    if error is not None:
-        return error
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            result = await uow.services.kg.reprocess_global_outbox_dead_letters(
-                dead_letter_ids=dead_letter_ids,
-                reason=reason,
-            )
-            await uow.commit()
-    except Exception as exc:
-        return _global_outbox_dead_letter_error_response(
-            "reprocess", exc, mutation=True
-        )
-
-    worker_signaled = False
-    if process_now:
-        from okto_pulse.core.application.runtime_workers import signal_runtime_worker
-
-        try:
-            worker_signaled = bool(signal_runtime_worker("outbox_worker"))
-        except Exception as exc:
-            _global_outbox_dead_letter_logger.error(
-                "global-outbox DLQ replay committed but worker signal failed with %s",
-                type(exc).__name__,
-            )
-    return json.dumps(
-        {**result, "worker_signaled": worker_signaled},
-        default=str,
-    )
-
-
-@mcp.tool()
-async def okto_pulse_kg_global_outbox_dead_letter_verify(
-    dead_letter_ids: list[str],
-) -> str:
-    """KG docs."""
-
-    ctx, error = await _global_recovery_authorize(
-        "kg.operations.global_outbox.verify",
-        "kg.admin.settings_read",
-    )
-    if error is not None:
-        return error
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            result = await uow.services.kg.verify_global_outbox_dead_letters(
-                dead_letter_ids=dead_letter_ids,
-            )
-    except Exception as exc:
-        return _global_outbox_dead_letter_error_response("verify", exc, mutation=False)
-    return json.dumps(result, default=str)
-
-
-@mcp.tool()
-async def okto_pulse_kg_global_discovery_recovery_preflight() -> str:
-    """See KG docs."""
-    ctx, error = await _global_recovery_authorize(
-        "kg.operations.global_recovery.preflight",
-        "kg.admin.settings_read",
-    )
-    if error is not None:
-        return error
-    from okto_pulse.core.kg.global_discovery_recovery import (
-        GlobalDiscoveryRecoveryError,
-    )
-
-    service = _global_recovery_service()
-    command = service.new_preparation_command(actor_id=ctx.agent_id)
-    try:
-        status = await asyncio.wait_for(
-            asyncio.to_thread(
-                _global_recovery_control_plane().prepare,
-                command,
-            ),
-            timeout=_GLOBAL_RECOVERY_PREFLIGHT_TIMEOUT_SECONDS,
-        )
-    except TimeoutError:
-        return json.dumps(
-            {
-                "error": "global_discovery_recovery_preflight_timeout",
-                "run_id": command.binding.run_id,
-                "status_tool": "okto_pulse_kg_global_discovery_recovery_status",
-                "action_required": (
-                    "call_okto_pulse_kg_global_discovery_recovery_status"
-                ),
-            }
-        )
-    except GlobalDiscoveryRecoveryError as exc:
-        return json.dumps({"error": exc.code, "reason": exc.reason})
-    except Exception as exc:
-        try:
-            return _global_recovery_control_error(exc)
-        except Exception:
-            _global_recovery_logger.exception("global recovery preflight failed")
-            return json.dumps(
-                {
-                    "error": "global_discovery_recovery_preflight_failed",
-                    "detail": f"unexpected_internal_error:{type(exc).__name__}",
-                }
-            )
-    payload = status.to_dict()
-    action_required = (
-        "call_okto_pulse_kg_global_discovery_recovery_confirm"
-        if payload.get("phase") == "prepared"
-        else "call_okto_pulse_kg_global_discovery_recovery_status"
-    )
-    return json.dumps(
-        {
-            **payload,
-            "outcome": "preparation_accepted",
-            "idempotent_replay": status.run_id != command.binding.run_id,
-            "action_required": action_required,
-        },
-        default=str,
-    )
-
-
-@mcp.tool()
-async def okto_pulse_kg_global_discovery_recovery_confirm(
-    run_id: str,
-    manifest_ref: str,
-    preflight_hash: str,
-) -> str:
-    """See KG docs."""
-    ctx, error = await _global_recovery_authorize(
-        "kg.operations.global_recovery.confirm",
-        "kg.admin.settings_write",
-    )
-    if error is not None:
-        return error
-    from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
-    from okto_pulse.core.kg.global_discovery_recovery import (
-        GlobalDiscoveryRecoveryError,
-    )
-
-    service = _global_recovery_service()
-    try:
-        result = await run_blocking_graph_io(
-            lambda: service.confirm(
-                actor_id=ctx.agent_id,
-                run_id=run_id,
-                manifest_ref=manifest_ref,
-                preflight_hash=preflight_hash,
-                current_snapshot_fingerprint=service.current_snapshot_fingerprint(),
-            ),
-            task_name="mcp.global_discovery_recovery.confirm",
-        )
-    except GlobalDiscoveryRecoveryError as exc:
-        return json.dumps({"error": exc.code, "reason": exc.reason})
-    except Exception as exc:
-        _global_recovery_logger.exception("global recovery confirm failed")
-        return json.dumps(
-            {
-                "error": "global_discovery_recovery_confirm_failed",
-                "detail": f"unexpected_internal_error:{type(exc).__name__}",
-            }
-        )
-    return json.dumps(result, default=str)
-
-
-@mcp.tool()
-async def okto_pulse_kg_global_discovery_recovery_status(run_id: str) -> str:
-    """See KG docs."""
-
-    ctx, error = await _global_recovery_authorize(
-        "kg.operations.global_recovery.read",
-        "kg.admin.settings_read",
-    )
-    if error is not None:
-        return error
-    from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
-
-    try:
-        status = await run_blocking_graph_io(
-            lambda: _global_recovery_status(
-                control=_global_recovery_control_plane(),
-                run_id=run_id,
-            ),
-            task_name="mcp.global_discovery_recovery.status",
-        )
-    except Exception as exc:
-        try:
-            return _global_recovery_control_error(exc)
-        except Exception:
-            _global_recovery_logger.exception("global recovery status failed")
-            return json.dumps(
-                {
-                    "error": "global_discovery_recovery_status_failed",
-                    "detail": f"unexpected_internal_error:{type(exc).__name__}",
-                }
-            )
-    return json.dumps(status.to_dict())
-
-
-@mcp.tool()
-async def okto_pulse_kg_global_discovery_recovery_cancel(
-    run_id: str,
-    expected_epoch: int,
-    reason: Annotated[
-        str | None,
-        Field(
-            max_length=512,
-            description="Optional operator audit reason (at most 512 characters)",
-        ),
-    ] = None,
-) -> str:
-    """See KG docs."""
-
-    ctx, error = await _global_recovery_authorize(
-        "kg.operations.global_recovery.cancel",
-        "kg.admin.settings_write",
-    )
-    if error is not None:
-        return error
-    from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
-
-    def request_cancel():
-        control = _global_recovery_control_plane()
-        _global_recovery_status(control=control, run_id=run_id)
-        return control.cancel(
-            run_id=run_id,
-            expected_epoch=expected_epoch,
-            requested_at=datetime.now(timezone.utc),
-            requested_by_actor_id=ctx.agent_id,
-            reason=reason,
-        )
-
-    try:
-        status = await run_blocking_graph_io(
-            request_cancel,
-            task_name="mcp.global_discovery_recovery.cancel",
-        )
-    except Exception as exc:
-        try:
-            return _global_recovery_control_error(exc)
-        except Exception:
-            _global_recovery_logger.exception("global recovery cancel failed")
-            return json.dumps(
-                {
-                    "error": "global_discovery_recovery_cancel_failed",
-                    "detail": f"unexpected_internal_error:{type(exc).__name__}",
-                }
-            )
-    return json.dumps(status.to_dict())
-
-
-@mcp.tool()
-async def okto_pulse_kg_global_discovery_recovery_resume(
-    run_id: str,
-    expected_epoch: int,
-    reason: Annotated[
-        str | None,
-        Field(
-            max_length=512,
-            description="Optional operator audit reason (at most 512 characters)",
-        ),
-    ] = None,
-) -> str:
-    """See KG docs."""
-
-    ctx, error = await _global_recovery_authorize(
-        "kg.operations.global_recovery.resume",
-        "kg.admin.settings_write",
-    )
-    if error is not None:
-        return error
-    from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
-
-    def request_resume():
-        control = _global_recovery_control_plane()
-        _global_recovery_status(control=control, run_id=run_id)
-        return control.resume(
-            run_id=run_id,
-            expected_epoch=expected_epoch,
-            requested_at=datetime.now(timezone.utc),
-            requested_by_actor_id=ctx.agent_id,
-            reason=reason,
-        )
-
-    try:
-        status = await run_blocking_graph_io(
-            request_resume,
-            task_name="mcp.global_discovery_recovery.resume",
-        )
-    except Exception as exc:
-        try:
-            return _global_recovery_control_error(exc)
-        except Exception:
-            _global_recovery_logger.exception("global recovery resume failed")
-            return json.dumps(
-                {
-                    "error": "global_discovery_recovery_resume_failed",
-                    "detail": f"unexpected_internal_error:{type(exc).__name__}",
-                }
-            )
-    return json.dumps(status.to_dict())
-
-
-@mcp.tool()
-async def okto_pulse_kg_global_discovery_recovery_run(
-    confirmation_id: str,
-    manifest_ref: str,
-    preflight_hash: str,
-    reason: Annotated[
-        str,
-        Field(min_length=1, max_length=512, description="Operator audit reason"),
-    ],
-) -> str:
-    """See KG docs."""
-    ctx, error = await _global_recovery_authorize(
-        "kg.operations.global_recovery.run",
-        "kg.admin.settings_write",
-    )
-    if error is not None:
-        return error
-    from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
-    from okto_pulse.core.kg.global_discovery_recovery import (
-        GlobalDiscoveryRecoveryError,
-    )
-
-    service = _global_recovery_service()
-    try:
-        command = await run_blocking_graph_io(
-            lambda: service.prepare_durable_start(
-                actor_id=ctx.agent_id,
-                confirmation_id=confirmation_id,
-                manifest_ref=manifest_ref,
-                preflight_hash=preflight_hash,
-                reason=reason,
-                current_snapshot_fingerprint=service.current_snapshot_fingerprint(),
-            ),
-            task_name="mcp.global_discovery_recovery.start.fence",
-        )
-
-        def dispatch_prepared_run():
-            control = _global_recovery_control_plane()
-            before = control.status(command.binding.run_id)
-            status = control.start(command)
-            return status, before.phase != "prepared"
-
-        status, idempotent_replay = await run_blocking_graph_io(
-            dispatch_prepared_run,
-            task_name="mcp.global_discovery_recovery.start.dispatch",
-        )
-    except GlobalDiscoveryRecoveryError as exc:
-        return json.dumps({"error": exc.code, "reason": exc.reason})
-    except Exception as exc:
-        try:
-            return _global_recovery_control_error(exc)
-        except Exception:
-            _global_recovery_logger.exception("global recovery start failed")
-            return json.dumps(
-                {
-                    "error": "global_discovery_recovery_run_failed",
-                    "detail": f"unexpected_internal_error:{type(exc).__name__}",
-                }
-            )
-    return json.dumps(
-        {
-            **status.to_dict(),
-            "outcome": "accepted",
-            "idempotent_replay": idempotent_replay,
-            "action_required": "call_okto_pulse_kg_global_discovery_recovery_status",
-        }
-    )
-
-
-# ============================================================================
-# KG REBUILD FAMILY (spec R2a 959115c0 — IMPL-3)
-#
-# Three MCP twins for the REST /kg/rebuild/{preflight,confirm,run} lane.
-# Preflight is diagnostic; online confirm/run fail closed and direct operators
-# to the local recovery-only one-shot executor.
-# Each tool:
-#   * authenticates + scopes to the board via _get_agent_ctx (same as tick)
-#   * calls the rebuild-scoped admission predicate from kg_rebuild.py
-#     (_refuse_rebuild_if_quarantined) — quarantined → refuse, recovery_needed → pass
-#   * delegates diagnostic classification to RebuildPreflightService
-#   * never persists a manifest or issues/consumes a confirmation online
-#   * directs execution to the isolated local one-shot recovery process
-#   * serialises all results to JSON strings (MCP transport contract)
-#
-# Pattern: okto_pulse_kg_tick_run_now (lines 12457-12564) — twin structure,
-# _get_agent_ctx auth, run_in_threadpool for sync service calls.
-# ============================================================================
-
-_rebuild_logger = logging.getLogger("okto_pulse.mcp.rebuild")
-
-_RECOVERY_EXECUTION_REQUIRED = "recovery_execution_required"
-_RECOVERY_EXECUTOR_ACTION = "run_local_offline_kg_recovery_executor"
-_RECOVERY_EXECUTOR_REMEDIATION = (
-    "Stop Pulse/API/MCP and SDLC writers. Run the installed "
-    "okto-pulse-kg-recovery-only command in three stages: inspect the live "
-    "data home, rehearse against a physical isolated copy while writing a "
-    "rehearsal receipt, then within 2 hours execute against that exact live "
-    "home with the single-use receipt and reviewed install fingerprint. See "
-    "okto-pulse://reference/kg-health; never retry confirm/run online."
-)
-
-
-def _recovery_execution_required_payload() -> dict[str, str]:
-    return {
-        "error": _RECOVERY_EXECUTION_REQUIRED,
-        "outcome": _RECOVERY_EXECUTION_REQUIRED,
-        "reason": (
-            "Board KG rebuild is supported only by the local one-shot recovery "
-            "executor while Pulse and SDLC source writers are offline."
-        ),
-        "execution_mode": "recovery_only_offline",
-        "operator_action": _RECOVERY_EXECUTOR_ACTION,
-        "remediation": _RECOVERY_EXECUTOR_REMEDIATION,
-    }
-
-
-@mcp.tool()
-async def okto_pulse_kg_rebuild_preflight(
-    board_id: str,
-) -> str:
-    """Run the KG rebuild preflight for a board. REST twin: POST
-    /api/v1/kg/rebuild/preflight. Read-only check (TR13): enumerates real
-    sources via BoardSourceReader and classifies the KG health state without
-    persisting a manifest. Admission: quarantined graph
-    refuses; board recovery_needed admits; discovery-only redirects. Returns outcome, action_required,
-    base_state, eligible_source_count and preflight_hash; manifest_ref and
-    source_set_hash are null online. Do not call online confirm/run: stop Pulse and use the
-    governed local one-shot recovery executor. Errors: rebuild_refused_quarantined.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-
-    from okto_pulse.core.application.kg_rebuild import (
-        build_source_store as _build_source_store,
-        refuse_rebuild_if_quarantined as _refuse_rebuild_if_quarantined,
-    )
-
-    # Admission gate + FR9 health probe — MCP-FU5 strangler: the single session
-    # block is extracted into RebuildAdmissionGateUseCase over the MCP
-    # UnitOfWork (admission helper injected so the use case stays Clean Core).
-    # Threadpool enumeration + RebuildPreflightService remain read-only; the
-    # one-shot process owns manifest persistence after proving offline isolation.
-    from okto_pulse.core.application.use_cases import (
-        RebuildAdmissionGateCommand,
-        RebuildAdmissionGateUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-    from okto_pulse.core.kg.rebuild_preflight import (
-        RebuildHealthSummary,
-        RebuildPreflightService,
-        RebuildSourceSummary,
-    )
-    from okto_pulse.core.kg.rebuild_sources import RebuildSourceEnumerator
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        _gate = await RebuildAdmissionGateUseCase().execute(
-            RebuildAdmissionGateCommand(
-                board_id,
-                refuse_fn=_refuse_rebuild_if_quarantined,
-                include_health=True,
-                scheduler_control=get_scheduler_control_for_mcp(),
-            ),
-            actor=actor,
-            uow=uow,
-        )
-    if _gate.refusal is not None:
-        return json.dumps(_gate.refusal)
-    _raw_health = _gate.raw_health
-    if _raw_health.get("graph_state") == "healthy" and (
-        bool(_raw_health.get("discovery_recovery_required"))
-        or _raw_health.get("discovery_state") in {"recovery_needed", "quarantined"}
-    ):
-        return json.dumps(
-            {
-                "error": "board_rebuild_wrong_recovery_scope",
-                "outcome": "redirected",
-                "action_required": (
-                    "call_okto_pulse_kg_global_discovery_recovery_preflight"
-                ),
-                "reason": (
-                    "the board graph is healthy; the failed store is the "
-                    "global discovery cache"
-                ),
-                "graph_state": _raw_health.get("graph_state"),
-                "discovery_state": _raw_health.get("discovery_state"),
-            }
-        )
-
-    def health_probe(_bid: str) -> RebuildHealthSummary:
-        return RebuildHealthSummary(
-            base_state=_raw_health.get("graph_state", "healthy"),
-            metric_status=_raw_health.get("metric_status", "unavailable"),
-            current_kg_generation_id=_raw_health.get("current_kg_generation_id"),
-        )
-
-    try:
-        enumerator = RebuildSourceEnumerator(source_store=_build_source_store())
-        source_set = await asyncio.to_thread(enumerator.enumerate, board_id=board_id)
-    except Exception as exc:
-        _rebuild_logger.error(
-            "kg.rebuild.preflight.enumerate_failed board=%s err=%s", board_id, exc
-        )
-        return json.dumps({"error": "preflight_enumerate_failed", "detail": str(exc)})
-
-    def source_probe(_bid: str) -> RebuildSourceSummary:
-        return RebuildSourceSummary(
-            eligible_count=source_set.eligible_count,
-            skipped_cancelled_count=source_set.skipped_cancelled_count,
-            has_non_deterministic_inputs=source_set.has_non_deterministic_inputs,
-            canonical_source_count=source_set.canonical_source_count,
-            working_source_count=source_set.working_source_count,
-            skipped_by_maturity_count=source_set.skipped_by_maturity_count,
-            skipped_expired_working_count=(source_set.skipped_expired_working_count),
-            legacy_unknown_count=source_set.legacy_unknown_count,
-            layer_counts=source_set.layer_counts,
-            source_partition_counts=source_set.source_partition_counts,
-        )
-
-    service = RebuildPreflightService(
-        source_probe=source_probe,
-        health_probe=health_probe,
-    )
-    try:
-        result = await asyncio.to_thread(service.run, board_id=board_id)
-    except Exception as exc:
-        _rebuild_logger.error(
-            "kg.rebuild.preflight.service_failed board=%s err=%s", board_id, exc
-        )
-        return json.dumps({"error": "preflight_service_failed", "detail": str(exc)})
-
-    payload = result.to_dict()
-    payload["preflight_outcome"] = payload.get("outcome", result.outcome)
-    payload["outcome"] = "diagnostic_complete"
-    payload["manifest_ref"] = None
-    payload["source_set_hash"] = None
-    payload["action_required"] = _RECOVERY_EXECUTOR_ACTION
-    payload["execution_mode"] = "recovery_only_offline"
-    payload["operator_action"] = _RECOVERY_EXECUTOR_ACTION
-    payload["remediation"] = _RECOVERY_EXECUTOR_REMEDIATION
-
-    _rebuild_logger.info(
-        "kg.rebuild.preflight.done board=%s outcome=%s manifest_ref=%s",
-        board_id,
-        result.outcome,
-        None,
-    )
-    return json.dumps(payload, default=str)
-
-
-@mcp.tool()
-async def okto_pulse_kg_rebuild_confirm(
-    board_id: str,
-    operation: str,
-    preflight_hash: str,
-    manifest_ref: str,
-) -> str:
-    """Validate request syntax, then deny online confirmation.
-
-    REST twin: POST /api/v1/kg/rebuild/confirm. A valid online request returns
-    ``recovery_execution_required`` without issuing a token. The governed local
-    one-shot executor performs fresh internal authorization or resumes the one
-    verified active receipt before a governed fresh run, after Pulse and SDLC
-    writers are offline. Online refs are not its inputs.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    authorization_error = await _authorize_kg_operation(
-        actor,
-        operation="kg.operations.rebuild.confirm",
-        legacy_operation="kg.admin.settings_write",
-        board_id=board_id,
-    )
-    if authorization_error is not None:
-        return authorization_error
-
-    from okto_pulse.core.kg.rebuild_confirmation import (
-        CANONICAL_OPERATIONS,
-    )
-    from okto_pulse.core.kg.rebuild_service import SUPPORTED_REBUILD_OPERATIONS
-    from okto_pulse.core.kg.rebuild_sources import validate_preflight_hash
-
-    if operation not in CANONICAL_OPERATIONS:
-        return json.dumps(
-            {
-                "error": "unsupported_operation",
-                "reason": "operation not in canonical set",
-            }
-        )
-
-    if operation not in SUPPORTED_REBUILD_OPERATIONS:
-        return json.dumps(
-            {
-                "error": "operation_pending_implementation",
-                "reason": (
-                    f"operation={operation!r} not implemented yet; "
-                    f"only {sorted(SUPPORTED_REBUILD_OPERATIONS)} supported"
-                ),
-            }
-        )
-
-    try:
-        validate_preflight_hash(preflight_hash)
-    except ValueError as exc:
-        return json.dumps({"error": "invalid_preflight_hash", "reason": str(exc)})
-    return json.dumps(_recovery_execution_required_payload())
-
-
-async def _run_rebuild_service_cooperatively(
-    service: Any,
-    *,
-    board_id: str,
-    **run_kwargs: Any,
-) -> Any:
-    """Run the blocking rebuild while preserving cancellation cleanup."""
-
-    cancellation = threading.Event()
-    run_task = asyncio.create_task(
-        asyncio.to_thread(
-            service.run,
-            board_id=board_id,
-            cancel_requested=cancellation.is_set,
-            **run_kwargs,
-        )
-    )
-    try:
-        # Shield keeps the worker future observable after the MCP request is
-        # cancelled.  The cooperative probe then drives compensation and lock
-        # release inside the rebuild thread instead of abandoning it.
-        return await asyncio.shield(run_task)
-    except asyncio.CancelledError:
-        cancellation.set()
-
-        def _consume_background_result(task: asyncio.Task[Any]) -> None:
-            try:
-                background_result = task.result()
-            except asyncio.CancelledError:
-                return
-            except Exception as exc:
-                _rebuild_logger.error(
-                    "kg.rebuild.run.cleanup_failed board=%s err=%s",
-                    board_id,
-                    exc,
-                )
-                return
-            _rebuild_logger.info(
-                "kg.rebuild.run.cancelled_cleanup_done board=%s outcome=%s run_id=%s",
-                board_id,
-                background_result.outcome,
-                background_result.run_id,
-            )
-
-        run_task.add_done_callback(_consume_background_result)
-        _rebuild_logger.warning(
-            "kg.rebuild.run.cancel_requested board=%s; cleanup continues",
-            board_id,
-        )
-        raise
-
-
-@mcp.tool()
-async def okto_pulse_kg_rebuild_run(
-    board_id: str,
-    confirmation_id: str,
-    operation: str,
-    preflight_hash: str,
-    manifest_ref: str,
-    reason: str,
-) -> str:
-    """Deny online KG rebuild execution without consuming the token.
-
-    REST twin: POST /api/v1/kg/rebuild/run. Request data cannot carry or mint
-    the opaque recovery capability. Returns ``recovery_execution_required`` and
-    directs the operator to the governed local one-shot recovery executor; do
-    not retry in a loop.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    authorization_error = await _authorize_kg_operation(
-        actor,
-        operation="kg.operations.rebuild.run",
-        legacy_operation="kg.admin.settings_write",
-        board_id=board_id,
-    )
-    if authorization_error is not None:
-        return authorization_error
-
-    return json.dumps(_recovery_execution_required_payload())
-
-
-@mcp.tool()
-async def okto_pulse_kg_quarantine_restore(
-    quarantine_id: str,
-    apply: bool = False,
-) -> str:
-    """Restore a board's KG from quarantine — dry-run/apply with backup-swap
-    (KGD-01 FR4/BR4). apply=false (default) returns the auditable plan (files,
-    destinations, conflicts, sizes) with NO mutation. apply=true moves the
-    board's live files to a NEW quarantine with manifest (backup_quarantine_id
-    in the result), copies the snapshot back, validates the board open and
-    emits kg.quarantine.restore_dry_run / kg.quarantine.restored. Response:
-    {plan, applied, backup_quarantine_id?}.
-    Errors: quarantine_not_found, board_locked (requires a maintenance
-    window), partial_restore (manifest records the exact state for rollback —
-    never a silent half-restore).
-    """
-    global_ctx = await _get_global_agent_ctx()
-    if global_ctx is None:
-        return _auth_error()
-
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    global_actor = MCPAdapterContract.actor(global_ctx)
-    authorization_error = await _authorize_kg_operation(
-        global_actor,
-        operation="kg.operations.quarantine.restore",
-        legacy_operation="kg.admin.settings_write",
-    )
-    if authorization_error is not None:
-        return authorization_error
-
-    from okto_pulse.core.composition import RuntimeProviderMissing
-    from okto_pulse.core.kg.interfaces import get_kg_registry
-    from okto_pulse.core.kg.interfaces.quarantine_restore import (
-        QuarantineRestoreError,
-    )
-
-    try:
-        restore = get_kg_registry().require_quarantine_restore()
-    except RuntimeProviderMissing as exc:
-        return json.dumps(
-            {
-                "error": "runtime_provider_missing",
-                "detail": str(exc),
-            }
-        )
-
-    # KGD-01: o handler no core fala só com a PORTA QuarantineRestore; o
-    # adapter concreto (filesystem/embedded graph backend) é injetado pela composition do
-    # Community (hexagonal — TR1).
-    try:
-        plan = await asyncio.to_thread(restore.plan, quarantine_id)
-    except QuarantineRestoreError as exc:
-        return json.dumps(exc.to_payload(), default=str)
-
-    # The quarantine id does not reveal its owning board. Resolve the minimum
-    # plan only after global-admin authorization, then re-authorize against the
-    # destination board's effective overrides before returning plan metadata or
-    # mutating any file.
-    ctx = await _get_agent_ctx(plan.board_id)
-    if ctx is None:
-        return _auth_error()
-
-    actor = MCPAdapterContract.actor(ctx, board_id=plan.board_id)
-    authorization_error = await _authorize_kg_operation(
-        actor,
-        operation="kg.operations.quarantine.restore",
-        legacy_operation="kg.admin.settings_write",
-        board_id=plan.board_id,
-    )
-    if authorization_error is not None:
-        return authorization_error
-
-    plan_payload = plan.to_payload()
-    if not apply:
-        return json.dumps(
-            {
-                "plan": plan_payload,
-                "applied": False,
-                "quarantine_id": plan.quarantine_id,
-                "board_id": plan.board_id,
-                "board_dir": plan.board_dir,
-                "conflicts": list(plan.conflicts),
-                "total_bytes": plan.total_bytes,
-            },
-            default=str,
-        )
-
-    try:
-        report = await asyncio.to_thread(restore.apply, quarantine_id)
-    except QuarantineRestoreError as exc:
-        return json.dumps(exc.to_payload(), default=str)
-
-    return json.dumps(
-        {
-            "plan": plan_payload,
-            "applied": report.applied,
-            "backup_quarantine_id": report.backup_quarantine_id,
-            "quarantine_id": report.quarantine_id,
-            "board_id": report.board_id,
-            "restored_files": list(report.restored_files),
-            "open_validated": report.open_validated,
-            "errors": list(report.errors),
-        },
-        default=str,
-    )
-
-
 # ============================================================================
 # CONSOLIDATED POLYMORPHIC LIST HANDLERS (spec P0.B — TR-B1)
 #
@@ -23880,10 +19633,10 @@ async def okto_pulse_list_by_board(
     board_id: str,
     entity_type: Annotated[BoardEntityType, Field(description="Entity family")],
     filters: Annotated[
-        dict[str, Any] | str | None,
+        dict[str, Any] | None,
         Field(
             description=(
-                "Native per-type filter object; legacy JSON object string accepted. "
+                "Native per-type filter object. "
                 "Unknown keys are preserved for fail-closed handler validation."
             )
         ),
@@ -23895,7 +19648,6 @@ async def okto_pulse_list_by_board(
     Filters by entity_type — spec: status, labels, assignee_id, include_archived;
     ideation: status, labels, derivation_pending, include_archived; refinement:
     ideation_id (required), status, labels, derivation_pending, include_archived;
-    sprint: spec_id (required), status, include_archived;
     story: status, topic_id, linked, converted, include_archived; topic:
     include_archived. derivation_pending finds DONE parents without a derived
     child; example: {"derivation_pending": true}. Unknown keys return
@@ -23908,11 +19660,11 @@ async def okto_pulse_list_by_board(
     )
 
     try:
-        filters = parse_filter_payload(filters)
+        filters = validate_filter_payload(filters)
     except ValueError as exc:
         return _structured_error("invalid_filter", [], None, str(exc))
 
-    SUPPORTED = ["spec", "ideation", "refinement", "sprint", "story", "topic"]
+    SUPPORTED = ["spec", "ideation", "refinement", "story", "topic"]
     if entity_type not in SUPPORTED:
         return _structured_error(
             "unsupported_entity",
@@ -23937,7 +19689,7 @@ async def okto_pulse_list_by_board(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -23956,19 +19708,10 @@ async def okto_pulse_list_by_board(
             None,
             "entity_type='refinement' requires filters.ideation_id",
         )
-    if entity_type == "sprint" and not filters.get("spec_id"):
-        return _structured_error(
-            "missing_required_filter",
-            ["spec_id"],
-            None,
-            "entity_type='sprint' requires filters.spec_id to identify the parent spec",
-        )
-
     from okto_pulse.core.domain.enums import (
         IdeationStatus,
         RefinementStatus,
         SpecStatus,
-        SprintStatus,
         StoryStatus,
     )
 
@@ -23976,7 +19719,6 @@ async def okto_pulse_list_by_board(
         "spec": SpecStatus,
         "ideation": IdeationStatus,
         "refinement": RefinementStatus,
-        "sprint": SprintStatus,
         "story": StoryStatus,
     }
     status_value = filters.get("status")
@@ -24006,11 +19748,11 @@ async def okto_pulse_list_by_board(
         if bool_key not in filters:
             continue
         try:
-            filters[bool_key] = _flag_enabled(filters[bool_key])
+            filters[bool_key] = _require_boolean(filters[bool_key])
         except (AttributeError, ValueError) as exc:
             return _structured_error(
                 "invalid_filter",
-                ["true", "false"],
+                [True, False],
                 None,
                 f"{bool_key}: {exc}",
             )
@@ -24022,11 +19764,9 @@ async def okto_pulse_list_by_board(
     if entity_type == "story":
 
         def _optional_bool_filter(value: Any) -> bool | None:
-            if value is None or value == "":
+            if value is None:
                 return None
-            if isinstance(value, bool):
-                return value
-            return _flag_enabled(str(value))
+            return _require_boolean(value)
 
         story_args = {
             "status_filter": filters.get("status") or None,
@@ -24197,45 +19937,6 @@ async def okto_pulse_list_by_board(
                 default=str,
             )
 
-        elif entity_type == "sprint":
-            spec_id = filters.get("spec_id", "")
-            paginated = items
-            return json.dumps(
-                {
-                    "board_id": board_id,
-                    "entity_type": entity_type,
-                    "spec_id": spec_id,
-                    "total": total,
-                    "total_overall": total_overall,
-                    "offset": offset,
-                    "limit": limit,
-                    "include_archived": bool(filters.get("include_archived", False)),
-                    "items": [
-                        {
-                            "id": s.id,
-                            "title": s.title,
-                            "status": s.status.value,
-                            "lane_type": s.lane_type.value if s.lane_type else "normal",
-                            "origin_sprint_id": s.origin_sprint_id,
-                            "origin_bug_id": s.origin_bug_id,
-                            "normal_sprint_created": s.normal_sprint_created,
-                            "spec_version": s.spec_version,
-                            "test_scenario_ids": s.test_scenario_ids,
-                            "business_rule_ids": s.business_rule_ids,
-                            "labels": s.labels,
-                            "archived": bool(getattr(s, "archived", False)),
-                            "pre_archive_status": getattr(
-                                getattr(s, "pre_archive_status", None),
-                                "value",
-                                getattr(s, "pre_archive_status", None),
-                            ),
-                        }
-                        for s in paginated
-                    ],
-                },
-                default=str,
-            )
-
         elif entity_type == "story":
             paginated = items
             return json.dumps(
@@ -24274,7 +19975,7 @@ async def okto_pulse_list_qa(
     board_id: str,
     entity_type: QaEntityType,
     entity_id: str,
-    filters: dict[str, Any] | str | None = None,
+    filters: dict[str, Any] | None = None,
 ) -> str:
     """List Q&A items for a spec, ideation, or refinement.
 
@@ -24286,7 +19987,7 @@ async def okto_pulse_list_qa(
     )
 
     try:
-        filters = parse_filter_payload(filters)
+        filters = validate_filter_payload(filters)
     except ValueError as exc:
         return _structured_error("invalid_filter", [], None, str(exc))
 
@@ -24332,7 +20033,7 @@ async def okto_pulse_list_qa(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -24361,7 +20062,7 @@ async def okto_pulse_list_knowledge(
     board_id: str,
     entity_type: KnowledgeEntityType,
     entity_id: str,
-    filters: dict[str, Any] | str | None = None,
+    filters: dict[str, Any] | None = None,
 ) -> str:
     """List knowledge base items for a spec, ideation, refinement, or card.
 
@@ -24374,7 +20075,7 @@ async def okto_pulse_list_knowledge(
     )
 
     try:
-        filters = parse_filter_payload(filters)
+        filters = validate_filter_payload(filters)
     except ValueError as exc:
         return _structured_error("invalid_filter", [], None, str(exc))
 
@@ -24403,7 +20104,7 @@ async def okto_pulse_list_knowledge(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -24469,7 +20170,7 @@ async def okto_pulse_list_snapshots(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -24493,7 +20194,7 @@ async def okto_pulse_list_snapshots(
     return json.dumps(result.payload, default=str)
 
 
-# These 70 reviewed commands have complete lazy family documentation.  Keep
+# These reviewed commands have complete lazy family documentation.  Keep
 # their always-loaded descriptions to one identity line so the additive,
 # strongly typed Code Traceability schemas stay inside the tools/list budget.
 _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
@@ -24501,36 +20202,27 @@ _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
         "okto_pulse_confirm_amendment_coverage",
         "okto_pulse_update_default_guideline_refs",
         "okto_pulse_create_amendment_revision",
-        "okto_pulse_kg_quarantine_restore",
         "okto_pulse_get_activity_log",
-        "okto_pulse_kg_queue_drilldown",
         "okto_pulse_execute_test_scenario_evidence",
+        "okto_pulse_admit_test_verification_report",
         "okto_pulse_update_test_scenario_status",
         "okto_pulse_kg_add_edge_candidate",
         "okto_pulse_add_screen_mockup",
         "okto_pulse_add_architecture_design",
-        "okto_pulse_kg_list_cognitive_dlq",
         "okto_pulse_kg_health",
         "okto_pulse_move_card",
-        "okto_pulse_kg_rebuild_run",
         "okto_pulse_kg_query_natural",
-        "okto_pulse_kg_rebuild_preflight",
         "okto_pulse_kg_query_cypher",
         "okto_pulse_add_choice_comment",
         "okto_pulse_evaluate_ideation",
-        "okto_pulse_kg_canonical_partition_integrity_list",
-        "okto_pulse_kg_tick_run_now",
         "okto_pulse_get_publish_health",
         "okto_pulse_kg_get_decision_history",
         "okto_pulse_ask_refinement_choice_question",
         "okto_pulse_kg_update_cognitive_pending_item",
-        "okto_pulse_kg_migrate_schema",
         "okto_pulse_create_refinement",
         "okto_pulse_ask_ideation_choice_question",
         "okto_pulse_validate_architecture_design_payload",
-        "okto_pulse_kg_stale_canonical_parity_list",
         "okto_pulse_get_architecture_design_schema",
-        "okto_pulse_kg_digest_layer_mismatch_list",
         "okto_pulse_list_blockers",
         "okto_pulse_create_default_board_config_version",
         "okto_pulse_get_spec_context",
@@ -24543,22 +20235,18 @@ _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
         "okto_pulse_transition_amendment_revision",
         "okto_pulse_set_ideation_ambiguity_gate_skip",
         "okto_pulse_kg_verify_grounding",
-        "okto_pulse_kg_rebuild_confirm",
         "okto_pulse_kg_export_jsonld",
         "okto_pulse_kg_evaluate_bug_cognitive_closure",
         "okto_pulse_get_task_context",
         "okto_pulse_update_screen_mockup",
         "okto_pulse_update_architecture_design",
-        "okto_pulse_kg_connectivity_dlq_diagnose",
         "okto_pulse_kg_list_cognitive_readiness_items",
         "okto_pulse_kg_clear_cognitive_skip",
         "okto_pulse_copy_architecture_to_card",
-        "okto_pulse_kg_provenance_drift",
         "okto_pulse_list_default_guideline_candidates",
-        "okto_pulse_copy_knowledge_to_card",
         "okto_pulse_kg_explain_constraint",
         "okto_pulse_move_ideation",
-        "okto_pulse_list_architecture_propagation_legacy",
+        "okto_pulse_list_architecture_propagation_report",
         "okto_pulse_kg_begin_consolidation",
         "okto_pulse_submit_spec_validation",
         "okto_pulse_submit_task_validation",
@@ -24590,6 +20278,93 @@ _LAZY_COMPACT_DESCRIPTION_OVERRIDES = {
 }
 
 
+# Reviewed summaries retain effect/authority warnings; detailed contracts are
+# available in the explicitly named lazy resource. No schema is compacted here.
+_LAZY_COMPACT_DESCRIPTION_OVERRIDES.update(
+{'okto_pulse_associate_amendment_revision_artifacts': 'Associate nonempty regression '
+                                                      'artifacts/evidence with an amendment; never '
+                                                      'reparent or bypass gates. Read '
+                                                      '`okto-pulse://reference/tool-docs/card` '
+                                                      'before use.',
+ 'okto_pulse_classify_architecture_candidates': 'Atomically classify adopted contracts as '
+                                                'promote_to_ir, associate_existing_ir or '
+                                                'context_only. CAS/digest/idempotency, permissions '
+                                                'and content lock apply; no waiver or execution '
+                                                'approval. Read '
+                                                '`okto-pulse://reference/tool-docs/architecture` '
+                                                'before use.',
+ 'okto_pulse_create_card': 'Create a Spec-linked Card. Normal work is blocked in Spec Done; '
+                           'bug/regression controls remain. Test Cards require scenarios within '
+                           'the Board cap and precede Spec validation. Read '
+                           '`okto-pulse://reference/tool-docs/card` before use.',
+ 'okto_pulse_get_allowed_transitions': 'Read canonical lifecycle gates/effects. Supply entity_id '
+                                       'for a scoped policy decision; status-only discovery never '
+                                       'advertises an unscoped pass. Read '
+                                       '`okto-pulse://reference/tool-docs/misc` before use.',
+ 'okto_pulse_get_delivery_evidence': 'Read current obligations/proof or paged ledger/resume '
+                                     'history. Inspect truncation, currentness and recovery '
+                                     'limits; history never gains current credit. Read '
+                                     '`okto-pulse://reference/tool-docs/code-traceability` before '
+                                     'use.',
+ 'okto_pulse_get_requirement_verification': 'Read qualifications, inheritance and prospective '
+                                            'obligations/contributions. Missing facts stay '
+                                            'unknown; planning is neither proof nor adoption. '
+                                            'Inspect pagination/currentness. Read '
+                                            '`okto-pulse://reference/tool-docs/spec` before use.',
+ 'okto_pulse_get_task_conclusions': 'Read completed Card conclusions, bug root cause and decisions '
+                                    'for later work. Read `okto-pulse://reference/tool-docs/misc` '
+                                    'before use.',
+ 'okto_pulse_get_traceability_report': 'Read SDLC traceability or typed query.view=bugs clusters. '
+                                       'Clusters are informational, not causal proof. Read '
+                                       '`okto-pulse://reference/tool-docs/traceability` before '
+                                       'use.',
+ 'okto_pulse_kg_health_readiness': 'Read non-maskable Board health/readiness aggregates. Summary '
+                                   'preserves blockers; artifact_ref is deprecated and does not '
+                                   'narrow signals. No row IDs/raw errors. Read '
+                                   '`okto-pulse://reference/tool-docs/kg` before use.',
+ 'okto_pulse_list_architecture_candidates': 'Page adopted contract summaries; candidate_id + '
+                                            'source_digest reads detail. Whole-population issues '
+                                            'remain visible; no classification, source fetch or '
+                                            'execution approval. Read '
+                                            '`okto-pulse://reference/tool-docs/architecture` '
+                                            'before use.',
+ 'okto_pulse_list_architecture_classifications': 'Page current/retired contract classifications; '
+                                                 'counts cover all candidates. Unknown sources '
+                                                 'stay unknown; normative IRs remain obligations. '
+                                                 'No source fetch/write. Read '
+                                                 '`okto-pulse://reference/tool-docs/architecture` '
+                                                 'before use.',
+ 'okto_pulse_list_by_board': 'List Spec/Ideation/Refinement/Story/Topic with validated filters and '
+                             'pagination. Refinement requires ideation_id; derivation_pending '
+                             'finds un-derived Done parents. Read '
+                             '`okto-pulse://reference/tool-docs/board` before use.',
+ 'okto_pulse_list_cards_by_status': 'Page Cards by status; open excludes done/cancelled. Archived '
+                                    'Cards require include_archived. Read '
+                                    '`okto-pulse://reference/tool-docs/card` before use.',
+
+ 'okto_pulse_move_refinement': 'Move Refinement through allowed states. Cancellation needs a '
+                               'reason; reopening creates a new version and clears cancellation. '
+                               'Read `okto-pulse://reference/tool-docs/refinement` before use.',
+ 'okto_pulse_record_delivery_evidence': 'Record progress or accepted proof; claims never prove '
+                                        'completion/recovery. Atomic batch/report retains every '
+                                        'admission and lifecycle gate. Retry the exact '
+                                        'envelope/key. Read '
+                                        '`okto-pulse://reference/tool-docs/code-traceability` '
+                                        'before use.',
+ 'okto_pulse_remove_spec_entity': 'Remove BR/API Contract or revoke Decision; Decision revocation '
+                                  'is restorable. Per-type aliases remain. Read '
+                                  '`okto-pulse://reference/tool-docs/spec` before use.',
+ 'okto_pulse_update_spec_entity': 'Author FR/BR/TR/Decision/AC/IR/OR or Project structure under '
+                                  'permissions/content locks. Verification declares obligations, '
+                                  'never proof. Read current digests/defaults first; structure '
+                                  'needs CAS/idempotency. Read '
+                                  '`okto-pulse://reference/tool-docs/spec` before use.'}
+)
+_TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = (
+    _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION | _LAZY_COMPACT_DESCRIPTION_OVERRIDES.keys()
+)
+
+
 def _compact_reviewed_tool_descriptions() -> None:
     catalog = mcp.resolve()
     missing = _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION.difference(
@@ -24606,7 +20381,7 @@ def _compact_reviewed_tool_descriptions() -> None:
             tool,
             description=_LAZY_COMPACT_DESCRIPTION_OVERRIDES.get(
                 tool_name,
-                f"Run `{tool_name}`. Read `{tool_docs_uri(tool_name)}` before use.",
+                f"Read `{tool_docs_uri(tool_name)}` before use.",
             ),
         )
 

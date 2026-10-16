@@ -1,0 +1,51 @@
+{
+  "scope": "AC-INT-05: stale classification refuses after committed IR or source change",
+  "proof_pair": "dist-native-main87",
+  "criteria": {
+    "ARQVER:AC-INT-05": [
+      "test_stale_classification_after_other_writer_ir_edit_preserves_committed_work",
+      "test_real_read_currentness_tracks_contracts_not_revision_and_never_writes"
+    ]
+  },
+  "evidence": [
+    "An initial classification is persisted. First author prepares another classification against the current Spec version; a separate semantic session then commits second-author's IR condition edit through StructuredSpecEntityService with explicit permissions.",
+    "The old classification receives architecture_classification_version_conflict. The complete structured snapshot and receipt/decision/history/event counts remain as they were after the successful edit. Every original classification payload is preserved; history attributes the actual edit to second-author.",
+    "Extended contract-currentness witness: version-only edit preserves classification; changed contract marks exactly one candidate review_required while two remain current. The old analyzed contract/provenance and IR obligations remain visible. An old classification intent is refused without overwriting the newer source.",
+    "Previously executed frontend conflict witness requires refresh/review, refuses changed-scope suggestions and never automatically retargets or retries the rejected write."
+  ],
+  "tests": {
+    "new_community_campaign_passed": 2,
+    "seconds": 12.21,
+    "distinct_new_case": 1,
+    "existing_case_strengthened": 1,
+    "frontend": "Reused unchanged 52-case native-classification-batch-frontend1; hash verified, not rerun or recounted"
+  },
+  "diagnostics": [
+    {
+      "campaign": "native-classification-conflict1",
+      "failed": 1,
+      "seconds": 5.25,
+      "cause": "Fixture inspection accessed nonexisting ORM fields instead of immutable decision payload."
+    },
+    {
+      "campaign": "native-classification-conflict2",
+      "failed": 1,
+      "seconds": 7.56,
+      "cause": "The new governed-writer session lacked required explicit RealmScope."
+    }
+  ],
+  "limits": [
+    "Actor identities and permissions are controlled fixtures, not installed authentication. IR edit uses the real governed writer and distinct session; the contract edit is a persisted test stimulus, not a second architecture authoring E2E.",
+    "Interleaving is deterministic: the second session commits before the stale request. This is not a simultaneous scheduling benchmark.",
+    "Criterion exercises the promotion/classification path; no claim of an additional Spec-start test.",
+    "No product/SPA change, compatibility path or authority relaxation. Main87 closure remains applicable; all eight budgets zero."
+  ],
+  "artifacts": {
+    "provenance-native-classification-conflict1.json": "fcec84abc88eed0079fc36f90cb81313107263916f4d76b4e4de0ae0002d849a",
+    "native-classification-conflict1.xml": "c0fa641c76a3ad4b0109b608996df66e88e00079a8511bb9d1fc6e3301417e77",
+    "native-classification-conflict2.xml": "7689a110d8ed2f68f344e6aaa585b5a172e3c3e8598d0e5ecfa88601bd05c5d3",
+    "native-classification-conflict3.xml": "8356c81a6c525fb17bc017e5295847a7932994efa18c0969429a996cd9510d34",
+    "native-classification-batch-frontend1.json": "ce07b583c7a65fb7beab3fbdf1b450e7fda5249b3536ee2cf7b3c43f8014f114",
+    "closure-native-main87.json": "0b9b185c7e16892769af431ffa471141244468db74ccd447dbcf6af474acbfd4"
+  }
+}

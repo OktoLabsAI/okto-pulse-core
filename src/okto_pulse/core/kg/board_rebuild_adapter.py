@@ -14,14 +14,13 @@ from typing import Any
 # Source artifact types that get deterministic rebuild ingestion.
 # Decision rows are intentionally excluded here: they are materialized through
 # the owning spec payload. task/test/bug are card-derived source types and are
-# mapped to the worker's legacy ``card`` artifact_type in ConsolidationQueue.
+# mapped to the worker's current ``card`` artifact_type in ConsolidationQueue.
 _DETERMINISTIC_SOURCE_ARTIFACT_TYPES: frozenset[str] = frozenset(
     {
         "story",
         "ideation",
         "refinement",
         "spec",
-        "sprint",
         "task",
         "test",
         "bug",
@@ -59,7 +58,6 @@ _REBUILD_SOURCE_DEPENDENCY_RANK: dict[str, int] = {
     "ideation": 10,
     "refinement": 20,
     "spec": 30,
-    "sprint": 40,
     "task": 50,
     "test": 50,
     "bug": 50,

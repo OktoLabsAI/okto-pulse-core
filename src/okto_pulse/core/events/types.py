@@ -1,6 +1,6 @@
 """Domain event types for the internal event bus.
 
-Every state change in the domain (card created, spec moved, sprint closed,
+Every state change in the domain (card created, spec moved,
 etc.) is modelled as a typed event. Publishers in services/main.py publish
 these via EventBus.publish(); handlers react asynchronously via the
 EventDispatcher worker.
@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Annotated, ClassVar, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
 
 from okto_pulse.core.domain.guideline_impact import (
     GUIDELINE_ADOPTION_EVENT_TYPE,
@@ -77,6 +78,15 @@ class DomainEvent(BaseModel):
                 "occurred_at",
             },
         )
+
+
+class LearningCaptureAdmitted(DomainEvent):
+    """Projection work for an already-authorized durable capture, not approval."""
+    model_config = ConfigDict(extra='forbid', populate_by_name=True)
+    event_type: ClassVar[str] = 'learning.capture_admitted.v1'
+    bug_id: str = Field(min_length=1, max_length=4096)
+    capture_author_id: str = Field(min_length=1, max_length=4096)
+    capture: LearningCaptureSelection
 
 
 class PolicyAdoptionChanged(DomainEvent):
@@ -466,7 +476,7 @@ class ArtifactArchiveChanged(DomainEvent):
     """Reversible archive/restore signal for KG-backed SDLC artifacts."""
 
     event_type: ClassVar[str] = "artifact.archive_changed"
-    artifact_type: Literal["story", "ideation", "refinement", "spec", "card", "sprint"]
+    artifact_type: Literal["story", "ideation", "refinement", "spec", "card"]
     artifact_id: str
     archived: bool
 
@@ -478,7 +488,6 @@ class CardCreated(DomainEvent):
     event_type: ClassVar[str] = "card.created"
     card_id: str
     spec_id: str
-    sprint_id: Optional[str] = None
     card_type: str = "normal"
     priority: str = "none"
 
@@ -556,6 +565,15 @@ class SpecVersionBumped(DomainEvent):
     old_version: int
     new_version: int
     changed_fields: list[str] = Field(default_factory=list)
+    projection_card_ids: list[str] = Field(default_factory=list)
+
+
+class CardDependencyChanged(DomainEvent):
+    event_type: ClassVar[str] = 'card.dependency_changed.v1'
+    card_id: str
+    prerequisite_card_id: str
+    dependency_id: str
+    operation: Literal['added', 'removed']
 
 
 class SpecDependencyAdded(DomainEvent):
@@ -605,6 +623,7 @@ class SpecSemanticChanged(DomainEvent):
     event_type: ClassVar[str] = "spec.semantic_changed"
     spec_id: str
     changed_fields: list[str] = Field(default_factory=list)
+    projection_card_ids: list[str] = Field(default_factory=list)
 
 
 class StructuredSpecEntityEvent(DomainEvent):
@@ -622,6 +641,7 @@ class StructuredSpecEntityEvent(DomainEvent):
     operation: str
     changed_fields: list[str] = Field(default_factory=list)
     spec_version: int
+    projection_card_ids: list[str] = Field(default_factory=list)
 
 
 class StructuredSpecEntityCreated(StructuredSpecEntityEvent):
@@ -640,7 +660,7 @@ class RefinementSemanticChanged(DomainEvent):
     """Fired when semantic refinement content changes.
 
     Mirrors SpecSemanticChanged for refinements. Triggers re-consolidation
-    via ConsolidationEnqueuer → consolidation_worker (artifact_type=refinement).
+    via ConsolidationEnqueuer â†’ consolidation_worker (artifact_type=refinement).
     """
 
     event_type: ClassVar[str] = "refinement.semantic_changed"
@@ -733,9 +753,7 @@ class ChecklistBindingChanged(DomainEvent):
 class CardLinkedToSpec(DomainEvent):
     """Fired when a card is linked to a spec via link_card_to_spec.
 
-    The handler enqueues a spec consolidation (NOT card) — the card extractor
-    does not reference spec_id, but the spec extractor must reflect the new
-    cards list.
+    The handler enqueues both the Spec children and Card-owned observed links.
     """
 
     event_type: ClassVar[str] = "card.linked_to_spec"
@@ -743,10 +761,20 @@ class CardLinkedToSpec(DomainEvent):
     spec_id: str
 
 
+class CardScenarioProjectionChanged(DomainEvent):
+    """Durable invalidation of observed links; grants no graph or domain authority."""
+
+    event_type: ClassVar[str] = "card.scenario_projection_changed.v1"
+    card_id: str
+    old_spec_id: str | None = None
+    new_spec_id: str | None = None
+    changed_fields: list[Literal['test_scenario_ids', 'spec_id', 'card_type']]
+
+
 class CardUnlinkedFromSpec(DomainEvent):
     """Fired when a card is unlinked from a spec.
 
-    Symmetric to CardLinkedToSpec — spec re-consolidation reflects the
+    Symmetric to CardLinkedToSpec â€” spec re-consolidation reflects the
     removal in the cards list.
     """
 
@@ -755,28 +783,7 @@ class CardUnlinkedFromSpec(DomainEvent):
     spec_id: str
 
 
-# --- Sprint lifecycle ---
-
-
-class SprintCreated(DomainEvent):
-    event_type: ClassVar[str] = "sprint.created"
-    sprint_id: str
-    spec_id: str
-
-
-class SprintMoved(DomainEvent):
-    event_type: ClassVar[str] = "sprint.moved"
-    sprint_id: str
-    from_status: str
-    to_status: str
-
-
-class SprintClosed(DomainEvent):
-    event_type: ClassVar[str] = "sprint.closed"
-    sprint_id: str
-
-
-# --- Derivation events ---
+# --- Ideation lifecycle and derivation ---
 
 
 class IdeationMoved(DomainEvent):
@@ -879,24 +886,14 @@ class CodeInvestigationReceiptSubmitted(CodeTraceabilityDomainEvent):
     investigation_request_id: _TraceabilityId
     investigation_receipt_id: _TraceabilityId
     acceptance_status: _TraceabilityState
-    outcome: _TraceabilityState
     trust_level: _TraceabilityState
     generation: _TraceabilityVersion
     omission_count: _TraceabilityCount
     observation_sha256: _TraceabilityDigest
     payload_sha256: _TraceabilityDigest
-    delivery_context: _TraceabilityState | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
-    contextual_outcome: _TraceabilityState | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
-    context_contract_version: Literal[2] | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
+    delivery_context: _TraceabilityState
+    contextual_outcome: _TraceabilityState
+    context_contract_version: Literal[2]
 
 
 class CodeInvestigationReceiptRevoked(CodeTraceabilityDomainEvent):
@@ -916,38 +913,17 @@ class CodeEvidenceCreated(CodeTraceabilityDomainEvent):
     lifecycle_status: _TraceabilityState
     attestation_state: _TraceabilityState
     payload_sha256: _TraceabilityDigest
-    context_contract_version: Literal[2] | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
-    source_role: _TraceabilityState | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
-    baseline_presence: _TraceabilityState | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
-    relevance_summary: _TraceabilityContextText | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
-    scope_relation: _TraceabilityContextText | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
-    source_origin: _TraceabilityContextText | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
+    context_contract_version: Literal[2]
+    source_role: _TraceabilityState
+    baseline_presence: _TraceabilityState
+    relevance_summary: _TraceabilityContextText
+    scope_relation: _TraceabilityContextText
+    source_origin: _TraceabilityContextText
     interpretation_limit: _TraceabilityContextText | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
     )
-    baseline_workspace_state_id: _TraceabilityId | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
+    baseline_workspace_state_id: _TraceabilityId
     baseline_provenance_note: _TraceabilityContextText | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
@@ -960,38 +936,17 @@ class CodeEvidenceSuperseded(CodeTraceabilityDomainEvent):
     superseding_evidence_id: _TraceabilityId
     investigation_receipt_id: _TraceabilityId
     payload_sha256: _TraceabilityDigest
-    context_contract_version: Literal[2] | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
-    source_role: _TraceabilityState | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
-    baseline_presence: _TraceabilityState | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
-    relevance_summary: _TraceabilityContextText | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
-    scope_relation: _TraceabilityContextText | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
-    source_origin: _TraceabilityContextText | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
+    context_contract_version: Literal[2]
+    source_role: _TraceabilityState
+    baseline_presence: _TraceabilityState
+    relevance_summary: _TraceabilityContextText
+    scope_relation: _TraceabilityContextText
+    source_origin: _TraceabilityContextText
     interpretation_limit: _TraceabilityContextText | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
     )
-    baseline_workspace_state_id: _TraceabilityId | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
+    baseline_workspace_state_id: _TraceabilityId
     baseline_provenance_note: _TraceabilityContextText | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
@@ -1038,26 +993,6 @@ class CodeEvidenceDispositionChanged(CodeTraceabilityDomainEvent):
     spec_version: _TraceabilityVersion
 
 
-class CodeEvidenceLegacyClassified(CodeTraceabilityDomainEvent):
-    """Metadata-only notification for one item of an atomic human batch."""
-
-    event_type: ClassVar[str] = "code_evidence.legacy_classified"
-    classification_id: _TraceabilityId
-    batch_id: _TraceabilityId
-    evidence_id: _TraceabilityId
-    evidence_payload_sha256: _TraceabilityDigest
-    classification_revision: _TraceabilityVersion
-    predecessor_classification_id: _TraceabilityId | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
-    classification_sha256: _TraceabilityDigest
-    request_sha256: _TraceabilityDigest
-    justification_sha256: _TraceabilityDigest
-    source_role: _TraceabilityState
-    context_contract_version: Literal[2]
-    batch_item_count: _TraceabilityVersion
-    batch_item_index: _TraceabilityVersion
 
 
 class ImplementationTargetCreated(CodeTraceabilityDomainEvent):
@@ -1071,6 +1006,7 @@ class ImplementationTargetCreated(CodeTraceabilityDomainEvent):
 
 class ImplementationTargetUpdated(CodeTraceabilityDomainEvent):
     event_type: ClassVar[str] = "implementation_target.updated"
+    overlap_projection_owner_ids: Annotated[tuple[_TraceabilityId, ...], Field(max_length=400)]
     target_id: _TraceabilityId
     card_id: _TraceabilityId
     lifecycle_status: _TraceabilityState
@@ -1081,6 +1017,7 @@ class ImplementationTargetUpdated(CodeTraceabilityDomainEvent):
 
 class ImplementationTargetRevoked(CodeTraceabilityDomainEvent):
     event_type: ClassVar[str] = "implementation_target.revoked"
+    overlap_projection_owner_ids: Annotated[tuple[_TraceabilityId, ...], Field(max_length=400)]
     target_id: _TraceabilityId
     card_id: _TraceabilityId
     lifecycle_status: _TraceabilityState
@@ -1090,6 +1027,7 @@ class ImplementationTargetRevoked(CodeTraceabilityDomainEvent):
 
 class ImplementationTargetResolutionSubmitted(CodeTraceabilityDomainEvent):
     event_type: ClassVar[str] = "implementation_target.resolution_submitted"
+    overlap_projection_owner_ids: Annotated[tuple[_TraceabilityId, ...], Field(max_length=400)]
     target_id: _TraceabilityId
     resolution_id: _TraceabilityId
     investigation_receipt_id: _TraceabilityId
@@ -1156,7 +1094,6 @@ CODE_TRACEABILITY_EVENT_TYPES: tuple[str, ...] = (
     CodeEvidenceLinked.event_type,
     CodeEvidenceUnlinked.event_type,
     CodeEvidenceDispositionChanged.event_type,
-    CodeEvidenceLegacyClassified.event_type,
     ImplementationTargetCreated.event_type,
     ImplementationTargetUpdated.event_type,
     ImplementationTargetRevoked.event_type,
@@ -1168,7 +1105,7 @@ CODE_TRACEABILITY_EVENT_TYPES: tuple[str, ...] = (
 )
 
 
-# --- KG operational events (spec 28583299 — Ideação #4) ---
+# --- KG operational events (spec 28583299 â€” IdeaÃ§Ã£o #4) ---
 
 
 class KGHitFlushed(DomainEvent):
@@ -1177,7 +1114,7 @@ class KGHitFlushed(DomainEvent):
     The handler reacts by recomputing the node's relevance_score so the
     refreshed hit count immediately participates in ranking. Decoupling
     via DomainEvent (vs sync recompute on the read path) keeps the search
-    hot path free of graph backend MATCH/COUNT pressure — see dec_3a6eb8ad.
+    hot path free of graph backend MATCH/COUNT pressure â€” see dec_3a6eb8ad.
     """
 
     event_type: ClassVar[str] = "kg.hit_flushed"
@@ -1193,7 +1130,7 @@ class CardPriorityChanged(DomainEvent):
     The handler recomputes the priority_boost on the card's root KG entity
     node and triggers a relevance_score recompute. Auditoria of significant
     boost changes (|delta| > 0.05) is recorded as a Decision node in the KG
-    rather than a SQL audit table — see dec_cb956457.
+    rather than a SQL audit table â€” see dec_cb956457.
     """
 
     event_type: ClassVar[str] = "card.priority_changed"
@@ -1207,7 +1144,7 @@ class CardPriorityChanged(DomainEvent):
 class CardSeverityChanged(DomainEvent):
     """Fired when a Bug card's severity changes via update_card.
 
-    Only emitted for ``card_type == 'bug'`` (BR1) — feature/task/chore cards
+    Only emitted for ``card_type == 'bug'`` (BR1) â€” feature/task/chore cards
     have no severity semantics. Handler symmetry with CardPriorityChanged:
     recomputes priority_boost via MAX(priority, severity) and persists.
     """
@@ -1242,7 +1179,7 @@ class KGDailyTick(DomainEvent):
     ``config.py``; registered through the SchedulerControl port). Uses
     ``board_id="*"`` as a global sentinel because the handler iterates every
     active board. Only the leader replica emits the event (advisory lock);
-    other replicas log a skip — see dec_bc0eaeec.
+    other replicas log a skip â€” see dec_bc0eaeec.
     """
 
     event_type: ClassVar[str] = "kg.tick.daily"
@@ -1286,8 +1223,9 @@ class KGDeliveryRedriveTick(DomainEvent):
 
 
 # Ordered list of all event_type strings known to the MVP. The dispatcher
-# uses this to resolve DomainEventRow → subclass during reconstruction.
+# uses this to resolve DomainEventRow â†’ subclass during reconstruction.
 EVENT_TYPES: list[str] = [
+    LearningCaptureAdmitted.event_type,
     PolicyAdoptionChanged.event_type,
     PolicyRetirementChanged.event_type,
     PolicyBindingMaterialized.event_type,
@@ -1301,6 +1239,8 @@ EVENT_TYPES: list[str] = [
     CardRestored.event_type,
     CardLinkedToSpec.event_type,
     CardUnlinkedFromSpec.event_type,
+    CardScenarioProjectionChanged.event_type,
+    CardDependencyChanged.event_type,
     SpecCreated.event_type,
     SpecMoved.event_type,
     SpecVersionBumped.event_type,
@@ -1317,9 +1257,6 @@ EVENT_TYPES: list[str] = [
     ResearchDecisionAppended.event_type,
     ResearchDecisionSuperseded.event_type,
     ChecklistBindingChanged.event_type,
-    SprintCreated.event_type,
-    SprintMoved.event_type,
-    SprintClosed.event_type,
     IdeationMoved.event_type,
     IdeationDerivedToSpec.event_type,
     RefinementDerivedToSpec.event_type,
@@ -1336,7 +1273,6 @@ EVENT_TYPES: list[str] = [
     CodeEvidenceLinked.event_type,
     CodeEvidenceUnlinked.event_type,
     CodeEvidenceDispositionChanged.event_type,
-    CodeEvidenceLegacyClassified.event_type,
     ImplementationTargetCreated.event_type,
     ImplementationTargetUpdated.event_type,
     ImplementationTargetRevoked.event_type,
@@ -1356,6 +1292,7 @@ EVENT_TYPES: list[str] = [
 
 
 _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
+    LearningCaptureAdmitted.event_type: LearningCaptureAdmitted,
     PolicyAdoptionChanged.event_type: PolicyAdoptionChanged,
     PolicyRetirementChanged.event_type: PolicyRetirementChanged,
     PolicyBindingMaterialized.event_type: PolicyBindingMaterialized,
@@ -1369,6 +1306,8 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     CardRestored.event_type: CardRestored,
     CardLinkedToSpec.event_type: CardLinkedToSpec,
     CardUnlinkedFromSpec.event_type: CardUnlinkedFromSpec,
+    CardScenarioProjectionChanged.event_type: CardScenarioProjectionChanged,
+    CardDependencyChanged.event_type: CardDependencyChanged,
     SpecCreated.event_type: SpecCreated,
     SpecMoved.event_type: SpecMoved,
     SpecVersionBumped.event_type: SpecVersionBumped,
@@ -1385,9 +1324,6 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     ResearchDecisionAppended.event_type: ResearchDecisionAppended,
     ResearchDecisionSuperseded.event_type: ResearchDecisionSuperseded,
     ChecklistBindingChanged.event_type: ChecklistBindingChanged,
-    SprintCreated.event_type: SprintCreated,
-    SprintMoved.event_type: SprintMoved,
-    SprintClosed.event_type: SprintClosed,
     IdeationMoved.event_type: IdeationMoved,
     IdeationDerivedToSpec.event_type: IdeationDerivedToSpec,
     RefinementDerivedToSpec.event_type: RefinementDerivedToSpec,
@@ -1404,7 +1340,6 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     CodeEvidenceLinked.event_type: CodeEvidenceLinked,
     CodeEvidenceUnlinked.event_type: CodeEvidenceUnlinked,
     CodeEvidenceDispositionChanged.event_type: CodeEvidenceDispositionChanged,
-    CodeEvidenceLegacyClassified.event_type: CodeEvidenceLegacyClassified,
     ImplementationTargetCreated.event_type: ImplementationTargetCreated,
     ImplementationTargetUpdated.event_type: ImplementationTargetUpdated,
     ImplementationTargetRevoked.event_type: ImplementationTargetRevoked,

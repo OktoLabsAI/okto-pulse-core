@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.community.api.deps import get_unit_of_work
@@ -201,7 +200,7 @@ def _ideation_matrix():
             EvaluateComplexityUseCase(),
             EvaluateComplexityCommand("ideation-b", {}),
         ),
-        (DeriveSpecUseCase(), DeriveSpecCommand("ideation-b")),
+        (DeriveSpecUseCase(), DeriveSpecCommand("ideation-b", data)),
         (
             ListIdeationSnapshotsUseCase(),
             ListIdeationSnapshotsCommand("ideation-b"),
@@ -321,7 +320,7 @@ def _ideation_write_matrix():
         (MoveIdeationUseCase(), MoveIdeationCommand("ideation-b", data)),
         (DeleteIdeationUseCase(), DeleteIdeationCommand("ideation-b")),
         (EvaluateComplexityUseCase(), EvaluateComplexityCommand("ideation-b", {})),
-        (DeriveSpecUseCase(), DeriveSpecCommand("ideation-b")),
+        (DeriveSpecUseCase(), DeriveSpecCommand("ideation-b", data)),
         (
             CreateIdeationKnowledgeUseCase(),
             CreateIdeationKnowledgeCommand("ideation-b", data),
@@ -684,14 +683,15 @@ async def test_knowledge_wrong_parent_is_not_found_before_delete(family):
     uow.commit.assert_not_awaited()
 
 
-def test_rest_list_readers_map_foreign_parents_to_404():
+@pytest.mark.asyncio
+async def test_rest_list_readers_map_foreign_parents_to_404(db_factory):
     uow = _foreign_uow()
     app = FastAPI()
     app.include_router(ideations_router, prefix="/api/v1")
     app.include_router(refinements_router, prefix="/api/v1")
     app.dependency_overrides[require_user] = lambda: "user-a"
     app.dependency_overrides[get_unit_of_work] = lambda: uow
-    client = TestClient(app)
+    import httpx
 
     paths = (
         "/api/v1/ideations/ideation-b",
@@ -706,6 +706,13 @@ def test_rest_list_readers_map_foreign_parents_to_404():
         "/api/v1/refinements/refinement-b/qa",
         "/api/v1/ideations/ideation-b/refinements",
     )
-    for path in paths:
-        response = client.get(path)
-        assert response.status_code == 404, (path, response.text)
+    async with db_factory() as session:
+        uow.services.cards = SimpleNamespace(db=session)
+        uow.services.entity_pages = _service(list=None)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test",
+        ) as client:
+            for path in paths:
+                response = await client.get(path)
+                assert response.status_code == 404, (path, response.text)
+        uow.services.entity_pages.list.assert_not_awaited()

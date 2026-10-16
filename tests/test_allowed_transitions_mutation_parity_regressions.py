@@ -11,9 +11,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import uuid
-from unittest.mock import ANY, AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
+from native_subject_testing import record_native_subject_authority
 
 from okto_pulse.core.application.use_cases.allowed_transitions import (
     ListAllowedTransitionsCommand,
@@ -26,7 +27,6 @@ from okto_pulse.core.domain.enums import (
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
-    SprintStatus,
 )
 from okto_pulse.core.domain.code_traceability import (
     CodeInvestigationCurrentnessUnknown,
@@ -54,7 +54,7 @@ from okto_pulse.core.services.main import (
     SpecService,
 )
 from okto_pulse.core.services.resource_gate import ResourceGateService
-from sqlalchemy_test_models import Board, Card, Ideation, Refinement, Spec, Sprint
+from sqlalchemy_test_models import Board, Card, Ideation, Refinement, Spec
 
 
 USER_ID = "allowed-transition-parity-user"
@@ -85,7 +85,7 @@ def _direct_spec_context_fields(
         source_spec_version=version,
     )
     manifest, manifest_sha256 = (
-        main_service._direct_spec_source_context_manifest(
+        main_service.build_direct_spec_source_context_manifest(
             spec_id=spec_id,
             delivery_context=DeliveryContext.BROWNFIELD,
             provenance=provenance,
@@ -107,7 +107,14 @@ def _direct_spec_context_fields(
 async def _persist(db_factory, *rows: object) -> None:
     async with db_factory() as db:
         db.add_all(list(rows))
+        await record_native_subject_authority(db)
         await db.commit()
+
+
+def _decision_plan_populations():
+    """Explicit current-schema populations for the code-evidence gate fixtures."""
+    return dict(functional_requirements=[], technical_requirements=[], business_rules=[],
+        integration_requirements=[], observability_requirements=[], acceptance_criteria=[], api_contracts=[])
 
 
 async def _preview_transition(
@@ -171,6 +178,7 @@ async def test_spec_code_evidence_coverage_preview_matches_validated_mutation(
         Spec(
             id=spec_id,
             **_direct_spec_context_fields(spec_id),
+            **_decision_plan_populations(),
             board_id=board_id,
             title="Code Evidence coverage preview",
             status=SpecStatus.APPROVED,
@@ -181,6 +189,8 @@ async def test_spec_code_evidence_coverage_preview_matches_validated_mutation(
                     "title": "Use the current architecture",
                     "status": "active",
                     "linked_task_ids": ["traceability-placeholder"],
+                    "verification": {"inspection": {"condition": "Architecture decision is documented",
+                        "scope_refs": [{"kind": "spec", "id": spec_id}]}},
                 }
             ],
         ),
@@ -230,6 +240,7 @@ async def test_spec_code_evidence_coverage_rechecked_before_in_progress(
         Spec(
             id=spec_id,
             **_direct_spec_context_fields(spec_id),
+            **_decision_plan_populations(),
             board_id=board_id,
             title="Code Evidence start coverage",
             status=SpecStatus.VALIDATED,
@@ -241,6 +252,8 @@ async def test_spec_code_evidence_coverage_rechecked_before_in_progress(
                     "title": "Use the current architecture",
                     "status": "active",
                     "linked_task_ids": ["traceability-placeholder"],
+                    "verification": {"inspection": {"condition": "Architecture decision is documented",
+                        "scope_refs": [{"kind": "spec", "id": spec_id}]}},
                 }
             ],
         ),
@@ -296,6 +309,7 @@ async def test_spec_code_evidence_skip_does_not_mask_technical_failure_parity(
         Spec(
             id=spec_id,
             **_direct_spec_context_fields(spec_id),
+            **_decision_plan_populations(),
             board_id=board_id,
             title="Code Evidence technical failure",
             status=SpecStatus.APPROVED,
@@ -307,6 +321,8 @@ async def test_spec_code_evidence_skip_does_not_mask_technical_failure_parity(
                     "title": "Use the current architecture",
                     "status": "active",
                     "linked_task_ids": ["traceability-placeholder"],
+                    "verification": {"inspection": {"condition": "Architecture decision is documented",
+                        "scope_refs": [{"kind": "spec", "id": spec_id}]}},
                 }
             ],
         ),
@@ -484,172 +500,62 @@ async def test_spec_done_preview_uses_canonical_cognitive_gate(db_factory) -> No
     assert "cognitive_consolidation_pending" in (done.blocked_reason or "")
 
 
-def _sprint_scope_case(
-    case: str,
-    *,
-    board_id: str,
-    spec_id: str,
-    sprint_id: str,
-) -> tuple[Spec, Sprint, list[Card]]:
-    scenario_id = f"scenario-{case}"
-    rule_id = f"rule-{case}"
-    scenarios: list[dict] = []
-    rules: list[dict] = []
-    sprint_scenario_ids: list[str] = []
-    sprint_rule_ids: list[str] = []
-    cards: list[Card] = []
-
-    if case == "coverage":
-        scenarios = [
-            {
-                "id": scenario_id,
-                "title": "Scoped but not executed",
-                "status": "draft",
-            }
-        ]
-        sprint_scenario_ids = [scenario_id]
-    elif case == "evidence":
-        scenarios = [
-            {
-                "id": scenario_id,
-                "title": "Successful status without authenticated evidence",
-                "status": "passed",
-            }
-        ]
-        cards = [
-            Card(
-                id=_id("scope-test-card"),
-                board_id=board_id,
-                spec_id=spec_id,
-                sprint_id=sprint_id,
-                title="Assigned test card",
-                card_type=CardType.TEST,
-                status=CardStatus.DONE,
-                test_scenario_ids=[scenario_id],
-                position=0,
-                created_by=USER_ID,
-            )
-        ]
-    elif case == "rules":
-        rules = [
-            {
-                "id": rule_id,
-                "title": "Scoped rule without an assigned-card backlink",
-                "linked_task_ids": [],
-            }
-        ]
-        sprint_rule_ids = [rule_id]
-    else:  # pragma: no cover - test helper misuse
-        raise AssertionError(case)
-
-    spec = Spec(
-        id=spec_id,
-        board_id=board_id,
-        title=f"Sprint scope spec: {case}",
-        status=SpecStatus.IN_PROGRESS,
-        acceptance_criteria=[],
-        test_scenarios=scenarios,
-        business_rules=rules,
-        created_by=USER_ID,
-    )
-    sprint = Sprint(
-        id=sprint_id,
-        board_id=board_id,
-        spec_id=spec_id,
-        title=f"Sprint scope: {case}",
-        status=SprintStatus.REVIEW,
-        test_scenario_ids=sprint_scenario_ids,
-        business_rule_ids=sprint_rule_ids,
-        skip_qualitative_validation=True,
-        created_by=USER_ID,
-    )
-    return spec, sprint, cards
-
-
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("case", "expected_code"),
-    [
-        ("coverage", "sprint_test_not_successful"),
-        ("evidence", "sprint_test_evidence_missing"),
-        ("rules", "sprint_business_rule_uncovered"),
-    ],
-)
-async def test_sprint_closed_preview_applies_canonical_scope_blockers(
-    db_factory,
-    case: str,
-    expected_code: str,
-) -> None:
-    board_id = _id(f"sprint-{case}-board")
-    spec_id = _id(f"sprint-{case}-spec")
-    sprint_id = _id(f"sprint-{case}")
-    spec, sprint, cards = _sprint_scope_case(
-        case,
-        board_id=board_id,
-        spec_id=spec_id,
-        sprint_id=sprint_id,
-    )
-    await _persist(db_factory, _board(board_id), spec, sprint, *cards)
+@pytest.mark.parametrize('kind,status,archived,blocks', [
+    (CardType.NORMAL, CardStatus.IN_PROGRESS, False, True),
+    (CardType.NORMAL, CardStatus.CANCELLED, False, False),
+    (CardType.NORMAL, CardStatus.DONE, False, False),
+    (CardType.NORMAL, CardStatus.IN_PROGRESS, True, False),
+    (CardType.BUG, CardStatus.IN_PROGRESS, False, False),
+    (CardType.TEST, CardStatus.IN_PROGRESS, False, False),
+])
+async def test_shared_spec_completion_reads_authoritative_cards_without_writes(
+    db_factory, monkeypatch, kind, status, archived, blocks,
+):
+    from sqlalchemy import event
 
+    board_id, spec_id, card_id = _id('shared-board'), _id('shared-spec'), _id('shared-card')
+    await _persist(db_factory, _board(board_id),
+        Spec(id=spec_id, board_id=board_id, title='Shared completion gates',
+            status=SpecStatus.IN_PROGRESS, created_by=USER_ID),
+        Card(id=card_id, board_id=board_id, spec_id=spec_id, title='Native task',
+            card_type=kind, status=status, archived=archived, created_by=USER_ID))
+    cognitive = AsyncMock(side_effect=ValueError('cognitive_check_reached'))
+    monkeypatch.setattr(SpecService, '_validate_cognitive_done', cognitive)
     async with db_factory() as db:
-        closed = await _preview_transition(
-            db,
-            board_id=board_id,
-            entity_type="sprint",
-            entity_id=sprint_id,
-            to_status="closed",
-        )
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        board = await main_service._application_get(db, 'board', board_id)
+        # A stale or partial loaded relationship must not be lifecycle authority.
+        spec.cards = []
+        statements = []
+        def observe(_conn, _cursor, statement, _parameters, _context, _many):
+            statements.append(statement)
+        event.listen(db.bind.sync_engine, 'before_cursor_execute', observe)
+        try:
+            with pytest.raises(ValueError) as preview:
+                await service.validate_completion_gates(spec, board, read_only_preview=True)
+            with pytest.raises(ValueError) as native:
+                await service.validate_completion_gates(spec, board)
+        finally:
+            event.remove(db.bind.sync_engine, 'before_cursor_execute', observe)
+        assert str(preview.value) == str(native.value)
+        assert ('linked task(s) are not yet done' in str(native.value)) is blocks
+        if blocks:
+            cognitive.assert_not_awaited()
+        else:
+            assert str(native.value) == 'cognitive_check_reached'
+            assert cognitive.await_args_list[0].kwargs == {'read_only_preview': True}
+            assert cognitive.await_args_list[1].kwargs == {}
+        assert statements and all(s.lstrip().upper().startswith('SELECT') for s in statements)
+        assert spec.status == SpecStatus.IN_PROGRESS
+        assert not db.new and not db.dirty and not db.deleted
 
-    assert closed.blocked_reason is not None
-    assert "sprint_scope_gate_blocked" in closed.blocked_reason
-    assert expected_code in closed.blocked_reason
 
 
-@pytest.mark.asyncio
-async def test_sprint_closed_preview_blocks_approval_below_threshold(
-    db_factory,
-) -> None:
-    board_id = _id("sprint-threshold-board")
-    spec_id = _id("sprint-threshold-spec")
-    sprint_id = _id("sprint-threshold")
-    await _persist(
-        db_factory,
-        _board(board_id, settings={"validation_threshold_global": 70}),
-        Spec(
-            id=spec_id,
-            board_id=board_id,
-            title="Threshold spec",
-            status=SpecStatus.IN_PROGRESS,
-            created_by=USER_ID,
-        ),
-        Sprint(
-            id=sprint_id,
-            board_id=board_id,
-            spec_id=spec_id,
-            title="Below-threshold sprint",
-            status=SprintStatus.REVIEW,
-            evaluations=[
-                {
-                    "recommendation": "approve",
-                    "overall_score": 40,
-                    "stale": False,
-                }
-            ],
-            skip_qualitative_validation=False,
-            created_by=USER_ID,
-        ),
-    )
 
-    async with db_factory() as db:
-        closed = await _preview_transition(
-            db,
-            board_id=board_id,
-            entity_type="sprint",
-            entity_id=sprint_id,
-            to_status="closed",
-        )
 
-    assert "sprint_evaluation_below_threshold" in (closed.blocked_reason or "")
+
 
 
 @pytest.mark.asyncio
@@ -826,7 +732,7 @@ async def test_ideation_evaluating_done_bypasses_cognitive_closeout_and_derives_
                 created_by=USER_ID,
             )
         )
-        await db.flush()
+        await record_native_subject_authority(db)
 
         resource_gate = ResourceGateService(db)
         for resource_type in ("architecture", "mockup", "knowledge_base"):
@@ -884,7 +790,7 @@ async def test_ideation_evaluating_done_bypasses_cognitive_closeout_and_derives_
 
 
 @pytest.mark.asyncio
-async def test_card_cognitive_preview_reads_same_graph_health_as_mutation(
+async def test_card_cognitive_preview_uses_canonical_gate_without_graph_health(
     db_factory,
     monkeypatch,
 ) -> None:
@@ -914,7 +820,8 @@ async def test_card_cognitive_preview_reads_same_graph_health_as_mutation(
         ),
     )
     probe = AsyncMock(return_value="healthy")
-    monkeypatch.setattr(main_service, "_resolve_closeout_graph_state", probe)
+    from okto_pulse.core.services import kg_health_service
+    monkeypatch.setattr(kg_health_service, "get_kg_health", probe)
     observed: dict = {}
 
     class AllowingGate:
@@ -939,8 +846,10 @@ async def test_card_cognitive_preview_reads_same_graph_health_as_mutation(
         )
 
     assert done.blocked_reason is None
-    probe.assert_awaited_once_with(board_id, ANY)
-    assert observed["graph_state"] == "healthy"
+    probe.assert_not_awaited()
+    assert "graph_state" not in observed
+    assert observed["entity_id"] == card_id
+    assert observed["target_status"] == "done"
 
 
 @pytest.mark.asyncio

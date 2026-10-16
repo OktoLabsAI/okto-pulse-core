@@ -17,7 +17,6 @@ async def test_operational_authorization_requires_exact_and_historical_authority
     use_case = AuthorizeOperationUseCase()
     command = AuthorizeOperationCommand(
         "metrics.settings.edit",
-        legacy_operation="board.analytics_read",
     )
 
     for incomplete in (

@@ -35,18 +35,22 @@ DiscoveryParamsSchema = dict[str, dict[str, Any]]
 def normalize_discovery_params_schema(
     params_schema: dict[str, Any] | None,
 ) -> DiscoveryParamsSchema | None:
-    """Normalize reader-side Discovery params metadata.
-
-    Legacy params without an explicit ``type`` are text params. Unknown/future
-    types are preserved so later validation layers can make the reject/handle
-    decision without this compatibility helper hiding the original value.
-    """
+    """Validate current metadata without inferring missing parameter types."""
+    if params_schema is None:
+        return None
+    if not isinstance(params_schema, dict):
+        raise ValueError("incompatible_discovery_params_schema: expected an object")
     if not params_schema:
         return None
 
     normalized: DiscoveryParamsSchema = {}
     for name, raw_meta in params_schema.items():
-        meta = dict(raw_meta) if isinstance(raw_meta, dict) else {}
-        meta["type"] = meta.get("type") or DISCOVERY_PARAM_TYPE_TEXT
-        normalized[name] = meta
+        if (
+            not isinstance(raw_meta, dict)
+            or raw_meta.get("type") not in SUPPORTED_DISCOVERY_PARAM_TYPES
+        ):
+            raise ValueError(
+                "incompatible_discovery_params_schema: explicit supported type required"
+            )
+        normalized[name] = dict(raw_meta)
     return normalized

@@ -476,210 +476,103 @@ def test_manifest_failed_preserves_evidence_as_partial(
     assert preserved_file.read_text() == "important-evidence"
 
 
-def test_purge_board_graph_storage_goes_through_quarantine(tmp_path: Path):
-    """val_79e6f555 regression: purge_board_graph_storage MUST move
-    files to quarantine first, never unlink directly."""
-    import kg_schema_testing as schema_module
-    import okto_pulse.community.adapters.kg_runtime as kg_runtime
-
-    storage_root = tmp_path / "okto-data" / "boards"
-    storage_root.mkdir(parents=True)
-
-    def fake_board_kuzu_path(board_id: str) -> Path:
-        d = storage_root / board_id
-        d.mkdir(parents=True, exist_ok=True)
-        return d / "graph.lbug"
-
-    # Replace the path resolver so the quarantine service sees the
-    # right scope_roots (tmp_path/okto-data/boards).
-    import okto_pulse.core.kg.quarantine as quarantine_module
-    quarantine_module.reset_quarantine_counter()
-    monkey = pytest.MonkeyPatch()
-    monkey.setattr(kg_runtime, "board_kuzu_path", fake_board_kuzu_path)
-    monkey.setattr(kg_runtime, "close_board_db_cache", lambda *_: None)
-
-    try:
-        primary = fake_board_kuzu_path("b1")
-        primary.write_text("corrupted-graph-bytes")
-        sidecar = primary.parent / "graph.lbug.wal"
-        sidecar.write_text("wal-bytes")
-
-        removed = schema_module.purge_board_graph_storage(
-            "b1", reason="corruption detected"
-        )
-        # Files are no longer at the original location.
-        assert not primary.exists()
-        assert not sidecar.exists()
-        # purge returned the original paths it cleared.
-        assert len(removed) == 2
-
-        # Quarantine dir under storage root contains the files + manifest.
-        quarantine_root = (
-            storage_root.parent / quarantine_module.QUARANTINE_DIRNAME
-        )
-        assert quarantine_root.exists()
-        qdirs = list(quarantine_root.iterdir())
-        assert len(qdirs) == 1
-        manifest = qdirs[0] / quarantine_module.MANIFEST_FILENAME
-        assert manifest.exists()
-        body = json.loads(manifest.read_text())
-        assert body["board_id"] == "b1"
-        assert body["graph_type"] == "board_graph"
-        assert body["files_moved"] == 2
-        # Counter emitted for created outcome.
-        assert quarantine_module.get_quarantine_counter("b1", "created") == 1
-    finally:
-        monkey.undo()
 
 
-def test_purge_board_graph_storage_aborts_when_quarantine_fails(tmp_path: Path):
-    """val_79e6f555 regression: if KGQuarantineService.create raises,
-    purge MUST be aborted and the original files preserved."""
-    import kg_schema_testing as schema_module
-    import okto_pulse.community.adapters.kg_runtime as kg_runtime
-    import okto_pulse.core.kg.quarantine as quarantine_module
+def _initialize_real_global_storage():
+    """Publish the routed Global binding and bootstrap real storage.
 
-    storage_root = tmp_path / "okto-data" / "boards"
-    storage_root.mkdir(parents=True)
+    The routed Global graph is fail-closed until the composition's explicit
+    initialization door runs (inside the durable writer fence), so tests that
+    exercise purge/rebuild drive the real route instead of fabricating files.
+    """
 
-    def fake_board_kuzu_path(board_id: str) -> Path:
-        d = storage_root / board_id
-        d.mkdir(parents=True, exist_ok=True)
-        return d / "graph.lbug"
-
-    monkey = pytest.MonkeyPatch()
-    monkey.setattr(kg_runtime, "board_kuzu_path", fake_board_kuzu_path)
-    monkey.setattr(kg_runtime, "close_board_db_cache", lambda *_: None)
-    # Make KGQuarantineService.create always raise.
-    original_create = quarantine_module.KGQuarantineService.create
-
-    def boom_create(self, **kwargs):
-        raise quarantine_module.QuarantineError(
-            quarantine_module.QuarantineErrorCode.QUARANTINE_STORAGE_UNAVAILABLE,
-            retryable=True,
-            reason="simulated disk full",
-        )
-
-    monkey.setattr(
-        quarantine_module.KGQuarantineService, "create", boom_create
+    from coordination_fakes import FakeWriteLockPort
+    from global_graph_testing import (
+        bootstrap_global_discovery,
+        global_discovery_writer_scope,
+    )
+    from kg_schema_testing import graph_composition
+    from okto_pulse.core.ports.coordination import (
+        CoordinationProviderMissing,
+        get_write_lock_port,
+        register_coordination_providers,
     )
 
     try:
-        primary = fake_board_kuzu_path("b1")
-        primary.write_text("evidence-bytes")
-        sidecar = primary.parent / "graph.lbug.wal"
-        sidecar.write_text("wal-bytes")
-
-        removed = schema_module.purge_board_graph_storage(
-            "b1", reason="corruption"
-        )
-        # FR7: purge aborted, evidence preserved.
-        assert removed == []
-        assert primary.exists()
-        assert primary.read_text() == "evidence-bytes"
-        assert sidecar.exists()
-        assert sidecar.read_text() == "wal-bytes"
-    finally:
-        monkey.undo()
-        # Restore the original method explicitly to keep other tests clean.
-        quarantine_module.KGQuarantineService.create = original_create
+        get_write_lock_port()
+    except CoordinationProviderMissing:
+        register_coordination_providers(write_lock_port=FakeWriteLockPort())
+    composition = graph_composition()
+    with global_discovery_writer_scope(operation="test_global_route_init"):
+        composition.initialize_global_route()
+    bootstrap_global_discovery()
+    return composition
 
 
-def test_purge_global_discovery_storage_goes_through_quarantine(
-    tmp_path: Path,
-):
-    """val_79e6f555 regression: purge_global_discovery_storage MUST move
-    discovery.lbug + sidecars to quarantine first."""
+def _global_active_path(composition):
+    return composition.resolver.inspect_global_route().active_path
+
+
+def _quarantine_manifests(kg_root: Path):
+    return sorted(
+        kg_root.glob(f"{QUARANTINE_DIRNAME}/*/{MANIFEST_FILENAME}")
+    )
+
+
+def test_purge_global_discovery_storage_goes_through_quarantine():
+    """val_79e6f555 regression: purge_global_discovery_storage MUST move the
+    global discovery storage (primary + sidecars) to quarantine first."""
     import global_graph_testing as gd_schema
     import okto_pulse.core.kg.quarantine as quarantine_module
-    from okto_pulse.core.kg.interfaces import get_kg_registry
 
-    storage_root = tmp_path / "okto-data" / "global"
-    storage_root.mkdir(parents=True)
-    primary = storage_root / "discovery.lbug"
-    primary.write_text("global-evidence")
-    sidecar = storage_root / "discovery.lbug.wal"
-    sidecar.write_text("global-wal")
-
-    monkey = pytest.MonkeyPatch()
-    runtime = get_kg_registry().global_discovery_runtime
-    monkey.setattr(runtime, "_global_graph_path", lambda: primary)
-    monkey.setattr(runtime, "close", lambda: None)
+    composition = _initialize_real_global_storage()
+    active = _global_active_path(composition)
+    assert active.exists()
 
     quarantine_module.reset_quarantine_counter()
 
-    try:
-        removed = gd_schema.purge_global_discovery_storage(
-            reason="corruption detected on open"
-        )
+    kg_root = composition.binding_store.root
+    manifests_before = set(_quarantine_manifests(kg_root))
 
-        assert not primary.exists()
-        assert not sidecar.exists()
-        assert len(removed) == 2
+    removed = gd_schema.purge_global_discovery_storage(
+        reason="corruption detected on open"
+    )
+    # The routed runtime reports no concrete paths across the port boundary —
+    # the durable evidence is the quarantine manifest, not path strings.
+    assert removed == []
+    assert not active.exists()
 
-        quarantine_root = (
-            storage_root.parent / quarantine_module.QUARANTINE_DIRNAME
-        )
-        assert quarantine_root.exists()
-        qdirs = list(quarantine_root.iterdir())
-        assert len(qdirs) == 1
-        manifest_data = json.loads(
-            (qdirs[0] / quarantine_module.MANIFEST_FILENAME).read_text()
-        )
-        assert manifest_data["graph_type"] == "global_discovery"
-        assert manifest_data["files_moved"] == 2
-        assert (
-            quarantine_module.get_quarantine_counter("_global", "created")
-            == 1
-        )
-    finally:
-        monkey.undo()
+    manifests = set(_quarantine_manifests(kg_root)) - manifests_before
+    assert len(manifests) == 1
+    manifest_data = json.loads(manifests.pop().read_text())
+    assert manifest_data["graph_type"] == "global_discovery"
+    assert manifest_data["reason"] == "corruption detected on open"
+    assert (
+        quarantine_module.get_quarantine_counter("_global", "created")
+        == 1
+    )
 
 
-def test_rebuild_from_scratch_quarantines_discovery_before_drop(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-):
+def test_rebuild_from_scratch_quarantines_discovery_before_drop():
     """val_b15ff42f residual regression: clustering.rebuild_from_scratch
-    used to call shutil.rmtree + unlink on discovery.lbug and sidecars
-    directly. After the rework it MUST route through
-    purge_global_discovery_storage so quarantine is created before any
-    drop. Test forces a scenario with a pre-existing discovery.lbug +
-    sidecar and asserts (a) discovery.lbug is gone from the original
-    location, (b) a quarantine dir with manifest exists, (c) NO
-    ``discovery_backup_*`` artifact is created (manifest replaces the
-    ad-hoc backup), (d) bootstrap is called and the new file is created.
+    used to call shutil.rmtree + unlink on discovery storage directly. It
+    MUST route through the runtime purge so quarantine is created (with a
+    manifest) before any drop, and no ad-hoc ``discovery_backup_*`` copy is
+    produced. Driven against the real routed Global storage: (a) the
+    pre-existing graph storage is quarantined, (b) a manifest documents it,
+    (c) NO ``discovery_backup_*`` artifact exists, (d) bootstrap
+    re-materializes a fresh graph.
     """
-    import global_graph_testing as gd_schema
     import okto_pulse.core.kg.global_discovery.clustering as clustering
     import okto_pulse.core.kg.quarantine as quarantine_module
-    from okto_pulse.core.kg.interfaces import get_kg_registry
 
-    storage_root = tmp_path / "okto-data" / "global"
-    storage_root.mkdir(parents=True)
-    primary = storage_root / "discovery.lbug"
-    primary.write_text("existing-discovery-bytes")
-    sidecar = storage_root / "discovery.lbug.wal"
-    sidecar.write_text("existing-wal-bytes")
-
-    bootstrap_called = {"count": 0}
-
-    def fake_bootstrap():
-        bootstrap_called["count"] += 1
-        # Simulate bootstrap recreating the primary file.
-        primary.write_text("freshly-bootstrapped")
-        return primary
-
-    runtime = get_kg_registry().global_discovery_runtime
-    monkeypatch.setattr(runtime, "_legacy_global_graph_path", lambda: primary)
-    monkeypatch.setattr(runtime, "_global_graph_path", lambda: primary)
-    monkeypatch.setattr(runtime, "close", lambda: None)
-    monkeypatch.setattr(runtime, "bootstrap", fake_bootstrap)
-    monkeypatch.setattr(gd_schema, "bootstrap_global_discovery", fake_bootstrap)
-    # clustering resolves lifecycle through GlobalDiscoveryRuntime; keep the
-    # schema patch only as a compatibility assertion for callers still using
-    # the facade directly.
+    composition = _initialize_real_global_storage()
+    active = _global_active_path(composition)
+    assert active.exists()
 
     quarantine_module.reset_quarantine_counter()
+    kg_root = composition.binding_store.root
+    manifests_before = set(_quarantine_manifests(kg_root))
 
     result = clustering.rebuild_from_scratch()
 
@@ -688,58 +581,46 @@ def test_rebuild_from_scratch_quarantines_discovery_before_drop(
     assert "backup_path" not in result
     assert result["quarantined_storage_refs"] == ["global-discovery"]
 
-    # bootstrap was actually called.
-    assert bootstrap_called["count"] == 1
-    # Fresh discovery.lbug exists, with new content from bootstrap.
-    assert primary.exists()
-    assert primary.read_text() == "freshly-bootstrapped"
+    # Quarantine dir + manifest exist for the dropped generation.
+    manifests = set(_quarantine_manifests(kg_root)) - manifests_before
+    assert len(manifests) == 1
+    manifest_data = json.loads(manifests.pop().read_text())
+    assert manifest_data["graph_type"] == "global_discovery"
+    assert (
+        manifest_data["reason"].startswith("rebuild_from_scratch")
+        or manifest_data["reason"] == "rebuild_from_scratch"
+    )
+    assert (
+        quarantine_module.get_quarantine_counter("_global", "created") == 1
+    )
+
     # No discovery_backup_* artifact created by the old code path.
-    backup_artifacts = list(storage_root.glob("discovery_backup_*"))
+    backup_artifacts = list(
+        composition.binding_store.root.glob("discovery_backup_*")
+    )
     assert backup_artifacts == [], (
         f"rebuild must not create ad-hoc backup; found {backup_artifacts}"
     )
 
-    # Quarantine dir + manifest exist with the original bytes preserved.
-    quarantine_root = (
-        storage_root.parent / quarantine_module.QUARANTINE_DIRNAME
-    )
-    qdirs = list(quarantine_root.iterdir())
-    assert len(qdirs) == 1
-    manifest = qdirs[0] / quarantine_module.MANIFEST_FILENAME
-    assert manifest.exists()
-    body = json.loads(manifest.read_text())
-    assert body["graph_type"] == "global_discovery"
-    assert body["reason"].startswith("rebuild_from_scratch") or body[
-        "reason"
-    ] == "rebuild_from_scratch"
-    assert body["files_moved"] == 2
-
-    # Both originals (with their original bytes) are now under quarantine.
-    quarantined_primary = qdirs[0] / "discovery.lbug"
-    quarantined_sidecar = qdirs[0] / "discovery.lbug.wal"
-    assert quarantined_primary.exists()
-    # NOTE: the primary path was reused by bootstrap, but the bytes
-    # under quarantine match the ORIGINAL pre-rebuild content.
-    assert quarantined_primary.read_text() == "existing-discovery-bytes"
-    assert quarantined_sidecar.read_text() == "existing-wal-bytes"
+    # Bootstrap re-materialized a fresh graph at the bound route.
+    assert _global_active_path(composition).exists()
 
 
-def test_purge_global_discovery_aborts_when_quarantine_fails(tmp_path: Path):
+def test_purge_global_discovery_aborts_when_quarantine_fails():
+    """Quarantine-before-purge is fail-closed: if the quarantine store cannot
+    take the artifacts, the routed purge reports failure and the live global
+    storage stays intact — it is never dropped un-quarantined."""
     import global_graph_testing as gd_schema
     import okto_pulse.core.kg.quarantine as quarantine_module
-    from okto_pulse.core.kg.interfaces import get_kg_registry
 
-    storage_root = tmp_path / "okto-data" / "global"
-    storage_root.mkdir(parents=True)
-    primary = storage_root / "discovery.lbug"
-    primary.write_text("global-evidence")
+    composition = _initialize_real_global_storage()
+    active = _global_active_path(composition)
+    assert active.exists()
+
+    kg_root = composition.binding_store.root
+    manifests_before = set(_quarantine_manifests(kg_root))
 
     monkey = pytest.MonkeyPatch()
-    runtime = get_kg_registry().global_discovery_runtime
-    monkey.setattr(runtime, "_global_graph_path", lambda: primary)
-    monkey.setattr(runtime, "close", lambda: None)
-
-    original_create = quarantine_module.KGQuarantineService.create
 
     def boom_create(self, **kwargs):
         raise quarantine_module.QuarantineError(
@@ -755,8 +636,9 @@ def test_purge_global_discovery_aborts_when_quarantine_fails(tmp_path: Path):
     try:
         removed = gd_schema.purge_global_discovery_storage(reason="corruption")
         assert removed == []
-        assert primary.exists()
-        assert primary.read_text() == "global-evidence"
+        # The live global storage survives the failed quarantine and no new
+        # quarantine manifest appeared.
+        assert active.exists()
+        assert set(_quarantine_manifests(kg_root)) == manifests_before
     finally:
         monkey.undo()
-        quarantine_module.KGQuarantineService.create = original_create

@@ -18,7 +18,11 @@ import json
 from typing import Annotated, Any, Callable, Literal, Mapping
 
 from pydantic import Field, SecretStr, ValidationError
-from okto_pulse.core.models.delivery_evidence import DeliveryEvidenceInput, DeliveryEvidenceCommand, DeliveryEvidenceQuery
+from okto_pulse.core.models.delivery_evidence import card_delivery_command, DeliveryBatchEntryError, DeliveryEvidenceReadQuery
+from okto_pulse.core.models.delivery_report import CardDeliveryRecordInput
+from okto_pulse.core.models.decision_review import DecisionReviewInput, DecisionReviewCommand, DecisionReviewQuery
+from okto_pulse.core.inbound.delivery_readiness_error import READINESS_ERRORS, project_readiness_error
+from okto_pulse.core.ports.delivery_readiness import ReadinessReadError
 
 from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
@@ -55,12 +59,9 @@ from okto_pulse.core.models.code_traceability import (
     CodeEvidenceSpecLinkInput,
     CodeEvidenceSpecUnlinkInput,
     CodeEvidenceSubmission,
-    CodeEvidenceSubmissionV2,
     CodeEvidenceSupersessionSubmission,
-    CodeEvidenceSupersessionSubmissionV2,
     CodeInvestigationOmissionInput,
     CodeInvestigationReceiptSubmission,
-    CodeInvestigationReceiptSubmissionV2,
     CodeInvestigationToolingInput,
     CodeTraceabilityWaiverClearInput,
     CodeTraceabilityWaiverInput,
@@ -70,8 +71,6 @@ from okto_pulse.core.models.code_traceability import (
     ImplementationTargetResolutionSubmission,
     ImplementationTargetSpecLinkInput,
     ImplementationTargetUpdateInput,
-    LegacyEvidenceClassificationBatchInput,
-    LegacyEvidenceClassificationItemInput,
     ObservedWorkspaceStateSubmission,
     ResolutionCandidateInput,
     StartCodeInvestigationInput,
@@ -102,7 +101,7 @@ Digest = Annotated[str, Field(pattern=r"^[0-9a-fA-F]{64}$")]
 OptionalDigest = Annotated[str | None, Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")]
 PageLimit = Annotated[int, Field(ge=1, le=200)]
 CursorToken = Annotated[str, Field(min_length=1, max_length=4096)]
-ContractVersion = Literal[1, 2]
+ContractVersion = Literal[2]
 AuthoredEvidenceSourceRole = Literal[
     "current_implementation",
     "existing_scaffold",
@@ -113,7 +112,7 @@ InvestigationOutcome = Annotated[
     str,
     Field(
         pattern=(
-            "^(accessible|evidence_applicable|"
+            "^(evidence_applicable|"
             "no_relevant_existing_implementation|partial|unavailable)$"
         )
     ),
@@ -189,11 +188,15 @@ def _decode_cursor(cursor: str | None) -> CodeTraceabilityPageCursor | None:
 
 
 def _error_outcome(error: Exception) -> McpToolOutcome:
-    if isinstance(error, CodeTraceabilityContractError):
+    if isinstance(error, READINESS_ERRORS):
+        projected = project_readiness_error(error)
+    elif isinstance(error, CodeTraceabilityContractError):
         projected = error.as_dict()
     elif hasattr(error, "to_error_dict"):
         projected = getattr(error, "to_error_dict")()
     elif isinstance(error, ValidationError):
+        if any(issue['type'] == 'readiness_query_invalid' for issue in error.errors()):
+            return _error_outcome(ReadinessReadError('readiness_query_invalid'))
         for issue in error.errors(include_input=False, include_url=False):
             context = issue.get("ctx")
             cause = context.get("error") if isinstance(context, Mapping) else None
@@ -211,8 +214,11 @@ def _error_outcome(error: Exception) -> McpToolOutcome:
             },
             "remediation": [],
         }
+    elif isinstance(error, ValueError) and str(error).startswith(("decision_review_", "decision_inspection_")):
+        projected = {"code": str(error).split(":", 1)[0], "message": str(error), "details": {},
+                     "remediation": [{"action": "review_decision_verification", "tool": "okto_pulse_get_decision_reviews"}]}
     elif isinstance(error, ValueError) and str(error).startswith("delivery_"):
-        projected = {"code": str(error).split(":", 1)[0], "message": str(error), "details": {}, "remediation": [{"action": "review_delivery_evidence", "tool": "okto_pulse_get_delivery_evidence"}]}
+        projected = {"code": str(error).split(":", 1)[0], "message": str(error), "details": error.details() if isinstance(error, DeliveryBatchEntryError) else {}, "remediation": [{"action": "review_delivery_evidence", "tool": "okto_pulse_get_delivery_evidence"}]}
     elif isinstance(error, PermissionDeniedError):
         projected = {
             "code": "forbidden",
@@ -248,7 +254,7 @@ def _error_outcome(error: Exception) -> McpToolOutcome:
     return McpToolOutcome.error(
         code=str(projected.get("code") or "code_traceability_error"),
         message=str(projected.get("message") or "Code Traceability failed."),
-        retryable=str(projected.get("code") or "").endswith("_conflict"),
+        retryable=bool(projected.get('retryable', str(projected.get("code") or "").endswith("_conflict"))),
         next_action=next_action,
         details={
             **dict(projected.get("details") or {}),
@@ -322,24 +328,6 @@ def _closed_input(model: type, values: Mapping[str, object]) -> object:
     return model.model_validate(payload)
 
 
-def _selected_contract_model(
-    contract_version: object,
-    *,
-    legacy: type,
-    contextual: type,
-) -> type:
-    """Select an inbound contract without inferring V2 from optional fields."""
-
-    if type(contract_version) is int and contract_version == 1:
-        return legacy
-    if type(contract_version) is int and contract_version == 2:
-        return contextual
-    raise CodeTraceabilityContractError(
-        "code_traceability_contract_version_invalid",
-        details={"contract_version": contract_version},
-    )
-
-
 def _investigation_receipt_command(
     *,
     board_id: str,
@@ -354,10 +342,10 @@ def _investigation_receipt_command(
     declared_revision: str | None = None,
     workspace_state: ObservedWorkspaceStateSubmission | None = None,
     omission_manifest: list[CodeInvestigationOmissionInput] | None = None,
-    contract_version: ContractVersion = 1,
+    contract_version: ContractVersion,
     **_ignored: object,
-) -> CodeInvestigationReceiptSubmission | CodeInvestigationReceiptSubmissionV2:
-    """Build exactly the selected receipt version from source-blind fields."""
+) -> CodeInvestigationReceiptSubmission:
+    """Build the current contextual receipt from source-blind fields."""
 
     payload: dict[str, object] = {
         "board_id": board_id,
@@ -373,14 +361,8 @@ def _investigation_receipt_command(
         "observed_at": observed_at,
         "idempotency_key": idempotency_key,
     }
-    model = _selected_contract_model(
-        contract_version,
-        legacy=CodeInvestigationReceiptSubmission,
-        contextual=CodeInvestigationReceiptSubmissionV2,
-    )
-    if model is CodeInvestigationReceiptSubmissionV2:
-        payload["contract_version"] = 2
-    return model.model_validate(payload)
+    payload["contract_version"] = contract_version
+    return CodeInvestigationReceiptSubmission.model_validate(payload)
 
 
 def _evidence_command(
@@ -406,21 +388,19 @@ def _evidence_command(
     idempotency_key: str,
     supersedes_evidence_id: str | None = None,
     supersession_reason: str | None = None,
-    contract_version: ContractVersion = 1,
-    source_role: CodeEvidenceSourceRole | None = None,
-    relevance_summary: str | None = None,
-    scope_relation: str | None = None,
-    source_origin: str | None = None,
+    contract_version: ContractVersion,
+    source_role: CodeEvidenceSourceRole,
+    relevance_summary: str,
+    scope_relation: str,
+    source_origin: str,
     interpretation_limit: str | None = None,
-    baseline_provenance: CodeEvidenceBaselineProvenance | None = None,
+    baseline_provenance: CodeEvidenceBaselineProvenance,
     **_ignored: object,
 ) -> (
     CodeEvidenceSubmission
-    | CodeEvidenceSubmissionV2
     | CodeEvidenceSupersessionSubmission
-    | CodeEvidenceSupersessionSubmissionV2
 ):
-    """Build exactly the selected Evidence version from source-blind fields."""
+    """Build the current contextual Evidence from source-blind fields."""
 
     payload: dict[str, object] = {
         "board_id": board_id,
@@ -453,33 +433,13 @@ def _evidence_command(
         "interpretation_limit": interpretation_limit,
         "baseline_provenance": baseline_provenance,
     }
-    model = _selected_contract_model(
-        contract_version,
-        legacy=(
-            CodeEvidenceSupersessionSubmission
-            if supersedes_evidence_id is not None
-            else CodeEvidenceSubmission
-        ),
-        contextual=(
-            CodeEvidenceSupersessionSubmissionV2
-            if supersedes_evidence_id is not None
-            else CodeEvidenceSubmissionV2
-        ),
+    model = (
+        CodeEvidenceSupersessionSubmission
+        if supersedes_evidence_id is not None
+        else CodeEvidenceSubmission
     )
-    if contract_version == 2:
-        payload["contract_version"] = 2
-        payload.update(contextual_values)
-    else:
-        # Passing any V2 meaning while selecting V1 is an incoherent mix.
-        # Feed those authored values to the closed legacy model so the
-        # attempt fails before authentication or persistence.
-        payload.update(
-            {
-                name: value
-                for name, value in contextual_values.items()
-                if value is not None
-            }
-        )
+    payload["contract_version"] = contract_version
+    payload.update(contextual_values)
     if supersedes_evidence_id is not None:
         payload["supersedes_evidence_id"] = supersedes_evidence_id
         payload["supersession_reason"] = supersession_reason
@@ -559,7 +519,7 @@ def register_code_traceability_tools(
         tooling: CodeInvestigationToolingInput,
         observed_at: datetime,
         idempotency_key: BoundedId,
-        contract_version: ContractVersion = 1,
+        contract_version: ContractVersion,
         source_identity_digest: OptionalDigest = None,
         declared_revision: OptionalBoundedText = None,
         workspace_state: ObservedWorkspaceStateSubmission | None = None,
@@ -596,13 +556,13 @@ def register_code_traceability_tools(
         selector_kind: CodeEvidenceSelectorKind,
         declared_source_content_sha256: Digest,
         idempotency_key: BoundedId,
-        contract_version: ContractVersion = 1,
-        source_role: AuthoredEvidenceSourceRole | None = None,
-        relevance_summary: OptionalBoundedText = None,
-        scope_relation: OptionalBoundedText = None,
-        source_origin: OptionalBoundedText = None,
+        contract_version: ContractVersion,
+        source_role: AuthoredEvidenceSourceRole,
+        relevance_summary: BoundedText,
+        scope_relation: BoundedText,
+        source_origin: BoundedText,
+        baseline_provenance: CodeEvidenceBaselineProvenance,
         interpretation_limit: OptionalBoundedText = None,
-        baseline_provenance: CodeEvidenceBaselineProvenance | None = None,
         relative_path: OptionalBoundedText = None,
         language: OptionalBoundedText = None,
         symbol_kind: OptionalBoundedText = None,
@@ -621,26 +581,6 @@ def register_code_traceability_tools(
         investigation, evidence, _ = _services()
         return await _execute(board_id, command, SubmitCodeEvidenceUseCase(investigation, evidence))
 
-    async def okto_pulse_classify_legacy_code_evidence(
-        board_id: BoundedId,
-        items: list[LegacyEvidenceClassificationItemInput],
-        justification: BoundedText,
-        idempotency_key: BoundedId,
-    ) -> McpToolOutcome:
-        """Classify legacy Evidence atomically with explicit source meaning and audit provenance."""
-        from okto_pulse.core.application.use_cases.code_traceability import ClassifyLegacyCodeEvidenceUseCase
-
-        command = LegacyEvidenceClassificationBatchInput(
-            board_id=board_id,
-            items=tuple(items),
-            justification=justification,
-            idempotency_key=idempotency_key,
-        )
-        return await _execute(
-            board_id,
-            command,
-            ClassifyLegacyCodeEvidenceUseCase(),
-        )
 
     async def okto_pulse_get_code_evidence(
         board_id: BoundedId,
@@ -688,13 +628,13 @@ def register_code_traceability_tools(
         selector_kind: CodeEvidenceSelectorKind,
         declared_source_content_sha256: Digest,
         idempotency_key: BoundedId,
-        contract_version: ContractVersion = 1,
-        source_role: AuthoredEvidenceSourceRole | None = None,
-        relevance_summary: OptionalBoundedText = None,
-        scope_relation: OptionalBoundedText = None,
-        source_origin: OptionalBoundedText = None,
+        contract_version: ContractVersion,
+        source_role: AuthoredEvidenceSourceRole,
+        relevance_summary: BoundedText,
+        scope_relation: BoundedText,
+        source_origin: BoundedText,
+        baseline_provenance: CodeEvidenceBaselineProvenance,
         interpretation_limit: OptionalBoundedText = None,
-        baseline_provenance: CodeEvidenceBaselineProvenance | None = None,
         relative_path: OptionalBoundedText = None,
         language: OptionalBoundedText = None,
         symbol_kind: OptionalBoundedText = None,
@@ -914,8 +854,9 @@ def register_code_traceability_tools(
     ) -> McpToolOutcome:
         """Submit an authenticated agent Execution Disposition for one Target.
 
-        After completing the task/bug, bind this accepted committed execution to
-        the Spec with okto_pulse_record_delivery_evidence, evidence.kind="implementation".
+        Before completing the task/bug, bind this accepted committed execution to
+        its card ledger with okto_pulse_record_delivery_evidence,
+        evidence.kind="implementation". The Spec reads the resulting rollup.
         It is implementation proof, not test verification; that requires a test card.
         """
         from okto_pulse.core.application.use_cases.code_traceability import SubmitImplementationTargetExecutionUseCase
@@ -948,42 +889,89 @@ def register_code_traceability_tools(
         command = _closed_input(CodeTraceabilityWaiverClearInput, locals())
         return await _execute(board_id, command, ClearCodeTraceabilityNotApplicableUseCase())
 
-    async def okto_pulse_get_delivery_evidence(board_id: BoundedId, spec_id: BoundedId) -> McpToolOutcome:
-        """Read delivery obligations/current proof before completing a Spec.
-
-        Planning Code Evidence is not delivery. Tasks/bugs record code; only TEST
-        cards with authenticated passing scenarios verify it. Read
-        okto-pulse://reference/code-traceability, section Delivery evidence.
+    async def okto_pulse_get_delivery_evidence(
+        board_id: BoundedId, spec_id: BoundedId, card_id: BoundedId | None = None,
+        cursor: Annotated[str, Field(min_length=1, max_length=8192)] | None = None,
+        record_id: BoundedId | None = None, limit: Annotated[int, Field(ge=1, le=20)] = 20,
+        view: Literal["progress", "ledger", "resume", "readiness"] = "progress",
+        edition: Annotated[int, Field(ge=1)] | None = None,
+        phase: Literal['all', 'implementation', 'verification', 'lifecycle'] = 'all',
+        issue_id: BoundedId | None = None,
+        snapshot_id: Digest | None = None,
+    ) -> McpToolOutcome:
+        """Read delivery proof, history or current readiness for a Spec/optional Card.
+        view=readiness returns independent implementation/verification metrics,
+        bounded causes and next actions. Detail requires issue_id + snapshot_id.
+        Readiness is current-edition only; history uses progress/ledger/resume.
+        Every page reauthorizes; mutations independently recheck native gates.
+        Read okto-pulse://reference/tool-docs/code-traceability for query rules.
         """
         from okto_pulse.core.application.use_cases.delivery_evidence import GetDeliveryEvidenceUseCase
 
-        return await _execute(board_id, DeliveryEvidenceQuery(board_id=board_id, spec_id=spec_id), GetDeliveryEvidenceUseCase())
+        try:
+            command = DeliveryEvidenceReadQuery(board_id=board_id, spec_id=spec_id,
+                card_id=card_id, cursor=cursor, record_id=record_id, limit=limit, view=view, edition=edition,
+                phase=phase, issue_id=issue_id, snapshot_id=snapshot_id)
+        except ValidationError as exc:
+            if view == 'readiness':
+                raise ReadinessReadError('readiness_query_invalid') from exc
+            raise
+        return await _execute(board_id, command, GetDeliveryEvidenceUseCase())
 
-    async def okto_pulse_record_delivery_evidence(board_id: BoundedId, spec_id: BoundedId, evidence: DeliveryEvidenceInput) -> McpToolOutcome:
-        """Bind accepted task execution or an authenticated TEST-card result.
+    async def okto_pulse_record_delivery_evidence(board_id: BoundedId, card_id: BoundedId, spec_id: BoundedId, evidence: CardDeliveryRecordInput) -> McpToolOutcome:
+        """Record Card progress or bind accepted implementation/authenticated test proof.
+        Read get_delivery_evidence first for obligations and CAS/edition/revision fences.
+        Progress/impact are claims: no proof, completion or verified workspace recovery.
+        Use the closed evidence schema for single, atomic batch or report composition;
+        each entry retains its own permission, admission, currentness and lifecycle gates.
+        Partial proofs never sum to complete. Never fabricate receipts or claim a task
+        is a Test Card. Waiver/revoke remain authorized human operations elsewhere.
+        Batch: 1..50 entries, at most 200 links and 128 KiB; failure rolls back all.
+        After timeout retry the exact envelope with the same idempotency key.
+        Read okto-pulse://reference/tool-docs/code-traceability for inline receipts,
+        composite Targets, contribution scopes, aliases and report semantics."""
+        from okto_pulse.core.application.use_cases.delivery_evidence import RecordCardDeliveryEvidenceUseCase
+        from okto_pulse.core.application.use_cases.code_traceability import SubmitImplementationTargetExecutionUseCase
 
-        Read get_delivery_evidence first for current edition/version/obligation_refs.
-        implementation: done task/bug card_id + accepted committed execution_id.
-        test: done TEST card_id + passed scenario_id + implementation binding IDs
-        actually tested. Never claim a task is a test or fabricate receipt fields.
-        Justify each mapping; reuse idempotency_key only for the identical request.
-        Waiver/revoke require an authorized human; agents must ask the user.
-        Missing/stale proof blocks done even when planning/test Skip flags are set.
+        command = card_delivery_command(board_id=board_id, card_id=card_id, spec_id=spec_id, evidence=evidence)
+        investigation, _, targets = _services()
+        return await _execute(board_id, command, RecordCardDeliveryEvidenceUseCase(
+            SubmitImplementationTargetExecutionUseCase(investigation, targets)
+        ))
+
+    async def okto_pulse_get_decision_reviews(board_id: BoundedId, spec_id: BoundedId) -> McpToolOutcome:
+        """Read Decision adherence, native inspection sources, CAS and review history.
+
+        Declared inspection and obligation proof are both required when selected.
+        No Card or scenario is required for a direct inspection. Sources are resolved
+        by the server; an observation authenticates the reviewer, not its execution.
         """
-        from okto_pulse.core.application.use_cases.delivery_evidence import RecordDeliveryEvidenceUseCase
+        from okto_pulse.core.application.use_cases.decision_review import GetDecisionReviewsUseCase
+        return await _execute(board_id, DecisionReviewQuery(board_id=board_id, spec_id=spec_id), GetDecisionReviewsUseCase())
 
-        evidence = DeliveryEvidenceInput.model_validate(evidence)
-        command = DeliveryEvidenceCommand(board_id=board_id, spec_id=spec_id, **evidence.model_dump())
-        return await _execute(board_id, command, RecordDeliveryEvidenceUseCase())
+    async def okto_pulse_record_decision_reviews(board_id: BoundedId, spec_id: BoundedId, review: DecisionReviewInput) -> McpToolOutcome:
+        """Record 1..50 Decision inspections with spec.validation.submit authority.
+
+        Read get_decision_reviews for exact sources/digests and version/review fences.
+        State what was actually observed. Failed/inconclusive results are preserved;
+        conflicting conclusions require explicitly reconciling all current heads.
+        Does not submit Spec Validation, waive requirements or execute an inspection.
+        Retry the identical batch and idempotency key after a timeout.
+        """
+        from okto_pulse.core.application.use_cases.decision_review import RecordDecisionReviewsUseCase
+        command = DecisionReviewCommand(board_id=board_id, spec_id=spec_id,
+            **DecisionReviewInput.model_validate(review).model_dump())
+        return await _execute(board_id, command, RecordDecisionReviewsUseCase())
 
     for handler in (
+        okto_pulse_get_decision_reviews,
+        okto_pulse_record_decision_reviews,
         okto_pulse_get_delivery_evidence,
         okto_pulse_record_delivery_evidence,
         okto_pulse_start_code_investigation,
         okto_pulse_submit_code_investigation_receipt,
         okto_pulse_get_code_investigation_receipt,
         okto_pulse_submit_code_evidence,
-        okto_pulse_classify_legacy_code_evidence,
         okto_pulse_get_code_evidence,
         okto_pulse_list_code_evidence,
         okto_pulse_supersede_code_evidence,

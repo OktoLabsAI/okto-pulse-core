@@ -71,8 +71,6 @@ _BASELINE_CORE_SETTING_NAMES: tuple[str, ...] = (
     "kg_queue_stuck_age_seconds",
     "kg_queue_recovery_scan_interval_s",
     "cognitive_readiness_blocking_enabled",
-    "semantic_assessment_v2_readers_ready",
-    "semantic_assessment_v2_writer_enabled",
     "guideline_policy_cursor_signing_key",
     "kg_queue_dlq_auto_drain_backoff_s",
     "kg_queue_dlq_auto_drain_max_requeue_attempts",
@@ -111,13 +109,15 @@ _EDITION_COMMUNITY_OWNERS: dict[str, tuple[str, str, str]] = {
 }
 
 _KG_RUNTIME_OWNERS: dict[str, str] = {
-    "kg_kuzu_buffer_pool_mb": (
-        "Legacy public buffer knob retained for API/env compatibility; AF37 "
-        "tracks the neutral graph_runtime_* alias plan."
+    "kg_grafx_buffer_pool_mb": (
+        "Public Grafx buffer knob exposed through the runtime settings API; "
+        "AF37 tracks the neutral graph_runtime_* alias plan."
     ),
-    "kg_kuzu_max_db_size_gb": (
-        "Legacy public storage knob retained for API/env compatibility; AF37 "
-        "tracks the neutral graph_runtime_* alias plan."
+    "kg_grafx_page_size": (
+        "Public Grafx page-geometry knob exposed through the runtime settings "
+        "API; AF37 tracks the neutral graph_runtime_* alias plan. The retired "
+        "engine's max-database-size knob has no Grafx equivalent: Grafx storage "
+        "geometry is immutable per generation."
     ),
     "kg_wal_salvage_enabled": (
         "WAL salvage toggle (KGD-01 FR1/TR3) exposed through the public "
@@ -179,14 +179,6 @@ _CORE_CONTRACT_OWNERS: dict[str, tuple[str, str]] = {
     "cognitive_readiness_blocking_enabled": (
         "okto-pulse-core/cognitive-readiness",
         "global enforcement rollout flag",
-    ),
-    "semantic_assessment_v2_readers_ready": (
-        "okto-pulse-core/semantic-assessment",
-        "readers-first rollout readiness declaration",
-    ),
-    "semantic_assessment_v2_writer_enabled": (
-        "okto-pulse-core/semantic-assessment",
-        "operator request for guarded v2 writer activation",
     ),
     "guideline_policy_cursor_signing_key": (
         "okto-pulse-core/inbound-policy",

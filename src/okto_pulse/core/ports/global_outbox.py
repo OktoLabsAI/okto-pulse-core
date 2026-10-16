@@ -30,6 +30,14 @@ class GlobalOutboxEventRecord:
     created_at: datetime
     event_type: str = "consolidation_committed"
 
+    def __post_init__(self) -> None:
+        self.validate_retry_count()
+
+    def validate_retry_count(self) -> None:
+        """Only native retry counters and the terminal failure state are valid."""
+        if type(self.retry_count) is not int or self.retry_count < GLOBAL_OUTBOX_DEAD_LETTER_SENTINEL:
+            raise ValueError("global_outbox_retry_count_invalid")
+
 
 @dataclass(frozen=True, slots=True)
 class GlobalOutboxDeadLetterCursor:
@@ -46,7 +54,7 @@ class GlobalOutboxNodeRefFact:
 
 
 class GlobalOutboxMutationConflict(RuntimeError):
-    """A terminal row changed after validation but before guarded requeue."""
+    """A delivery/requeue selection conflicts with current terminal ownership."""
 
 
 class GlobalOutboxStore(Protocol):

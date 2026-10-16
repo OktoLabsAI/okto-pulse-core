@@ -172,23 +172,7 @@ class KGOperationalReadModelPort(Protocol):
     ) -> Sequence[str]:
         ...
 
-    async def list_pending_entries(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-        include_code_traceability: bool = True,
-    ) -> Sequence[Mapping[str, Any]]:
-        ...
 
-    async def build_pending_tree(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-        depth: int = 5,
-    ) -> Mapping[str, Any]:
-        ...
 
     async def queue_status_counts(
         self,
@@ -230,51 +214,6 @@ class KGOperationalReadModelPort(Protocol):
         *,
         board_id: str,
     ) -> Sequence[KGDeadLetterSignal]:
-        ...
-
-
-@runtime_checkable
-class KGGovernanceEffectsPort(Protocol):
-    """Write/effect contract for KG governance operations."""
-
-    async def start_historical_consolidation(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-    ) -> Mapping[str, Any]:
-        ...
-
-    async def pause_historical(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-    ) -> Mapping[str, Any]:
-        ...
-
-    async def resume_historical(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-    ) -> Mapping[str, Any]:
-        ...
-
-    async def cancel_historical(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-    ) -> Mapping[str, Any]:
-        ...
-
-    async def get_historical_progress(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-    ) -> Mapping[str, Any]:
         ...
 
 
@@ -323,16 +262,6 @@ class KGWorkerQueuePort(Protocol):
     ) -> Mapping[str, Any]:
         ...
 
-    async def retry_pending_entry(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-        queue_entry_id: str,
-        recursive: bool = False,
-        include_code_traceability: bool = True,
-    ) -> Mapping[str, Any] | None:
-        ...
 
 
 @runtime_checkable
@@ -361,7 +290,6 @@ class KGWorkerAuditPort(Protocol):
 
 
 _READ_MODEL_KEY = "ports.kg_operational.read_model"
-_GOVERNANCE_KEY = "ports.kg_operational.governance"
 _WORKER_QUEUE_KEY = "ports.kg_operational.worker_queue"
 _WORKER_AUDIT_KEY = "ports.kg_operational.worker_audit"
 
@@ -369,7 +297,6 @@ _WORKER_AUDIT_KEY = "ports.kg_operational.worker_audit"
 def register_kg_operational_ports(
     *,
     read_model: KGOperationalReadModelPort | None = None,
-    governance_effects: KGGovernanceEffectsPort | None = None,
     worker_queue: KGWorkerQueuePort | None = None,
     worker_audit: KGWorkerAuditPort | None = None,
 ) -> None:
@@ -377,8 +304,6 @@ def register_kg_operational_ports(
 
     if read_model is not None:
         register_runtime_value(_READ_MODEL_KEY, read_model)
-    if governance_effects is not None:
-        register_runtime_value(_GOVERNANCE_KEY, governance_effects)
     if worker_queue is not None:
         register_runtime_value(_WORKER_QUEUE_KEY, worker_queue)
     if worker_audit is not None:
@@ -389,13 +314,6 @@ def get_kg_operational_read_model_port() -> KGOperationalReadModelPort:
     port = resolve_runtime_value(_READ_MODEL_KEY)
     if port is None:
         raise KGOperationalProviderMissing("read_model")
-    return port
-
-
-def get_kg_governance_effects_port() -> KGGovernanceEffectsPort:
-    port = resolve_runtime_value(_GOVERNANCE_KEY)
-    if port is None:
-        raise KGOperationalProviderMissing("governance_effects")
     return port
 
 
@@ -417,14 +335,13 @@ def reset_kg_operational_ports_for_tests() -> None:
     """Drop registered providers for deterministic test isolation."""
 
     reset_runtime_values(
-        _READ_MODEL_KEY, _GOVERNANCE_KEY, _WORKER_QUEUE_KEY, _WORKER_AUDIT_KEY
+        _READ_MODEL_KEY, _WORKER_QUEUE_KEY, _WORKER_AUDIT_KEY
     )
 
 
 __all__ = [
     "KGCanonicalDebtSignal",
     "KGDeadLetterSignal",
-    "KGGovernanceEffectsPort",
     "KGOperationalProviderMissing",
     "KGOperationalReadModelPort",
     "KGOutboxCounts",
@@ -434,7 +351,6 @@ __all__ = [
     "KGWorkerAuditPort",
     "KGWorkerQueuePort",
     "classify_kg_recovery_failure",
-    "get_kg_governance_effects_port",
     "get_kg_operational_read_model_port",
     "get_kg_worker_audit_port",
     "get_kg_worker_queue_port",

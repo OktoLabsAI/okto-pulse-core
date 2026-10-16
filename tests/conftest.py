@@ -19,7 +19,6 @@ import os
 import sys
 import tempfile
 import uuid
-from collections import defaultdict
 from datetime import datetime, timezone
 from importlib import util as importlib_util
 from pathlib import Path
@@ -170,13 +169,10 @@ from sqlalchemy_test_models import (  # noqa: E402
     ConsolidationQueue,
     ArtifactDeletionTombstone,
     GlobalUpdateOutbox,
-    Ideation,
     KGTickRun,
     KuzuNodeRef,
-    Refinement,
     PermissionPreset,
     Spec,
-    Sprint,
 )
 from okto_pulse.core.ports.kg_operational import (  # noqa: E402
     KGCanonicalDebtSignal,
@@ -190,7 +186,6 @@ from okto_pulse.core.ports.kg_operational import (  # noqa: E402
     reset_kg_operational_ports_for_tests,
 )
 from okto_pulse.core.ports.kg_events import (  # noqa: E402
-    HISTORICAL_PROGRESS_SETTINGS_KEY,
     KGEventsPoll,
     KGOutboxEvent,
     register_kg_events_reader_port,
@@ -346,6 +341,11 @@ def _build_test_relational_runtime(url: str, *, echo: bool = False):
 
         @event.listens_for(engine.sync_engine, "connect")
         def _install_test_sqlite_pragmas(dbapi_conn, _conn_record):  # noqa: ANN001
+            from okto_pulse.community.adapters.sqlite_delivery_contract import (
+                install_delivery_contract_function,
+            )
+
+            install_delivery_contract_function(dbapi_conn)
             cursor = dbapi_conn.cursor()
             try:
                 cursor.execute("PRAGMA journal_mode=WAL")
@@ -376,11 +376,21 @@ class _CoreTestSchemaLifecycle:
                 from okto_pulse.community.adapters.sqlalchemy_base import (
                     Base as CommunityBase,
                 )
+                # Register all edition mappings before create_all. Otherwise a
+                # focused/nested suite can import CodeEvidence only on its first
+                # service call, after this schema snapshot was already created.
+                from okto_pulse.community.adapters import sqlalchemy_models  # noqa: F401
+
+                from sqlalchemy import inspect
+                from okto_pulse.community.adapters.sqlite_validation_revisions import install_validation_revision_triggers
+                revisions_exist = await conn.run_sync(lambda sync: inspect(sync).has_table("validation_source_revisions"))
 
                 # SK-B's immutable policy authority is an edition extension.
                 # Cross-repo integration runs compose it explicitly while
                 # pure-Core runs remain independent of Community.
                 await conn.run_sync(CommunityBase.metadata.create_all)
+                if not revisions_exist:
+                    await conn.run_sync(lambda sync: install_validation_revision_triggers(sync, CommunityBase.metadata))
 
 
 class _CoreTestRelationalEffects(RelationalEffectsPort):
@@ -547,9 +557,8 @@ class _CoreTestPermissionPresetGateway:
         self._session = session
 
     async def get_effective_permissions(self, *, user_id, board_id):
-        from okto_pulse.core.infra.permissions import (
+        from okto_pulse.core.domain.permissions import (
             _match_builtin_preset_name,
-            map_legacy_permissions,
             resolve_permissions,
         )
         from okto_pulse.core.ports.permission_policy import (
@@ -569,8 +578,6 @@ class _CoreTestPermissionPresetGateway:
         if agent is not None:
             if isinstance(agent.permission_flags, dict) and agent.permission_flags:
                 agent_flags = agent.permission_flags
-            elif isinstance(agent.permissions, list) and agent.permissions:
-                agent_flags = map_legacy_permissions(agent.permissions)
             if agent.preset_id:
                 preset_rows = list(
                     (
@@ -652,7 +659,7 @@ class _CoreTestPermissionPresetGateway:
     async def clone_preset(
         self, *, source_preset_id, user_id, name, description, flags
     ):
-        from okto_pulse.core.infra.permissions import (
+        from okto_pulse.core.domain.permissions import (
             _flatten_registry,
             _get_nested,
             _set_nested,
@@ -733,10 +740,12 @@ class _CoreTestAgentAuthenticationGateway:
         agent = result.scalar_one_or_none()
         if agent is None:
             return None
+        context = await self.resolve_agent_permission_context(agent.id)
         return AgentAuthSession(
             agent_id=agent.id,
             agent_name=agent.name,
             is_active=True,
+            permissions=context.permissions,
             metadata={
                 "credential_source": credential_source,
                 "realm_id": "local",
@@ -762,43 +771,34 @@ class _CoreTestAgentAuthenticationGateway:
         return result.scalar_one_or_none() is not None
 
     async def resolve_agent_permission_context(self, agent_id, *, board_id=None):
-        from okto_pulse.core.infra.permissions import resolve_permissions
+        from okto_pulse.core.ports.permission_policy import (
+            PermissionPresetLineageNode, resolve_agent_permission_facts,
+        )
 
         agent = await self._session.get(Agent, agent_id)
-        if agent is None or not bool(getattr(agent, "is_active", True)):
+        if agent is None or not agent.is_active:
             return None
-        agent_board = None
+        binding = None
         if board_id:
-            result = await self._session.execute(
-                select(AgentBoard).where(
-                    AgentBoard.agent_id == agent.id,
-                    AgentBoard.board_id == board_id,
-                )
-            )
-            agent_board = result.scalar_one_or_none()
-            if agent_board is None:
+            binding = (await self._session.execute(select(AgentBoard).where(
+                AgentBoard.agent_id == agent.id, AgentBoard.board_id == board_id,
+            ))).scalar_one_or_none()
+            if binding is None:
                 return None
-        agent_flags = getattr(agent, "permission_flags", None)
-        if agent_flags is None:
-            permissions = agent.permissions
-        else:
-            preset_flags = None
-            if agent.preset_id:
-                preset = await self._session.get(PermissionPreset, agent.preset_id)
-                if preset is not None:
-                    preset_flags = preset.flags
-            board_overrides = (
-                agent_board.permission_overrides if agent_board is not None else None
+        presets = ()
+        if agent.preset_id:
+            rows = (await self._session.execute(select(PermissionPreset))).scalars().all()
+            presets = tuple(
+                PermissionPresetLineageNode(row.id, row.flags, row.base_preset_id)
+                for row in rows
             )
-            permissions = resolve_permissions(
-                agent_flags,
-                preset_flags,
-                board_overrides,
-            )
+        permissions = resolve_agent_permission_facts(
+            agent_flags=agent.permission_flags, preset_id=agent.preset_id,
+            presets=presets,
+            board_overrides=binding.permission_overrides if binding else None,
+        )
         return AgentPermissionContext(
-            agent_id=agent.id,
-            agent_name=agent.name,
-            permissions=permissions,
+            agent_id=agent.id, agent_name=agent.name, permissions=permissions,
         )
 
 
@@ -891,6 +891,44 @@ class _CoreTestRelationalApplicationAdapter:
     def permission_presets(self, session):
         return _CoreTestPermissionPresetGateway(session)
 
+    def delivery_evidence(self, session):
+        """Empty delivery-evidence seam for Core scenarios with no persistence.
+
+        The Core suite has no relational delivery ledger: every scope it moves
+        through a terminal transition is seeded WITHOUT acceptance criteria or
+        test scenarios, so a faithful adapter would project an empty obligation
+        set too. Recording is fail-closed — a Core test that needs real receipts
+        must register its own adapter.
+        """
+
+        _ = session
+
+        from okto_pulse.core.domain.delivery_evidence import (
+            DeliveryEvidenceSnapshot,
+        )
+
+        class _CoreTestDeliveryEvidenceStore:
+            async def lock_scope(self, _scope) -> None:
+                return None
+
+            async def load_snapshot(self, scope):
+                return DeliveryEvidenceSnapshot(scope=scope, obligations=())
+
+            async def projection(self, board_id: str, spec_id: str) -> dict:
+                return {
+                    "board_id": board_id,
+                    "spec_id": spec_id,
+                    "obligations": [],
+                    "complete": True,
+                }
+
+            async def record(self, command, *, actor_id: str, actor_kind: str):
+                raise NotImplementedError(
+                    "Delivery evidence recording needs an edition-owned adapter."
+                )
+
+        return _CoreTestDeliveryEvidenceStore()
+
     def quality_assessments(self, session):
         _ = session
         from okto_pulse.core.ports.quality_assessment import (
@@ -928,7 +966,6 @@ class _CoreTestRelationalApplicationAdapter:
                     zero_orphans=True,
                     projections_reconciled=True,
                     outbox_reconciled=True,
-                    epoch_consistency_preserved=True,
                     verified_at=datetime.now(timezone.utc),
                 )
 
@@ -1020,6 +1057,7 @@ class _CoreTestRelationalApplicationAdapter:
                 if spec is None or spec.board_id != board_id:
                     return None
                 return ChecklistSpecSnapshot(
+                    spec_edition=spec.edition,
                     board_id=board_id,
                     spec_id=spec_id,
                     spec_version=spec.version,
@@ -1169,46 +1207,18 @@ class _CoreTestKGEventsReader:
         rows = (
             await session.execute(
                 select(
-                    ConsolidationQueue.status, ConsolidationQueue.source, func.count()
+                    ConsolidationQueue.status, func.count()
                 )
                 .where(ConsolidationQueue.board_id == board_id)
-                .group_by(ConsolidationQueue.status, ConsolidationQueue.source)
+                .group_by(ConsolidationQueue.status)
             )
         ).all()
         snapshot = {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
-        historical = {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
-        for status, source, count in rows:
+        for status, count in rows:
             if status in snapshot:
                 snapshot[status] += int(count)
-                if source == "historical_backfill":
-                    historical[status] += int(count)
-
-        live_total = sum(snapshot.values())
-        historical_active = (
-            historical["pending"] + historical["claimed"] + historical["paused"]
-        )
-        historical_total = 0
-        if historical_active > 0:
-            board = await session.get(Board, board_id)
-            if board is not None and isinstance(board.settings, dict):
-                state = board.settings.get(HISTORICAL_PROGRESS_SETTINGS_KEY)
-                if isinstance(state, dict):
-                    try:
-                        historical_total = int(state.get("total") or 0)
-                    except (TypeError, ValueError):
-                        historical_total = 0
-
-        non_historical_total = live_total - sum(historical.values())
-        if historical_active > 0 and historical_total > 0:
-            snapshot["total"] = max(live_total, historical_total + non_historical_total)
-            snapshot["processed"] = max(
-                0,
-                snapshot["total"]
-                - (snapshot["pending"] + snapshot["claimed"] + snapshot["paused"]),
-            )
-        else:
-            snapshot["total"] = live_total
-            snapshot["processed"] = snapshot["done"]
+        snapshot["total"] = sum(snapshot.values())
+        snapshot["processed"] = snapshot["done"]
         return snapshot
 
 
@@ -1262,247 +1272,7 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
         result = await context.execute(select(Board).limit(limit))
         return [b.id for b in result.scalars().all()]
 
-    async def list_pending_entries(
-        self,
-        context,
-        *,
-        board_id: str,
-        include_code_traceability: bool = True,
-    ) -> list[dict]:
-        query = select(ConsolidationQueue).where(
-            ConsolidationQueue.board_id == board_id
-        )
-        if not include_code_traceability:
-            from okto_pulse.core.domain.code_traceability_kg import (
-                CODE_TRACEABILITY_KG_SUBTYPES,
-            )
 
-            query = query.where(
-                ConsolidationQueue.artifact_type.not_in(CODE_TRACEABILITY_KG_SUBTYPES)
-            )
-        query = query.order_by(ConsolidationQueue.triggered_at.desc()).limit(100)
-        rows = (await context.execute(query)).scalars().all()
-        return [
-            {
-                "id": r.id,
-                "board_id": r.board_id,
-                "artifact_id": r.artifact_id,
-                "artifact_type": r.artifact_type,
-                "priority": r.priority,
-                "source": r.source,
-                "status": r.status,
-                "triggered_at": r.triggered_at.isoformat() if r.triggered_at else None,
-                "claimed_by_session_id": r.claimed_by_session_id,
-            }
-            for r in rows
-        ]
-
-    async def build_pending_tree(
-        self,
-        context,
-        *,
-        board_id: str,
-        depth: int = 5,
-    ) -> dict:
-        q_rows = (
-            (
-                await context.execute(
-                    select(ConsolidationQueue).where(
-                        ConsolidationQueue.board_id == board_id
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        q_by_artifact: dict[tuple[str, str], ConsolidationQueue] = {
-            (r.artifact_type, r.artifact_id): r for r in q_rows
-        }
-
-        def _queue_meta(art_type: str, art_id: str) -> dict:
-            entry = q_by_artifact.get((art_type, art_id))
-            if entry is None:
-                return {
-                    "status": "not_queued",
-                    "queued_age_seconds": None,
-                    "retry_count": 0,
-                    "layer": None,
-                    "last_error": None,
-                }
-            age = None
-            if entry.triggered_at is not None:
-                triggered_at = entry.triggered_at
-                if triggered_at.tzinfo is None:
-                    triggered_at = triggered_at.replace(tzinfo=timezone.utc)
-                age = (datetime.now(timezone.utc) - triggered_at).total_seconds()
-            return {
-                "status": entry.status,
-                "queued_age_seconds": int(age) if age is not None else None,
-                "retry_count": 0,
-                "layer": entry.source or "unknown",
-                "last_error": None,
-            }
-
-        ideas = (
-            (
-                await context.execute(
-                    select(Ideation).where(Ideation.board_id == board_id)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        refs = (
-            (
-                await context.execute(
-                    select(Refinement).where(Refinement.board_id == board_id)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        specs = (
-            (await context.execute(select(Spec).where(Spec.board_id == board_id)))
-            .scalars()
-            .all()
-        )
-        sprints = (
-            (await context.execute(select(Sprint).where(Sprint.board_id == board_id)))
-            .scalars()
-            .all()
-        )
-        cards = (
-            (await context.execute(select(Card).where(Card.board_id == board_id)))
-            .scalars()
-            .all()
-        )
-
-        refs_by_ideation: dict[str, list] = defaultdict(list)
-        for row in refs:
-            refs_by_ideation[row.ideation_id or ""].append(row)
-        specs_by_refinement: dict[str, list] = defaultdict(list)
-        specs_orphan: list = []
-        for row in specs:
-            if row.refinement_id:
-                specs_by_refinement[row.refinement_id].append(row)
-            else:
-                specs_orphan.append(row)
-        sprints_by_spec: dict[str, list] = defaultdict(list)
-        for row in sprints:
-            sprints_by_spec[row.spec_id].append(row)
-        cards_by_sprint: dict[str, list] = defaultdict(list)
-        cards_by_spec_direct: dict[str, list] = defaultdict(list)
-        for row in cards:
-            if getattr(row, "sprint_id", None):
-                cards_by_sprint[row.sprint_id].append(row)
-            else:
-                cards_by_spec_direct[row.spec_id].append(row)
-
-        levels_counter = {
-            lvl: {
-                "pending": 0,
-                "in_progress": 0,
-                "done": 0,
-                "failed": 0,
-                "not_queued": 0,
-            }
-            for lvl in ("ideations", "refinements", "specs", "sprints", "cards")
-        }
-
-        def _tally(level: str, art_type: str, art_id: str) -> None:
-            status = _queue_meta(art_type, art_id)["status"]
-            levels_counter[level][status] = levels_counter[level].get(status, 0) + 1
-
-        def _card_node(row) -> dict:
-            meta = _queue_meta("card", row.id)
-            _tally("cards", "card", row.id)
-            return {
-                "id": row.id,
-                "type": "card",
-                "title": row.title,
-                "card_type": (
-                    str(row.card_type) if getattr(row, "card_type", None) else "normal"
-                ),
-                **meta,
-                "children": [],
-            }
-
-        def _sprint_node(row) -> dict:
-            meta = _queue_meta("sprint", row.id)
-            _tally("sprints", "sprint", row.id)
-            children = [_card_node(c) for c in cards_by_sprint.get(row.id, [])]
-            if depth < 5:
-                children = []
-            return {
-                "id": row.id,
-                "type": "sprint",
-                "title": row.title,
-                **meta,
-                "children": children,
-            }
-
-        def _spec_node(row) -> dict:
-            meta = _queue_meta("spec", row.id)
-            _tally("specs", "spec", row.id)
-            sp_children = [_sprint_node(sp) for sp in sprints_by_spec.get(row.id, [])]
-            direct_cards = [_card_node(c) for c in cards_by_spec_direct.get(row.id, [])]
-            if depth < 4:
-                sp_children = []
-                direct_cards = []
-            return {
-                "id": row.id,
-                "type": "spec",
-                "title": row.title,
-                **meta,
-                "children": sp_children + direct_cards,
-            }
-
-        def _refinement_node(row) -> dict:
-            meta = _queue_meta("refinement", row.id)
-            _tally("refinements", "refinement", row.id)
-            spec_children = [_spec_node(s) for s in specs_by_refinement.get(row.id, [])]
-            if depth < 3:
-                spec_children = []
-            return {
-                "id": row.id,
-                "type": "refinement",
-                "title": row.title,
-                **meta,
-                "children": spec_children,
-            }
-
-        tree: list[dict] = []
-        for row in ideas:
-            meta = _queue_meta("ideation", row.id)
-            _tally("ideations", "ideation", row.id)
-            ref_children = [
-                _refinement_node(r) for r in refs_by_ideation.get(row.id, [])
-            ]
-            if depth < 2:
-                ref_children = []
-            tree.append(
-                {
-                    "id": row.id,
-                    "type": "ideation",
-                    "title": row.title,
-                    **meta,
-                    "children": ref_children,
-                }
-            )
-        for row in specs_orphan:
-            tree.append(_spec_node(row))
-
-        total_pending = sum(
-            sum(v for k, v in counts.items() if k in ("pending", "in_progress"))
-            for counts in levels_counter.values()
-        )
-        return {
-            "board_id": board_id,
-            "depth": depth,
-            "total_pending": total_pending,
-            "levels": levels_counter,
-            "tree": tree,
-        }
 
     async def queue_status_counts(self, context, *, board_id: str) -> dict[str, int]:
         rows = (
@@ -1798,26 +1568,6 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
             "already_queued_count": len(already_queued),
         }
 
-    async def retry_pending_entry(
-        self,
-        context,
-        *,
-        board_id: str,
-        queue_entry_id: str,
-        recursive: bool = False,
-        include_code_traceability: bool = True,
-    ):
-        from okto_pulse.community.adapters.kg_operational import (
-            CommunitySqlAlchemyKGWorkerQueue,
-        )
-
-        return await CommunitySqlAlchemyKGWorkerQueue().retry_pending_entry(
-            context,
-            board_id=board_id,
-            queue_entry_id=queue_entry_id,
-            recursive=recursive,
-            include_code_traceability=include_code_traceability,
-        )
 
 
 class _CoreTestKGWorkerAudit(KGWorkerAuditPort):
@@ -2164,12 +1914,12 @@ def _coordination_test_fakes():
 
 
 @pytest.fixture(autouse=True)
-def _knowledge_propagation_legacy_test_port(request: pytest.FixtureRequest):
-    """Make legacy Knowledge reads explicit in Core-only test compositions.
+def _knowledge_propagation_empty_test_port(request: pytest.FixtureRequest):
+    """Provide an explicitly empty native Knowledge scope for Core-only tests.
 
     Production composition remains fail-closed when the edition-owned port is
     absent.  Tests that exercise the port registry itself own that registry and
-    therefore intentionally opt out of this compatibility fake.
+    therefore intentionally opt out of this empty-scope fake.
     """
 
     from okto_pulse.core.ports.knowledge_propagation import (
@@ -2185,19 +1935,16 @@ def _knowledge_propagation_legacy_test_port(request: pytest.FixtureRequest):
         yield
         return
 
-    class _ExplicitLegacyKnowledgePropagationPort:
+    class _EmptyKnowledgePropagationPort:
         async def load_scope(self, _context, lookup):
             return KnowledgePropagationScope(
                 target=lookup.target,
                 scope_revision=0,
-                v2_active=False,
-                selection_state=None,
+                selection_state="omitted",
             )
 
         async def get_idempotency_entry(self, _context, _lookup):
-            raise AssertionError(
-                "legacy Knowledge test port does not support mutations"
-            )
+            return None
 
         async def load_parent_evidence(self, _context, _lookup):
             raise AssertionError(
@@ -2205,9 +1952,12 @@ def _knowledge_propagation_legacy_test_port(request: pytest.FixtureRequest):
             )
 
         async def stage_mutation(self, _context, _plan):
-            raise AssertionError(
-                "legacy Knowledge test port does not support mutations"
-            )
+            # No data is persisted by this empty-scope unit-test double.
+            assert _plan.operation_kind == "relink_reset"
+            assert not _plan.assignments_to_open
+            assert not _plan.assignment_ids_to_close
+            assert not _plan.snapshots_to_open
+            return _plan.ledger_entry.receipt
 
         async def stage_attempt(self, _context, _attempt):
             raise AssertionError(
@@ -2215,7 +1965,7 @@ def _knowledge_propagation_legacy_test_port(request: pytest.FixtureRequest):
             )
 
     reset_knowledge_propagation_port_for_tests()
-    register_knowledge_propagation_port(_ExplicitLegacyKnowledgePropagationPort())
+    register_knowledge_propagation_port(_EmptyKnowledgePropagationPort())
     try:
         yield
     finally:
@@ -2327,28 +2077,6 @@ def _amendment_revision_test_store():
     reset_amendment_revision_store_for_tests()
 
 
-@pytest.fixture(autouse=True)
-def _sprint_activation_baseline_test_store():
-    from okto_pulse.core.ports.sprint_activation_baseline import (
-        register_sprint_activation_baseline_store,
-        reset_sprint_activation_baseline_store_for_tests,
-    )
-
-    class _Store:
-        def __init__(self):
-            self.rows = {}
-
-        async def get(self, context, *, board_id, sprint_id):
-            return self.rows.get((board_id, sprint_id))
-
-        async def save_if_absent(self, context, baseline):
-            return self.rows.setdefault(
-                (baseline.board_id, baseline.sprint_id), baseline
-            )
-
-    register_sprint_activation_baseline_store(_Store())
-    yield
-    reset_sprint_activation_baseline_store_for_tests()
 
 
 @pytest.fixture(autouse=True)
@@ -2365,20 +2093,20 @@ def _parent_artifact_test_reader():
 
 
 @pytest.fixture(autouse=True)
-def _architecture_legacy_test_reader():
-    from okto_pulse.core.ports.architecture_legacy import (
-        register_architecture_legacy_snapshot_read_port,
-        reset_architecture_legacy_snapshot_read_port_for_tests,
+def _architecture_snapshot_test_reader():
+    from okto_pulse.core.ports.architecture_snapshot import (
+        register_architecture_snapshot_snapshot_read_port,
+        reset_architecture_snapshot_snapshot_read_port_for_tests,
     )
-    from sqlalchemy_architecture_legacy_reader import (
-        TestSqlAlchemyArchitectureLegacySnapshotReader,
+    from sqlalchemy_architecture_snapshot_reader import (
+        TestSqlAlchemyArchitectureSnapshotReader,
     )
 
-    register_architecture_legacy_snapshot_read_port(
-        TestSqlAlchemyArchitectureLegacySnapshotReader()
+    register_architecture_snapshot_snapshot_read_port(
+        TestSqlAlchemyArchitectureSnapshotReader()
     )
     yield
-    reset_architecture_legacy_snapshot_read_port_for_tests()
+    reset_architecture_snapshot_snapshot_read_port_for_tests()
 
 
 @pytest.fixture(autouse=True)
@@ -2439,30 +2167,6 @@ def _structured_spec_test_store():
     reset_structured_spec_store_for_tests()
 
 
-@pytest.fixture(autouse=True)
-def _requirement_lint_writer_hook():
-    from okto_pulse.core.ports.requirement_lint import (
-        RequirementLintWriteResult,
-        register_requirement_lint_writer_hook,
-        reset_requirement_lint_writer_hook_for_tests,
-    )
-
-    class _ContractTestRequirementLintHook:
-        async def stage_requirement_lint(self, context, command):  # noqa: ANN001
-            del context
-            return RequirementLintWriteResult(
-                receipt_id=(
-                    f"qar_test_{command.spec_id}_{command.spec_version}_"
-                    f"{command.writer.value}"
-                ),
-                head_revision=command.spec_version,
-                evaluated_rule_count=1,
-                finding_count=0,
-            )
-
-    register_requirement_lint_writer_hook(_ContractTestRequirementLintHook())
-    yield
-    reset_requirement_lint_writer_hook_for_tests()
 
 
 @pytest.fixture(autouse=True)
@@ -2729,7 +2433,7 @@ def _reset_rebuild_audit_artifact_store_state(_kg_registry_test_fakes):
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _kg_registry_module_bootstrap_seed():
+def _kg_registry_module_bootstrap_seed(request: pytest.FixtureRequest):
     """Seed the registry for legacy module-scoped KG fixtures.
 
     A few older integration modules bootstrap the global discovery graph from a
@@ -2744,7 +2448,16 @@ def _kg_registry_module_bootstrap_seed():
     reset_registry_for_tests()
     configure_test_kg_registry()
     yield
-    reset_registry_for_tests()
+    _assert_kg_health_probes_drained(
+        nodeid=request.node.nodeid,
+        phase="before_module_graph_cleanup",
+    )
+    from kg_schema_testing import close_all_connections
+
+    try:
+        close_all_connections(strict=True)
+    finally:
+        reset_registry_for_tests()
 
 
 def _reset_commit_health_cache() -> None:
@@ -2788,7 +2501,6 @@ _ENGINE_SWAP_SANCTIONED = frozenset(
     {
         "test_kg_governance.py",
         "test_kg_dedup_nc8.py",
-        "test_kg_dedup_migration.py",
         "test_kg_pipeline_e2e.py",
         "test_kg_real_integration.py",
     }
@@ -3077,3 +2789,32 @@ def heartbeat():
         tracker.heartbeat()
 
     return _heartbeat
+
+
+@pytest.fixture
+def community_page_persistence():
+    """Use real page reads; keep unrelated CRUD setup in its existing harness."""
+    from contextlib import contextmanager
+    from okto_pulse.community.adapters.sqlalchemy_application_persistence import (
+        CommunitySqlAlchemyApplicationPersistence,
+    )
+    from okto_pulse.core.domain.realm import RealmScope
+    from okto_pulse.core.ports.application_persistence import (
+        get_application_persistence_port,
+        register_application_persistence_port,
+    )
+
+    @contextmanager
+    def native_reads():
+        previous = get_application_persistence_port()
+        factory = get_session_factory()
+        previous_info = dict(factory.kw.get("info") or {})
+        factory.configure(info={**previous_info, "realm_scope": RealmScope.local()})
+        register_application_persistence_port(CommunitySqlAlchemyApplicationPersistence())
+        try:
+            yield
+        finally:
+            register_application_persistence_port(previous)
+            factory.configure(info=previous_info)
+
+    return native_reads

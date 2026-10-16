@@ -1,0 +1,45 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "ARQVER:ADV-10",
+  "status": "verified",
+  "coverage": "Persisted BR-left and BR-right inherit the same FR criterion; BR-top inherits through both. A single signed authorization run and single Card test record satisfy all three BRs, without duplicate obligations or receipts. Fresh-session qualification retains both origins, the rollup has six distinct obligations, and the real delivery gate passes. Introducing a persisted BR-left to BR-top cycle is detected despite stale digests, blocks the rollup/gate and leaves every evidence payload unchanged.",
+  "executions": [
+    {
+      "terminal_session": 83800,
+      "exit_code": 0,
+      "passed": 12,
+      "seconds": 42.49,
+      "cases": [
+        "tests.test_multicard_delivery_integration::test_diamond_reuses_one_proof_and_persisted_cycle_never_receives_credit",
+        "tests.test_multicard_delivery_integration::test_two_of_three_passing_criteria_never_satisfy_requirement[absent]",
+        "tests.test_multicard_delivery_integration::test_two_of_three_passing_criteria_never_satisfy_requirement[failed]",
+        "tests.test_multicard_delivery_integration::test_ui_completion_cannot_deliver_authorization_or_its_inherited_rule",
+        "tests.test_multicard_delivery_integration::test_failed_authorization_remains_visible_beside_passing_ui",
+        "tests.test_multicard_delivery_integration::test_ui_result_cannot_name_authorization_proof_to_gain_its_criterion[requirement]",
+        "tests.test_multicard_delivery_integration::test_ui_result_cannot_name_authorization_proof_to_gain_its_criterion[criterion]",
+        "tests.test_multicard_delivery_integration::test_changed_authorization_never_rewrites_or_invalidates_independent_ui[target_revision]",
+        "tests.test_multicard_delivery_integration::test_changed_authorization_never_rewrites_or_invalidates_independent_ui[contribution_scope]",
+        "tests.test_multicard_delivery_integration::test_changed_authorization_never_rewrites_or_invalidates_independent_ui[later_failed_run]",
+        "tests.test_multicard_delivery_integration::test_two_partial_authorization_records_never_sum_to_the_inherited_obligation",
+        "tests.test_multicard_delivery_integration::test_one_signed_report_preserves_distinct_criterion_verdicts"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-three-criteria-diamond2-community.xml",
+          "sha256": "fbf9e8d4a074aba275d8c65a22e154b219dcb2cbec4912953624f38dee431956"
+        },
+        {
+          "file": "learning-reconciliation-three-criteria-diamond2-community.log",
+          "sha256": "47c64fbf341ba0d98a42c358ee6651fd49249841adb7db194d5019582e71b347"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "One new diamond test plus eleven regressions. Real Community SQL store, signed HTTP issuer/verifier, ledger admission, fresh-session reads and Spec delivery predicate. Not a full Spec Done transition or transport authentication test.",
+    "Spec/Card lifecycle states and accepted external implementation receipts are fixtures. BR responsibility uses the existing canonical linked_requirements FR allocation; verification inheritance is separately qualified through both BR paths.",
+    "The cycle is injected directly into the disposable database to test recovery reads; this does not claim that an authorized content writer admits cycles.",
+    "Probe1 session35563 exit1 correctly refused delivery_obligation_not_found: BR-top had no implementation allocation. Fixture repaired with its canonical FR link; no production policy or resolver altered.",
+    "Productive sources unchanged since provenance-three-criteria1.json byte-compared Core859/922 and Community373/458 against installed wheels. Latest relevant F16 session31859 exit0 has eight ZERO budgets; frontend46579 passed54. No UI change."
+  ]
+}

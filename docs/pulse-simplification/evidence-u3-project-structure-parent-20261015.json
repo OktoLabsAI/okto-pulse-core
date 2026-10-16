@@ -1,0 +1,132 @@
+{
+  "date": "2026-10-15",
+  "scope": "U3/5d Project Structure parent integration",
+  "checkpoint": {
+    "core_product": "8291a648",
+    "community": "5ac5ce06"
+  },
+  "runtime": {
+    "kind": "checkout, not installed qualification",
+    "api_port": 8200,
+    "mcp_port": 8201,
+    "vite_port": 5274,
+    "api_pid": 39712,
+    "vite_pid": 17304
+  },
+  "subject": {
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "dec9410f-d455-4506-a8fd-f791ee31dc77",
+    "edition": 1
+  },
+  "frontend": {
+    "passed": 138,
+    "failed": 0,
+    "skipped": 0,
+    "max_workers": 1,
+    "typescript_exit": 0,
+    "eslint_errors": 0,
+    "eslint_existing_warnings": 11,
+    "initial_parent_test_failure": "Two new selectors expected an exact tab name without its node-count badge; corrected selectors, unchanged product visibility contract."
+  },
+  "observed": [
+    "UI created one planned mock-scope.md node; MCP confirmed version18/revision1.",
+    "MCP rename changed version19/revision2. Open UI retained the local note draft and disabled Save until explicit review. Screenshot inspected.",
+    "Environment suspended networking and reloaded the page before save; the first draft was not saved and was not claimed persistent across reload.",
+    "After reconnecting to the same live runtime, a new UI draft remained while MCP linked the real mock Task: version19 unchanged, revision3. UI refreshed automatically and required review.",
+    "Explicit review then UI Save; MCP confirmed version20/revision4 with exactly one node, reviewed name, authored note and Task link retained. Screenshot inspected.",
+    "Details source inspection: read-only description/context/labels/cancellation and Task Validation Gate summary; no requirement editor reintroduced."
+  ],
+  "final_node": {
+    "id": "psn_6a7cb3581649",
+    "parent_id": null,
+    "position": 0,
+    "kind": "file",
+    "name": "mock-scope-reviewed.md",
+    "note": "Planned mock scope document. This authored note must survive an external Task link and preserve the reviewed filename. No implementation or execution evidence claimed.",
+    "classification": "to_be",
+    "state": "planned",
+    "interpretation_limit": null,
+    "status": "active",
+    "task_references": [
+      {
+        "task_id": "d14ef50a-189e-5282-99fd-8a636bc698df",
+        "role": "create",
+        "classification_at_link": "to_be"
+      }
+    ],
+    "test_references": [],
+    "evidence_ids": []
+  },
+  "limits": [
+    "get_spec_context(profile=full) refused checklist_validation_binding_snapshot_missing in this isolated fixture. Recorded separately; no gate/policy changed. get_spec and public tree writes succeeded.",
+    "Uncertain exact retry, denied access, late identity response and full Spec read recovery are frontend tests; no claim of native signed report or installed E2E.",
+    "No Python/backend change, build or reinstall in this increment. Existing backend/closure evidence is not a new run.",
+    "U3/3d readers and integrated UV18-21 remain; U4 installed initiative through Done/KG canonical remains."
+  ],
+  "artifacts": [
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-project-structure-before.xml",
+      "sha256": "9bb8f456f2b965d3008a8ce1f3cd7b3119ef7ffb50920fb0e36822974c5bd04e"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-project-structure-guards.xml",
+      "sha256": "2ca647e891eafbdd0055fc9d2c4eac32c1671695015be882dcabb7c5c06bc4b2"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-project-structure-parent.xml",
+      "sha256": "92d7a52d116ee51400d0a1ef515c21d0c68e8a1eaccee87fb4398e45f82f4d23"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-project-structure-parent-targeted.xml",
+      "sha256": "02f6f914fd111ae8643d251032e92900565e216bdf0fdf6f6bdba8f84e189671"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-project-structure-integrated.xml",
+      "sha256": "9adc7608848eb77219487a8b6211e20eb5c815b31c55c24aff49e596688e98d7"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-scenario-snapshot-native-tree-before.json",
+      "sha256": "21e795496d43e79b5209944a5346ba75329b8214155dc40d787d258b43b6ec36"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-scenario-snapshot-native-tree-base.json",
+      "sha256": "5a38c750f523a8940a120389052f01361a464a4327b1b5c6fa151a20fa82d4a1"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-scenario-snapshot-native-tree-created.json",
+      "sha256": "b0f65a88a7df0b7cf488e3775e050ac73ab7b239599c0c8c428d0fe9ed71b05b"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-scenario-snapshot-native-tree-external.json",
+      "sha256": "a15d82abb1c47c1d4a74550d614a4cc60ff7be65daf856c4c3a54cfc9baa898e"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-scenario-snapshot-native-tree-saved.json",
+      "sha256": "2a2348ac47bbaaddcc7acb02e19a81c014e22f8c1ff2b4eeb25c892a372afc6e"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-scenario-snapshot-native-tree-link.json",
+      "sha256": "f85ff5158cfc7236056f9240caaecd6d65d2d0ca41bc790dc4f23eeb624438b2"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-scenario-snapshot-native-tree-final.json",
+      "sha256": "e9fc94d83869fd78da636e185a4d0bfb4c9ad538c567d5ccf75408ef0b40121a"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-project-structure-external-draft.yml",
+      "sha256": "258ac674314599e63802c52385b8af188927ee9f805537e6025c2eedd9dbe0ec"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-project-structure-external-draft.png",
+      "sha256": "2b25c4cf03ba40e372a716ad926641443425bc3c4e8b6b71bb7af59fe5d4badd"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-project-structure-link-draft.yml",
+      "sha256": "49f86f514a53c1232ce004c435cef1fbd12aa40b7f798e731938bbf9e67c9990"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-project-structure-saved.png",
+      "sha256": "213e59c1416d50812ea5088f040b6034d3840fb4676501effa8f458dead6253b"
+    }
+  ]
+}

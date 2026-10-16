@@ -95,7 +95,7 @@ def test_working_and_all_layers_are_echoed():
 def test_invalid_graph_layer_fails_closed_before_execution():
     # Board never bootstrapped: the invalid graph_layer must be rejected at the
     # boundary BEFORE any retrieval would touch the (absent) graph. A structured
-    # invalid_param error, not a graph/kuzu error, proves the order.
+    # invalid_param error, not a graph/grafx error, proves the order.
     with pytest.raises(TierPowerError) as exc_info:
         execute_natural_query(
             "nlayer-never-bootstrapped", "q", graph_layer="bogus"

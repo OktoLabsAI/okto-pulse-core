@@ -282,7 +282,7 @@ def test_ts4_current_core_common_contracts_are_backend_agnostic() -> None:
         GraphRuntimeSurfaceGateInput(mode="blocking")
     )
 
-    assert report.status == "passed"
+    assert report.status == "passed", report.evidence["violations"]
     assert report.evidence["violations"] == []
     assert report.evidence["compatibility_allowlist"] == []
     assert report.evidence["compatibility_ledger_findings"] == []

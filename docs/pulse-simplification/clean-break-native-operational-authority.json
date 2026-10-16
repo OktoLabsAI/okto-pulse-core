@@ -1,0 +1,30 @@
+{
+  "scope": "AC-VER-17: operational qualification cannot dispense active scope",
+  "proof_pair": "dist-native-main87",
+  "criteria": {
+    "ARQVER:AC-VER-17": [
+      "test_active_operational_obligation_cannot_be_dispensed_by_qualification_edit"
+    ]
+  },
+  "evidence": [
+    "Three new real REST cases try verification=null, mode=none and an empty required-profile set against an in_progress Spec's active OR.",
+    "Requests are refused409/422. Null removal explicitly returns governed Draft revision guidance; no permission or content-lock bypass is introduced.",
+    "The complete relational snapshot, Spec version/status and OR payload remain unchanged. A subsequent scoped diagnostic still returns operational qualification and explicitly does not claim delivery evaluation."
+  ],
+  "tests": {
+    "community_passed": 3,
+    "seconds": 12.53,
+    "frontend_evidence": "Unchanged RequirementVerificationPanel permission-loss/read-only/explicit-save cases in native-verification-start-frontend1; no additional frontend execution or count"
+  },
+  "limits": [
+    "The transport uses the fixture's controlled author/Board principal; a broad author still cannot bypass the state gate. This is not installed authentication or a new independent-review witness.",
+    "Initial in_progress state is seeded; the test exercises actual write refusal/readback, not the entire transition that starts the Spec.",
+    "No product/SPA modification. Main87 closure stays applicable with eight zero budgets; no migration, promotion or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-operational-authority1.json": "6077a7466ae09473c2c110ac77c8f7f97cfc8a69afe08bde6e3068fc58d3d302",
+    "native-operational-authority1.xml": "17ef2822c140a65e5609429f0e06812598d13ba138fec9c1643d87e5978862b3",
+    "native-verification-start-frontend1.json": "c0b045da14b876273f918bb6fedd26f7ad61580f4af5a5053e20d5d82075eb04",
+    "closure-native-main87.json": "0b9b185c7e16892769af431ffa471141244468db74ccd447dbcf6af474acbfd4"
+  }
+}

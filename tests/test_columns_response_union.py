@@ -61,7 +61,7 @@ LEGACY = {
     "columns": {"not_started": [CARD]},
 }
 
-OPT_IN = {
+BATCH = {
     **LEGACY,
     "columns_meta": {
         "columns": {"not_started": COLUMN_META},
@@ -102,8 +102,7 @@ def test_card_summary_is_the_canonical_projection() -> None:
 @pytest.mark.parametrize(
     ("payload", "runtime_type"),
     [
-        (LEGACY, "ColumnsLegacyResponse"),
-        (OPT_IN, "ColumnsOptInResponse"),
+        (BATCH, "ColumnsBatchResponse"),
         (PAGE, "ColumnPageResponse"),
     ],
 )
@@ -112,7 +111,7 @@ def test_valid_shape_matches_exactly_one_variant(
     runtime_type: str,
 ) -> None:
     assert "anyOf" not in SCHEMA
-    assert len(SCHEMA["oneOf"]) == 3
+    assert len(SCHEMA["oneOf"]) == 2
     assert _matching_variants(payload) == 1
     assert (
         type(ColumnsResponseUnion.model_validate(payload).root).__name__ == runtime_type
@@ -123,9 +122,10 @@ def test_valid_shape_matches_exactly_one_variant(
 @pytest.mark.parametrize(
     "payload",
     [
-        {**OPT_IN, **PAGE},
+        LEGACY,
+        {**BATCH, **PAGE},
         {**LEGACY, "column": "not_started"},
-        {**OPT_IN, "items": []},
+        {**BATCH, "items": []},
         {**PAGE, "columns": {}},
     ],
 )
@@ -137,7 +137,7 @@ def test_hybrid_shapes_match_no_variant(payload: dict) -> None:
 
 
 def test_shapes_are_open_to_unrelated_future_fields() -> None:
-    payload = deepcopy(OPT_IN)
+    payload = deepcopy(BATCH)
     payload["future_top_level"] = {"version": 2}
     payload["columns_meta"]["future_meta"] = True
 

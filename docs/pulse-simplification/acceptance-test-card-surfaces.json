@@ -1,0 +1,199 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE T20 public create scope",
+  "provenance": {
+    "file": "provenance-test-card-surfaces1.json",
+    "sha256": "fa2518b86b9e2760ceea4ad9a549c5575d55e2bce003cbd1abe6ea5718f92645",
+    "identity": {
+      "checked_at": "2026-09-30T21:49:08.726374+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 859,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "825fc6761a36ac095d893afda49a15b991397fa1",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "a6f77fab8288ae5a91690a7d2796ea8d19db5b10c8a7c7263629553ebeff0312",
+            "size": 3793229
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 922,
+          "byte_identical": true,
+          "aggregate_sha256": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+          "chain_hashes": {
+            "source": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "wheel": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "site_packages": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 373,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "42b7572f62fa81cba72963f306c6a01df2c9335a",
+          "dirty": true,
+          "dirty_entry_count": 1,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "3d1eb7b80776aa6ba91a8e0e24d194c6d09769d70a4637a6423e0f57872ecd55",
+            "size": 4535175
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 458,
+          "byte_identical": true,
+          "aggregate_sha256": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+          "chain_hashes": {
+            "source": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "wheel": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "site_packages": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "run": {
+    "xml": "learning-reconciliation-test-card-surfaces4-community.xml",
+    "xml_sha256": "655a34dc3cc5ced347ff2039e1e6a01cc4cdc91347d4ac1cdb3bfc878e8c01d8",
+    "log": "learning-reconciliation-test-card-surfaces4-community.log",
+    "log_sha256": "457cf55db1fdcd0efbca8bfbde342bb98c00b07fab5ab3145e22f3d166bec64a",
+    "suites": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "16",
+        "time": "27.207",
+        "timestamp": "2026-09-30T18:52:17.617321-03:00",
+        "hostname": "Alienware_m15"
+      }
+    ]
+  },
+  "intermediate_runs": [
+    {
+      "xml": "learning-reconciliation-test-card-surfaces1-community.xml",
+      "xml_sha256": "babf203f17dcb3b5034d260049fcf135679e26937db096809372835446521570",
+      "log": "learning-reconciliation-test-card-surfaces1-community.log",
+      "log_sha256": "af3a8730dcc92d2d6aef9e345186e63729ae1987c092a0d93663664d16f38fb5",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "1",
+          "time": "10.352",
+          "timestamp": "2026-09-30T18:49:18.692175-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-test-card-surfaces2-community.xml",
+      "xml_sha256": "db05de7207fcb705f7b51b716ede450b53f2cfe100f0db5a74869e1fe6ac767f",
+      "log": "learning-reconciliation-test-card-surfaces2-community.log",
+      "log_sha256": "75a0c620da29b03b3836addf6074ec5c951439cf1cc1cb9d4728c422de3b546c",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "8",
+          "time": "21.697",
+          "timestamp": "2026-09-30T18:50:01.187714-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-test-card-surfaces3-community.xml",
+      "xml_sha256": "85aadc9b99802bbdbc3b0290d49a936e544f109bb3fb30965c6511cd193750b9",
+      "log": "learning-reconciliation-test-card-surfaces3-community.log",
+      "log_sha256": "9a229617aa3e01726349770c068d7943e0b72f71e186c2d5017954dbaf3c4e7c",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "1",
+          "time": "8.593",
+          "timestamp": "2026-09-30T18:51:47.553826-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    }
+  ],
+  "criteria": {
+    "BASE:T20": {
+      "status": "verified_by_reviewed_execution",
+      "remaining": null,
+      "covered": "REST HTTP handler and MCP tool handler, each with omitted/v2 Knowledge envelope: valid scenario set succeeds with reverse links, missing create_test grant denies, valid-first plus foreign Spec/Board scenario set rejects entirely. Independent production SQLite read confirms no Card, scenario backlinks, outbox or activity after denial.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_test_card_creation_surfaces.py",
+          "source_sha256": "ed05d3217dc22835727132d1fa35fb398c97da0d2c07f88096eb45da08bf9fb7"
+        }
+      ]
+    }
+  },
+  "reviewed_chain": [
+    {
+      "repository": "community",
+      "file": "src/okto_pulse/community/api/boards.py",
+      "sha256": "34b209603173eee76f8e2564e0f5bd0cbef35747323454d5b4382019f4ae09c1"
+    },
+    {
+      "repository": "core",
+      "file": "src/okto_pulse/core/mcp/server.py",
+      "sha256": "348bde974fcc0b6f89ae3ecec24b7defe3fe5fe6d3eaa3006f73ff789241e32b"
+    },
+    {
+      "repository": "core",
+      "file": "src/okto_pulse/core/application/use_cases/boards_crud.py",
+      "sha256": "a37111d39624e525881d72a0bf55de347f98f530c9b39bfc09dad90d2b64f89d"
+    },
+    {
+      "repository": "core",
+      "file": "src/okto_pulse/core/application/use_cases/mcp_card_crud.py",
+      "sha256": "bacb6291533fa28ff83bff446444801f64c33988d7d12b3d9ddb7bc840d591b5"
+    },
+    {
+      "repository": "core",
+      "file": "src/okto_pulse/core/application/use_cases/knowledge_propagation.py",
+      "sha256": "66b2468675ddf0d9c7d35b2c927800f43c8f93d71bc42fe96ca8923518351bb4"
+    },
+    {
+      "repository": "core",
+      "file": "src/okto_pulse/core/services/main.py",
+      "sha256": "03db4f6a6cf645c9affddc4875e4244c34e1b6f6024d5ead0502ca3d4b90ee01"
+    }
+  ],
+  "surface_mapping": "CardCreate and McpCreateCardCommand usages expose one Card per create call. REST POST /boards/{board_id}/cards and MCP okto_pulse_create_card accept a scenario-ID collection atomically. Both Knowledge branches converge on CardService.create_card. No separate multi-Card creation batch was found or added; this does not certify other homogeneous batch features.",
+  "limits": [
+    "REST uses real ASGI route; principal dependency injected. MCP calls registered tool fn with resolved agent context injected, not an HTTP authentication test. Real authorization, use cases, UoW, SQLite and Knowledge v2 persistence execute.",
+    "First fixture failure omitted required Agent api_key_hash; third omitted required Knowledge store session factory. Both fixed without product changes; logs retained.",
+    "Final sixteen cases replace intermediate eight for counts. No product/frontend change; no new F16 execution."
+  ]
+}

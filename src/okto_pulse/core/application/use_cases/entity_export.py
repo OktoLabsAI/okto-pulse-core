@@ -31,7 +31,6 @@ ENTITY_EXPORT_ROOT_READ_PERMISSION: dict[EntityExportType, str] = {
     EntityExportType.IDEATION: "ideation.entity.read",
     EntityExportType.REFINEMENT: "refinement.entity.read",
     EntityExportType.SPEC: "spec.entity.read",
-    EntityExportType.SPRINT: "sprint.entity.read",
     EntityExportType.CARD: "card.entity.read",
     EntityExportType.TEST_SCENARIO: "spec.tests.read",
 }

@@ -1,0 +1,218 @@
+{
+  "recorded_at": "2026-10-01T09:39:48.948403+00:00",
+  "scope": "KG 6/9: Spec coverage public REST/MCP variant and contextual frontend",
+  "status": "partial_plan_delivery",
+  "verified_criterion_keys": [
+    "KG:KG-58"
+  ],
+  "base_pair": {
+    "core": "c27dce01",
+    "community": "70743887"
+  },
+  "campaigns": [
+    {
+      "name": "learning-reconciliation-spec-coverage-public1-core",
+      "sha256": "72bea5a42c58333eb51d54f0bf36302a83a84a2521b7667957fe5e45feb781ea",
+      "tests": 182,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "learning-reconciliation-spec-coverage-public1-community",
+      "sha256": "c72c7ffd284094f01248018807a783e91e2f16e1170d8c8a5e7dc273879767bf",
+      "tests": 40,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "frontend-spec-coverage-ui1",
+      "sha256": "4abdf12c5e0f968d44e31cd671b8eb27b7036f2631892b1ade303a4d688b3178",
+      "tests": 69,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "learning-reconciliation-spec-coverage-public-qualified-community",
+      "sha256": "6162a0e915a3cf2ad385e6a6246389c6d83d1c6c189959608c141c5b1c9e5b8a",
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "campaign_accounting": "Do not add overlapping qualified distribution rerun.",
+  "provenance": {
+    "checked_at": "2026-10-01T09:37:09.142700+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 873,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "c27dce01c54880114f001f15c3896ca767eca247",
+        "dirty": true,
+        "dirty_entry_count": 9,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-spec-coverage-public-qualified\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "d0e3857ef14cc7b0d76b4c394eed8d09106208676a9677ed6b32df24913976b6",
+          "size": 3824482
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 936,
+        "byte_identical": true,
+        "aggregate_sha256": "d7dc636a5c460cfd383506100f09e952528269639068b2af97c00f40969f25be",
+        "chain_hashes": {
+          "source": "d7dc636a5c460cfd383506100f09e952528269639068b2af97c00f40969f25be",
+          "wheel": "d7dc636a5c460cfd383506100f09e952528269639068b2af97c00f40969f25be",
+          "site_packages": "d7dc636a5c460cfd383506100f09e952528269639068b2af97c00f40969f25be"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 381,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "70743887d72f16ecbfc75c8e510481b0aac15e22",
+        "dirty": true,
+        "dirty_entry_count": 43,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-spec-coverage-public-qualified\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "0458315a03860f13615860e232526ab5d8aa71dae1c56cf10bada064734d5fca",
+          "size": 4554727
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 466,
+        "byte_identical": true,
+        "aggregate_sha256": "f637f47f816037bd1d4bfaef0a99b101f29ae65f7e4dd2d015773269617cfbf9",
+        "chain_hashes": {
+          "source": "f637f47f816037bd1d4bfaef0a99b101f29ae65f7e4dd2d015773269617cfbf9",
+          "wheel": "f637f47f816037bd1d4bfaef0a99b101f29ae65f7e4dd2d015773269617cfbf9",
+          "site_packages": "f637f47f816037bd1d4bfaef0a99b101f29ae65f7e4dd2d015773269617cfbf9"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "closure": {
+    "ok": true,
+    "findings": [],
+    "documentation_findings": [],
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ]
+  },
+  "source_sha256": {
+    "okto_labs_pulse_core/src/okto_pulse/core/models/spec_coverage_query.py": "62561dbbfe181039bdccda35130f8d359695c542ec35fc47d8976ebd58ab8d41",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/spec_coverage_query.py": "c4e24424f0f99c00880bdbf2268eb38461edbebda3a0fc17502da6dcbb6c0d3a",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/spec_coverage_query.py": "f9d2b3d395eba983c32077cb7ebe13a4c94253e417a3ca662f54c188eabacb7e",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/server.py": "acf7c7442f9f116e7e382f09a27a5e2d048a401721112828836dbe131815faec",
+    "okto_labs_pulse_core/tests/test_spec_coverage_mcp.py": "929f0a88fbc9be46318f56d8db37476363255f8f6360d24306021825f06733af",
+    "okto_labs_pulse_community/src/okto_pulse/community/api/spec_coverage_query.py": "2772693bef88d6df73cd5c086d26c1e1bc49265897a050476bd6a3ac2b4b6098",
+    "okto_labs_pulse_community/tests/test_spec_coverage_read.py": "8f013d8f7bebed79b317dba9290a02e41d3f874af2db222a9d45c673250f43e6",
+    "okto_labs_pulse_community/tests/test_spec_coverage_transport.py": "03cf624af96cbe7a97f39d2882e2e341f239e461cfc8ff1c630fb61ec9a6b399",
+    "okto_labs_pulse_community/frontend/src/components/specs/SpecCoveragePanel.tsx": "e11664aa0a3c160e1df7ab5d4a8e1f1a125e6c7342172fcc66abc1f165e3c956",
+    "okto_labs_pulse_community/frontend/src/components/specs/specCoverageTypes.ts": "db72b673866af87ecac6a00441d00347c8948dceb410dac18d8e1d4fac67d046",
+    "okto_labs_pulse_community/frontend/src/components/specs/SpecCoveragePanel.test.tsx": "70764c7c1f6e837124d4453dd7c79d7f15b3a3ec3d19e2cca00cdaa8430c3126",
+    "okto_labs_pulse_community/frontend/src/components/specs/SpecModal.tsx": "e9c2d26ffc1627d0b4602b1ce27903fe7e401104e2aa14a6d38836be9c13263d",
+    "okto_labs_pulse_community/frontend/src/components/specs/__tests__/SpecModal.qualityTab.test.tsx": "37783929b5a47c6ba3b2dc5631971a5f55d0ad003b422ef11ead3f439fcf8de4",
+    "okto_labs_pulse_community/frontend/src/services/api.specCoverage.test.tsx": "169f45255c0b41d7732b03ac0dd075b50580a979197c7d13a2c68ddfcfac0ac6",
+    "okto_labs_pulse_community/src/okto_pulse/community/frontend_dist/pulse-frontend-contract.json": "15e1bd5d1372045b83c9a01a13fe06a45cd591912345777c6853e962bb68996c"
+  },
+  "frontend_tree_sha256": "ddd04cb9ba872b50c5d45bcfa959c060926af76cafae19bf5c4d6da25682e92a",
+  "authority_review": "IR/OR source grants match existing GetRequirementVerificationUseCase; no permission or gate invented.",
+  "limits": [
+    "KG-58 exact criterion: real SQL current scenario ready with linked Test Card and no admitted passing Delivery record; structural linkage 100%, verification proven 0.",
+    "HTTP/MCP use controlled actor/UOW. Real SQL and Grafx are separate disposable adapter tests, not an authenticated deployed E2E.",
+    "No full graph checkpoint: matching observations remain unknown, missing observations incomplete.",
+    "Remaining impact/lineage views, benchmark and full acceptance delivery remain in original scope.",
+    "Frontend legacy navigation tests emit existing React act warnings; build emits chunk-size warnings. New-file ESLint passed without warnings.",
+    "No production data migration, runtime restart, release, merge, deployment or tag."
+  ]
+}

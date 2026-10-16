@@ -203,25 +203,22 @@ async def test_card_start_allows_board_skip(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_legacy_board_missing_gate_key_is_grandfathered(db_factory):
+async def test_missing_gate_key_uses_current_default_and_requires_link(db_factory):
     _, _, card_id = await _seed_card_case(db_factory, board_settings={})
-
     async with db_factory() as db:
-        service = CardService(db)
-        moved = await service.move_card(card_id, USER_ID, CardMove(status=CardStatus.STARTED))
-
-    assert moved is not None
-    assert moved.status == CardStatus.STARTED
+        with pytest.raises(CardOperationError) as exc:
+            await CardService(db).move_card(card_id, USER_ID, CardMove(status=CardStatus.STARTED))
+    assert exc.value.code == "task_requirement_link_required"
 
 
-def test_settings_patch_preserves_legacy_absent_gate_key():
+def test_settings_patch_materializes_current_default():
     merged = BoardGovernanceService.merge_settings_patch(
         {"skip_test_coverage_global": False},
         {"skip_test_coverage_global": True},
     )
 
     assert merged["skip_test_coverage_global"] is True
-    assert "skip_task_requirement_link_gate_global" not in merged
+    assert merged["skip_task_requirement_link_gate_global"] is False
 
 
 def test_settings_patch_materializes_gate_key_when_explicit_false():
@@ -297,13 +294,19 @@ async def test_cross_spec_requirement_link_does_not_satisfy_card_gate(db_factory
 
 
 @pytest.mark.asyncio
-async def test_spec_validation_requires_active_decision_even_when_decision_coverage_skipped(db_factory):
+async def test_spec_planning_does_not_require_an_artificial_decision(db_factory):
     board_id, spec_id, card_id = await _seed_card_case(db_factory, link_card_to_fr=True)
     async with db_factory() as db:
         spec = await db.get(Spec, spec_id)
         assert spec is not None
         spec.status = SpecStatus.APPROVED
         spec.decisions = []
+        # This gate resolves all potential proof references, even with no Decisions.
+        spec.technical_requirements = []
+        spec.business_rules = []
+        spec.integration_requirements = []
+        spec.observability_requirements = []
+        spec.api_contracts = []
         await db.commit()
 
     async with db_factory() as db:
@@ -311,8 +314,18 @@ async def test_spec_validation_requires_active_decision_even_when_decision_cover
         spec = await db.get(Spec, spec_id)
         board = await db.get(Board, board_id)
         assert spec is not None and board is not None
-        with pytest.raises(ValueError, match="at least one active Decision"):
-            await service.check_decision_presence(spec)
+        await service.check_decisions_coverage(spec, board)
+        spec.decisions = [{"id": "dec-missing-plan", "title": "A real decision", "status": "active"}]
+        with pytest.raises(ValueError, match="decision_verification_plan_incomplete"):
+            await service.check_decisions_coverage(spec, board)
+        spec.decisions = [{
+            "id": "dec-scope", "title": "Scope inspection", "status": "active",
+            "verification": {"inspection": {
+                "condition": "The Spec explicitly limits the application to local use.",
+                "scope_refs": [{"kind": "spec", "id": spec_id}],
+            }},
+        }]
+        await service.check_decisions_coverage(spec, board)
 
 
 @pytest.mark.asyncio
@@ -429,7 +442,7 @@ async def test_mcp_default_board_config_preserves_omitted_human_skip(db_factory)
 
 
 @pytest.mark.asyncio
-async def test_default_board_config_create_preserves_legacy_absent_gate_key(db_factory):
+async def test_default_board_config_create_materializes_current_default(db_factory):
     scope = _id("scope")
     async with db_factory() as db:
         db.add(
@@ -454,7 +467,7 @@ async def test_default_board_config_create_preserves_legacy_absent_gate_key(db_f
         )
 
     assert next_template.settings_payload["skip_test_coverage_global"] is True
-    assert "skip_task_requirement_link_gate_global" not in next_template.settings_payload
+    assert next_template.settings_payload["skip_task_requirement_link_gate_global"] is False
 
 
 @pytest.mark.asyncio

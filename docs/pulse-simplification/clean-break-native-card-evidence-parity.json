@@ -1,0 +1,44 @@
+{
+  "format": "pulse-040-reviewed-increment/v1",
+  "status": "increment_verified_not_full_delivery",
+  "scope": [
+    "KG:KG-16 complete native Card child-family removal",
+    "KG:KG-24 native Card child and Evidence supersedence parity"
+  ],
+  "proof_pair": "dist-native-main45",
+  "provenance_sha256": "8b04133e93a9f5c7dc194b391dfbb77c49371a27899f95d21d5d1bd693311604",
+  "runs": [
+    {
+      "name": "acceptance-native-evidence-chain1",
+      "sha256": "6f059dffdd498d1081cc8cbed982328aca9ca55ef01abc1691fef2cd19bb4fe7",
+      "passed": 1,
+      "cases": [
+        "tests.test_native_evidence_chain_parity::test_native_evidence_supersedence_matches_exact_snapshot_rebuild"
+      ]
+    },
+    {
+      "name": "acceptance-native-card-children-parity2",
+      "sha256": "7023ff8a5fb715148e005c50d66f89b73754761f94c69bbf89b7044c60d63278",
+      "passed": 3,
+      "cases": [
+        "tests.test_native_card_children_parity::test_all_card_child_families_match_identical_native_snapshot[normal]",
+        "tests.test_native_card_children_parity::test_all_card_child_families_match_identical_native_snapshot[test]",
+        "tests.test_native_card_children_parity::test_all_card_child_families_match_identical_native_snapshot[bug]"
+      ]
+    }
+  ],
+  "verified": [
+    "Exact complete authoritative source snapshots equal before complete relationship multiset comparison.",
+    "All eight Card child families and scenario association removed, then a subset restored and replayed for normal/test/bug.",
+    "Multiple children per family compared by exact typed reference with no duplicate relationships.",
+    "Native Evidence successor retains immutable supersedence to working predecessor; current successor remains canonical."
+  ],
+  "limits": [
+    "Native SQL attestation/lifecycle fixtures test projection, not signing or mutation authorization.",
+    "No unlink added to immutable Evidence supersedence history.",
+    "First Card campaign failed fixture multiplicity oracle (11 endpoints, not 9); exact endpoint oracle corrected without changing product.",
+    "No product/frontend payload changed; closure45 remains applicable with eight budgets zero.",
+    "KG-16/24 not yet fully qualified; next compare typed Card/Spec dependencies and Bug-origin proxy families against identical-source rebuilds.",
+    "No legacy conversion or real storage intervention."
+  ]
+}

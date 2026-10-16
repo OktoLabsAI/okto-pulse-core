@@ -17,7 +17,7 @@ board-specific alternative.
 
 | From | To | Pre-requisites |
 |------|-----|---------------|
-| `not_started` | `started` | Spec must be `in_progress` or later |
+| `not_started` | `started` | Spec must be `in_progress`; Done blocks normal-card start/reopen |
 | `not_started` | `in_progress` | Direct start only when current permissions and readiness allow it; same execution gates apply |
 | `started` | `in_progress` | — |
 | `in_progress` | `validation` | — |
@@ -42,19 +42,10 @@ board-specific alternative.
 | `started`/`in_progress`/`validation` | `done` | Linked scenarios have an honest terminal result (`passed`, `failed`, or `automated`) and required evidence, plus `conclusion` + completeness/drift; other completion gates still apply |
 
 A Test Card being `done` means its execution/report is complete, not that the
-product passed. Preserve `failed`; do not relabel it to unblock a move. Sprint
-review, bug regression and delivery approval have their own success/evidence
+product passed. Preserve `failed`; do not relabel it to unblock a move. Bug regression and delivery approval have their own success/evidence
 requirements. See `okto-pulse://reference/card_types`.
 
 Type rules — scenario cap (`max_scenarios_per_card`), evidence gate, validation-gate skip, scenario updates on locked specs: see `okto-pulse://reference/card_types`.
-
-## Sprint transitions
-
-| From | To | Pre-requisites |
-|------|-----|---------------|
-| `draft` | `active` | Must have assigned cards |
-| `active` | `review` | Scoped test scenarios must be `passed` |
-| `review` | `closed` | `okto_pulse_submit_sprint_evaluation` with `recommendation=approve` |
 
 ## Spec transitions
 
@@ -63,8 +54,8 @@ Type rules — scenario cap (`max_scenarios_per_card`), evidence gate, validatio
 | `draft` | `review` | — |
 | `review` | `approved` | — |
 | `approved` | `validated` | `okto_pulse_submit_spec_validation` with all coverage gates passing + `recommendation=approve`; when the curated checklist binding is `blocking`, a passing Current `/specify/v1` result for the same Spec edition is also required (see `okto-pulse://reference/spec_gates`) |
-| `validated` | `in_progress` | `okto_pulse_submit_spec_evaluation` with `recommendation=approve` |
-| `in_progress` | `done` | All linked non-bug, non-archived cards `done` or `cancelled`; when sprints exist, all sprints `closed`/`cancelled` (minimum 1 closed) |
+| `validated` | `in_progress` | Sufficient Current decomposition evaluation from `approved` or `validated`, with `recommendation=approve`, plus current execution gates. Reuse the existing judgment within the same edition. |
+| `in_progress` | `done` | All linked normal, non-archived cards `done` or `cancelled`; applicable coverage, resource, cognitive, policy and delivery-evidence gates satisfied |
 
 ## Ideation transitions
 

@@ -1,0 +1,38 @@
+{
+  "scope": "Partial integration coverage and diamond inheritance without duplicate credit",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "ARQVER:AC-VER-09": [
+      "test_passing_response_shape_does_not_observe_required_timeout"
+    ],
+    "ARQVER:ADV-16": [
+      "test_passing_response_shape_does_not_observe_required_timeout"
+    ],
+    "ARQVER:ADV-10": [
+      "test_diamond_reuses_one_proof_and_persisted_cycle_never_receives_credit"
+    ]
+  },
+  "evidence": [
+    "Re-reviewed already passing SQL/HTTP witnesses on identical main86 source/install. The IR requires response shape and timeout. A real signed shape assertion satisfies only the shape criterion; timeout and the IR remain incomplete after a fresh SQL session read.",
+    "The real Spec delivery gate rejects the partial proof. Attempting to name the unobserved timeout criterion in a test binding is refused and all historical payloads remain unchanged.",
+    "A diamond of two BR paths preserves both source paths to the same terminal criterion while retaining one effective obligation per ID and one authorization test proof. The full real delivery gate passes with the two distinct UI/authorization results.",
+    "Deliberately corrupting persisted inheritance into a cycle makes qualification and delivery incomplete without granting credit from revisiting a node. The real gate refuses and prior ledger payloads remain intact.",
+    "Re-reviewed frontend tests show exact missing criterion/Card gaps, keep mixed reports partial and explicitly disclose truncated gap lists."
+  ],
+  "tests": {
+    "new_tests_run": 0,
+    "reused": "native-delivery-multicard1.xml:15 passed in39.28s, including the two named witnesses; frontend campaign21 passed. Not added to test counts.",
+    "verification": "Prior receipt artifact SHA256 values matched; git diff ba80ac91..HEAD is empty for the backend and frontend witness files; fresh pair proof confirms source/wheel/install equality."
+  },
+  "limits": [
+    "Source receipt/execution facts are seeded; HTTP assertions use the actual issuer/verifier. No attestation handshake or installed-authentication E2E claim.",
+    "Cycle setup is deliberate persisted corruption testing fail-closed reads, not a claim that an authorized writer permits cycles.",
+    "No product, test or SPA change. Main86 closure remains applicable with all eight budgets zero; no promotion, migration or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-inheritance-coverage1.json": "00acc88bc5cf185d3237042f6e61d68a5f2d0f36470d8ae6f89909644756d80f",
+    "native-delivery-multicard1.xml": "7c2ceb6edd0cf6ce465f7ae7d1a3a4e4613ad320a532e957ff7a628ba7f0d0ba",
+    "native-delivery-multicard-frontend1.json": "7ffd99ad80208a381ee939bb32069d54fa37fa858858cf1e78ddbd359c886b2f",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

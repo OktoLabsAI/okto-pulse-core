@@ -80,7 +80,6 @@ class ListPermissionPresetsUseCase:
             actor,
             PermissionRequirement(
                 "permission_preset.entity.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
         )
@@ -123,7 +122,6 @@ class CreatePermissionPresetUseCase:
             actor,
             PermissionRequirement(
                 "permission_preset.entity.create",
-                legacy_operation="profile.update",
             ),
             uow=uow,
         )
@@ -166,7 +164,6 @@ class ClonePermissionPresetUseCase:
             actor,
             PermissionRequirement(
                 "permission_preset.clone",
-                legacy_operation="profile.update",
             ),
             uow=uow,
         )
@@ -216,7 +213,6 @@ class UpdatePermissionPresetUseCase:
             actor,
             PermissionRequirement(
                 "permission_preset.entity.edit",
-                legacy_operation="profile.update",
             ),
             uow=uow,
         )
@@ -263,7 +259,6 @@ class DeletePermissionPresetUseCase:
             actor,
             PermissionRequirement(
                 "permission_preset.entity.delete",
-                legacy_operation="profile.update",
             ),
             uow=uow,
         )

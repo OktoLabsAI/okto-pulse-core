@@ -11,14 +11,12 @@ import pytest
 
 from okto_pulse.core.domain.guideline_import_export import (
     GUIDELINE_EXPORT_CONTRACT_VERSION,
-    GUIDELINE_EXPORT_LEGACY_BASELINE_VERSION,
     ExistingGuidelineRevision,
     GuidelineBindingMaterialization,
     GuidelineExportAggregate,
     GuidelineExportBinding,
     GuidelineExportRevision,
     GuidelineExportSnapshot,
-    GuidelineHistoryStatus,
     GuidelineImportBindingDisposition,
     GuidelineImportExportError,
     GuidelineImportResult,
@@ -26,7 +24,6 @@ from okto_pulse.core.domain.guideline_import_export import (
     GuidelineImportTransactionStatus,
     build_guideline_export_v3,
     canonical_guideline_json_bytes,
-    canonical_guideline_sha256,
     guideline_export_json_bytes,
     guideline_export_payload,
     parse_guideline_export,
@@ -45,7 +42,6 @@ from okto_pulse.core.domain.guideline_policy import (
     GuidelineRetirement,
     GuidelineRevision,
     GuidelineScope,
-    POLICY_SQL_INTEGER_MAX,
     PolicyEntityType,
 )
 
@@ -134,7 +130,7 @@ def _exported_binding(
             state=state,
             source_kind=GuidelineBindingProvenance.NATIVE,
         ),
-        physical_source_kind="guideline_board_bindings",
+        physical_source_kind="native",
         binding_origin="native",
         materialization=materialization,
         evidence_refs=(
@@ -209,53 +205,14 @@ def _envelope(
     )
 
 
-def _legacy_v2_payload(
-    aggregate: GuidelineExportAggregate,
-    *,
-    rules: tuple[dict[str, object], ...] = (),
-) -> dict[str, object]:
-    payload = guideline_export_payload(_envelope(aggregate))
-    payload["contract_version"] = "guideline-export/v2"
-    payload["schema_version"] = "2"
-    for raw_aggregate in payload["guidelines"]:
-        legacy_digests: dict[str, str] = {}
-        for revision in raw_aggregate["revisions"]:
-            digest = canonical_guideline_sha256(
-                {
-                    "contract": "guideline-revision-digest/v1",
-                    "title": revision["title"],
-                    "content": revision["content"],
-                    "tags": tuple(sorted(revision["tags"])),
-                    "rules": rules,
-                }
-            )
-            legacy_digests[revision["revision_id"]] = digest
-            revision["content_digest"] = digest
-            revision["rules"] = list(rules)
-            del revision["revision_digest"]
-            del revision["metrics"]
-        if raw_aggregate["retirement"] is not None:
-            raw_aggregate["retirement"]["retired_revision_digest"] = legacy_digests[
-                raw_aggregate["retirement"]["retired_revision_id"]
-            ]
-        for exported_binding in raw_aggregate["bindings"]:
-            binding = exported_binding["binding"]
-            binding["revision_digest"] = legacy_digests[binding["revision_id"]]
-            binding["default_enforcement"] = binding.pop("enforcement")
-            del binding["minimum_confidence"]
-            del binding["metric_threshold_overrides"]
-            del binding["configuration_digest"]
-            exported_binding["binding_digest"] = "a" * 64
-    payload["content_digest"] = canonical_guideline_sha256(
-        {
-            "contract_version": payload["contract_version"],
-            "schema_version": payload["schema_version"],
-            "kind": payload["kind"],
-            "source_board_id": payload["source_board_id"],
-            "guidelines": payload["guidelines"],
-        }
-    )
-    return payload
+
+
+def test_export_snapshot_enforces_binding_board_scope() -> None:
+    aggregate = _aggregate()
+    snapshot = GuidelineExportSnapshot(aggregates=(aggregate,), source_board_id="board-1")
+    assert snapshot.aggregates == (aggregate,)
+    with pytest.raises(GuidelineImportExportError, match="guideline_export_snapshot_binding_board_mismatch"):
+        GuidelineExportSnapshot(aggregates=(aggregate,), source_board_id="another-board")
 
 
 def test_v3_round_trip_is_closed_complete_and_canonical() -> None:
@@ -289,7 +246,7 @@ def test_v3_round_trip_is_closed_complete_and_canonical() -> None:
         aggregate.bindings[1].binding_digest
     )
     assert parsed.guidelines[0].bindings[1].physical_source_kind == (
-        "guideline_board_bindings"
+        "native"
     )
     assert parsed.guidelines[0].revisions[1].published_head_revision == 2
     parsed_revision = parsed.guidelines[0].revisions[1].revision
@@ -312,51 +269,55 @@ def test_v3_round_trip_is_closed_complete_and_canonical() -> None:
     assert b'", "' not in guideline_export_json_bytes(parsed)
 
 
-def test_legacy_v2_rule_empty_import_is_context_only_and_drops_bindings() -> None:
-    parsed = parse_guideline_export(_legacy_v2_payload(_aggregate()))
-    aggregate = parsed.guidelines[0]
-
-    assert parsed.contract_version == GUIDELINE_EXPORT_CONTRACT_VERSION
-    assert parsed.schema_version == "3"
-    assert parsed.source_schema_version == "2"
-    assert all(
-        exported_revision.revision.metrics == ()
-        for exported_revision in aggregate.revisions
-    )
-    assert aggregate.bindings == ()
-    assert "legacy_v2_contextual_only" in aggregate.migration_notes
-    assert (
-        "legacy_v2_bindings_dropped_contextual_only"
-        in aggregate.migration_notes
-    )
-    plan = plan_guideline_import(
-        parsed,
-        target_owner_id="actor-target",
-    )
-    assert plan.entries[0].binding_disposition is (
-        GuidelineImportBindingDisposition.NO_BINDINGS
-    )
 
 
-def test_legacy_v2_executable_rules_fail_with_actionable_remediation() -> None:
-    payload = _legacy_v2_payload(
-        _aggregate(),
-        rules=(
-            {
-                "rule_id": "legacy-rule",
-                "code": "legacy.rule",
-            },
-        ),
-    )
 
-    with pytest.raises(GuidelineImportExportError) as raised:
+
+@pytest.mark.parametrize("field", ["legacy_version", "legacy_version_unresolvable", "legacy_tags"])
+def test_revision_rejects_removed_metadata(field):
+    payload = guideline_export_payload(_envelope(_aggregate()))
+    payload["guidelines"][0]["revisions"][0][field] = None
+    with pytest.raises(GuidelineImportExportError) as caught:
         parse_guideline_export(payload)
+    assert "unknown" in caught.value.code
 
-    assert raised.value.code == "legacy_executable_rules_unsupported"
-    assert raised.value.path == "$.guidelines[0].revisions[0].rules"
-    assert "re-author" in raised.value.message
-    assert "semantic metrics" in raised.value.message
-    assert "schema v3" in raised.value.message
+
+@pytest.mark.parametrize("field", ["legacy_source_id", "legacy_guideline_version",
+                                  "legacy_template_id", "legacy_template_version",
+                                  "legacy_version_unresolvable"])
+def test_binding_rejects_removed_metadata(field):
+    payload = guideline_export_payload(_envelope(_aggregate()))
+    payload["guidelines"][0]["bindings"][0][field] = None
+    with pytest.raises(GuidelineImportExportError) as caught:
+        parse_guideline_export(payload)
+    assert caught.value.code == "guideline_export_unknown_field"
+
+
+@pytest.mark.parametrize("field", ["materialized_revision_number", "materialized_template_version"])
+@pytest.mark.parametrize("value", ["1", True, 0, -1])
+def test_binding_materialization_versions_are_strict_positive_integers(field, value):
+    binding = _aggregate().bindings[0]
+    with pytest.raises(GuidelineImportExportError):
+        replace(binding, **{field: value}, binding_digest=None)
+
+
+@pytest.mark.parametrize("origin", ["legacy_board_guideline", "legacy_inline_guideline", "guideline_board_bindings"])
+def test_binding_refuses_non_native_physical_origin(origin):
+    with pytest.raises(GuidelineImportExportError, match="guideline_export_binding_source_kind_invalid"):
+        replace(_aggregate().bindings[0], physical_source_kind=origin, binding_digest=None)
+
+
+def test_binding_materialization_proof_roundtrip_preserves_typed_values():
+    aggregate = _aggregate()
+    binding = replace(aggregate.bindings[0], materialized_template_id="template-1",
+                      materialized_template_version=7, materialized_revision_number=1,
+                      binding_digest=None)
+    envelope = _envelope(replace(aggregate, bindings=(binding,)))
+    parsed = parse_guideline_export(guideline_export_payload(envelope))
+    restored = parsed.guidelines[0].bindings[0]
+    assert restored == binding
+    assert type(restored.materialized_template_version) is int
+    assert type(restored.materialized_revision_number) is int
 
 
 def test_digest_and_bytes_ignore_object_key_order_but_reject_unknown_fields() -> None:
@@ -424,32 +385,6 @@ def test_publication_provenance_rejects_revision_local_tampering() -> None:
         )
 
 
-def test_legacy_version_text_and_integer_projection_match_durable_bounds() -> None:
-    revision = _revision()
-    boundary = GuidelineExportRevision(
-        revision=revision,
-        legacy_version="9" * 64,
-        legacy_version_unresolvable=True,
-    )
-    assert boundary.legacy_version == "9" * 64
-    assert boundary.legacy_version_as_int is None
-
-    persisted_integer = GuidelineExportRevision(
-        revision=revision,
-        legacy_version=str(POLICY_SQL_INTEGER_MAX),
-        legacy_version_unresolvable=True,
-    )
-    assert persisted_integer.legacy_version_as_int == POLICY_SQL_INTEGER_MAX
-
-    with pytest.raises(
-        GuidelineImportExportError,
-        match="guideline_export_legacy_version_invalid",
-    ):
-        GuidelineExportRevision(
-            revision=revision,
-            legacy_version="9" * 65,
-            legacy_version_unresolvable=True,
-        )
 
 
 def test_publication_provenance_rejects_history_and_head_time_tampering() -> None:
@@ -639,81 +574,8 @@ def test_v3_binding_rejects_unknown_metric_override_and_unstable_identity() -> N
         )
 
 
-def test_legacy_v1_becomes_contextual_baseline_and_drops_blocking_rules() -> None:
-    envelope = parse_guideline_export(
-        {
-            "schema_version": 1,
-            "kind": "guidelines",
-            "items": [
-                {
-                    "title": "Legacy policy",
-                    "content": "Legacy prose.",
-                    "tags": ["legacy"],
-                    "scope": "inline",
-                    "board_id": "source-board",
-                    "version": 17,
-                    "blocking": True,
-                    "rules": [
-                        {
-                            "code": "legacy.block",
-                            "enforcement": "blocking",
-                        }
-                    ],
-                }
-            ],
-        }
-    )
-    aggregate = envelope.guidelines[0]
-    revision = aggregate.revisions[0]
-
-    assert envelope.exported_at == datetime(1970, 1, 1, tzinfo=timezone.utc)
-    assert envelope.source_schema_version == "1"
-    assert aggregate.history_status is GuidelineHistoryStatus.BASELINE_ONLY
-    assert aggregate.bindings == ()
-    assert revision.semantic_version == GUIDELINE_EXPORT_LEGACY_BASELINE_VERSION
-    assert revision.revision.metrics == ()
-    assert revision.legacy_version == "17"
-    assert revision.legacy_version_as_int == 17
-    assert revision.legacy_version_unresolvable is True
-    assert revision.legacy_tags == ("legacy",)
-    assert "legacy_rules_dropped_contextual_baseline" in aggregate.migration_notes
-    assert "legacy_blocking_downgraded_to_advisory" in aggregate.migration_notes
-
-    plan = plan_guideline_import(
-        envelope,
-        target_owner_id="actor-target",
-        target_board_id="target-board",
-    )
-    assert plan.entries[0].aggregate.identity.owner_id == "actor-target"
-    assert plan.entries[0].aggregate.identity.board_id == "target-board"
-    assert plan.entries[0].binding_disposition is (
-        GuidelineImportBindingDisposition.NO_BINDINGS
-    )
 
 
-@pytest.mark.parametrize(
-    "invalid_rules",
-    ("not-a-list", [1], [{"enforcement": "sometimes"}]),
-)
-def test_legacy_rule_hints_are_validated_not_executed(
-    invalid_rules: object,
-) -> None:
-    with pytest.raises(GuidelineImportExportError):
-        parse_guideline_export(
-            {
-                "schema_version": "1",
-                "kind": "guidelines",
-                "items": [
-                    {
-                        "title": "Legacy",
-                        "content": "Prose",
-                        "scope": "global",
-                        "board_id": None,
-                        "rules": invalid_rules,
-                    }
-                ],
-            }
-        )
 
 
 def test_fresh_binding_import_is_inert_and_pending_native_adoption() -> None:
@@ -735,12 +597,12 @@ def test_fresh_binding_import_is_inert_and_pending_native_adoption() -> None:
     assert entry.binding_candidates[0].live_write_forbidden is True
     assert entry.binding_candidates[0].source_board_id == "board-1"
     assert entry.binding_candidates[0].target_board_id == "board-target"
-    assert entry.aggregate.bindings[0].board_id == "board-target"
+    assert entry.aggregate.bindings[0].binding.board_id == "board-target"
     assert entry.aggregate.bindings[0].materialization is (
         GuidelineBindingMaterialization.CANDIDATE
     )
-    assert entry.aggregate.bindings[0].configuration_digest != (
-        aggregate.bindings[0].configuration_digest
+    assert entry.aggregate.bindings[0].binding.configuration_digest != (
+        aggregate.bindings[0].binding.configuration_digest
     )
     assert "source_active_binding_pending_explicit_preview_and_adoption" in (
         entry.diagnostics

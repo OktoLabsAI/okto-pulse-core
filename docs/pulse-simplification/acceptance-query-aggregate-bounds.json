@@ -1,0 +1,136 @@
+{
+  "scope": "KG6.5 explicit resource refusals and serialized query envelope bound",
+  "campaigns": {
+    "query-aggregate1-core": 45,
+    "query-aggregate1-community": 129,
+    "query-aggregate2-core": 88,
+    "query-aggregate2-community": 9
+  },
+  "counts_overlap": true,
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Native Grafx already refuses collections over 1024, including collect over 10001 persisted fixture nodes; that bound was not duplicated or relaxed.",
+    "The adapter preserves typed numeric resource limits without message parsing, query text or result data.",
+    "Native limit refusals are non-retryable graph_query_resource_limit; MCP exposes resource details and REST Cypher returns HTTP 413 without Retry-After.",
+    "Non-budget malformed-plan and parameter cases retain original classification.",
+    "150 individually bounded cells reproduced the missing total-response budget.",
+    "Core bounds the complete query data envelope to 4 MiB using streamed conservative JSON byte accounting, including metadata and Unicode escaping.",
+    "Oversized responses are refused; complete server counts and smaller aggregates are preserved without invented partial success."
+  ],
+  "limits": [
+    "Initial parameter/range reproductions were refused before aggregation; the stored-node reproduction established the actual native result-value bound.",
+    "The JSON budget covers the query data envelope; transport framing is separate. Observed size is measured at refusal, not a claimed complete result size.",
+    "Finite foreground native fan-out, expanded paths and query-working-memory composition remain pending under KG6.5.",
+    "No frontend query consumer or frontend flow changed in this increment; no real data or live process was modified.",
+    "Full-plan inventory remains 78 verified / 33 partial / 135 unaudited; no full-plan completion claim."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/record_query_aggregate.py": "630d22078ac57680f23ff7ce4930e24f2fbf09a1301f1e6aaec3373b2616e9f0",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate-final-closure.log": "82a87ebed659213eb4f0fd2325f2f0774c661309119d2b00b03492b98c945fa8",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate1-core.xml": "c802f9f8061bf1d083a9c3168d2f7047a79bb4e77939238de6ab3470a32782db",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate1-core.log": "40886f454a529864cbfd5024a1c2ddd7759ceaf72a88e607380f41230431b65e",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate1-community.xml": "035bac83c01074203fc885048fedff960571500ca7b86e62fa03626dfb75f740",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate1-community.log": "737ab0e5fdc288e75ff2dcf8d9abd1dc49b57ba3098902a777b7184a1d893b41",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate2-core.xml": "4a168189086a5ba26429f4c7dba0e219530e4f6c9950cda488c8deceb6e4d087",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate2-core.log": "979d76b09c61422012c319093a9dd730664831a6bac836d3e805188f50ad364e",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate2-community.xml": "921460981a31133c12c4fc83b1152e75cf3184359c784c970deb5706e89a469e",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate2-community.log": "a00a324ec9324c9d93ba38b971495c325d0a0d2f611904e1bda0ddffc6066e5d",
+    "PULSE_REFACTOR/.validation-v040/provenance-query-aggregate1.json": "62eddd89eec1806509192b597606311cbd315569bd532ab046a291c76920b7bb",
+    "PULSE_REFACTOR/.validation-v040/provenance-query-aggregate2.json": "a4c0fdffda63c718cb335e93ba4ae7fa1eadd034613cda9f82d0d79c2964a14c",
+    "PULSE_REFACTOR/.validation-v040/provenance-query-aggregate-final-terminal.json": "78dfc0de34ca3370018cff12c45563a6047385414d0c846fde01a1211e7f7e80",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate-repro-community.log": "2665215f38f377bd22e3756414c64e7ba3806bba223c141eb0de5dfb9151d3c4",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate-repro-community.xml": "498ede9027727b073044d2870efb474cb8676378ab936a6bc3c56961d351432d",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate-generated-repro-community.log": "e2210d4096068723cd543b5b0b49d69a927950758737554b70625b0c9c4e6ca1",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate-generated-repro-community.xml": "f681e2346aebf1a7c74961a07195376384c55567b764beff7d50a41bf14150ec",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate-stored-repro-community.log": "b488df47d5c3d9752ec9ebf9bfb62d98a80a29b74cdccac0b96a01831b30e5bc",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate-stored-repro-community.xml": "a5f9535be60adc95fea05014cc3a4f1faf536c36ea36ee0c7b22ed19f4d9e848",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate-limit-repro-community.log": "7bfea0eb71ae6343562cbcfb25ac955e92e63d7909a55c4fdd714407b21de034",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-aggregate-limit-repro-community.xml": "1c0b91c8ea73d4a80d190fd6744a2e0fe33bddde9d90760d113f5dd5b2dce8bb",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-payload-repro-core.log": "97a2d0815c01804fc7bbcb6cbda6e27900d5b00d633ee54f62ac1f97e9a1e217",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-payload-repro-core.xml": "1ac094b97ffc78a9088c2d7697ad056d8353a6af474493975062f98c3be40272",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/interfaces/graph_errors.py": "266771e4ab0438a7e8dcdd39724f2ffe7c2a5678919d7182677125bf5910877e",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/query_response_budget.py": "b0e2e348a442be31130c82825d911b4ac09397ce5291d299543a0959c32e0d4e",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/retrieve_critic/orchestrator.py": "fdd7ccb2e0a9a2d4195b814e127ade9171cc20c8facefc58f3a837d52651ca17",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/tier_power.py": "7ff14bcb77bbe34f5211eaffea7659451857667601c2b04e3c8df1d4d865eb4f",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/kg_power_tools.py": "8af5a27ad420c78d62ff3c760b6979c6b4465a003635801049d4f216043784cc",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/resources/reference/tool-docs/kg.md": "93eecffeb87ed2c62d693bfc592f4e1f2439717d240375276e9728570e74692c",
+    "okto_labs_pulse_core/tests/test_kg_query_response_budget.py": "d0ad27f00ba89e4d34c37385abaf4128f5b94558f9e395c0b20c67c66403b4c4",
+    "okto_labs_pulse_core/tests/test_kg_compound_query_deadline.py": "b0b69d01eec653cd1656fde8adf079690bc9fbede8ec53732dd8910d0f8a41cf",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/grafx_error_mapping.py": "e9a22eb371fb89a62b5681e4c47ec6935e6fd61dbbe7ef357bc5d19e01619f6a",
+    "okto_labs_pulse_community/src/okto_pulse/community/api/kg_routes.py": "9a49115dc5bd3d14b0d22d58919fe15a5bf969071a9d5d35f5a9e0c42b10edf4",
+    "okto_labs_pulse_community/tests/test_kg_query_aggregate_bounds.py": "678632ac9275144a0cb907cfc1fcd06a26e0ce53b877b0dfcf8b3b69a196cdd6"
+  }
+}

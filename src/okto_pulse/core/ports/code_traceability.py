@@ -18,8 +18,6 @@ from okto_pulse.core.domain.code_traceability import (
     CodeEvidence,
     CodeEvidenceAttestationState,
     CodeEvidenceDisposition,
-    CodeEvidenceLegacyClassification,
-    CodeEvidenceLegacyClassificationBatchReceipt,
     CodeEvidenceSpecLink,
     CodeTraceabilityContext,
     CodeTraceabilityContextScope,
@@ -105,22 +103,10 @@ class CodeTraceabilityCursorInvalid(CodeTraceabilityPersistenceError):
     code = "code_traceability_cursor_invalid"
 
 
-class LegacyEvidenceClassificationPersistenceConflict(
-    CodeTraceabilityPersistenceError
-):
-    code = "code_evidence_legacy_classification_persistence_conflict"
 
 
-class LegacyEvidenceClassificationRevisionConflict(
-    CodeTraceabilityPersistenceError
-):
-    code = "code_evidence_legacy_classification_revision_conflict"
 
 
-class LegacyEvidenceClassificationIdempotencyConflict(
-    CodeTraceabilityPersistenceError
-):
-    code = "code_evidence_legacy_classification_idempotency_conflict"
 
 
 def _required(value: object, code: str) -> str:
@@ -443,49 +429,10 @@ class CodeTraceabilityStore(Protocol):
         expected_lifecycle_status: CodeTraceabilityLifecycleStatus,
     ) -> CodeEvidence: ...
 
-    async def get_latest_evidence_classification(
-        self,
-        *,
-        board_id: str,
-        evidence_id: str,
-    ) -> CodeEvidenceLegacyClassification | None: ...
 
-    async def get_evidence_classification(
-        self,
-        *,
-        board_id: str,
-        evidence_id: str,
-        revision: int,
-    ) -> CodeEvidenceLegacyClassification | None: ...
 
-    async def list_latest_evidence_classifications(
-        self,
-        *,
-        board_id: str,
-        evidence_ids: tuple[str, ...],
-    ) -> tuple[CodeEvidenceLegacyClassification, ...]: ...
 
-    async def resolve_legacy_classification_batch_replay(
-        self,
-        *,
-        board_id: str,
-        classified_by: str,
-        idempotency_key: str,
-    ) -> CodeEvidenceLegacyClassificationBatchReceipt | None: ...
 
-    async def append_legacy_evidence_classification_batch(
-        self,
-        *,
-        receipt: CodeEvidenceLegacyClassificationBatchReceipt,
-        expected_revisions: Mapping[str, int],
-    ) -> CodeEvidenceLegacyClassificationBatchReceipt:
-        """Atomically append all events and CAS every per-Evidence head.
-
-        Adapters must verify each referenced Evidence payload digest and every
-        expected classification revision in the same transaction.  A failure
-        rolls back the complete batch; no mutable batch row is implied.
-        """
-        ...
 
     async def get_spec_link(
         self,
@@ -795,8 +742,5 @@ __all__ = [
     "CodeTraceabilityStore",
     "ImplementationTargetQuery",
     "ImplementationTargetResolutionCommitResult",
-    "LegacyEvidenceClassificationIdempotencyConflict",
-    "LegacyEvidenceClassificationPersistenceConflict",
-    "LegacyEvidenceClassificationRevisionConflict",
     "TargetOverlapQuery",
 ]

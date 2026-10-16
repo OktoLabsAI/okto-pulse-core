@@ -71,7 +71,7 @@ def test_all_gates_passed_no_command_failure_exits_zero_success():
         mode="quick",
         gate_results=[
             _passing_gate("fcc07a_conformance_matrix"),
-            _passing_gate("fcc07b_readiness", spec_id="FCC-07B", adapter_key="kuzu_graph_store"),
+            _passing_gate("fcc07b_readiness", spec_id="FCC-07B", adapter_key="grafx_graph_store"),
         ],
         command_results=[
             RunnerCommandResult(command="pytest tests/test_fcc07a.py", exit_code=0),
@@ -164,7 +164,7 @@ def test_schema_matches_api_170877a6():
                 spec_id="FCC-07B",
                 status="success",
                 owner="okto-pulse-core/kg",
-                adapter_key="kuzu_graph_store",
+                adapter_key="grafx_graph_store",
                 dependency_family=None,
                 provider_key=None,
                 evidence_fields=AdapterEvidence(
@@ -366,7 +366,7 @@ def test_report_is_json_serialisable():
     report = run_final_clean_core(
         mode="full",
         gate_results=[
-            _passing_gate("fcc07a", adapter_key="kuzu_graph_store"),
+            _passing_gate("fcc07a", adapter_key="grafx_graph_store"),
             _passing_gate("fcc07d", spec_id="D", status="blocked", provider_key="event_bus"),
         ],
         command_results=[RunnerCommandResult(command="pytest -q", exit_code=2)],
@@ -379,7 +379,7 @@ def test_report_is_json_serialisable():
         run_final_clean_core(
             mode="full",
             gate_results=[
-                _passing_gate("fcc07a", adapter_key="kuzu_graph_store"),
+                _passing_gate("fcc07a", adapter_key="grafx_graph_store"),
                 _passing_gate("fcc07d", spec_id="D", status="blocked", provider_key="event_bus"),
             ],
             command_results=[RunnerCommandResult(command="pytest -q", exit_code=2)],
@@ -447,7 +447,7 @@ def test_render_report_json_and_markdown_are_stable():
     report = run_final_clean_core(
         mode="quick",
         gate_results=[
-            _passing_gate("fcc07b", spec_id="B", adapter_key="kuzu_graph_store")
+            _passing_gate("fcc07b", spec_id="B", adapter_key="grafx_graph_store")
         ],
         command_results=[
             RunnerCommandResult(command="pytest x", exit_code=1, owner="FCC07A")
@@ -459,7 +459,7 @@ def test_render_report_json_and_markdown_are_stable():
     md = render_final_clean_core_report(report, fmt="markdown")
     assert md == render_final_clean_core_report(report, fmt="markdown")  # stable
     assert "Final clean-core runner" in md
-    assert "kuzu_graph_store" in md
+    assert "grafx_graph_store" in md
     assert "Failing commands" in md and "pytest x" in md
     # an unknown format fails closed.
     with pytest.raises(ValueError):

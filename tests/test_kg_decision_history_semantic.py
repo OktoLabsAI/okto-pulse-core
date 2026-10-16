@@ -59,8 +59,8 @@ class TestMergePreservesTextOrderWhenSemanticFails:
         class FakeStore:
             def find_by_topic(self, board_id, node_type, topic, f):
                 return [
-                    ["dec-1", "Title", "Content", "ts", 0.9, 0.8, None],
-                    ["dec-2", "Other", "Content", "ts", 0.9, 0.7, None],
+                    ["dec-1", "Title", "Content", "ts", 0.9, 0.8, None, None],
+                    ["dec-2", "Other", "Content", "ts", 0.9, 0.7, None, None],
                 ]
 
             def find_by_topic_semantic(self, *a, **kw):
@@ -84,13 +84,13 @@ class TestMergePreservesTextOrderWhenSemanticFails:
     def test_merge_dedups_by_id(self):
         class FakeStore:
             def find_by_topic(self, board_id, node_type, topic, f):
-                return [["dec-1", "T", "C", "ts", 0.9, 0.8, None]]
+                return [["dec-1", "T", "C", "ts", 0.9, 0.8, None, None]]
 
             def find_by_topic_semantic(self, *a, **kw):
                 # Same dec-1 surfaced via semantic must not double
                 return [
-                    ["dec-1", "T", "C", "ts", 0.9, 0.8, None],
-                    ["dec-42", "Paraphrase", "C", "ts", 0.9, 0.7, None],
+                    ["dec-1", "T", "C", "ts", 0.9, 0.8, None, None],
+                    ["dec-42", "Paraphrase", "C", "ts", 0.9, 0.7, None, None],
                 ]
 
         import okto_pulse.core.kg.kg_service as kg_service_mod
@@ -114,7 +114,7 @@ class TestUseSemanticFalseDisablesPath:
         class FakeStore:
             def find_by_topic(self, *a, **kw):
                 calls["text"] += 1
-                return [["dec-1", "T", "C", "ts", 0.9, 0.8, None]]
+                return [["dec-1", "T", "C", "ts", 0.9, 0.8, None, None]]
 
             def find_by_topic_semantic(self, *a, **kw):
                 calls["semantic"] += 1
@@ -137,7 +137,7 @@ class TestUseSemanticFalseDisablesPath:
 
         class FakeStore:
             def find_by_topic(self, *a, **kw):
-                return [["dec-1", "Retry", "Content", created_at, 0.9, 0.8, None]]
+                return [["dec-1", "Retry", "Content", created_at, 0.9, 0.8, None, None]]
 
         import okto_pulse.core.kg.kg_service as kg_service_mod
 
@@ -160,7 +160,7 @@ class TestSemanticSkippedWhenMaxRowsReached:
             def find_by_topic(self, board_id, node_type, topic, f):
                 # Fill up to max_rows
                 return [
-                    [f"dec-{i}", "T", "C", "ts", 0.9, 0.8, None]
+                    [f"dec-{i}", "T", "C", "ts", 0.9, 0.8, None, None]
                     for i in range(f.max_rows)
                 ]
 

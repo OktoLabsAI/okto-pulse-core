@@ -33,6 +33,34 @@ def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4()}"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('collection,prefix', [
+    ('integration_requirements', 'ir'), ('observability_requirements', 'or'),
+])
+async def test_declared_technical_requirement_link_persists_through_spec_service(
+    db_factory, collection, prefix,
+):
+    """A technical reference is domain data, independently of graph projection."""
+    board_id, spec_id, actor_id = _id('board'), _id('spec'), _id('actor')
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name='Technical lineage', owner_id=actor_id))
+        db.add(Spec(id=spec_id, board_id=board_id, title='Technical lineage',
+            status=SpecStatus.DRAFT, created_by=actor_id,
+            technical_requirements=[{'id': 'tr_declared', 'text': 'Bounded response time'}]))
+        await db.commit()
+        updated = await SpecService(db).update_spec(spec_id, actor_id, SpecUpdate(**{
+            collection: [{'id': prefix + '_declared', 'title': 'Observe technical condition',
+                'linked_requirements': ['tr_declared']}],
+        }))
+        assert updated is not None
+        await db.commit()
+    async with db_factory() as db:
+        persisted = (await db.execute(select(Spec).where(Spec.id == spec_id))).scalar_one()
+        assert getattr(persisted, collection)[0]['linked_requirements'] == ['tr_declared']
+        histories = (await db.execute(select(SpecHistory).where(SpecHistory.spec_id == spec_id))).scalars().all()
+        assert any(change['field'] == collection for history in histories for change in history.changes)
+
+
 def test_ir_or_spec_update_permissions_detect_create_edit_delete_and_links():
     spec = SimpleNamespace(
         integration_requirements=[
@@ -104,6 +132,13 @@ async def test_code_evidence_coverage_skip_is_persisted_and_audited(
     spec_id = _id("code-evidence-skip-spec")
     actor_id = _id("code-evidence-skip-user")
     async with db_factory() as db:
+        # The shared test database can contain activity from other Boards.
+        foreign_board_id = _id("unrelated-evidence-board")
+        db.add(Board(id=foreign_board_id, name="Other Board", owner_id="other"))
+        db.add(ActivityLog(
+            board_id=foreign_board_id, action="spec_updated", actor_type="user",
+            actor_id="other", actor_name="Other", details={"fields": ["title"]},
+        ))
         db.add(Board(id=board_id, name="Evidence Board", owner_id=actor_id))
         db.add(
             Spec(
@@ -127,7 +162,11 @@ async def test_code_evidence_coverage_skip_is_persisted_and_audited(
         ).scalar_one()
         activity = (
             await db.execute(
-                select(ActivityLog).where(ActivityLog.action == "spec_updated")
+                select(ActivityLog).where(
+                    ActivityLog.action == "spec_updated",
+                    ActivityLog.board_id == board_id,
+                    ActivityLog.actor_id == actor_id,
+                )
             )
         ).scalar_one()
 
@@ -171,7 +210,7 @@ async def test_ir_or_coverage_requires_linked_tasks(db_factory):
             title="Spec with IR and OR",
             status=SpecStatus.APPROVED,
             created_by=actor_id,
-            functional_requirements=["Send metrics"],
+            functional_requirements=[{"id": "fr_metrics", "text": "Send metrics"}],
             integration_requirements=[
                 {"id": "ir_1", "title": "Send metric event", "status": "active"}
             ],
@@ -221,7 +260,7 @@ async def test_ir_or_link_reference_validation(db_factory):
                 title="Spec",
                 status=SpecStatus.DRAFT,
                 created_by=actor_id,
-                functional_requirements=["FR"],
+                functional_requirements=[{"id": "fr_one", "text": "FR"}],
                 api_contracts=[
                     {"id": "api_1", "method": "POST", "path": "/metrics"}
                 ],
@@ -320,7 +359,7 @@ async def test_ir_or_linked_requirements_accept_structured_tr_refs(db_factory):
                     {
                         "id": "or_1",
                         "title": "Timeout metric",
-                        "linked_requirements": ["Session timeout must be configurable"],
+                        "linked_requirements": ["tr_session"],
                     }
                 ],
             ),
@@ -328,9 +367,7 @@ async def test_ir_or_linked_requirements_accept_structured_tr_refs(db_factory):
         spec = await service.get_spec(spec_id)
 
     assert spec.integration_requirements[0]["linked_requirements"] == ["tr_audit"]
-    assert spec.observability_requirements[0]["linked_requirements"] == [
-        "Session timeout must be configurable"
-    ]
+    assert spec.observability_requirements[0]["linked_requirements"] == ["tr_session"]
 
 
 @pytest.mark.asyncio
@@ -348,7 +385,7 @@ async def test_add_integration_requirement_accepts_external_service_mcp(db_facto
                 title="Spec",
                 status=SpecStatus.DRAFT,
                 created_by=actor_id,
-                functional_requirements=["FR"],
+                functional_requirements=[{"id": "fr_one", "text": "FR"}],
                 integration_requirements=[],
                 observability_requirements=[],
             )
@@ -393,7 +430,7 @@ async def test_add_integration_requirement_accepts_mcp_tool_type(db_factory):
                 title="Spec",
                 status=SpecStatus.DRAFT,
                 created_by=actor_id,
-                functional_requirements=["FR"],
+                functional_requirements=[{"id": "fr_one", "text": "FR"}],
                 integration_requirements=[],
                 observability_requirements=[],
             )
@@ -427,7 +464,7 @@ def test_ir_or_coverage_summary_and_kg_mapping():
     spec = {
         "id": "spec_1",
         "title": "Metrics ingestion",
-        "functional_requirements": ["Receive metrics"],
+        "functional_requirements": [{"id": "fr_metrics", "text": "Receive metrics"}],
         "technical_requirements": [],
         "acceptance_criteria": [],
         "business_rules": [],
@@ -438,7 +475,7 @@ def test_ir_or_coverage_summary_and_kg_mapping():
                 "method": "POST",
                 "path": "/metrics",
                 "description": "Receive metric payload",
-                "linked_requirements": ["Receive metrics"],
+                "linked_requirements": ["fr_metrics"],
             }
         ],
         "integration_requirements": [

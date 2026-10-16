@@ -51,7 +51,7 @@ FR5_REQUIRED_FIELDS = {
 
 # A core-owned adapter and a Community-owned adapter present in the inventory.
 CORE_KEY = "filesystem_storage_provider"
-COMMUNITY_KEY = "kuzu_graph_store"
+COMMUNITY_KEY = "grafx_graph_store"
 
 
 def _by_key(adapter_key: str):

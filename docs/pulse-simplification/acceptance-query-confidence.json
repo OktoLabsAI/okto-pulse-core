@@ -1,0 +1,106 @@
+{
+  "scope": "KG6.5/D18 natural retrieval source-confidence qualification",
+  "passed": 98,
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Native Grafx reproduction returned confidence 0.1 despite requested minimum 0.8 before the fix.",
+    "Literal and topic candidates use source_confidence; final identities are qualified after equivalence folding, including vector retrieval.",
+    "Vector similarity and RRF do not substitute for source confidence.",
+    "Invalid or non-finite thresholds fail before providers; unavailable qualification fails explicitly.",
+    "Native thresholds 0, 0.8 and 1 and layer/rewrite/temporal regressions passed."
+  ],
+  "limits": [
+    "First expanded run failed on reused native fixture identity; only Board test identity changed before the 98-case green rerun.",
+    "No frontend feature changed in this increment.",
+    "Query-count quota removal, natural/reflective shared deadlines and aggregate bounds remain pending under KG6.5.",
+    "Full-plan inventory remains 78 verified / 33 partial / 135 unaudited; this is not complete-plan acceptance."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/record_query_confidence.py": "a0ca8c524e77c6eafd80e294bcabeeaf0252cbd427e94b513ae49d866e5a88dd",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-confidence-final-closure.log": "20f21f133953de46c0af2fe5fd353d8d08c04e009acc279c4accf9945c0fce96",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-confidence-fixture2-core.xml": "2f048cec66334ddafdf37acad35853d53ab6ed9dd774acf948f837194d61f9ec",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-confidence-fixture2-core.log": "b79d407983fab2004fb4e59c40adc1da2280726c32b19985fdb315ab7defbca2",
+    "PULSE_REFACTOR/.validation-v040/provenance-query-confidence1.json": "9950f078a8e14dd4acd554ebc612bc0f649474b2bff4d7125e8d3d1694e4744d",
+    "PULSE_REFACTOR/.validation-v040/provenance-query-confidence-final.json": "23f21cf7a0598e41985efc95a6311c3322f3d45a085f00b67e7a466fcf1cfef1",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-confidence-repro-core.log": "c15878a7164225dd8a31b116c262689636085d6a49dfd995620a5ce9476c2a6e",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-confidence-repro-core.xml": "4afc7e06d2d0c24656a56d9475f1f0ed82665082a7ba258a4e535c58fdcc2e61",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-confidence1-core.log": "e3da3c1acb66fba99ff2088b24bdc96ca76b6fac3f6e69d0ff42980f8a4f9d32",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-confidence1-core.xml": "4f7bc09c0b67ad2f0db56fd777ad5d7270244c84a909ccee7aa0bd4d34efca54",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/tier_power.py": "462d739630dbcafa1a6e396e774bbcddd82c1a1bee1a770ed0f02976bf1412ab",
+    "okto_labs_pulse_core/tests/test_kg_natural_query_confidence.py": "d203f7e4638b7ec8233ece5baa105c817ca2409b4ab9a72bef2a18008034e9a0",
+    "okto_labs_pulse_core/tests/test_kg_query_rewrite.py": "5e97caf5fd594a8d975f0b095181c292e40632f6604dcd2a616b6153fad73295"
+  }
+}

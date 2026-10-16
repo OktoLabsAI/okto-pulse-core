@@ -21,7 +21,6 @@ DEFAULT_BRIDGE_CACHE_MAX_ENTRIES = 1024
 DEFAULT_BRIDGE_CACHE_REALM = "runtime"
 
 INVENTORIED_PROVIDER_BRIDGE_NAMESPACES: tuple[str, ...] = (
-    "events.handlers.learning_summariser",
     "kg.adaptive_hops",
     "kg.agent.heuristics",
     "kg.context_compress",

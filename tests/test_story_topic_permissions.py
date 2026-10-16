@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from okto_pulse.community.api import stories as stories_api
 from okto_pulse.core.application.use_cases import PermissionDeniedError
 from okto_pulse.core.application.use_cases import stories_crud
-from okto_pulse.core.infra.permissions import PermissionSet
+from okto_pulse.core.domain.permissions import PermissionSet
 from sqlalchemy_test_models import StoryStatus
 from okto_pulse.core.mcp.server import (
     _mcp_check_story_state_permission,

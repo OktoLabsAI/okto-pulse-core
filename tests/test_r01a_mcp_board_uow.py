@@ -51,9 +51,7 @@ _TOOL_USE_CASE = {
     "activate_default_board_config_version": "McpActivateDefaultBoardConfigVersionUseCase",
     "deactivate_default_board_config_version": "McpDeactivateDefaultBoardConfigVersionUseCase",
     "get_board_guidelines": "McpGetBoardGuidelinesUseCase",
-    "link_guideline_to_board": "McpLinkGuidelineToBoardUseCase",
     "unlink_guideline_from_board": "McpUnlinkGuidelineFromBoardUseCase",
-    "update_board_guideline_priority": "McpUpdateBoardGuidelinePriorityUseCase",
     "link_board_design_system": "McpLinkBoardDesignSystemUseCase",
     "unlink_board_design_system": "McpUnlinkBoardDesignSystemUseCase",
     "get_board_design_system": "McpGetBoardDesignSystemUseCase",
@@ -377,11 +375,11 @@ async def test_list_by_board_refinement_requires_ideation_id(_seed):
 
 
 @pytest.mark.asyncio
-async def test_list_by_board_sprint_requires_spec_id(_seed):
+async def test_list_by_board_sprint_is_retired(_seed):
     payload = await _call(
         "okto_pulse_list_by_board", board_id=BOARD_ID, entity_type="sprint"
     )
-    assert "spec_id" in json.dumps(payload), payload
+    assert payload["error_code"] == "unsupported_entity", payload
 
 
 @pytest.mark.asyncio
@@ -483,7 +481,7 @@ async def test_get_board_guidelines_honors_mcp_board_grant_for_non_owner_board()
 
 
 @pytest.mark.asyncio
-async def test_update_board_guideline_priority_requires_preview_without_mutation():
+async def test_removed_board_guideline_priority_tool_cannot_mutate():
     from okto_pulse.core.infra.database import get_session_factory
     from sqlalchemy import select
 
@@ -516,16 +514,8 @@ async def test_update_board_guideline_priority_requires_preview_without_mutation
         await db.commit()
 
     try:
-        payload = await _call(
-            "okto_pulse_update_board_guideline_priority",
-            board_id=board_id,
-            guideline_id=guideline_id,
-            priority="30",
-        )
-
-        assert payload["error_code"] == "guideline_impact_preview_required"
-        assert payload["next_action"] == "preview_then_adopt"
-        assert payload["retryable"] is False
+        with pytest.raises(KeyError):
+            await mcp_server.mcp.get_tool("okto_pulse_update_board_guideline_priority")
         async with factory() as db:
             link = (
                 await db.execute(

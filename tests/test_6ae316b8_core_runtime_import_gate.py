@@ -26,6 +26,7 @@ FORBIDDEN_SCHEMA_RUNTIME_SYMBOLS = frozenset(
         "purge_board_graph_storage",
         "migrate_schema_for_board",
         "apply_ladybug_lifecycle_step",
+        "board_graph_path",
         "board_kuzu_path",
         "_open_kuzu_db",
         "load_vector_extension",

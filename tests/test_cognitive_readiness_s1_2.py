@@ -149,12 +149,12 @@ def _seed_pending_item(store, board, gen, source_ref):
         "pending_refs": [source_ref],
         "status": "pending",
         "recorded_at": "2026-06-17T00:00:00+00:00",
-        "items": [{
-            "item_id": iid, "board_id": board, "kg_generation_id": gen,
-            "source_ref": source_ref, "artifact_type": source_ref.split(":", 1)[0],
-            "status": CognitiveItemStatus.PENDING.value,
-            "recorded_at": "2026-06-17T00:00:00+00:00",
-        }],
+        "items": [CognitiveConsolidationItem(
+            item_id=iid, board_id=board, kg_generation_id=gen,
+            source_ref=source_ref, artifact_type=source_ref.split(":", 1)[0],
+            status=CognitiveItemStatus.PENDING.value,
+            recorded_at="2026-06-17T00:00:00+00:00",
+        ).to_dict()],
     }
     store.artifact_store.write_json_atomic(
         RebuildAuditKey(

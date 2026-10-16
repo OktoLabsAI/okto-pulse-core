@@ -34,6 +34,12 @@ from datetime import datetime, timezone
 from functools import partial
 from typing import TypeVar
 
+from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
+from okto_pulse.core.domain.learning_materialization import CapturedLearningProjection, LEARNING_CAPTURE_CANDIDATE_ID
+
+from okto_pulse.core.ports.code_evidence_projection import (
+    TRACEABILITY_RELATIONSHIP_NAMESPACES, traceability_relationship_family,
+)
 from okto_pulse.core.domain.code_traceability_kg import (
     CODE_TRACEABILITY_DETERMINISTIC_WRITER_PATH,
     CodeTraceabilityKGWriteViolation,
@@ -106,6 +112,10 @@ from okto_pulse.core.kg.session_manager import (
     compute_content_hash,
 )
 from okto_pulse.core.ports.runtime_workers import BlockingExecutionPort
+from okto_pulse.core.kg.projection_removals import (
+    DeferredProjectionProgress, GraphRemovalProgress, card_removal_intents, dependency_removal_intents,
+    card_dependency_removal_intents,
+)
 
 logger = logging.getLogger("okto_pulse.kg.primitives")
 
@@ -126,7 +136,7 @@ class _PendingConsolidationCommit:
     records: tuple[object, ...]
     counters: object
     cognitive_source_records: tuple[dict, ...]
-    response: CommitConsolidationResponse
+    response: CommitConsolidationResponse | DeferredProjectionProgress
     in_flight: bool = False
 
 
@@ -532,12 +542,16 @@ async def begin_consolidation(
         SpecLineageParentIntent.PRESERVE
     ),
     relational_projection_candidate_ids: frozenset[str] = frozenset(),
-    relational_projection_active_set_intent: object | None = None,
+    relational_projection_active_set_intents: tuple[object, ...] = (),
+    reference_findings: object | None = None,
 ) -> BeginConsolidationResponse:
     """Open a new transactional session. SHA256-dedup against the last commit."""
     registry = get_kg_registry()
     store = registry.require_session_store()
     session_id = f"kgses_{uuid.uuid4().hex[:16]}"
+    from okto_pulse.core.ports.projection_findings import validate_audit_finding_snapshot
+    validate_audit_finding_snapshot(reference_findings, board_id=req.board_id,
+        artifact_type=req.artifact_type, artifact_id=req.artifact_id, agent_id=agent_id)
 
     deterministic_candidates: dict[str, NodeCandidate] = {}
     for candidate in req.deterministic_candidates:
@@ -548,6 +562,16 @@ async def begin_consolidation(
                 session_id=session_id,
             )
         deterministic_candidates[candidate.candidate_id] = candidate
+
+    if agent_id != "system:historical_consolidation" and any(
+        candidate._source_projection_metadata is not None
+        for candidate in deterministic_candidates.values()
+    ):
+        raise KGPrimitiveError(
+            "source_projection_metadata_forbidden",
+            "Only the deterministic worker may attest source metadata.",
+            session_id=session_id,
+        )
 
     _require_code_traceability_candidate_ownership(
         deterministic_candidates,
@@ -576,16 +600,40 @@ async def begin_consolidation(
     projection_candidate_ids = frozenset(
         str(candidate_id) for candidate_id in relational_projection_candidate_ids
     )
-    projection_intent = relational_projection_active_set_intent
-    if projection_intent is not None:
+    projection_intents = relational_projection_active_set_intents
+    _validate_projection_intent_collection(projection_intents, session_id=session_id)
+    declared_candidate_ids = frozenset(
+        str(getattr(ref, "candidate_id", ""))
+        for intent in projection_intents for ref in getattr(intent, "active_refs", ())
+    )
+    if projection_intents and declared_candidate_ids != projection_candidate_ids:
+        raise KGPrimitiveError(
+            "relational_projection_active_set_mismatch",
+            "Projection candidates must match the complete collection of active sets.",
+            session_id=session_id,
+        )
+    from okto_pulse.core.ports.spec_projection import SPEC_RELATIONSHIP_NAMESPACES
+    from okto_pulse.core.ports.card_projection import (
+        CARD_EDGE_NAMESPACES, card_edge_family, CARD_DEPENDENCY_NAMESPACE,
+        is_card_dependency_writer, owns_card_dependency_endpoints,
+    )
+    for projection_intent in projection_intents:
         owner_type = str(getattr(projection_intent, "owner_type", ""))
         owner_id = str(getattr(projection_intent, "owner_id", ""))
         namespace = str(getattr(projection_intent, "namespace", ""))
         active_refs = tuple(getattr(projection_intent, "active_refs", ()))
         active_edges = tuple(getattr(projection_intent, "active_edges", ()))
         supported_scope = (req.artifact_type, owner_type, namespace) in {
+            *((traceability_relationship_family(name).owner_type,
+               traceability_relationship_family(name).owner_type, name)
+              for name in TRACEABILITY_RELATIONSHIP_NAMESPACES),
             ("refinement", "refinement", "rdl"),
             ("spec", "spec", "dependencies"),
+            ("card", "card", "card_scenarios"),
+            ("card", "card", "card_parent"),
+            ('card', 'card', CARD_DEPENDENCY_NAMESPACE),
+            *(("card", "card", name) for name in CARD_EDGE_NAMESPACES),
+            *(("spec", "spec", name) for name in SPEC_RELATIONSHIP_NAMESPACES),
         }
         if (
             not agent_id.startswith("system:")
@@ -603,7 +651,7 @@ async def begin_consolidation(
         )
         if (
             "" in active_candidate_ids
-            or active_candidate_ids != projection_candidate_ids
+            or not active_candidate_ids.issubset(projection_candidate_ids)
         ):
             raise KGPrimitiveError(
                 "relational_projection_active_set_mismatch",
@@ -632,6 +680,120 @@ async def begin_consolidation(
                     "deterministic candidate identity.",
                     session_id=session_id,
                 )
+        if namespace in TRACEABILITY_RELATIONSHIP_NAMESPACES:
+            family = traceability_relationship_family(namespace)
+            roots = [candidate for candidate in deterministic_candidates.values()
+                     if _enum_value(candidate.node_type) == "Entity"
+                     and candidate.source_artifact_ref == f"{owner_type}:{owner_id}"
+                     and candidate.kind_of == owner_type]
+            if agent_id != "system:historical_consolidation" or active_refs or len(roots) != 1:
+                raise KGPrimitiveError("relational_projection_scope_invalid",
+                    "Evidence links require their authenticated worker and exact owner.",
+                    session_id=session_id)
+            for ref in active_edges:
+                source = deterministic_candidates.get(ref.from_candidate_id)
+                target = _parse_source_ref_endpoint(ref.to_candidate_id)
+                if (source is not roots[0] or ref.edge_type != family.edge_type
+                        or ref.rule_id not in family.rules or target is None
+                        or not family.owns_endpoints(owner_id=owner_id,
+                            source_type=_enum_value(source.node_type), target_type=target[0],
+                            source_ref=source.source_artifact_ref, target_ref=target[1])):
+                    raise KGPrimitiveError("relational_projection_edge_identity_mismatch",
+                        "Evidence link is outside its exact projection scope.", session_id=session_id)
+        if namespace == CARD_DEPENDENCY_NAMESPACE:
+            roots = [candidate for candidate in deterministic_candidates.values()
+                     if _enum_value(candidate.node_type) in {'Entity', 'Bug'}
+                     and candidate.source_artifact_ref == f'card:{owner_id}']
+            cleanup_only = not deterministic_candidates and not active_edges
+            if (agent_id != 'system:historical_consolidation' or active_refs
+                    or (len(roots) != 1 and not cleanup_only)):
+                raise KGPrimitiveError('relational_projection_scope_invalid',
+                    'Card dependencies require the authenticated worker and exact owner.', session_id=session_id)
+            for ref in active_edges:
+                target = deterministic_candidates.get(ref.to_candidate_id)
+                source = _parse_source_ref_endpoint(ref.from_candidate_id)
+                if (target is not roots[0] or ref.edge_type != 'precedes' or source is None
+                        or not is_card_dependency_writer(rule_id=ref.rule_id, layer='deterministic', created_by='worker_layer1')
+                        or not owns_card_dependency_endpoints(owner_id=owner_id, source_type=source[0],
+                            target_type=_enum_value(target.node_type), source_ref=source[1], target_ref=target.source_artifact_ref)):
+                    raise KGPrimitiveError('relational_projection_edge_identity_mismatch',
+                        'Card dependency is outside its exact owner.', session_id=session_id)
+        if namespace in CARD_EDGE_NAMESPACES:
+            family = card_edge_family(namespace)
+            roots = [candidate for candidate in deterministic_candidates.values()
+                     if _enum_value(candidate.node_type) in {'Entity', 'Bug'}
+                     and candidate.source_artifact_ref == f'card:{owner_id}']
+            cleanup_only = not deterministic_candidates and not active_edges
+            if (agent_id != 'system:historical_consolidation' or active_refs
+                    or (len(roots) != 1 and not cleanup_only)):
+                raise KGPrimitiveError('relational_projection_scope_invalid',
+                    'Card child projection requires its authenticated worker and exact owner root.', session_id=session_id)
+            for edge_ref in active_edges:
+                source = deterministic_candidates.get(edge_ref.from_candidate_id)
+                target = _parse_source_ref_endpoint(edge_ref.to_candidate_id)
+                if (source is not roots[0] or edge_ref.edge_type != family.edge_type
+                        or not family.owns_writer(rule_id=edge_ref.rule_id, layer='deterministic', created_by='worker_layer1') or target is None
+                        or not family.owns_endpoints(owner_id=owner_id, source_type=_enum_value(source.node_type),
+                            target_type=target[0], source_ref=source.source_artifact_ref, target_ref=target[1])):
+                    raise KGPrimitiveError('relational_projection_edge_identity_mismatch',
+                        'Card child edge is outside its exact projection scope.', session_id=session_id)
+        if namespace == 'card_scenarios':
+            from okto_pulse.core.ports.card_projection import CARD_SCENARIO_RULES, is_scenario_source_reference
+            roots = [candidate for candidate in deterministic_candidates.values()
+                     if _enum_value(candidate.node_type) in {'Entity', 'Bug'}
+                     and candidate.source_artifact_ref == f'card:{owner_id}']
+            cleanup_only = not deterministic_candidates and not active_edges
+            if (agent_id != 'system:historical_consolidation' or active_refs
+                    or (len(roots) != 1 and not cleanup_only)):
+                raise KGPrimitiveError('relational_projection_scope_invalid',
+                    'Card scenario projection requires its authenticated worker and exact owner root.', session_id=session_id)
+            for edge_ref in active_edges:
+                source = deterministic_candidates.get(edge_ref.from_candidate_id)
+                target = _parse_source_ref_endpoint(edge_ref.to_candidate_id)
+                if (source is not roots[0] or edge_ref.edge_type != 'supports'
+                        or edge_ref.rule_id not in CARD_SCENARIO_RULES or target is None
+                        or target[0] != 'TestScenario' or not is_scenario_source_reference(target[1])):
+                    raise KGPrimitiveError('relational_projection_edge_identity_mismatch',
+                        'Card scenario edge is outside its exact projection scope.', session_id=session_id)
+        if namespace == 'card_parent':
+            from okto_pulse.core.ports.card_projection import CARD_PARENT_RULE, is_spec_source_reference
+            roots = [candidate for candidate in deterministic_candidates.values()
+                     if _enum_value(candidate.node_type) in {'Entity', 'Bug'}
+                     and candidate.source_artifact_ref == f'card:{owner_id}']
+            if (agent_id != 'system:historical_consolidation' or active_refs
+                    or len(roots) != 1 or len(active_edges) > 1):
+                raise KGPrimitiveError('relational_projection_scope_invalid',
+                    'Card parent projection requires its authenticated worker and exact owner root.', session_id=session_id)
+            for edge_ref in active_edges:
+                source = deterministic_candidates.get(edge_ref.from_candidate_id)
+                target = _parse_source_ref_endpoint(edge_ref.to_candidate_id)
+                if (source is not roots[0] or target is None or edge_ref.edge_type != 'belongs_to'
+                        or edge_ref.rule_id != CARD_PARENT_RULE
+                        or target[0] != 'Entity' or not is_spec_source_reference(target[1])):
+                    raise KGPrimitiveError('relational_projection_edge_identity_mismatch',
+                        'Card parent edge is outside its exact projection scope.', session_id=session_id)
+        if namespace in SPEC_RELATIONSHIP_NAMESPACES:
+            from okto_pulse.core.ports.spec_projection import spec_relationship_family
+            family = spec_relationship_family(namespace)
+            if agent_id != "system:historical_consolidation" or active_refs:
+                raise KGPrimitiveError("relational_projection_scope_invalid",
+                    "Spec relationship projection belongs to the authenticated deterministic worker.", session_id=session_id)
+            roots = [candidate for candidate in deterministic_candidates.values()
+                     if _enum_value(candidate.node_type) == "Entity"
+                     and candidate.source_artifact_ref == f"spec:{owner_id}"]
+            if len(roots) != 1:
+                raise KGPrimitiveError("relational_projection_owner_unresolved",
+                    "Spec relationship projection requires its exact owner root.", session_id=session_id)
+            for edge_ref in active_edges:
+                source = deterministic_candidates.get(edge_ref.from_candidate_id)
+                target = deterministic_candidates.get(edge_ref.to_candidate_id)
+                if (edge_ref.edge_type != family.edge_type or edge_ref.rule_id not in family.rules
+                        or source is None or target is None
+                        or not family.owns_endpoints(owner_id=owner_id,
+                            source_type=_enum_value(source.node_type), target_type=_enum_value(target.node_type),
+                            source_ref=source.source_artifact_ref, target_ref=target.source_artifact_ref)):
+                    raise KGPrimitiveError("relational_projection_edge_identity_mismatch",
+                        "Spec relationship edge is outside its exact projection scope.", session_id=session_id)
         if namespace == "rdl" and active_edges:
             raise KGPrimitiveError(
                 "relational_projection_active_set_mismatch",
@@ -694,7 +856,7 @@ async def begin_consolidation(
                         session_id=session_id,
                     )
                 edge_candidate_ids.add(candidate_id)
-    elif projection_candidate_ids:
+    if not projection_intents and projection_candidate_ids:
         raise KGPrimitiveError(
             "relational_projection_intent_required",
             "Relational projection candidates require an exact active-set intent.",
@@ -747,7 +909,8 @@ async def begin_consolidation(
     session.node_candidates.update(deterministic_candidates)
     session.spec_lineage_parent_intent = lineage_intent
     session.relational_projection_candidate_ids = projection_candidate_ids
-    session.relational_projection_active_set_intent = projection_intent
+    session.relational_projection_active_set_intents = projection_intents
+    session.reference_findings = reference_findings
 
     # Spec 4007e4a3 (Ideação #3, FR6): structured counter for the
     # nothing_changed short-circuit. Lets observability tooling track how
@@ -1322,6 +1485,36 @@ def _require_no_code_traceability_existing_targets(
             )
 
 
+def _require_spec_source_identity_matches(graph_scope, *, node_candidates, effective_hints, session_id):
+    """Reject stale/overridden cross-source Spec child hints before mutation."""
+    from okto_pulse.core.ports.spec_projection import is_spec_owned_node_identity
+    for candidate_id, candidate in node_candidates.items():
+        node_type = _enum_value(candidate.node_type)
+        source_ref = candidate.source_artifact_ref
+        if not is_spec_owned_node_identity(node_type, source_ref):
+            continue
+        hint = effective_hints.get(candidate_id)
+        if hint is None or _resolve_op(hint, candidate.source_confidence) not in {
+            ReconciliationOperation.UPDATE, ReconciliationOperation.SUPERSEDE,
+        }:
+            continue
+        target_id = getattr(hint, 'target_node_id', None)
+        try:
+            snapshot = (graph_scope.snapshot_node_properties(node_type, target_id, ('source_artifact_ref',))
+                if target_id else None)
+        except Exception as exc:
+            raise KGPrimitiveError('spec_source_identity_unverifiable',
+                'The Spec child target identity could not be read.', session_id=session_id) from exc
+        if snapshot is None or not snapshot.attrs.get('source_artifact_ref'):
+            raise KGPrimitiveError('spec_source_identity_unverifiable',
+                'The Spec child target has no verifiable source identity.', session_id=session_id)
+        if snapshot.attrs['source_artifact_ref'] != source_ref:
+            raise KGPrimitiveError('spec_source_identity_mismatch',
+                'A Spec child cannot update or supersede another source identity.', session_id=session_id,
+                details={'candidate_id': candidate_id, 'candidate_source_artifact_ref': source_ref,
+                    'target_node_id': target_id, 'target_source_artifact_ref': snapshot.attrs['source_artifact_ref']})
+
+
 def _require_entity_source_identity_matches(
     graph_scope,
     *,
@@ -1439,6 +1632,7 @@ def _validate_graph_connectivity_before_commit(
     writer_path: str,
     kg_health_state: str,
     deterministic_rdl_alternative_candidate_ids: frozenset[str] = frozenset(),
+    deterministic_spec_decision_candidate_ids: frozenset[str] = frozenset(),
 ) -> dict:
     """Validate zero-orphan invariants before any graph backend mutation.
 
@@ -1561,6 +1755,7 @@ def _validate_graph_connectivity_before_commit(
         deterministic_rdl_alternative_candidate_ids=(
             deterministic_rdl_alternative_candidate_ids
         ),
+        deterministic_spec_decision_candidate_ids=deterministic_spec_decision_candidate_ids,
     )
     response = result.to_response()
     response["checked_nodes"] = len(guard_nodes)
@@ -1600,6 +1795,98 @@ def _validate_graph_connectivity_before_commit(
     )
 
 
+def _validate_projection_intent_collection(intents, *, session_id):
+    """Internal replacement intents have one unambiguous owner per namespace."""
+    from okto_pulse.core.ports.card_projection import CARD_EDGE_NAMESPACES
+    # The closed Card registry also includes parent, scenarios and dependencies.
+    # This is an internal source declaration, not a wider public mutation batch.
+    maximum = max(16, len(CARD_EDGE_NAMESPACES) + 3)
+    if type(intents) is not tuple or len(intents) > maximum:
+        raise KGPrimitiveError(
+            "relational_projection_active_set_invalid",
+            "Projection active sets require a bounded tuple.", session_id=session_id,
+        )
+    scopes = set()
+    members = set()
+    edges = set()
+    for intent in intents:
+        scope = tuple(getattr(intent, key, None) for key in ("owner_type", "owner_id", "namespace"))
+        if any(type(value) is not str or not value for value in scope) or scope in scopes:
+            raise KGPrimitiveError(
+                "relational_projection_scope_invalid",
+                "Projection active sets require distinct, complete ownership scopes.", session_id=session_id,
+            )
+        scopes.add(scope)
+        for field, seen in (("active_refs", members), ("active_edges", edges)):
+            refs = getattr(intent, field, ())
+            if type(refs) is not tuple:
+                raise KGPrimitiveError(
+                    "relational_projection_active_set_invalid",
+                    "Active-set members must be immutable tuples.", session_id=session_id,
+                )
+            for ref in refs:
+                candidate_id = getattr(ref, "candidate_id", None)
+                if type(candidate_id) is not str or not candidate_id or candidate_id in seen:
+                    raise KGPrimitiveError(
+                        "relational_projection_active_set_mismatch",
+                        "Each projection member must have exactly one owner.", session_id=session_id,
+                    )
+                seen.add(candidate_id)
+
+
+def _validated_deterministic_spec_decision_grants(
+    *, agent_id, session_artifact_type, session_artifact_id,
+    node_candidates, edge_candidates, relational_projection_active_set_intents,
+) -> frozenset[str]:
+    """Prove the exact native Spec owner at the graph commit boundary.
+
+    This is not a public grant. Only the internal worker with its declared
+    Decision active set and a current belongs_to edge can use provenance alone.
+    Existing graph edges are deliberately not evidence for this authority.
+    """
+    from okto_pulse.core.ports.spec_projection import is_spec_child_reference
+
+    if (agent_id != "system:historical_consolidation"
+            or session_artifact_type != "spec"
+            or type(session_artifact_id) is not str or not session_artifact_id
+            or type(node_candidates) is not dict or type(edge_candidates) is not dict
+            or type(relational_projection_active_set_intents) is not tuple):
+        return frozenset()
+    intents = [intent for intent in relational_projection_active_set_intents
+               if getattr(intent, "namespace", None) == "decision_requirements"]
+    if (len(intents) != 1
+            or getattr(intents[0], "owner_type", None) != "spec"
+            or getattr(intents[0], "owner_id", None) != session_artifact_id
+            or getattr(intents[0], "active_refs", None) != ()):
+        return frozenset()
+    for mapping in (node_candidates, edge_candidates):
+        if any(type(key) is not str or not key
+               or getattr(candidate, "candidate_id", None) != key
+               for key, candidate in mapping.items()):
+            return frozenset()
+    roots = [key for key, node in node_candidates.items()
+             if _enum_value(getattr(node, "node_type", "")) == "Entity"
+             and getattr(node, "source_artifact_ref", None) == f"spec:{session_artifact_id}"]
+    if len(roots) != 1:
+        return frozenset()
+    granted = set()
+    for key, node in node_candidates.items():
+        if (_enum_value(getattr(node, "node_type", "")) != "Decision"
+                or not is_spec_child_reference(getattr(node, "source_artifact_ref", None),
+                    owner_id=session_artifact_id, section="decision")):
+            continue
+        provenance = [edge for edge in edge_candidates.values()
+                      if getattr(edge, "from_candidate_id", None) == key
+                      and _enum_value(getattr(edge, "edge_type", "")) == "belongs_to"]
+        if (len(provenance) == 1
+                and getattr(provenance[0], "to_candidate_id", None) == roots[0]
+                and getattr(provenance[0], "rule_id", None) == "belongs_to/fdec@v2.0"
+                and getattr(provenance[0], "created_by", None) == "worker_layer1"
+                and _enum_value(getattr(provenance[0], "layer", "deterministic")) == "deterministic"):
+            granted.add(key)
+    return frozenset(granted)
+
+
 def _validated_deterministic_rdl_alternative_grants(
     *,
     agent_id: str,
@@ -1608,7 +1895,7 @@ def _validated_deterministic_rdl_alternative_grants(
     node_candidates: dict,
     edge_candidates: dict,
     relational_projection_candidate_ids: frozenset[str],
-    relational_projection_active_set_intent: object | None,
+    relational_projection_active_set_intents: tuple[object, ...],
 ) -> frozenset[str]:
     """Prove the narrow server-owned RDL Alternative writer exception.
 
@@ -1619,7 +1906,8 @@ def _validated_deterministic_rdl_alternative_grants(
     prefix collision, or mutable intent cannot inherit that authority.
     """
 
-    intent = relational_projection_active_set_intent
+    intents = relational_projection_active_set_intents
+    intent = intents[0] if type(intents) is tuple and len(intents) == 1 else None
     if (
         type(node_candidates) is not dict
         or type(edge_candidates) is not dict
@@ -2874,8 +3162,11 @@ def _do_graph_commit(
         SpecLineageParentIntent.PRESERVE
     ),
     relational_projection_candidate_ids: frozenset[str] = frozenset(),
-    relational_projection_active_set_intent: object | None = None,
-) -> tuple[dict, object, list, datetime, dict, list[dict]]:
+    relational_projection_active_set_intents: tuple[object, ...] = (),
+    learning_projection: CapturedLearningProjection | None = None,
+    allow_known_removals: bool = False,
+    cognitive_rebuild_heads: dict | None = None,
+) -> tuple[dict, object, list, datetime, dict, list[dict]] | GraphRemovalProgress:
     """Synchronous graph writes for ``commit_consolidation``.
 
     Runs in the thread pool via ``_run_graph_io``. Returns
@@ -2967,6 +3258,37 @@ def _do_graph_commit(
         )
 
     try:
+        if learning_projection is not None:
+            from okto_pulse.core.application.learning_materialization import require_capture_candidates
+            from okto_pulse.core.kg.cognitive_source_ref_resolver import bug_source_reference_aliases
+
+            require_capture_candidates(learning_projection, node_candidates, edge_candidates)
+            learning_projection.require_literal_head()
+            learning_projection.require_scope_target()
+            capture_hint = effective_hints.get(LEARNING_CAPTURE_CANDIDATE_ID)
+            if (capture_hint is None or _resolve_op(capture_hint, 1.0) != ReconciliationOperation.ADD
+                    or getattr(capture_hint, 'target_node_id', None)):
+                raise ValueError('learning_materialization_intent_mismatch')
+            edge, = edge_candidates.values()
+            target_id = edge.to_candidate_id[3:]
+            target_attrs = _read_cognitive_source_node_attrs(graph_scope, 'Bug', target_id)
+            target_ref = target_attrs.get('source_artifact_ref')
+            # Both identities are already typed Bug: one from the authenticated
+            # capture, the other read from the Bug table in this Board's scope.
+            # Compare whole source aliases, never concept-prefix approximations.
+            expected_refs = bug_source_reference_aliases(learning_projection.bug_id)
+            if (learning_projection.capture.board_id != board_id
+                    or target_attrs.get('graph_layer') != 'canonical'
+                    or target_attrs.get('superseded_by')
+                    or target_ref not in expected_refs):
+                raise KGPrimitiveError('learning_materialization_target_changed',
+                    'The canonical Bug target changed before graph mutation',
+                    session_id=session_id, retryable=True)
+            if learning_projection.scope_target_head is not None:
+                previous = learning_projection.scope_target_head
+                if 'Learning' in graph_scope.find_node_types(previous.node_id):
+                    learning_projection.require_literal_graph_fields(
+                        _read_captured_learning_node_attrs(graph_scope, previous.node_id), previous.payload)
         _require_no_code_traceability_existing_targets(
             graph_scope,
             node_candidates=node_candidates,
@@ -3003,12 +3325,49 @@ def _do_graph_commit(
             effective_hints=effective_hints,
             session_id=session_id,
         )
-        resolved_dependency_endpoints = _resolve_spec_dependency_endpoints(
-            projection_intent=relational_projection_active_set_intent,
-            edge_candidates=edge_candidates,
-            session_id=session_id,
-            graph_scope=graph_scope,
+        _require_spec_source_identity_matches(graph_scope, node_candidates=node_candidates,
+            effective_hints=effective_hints, session_id=session_id)
+        _validate_projection_intent_collection(
+            relational_projection_active_set_intents, session_id=session_id,
         )
+        declared_projection_ids = frozenset(
+            str(getattr(ref, "candidate_id", ""))
+            for intent in relational_projection_active_set_intents
+            for ref in getattr(intent, "active_refs", ())
+        )
+        if declared_projection_ids != frozenset(relational_projection_candidate_ids):
+            raise KGPrimitiveError(
+                "relational_projection_active_set_mismatch",
+                "Projection ownership changed after session admission.", session_id=session_id,
+            )
+        if allow_known_removals:
+            removal_intents = card_removal_intents(
+                intents=relational_projection_active_set_intents,
+                nodes=node_candidates, edges=edge_candidates,
+                resolve_endpoint=lambda endpoint: _resolve_endpoint(endpoint, {}, graph_scope=graph_scope),
+            )
+            removal_intents += dependency_removal_intents(
+                intents=relational_projection_active_set_intents,
+                nodes=node_candidates, edges=edge_candidates,
+                resolve_endpoint=lambda endpoint: _resolve_endpoint(endpoint, {}, graph_scope=graph_scope),
+            )
+            removal_intents += card_dependency_removal_intents(
+                intents=relational_projection_active_set_intents, nodes=node_candidates, edges=edge_candidates,
+                resolve_endpoint=lambda endpoint: _resolve_endpoint(endpoint, {}, graph_scope=graph_scope),
+            )
+            if removal_intents:
+                for removal_intent in removal_intents:
+                    orch.reconcile_projection_active_set(removal_intent)
+                run_async_blocking(graph_scope.commit())
+                return GraphRemovalProgress(tuple(orch.records), orch.counters, datetime.now(timezone.utc))
+        resolved_dependency_endpoints = {}
+        for projection_intent in relational_projection_active_set_intents:
+            resolved_dependency_endpoints.update(_resolve_spec_dependency_endpoints(
+                projection_intent=projection_intent,
+                edge_candidates=edge_candidates,
+                session_id=session_id,
+                graph_scope=graph_scope,
+            ))
         deterministic_rdl_alternative_grants = (
             _validated_deterministic_rdl_alternative_grants(
                 agent_id=agent_id,
@@ -3019,10 +3378,16 @@ def _do_graph_commit(
                 relational_projection_candidate_ids=(
                     relational_projection_candidate_ids
                 ),
-                relational_projection_active_set_intent=(
-                    relational_projection_active_set_intent
+                relational_projection_active_set_intents=(
+                    relational_projection_active_set_intents
                 ),
             )
+        )
+        spec_decision_grants = _validated_deterministic_spec_decision_grants(
+            agent_id=agent_id, session_artifact_type=session_artifact_type,
+            session_artifact_id=session_artifact_id, node_candidates=node_candidates,
+            edge_candidates=edge_candidates,
+            relational_projection_active_set_intents=relational_projection_active_set_intents,
         )
         connectivity = _validate_graph_connectivity_before_commit(
             graph_scope=graph_scope,
@@ -3037,6 +3402,7 @@ def _do_graph_commit(
             deterministic_rdl_alternative_candidate_ids=(
                 deterministic_rdl_alternative_grants
             ),
+            deterministic_spec_decision_candidate_ids=spec_decision_grants,
         )
         for endpoint, (node_id, node_type) in resolved_dependency_endpoints.items():
             candidate_to_graph_id[endpoint] = node_id
@@ -3046,6 +3412,30 @@ def _do_graph_commit(
             op = _resolve_op(hint, cand.source_confidence)
             node_type = _enum_value(cand.node_type)
             is_relational_projection = cand_id in relational_projection_candidate_ids
+
+            recovered = (cognitive_rebuild_heads or {}).get(cand.source_artifact_ref)
+            if node_type == "Decision" and not is_relational_projection and recovered is not None:
+                from okto_pulse.core.kg.cognitive_rebuild import matches_literal_decision
+                present = _lookup_existing_node_identity_by_id(graph_scope, node_type, recovered.node_id)
+                if present is None:
+                    # The recovery session owns compensation; durable authorship
+                    # remains in created_by_agent and the unchanged source ledger.
+                    attrs = {key: value for key, value in recovered.payload.items()
+                             if key not in {"id", "board_id", "source_session_id"}}
+                    _apply_graph_node_create(orch, node_type, recovered.node_id, attrs)
+                else:
+                    from okto_pulse.core.kg.cognitive_rebuild import require_existing_decision_matches
+                    require_existing_decision_matches(recovered,
+                        _read_cognitive_source_node_attrs(graph_scope, node_type, recovered.node_id))
+                if matches_literal_decision(cand, recovered):
+                    # Recovery is not a fresh attestation or a new semantic revision.
+                    candidate_to_graph_id[cand_id] = recovered.node_id
+                    candidate_to_node_type[cand_id] = node_type
+                    if present is not None:
+                        orch.counters.nodes_noop += 1
+                    continue
+                # A newer authoritative source still follows the normal semantic
+                # supersedence path, now against its recovered predecessor.
 
             if op == ReconciliationOperation.NOOP:
                 # Spec eca49df9 (FR6): NOOP is a processed candidate too.
@@ -3371,6 +3761,15 @@ def _do_graph_commit(
                             graph_scope, node_type, new_node_id
                         ),
                     )
+                    # Supersedence changes both durable identities. Persist the
+                    # predecessor's retired state in the same relational batch.
+                    _queue_cognitive_source_record(
+                        node_id=superseded_id, node_type=node_type,
+                        generation=successor_generation - 1,
+                        attrs=_read_cognitive_source_node_attrs(
+                            graph_scope, node_type, superseded_id),
+                    )
+
                     logger.info(
                         "kg.consolidation.supersede_replayed candidate=%s "
                         "existing=%s target=%s type=%s session=%s",
@@ -3405,6 +3804,13 @@ def _do_graph_commit(
                     generation=successor_generation,
                     attrs=new_attrs,
                 )
+                _queue_cognitive_source_record(
+                    node_id=superseded_id, node_type=node_type,
+                    generation=successor_generation - 1,
+                    attrs=_read_cognitive_source_node_attrs(
+                        graph_scope, node_type, superseded_id),
+                )
+
                 logger.info(
                     "kg.consolidation.superseded candidate=%s new=%s old=%s "
                     "type=%s session=%s",
@@ -3431,7 +3837,7 @@ def _do_graph_commit(
             # every spec.semantic_changed / spec.moved / spec.version_bumped
             # event spawns a duplicate Entity for the same source.
             source_ref = cand.source_artifact_ref or ""
-            if source_ref:
+            if source_ref and learning_projection is None:
                 existing_id = _lookup_existing_node(graph_scope, node_type, source_ref)
                 if existing_id:
                     is_curated = _node_is_human_curated(
@@ -3531,6 +3937,13 @@ def _do_graph_commit(
                             generation=trail_generation,
                             attrs=trail_attrs,
                         )
+                        _queue_cognitive_source_record(
+                            node_id=existing_id, node_type=node_type,
+                            generation=trail_generation - 1,
+                            attrs=_read_cognitive_source_node_attrs(
+                                graph_scope, node_type, existing_id),
+                        )
+
                         logger.info(
                             "kg.consolidation.reuse_superseded candidate=%s "
                             "old=%s new=%s type=%s session=%s",
@@ -3669,7 +4082,12 @@ def _do_graph_commit(
                 derive_natural_key(cand.source_artifact_ref, node_type, cand.title),
                 0,
             )
-            embedding = embedder.encode(f"{cand.title}\n{cand.content or ''}")
+            if learning_projection is not None:
+                node_id = learning_projection.node_id
+            embedding = (learning_projection.literal_payload.get('embedding')
+                if learning_projection is not None
+                and (learning_projection.is_reuse or not learning_projection.is_initial)
+                else embedder.encode(f"{cand.title}\n{cand.content or ''}"))
 
             node_attrs = {
                 "title": cand.title,
@@ -3703,6 +4121,15 @@ def _do_graph_commit(
                 "embedding": embedding,
             }
 
+            if learning_projection is not None:
+                node_attrs['created_at'] = learning_projection.capture.payload['captured_at']
+                node_attrs['created_by_agent'] = learning_projection.capture.payload['author_id']
+                node_attrs['source_content_hash'] = learning_projection.capture.record_fingerprint
+                if learning_projection.is_reuse or not learning_projection.is_initial:
+                    # Recovery restores the literal admitted revision, including
+                    # its original vector and provenance, without re-extraction.
+                    node_attrs = learning_projection.literal_payload
+
             # A deterministic id is an idempotency key in its own right.
             # Normally NC-8 finds the node above by source_artifact_ref, but
             # an at-least-once replay can observe a node that was already
@@ -3716,6 +4143,32 @@ def _do_graph_commit(
                 graph_scope, node_type, node_id
             )
             if existing_identity is not None:
+                if learning_projection is not None:
+                    actual = _read_captured_learning_node_attrs(graph_scope, node_id)
+                    if learning_projection.is_reuse and learning_projection.is_initial:
+                        # The explicit reuse changes only association provenance.
+                        # Compare the whole stable predecessor under this graph
+                        # fence; never overwrite a concurrent human correction.
+                        learning_projection.require_literal_graph_fields(
+                            actual, learning_projection.predecessor.payload)
+                        _apply_graph_node_update_partial(orch, node_type, node_id,
+                            {'source_content_hash': learning_projection.authored_capture.record_fingerprint})
+                        actual = _read_captured_learning_node_attrs(graph_scope, node_id)
+                    learning_projection.require_authored_graph_fields(actual)
+                    if not learning_projection.is_initial:
+                        from okto_pulse.core.ports.kg_cognitive_source import COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS
+                        wanted = learning_projection.head.payload
+                        if any(actual.get(key) != wanted.get(key) for key in set(actual) | set(wanted)
+                                if key not in COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS and key != 'created_at'):
+                            raise ValueError('learning_materialization_projection_conflict')
+                    candidate_to_graph_id[cand_id] = node_id
+                    candidate_to_node_type[cand_id] = node_type
+                    orch.counters.nodes_noop += 1
+                    _queue_cognitive_source_record(node_id=node_id, node_type=node_type,
+                        generation=learning_projection.capture.generation, attrs=(learning_projection.literal_payload
+                            if not learning_projection.is_initial
+                            else actual))
+                    continue
                 existing_ref = str(
                     existing_identity.get("source_artifact_ref") or ""
                 ).strip()
@@ -3809,14 +4262,32 @@ def _do_graph_commit(
                 continue
 
             _apply_graph_node_create(orch, node_type, node_id, node_attrs)
+            if learning_projection is not None:
+                # Seal the actual admitted projection, including graph defaults
+                # and codec representations. Pre-write attrs omit stable fields
+                # that an exact replay must compare, not silently overwrite.
+                node_attrs = _read_captured_learning_node_attrs(graph_scope, node_id)
+                learning_projection.require_authored_graph_fields(node_attrs)
             candidate_to_graph_id[cand_id] = node_id
             candidate_to_node_type[cand_id] = node_type
             _queue_cognitive_source_record(
                 node_id=node_id,
                 node_type=node_type,
-                generation=0,
+                generation=learning_projection.capture.generation if learning_projection is not None else 0,
                 attrs=node_attrs,
             )
+
+        # Source chronology is authoritative metadata, including on NOOP and
+        # curated-content reuse. It participates in the same compensated
+        # transaction and never overwrites the projection's created_at.
+        for cand_id, cand in node_candidates.items():
+            metadata = getattr(cand, "_source_projection_metadata", None)
+            graph_id = candidate_to_graph_id.get(cand_id)
+            if metadata is not None and graph_id is not None:
+                _apply_graph_node_update_partial(
+                    orch, candidate_to_node_type[cand_id], graph_id,
+                    metadata.graph_attributes(),
+                )
 
         if clear_source_candidate_id is not None:
             source_graph_id = candidate_to_graph_id.get(clear_source_candidate_id)
@@ -3888,7 +4359,14 @@ def _do_graph_commit(
                 to_type=to_hint,
             )
 
-        if relational_projection_active_set_intent is not None:
+        if learning_projection is not None and learning_projection.scope_target is not None:
+            # Scoped replacement retires only this exact association. Durable
+            # claim history carries its provenance; no global superseded_by
+            # marker or unscoped supersedes chain is authored here.
+            orch.replace_learning_bug_association(learning_projection.scope_target.node_id,
+                learning_projection.node_id, target_id)
+
+        for projection_intent in relational_projection_active_set_intents:
             from okto_pulse.core.kg.interfaces.graph_transaction import (
                 ProjectionActiveSetIntent,
                 ProjectionEdgeRef,
@@ -3898,7 +4376,7 @@ def _do_graph_commit(
             active_nodes: list[ProjectionNodeRef] = []
             active_refs = tuple(
                 getattr(
-                    relational_projection_active_set_intent,
+                    projection_intent,
                     "active_refs",
                     (),
                 )
@@ -3906,7 +4384,7 @@ def _do_graph_commit(
             active_candidate_ids = frozenset(
                 str(getattr(ref, "candidate_id", "")) for ref in active_refs
             )
-            if active_candidate_ids != frozenset(relational_projection_candidate_ids):
+            if not active_candidate_ids.issubset(relational_projection_candidate_ids):
                 raise KGPrimitiveError(
                     "relational_projection_active_set_mismatch",
                     "Projection ownership changed after session admission.",
@@ -3935,7 +4413,7 @@ def _do_graph_commit(
             active_edges: list[ProjectionEdgeRef] = []
             active_edge_refs = tuple(
                 getattr(
-                    relational_projection_active_set_intent,
+                    projection_intent,
                     "active_edges",
                     (),
                 )
@@ -3943,12 +4421,24 @@ def _do_graph_commit(
             declared_edge_candidate_ids = {
                 str(getattr(ref, "candidate_id", "")) for ref in active_edge_refs
             }
+            from okto_pulse.core.ports.spec_projection import SPEC_RELATIONSHIP_NAMESPACES, spec_relationship_family
+            from okto_pulse.core.ports.card_projection import CARD_EDGE_NAMESPACES, card_edge_family
+            from okto_pulse.core.ports.card_projection import CARD_DEPENDENCY_NAMESPACE, is_card_dependency_writer
+            namespace = getattr(projection_intent, 'namespace', '')
+            family = (traceability_relationship_family(namespace) if namespace in TRACEABILITY_RELATIONSHIP_NAMESPACES
+                else spec_relationship_family(namespace) if namespace in SPEC_RELATIONSHIP_NAMESPACES else None)
             emitted_projection_edge_ids = {
-                candidate_id
-                for candidate_id, candidate in edge_candidates.items()
-                if str(getattr(candidate, "rule_id", "") or "").startswith(
-                    "precedes/spec_dependency/"
-                )
+                candidate_id for candidate_id, candidate in edge_candidates.items()
+                if (str(candidate.rule_id or '').startswith('supports/card_scenario_observed_')
+                    if namespace == 'card_scenarios' else
+                    is_card_dependency_writer(rule_id=candidate.rule_id, layer='deterministic', created_by='worker_layer1')
+                    if namespace == CARD_DEPENDENCY_NAMESPACE else
+                    card_edge_family(namespace).owns_writer(rule_id=candidate.rule_id, layer='deterministic', created_by='worker_layer1')
+                    if namespace in CARD_EDGE_NAMESPACES else
+                    str(candidate.rule_id or '').startswith('belongs_to/card_to_spec@')
+                    if namespace == 'card_parent' else
+                    family.matches_rule_family(str(candidate.rule_id or '')) if family is not None
+                    else str(candidate.rule_id or '').startswith('precedes/spec_dependency/'))
             }
             if (
                 "" in declared_edge_candidate_ids
@@ -4012,14 +4502,14 @@ def _do_graph_commit(
                 )
             projection_owner_type = str(
                 getattr(
-                    relational_projection_active_set_intent,
+                    projection_intent,
                     "owner_type",
                     "",
                 )
             )
             projection_owner_id = str(
                 getattr(
-                    relational_projection_active_set_intent,
+                    projection_intent,
                     "owner_id",
                     "",
                 )
@@ -4028,7 +4518,7 @@ def _do_graph_commit(
             owner_candidate_ids = [
                 candidate_id
                 for candidate_id, candidate in node_candidates.items()
-                if _enum_value(candidate.node_type) == "Entity"
+                if _enum_value(candidate.node_type) in ({'Entity', 'Bug'} if projection_owner_type == 'card' else {'Entity'})
                 and str(candidate.source_artifact_ref or "") == owner_source_ref
             ]
             owner_node_id = None
@@ -4054,7 +4544,7 @@ def _do_graph_commit(
                     owner_id=projection_owner_id,
                     namespace=str(
                         getattr(
-                            relational_projection_active_set_intent,
+                            projection_intent,
                             "namespace",
                             "",
                         )
@@ -4133,6 +4623,14 @@ def _do_graph_commit(
                 exc,
             )
 
+        if agent_id == 'system:historical_consolidation' and any(
+            getattr(candidate, '_source_projection_metadata', None) is not None
+            for candidate in node_candidates.values()
+        ):
+            from okto_pulse.core.application.projection_effects import capture_projection_property_effects
+
+            orch.counters.projection_property_effects = capture_projection_property_effects(
+                graph_scope, orch.records, board_id=board_id, session_id=session_id)
         committed_at = datetime.now(timezone.utc)
         run_async_blocking(graph_scope.commit())
         return (
@@ -4256,7 +4754,10 @@ async def commit_consolidation(
     db=None,
     blocking_execution: BlockingExecutionPort | None = None,
     defer_session_finalization: bool = False,
-) -> CommitConsolidationResponse:
+    learning_capture: LearningCaptureSelection | None = None,
+    allow_known_removals: bool = False,
+    rebuild_cognitive: bool = False,
+) -> CommitConsolidationResponse | DeferredProjectionProgress:
     """Atomically write graph backend nodes/edges + audit + outbox event.
 
     Graph writes are offloaded to the thread pool via ``_run_graph_io`` and
@@ -4282,6 +4783,16 @@ async def commit_consolidation(
         agent_id,
         allow_pending_commit=True,
     )
+    if rebuild_cognitive and (
+        agent_id != "system:historical_consolidation" or db is None
+        or not defer_session_finalization or req.agent_overrides
+    ):
+        raise ValueError("cognitive_rebuild_worker_transaction_required")
+    if allow_known_removals and (
+        agent_id != 'system:historical_consolidation' or session.artifact_type not in {'card', 'spec'}
+        or not defer_session_finalization or db is None or req.agent_overrides
+    ):
+        raise ValueError('known_removal_worker_transaction_required')
 
     _require_code_traceability_candidate_ownership(
         dict(session.node_candidates),
@@ -4296,6 +4807,12 @@ async def commit_consolidation(
             "relational UnitOfWork",
             session_id=req.session_id,
         )
+
+    if learning_capture is not None and (
+        not isinstance(learning_capture, LearningCaptureSelection)
+        or db is None or not defer_session_finalization or req.agent_overrides
+    ):
+        raise ValueError('learning_materialization_transaction_required')
 
     # FR5/FR6 barrier check. Uses session.board_id so a multi-board
     # process never blocks the wrong board. Raises in STRICT, logs+counter
@@ -4318,6 +4835,7 @@ async def commit_consolidation(
     ):
         from okto_pulse.core.ports.kg_cognitive_source import (
             CognitiveSourceError,
+            CognitiveSourceUnavailable,
             require_cognitive_source_store,
         )
 
@@ -4340,6 +4858,7 @@ async def commit_consolidation(
                 "kg_cognitive_source_unavailable",
                 "cognitive durable-source adapter is unavailable; graph "
                 "commit was rejected before its first write.",
+                retryable=isinstance(exc, CognitiveSourceUnavailable),
                 session_id=req.session_id,
                 details={
                     "board_id": session.board_id,
@@ -4348,6 +4867,14 @@ async def commit_consolidation(
                 },
             ) from exc
 
+    cognitive_rebuild_heads = {}
+    if rebuild_cognitive and cognitive_source_store is not None:
+        from okto_pulse.core.kg.cognitive_rebuild import select_decision_heads
+        cognitive_rebuild_heads = select_decision_heads(
+            session.board_id, dict(session.node_candidates),
+            await cognitive_source_store.enumerate(session.board_id),
+        )
+
     owns_deferred_claim = False
 
     async def _complete_commit(
@@ -4355,6 +4882,13 @@ async def commit_consolidation(
     ) -> CommitConsolidationResponse:
         nonlocal owns_deferred_claim
         request_payload = req.model_dump(mode="json")
+        if rebuild_cognitive:
+            request_payload["rebuild_cognitive"] = True
+        learning_projection = None
+        if learning_capture is not None:
+            from okto_pulse.core.application.learning_materialization import prepare_captured_learning_commit
+            learning_projection = await prepare_captured_learning_commit(db, session, learning_capture)
+            request_payload['learning_capture'] = learning_capture.model_dump(mode='json')
         pending = getattr(session, "pending_commit", None)
         if pending is not None:
             if not isinstance(pending, _PendingConsolidationCommit):
@@ -4394,6 +4928,12 @@ async def commit_consolidation(
             # another invocation's ``in_flight`` snapshot.
             owns_deferred_claim = True
 
+            if isinstance(pending.response, DeferredProjectionProgress):
+                # There is no complete projection audit/outbox to restage.
+                pending.in_flight = True
+                session.touch(registry.require_session_store().default_ttl_seconds)
+                return pending.response
+
             # The graph was already applied by the first attempt.  Restage only
             # the relational ledger/audit/outbox in the fresh caller UOW.
             await observe_consolidation_phase(
@@ -4405,6 +4945,7 @@ async def commit_consolidation(
                     list(pending.cognitive_source_records),
                     context=db,
                     store=cognitive_source_store,
+                    **({'learning_projection': learning_projection} if learning_projection else {}),
                 ),
             )
             await observe_consolidation_phase(
@@ -4428,17 +4969,16 @@ async def commit_consolidation(
         effective_hints = dict(session.reconciliation_hints)
         for cid, override in req.agent_overrides.items():
             effective_hints[cid] = override
+        if learning_projection is not None:
+            # Exact authored identity/intent is checked separately; generic
+            # similarity reconciliation cannot select or supersede its target.
+            effective_hints = {LEARNING_CAPTURE_CANDIDATE_ID: ReconciliationHint(
+                candidate_id=LEARNING_CAPTURE_CANDIDATE_ID, operation=ReconciliationOperation.ADD,
+                confidence=1.0, reason='Explicit durable Learning capture intent')}
 
         # --- graph backend writes (offloaded to thread pool) ---
         try:
-            (
-                candidate_to_graph_id,
-                counters,
-                records,
-                committed_at,
-                connectivity,
-                cognitive_source_records,
-            ) = await observe_consolidation_phase(
+            graph_result = await observe_consolidation_phase(
                 "graph_dispatch",
                 req.session_id,
                 _run_graph_io(
@@ -4463,10 +5003,13 @@ async def commit_consolidation(
                     ),
                     getattr(
                         session,
-                        "relational_projection_active_set_intent",
-                        None,
+                        "relational_projection_active_set_intents",
+                        (),
                     ),
                     executor=blocking_execution,
+                    **({'learning_projection': learning_projection} if learning_projection else {}),
+                    **({'allow_known_removals': True} if allow_known_removals else {}),
+                    **({"cognitive_rebuild_heads": cognitive_rebuild_heads} if cognitive_rebuild_heads else {}),
                 ),
             )
         except KGPrimitiveError:
@@ -4479,6 +5022,19 @@ async def commit_consolidation(
                 session_id=req.session_id,
                 details=details,
             ) from exc
+
+        if isinstance(graph_result, GraphRemovalProgress):
+            response = DeferredProjectionProgress(req.session_id)
+            session.pending_commit = _PendingConsolidationCommit(
+                request_payload=request_payload, records=graph_result.records,
+                counters=graph_result.counters, cognitive_source_records=(),
+                response=response, in_flight=True,
+            )
+            owns_deferred_claim = True
+            session.touch(registry.require_session_store().default_ttl_seconds)
+            return response
+        (candidate_to_graph_id, counters, records, committed_at,
+            connectivity, cognitive_source_records) = graph_result
 
         # --- relational staging (async, graph writer already released) ---
         # Ladybug/Kuzu can auto-commit individual graph statements, so this is
@@ -4499,6 +5055,7 @@ async def commit_consolidation(
                     cognitive_source_records,
                     context=db,
                     store=cognitive_source_store,
+                    **({'learning_projection': learning_projection} if learning_projection else {}),
                 ),
             )
 
@@ -4739,6 +5296,12 @@ async def finalize_deferred_consolidation(
         # error handler from an older caller may have released that volatile
         # flag after durability was already established.  Finalization must
         # never restage INSERTs or replay graph writes.
+        if isinstance(pending.response, DeferredProjectionProgress):
+            session.pending_commit = None
+            await registry.require_session_store().remove(session_id)
+            registry.require_cache_backend().invalidate_board(session.board_id)
+            _COMMIT_HEALTH_CACHE.pop(session.board_id, None)
+            return
         await _finalize_consolidation_session_unlocked(
             registry,
             session,
@@ -4847,19 +5410,40 @@ def _lookup_existing_node(
     same ``source_artifact_ref``.  A bare ``LIMIT 1`` can therefore select a
     superseded generation and make an at-least-once replay mint its already
     materialized successor again.  Select only the active node and break ties
-    deterministically by highest generation, then id (legacy NULL generation
-    is generation zero).  Returns the graph node id if found, ``None``
+    deterministically by highest explicit generation, then id.
+    Returns the graph node id if found, ``None``
     otherwise.  Used when NOOP to find existing nodes so edges can still be
     resolved and by NC-8 to update/supersede the current assertion.
+
+    Whole Bug source aliases use the typed transactional lookup and require one
+    active identity. Ambiguity and read failures are never interpreted as absence.
     """
     if not source_artifact_ref:
         return None
+    if node_type == 'Bug' and (
+        (source_artifact_ref.startswith(('bug:', 'card:'))
+         and source_artifact_ref.count(':') == 1)
+        or (source_artifact_ref.startswith('card:bug:')
+            and source_artifact_ref.count(':') == 2)
+    ):
+        from okto_pulse.core.kg.cognitive_source_ref_resolver import (
+            typed_bug_source_reference_aliases,
+        )
+        aliases = typed_bug_source_reference_aliases(source_artifact_ref)
+        identities = graph_scope.find_active_node_ids_by_source_refs('Bug', aliases)
+        if (type(identities) is not tuple or len(identities) > 2
+                or any(type(value) is not str or not value for value in identities)
+                or len(set(identities)) != len(identities)):
+            raise ValueError('canonical_bug_identity_unavailable')
+        if len(identities) > 1:
+            raise ValueError('canonical_bug_identity_ambiguous')
+        return identities[0] if identities else None
     cypher = (
         f"MATCH (n:{node_type}) "
         "WHERE n.source_artifact_ref = $ref "
         "AND n.superseded_by IS NULL "
         "RETURN n.id "
-        "ORDER BY coalesce(n.generation, 0) DESC, n.id DESC "
+        "ORDER BY n.generation DESC, n.id DESC "
         "LIMIT 1"
     )
     try:
@@ -4951,8 +5535,8 @@ def _provenance_attrs(
     ``seed_attestation=False`` is the NC-8 in-place UPDATE variant: the
     content is being rewritten by a NEW assertion, so the provenance anchor
     (span/extraction/source_content_hash) is restamped to describe the new
-    content — without the restamp, kg_provenance_drift would keep flagging
-    the node forever after the re-consolidation remedy (D5). Attestation
+    content. The anchor must identify the assertion that wrote the current
+    content, including after re-consolidation (D5). Attestation
     counters are excluded there — ``_bump_attestation`` accumulates them
     (N -> N+1, never reset to 1).
     """
@@ -5093,7 +5677,7 @@ async def _validate_subtype_declarations(node_candidates: dict) -> None:
                 "kg_subtype_undeclared",
                 (
                     f"kind_of {kind_of!r} is not declared for node_type "
-                    f"{node_type} — declare it first (kg subtype declare)."
+                    f"{node_type}; this candidate cannot be committed."
                 ),
                 details={
                     "node_type": node_type,
@@ -5392,6 +5976,17 @@ def _read_cognitive_source_node_attrs(
     }
 
 
+def _read_captured_learning_node_attrs(graph_scope, node_id: str) -> dict:
+    attrs = _read_cognitive_source_node_attrs(graph_scope, 'Learning', node_id)
+    # The transaction marker belongs to the current graph write and its
+    # compensation, not to authored content. Keep the original source session
+    # in the record envelope; replay must receive a fresh compensation marker.
+    # This normalization applies only to the new authored capture projection,
+    # never to legacy source history or its fingerprint contract.
+    attrs.pop('source_session_id', None)
+    return attrs
+
+
 def _cognitive_source_json_value(value):
     """Normalize graph-native values for the relational JSON payload."""
 
@@ -5519,6 +6114,7 @@ async def _append_cognitive_source_records(
     *,
     context: object | None = None,
     store: object | None = None,
+    learning_projection: CapturedLearningProjection | None = None,
 ) -> None:
     """Append cognitive-source records fail-closed (spec MKG-A-S1 FR4/D5).
 
@@ -5529,16 +6125,49 @@ async def _append_cognitive_source_records(
     the process-global embedded writer.
     """
 
+    if not records and learning_projection is not None:
+        raise KGPrimitiveError('learning_materialization_projection_missing',
+            'The authored capture commit must stage its literal source revision', session_id=session_id)
     if not records:
         return
     from okto_pulse.core.ports.kg_cognitive_source import (
         CognitiveSourceError,
         CognitiveSourceRecord,
+        CognitiveSourceUnavailable,
         require_cognitive_source_store,
     )
 
     try:
         resolved_store = store or require_cognitive_source_store()
+        if learning_projection is not None:
+            from okto_pulse.core.ports.kg_cognitive_source import ConditionalCognitiveSourceWriter
+            if context is None or not isinstance(resolved_store, ConditionalCognitiveSourceWriter) or len(records) != 1:
+                raise CognitiveSourceError('learning_materialization_conditional_append_required', board_id=board_id)
+            raw, = records
+            if ((raw['node_id'], raw['node_type'], raw['generation'], raw['board_id'])
+                    != (learning_projection.node_id, 'Learning', learning_projection.capture.generation, board_id)):
+                raise CognitiveSourceError('learning_materialization_projection_conflict', board_id=board_id)
+            learning_projection.require_authored_graph_fields(raw['payload'])
+            record = CognitiveSourceRecord(**{**raw, 'evidence_refs': learning_projection.evidence_refs})
+            learning_projection.require_scope_target()
+            if learning_projection.scope_target is not None:
+                if not learning_projection.scope_claim_committed:
+                    from dataclasses import replace
+                    from okto_pulse.core.application.learning_supersedence import stage_learning_scope_replacement
+                    await stage_learning_scope_replacement(context, resolved_store,
+                        previous=learning_projection.scope_target, capture=learning_projection.capture,
+                        successor=replace(record, source_revision=learning_projection.capture.source_revision + 1,
+                            record_fingerprint=''))
+                else:
+                    # Preserve later target curation/reuse/claims verbatim.
+                    # Compare both heads even on a no-op successor recovery.
+                    target = learning_projection.scope_target_head
+                    await resolved_store.append_many_if_current_in_context(context, (record, target),
+                        expected_fingerprints=(learning_projection.head.record_fingerprint, target.record_fingerprint))
+                return
+            await resolved_store.append_many_if_current_in_context(context, (record,),
+                expected_fingerprints=(learning_projection.head.record_fingerprint,))
+            return
         if context is None:
             source_records = tuple(
                 CognitiveSourceRecord(**kwargs) for kwargs in records
@@ -5596,6 +6225,7 @@ async def _append_cognitive_source_records(
             "idempotent per (node_id, generation, source_revision), while "
             "divergent replays "
             "are rejected as integrity conflicts.",
+            retryable=isinstance(exc, CognitiveSourceUnavailable),
             session_id=session_id,
             details={
                 "board_id": board_id,
@@ -5701,24 +6331,35 @@ def _node_superseded_by(graph_scope, node_type: str, node_id: str) -> str | None
 
 
 def _node_generation(graph_scope, node_type: str, node_id: str) -> int:
-    """Read a node's supersedence generation (spec MKG-A-S1 FR3).
+    """Read the explicit native supersedence generation (MKG-A-S1 FR3).
 
-    Treats NULL as 0 — legacy nodes from before the generation column have
-    no value and start the deterministic chain at generation 0. Returns 0
-    on any read error so a supersede of a legacy node still mints
-    generation 1 deterministically instead of failing the commit.
+    Every current writer persists a nonnegative integer. Missing or malformed
+    state cannot establish the identity of a successor and must not mint one.
     """
     if not node_id:
-        return 0
+        raise KGPrimitiveError(
+            "kg_node_generation_invalid", "A node identity is required to read its generation."
+        )
     cypher = f"MATCH (n:{node_type}) WHERE n.id = $id RETURN n.generation LIMIT 1"
     try:
-        res = graph_scope.execute(cypher, {"id": node_id})
-        if res.rows:
-            value = res.rows[0][0]
-            return int(value) if value is not None else 0
-    except Exception:
-        pass
-    return 0
+        rows = graph_scope.execute(cypher, {"id": node_id}).rows
+    except Exception as exc:
+        raise KGPrimitiveError(
+            "kg_node_generation_unavailable",
+            "The current node generation could not be read.",
+            retryable=True,
+        ) from exc
+    if len(rows) != 1 or len(rows[0]) != 1:
+        raise KGPrimitiveError(
+            "kg_node_generation_invalid", "The current node generation is missing."
+        )
+    value = rows[0][0]
+    if type(value) is not int or value < 0:
+        raise KGPrimitiveError(
+            "kg_node_generation_invalid",
+            "The current node generation must be a nonnegative integer.",
+        )
+    return value
 
 
 _CROSS_SESSION_PREFIXES: tuple[str, ...] = (
@@ -5726,7 +6367,6 @@ _CROSS_SESSION_PREFIXES: tuple[str, ...] = (
     "ideation_",
     "refinement_",
     "spec_",
-    "sprint_",
     "card_",
 )
 _SOURCE_REF_ENDPOINT_PREFIX = "kgref:"
@@ -5775,17 +6415,19 @@ def _resolve_spec_dependency_endpoints(
 
     if (
         projection_intent is None
-        or str(getattr(projection_intent, "namespace", "")) != "dependencies"
+        or str(getattr(projection_intent, "namespace", "")) not in {'dependencies', 'card_dependencies'}
     ):
         return {}
 
+    card_dependency = projection_intent.namespace == 'card_dependencies'
+    rule_prefix = 'precedes/card_dependency/' if card_dependency else 'precedes/spec_dependency/'
     active_edge_refs = tuple(getattr(projection_intent, "active_edges", ()))
     declared_ids = {str(getattr(ref, "candidate_id", "")) for ref in active_edge_refs}
     emitted_ids = {
         candidate_id
         for candidate_id, candidate in edge_candidates.items()
         if str(getattr(candidate, "rule_id", "") or "").startswith(
-            "precedes/spec_dependency/"
+            rule_prefix
         )
     }
     if (
@@ -5824,8 +6466,9 @@ def _resolve_spec_dependency_endpoints(
             )
         if (
             parsed is None
-            or parsed[0] != "Entity"
-            or not _is_spec_root_source_ref(parsed[1])
+            or (not (parsed[0] in {'Entity', 'Bug'} and parsed[1].startswith('card:')
+                     and len(parsed[1].split(':')) == 2 and parsed[1].split(':')[1]) if card_dependency
+                else (parsed[0] != 'Entity' or not _is_spec_root_source_ref(parsed[1])))
             or endpoint_identity in desired_endpoints
         ):
             raise KGPrimitiveError(
@@ -5882,6 +6525,20 @@ def _is_cross_session_entity_ref(endpoint: str) -> bool:
     )
 
 
+def _cross_session_entity_source_prefix(endpoint: str) -> str | None:
+    """Pure grammar shared by the live lookup and offline relation comparison."""
+    if endpoint.endswith("_entity"):
+        body = endpoint[: -len("_entity")]
+        for prefix, ref_prefix in (
+            ("story_", "story:"), ("ideation_", "ideation:"),
+            ("refinement_", "refinement:"), ("spec_", "spec:"),
+            ("card_", "card:"),
+        ):
+            if body.startswith(prefix):
+                return ref_prefix + body[len(prefix):]
+    return None
+
+
 def _resolve_endpoint(
     endpoint: str,
     candidate_to_graph_id: dict[str, str],
@@ -5917,6 +6574,13 @@ def _resolve_endpoint(
     source_ref_endpoint = _parse_source_ref_endpoint(endpoint)
     if source_ref_endpoint is not None:
         node_type, source_artifact_ref = source_ref_endpoint
+        if node_type == "Bug" and (
+            (source_artifact_ref.startswith(("bug:", "card:")) and source_artifact_ref.count(":") == 1)
+            or (source_artifact_ref.startswith("card:bug:") and source_artifact_ref.count(":") == 2)
+        ):
+            # Share NC8's whole, typed aliases; never resolve a Bug via an
+            # Entity prefix or select an arbitrary active historical identity.
+            return _lookup_existing_node(graph_scope, node_type, source_artifact_ref), node_type
         result = graph_scope.execute(
             f"MATCH (n:{node_type}) "
             "WHERE n.source_artifact_ref = $ref "
@@ -5933,33 +6597,21 @@ def _resolve_endpoint(
     # Cross-session deterministic-id fallback. We only handle the worker's
     # own naming convention here (`<artifact>_<id8>_entity`) to avoid
     # surprises; new patterns must be opt-in.
-    if endpoint.endswith("_entity"):
-        body = endpoint[: -len("_entity")]
-        for prefix, ref_prefix in (
-            ("story_", "story:"),
-            ("ideation_", "ideation:"),
-            ("refinement_", "refinement:"),
-            ("spec_", "spec:"),
-            ("sprint_", "sprint:"),
-            ("card_", "card:"),
-        ):
-            if body.startswith(prefix):
-                short = body[len(prefix) :]
-                # Source_artifact_ref uses the full UUID. We probe with a
-                # prefix match because the worker only carries the first 8
-                # chars in the candidate id.
-                cypher = (
-                    "MATCH (n:Entity) "
-                    "WHERE n.source_artifact_ref STARTS WITH $ref "
-                    "RETURN n.id LIMIT 1"
-                )
-                try:
-                    res = graph_scope.execute(cypher, {"ref": f"{ref_prefix}{short}"})
-                    if res.rows:
-                        return res.rows[0][0], "Entity"
-                except Exception:
-                    pass
-                break
+    source_prefix = _cross_session_entity_source_prefix(endpoint)
+    if source_prefix is not None:
+        # Preserve the existing live prefix lookup; the offline observer can
+        # report ambiguity, but does not choose a new winner for this writer.
+        cypher = (
+            "MATCH (n:Entity) "
+            "WHERE n.source_artifact_ref STARTS WITH $ref "
+            "RETURN n.id LIMIT 1"
+        )
+        try:
+            res = graph_scope.execute(cypher, {"ref": source_prefix})
+            if res.rows:
+                return res.rows[0][0], "Entity"
+        except Exception:
+            pass
     return None, None
 
 
@@ -5993,7 +6645,13 @@ _NODE_UPDATEABLE_ATTRS: frozenset[str] = frozenset(
         "source_content_hash",
         # Spec MKG-E-S1 (FR4): the declared subtype is content-derived too.
         "kind_of",
-        # Code Traceability is a deterministic relational projection.  Its
+        # Server-owned source chronology is refreshed independently of content.
+        "source_created_at",
+        "source_updated_at",
+        "source_status",
+        "severity",
+        "resolved_at",
+        # Code Traceability is a deterministic relational projection. Its
         # optional metadata follows the immutable source row on a refresh;
         # no external repository is consulted at this boundary.
         "investigation_receipt_id",
@@ -6172,12 +6830,20 @@ async def _commit_audit_records(
         },
     )
 
+    effects = getattr(counters, 'projection_property_effects', None)
+    if effects is not None:
+        if (effects.board_id, effects.session_id) != (session.board_id, req.session_id):
+            raise ValueError('projection_effect_scope_mismatch')
+        outbox_data.payload['projection_property_effects'] = effects.to_payload()
+
     if registry.audit_repo is not None:
+        snapshot = getattr(session, 'reference_findings', None)
         await registry.audit_repo.stage_consolidation_records(
             db,
             audit_data,
             graph_refs,
             outbox_data,
+            **({'reference_findings': snapshot} if snapshot is not None else {}),
         )
         return
     raise KGPrimitiveError(

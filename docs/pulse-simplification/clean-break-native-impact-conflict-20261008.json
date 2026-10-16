@@ -1,0 +1,43 @@
+{
+  "scope": "Native declared impact: conflicting receipt and outside-plan fact",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criteria": [
+    "DEI:DEI-T49",
+    "DEI:DEI-T50"
+  ],
+  "results": {
+    "backend": {
+      "passed": 4,
+      "failed": 0,
+      "seconds": 11.82,
+      "terminal_session": 82531
+    },
+    "frontend": {
+      "passed": 3,
+      "failed": 0,
+      "terminal_session": 56249
+    }
+  },
+  "evidence": [
+    "REST/MCP with real authorization and native SQL accept progress impact under card.conclusion.write alone. File experiment.py is outside the existing Target path src/file.py.",
+    "Projection preserves the declared file with claim_only=true. It does not change the Target plan, create implementation bindings, conclude the Card or grant final delivery credit.",
+    "A later coherent generation-2 accepted source observation records commit B. Reuse of impact claiming commit C refuses exactly delivery_impact_current_observation_required.",
+    "Matching commit B is a positive control: resolver returns selected impact and receipt-2 as explicit basis. Resolution itself is not approval and leaves observed Card/Spec/record/Target/execution/event state unchanged.",
+    "Committing after either refusal or resolution never rewrites original claims or stages a report.",
+    "Frontend tests display claim-only history without approval, bounded reconciliation without completion, and visible file/source/rename facts with explicit truncation."
+  ],
+  "limits": [
+    "Accepted source observations and execution facts are controlled fixture input persisted through native append/CAS; this does not assert cryptographic attestation authentication.",
+    "Conflict exercised is declared result revision versus accepted source observation; no assertion that Pulse inspects external repository file contents.",
+    "Outside-plan file stays visible as a claim distinct from the unchanged Target plan. No semantic evaluator approval or drift-policy waiver is inferred.",
+    "Impact resolution is tested at the real report-selection adapter boundary; full report transitions are covered separately. Frontend is component-level Vitest, not browser E2E.",
+    "No product/frontend source change, migration, real-data operation or promotion. Main88 installed parity and closure remain applicable with eight zero budgets."
+  ],
+  "artifacts": {
+    "provenance-native-impact-conflict-20261008.json": "9feb229a1452523b7a0a35d59d06757765697e38b3797271df8d77e65dc2aa09",
+    "native-impact-conflict-20261008.xml": "2b3c4280ab764c3a8366f0de813303063cacd2c5215f6eb894602e028ccfd33c",
+    "native-impact-conflict-frontend-20261008.json": "66d5cc1b9ce99b8af8c4b0226d1437df01ae09a7fb1cad3fe993d72f64a30814",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

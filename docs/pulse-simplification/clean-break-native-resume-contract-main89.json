@@ -1,0 +1,26 @@
+{
+  "scope": "Remove remaining legacy-labelled resume state",
+  "status": "verified",
+  "proof_pair": "dist-native-main89",
+  "change": "card_verification_plan now reports unavailable for missing/incomplete native population; removes legacy_or_unavailable and legacy contract docstring. complete=False and items=[] remain unchanged.",
+  "results": {
+    "core_passed": 2,
+    "community_passed": 12,
+    "frontend_passed": 4,
+    "closure_ok": true,
+    "zero_budgets": 8
+  },
+  "limits": [
+    "No change to authorization, currentness, credit, ownership or provider error behavior.",
+    "Only affected resume path revalidated; no new acceptance criterion qualified. Prior main88 receipts remain historical evidence and are not relabelled as main89.",
+    "No frontend implementation/SPA change, promotion, publication or real-data action. Validation venv alone was reinstalled.",
+    "KG16/KG24 continue to depend on pending KG10 decision. AC-INT-11 investigation remains incomplete."
+  ],
+  "artifacts": {
+    "provenance-native-main89.json": "52ae0ce1e49e72d127098eb2184a4ad6c791023fd2c332960f63a6478d1800dc",
+    "native-main89-core.xml": "ac7eab1864fe1c79bd1276e20c9695cc455e148620a67d810a5a87bec8f69cf5",
+    "native-main89-community.xml": "272e8484699a6cc681b5217dc493cb28fb045a0244774c7b62e76b8e08e3e0a8",
+    "native-main89-frontend.json": "3c384b9652c90b8fb308f47c72770413e24e2b07fb980e195ed22f1f153e1704",
+    "closure-native-main89.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

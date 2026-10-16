@@ -215,3 +215,19 @@ def test_af14_secret_surface_gate_flags_response_and_plaintext_persistence(tmp_p
     assert KIND_RESPONSE_SECRET_FIELD in kinds
     assert KIND_PERSISTED_SECRET_FIELD in kinds
     assert KIND_PLAINTEXT_AGENT_PERSISTENCE in kinds
+
+
+@pytest.mark.parametrize("old_value", [None, [], ["board:read"], ["*"]])
+def test_agent_rest_refuses_removed_flat_permissions_without_creating_or_updating(old_value):
+    with _client() as client:
+        before = client.get("/api/v1/agents").json()
+        refused = client.post("/api/v1/agents", json={"name": "Old", "permissions": old_value})
+        assert refused.status_code == 422
+        assert client.get("/api/v1/agents").json() == before
+        created = client.post("/api/v1/agents", json={"name": "Native"})
+        assert created.status_code == 201, created.text
+        record = created.json()["agent"]
+        assert "permissions" not in record
+        refused = client.patch(f"/api/v1/agents/{record['id']}", json={"permissions": old_value})
+        assert refused.status_code == 422
+        assert client.get(f"/api/v1/agents/{record['id']}").json() == record

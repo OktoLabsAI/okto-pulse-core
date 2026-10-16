@@ -1,0 +1,116 @@
+{
+  "scope": "KG7.5/K3 isolated private runtime for retained Learning execution",
+  "community": {
+    "passed": 6,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "The deterministic phase and the private Learning phase share an isolated composition of candidate SQL, routed Grafx, filesystem evidence and root-bound locks.",
+    "The Learning phase validates exact generation and stable bindings, captures SQL phase boundaries and rederives every retained Board chain before sealing.",
+    "Real native execution in a separate disposable candidate authenticates the copied signed fixture evidence and appends the selected Learning source.",
+    "The original fixture SQL, graph and source history remain exactly unchanged; cold verification succeeds with no runtime providers.",
+    "SQLite itself checkpoints the candidate WAL and switches to DELETE journal mode after engines close, before final standalone snapshot verification.",
+    "The existing durable-technical-report coordinator regression passes after shared runtime extraction.",
+    "Paired installed bytes were proved identical before campaigns; F16 passed without findings/documentation drift and all eight budgets remain zero."
+  ],
+  "investigation": [
+    "The initial native case reached cold replay but failed because a readonly WAL backup recreated empty WAL/SHM files in the candidate.",
+    "The fix folds WAL through SQLite under the private-stage fence and refuses busy/checkpoint failure; no manual sidecar removal or immutable live-WAL read was introduced."
+  ],
+  "limits": [
+    "The new private Learning phase is not yet invoked by the top-level coordinator/checkpoint; full K3 completion remains unproved.",
+    "The new native Learning fixture substitutes unrelated lifecycle and graph-health gates; it does not certify full admission.",
+    "Original/candidate offline fences, initial graph ownership, native census, cognitive applicability and final completion remain required for coordinator integration.",
+    "Core behavior is unchanged; no additional Core campaign was needed.",
+    "No UI change, real-data migration, active runtime restart, release or tag occurred.",
+    "Full-plan acceptance remains incomplete: 78 verified / 33 partial / 135 unaudited."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-candidate-learning-runtime2-closure.log": "19587ea95fcac3569b735ac58aa98e86b18815a61079117ee613d7177f923c55",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-candidate-learning-runtime2-community.xml": "4ad4a33768cf8bdeb43c3fabb7f28b848c2e6a4f6f9f4c1ec28bb8fc38f695ed",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-candidate-learning-runtime2-community.log": "fa0bdde2a176add5dbb9b1ade1367d71a6f5268c21ae72e717b8d7ebdadd87eb",
+    "PULSE_REFACTOR/.validation-v040/provenance-candidate-learning-runtime2.json": "fcd2794d964bd629a9ee53e51b73a1cc425d49c23587e4a6fb925dbe4271df36",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-candidate-learning-runtime1-community.log": "4afda176900636fc53a2cc62e2fd1d6536258422c1f0be9b3fb554e2da373b43",
+    "PULSE_REFACTOR/.validation-v040/run_learning_reconciliation.py": "373488da59e82796ae30ed155bcbed34eed201f69755ec41e23dfee5272cfc5d",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_execution.py": "53c404399eb93c7bd70836f6eccb3de40fd7465b90906d9c117a26a0b67a5cf1",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_learning_execution.py": "9482b000b91d7f33b0a750b09dc09ae68720da6ea32e516397e4b4d07e5fb2ab",
+    "okto_labs_pulse_community/tests/test_retirement_learning_execution.py": "d924cc937c61debf8418152ac14c7eafa6dbf4b3b61b1f6aab98dd7123b48b15",
+    "okto_labs_pulse_community/tests/test_retirement_reused_history.py": "9df54aa54cde9f702cdae072639104439515b21bba0d235b4f9728d4810b9344"
+  }
+}

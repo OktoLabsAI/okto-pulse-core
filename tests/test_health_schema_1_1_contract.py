@@ -28,7 +28,7 @@ from sqlalchemy_test_models import Board
 
 
 def test_health_schema_version_advances_to_1_1() -> None:
-    assert HEALTH_SCHEMA_VERSION == "1.1"
+    assert HEALTH_SCHEMA_VERSION == "1.3"
 
 
 def test_mcp_summary_preserves_versioned_materialization_contract() -> None:
@@ -43,7 +43,7 @@ def test_mcp_summary_preserves_versioned_materialization_contract() -> None:
         "memory_pressure_status": "unconfirmed",
         "recent_events": [],
         "checked_at": "2026-07-16T00:00:00+00:00",
-        "health_schema_version": "1.1",
+        "health_schema_version": "1.3",
         "materialization_state": "not_materialized",
         "materialization_generation": "generation-1",
         "probe_reason_codes": {
@@ -61,7 +61,7 @@ def test_mcp_summary_preserves_versioned_materialization_contract() -> None:
 
     projected = KGHealthMCPProjection().project(payload, profile="summary")
 
-    assert projected["health_schema_version"] == "1.1"
+    assert projected["health_schema_version"] == "1.3"
     assert projected["materialization_state"] == "not_materialized"
     assert projected["materialization_generation"] == "generation-1"
     assert projected["probe_reason_codes"] == payload["probe_reason_codes"]
@@ -176,6 +176,39 @@ async def _ensure_board(db_factory, board_id: str) -> None:  # noqa: ANN001
 
 
 @pytest.mark.asyncio
+async def test_failed_debt_provider_remains_unavailable_through_health_and_mcp(db_factory, monkeypatch):
+    from okto_pulse.core.services import canonical_debt_service
+
+    board_id = "board-health-unavailable-debt"
+    await _ensure_board(db_factory, board_id)
+
+    async def failed_summary(db, observed_board, **kwargs):
+        assert observed_board == board_id
+        raise RuntimeError("D:/private/other-board token=never-publish")
+
+    monkeypatch.setattr(canonical_debt_service, "summarize_canonical_debt", failed_summary)
+    register_materialization_evidence_port(_ConfirmedEmptyEvidencePort())
+    try:
+        async with db_factory() as session:
+            result = await kg_health_service.get_kg_health(board_id, session)
+    finally:
+        reset_materialization_evidence_port_for_tests()
+
+    assert result["overall_state"] != "healthy"
+    assert result["canonical_debt"]["status"] == "unavailable"
+    assert "canonical_debt_observation_unavailable" in result["classification_reason"]
+    for name in ("open_count", "retryable_count", "blocked_count", "retry_scheduled_count", "terminal_count"):
+        assert result["canonical_debt"][name] is None
+    assert result["rebuild_diagnostics"]["last_outcome"] == "unavailable"
+    assert result["rebuild_diagnostics"]["canonical_open_debt_count"] is None
+    for profile in ("summary", "full"):
+        projected = KGHealthMCPProjection().project(result, profile=profile)
+        assert projected["canonical_debt"]["open_count"] is None
+        assert projected["operational_domains"]["canonical_debt"]["status"] == "unavailable"
+        assert "never-publish" not in json.dumps(projected)
+
+
+@pytest.mark.asyncio
 async def test_confirmed_empty_composes_known_zero_contract_without_graph_reads(
     db_factory,
     monkeypatch,
@@ -215,8 +248,8 @@ async def test_confirmed_empty_composes_known_zero_contract_without_graph_reads(
     finally:
         reset_materialization_evidence_port_for_tests()
 
-    assert result["schema_version"] == "1.0"
-    assert result["health_schema_version"] == "1.1"
+    assert "schema_version" not in result
+    assert result["health_schema_version"] == "1.3"
     assert result["materialization_state"] == "not_materialized"
     assert result["materialization_generation"] == "generation-empty-1"
     assert result["classification_reason"] == "empty_board_not_materialized"
@@ -302,6 +335,11 @@ async def test_unreadable_store_preserves_concrete_recovery_state_without_open(
     assert result["graph_state"] == expected_state
     assert result["overall_state"] == expected_state
     assert result["metric_status"] == "unavailable"
+    assert result["total_nodes"] is None
+    assert result["default_score_count"] is None
+    assert result["default_score_ratio"] is None
+    assert result["avg_relevance"] is None
+    assert result["root_cause"]["materialized_node_count"] is None
     assert result["probe_reason_codes"]["board_graph"].startswith("board_graph_")
     assert result["probe_diagnostics"]["graph_metrics"]["status"] == ("unavailable")
     assert forbidden_calls == []
@@ -347,7 +385,7 @@ async def test_evidence_timeout_returns_typed_fail_closed_payload_without_open(
     finally:
         reset_materialization_evidence_port_for_tests()
 
-    assert result["health_schema_version"] == "1.1"
+    assert result["health_schema_version"] == "1.3"
     assert result["materialization_state"] == "unknown"
     assert result["materialization_generation"] is None
     assert result["metric_status"] == "unavailable"

@@ -1,31 +1,9 @@
-"""Spec 8a2fad91 / card 2803c136 — transactional materialization of BoardGuideline
-defaults during board creation (FR3, TR3/TR4, AC3/AC4), scenario ts_a48e70ee.
-
-Validator criteria reproduced:
-  1) the migration adds template_id/template_version/guideline_version NULLABLE to
-     BoardGuideline; manual/legacy links keep NULL (no backfill);
-  2) a default-materialized BoardGuideline carries priority + template_id +
-     template_version + guideline_version;
-  3) a forced GuidelineService.apply_default_guidelines failure -> structured
-     default_materialization_failed; after a clean-session rollback the board does
-     not exist and no orphan BoardGuideline remains;
-  4) idempotent per uq_board_guideline (no duplicate); intra-template duplicate
-     guideline_ids de-duped deterministically (first wins);
-  5) the applied_to_board audit row is queryable (actor/template_version/board_id);
-     the materialization_failed event carries the same fields in the structured error.
-
-create_board materializes from scope='global' (hardcoded). Each test first
-creates + activates ITS OWN global template (deactivating any leaked active
-template in-session) and never commits, so the single session is rolled back at
-close and nothing leaks (gotcha ts_cdb70cc0). Template versions are read relatively.
-
-Reproduce:
-  .venv/Scripts/python -m pytest -p no:logging -q tests/test_default_board_config_materialization.py
-"""
+"""Native exact default materialization, provenance, rollback and idempotence."""
 
 from __future__ import annotations
 
 import uuid
+from guideline_native_fixtures import append_revision, exact_pin
 from unittest.mock import patch
 
 import pytest
@@ -39,7 +17,6 @@ from okto_pulse.core.models.schemas import (
     BoardCreate,
     BoardSettings,
     GuidelineCreate,
-    GuidelineUpdate,
 )
 from okto_pulse.core.services.default_board_configuration import (
     EVENT_GUIDELINE_APPLIED_TO_BOARD,
@@ -65,11 +42,7 @@ async def _global_guideline(db, title: str, version: int = 3):
         ),
     )
     for revision_number in range(2, version + 1):
-        guideline = await service.update_guideline(
-            guideline.id,
-            USER_ID,
-            GuidelineUpdate(content=f"c-{revision_number}"),
-        )
+        guideline = await append_revision(db, guideline.id, USER_ID, content=f"c-{revision_number}")
         assert guideline is not None
     return guideline
 
@@ -83,7 +56,6 @@ async def _active_global_template_with(db, refs):
         scope="global",
         guideline_default_refs=refs,
         activate=True,
-        compatibility_import=True,
     )
 
 
@@ -98,42 +70,6 @@ async def _board(db, name: str | None = None) -> Board:
 # ---------------------------------------------------------------------------
 
 
-async def test_manual_link_requires_impact_preview_and_persists_nothing():
-    from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.ports.guideline_policy import (
-        GuidelinePolicyBindingConflict,
-    )
-    from okto_pulse.core.ports.relational_application import (
-        require_relational_application_adapter,
-    )
-
-    async with get_session_factory()() as db:
-        await _active_global_template_with(
-            db, []
-        )  # empty defaults -> create_board links nothing
-        g = await _global_guideline(db, "Manual")
-        board = await _board(db)
-        with pytest.raises(
-            GuidelinePolicyBindingConflict,
-            match="guideline_impact_preview_required",
-        ) as exc:
-            await GuidelineService(db).link_guideline_to_board(
-                board.id,
-                g.id,
-                priority=2,
-            )
-
-        assert dict(exc.value.details) == {
-            "board_id": board.id,
-            "guideline_id": g.id,
-            "remediation": "preview_then_adopt",
-        }
-        persisted = (
-            await require_relational_application_adapter()
-            .guideline_policy(db)
-            .get_binding(board_id=board.id, guideline_id=g.id)
-        )
-        assert persisted is None
 
 
 # ---------------------------------------------------------------------------
@@ -153,8 +89,8 @@ async def test_board_creation_materializes_links_with_provenance():
         await _active_global_template_with(
             db,
             [
-                {"guideline_id": g1.id, "priority": 1, "guideline_version": g1.version},
-                {"guideline_id": g2.id, "priority": 5, "guideline_version": g2.version},
+                exact_pin(g1, 1),
+                exact_pin(g2, 5),
             ],
         )
         board = await _board(db)
@@ -186,7 +122,7 @@ async def test_applied_to_board_audit_is_queryable():
         g1 = await _global_guideline(db, "G1")
         tmpl = await _active_global_template_with(
             db,
-            [{"guideline_id": g1.id, "priority": 1, "guideline_version": g1.version}],
+            [exact_pin(g1, 1)],
         )
         board = await _board(db)
 
@@ -226,7 +162,7 @@ async def test_forced_apply_failure_aborts_transactionally():
         g1 = await _global_guideline(db, "G1")
         tmpl = await _active_global_template_with(
             db,
-            [{"guideline_id": g1.id, "priority": 1, "guideline_version": g1.version}],
+            [exact_pin(g1, 1)],
         )
         name = f"b-{uuid.uuid4().hex[:8]}"
 
@@ -264,7 +200,7 @@ async def test_forced_apply_failure_aborts_transactionally():
 # ---------------------------------------------------------------------------
 
 
-async def test_apply_default_guidelines_idempotent_and_dedups():
+async def test_apply_default_guidelines_refuses_duplicates_and_is_idempotent():
     from okto_pulse.core.infra.database import get_session_factory
     from okto_pulse.core.ports.relational_application import (
         require_relational_application_adapter,
@@ -277,23 +213,20 @@ async def test_apply_default_guidelines_idempotent_and_dedups():
         board = await _board(db)
         gsvc = GuidelineService(db)
 
-        refs = [
-            {"guideline_id": g1.id, "priority": 1, "guideline_version": 1},
-            {
-                "guideline_id": g1.id,
-                "priority": 9,
-                "guideline_version": 9,
-            },  # intra-batch dup
-            {"guideline_id": g2.id, "priority": 2, "guideline_version": 2},
-        ]
+        invalid_refs = [exact_pin(g1, 1), exact_pin(g1, 9)]
+        with pytest.raises(DefaultBoardConfigurationError) as duplicate:
+            await gsvc.apply_default_guidelines(board.id, invalid_refs, template_id="t1", template_version=7)
+        assert duplicate.value.code == "default_guideline_duplicate"
+        assert await require_relational_application_adapter().guideline_policy(db).list_bindings(board_id=board.id) == ()
+        refs = [exact_pin(g1, 1), exact_pin(g2, 2)]
         created = await gsvc.apply_default_guidelines(
             board.id, refs, template_id="t1", template_version=7
         )
-        # intra-template dup de-duped first-wins: g1 once (priority 1), g2 once.
+        # Each complete current pin materializes once.
         assert {c.guideline_id for c in created} == {g1.id, g2.id}
         assert len(created) == 2
         g1link = next(c for c in created if c.guideline_id == g1.id)
-        assert g1link.priority == 1 and g1link.guideline_version == 1  # first wins
+        assert g1link.priority == 1 and g1link.guideline_version == g1.version
 
         # idempotent re-run: existing board/guideline links preserved, none created.
         again = await gsvc.apply_default_guidelines(

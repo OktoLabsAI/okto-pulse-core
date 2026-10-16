@@ -1,0 +1,32 @@
+{
+  "scope": "Documentary reconciliation of existing U4 receipts; no new runtime execution",
+  "artifact_root": "D:/Projetos/Techridy/PULSE_REFACTOR/.validation-v040/spec-unified-20261014",
+  "reviewed_base": {"core": "f739db87", "community": "1c18806d"},
+  "observations": {
+    "spec": {"id": "dcfb20fb-db6d-5628-b861-831d6a2d140d", "status": "done", "edition": 1, "version": 17, "implementation": 100, "verification": 100},
+    "task": {"id": "5e946696-db4d-5205-a47a-9b46f1115157", "status": "done", "implementation": 100, "verification": 100},
+    "test": {"id": "ee0caea9-97dd-5b9a-93a1-cf87bf0961ee", "status": "done", "implementation": "not_applicable", "verification": 100},
+    "prior_test_reports": {"resources_and_catalog": 158, "community_host": 31, "manifest_and_inventory": 23},
+    "public_mcp_tokens": {"instructions": 2467, "tools": 50066, "combined": 52533, "tools_limit": 50800, "combined_limit": 53500},
+    "kg": {"canonical_query": "nodes returned with source_artifact_ref", "related_context": "returned", "overall_state": "at_risk", "metric_status": "unavailable", "unavailable_probes": ["digest_layer_parity", "stale_canonical_parity"]}
+  },
+  "limits": [
+    "Existing XML reports were read, not re-executed during planning.",
+    "Readiness receipts establish relational Done, not final visual or cognitive consolidation acceptance.",
+    "Python/frontend parity does not establish parity of subsequently changed resource files.",
+    "Canonical search results do not establish all graph health probes or completion of cognitive consolidation.",
+    "No current process health or PID assertion is made by this documentary review."
+  ],
+  "artifacts": [
+    {"path": "u4-e2e/final-spec-readiness.json", "sha256": "cc4a10558a55cefc5e03edc04232757347d79efe6f42fb54a941085328e60a69"},
+    {"path": "u4-e2e/final-task-readiness.json", "sha256": "5e55ecdec1bd0d202f60f6afca5e274998c59d337af0f86eed3d0f3f076f8d48"},
+    {"path": "u4-e2e/final-test-readiness.json", "sha256": "49836dacb243ee1239ca45984e3e114fd4fb33ba0c4517dadc6e5a349a392178"},
+    {"path": "u4-e2e/kg-closeout-health.json", "sha256": "45ad701d78eabb6e07ad13d45c32ff22cef804822e0fffdf074b1fe9a65d5e5c"},
+    {"path": "u4-e2e/kg-closeout-natural.json", "sha256": "bb7da9b1592b27b6e88c8abccc0e738f304ae421077c230a7e530e884516387a"},
+    {"path": "u4-e2e/kg-closeout-related.json", "sha256": "50a0e80d1cd9c7a797261b1f591f7c27520f45afeab8be9054f7fc96e39a7468"},
+    {"path": "u4-resources-transport-split.xml", "sha256": "e0445cec111b1b7a66f73c8014ba85133cf0c565995209b0d98f47440031e5fb"},
+    {"path": "u4-host-footprint-final.xml", "sha256": "e51eeeba8d4b90515a051110b79613c49e1d4f94b66e6a43535628d818ce8971"},
+    {"path": "u4-manifest-regression-final.xml", "sha256": "35d6e8e800453893e2516bb2e94ba3905f0ea315eb9c19ea67f3e52c31d845cc"},
+    {"path": "u4-e2e/resume-validation-parity.json", "sha256": "9817ba11246ddb89f976326199a6d5a678ee81cd84099189b29bbc73c9a1ee8b"}
+  ]
+}

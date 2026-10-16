@@ -1,0 +1,33 @@
+{
+  "scope": "DEI-T59 revised fresh-install-only acceptance",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "DEI:DEI-T59",
+  "scope_authority": "CLEAN_BREAK_040_REASSESSMENT.md:181 replaces repeated upgrade with clean creation, same-version restart, integrity and incompatible-format refusal",
+  "result": {
+    "passed": 44,
+    "failed": 0,
+    "seconds": 40.03,
+    "terminal_session": 66488
+  },
+  "evidence": [
+    "Reviewed and reran test_current_relational_schema.py against byte-identical current paired source/wheel/install.",
+    "Fresh SQLite creation and restart preserve stored Board and schema identity. Retired tables/columns/mappers/FKs are absent; current semantic governance and native checklist constraints remain present.",
+    "Thirty-three incompatible schema mutations (version, identity, obsolete fields/tables, dropped indexes/triggers) refuse both pragma setup and initialization without file/WAL/content change.",
+    "Pending WAL is inspected without modifying source files: compatible committed data accepted, incompatible DDL refused. Composition/connection race rechecks format before writable setup.",
+    "Interrupted creation rolls back DDL and version marker and can retry. Lifecycle seeds never run against incompatible storage.",
+    "Non-database files and externally damaged current-format FK data are refused without repair/deletion. Repeated current-catalog seeds preserve IDs, permission flags and user choices.",
+    "Source review confirms initialization creates objects only when empty, checks exact format/integrity otherwise, and has no upgrade/conversion path. Internal DROP finalizes native creation hooks only inside fresh creation transaction."
+  ],
+  "limits": [
+    "Disposable relational storage qualification, not a final complete installed-runtime/UI E2E or graph recovery qualification.",
+    "No legacy-upgrade rollback is claimed or retained. Transactional rollback of failed native creation remains required and tested.",
+    "No implementation/test source edits needed; this milestone qualifies existing reviewed behavior. No product/frontend change, promotion or real-data operation.",
+    "Main88 closure remains applicable with eight zero budgets."
+  ],
+  "artifacts": {
+    "provenance-native-install-refusal-20261008.json": "b4423338bb03d41bcb071362a9c0dd8cb0589de606219908576635cc6f731039",
+    "native-install-refusal-20261008.xml": "6daabb09672ed606a903a32bf8391d0dc1ff3ba3f6e64c1b0ba2217d17d8380e",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

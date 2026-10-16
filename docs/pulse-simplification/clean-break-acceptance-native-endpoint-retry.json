@@ -1,0 +1,44 @@
+{
+  "format": "pulse-040-reviewed-increment/v1",
+  "status": "criterion_verified_not_full_delivery",
+  "criterion_keys": [
+    "KG:KG-26"
+  ],
+  "proof_pair": "dist-native-main57",
+  "provenance": {
+    "name": "provenance-native-explicit-decision-parity1.json",
+    "sha256": "ca47dc45e72af85f0893cb9aad7d00fbbc00d50ee1954bf23ecb7aa0f69ffe40"
+  },
+  "runs": [
+    {
+      "name": "acceptance-native-endpoint-pending1",
+      "sha256": "a35d695f8ed1a17662dbc7b5f0cac07aa1ae2e5ae3f5444ce7d897bab7f5e7ee",
+      "passed": 3,
+      "cases": [
+        "tests.test_skm_spec_dependency_kg_projection::test_commit_defers_before_writes_until_prerequisite_root_is_consolidated",
+        "tests.test_skm_spec_dependency_kg_projection::test_endpoint_pending_skips_durability_for_read_only_attempt",
+        "tests.test_skm_spec_dependency_kg_projection::test_endpoint_pending_requeues_without_spending_delivery_budget"
+      ]
+    },
+    {
+      "name": "acceptance-native-endpoint-retry1",
+      "sha256": "be5466c38ad96c7a300f7096e647f1e3a823120d79f4a8cfa3e21056627d9e35",
+      "passed": 1,
+      "cases": [
+        "tests.test_native_endpoint_retry::test_native_endpoint_wait_creates_no_user_work_and_retries_without_queue_edits"
+      ]
+    }
+  ],
+  "verified": [
+    "Valid endpoint missing only from graph is deferred with stable technical code and unchanged attempts.",
+    "Private queue converges after prerequisite projection without editing next_retry_at or other queue scheduling fields.",
+    "No extra Card or Card/Spec/Refinement/Ideation question is created; Card and Spec lifecycle status unchanged.",
+    "No false complete-consolidation audit while pending; prerequisite and dependent each acknowledged after actual completion.",
+    "Preflight refuses before graph writes; read-only deferred attempt does not invoke durability or compensation."
+  ],
+  "limits": [
+    "Native source mutation is a fixture for projection; does not claim a lifecycle-policy bypass.",
+    "No product or frontend change; main57 payload, green closure and prior frontend qualification unchanged.",
+    "KG-10 guard decision remains isolated and unanswered; this receipt does not relax that guard."
+  ]
+}

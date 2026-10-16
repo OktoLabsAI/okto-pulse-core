@@ -1,0 +1,183 @@
+{
+  "criteria": [
+    "KG:KG-48",
+    "KG:KG-49"
+  ],
+  "proof_pair": "dist-native-main68",
+  "review_base": {
+    "core": "9f401914",
+    "community": "3a172484"
+  },
+  "verified": [
+    "One agent with sufficient source grants can query coverage, decision impact, bug clusters and lineage; removing individual grants refuses reads before aggregation.",
+    "Single authenticated MCP actor performs Spec validation/evaluation, implementation and signed test evidence, delivery and Done when reviewer separation is off; native Learning capture/review/projection works with the same reviewer identity.",
+    "Separate authenticated executor/reviewer sessions recover durable evidence and conclusions, enforce exact grants and configured reviewer separation, and preserve history across approval, rejection and rework.",
+    "Measured every MCP initialize, tools/list page and tool request/response in six executed scenarios, with per-case/session and summed payload costs."
+  ],
+  "tests": {
+    "native-session-measurement68.xml": {
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "time": "31.763"
+    },
+    "native-single-agent-queries1.xml": {
+      "tests": "71",
+      "failures": "0",
+      "errors": "0",
+      "time": "13.439"
+    },
+    "native-single-agent-learning1.xml": {
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "time": "69.920"
+    }
+  },
+  "distinct_final_passed": 79,
+  "count_basis": "71 query transport cases +2 native Learning variants +2 single-agent flows +4 executor/reviewer variants; overlapping single-agent reruns counted once.",
+  "measurement": {
+    "serialization": "UTF-8, sorted keys, compact JSON, aliases, omit None",
+    "tokenizer": "cl100k_base (reproducible estimate, not model billing)",
+    "versions": {
+      "tiktoken": "0.14.0",
+      "mcp": "1.30.0",
+      "fastmcp": "2.14.7",
+      "pytest": "8.3.4",
+      "sqlalchemy": "2.0.49"
+    },
+    "summary": {
+      "sessions": 28,
+      "methods": {
+        "initialize": 28,
+        "tools/list": 28,
+        "tools/call": 85
+      },
+      "payload_bytes": 6980785,
+      "tokens_cl100k_base": 1651840,
+      "sql_queries_during_serial_requests": 4211,
+      "request_elapsed_ms": 8272.032600129023
+    },
+    "single_agent": {
+      "sessions": 2,
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "tools/call": 49
+      },
+      "payload_bytes": 628273,
+      "tokens_cl100k_base": 151492,
+      "sql_queries_during_serial_requests": 2765,
+      "request_elapsed_ms": 4892.483599993284
+    },
+    "executor_reviewer": {
+      "sessions": 26,
+      "methods": {
+        "initialize": 26,
+        "tools/list": 26,
+        "tools/call": 36
+      },
+      "payload_bytes": 6352512,
+      "tokens_cl100k_base": 1500348,
+      "sql_queries_during_serial_requests": 1446,
+      "request_elapsed_ms": 3379.5490001357393
+    },
+    "by_case": {
+      "tests/test_executor_reviewer_handoff.py::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[grant-denied-approve]": {
+        "sessions": 5,
+        "methods": {
+          "initialize": 5,
+          "tools/list": 5,
+          "tools/call": 7
+        },
+        "payload_bytes": 1225471,
+        "tokens_cl100k_base": 289488,
+        "sql_queries_during_serial_requests": 267,
+        "request_elapsed_ms": 824.6399000345264
+      },
+      "tests/test_executor_reviewer_handoff.py::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[grant-denied-reject]": {
+        "sessions": 8,
+        "methods": {
+          "initialize": 8,
+          "tools/list": 8,
+          "tools/call": 11
+        },
+        "payload_bytes": 1950860,
+        "tokens_cl100k_base": 460688,
+        "sql_queries_during_serial_requests": 446,
+        "request_elapsed_ms": 852.8950000618352
+      },
+      "tests/test_executor_reviewer_handoff.py::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-approve]": {
+        "sessions": 5,
+        "methods": {
+          "initialize": 5,
+          "tools/list": 5,
+          "tools/call": 7
+        },
+        "payload_bytes": 1225396,
+        "tokens_cl100k_base": 289507,
+        "sql_queries_during_serial_requests": 277,
+        "request_elapsed_ms": 859.5777000300586
+      },
+      "tests/test_executor_reviewer_handoff.py::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-reject]": {
+        "sessions": 8,
+        "methods": {
+          "initialize": 8,
+          "tools/list": 8,
+          "tools/call": 11
+        },
+        "payload_bytes": 1950785,
+        "tokens_cl100k_base": 460665,
+        "sql_queries_during_serial_requests": 456,
+        "request_elapsed_ms": 842.4364000093192
+      },
+      "tests/test_single_agent_spec_execution.py::test_one_agent_preserves_assessments_and_evidence_through_spec_done[False]": {
+        "sessions": 1,
+        "methods": {
+          "initialize": 1,
+          "tools/list": 1,
+          "tools/call": 23
+        },
+        "payload_bytes": 309820,
+        "tokens_cl100k_base": 74481,
+        "sql_queries_during_serial_requests": 1361,
+        "request_elapsed_ms": 2094.9889000039548
+      },
+      "tests/test_single_agent_spec_execution.py::test_one_agent_preserves_assessments_and_evidence_through_spec_done[True]": {
+        "sessions": 1,
+        "methods": {
+          "initialize": 1,
+          "tools/list": 1,
+          "tools/call": 26
+        },
+        "payload_bytes": 318453,
+        "tokens_cl100k_base": 77011,
+        "sql_queries_during_serial_requests": 1404,
+        "request_elapsed_ms": 2797.494699989329
+      }
+    },
+    "archive": {
+      "file": "benchmark-native-sessions-main68.json.gz",
+      "sha256": "c88707770d236751251bce264d5b328f63a1df6d37de06427d4ab4aa40bb83bf",
+      "raw_sha256": "3b32c994228e60fa6e45c1b0a757c1e288779b0012db1f8be5e622246d8dd6f1"
+    }
+  },
+  "limits": [
+    "Fixture setup and seeded facts are not measured authorship.",
+    "Only actually consumed resources are measured.",
+    "SQL counts cover serial MCP request windows, not fixture setup/verification; they do not establish causality for background work.",
+    "External execution is included in request latency but not separately instrumented.",
+    "No baseline equivalence or cost reduction is established by this capture.",
+    "cl100k_base is an explicitly versioned estimate, not billed model tokens or monetary cost.",
+    "Query transport cases inject an actor and source facts; reducers, permission checks and REST boundary are real. Workflow MCP resolves stored fixture credentials.",
+    "Native Learning fixture uses real SQL/Grafx and injected actor; external implementation evidence in Spec flow is seeded while signed HTTP test execution is real.",
+    "No tools-list savings, percentage reduction or baseline-equivalent whole-initiative benchmark is established. BASE:T43 and KG:KG-64 remain pending.",
+    "No product/frontend changes. Prior main68 closure and frontend evidence retained without rerun."
+  ],
+  "artifacts": {
+    "provenance-native-session-measurement1.json": "f89c9d0f680683133f4ab2049b5e2646e4f856dbba40ae594ceb839c38addb13",
+    "native-session-measurement68.xml": "ba6d77e02d727419696266cadc2532faf8d7fb1962b4b4158160ef888ac97fed",
+    "native-single-agent-queries1.xml": "9adcc9bc42a916d6f8d4232cfa4a12a4d3ae6045f03d29e1f98c19a97b239644",
+    "native-single-agent-learning1.xml": "dbe709b505e6a16587537e9a81e161bca00cfb9a643744dcfe6221c03e2d67e8"
+  }
+}

@@ -274,7 +274,6 @@ class ApplicationPersistencePort(Protocol):
 
     async def rollback(self, context: Any) -> None: ...
 
-    async def backfill_qa_answered_at(self, context: Any) -> dict[str, int]: ...
 
 
 _RUNTIME_KEY = "ports.application_persistence.store"

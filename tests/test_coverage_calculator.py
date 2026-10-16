@@ -100,7 +100,7 @@ def test_analytics_service_saturation_envelope_delegates_without_shape_change():
         "contracts_total": 1,
         "tr_task_linkage_pct": 100.0,
         "trs_total": 1,
-        "decisions_coverage_pct": 100.0,
+        "decisions_planning_pct": 100.0,
         "decisions_total": 1,
         "ir_task_linkage_pct": 0.0,
         "irs_total": 1,

@@ -79,7 +79,7 @@ async def _seed_ideation(board_id: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_create_list_get_ideation(client) -> None:
+async def test_create_list_get_ideation(client, community_page_persistence) -> None:
     board_id = await _seed_board()
     created = client.post(
         f"{PREFIX}/boards/{board_id}/ideations", json={"title": "First idea"}
@@ -87,9 +87,10 @@ async def test_create_list_get_ideation(client) -> None:
     assert created.status_code == 201, created.text
     ideation_id = created.json()["id"]
 
-    listed = client.get(f"{PREFIX}/boards/{board_id}/ideations")
+    with community_page_persistence():
+        listed = client.get(f"{PREFIX}/boards/{board_id}/ideations")
     assert listed.status_code == 200, listed.text
-    assert any(i["id"] == ideation_id for i in listed.json())
+    assert any(i["id"] == ideation_id for i in listed.json()["items"])
 
     got = client.get(f"{PREFIX}/ideations/{ideation_id}")
     assert got.status_code == 200 and got.json()["id"] == ideation_id

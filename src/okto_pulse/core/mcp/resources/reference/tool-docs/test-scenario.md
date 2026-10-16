@@ -4,6 +4,51 @@ version: "2.0"
 
 # Tool docs — `test-scenario`
 
+## Reading the Test Card's verification work
+
+Read `okto_pulse_get_task_context` with `profile="full", context_scope="all"`
+before executing the card's scenarios. `test_verification_context` resolves the
+assigned scenarios to their current ACs: observable condition, verification
+profile, requirement links/aspects, scenario method and expected observation.
+It includes the Spec edition/version and evidence guidance. ACs remain owned by
+the Spec; there is no copied verification entity in the Card.
+
+Check `content_complete`, `source_resolution_complete` and `issues`. Summary/detail
+can truncate content: follow the full/all read before executing an incomplete
+plan. The gate scope deliberately omits these bodies. `get_card` alone does not
+provide this execution context. No planning field grants delivery credit.
+
+In the UI, expand the AC to author its profile and requirement links and inspect
+its verification scenarios. Methods remain authored in Tests. Record results via
+the existing authenticated evidence path below, referencing exact criterion IDs;
+Coverage distinguishes planning from current verified delivery.
+
+Scenario `verification_method` is independent of `scenario_type`: `automated_test`,
+`static_analysis`, `inspection`, or `demonstration`. Omission leaves the method unspecified;
+no method is inferred from the scenario type or evidence class. The
+Community verifier admits authenticated Evidence V2 automated tests and signed
+external reports for static analysis, inspection and demonstration. A different
+edition must explicitly declare and implement each method; otherwise it remains
+pending. The board evidence skip does not
+bypass the explicit method's authenticated-result requirement.
+
+Use add/update scenario to author the method. A method change is semantic and
+invalidates existing evidence through the normal body writer. `clear` can remove
+the method as an explicit Draft edit; it cannot preserve the old proof as credit
+for a different contract. `expected_spec_version` on the update tool rejects a
+stale edit. A method edit changes the semantic digest and requires new evidence.
+
+For REST whole-collection authoring, the full Spec response also supplies
+`scenario_snapshot`. Send it unchanged as `expected_scenario_snapshot` alongside
+`expected_spec_version` when replacing `test_scenarios`. Capture both from the
+same read used to author the collection: status, evidence or task-link changes
+can leave the Spec version unchanged. A stale snapshot returns
+`scenario_snapshot_conflict` (HTTP 409), with no collection mutation. Reload,
+review the retained draft against the current collection, then explicitly submit
+the revised operation. The snapshot is concurrency metadata, never verification
+evidence. Scoped MCP add/update/delete retain their own native semantics and
+capture their collection base inside the use case; no new MCP argument is needed.
+
 Delivery closeout requires this scenario to belong to a completed **test card**,
 have a current authenticated `passed` receipt, and be explicitly associated with
 the implementation it tested via `okto_pulse_record_delivery_evidence` with
@@ -17,6 +62,92 @@ Executable guideline evaluation of `test_scenario` follows
 `okto-pulse://reference/policy-compliance`.
 
 Full long-form documentation (args, returns, examples, enum prose) for `okto_pulse_*` tools in this family. The `tools/list` surface carries only the compact summary; read here on demand.
+
+## External automated tests (Community local host)
+
+The host operator explicitly registers a Python unittest profile once:
+
+```powershell
+okto-pulse test-runner capacity --workspace D:/project --source-ref SOURCE_ID --board-id BOARD_ID --spec-id SPEC_ID --scenario-id SCENARIO_ID --test tests/test_domain.py::DomainTests.test_capacity
+```
+
+Registration authorizes executing that project's code as the Pulse OS user.
+Profiles are scoped to Board/Spec/scenario, stored in `DATA_DIR/test-runners`,
+and cannot be created/changed by an MCP or REST execution request. To revoke,
+remove the profile locally; issued historical receipts remain verifiable.
+Profiles are host authority and are not automatically restored with evidence.
+This runner supports explicit Python `unittest.TestCase` methods using the
+Pulse Python environment; it is not a general CI report importer or arbitrary
+shell runner. Repeat `--test` for multiple methods; default timeout is 60s,
+configurable locally up to 120s. Only register trusted code: the temporary
+workspace is a reproducibility boundary, not an OS security sandbox.
+
+Call `okto_pulse_execute_test_scenario_evidence` with the usual identifiers,
+`status="passed"`, and `replay='{"runner_ref":"capacity","revision":"FULL_GIT_COMMIT"}'`.
+The runtime extracts the exact tracked commit, executes the registered methods,
+and issues an installation-authenticated receipt with source, revision and test
+selectors. It does not execute uncommitted/ignored files. Timeouts, missing tests,
+skips, expected failures and incomplete runs do not produce a passing receipt.
+Use `status="failed"` for an observed failing execution; requested status never
+overrides the actual outcome. No scenario or Card is moved by execution alone.
+
+Pass the returned evidence **unchanged** to the scenario status writer, then bind
+the scenario to the implementation through Delivery. The implementation receipt
+must identify the same source and exact clean revision and precede this run.
+Wrong revision/source, tampering or changed scenario semantics fail closed.
+Passing tests alone neither approve the Test Card nor prove that the selected
+tests satisfy every AC; the authored scope and governance gates still apply.
+
+## `okto_pulse_admit_test_verification_report`
+
+Supply `board_id`, `spec_id`, `scenario_id` and a closed `report` object. This
+authenticates submission under `spec.tests.execute`; it does not execute the
+observation, fetch references, approve a Test Card or change scenario status.
+Use the returned evidence unchanged with `okto_pulse_update_test_scenario_status`.
+All existing lifecycle, policy, current-base and independent-review gates apply.
+
+The report requires `schema_version="verification-report/v1"`, `method`,
+`report_id`, timezone-aware `observed_at`, nonempty `sources`, `observations`,
+`conclusion` and `result` (`passed`, `failed`, `inconclusive`, `aborted` or
+`unavailable`). Each source is
+`{reference, revision, sha256}` (64 lowercase hex characters). Each observation
+contains `observation_id`, `criterion_id`, `observation_ref`, `expected`,
+`observed` and `outcome`. Cover exactly the scenario's current linked criterion
+IDs; a failed observation requires a failed report. The observation reference
+must identify the recoverable observation in the versioned source. Authors
+remain responsible for the truth and recoverability of submitted observations;
+the receipt authenticates their submission, not an independent verification.
+Only all-passed observations may yield `passed`. Incomplete observations retain
+their distinct outcome in the signed report; submit their returned evidence
+with scenario status `ready`, awaiting another attempt. This uses the existing
+transition/execute permissions and never grants delivery credit. It cannot hide
+a failed observation inside a passing or inconclusive summary. Receipt admission
+alone does not replace the current scenario evidence; the scoped status write
+must succeed before the new attempt becomes current.
+
+For the current execution contract, one authenticated passed/failed report may
+cover several criteria. Delivery credits a criterion only when all its
+observations pass; failures of another criterion remain visible and block that
+obligation. The aggregate scenario result is preserved. Reference the same
+receipt through the existing Test Card ledger, without copying the report.
+Current-base checks, completed Cards and every required criterion still apply.
+
+- `inspection`: versioned `inspection_procedure`.
+- `static_analysis`: `tool_name`, `tool_version`, versioned `rules` and
+  `configuration`, `analyzed_scope` and `findings` (empty is explicit).
+  Each finding supplies `finding_id`, declared `rule_id`, `location`,
+  `description`, `severity` (`info`, `warning`, `error`). Observations explicitly
+  compare findings against the criteria; no implicit severity threshold exists.
+- `demonstration`: versioned `procedure` and `environment`.
+
+Reports are bounded to 64 KiB, 20 sources and 100 observations. Do not supply
+author, permission, approval, skip or receipt fields: authorship is stamped from
+the authenticated caller. Changing any report byte, scenario semantics, method,
+criterion definition or binding invalidates its use. Historical evidence is not
+upgraded or reinterpreted. REST provides the same use case at
+`POST /api/v1/specs/{spec_id}/scenarios/{scenario_id}/evidence/reports` with
+`{"report": ...}`; the frontend records its returned receipt through the same
+scoped status endpoint.
 
 ## `okto_pulse_add_test_scenario`
 
@@ -44,8 +175,7 @@ Args:
         references to the acceptance criteria this scenario validates. Each
         token may be a 0-based index, a structured ``ac_id`` (e.g. ``ac_1a2b``),
         or the EXACT acceptance-criterion text. ``ac_id`` is recommended — it is
-        the canonical projection persisted in ``linked_criteria`` (legacy ACs
-        without an id fall back to their text). Matching is exact: prefix
+        the canonical projection persisted in ``linked_criteria``. Matching is exact: prefix
         matching is NOT accepted on this write path. Resolution is fail-closed
         and atomic — if ANY token is unresolved the tool returns a structured
         error JSON (listing the failing tokens, the valid index range and the
@@ -83,11 +213,9 @@ Args:
     board_id: Board ID
     spec_id: Spec ID
     status: Filter by scenario status (optional) — one of: draft, ready, automated, passed, failed
-    scenario_type: Optional exact-match filter over the raw persisted value.
-        Canonical values are unit, integration, e2e, manual, and negative.
-        Historical values such as regression may also be supplied here so
-        legacy rows remain discoverable. This is a read-only compatibility
-        filter and does not make a historical value valid on any write.
+    scenario_type: Optional exact-match filter using the closed native enum:
+        unit, integration, e2e, manual, or negative. Omit to include every type.
+        Unsupported values are rejected before context or storage access.
     linked: Filter by task linkage (optional) — "linked" = only scenarios with tasks, "unlinked" = only scenarios without tasks
     offset: Skip first N scenarios (default 0)
     limit: Max scenarios to return (default 50, max 200)
@@ -105,9 +233,9 @@ Edit the BODY of a test scenario (title/given/when/then/scenario_type/
     `scenario_type` to preserve the current type; an empty string is not part
     of the closed enum and is rejected by FastMCP as ``validation_failed``
     before agent context, permissions, or UoW resolution. To
-    intentionally CLEAR a field, list it in `clear` (pipe-separated); only
+    intentionally CLEAR a field, list it in `clear` (native string array); only
     `notes` and `linked_criteria` are clearable. `linked_criteria` is a
-    pipe-separated list of AC index/id/text, resolved to AC ids (fail-closed on
+    native string array of AC references, resolved to AC ids (fail-closed on
     unresolved tokens).
 
     Editing a SEMANTIC field (given/when/then/scenario_type/linked_criteria) of a
@@ -125,8 +253,8 @@ Edit the BODY of a test scenario (title/given/when/then/scenario_type/
             negative. Empty string and every unsupported value are rejected by
             the closed FastMCP schema as ``validation_failed`` before context or
             UoW resolution, never normalized.
-        linked_criteria: Pipe-separated AC index/id/text (resolved to AC ids).
-        clear: Pipe-separated field names to empty (notes, linked_criteria).
+        linked_criteria: Native string array of AC index/id/text (resolved to AC ids).
+        clear: Native string array of field names to empty (notes, linked_criteria).
 
     Returns:
         JSON {success, scenario_id, updated_fields, evidence_invalidated} or
@@ -147,7 +275,7 @@ one replay source is required:
     board/spec/scenario/current-semantic-digest bindings, serializes canonical
     JSON and atomically persists it under an installation-owned deterministic
     `inline-<sha256>.json` reference before execution.
-  - Legacy/advanced mode: pass `manifest_ref`, a canonical relative `.json`
+  - Installation-managed mode: pass `manifest_ref`, a canonical relative `.json`
     path below `<data_dir>/evidence/manifests`. That installation-managed
     manifest must already declare `purpose: test_scenario_evidence`, the exact
     `board_id`, `spec_id`, `scenario_id` and `scenario_sha256`.
@@ -159,7 +287,7 @@ or `{"name":"...","kind":"body_contains","expected":"..."}`. Methods,
 headers, bodies, scripts, absolute URLs and redirects cannot be supplied.
 Absolute/ref-traversal paths, duplicate JSON keys, non-standard JSON values,
 oversized payloads, symlinks, junctions and reparse-point components are
-rejected. A generic or cross-context legacy manifest is never executed.
+rejected. A generic or cross-context manifest is never executed.
 
 Example `replay` value (encode this object as the MCP string argument):
 
@@ -176,7 +304,7 @@ Example `replay` value (encode this object as the MCP string argument):
           "name": "version",
           "kind": "json_equals",
           "path": "version",
-          "expected": "0.3.0"
+          "expected": "0.4.0"
         }
       ]
     }
@@ -187,16 +315,15 @@ Example `replay` value (encode this object as the MCP string argument):
 The Community adapter calls the live local Pulse HTTP runtime first. Only after
 all responses are observed does it authenticate the complete bounded receipt
 history and append an immutable receipt to the local ledger with a
-per-installation secret. Signed pre-hardening records may establish key
-continuity for append, but remain explicitly non-authoritative at every gate.
+per-installation secret. Every ledger entry must satisfy the current receipt
+schema and authenticate successfully; incompatible records are rejected.
 Receipt files must remain byte-for-byte canonical JSON; reordered/pretty JSON,
 duplicate keys and any other byte rewrite are treated as ledger tampering.
 Inline manifest names are content-addressed, so an identical replay in the same
 scenario context safely reuses identical canonical bytes; a conflicting or
 changed target fails closed. The result contains `{success, persisted: false,
 scenario_persisted: false, manifest_persisted, evidence, next_tool}`.
-`persisted: false` remains the compatibility indicator that scenario state was
-not changed; `manifest_persisted` is true for inline mode. Pass `evidence`
+`persisted: false` indicates that scenario state was not changed; `manifest_persisted` is true for inline mode. Pass `evidence`
 unchanged to `okto_pulse_update_test_scenario_status`. A client-authored
 binding, `product_runtime_exercised`, public SHA or receipt-like string is never
 trusted.
@@ -206,7 +333,7 @@ Args:
     spec_id: Spec ID.
     scenario_id: Existing scenario ID.
     status: `automated`, `passed`, or `failed`; must match the observed outcome.
-    manifest_ref: Legacy/advanced relative path under the installation
+    manifest_ref: Installation-managed relative path under the installation
         manifest root. Leave empty when using `replay`.
     replay: Preferred MCP-only JSON object with optional `description` and
         required bounded GET-only `steps`. Leave empty when using
@@ -234,7 +361,7 @@ When `skip_test_evidence_global=True`, the gate is bypassed — every
 status update is accepted without evidence, but a structured audit log
 `test_scenario.evidence_gate_skipped` is emitted for forensics.
 
-Evidence is persisted inline within the scenario dict (no DB migration).
+Evidence is persisted inline within the scenario dict.
 Audit log `test_scenario.status_changed` is emitted on every successful
 update with `evidence_provided`, `evidence_gate_skipped`, and
 `changed_by_agent_id`.
@@ -242,16 +369,17 @@ update with `evidence_provided`, `evidence_gate_skipped`, and
 **Re-executable evidence contract (spec 9e0bf979):**
 
 Evidence may declare an explicit `evidence_class` so a validator can rerun or
-inspect the artifact instead of trusting a raw log. The six classes and their
+inspect the artifact instead of trusting a raw log. The seven classes and their
 minimum fields (on a gated status) are:
 
+  - `verification_report`: the authenticated evidence returned by
+    `okto_pulse_admit_test_verification_report`, with its complete typed report.
   - `automated_test_pointer`: `test_file_path` + `test_function`.
   - `replay_command`: `replay_command` + `expected_output_snapshot`.
   - `mcp_replay_manifest` (Evidence V2): `manifest_ref` +
     `execution_attestation` + opaque `execution_receipt`, emitted by
-    `okto_pulse_execute_test_scenario_evidence`. The old
-    `mcp_replay_manifest` string/object is a
-    reader-only legacy alias and never satisfies a new gate.
+    `okto_pulse_execute_test_scenario_evidence`. The separate field
+    `mcp_replay_manifest` is unsupported and rejected on reads and writes.
   - `manual_checklist`: `manual_checklist_ref` + `expected_output_snapshot`.
   - `run_log`: `last_run_at` + (`output_snippet` OR `test_run_id`) +
     `non_replayable_justification` + `expected_output_snapshot`.
@@ -259,7 +387,8 @@ minimum fields (on a gated status) are:
     `expected_output_snapshot`.
 
 An `expected_output_snapshot` (expected output / success criteria) is required
-for every non-V2 class except the direct `automated_test_pointer`. An invalid
+for the structural replay/log/checklist classes. Authenticated `verification_report`
+uses its typed observations; `automated_test_pointer` uses its test reference. An invalid
 `evidence_class` value fails closed (it is never normalized).
 
 Evidence V2 `execution_attestation` is a typed object with:
@@ -283,7 +412,7 @@ the exact board/spec/scenario/semantic-digest/status/issuing-actor binding.
 The digest covers identity, Given/When/Then, scenario type, linked ACs and the
 current AC identity/text. Missing/rotated secrets, missing ledger records,
 semantic edits, actor substitution, cross-scenario replay and tampering fail
-closed at writes; card, sprint and bug-closeout consumers recompute the current
+closed at writes; Card, Spec and bug-closeout consumers recompute the current
 semantic digest and reauthenticate the receipt as well. A `passed` scenario
 requires a passed attestation and all assertions to match. A `failed` scenario requires a failed
 attestation and at least one genuine mismatch. Runtime=false, contradictory
@@ -295,20 +424,17 @@ minimum field is present.
 replay is treated as cheap or already-existing — so a run log is the wrong
 class — when any of these is present: an existing test (`test_file_path`), an
 existing command/script (`replay_command`), or a deterministic MCP replay
-manifest writable under bounded setup (`manifest_ref` or legacy
-`mcp_replay_manifest`). A `run_log` /
+manifest writable under bounded setup (`manifest_ref`). A `run_log` /
 `non_replayable_justified` payload is rejected when `replay_should_exist=true`
 OR a cheap/existing signal is present — declare a replayable class instead.
 
-**Write vs read:** on a NEW gated write without `evidence_class`, only the
-legacy direct test pointer (`test_file_path` + `test_function`) is grandfathered;
-a run-log-like payload must carry `expected_output_snapshot` +
-`non_replayable_justification` (or declare `evidence_class`). Already-persisted
-legacy evidence stays readable without losing prior fields. Legacy manifest
-strings/free-form objects are explicitly unverified and cannot close the
-status, whole-spec, test-card or sprint gate until a Community runtime adapter
-produces a complete Evidence V2 attestation. Non-manifest evidence classes keep
-their documented structural policy.
+**Writes and reads:** both enforce the current evidence contract. Without
+`evidence_class`, a direct test pointer requires `test_file_path` +
+`test_function`; a run log requires `expected_output_snapshot` +
+`non_replayable_justification` as well as its timestamp and output/run ID.
+MCP replay evidence requires the complete current attestation and authenticated
+receipt. Non-manifest evidence classes keep their documented structural policy;
+Delivery credit additionally requires the authenticated proof described above.
 
 Validated/done specs keep their semantic content lock. The only post-lock
 status update allowed here is operational evidence for a scenario that is
@@ -321,11 +447,10 @@ Args:
     spec_id: Spec ID
     scenario_id: Test scenario ID (e.g. "ts_abc123")
     status: New status — one of: draft, ready, automated, passed, failed
-    evidence: Optional JSON string. Legacy keys: test_file_path, test_function,
+    evidence: Optional JSON string. Structural keys: test_file_path, test_function,
         last_run_at, test_run_id, output_snippet. Re-executable contract keys
         (spec 9e0bf979 / Evidence V2): evidence_class, replay_command,
         manifest_ref, execution_attestation, execution_receipt,
-        reader-only mcp_replay_manifest,
         manual_checklist_ref, expected_output_snapshot, replay_should_exist,
         non_replayable_justification. Empty string = no evidence.
 

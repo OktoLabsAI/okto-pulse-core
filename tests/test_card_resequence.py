@@ -13,6 +13,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 from sqlalchemy import select
 
 pytestmark = pytest.mark.asyncio
@@ -44,6 +45,14 @@ async def _seed_board(db_factory):
         await db.flush()
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=USER_ID, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
+                functional_requirements=[{
+                    "id": "fr-ordering", "text": "Ordering requirement",
+                    "linked_task_ids": [value for key, value in ids.items() if key not in {"board", "spec"}],
+                }],
                 id=spec_id,
                 board_id=board_id,
                 title="Resequence Spec",

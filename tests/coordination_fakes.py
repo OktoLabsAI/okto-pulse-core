@@ -318,18 +318,6 @@ class FakeWriteLockPort:
         self.released_async.clear()
 
 
-class FakeRuntimeSettingsProvider:
-    def __init__(self, payload: dict[str, int] | None = None) -> None:
-        self.payload = dict(payload or {})
-        self.read_scopes: list[str] = []
-        self.validated_values: list[dict[str, int]] = []
-
-    async def read_runtime_settings(self, scope: str = "global") -> dict[str, int]:
-        self.read_scopes.append(scope)
-        return dict(self.payload)
-
-    def validate_runtime_settings(self, values: dict[str, int]) -> None:
-        self.validated_values.append(dict(values))
 
 
 class FakeRebuildAuditArtifactStore(InMemoryRebuildAuditArtifactStore):

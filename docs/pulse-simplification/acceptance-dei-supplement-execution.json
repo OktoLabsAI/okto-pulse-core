@@ -1,0 +1,356 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "Additional reviewed DEI oracles",
+  "provenance": {
+    "file": "provenance-mixed-report-final.json",
+    "sha256": "833dc7d171fedc4535e0ce5f44b988861f9b374b4b2dd8ad62b3423be2b53eb0",
+    "identity": {
+      "checked_at": "2026-09-23T17:36:42.332739+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 829,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "c06157bb14aa5ae6aaf2d9bd7a757f899c609c24",
+          "dirty": true,
+          "dirty_entry_count": 8,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-mixed-report-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "cfd61da8aa0dde2737af3d6f9c2f20ae4bb12fa72582e11895417feca99b4956",
+            "size": 3731036
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 892,
+          "byte_identical": true,
+          "aggregate_sha256": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657",
+          "chain_hashes": {
+            "source": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657",
+            "wheel": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657",
+            "site_packages": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "e162d8460ad0140b40a6916c06d59a07caa7354def5fa3b9c510f984e6705df9",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 360,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "f8761bb711cc765265c2e118396bda8fca5ce80c",
+          "dirty": true,
+          "dirty_entry_count": 65,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-mixed-report-final\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "d9ffd80284d67e037430e945ce8962db878b7a5b65636655cd7535134a29e426",
+            "size": 4499802
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 444,
+          "byte_identical": true,
+          "aggregate_sha256": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7",
+          "chain_hashes": {
+            "source": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7",
+            "wheel": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7",
+            "site_packages": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "limits": [
+    "Origin observation is admitted fixture input; this campaign proves its reuse/refusal, not the initial challenge handshake.",
+    "Legacy transport tests explicitly mock authorization; no new authority claim.",
+    "No full-plan completion or benchmark claim."
+  ],
+  "runs": {
+    "acceptance-dei-extra-final": {
+      "file": "acceptance-dei-extra-final.xml",
+      "sha256": "85ce1483c166b36f5d7be69c6cfd8490fc9be99f285ddaa0a849a76cdccd31ee",
+      "suite": {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "4",
+        "time": "13.512",
+        "timestamp": "2026-09-23T15:08:41.017623-03:00",
+        "hostname": "Alienware_m15"
+      }
+    },
+    "acceptance-dei-supplement-r2": {
+      "file": "acceptance-dei-supplement-r2.xml",
+      "sha256": "c280bcec5c6d185cd273ef2785605cfd7198f8fe936c60247341b6a47597195b",
+      "suite": {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "29",
+        "time": "48.674",
+        "timestamp": "2026-09-23T15:07:41.707038-03:00",
+        "hostname": "Alienware_m15"
+      }
+    },
+    "acceptance-dei-core": {
+      "file": "acceptance-dei-core.xml",
+      "sha256": "eef68c28ba23e1e5a5bab8b2ccf40fb86657bb5b646a75ef0e70548e6f40f961",
+      "suite": {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "218",
+        "time": "15.041",
+        "timestamp": "2026-09-23T14:53:21.336397-03:00",
+        "hostname": "Alienware_m15"
+      }
+    }
+  },
+  "criteria": {
+    "DEI:DEI-T12": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Revogação persistida de receipt de origem recusa item implementation após progress válido; rollback integral sem receipts, ledger ou eventos novos. Revogação e receipt históricos permanecem.",
+      "remaining": null,
+      "evidence": [
+        {
+          "run": "acceptance-dei-extra-final",
+          "repository": "community",
+          "file": "tests/test_delivery_origin_acceptance.py",
+          "source_sha256": "3b30ab43a73990a7d734c1a690bd6f0356db76b44b9e32239930ca74e0a05d6f",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_origin_acceptance",
+              "name": "test_origin_refusal_rolls_back_preceding_progress_in_mixed_batch[revoked_receipt]",
+              "time": "1.552"
+            },
+            {
+              "classname": "tests.test_delivery_origin_acceptance",
+              "name": "test_origin_refusal_rolls_back_preceding_progress_in_mixed_batch[changed_selector]",
+              "time": "1.324"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T17": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Mudança da revisão do Target invalida selector scope da observação anterior no writer real; o lote inteiro reverte.",
+      "remaining": null,
+      "evidence": [
+        {
+          "run": "acceptance-dei-extra-final",
+          "repository": "community",
+          "file": "tests/test_delivery_origin_acceptance.py",
+          "source_sha256": "3b30ab43a73990a7d734c1a690bd6f0356db76b44b9e32239930ca74e0a05d6f",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_origin_acceptance",
+              "name": "test_origin_refusal_rolls_back_preceding_progress_in_mixed_batch[revoked_receipt]",
+              "time": "1.552"
+            },
+            {
+              "classname": "tests.test_delivery_origin_acceptance",
+              "name": "test_origin_refusal_rolls_back_preceding_progress_in_mixed_batch[changed_selector]",
+              "time": "1.324"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T18": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Dois Targets cobertos pelo mesmo snapshot admitido usam um único receipt/request. Dois execution receipts e três bindings persistem; retry não cria challenge ou recibo de investigação.",
+      "remaining": null,
+      "evidence": [
+        {
+          "run": "acceptance-dei-extra-final",
+          "repository": "community",
+          "file": "tests/test_delivery_origin_acceptance.py",
+          "source_sha256": "3b30ab43a73990a7d734c1a690bd6f0356db76b44b9e32239930ca74e0a05d6f",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_origin_acceptance",
+              "name": "test_two_targets_reuse_one_admitted_snapshot_without_new_challenge[composed0]",
+              "time": "1.430"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T48": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Create→delete e rename a→b→c persistidos mantêm registros originais. Mesmo path nos repos core/community não colapsa; impacto líquido permanece claim sem crédito Delivery.",
+      "remaining": null,
+      "evidence": [
+        {
+          "run": "acceptance-dei-extra-final",
+          "repository": "community",
+          "file": "tests/test_delivery_net_impact_acceptance.py",
+          "source_sha256": "9e905dc9c10c91e55a21a0c2591f7fc3799d452502ae87ce09a27f09443bb6d5",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_net_impact_acceptance",
+              "name": "test_persisted_rename_chain_does_not_merge_identical_paths_in_two_repos",
+              "time": "1.342"
+            }
+          ]
+        },
+        {
+          "run": "acceptance-dei-supplement-r2",
+          "repository": "community",
+          "file": "tests/test_delivery_net_impact.py",
+          "source_sha256": "c131af4a3b15efba017f27d927ed83f8fab03247d1deed40290a7e3a2b8bee04",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_net_impact",
+              "name": "test_persisted_net_claims_preserve_history_without_delivery_credit",
+              "time": "1.325"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T53": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "REST legado recusa implementation/test antes de commit; use case e adapter também recusam contratos construídos fora do schema. Histórico legado permanece visível e revogável.",
+      "remaining": null,
+      "evidence": [
+        {
+          "run": "acceptance-dei-supplement-r2",
+          "repository": "community",
+          "file": "tests/test_delivery_evidence_integration.py",
+          "source_sha256": "c42f19d5a3a6972f00b89e37907b8ef6bc21f842f4139c3724067779ecb31219",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_evidence_integration",
+              "name": "test_legacy_spec_proof_writer_rejects_invisible_bindings[implementation]",
+              "time": "1.646"
+            },
+            {
+              "classname": "tests.test_delivery_evidence_integration",
+              "name": "test_legacy_spec_proof_writer_rejects_invisible_bindings[test]",
+              "time": "1.626"
+            }
+          ]
+        },
+        {
+          "run": "acceptance-dei-supplement-r2",
+          "repository": "community",
+          "file": "tests/test_delivery_evidence_integration.py",
+          "source_sha256": "c42f19d5a3a6972f00b89e37907b8ef6bc21f842f4139c3724067779ecb31219",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_evidence_integration",
+              "name": "test_direct_legacy_writer_cannot_bypass_closed_transport[implementation]",
+              "time": "1.357"
+            },
+            {
+              "classname": "tests.test_delivery_evidence_integration",
+              "name": "test_direct_legacy_writer_cannot_bypass_closed_transport[test]",
+              "time": "1.261"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T56": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Contrato legado sem declaração mantém ausência explícita e veredito anterior; schema não injeta complete nem altera formato do digest. Novo histórico inválido falha fechado.",
+      "remaining": null,
+      "evidence": [
+        {
+          "run": "acceptance-dei-core",
+          "repository": "core",
+          "file": "tests/test_delivery_contributions.py",
+          "source_sha256": "7bf417606cb94467e4ec6409dc5f796709550f18d557ec84c88e397ccb828551",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_contributions",
+              "name": "test_legacy_remains_absent_not_fabricated_complete",
+              "time": "0.015"
+            }
+          ]
+        },
+        {
+          "run": "acceptance-dei-core",
+          "repository": "core",
+          "file": "tests/test_delivery_contributions.py",
+          "source_sha256": "7bf417606cb94467e4ec6409dc5f796709550f18d557ec84c88e397ccb828551",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_contributions",
+              "name": "test_corrupt_new_history_never_falls_back_to_legacy[change0]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_contributions",
+              "name": "test_corrupt_new_history_never_falls_back_to_legacy[change1]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_contributions",
+              "name": "test_corrupt_new_history_never_falls_back_to_legacy[change2]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_delivery_contributions",
+              "name": "test_corrupt_new_history_never_falls_back_to_legacy[change3]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_contributions",
+              "name": "test_corrupt_new_history_never_falls_back_to_legacy[change4]",
+              "time": "0.016"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T58": {
+      "status": "partial",
+      "covered": "Waiver humano por fase e revogação preservam Done e histórico; skip muda postura do gate sem fabricar allowed no rollup.",
+      "remaining": "Fixture aplica policy por SQL e chama store/gate; falta matriz completa de writers autorizados/advisory e grants distintos em transporte real.",
+      "evidence": [
+        {
+          "run": "acceptance-dei-supplement-r2",
+          "repository": "community",
+          "file": "tests/test_delivery_evidence_integration.py",
+          "source_sha256": "c42f19d5a3a6972f00b89e37907b8ef6bc21f842f4139c3724067779ecb31219",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_evidence_integration",
+              "name": "test_waiver_is_human_scoped_phase_specific_revocable_and_preserves_done",
+              "time": "1.561"
+            }
+          ]
+        },
+        {
+          "run": "acceptance-dei-supplement-r2",
+          "repository": "community",
+          "file": "tests/test_delivery_evidence_integration.py",
+          "source_sha256": "c42f19d5a3a6972f00b89e37907b8ef6bc21f842f4139c3724067779ecb31219",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_evidence_integration",
+              "name": "test_spec_level_skip_overrides_the_spec_done_gate",
+              "time": "1.328"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

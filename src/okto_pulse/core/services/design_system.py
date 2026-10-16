@@ -126,7 +126,7 @@ def serialize_design_system_profile(
     if normalized not in _VALID_GET_PROFILES:
         raise DesignSystemError(
             "design_system_invalid_profile",
-            "profile must be one of: summary, detail, full, legacy.",
+            "profile must be one of: summary, detail, full.",
             422,
             {"profile": profile},
         )

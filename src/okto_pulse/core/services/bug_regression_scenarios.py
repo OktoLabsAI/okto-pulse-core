@@ -124,6 +124,40 @@ class BugRegressionGateDecision(str, Enum):
 
 
 @dataclass(frozen=True)
+class CoverageBasis:
+    """Native confirmation's exact semantic and operational evidence revision."""
+
+    scenario_spec_id: str
+    spec_edition: int
+    scenario_epoch: int
+    semantic_sha256: str
+    evidence_sha256: str
+    amendment_sha256: str
+    evidence_ref: str
+
+    @classmethod
+    def from_metadata(cls, raw: object) -> "CoverageBasis | None":
+        if not isinstance(raw, dict) or set(raw) != set(cls.__dataclass_fields__):
+            return None
+        if any(type(raw[key]) is not int or raw[key] < 1
+               for key in ("spec_edition", "scenario_epoch")):
+            return None
+        if any(type(raw[key]) is not str or not raw[key]
+               for key in ("scenario_spec_id", "evidence_ref")):
+            return None
+        for key in ("semantic_sha256", "evidence_sha256", "amendment_sha256"):
+            digest = raw[key]
+            if key == "semantic_sha256":
+                if type(digest) is not str or not digest.startswith("sha256:"):
+                    return None
+                digest = digest[7:]
+            if type(digest) is not str or len(digest) != 64 or any(
+                    char not in "0123456789abcdef" for char in digest):
+                return None
+        return cls(**raw)
+
+
+@dataclass(frozen=True)
 class CoverageConfirmationFact:
     """Pure projection of the persisted validator coverage attestation (G2).
 
@@ -137,6 +171,7 @@ class CoverageConfirmationFact:
     regression_scenario_id: str
     evidence_ref: str
     confirmed_at: str = ""
+    basis: CoverageBasis | None = None
 
     @classmethod
     def from_metadata(cls, raw: object) -> "CoverageConfirmationFact | None":
@@ -149,6 +184,7 @@ class CoverageConfirmationFact:
             regression_scenario_id=str(raw.get("regression_scenario_id") or ""),
             evidence_ref=str(raw.get("evidence_ref") or ""),
             confirmed_at=str(raw.get("confirmed_at") or ""),
+            basis=CoverageBasis.from_metadata(raw.get("basis")),
         )
 
 
@@ -172,6 +208,7 @@ class AmendmentLineageFact:
     regression_test_task_ids: tuple[str, ...] = ()
     automated_regression_refs: tuple[str, ...] = ()
     coverage_confirmation: CoverageConfirmationFact | None = None
+    current_coverage_basis: CoverageBasis | None = None
 
     @classmethod
     def from_row(cls, amendment: object) -> "AmendmentLineageFact":
@@ -334,6 +371,9 @@ def _coverage_confirmed_for(fact: AmendmentLineageFact, scenario_id: str) -> boo
     if cc is None:
         return False
     if not cc.validator_id or not cc.evidence_ref:
+        return False
+    if (cc.basis is None or cc.basis != fact.current_coverage_basis
+            or cc.evidence_ref != cc.basis.evidence_ref):
         return False
     if cc.amendment_revision_id != fact.amendment_revision_id:
         return False

@@ -1,0 +1,31 @@
+{
+  "scope": "Community14 current logical transfer corpus and recovery consumers",
+  "pair": "dist-native-main18",
+  "run": "community14-native-transfer1",
+  "handle": 79646,
+  "exit_code": 1,
+  "xml_sha256": "698baa81c3188c571223e13e680b2faa64764d7b2593d314ed9d01d670aad79a",
+  "passed": 79,
+  "failed": 18,
+  "qualified_modules": [
+    "test_logical_transfer_factories",
+    "test_logical_transfer_physical_matrix",
+    "test_joint_recovery_retained_generations",
+    "test_joint_recovery_snapshot",
+    "test_joint_recovery_window"
+  ],
+  "unqualified_modules": [
+    "test_projection_materialized_parity"
+  ],
+  "current_corpus": {
+    "nodes": 24,
+    "relations": 86,
+    "properties": 1690,
+    "vectors": 11,
+    "relation_layouts": 85
+  },
+  "limitations": [
+    "Projection fixtures lack native architecture adoption; followup active",
+    "Installed E2E and C4 not complete"
+  ]
+}

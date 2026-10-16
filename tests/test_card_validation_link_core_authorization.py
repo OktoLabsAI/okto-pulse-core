@@ -319,7 +319,7 @@ async def test_validation_permissions_do_not_fall_back_to_cards_update(
         ACTOR_ID,
         "mcp",
         board_id=BOARD_ID,
-        permissions=["cards:update"],
+        permissions=["card.entity.link_tests"],
     )
 
     with pytest.raises(PermissionDeniedError):
@@ -355,7 +355,7 @@ async def test_submit_permission_does_not_disclose_result_without_validation_rea
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("case", "linked"), (("link", False), ("unlink", True)))
-async def test_bug_test_links_keep_cards_update_legacy_compatibility(
+async def test_bug_test_links_require_exact_operation(
     case: str,
     linked: bool,
 ) -> None:
@@ -364,7 +364,7 @@ async def test_bug_test_links_keep_cards_update_legacy_compatibility(
         ACTOR_ID,
         "mcp",
         board_id=BOARD_ID,
-        permissions=["cards:update"],
+        permissions=["card.entity.link_tests"],
     )
 
     await _execute(case, actor=actor, uow=uow)

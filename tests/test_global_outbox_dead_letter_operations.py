@@ -111,17 +111,17 @@ class MemoryGlobalOutboxStore:
     ("last_error", "expected"),
     [
         (
-            "graph_memory_pressure:LadybugDB open is cooling down "
+            "graph_memory_pressure:graph open is cooling down "
             "after native allocation pressure",
             "global_open_failure",
         ),
         (
-            "graph_memory_pressure:LadybugDB allocation failed while opening "
+            "graph_memory_pressure:graph allocation failed while opening "
             "global/discovery.lbug",
             "global_open_failure",
         ),
         (
-            "LadybugDB open is cooling down after native allocation pressure",
+            "graph open is cooling down after native allocation pressure",
             "global_open_failure",
         ),
         ("validation_failed: invalid digest payload", "unclassified_failure"),

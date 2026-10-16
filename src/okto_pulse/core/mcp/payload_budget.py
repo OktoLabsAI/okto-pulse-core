@@ -16,7 +16,7 @@ Every violation reports ``path``, ``actual_chars``, ``budget_chars``, ``reason``
 ``budget_profile`` and ``unit="chars"`` — never ``actual_tokens``/``max_tokens``.
 
 The ``MCPProjectionTelemetrySink`` records SAFE aggregate telemetry only —
-profile, truncation, omitted/deduped counts, payload_bytes, legacy/full usage,
+profile, truncation, omitted/deduped counts, payload_bytes, full usage,
 budget status — and rejects any label carrying a payload body, board content,
 query text, email, PII fragment, or raw JSON/XML (BR br_1cb47bea, TR tr_7711d521,
 or_7f86b398). It fails closed.
@@ -48,7 +48,7 @@ BUDGET_UNIT = "chars"
 METRIC_BUDGET_VIOLATION = "mcp_budget_violation_total"
 METRIC_PAYLOAD_BUDGET_VIOLATION = "mcp_payload_budget_violation_total"
 METRIC_PROJECTION_RESPONSE = "mcp_projection_response_total"
-METRIC_PROJECTION_LEGACY_FULL = "mcp_projection_legacy_full_usage_total"
+METRIC_PROJECTION_FULL = "mcp_projection_full_profile_usage_total"
 METRIC_UNSAFE_LABEL_REJECTED = "mcp_projection_unsafe_label_rejected_total"
 # Context-projection observability (R2.2, fr_610801cc / or_*): a usage counter and
 # a payload-bytes accumulator for the high-frequency get_*_context responses. They
@@ -79,7 +79,7 @@ SAFE_PROJECTION_LABEL_KEYS = frozenset(
         "omitted_count",
         "deduped_count",
         "payload_bytes",
-        "legacy_full",
+        "full_profile",
         "tool_family",
     }
 )
@@ -425,7 +425,7 @@ def projection_labels_from_envelope(
         "omitted_count": int(envelope.get("omitted_count", 0) or 0),
         "deduped_count": int(envelope.get("deduped_count", 0) or 0),
         "payload_bytes": int(envelope.get("payload_bytes", 0) or 0),
-        "legacy_full": profile in ("full", "legacy"),
+        "full_profile": profile == "full",
     }
     if tool_name is not None:
         labels["tool_name"] = str(tool_name)
@@ -478,11 +478,10 @@ class MCPProjectionTelemetrySink:
             )
         self.events.append({"type": "projection", **dict(labels)})
         self._inc(METRIC_PROJECTION_RESPONSE)
-        if bool(labels.get("legacy_full")) or str(labels.get("profile")) in (
+        if bool(labels.get("full_profile")) or str(labels.get("profile")) in (
             "full",
-            "legacy",
         ):
-            self._inc(METRIC_PROJECTION_LEGACY_FULL)
+            self._inc(METRIC_PROJECTION_FULL)
         return TelemetryResult(True)
 
     def record_projection_envelope(

@@ -1,0 +1,217 @@
+{
+  "scope": "F4 Global Health existing participant observation and native query deadline",
+  "base_heads": {
+    "core": "eee0db3d",
+    "community": "c57b0ace"
+  },
+  "provenance": {
+    "checked_at": "2026-09-24T05:09:06.351000+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 824,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "eee0db3da57cc672dd36e1d9fd8c8a820d4f6356",
+        "dirty": true,
+        "dirty_entry_count": 2,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-health-global-observation\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "99a19d17252153deaf5d9498eb0fb32b0bae2c8be879be669ce870049923cda8",
+          "size": 3683831
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 887,
+        "byte_identical": true,
+        "aggregate_sha256": "be0216c3a62c3ec6259e2d41c4262117560cdddfebfd09850069c4acc64ba5a2",
+        "chain_hashes": {
+          "source": "be0216c3a62c3ec6259e2d41c4262117560cdddfebfd09850069c4acc64ba5a2",
+          "wheel": "be0216c3a62c3ec6259e2d41c4262117560cdddfebfd09850069c4acc64ba5a2",
+          "site_packages": "be0216c3a62c3ec6259e2d41c4262117560cdddfebfd09850069c4acc64ba5a2"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "55ed4cde6fc6f318c5b524ffcd7eaf65b1d9ee9bcee2e853865675f7bdd2f78a",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 359,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "c57b0aceb4fbc6a5900065f9a195114b7eb0eb11",
+        "dirty": true,
+        "dirty_entry_count": 9,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-health-global-observation\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "59ea08ea38ee5daf4a073f424d90ead07027212e817897184d3464a878c4c42a",
+          "size": 4477564
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 444,
+        "byte_identical": true,
+        "aggregate_sha256": "9d0d7666b627a0d5f5a33a09391d089dd75d26622de4602432d33b17386aa3d1",
+        "chain_hashes": {
+          "source": "9d0d7666b627a0d5f5a33a09391d089dd75d26622de4602432d33b17386aa3d1",
+          "wheel": "9d0d7666b627a0d5f5a33a09391d089dd75d26622de4602432d33b17386aa3d1",
+          "site_packages": "9d0d7666b627a0d5f5a33a09391d089dd75d26622de4602432d33b17386aa3d1"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "reports": [
+    {
+      "file": "health-global-observation-before.xml",
+      "sha256": "16891c6b480155827c25da395a761cdb76665d9b39f6c6e2bc1e1c82180df1de",
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "health-root-composition.xml",
+      "sha256": "bd891361a7449acb46fca57d2b38828e619d71187bc441d69259e5559534e706",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "health-global-observation-core.xml",
+      "sha256": "a24f6d777dede10c78adb43961879051d5ee81bc5af11ca147d799d442768328",
+      "tests": 108,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "health-global-observation-community.xml",
+      "sha256": "3b2823340a102d671914f394fa3fbf67b44431d63262ce12369a13384d4db8bd",
+      "tests": 119,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "health-global-observation-frontend.xml",
+      "sha256": "2169e54e62200a3c9cf0589c527601afca1ade6c1c5e6213346c25346b8a549e",
+      "tests": 55,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "closure": {
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "documentation_findings": [],
+    "evidence": {
+      "af35_s5_ok": true,
+      "community_to_core_import_rows": 1195,
+      "conformance_matrix_ok": true,
+      "core_import_rows": 7438,
+      "dependency_rows": 25,
+      "distribution_report_ok": true,
+      "rebuild_storage_violation_count": 0,
+      "singleton_gate_status": "passed"
+    },
+    "findings": [],
+    "ok": true,
+    "version": "F16.2",
+    "ownership_rows": 8658,
+    "source_report": {
+      "file": "closure-health-global-observation.json",
+      "sha256": "e621275b96bab02524f5b5cd6069b959fbea34fd043f3e5d9bed689548e027b0"
+    }
+  },
+  "limitations": [
+    "Native tests use disposable real Grafx storage and a controlled clock; no wall-time benchmark is claimed.",
+    "The before report demonstrates a writable participant open, not an observed native checkpoint.",
+    "Cold or terminal Global read participants are unavailable in Health; foreground recovery remains unchanged.",
+    "Global Health currently selects an existing reader lane; it does not fall back to another lane or the writer pool if that selected participant is cold.",
+    "Parity payload volume, filesystem enumeration and blocked OS calls still need qualification.",
+    "BASE:T35/T36 and F4 remain open; full paired suites remain pending."
+  ]
+}

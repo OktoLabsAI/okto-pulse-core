@@ -3,9 +3,9 @@
 Spec #03, card b4f07ad3, tr_b8b180cb / tr_8ef33b21 / contract api_18f9c6e6.
 
 Replays a :class:`RuntimeComposition`'s lifecycle (startup + shutdown) and reports
-the observed events against the closed Community golden baseline. The 15 required
+the observed events against the closed Community golden baseline. The 13 required
 events MUST all be observed; the ONLY accepted ``_default_lifespan``-only
-exclusions are exactly ``kg_migration_sweep``, ``shutdown_kg_events_hub`` and
+exclusions are exactly ``shutdown_kg_events_hub`` and
 ``close_all_connections``. Any other delta is ``unexpected_lifecycle_delta`` (or
 ``required_lifecycle_event_missing`` for an absent required event).
 
@@ -28,8 +28,6 @@ from okto_pulse.core.composition import (
 REQUIRED_LIFECYCLE_EVENTS: tuple[str, ...] = (
     "init_db",
     "seed_community_defaults",
-    "backfill_qa_answered_at",
-    "_afg_backfill_task",
     "_preload_embedding_model",
     "event_dispatcher",
     "consolidation_worker",
@@ -45,7 +43,6 @@ REQUIRED_LIFECYCLE_EVENTS: tuple[str, ...] = (
 
 #: The ONLY accepted ``_default_lifespan``-only exclusions (closed allowlist).
 DEFAULT_ONLY_EXCLUSIONS: tuple[str, ...] = (
-    "kg_migration_sweep",
     "shutdown_kg_events_hub",
     "close_all_connections",
 )

@@ -1,15 +1,7 @@
 """Card Knowledge MCP handlers.
 
-Exercises the 5 new MCP handlers via the FastMCP tool registry:
-- okto_pulse_list_knowledge (entity_type="card")
-- okto_pulse_get_card_knowledge
-- okto_pulse_add_card_knowledge
-- okto_pulse_update_card_knowledge
-- okto_pulse_delete_card_knowledge
-
-Card Knowledge is now a read-only governed snapshot: direct add/update/delete
-return a deterministic `card_resource_read_only` error while list/get remain
-available for copied card context.
+Exercises native list/get handlers and verifies retired direct writers are absent.
+Card Knowledge remains a read-only governed snapshot.
 
 Each handler is fetched through `mcp.get_tool(name).fn` to bypass the
 FastMCP / xml_safety decorator stack and invoke the underlying coroutine
@@ -18,6 +10,8 @@ factory exposed by conftest.
 """
 
 from __future__ import annotations
+
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 
 from mcp_runtime_testing import register_mcp_test_runtime
 
@@ -61,6 +55,10 @@ async def _seed_card():
             await db.flush()
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=BOARD_ID, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=USER_ID, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 id=spec_id,
                 board_id=BOARD_ID,
                 title="Card KB Spec",
@@ -161,33 +159,11 @@ async def test_get_returns_full_content(_seed_card):
 
 
 @pytest.mark.asyncio
-async def test_direct_add_update_delete_are_read_only(_seed_card):
+async def test_direct_add_update_delete_tools_are_absent(_seed_card):
     spec_id, card_id = _seed_card
-    add = await _call(
-        "okto_pulse_add_card_knowledge",
-        board_id=BOARD_ID,
-        card_id=card_id,
-        title="Direct",
-        content="blocked",
-    )
-    assert add.get("error") == "card_resource_read_only"
-
-    upd = await _call(
-        "okto_pulse_update_card_knowledge",
-        board_id=BOARD_ID,
-        card_id=card_id,
-        knowledge_id="cardkb_existing",
-        title="renamed",
-    )
-    assert upd.get("error") == "card_resource_read_only"
-
-    rem = await _call(
-        "okto_pulse_delete_card_knowledge",
-        board_id=BOARD_ID,
-        card_id=card_id,
-        knowledge_id="cardkb_existing",
-    )
-    assert rem.get("error") == "card_resource_read_only"
+    tools = await mcp_server.mcp.get_tools()
+    for action in ("add", "update", "delete"):
+        assert f"okto_pulse_{action}_card_knowledge" not in tools
 
     listed = await _call(
         "okto_pulse_list_knowledge",

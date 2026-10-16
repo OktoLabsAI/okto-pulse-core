@@ -2,8 +2,8 @@
 assertiveness-gate-eligible families: spec_entity_remove and qa_ask).
 
 Covers spec ``MCP Tool Family Consolidation and Alias Compatibility``:
-- TC-R4.1: registry eligible/excluded families + consolidated-vs-legacy parity.
-- TC-R4.2: legacy alias delegation + short-alias collision checks.
+- TC-R4.1: current registry families and per-target behavior.
+- TC-R4.2 superseded: removed aliases cannot dispatch.
 - TC-R4.3: unsupported target_type structured errors + safe alias telemetry.
 
 Owner gate honored: ONLY the two homogeneous-signature families are consolidated;
@@ -11,6 +11,8 @@ the six heterogeneous families are kept separate with a rejected_reason.
 """
 
 from __future__ import annotations
+
+from okto_pulse.core.domain.permissions import PermissionSet
 
 from mcp_runtime_testing import register_mcp_test_runtime
 
@@ -45,8 +47,6 @@ from sqlalchemy_test_models import (
     Spec,
     SpecQAItem,
     SpecStatus,
-    Sprint,
-    SprintStatus,
 )
 
 USER_ID = "r4-agent"
@@ -64,7 +64,11 @@ def _stub_ctx(board_id: str, permissions=None):
             "agent_id": USER_ID,
             "agent_name": USER_ID,
             "board_id": board_id,
-            "permissions": permissions or ["board:read", "specs:update", "qa:create"],
+            "permissions": permissions if permissions is not None else PermissionSet({
+                "board": {"read": True}, "card": {"qa": {"ask": True}},
+                "ideation": {"qa": {"ask": True}}, "refinement": {"qa": {"ask": True}},
+                "spec": {"qa": {"ask": True}},
+            }),
         },
     )()
 
@@ -86,7 +90,7 @@ def test_registry_lists_exactly_the_two_eligible_families():
     for f in REGISTRY.eligible():
         assert f.mode is ConsolidationMode.DEDICATED_ROUTING  # never a flat payload
         assert f.consolidated_tool and f.consolidated_tool.startswith("okto_pulse_")
-        assert f.legacy_aliases and f.routing_notes
+        assert not f.dedicated_tools and f.routing_notes
 
 
 def test_registry_excludes_six_families_each_with_a_reason():
@@ -121,22 +125,29 @@ def test_validate_target_type_structured_and_excluded(ac_c0c8f0f3=None):
     assert excl and "not consolidated" in excl
 
 
-def test_short_alias_collision_detection(tr_524ea8d3=None):
-    # No collision when the short names are not among existing tool names.
-    assert REGISTRY.short_alias_collisions(frozenset({"okto_pulse_get_card"})) == ()
-    # Collision flagged when a short alias already exists.
-    hit = REGISTRY.short_alias_collisions(frozenset({"ask", "remove_spec_entity"}))
-    assert set(hit) == {"ask", "remove_spec_entity"}
-
-
-def test_resolve_alias_maps_legacy_consolidated_short():
+def test_registry_resolves_only_current_tools():
     reg = ToolFamilyRegistry()
-    fam, kind = reg.resolve_alias("okto_pulse_remove_business_rule")
-    assert fam.family_id == "spec_entity_remove" and kind.value == "legacy"
-    fam2, kind2 = reg.resolve_alias("okto_pulse_remove_spec_entity")
-    assert fam2.family_id == "spec_entity_remove" and kind2.value == "consolidated"
-    fam3, kind3 = reg.resolve_alias("ask")
-    assert fam3.family_id == "qa_ask" and kind3.value == "short"
+    assert reg.resolve_tool("okto_pulse_remove_business_rule") is None
+    assert reg.resolve_tool("ask") is None
+    family, kind = reg.resolve_tool("okto_pulse_remove_spec_entity")
+    assert family.family_id == "spec_entity_remove"
+    assert kind.value == "consolidated"
+    family, kind = reg.resolve_tool("okto_pulse_add_business_rule")
+    assert kind.value == "dedicated"
+
+
+@pytest.mark.asyncio
+async def test_removed_family_aliases_have_no_handler_or_policy(monkeypatch):
+    from okto_pulse.core.domain.mcp_permission_registry import MCP_TOOL_PERMISSION_POLICIES
+    def forbidden(*args, **kwargs):
+        pytest.fail("removed alias reached runtime")
+    monkeypatch.setattr(mcp_server, "_get_agent_ctx", forbidden)
+    for name in ('okto_pulse_ask_question', 'okto_pulse_ask_ideation_question', 'okto_pulse_ask_refinement_question', 'okto_pulse_ask_spec_question', 'okto_pulse_remove_business_rule', 'okto_pulse_remove_api_contract', 'okto_pulse_remove_decision'):
+        assert not hasattr(mcp_server, name)
+        with pytest.raises(KeyError):
+            await mcp_server.mcp.get_tool(name)
+        assert name not in {policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES}
+        assert REGISTRY.resolve_tool(name) is None
 
 
 # ===========================================================================
@@ -162,7 +173,7 @@ def test_alias_usage_telemetry_records_safe_labels(caplog):
 def test_alias_usage_telemetry_fails_closed_on_unsafe_value():
     # A body-length value (e.g. the question text) is rejected fail-closed.
     rejected = emit_alias_usage(
-        family_id="qa_ask", alias_kind="legacy", tool_name="okto_pulse_ask_question",
+        family_id="qa_ask", alias_kind="consolidated", tool_name="okto_pulse_ask",
         operation="ask", target_type="x" * 200, outcome="ok",
     )
     assert rejected == {}
@@ -184,7 +195,7 @@ async def _seed_spec(db_factory, *, board_id, spec_id, **spec_kwargs):
 
 
 @pytest.mark.asyncio
-async def test_remove_legacy_and_consolidated_parity():
+async def test_canonical_removal_preserves_hard_and_soft_delete():
     db_factory = get_session_factory()
     board_id, spec_id = _id("r4-board"), _id("r4-spec")
     await _seed_spec(
@@ -201,20 +212,14 @@ async def test_remove_legacy_and_consolidated_parity():
 
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))), \
          patch.object(mcp_server, "check_permission", return_value=None):
-        legacy_br = await _call("okto_pulse_remove_business_rule", board_id=board_id, spec_id=spec_id, rule_id="br_legacy")
         consol_br = await _call("okto_pulse_remove_spec_entity", board_id=board_id, spec_id=spec_id, target_type="business_rule", entity_id="br_consol")
-        legacy_dec = await _call("okto_pulse_remove_decision", board_id=board_id, spec_id=spec_id, decision_id="dec_legacy")
         consol_dec = await _call("okto_pulse_remove_spec_entity", board_id=board_id, spec_id=spec_id, target_type="decision", entity_id="dec_consol")
 
     # business_rule hard-remove parity: identical key shape.
-    assert legacy_br["success"] is True and legacy_br["removed"] == "br_legacy"
     assert consol_br["success"] is True and consol_br["removed"] == "br_consol"
-    assert set(legacy_br) == set(consol_br)
 
     # decision SOFT-delete parity: both revoke (status=revoked), same shape.
-    assert legacy_dec["revoked"] == "dec_legacy" and legacy_dec["decision"]["status"] == "revoked"
     assert consol_dec["revoked"] == "dec_consol" and consol_dec["decision"]["status"] == "revoked"
-    assert set(legacy_dec) == set(consol_dec)
 
 
 @pytest.mark.asyncio
@@ -237,12 +242,12 @@ async def test_remove_spec_entity_unsupported_target_type_no_mutation():
 
 
 # ===========================================================================
-# Parity — consolidated vs legacy ask + sprint asymmetry (TC-R4.1/R4.2)
+# Parity — consolidated vs legacy ask (TC-R4.1/R4.2)
 # ===========================================================================
 
 
 @pytest.mark.asyncio
-async def test_ask_legacy_and_consolidated_parity_and_sprint_asymmetry():
+async def test_canonical_ask_creates_scoped_questions_and_rejects_unknown_target():
     db_factory = get_session_factory()
     board_id, spec_id, card_id = _id("r4q-board"), _id("r4q-spec"), _id("r4q-card")
     async with db_factory() as db:
@@ -254,59 +259,45 @@ async def test_ask_legacy_and_consolidated_parity_and_sprint_asymmetry():
 
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))), \
          patch.object(mcp_server, "check_permission", return_value=None):
-        legacy = await _call("okto_pulse_ask_question", board_id=board_id, card_id=card_id, question="Q legacy")
         consol = await _call("okto_pulse_ask", board_id=board_id, target_type="card", parent_id=card_id, question="Q consolidated")
         spec_consol = await _call("okto_pulse_ask", board_id=board_id, target_type="spec", parent_id=spec_id, question="Q spec")
         bad = await _call("okto_pulse_ask", board_id=board_id, target_type="bogus", parent_id=card_id, question="Q")
 
     # card ask parity: identical key shape, both create a qa.
-    assert legacy["success"] is True and "qa" in legacy
-    assert consol["success"] is True and consol["qa"]["question"] == "Q consolidated"
-    assert set(legacy) == set(consol)
+    assert consol.get("success") is True, consol
+    assert consol["qa"]["question"] == "Q consolidated"
     assert spec_consol["success"] is True
     # unsupported target_type → structured error, no qa.
     assert bad["error"] == "unsupported_target_type"
-    assert "sprint" in bad["allowed"]
+    assert bad["allowed"] == ["card", "ideation", "refinement", "spec"]
 
 
 @pytest.mark.asyncio
-async def test_ask_uses_target_specific_permission_for_card_and_sprint():
-    # Every target has a canonical QA leaf; the sprint service keeps its transport
-    # asymmetries but no longer bypasses authorization.
+async def test_ask_uses_target_specific_permission_for_card_and_spec():
+    # A Board read permission cannot authorize Q&A writes on either target.
     db_factory = get_session_factory()
-    board_id, card_id, spec_id, sprint_id = (
+    board_id, card_id, spec_id = (
         _id("r4s-board"),
         _id("r4s-card"),
         _id("r4s-spec"),
-        _id("r4s-sprint"),
     )
     async with db_factory() as db:
         db.add(Board(id=board_id, name="R4S", owner_id=USER_ID))
         db.add(Spec(id=spec_id, board_id=board_id, title="Spec", status=SpecStatus.IN_PROGRESS, created_by=USER_ID))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="Card",
                     status=CardStatus.IN_PROGRESS, card_type=CardType.NORMAL, created_by=USER_ID))
-        db.add(
-            Sprint(
-                id=sprint_id,
-                board_id=board_id,
-                spec_id=spec_id,
-                title="Sprint",
-                status=SprintStatus.ACTIVE,
-                created_by=USER_ID,
-            )
-        )
         await db.commit()
 
     with patch.object(
         mcp_server,
         "_get_agent_ctx",
-        AsyncMock(return_value=_stub_ctx(board_id, permissions=["board:read"])),
+        AsyncMock(return_value=_stub_ctx(board_id, permissions=PermissionSet({"board": {"read": True}, "card": {"qa": {"ask": False}}, "spec": {"qa": {"ask": False}}}))),
     ):
         card_res = await _call("okto_pulse_ask", board_id=board_id, target_type="card", parent_id=card_id, question="Q")
-        sprint_res = await _call("okto_pulse_ask", board_id=board_id, target_type="sprint", parent_id=sprint_id, question="Q")
+        spec_res = await _call("okto_pulse_ask", board_id=board_id, target_type="spec", parent_id=spec_id, question="Q")
 
     assert "card.qa.ask" in card_res["error"]
-    assert "sprint.qa.ask" in sprint_res["error"]
+    assert "spec.qa.ask" in spec_res["error"]
 
 
 @pytest.mark.asyncio
@@ -432,13 +423,13 @@ async def test_ask_non_card_parents_are_board_scoped_before_create_or_log():
             for entity_type, parent_id in local_ids.items()
         }
 
-    assert all(result.get("success") is True for result in same_board.values())
+    assert all(result.get("success") is True for result in same_board.values()), same_board
     after = await _counts()
     assert tuple(after[i] - before[i] for i in range(4)) == (1, 1, 1, 3)
 
 
 # ===========================================================================
-# Lazy migration docs — tools/list points to the canonical lazy documentation
+# Current tool docs — tools/list points to the canonical lazy documentation
 # instead of embedding migration prose (TC-R4.3, ac_ac75da3a / AC6)
 # ===========================================================================
 
@@ -447,7 +438,7 @@ async def test_ask_non_card_parents_are_board_scoped_before_create_or_log():
 async def test_consolidated_tool_descriptions_point_to_lazy_family_docs():
     # ac_ac75da3a (AC6): the consolidated tools' tools/list descriptions REFERENCE
     # canonical lazy documentation instead of embedding long migration prose. The
-    # detailed migration guidance must remain reachable (moved, NOT deleted) and
+    # current routing guidance must remain reachable and
     # stay out of the compact description.
     tools = await mcp_server.mcp.get_tools()
     load = mcp_server._load_resource_file
@@ -455,20 +446,20 @@ async def test_consolidated_tool_descriptions_point_to_lazy_family_docs():
     cases = [
         (
             "okto_pulse_remove_spec_entity",
-            "okto-pulse://reference/tool-families/spec_entity_remove",
+            "okto-pulse://reference/tool-docs/spec",
+            "reference/tool-docs/spec.md",
             "reference/tool-families/spec_entity_remove.md",
-            "reference/tool-families/spec_entity_remove.md",
-            # full-form legacy alias that lives in the doc, not the compact description
-            # (the description only abbreviates it to `/_api_contract`).
-            "okto_pulse_remove_api_contract",
+            # Full legacy aliases live in the family resource reached via the
+            # compact tool-docs landing page.
+            "target_type",
         ),
         (
             "okto_pulse_ask",
             "okto-pulse://reference/tool-docs/qa",
             "reference/tool-docs/qa.md",
             "reference/tool-families/qa_ask.md",
-            # the description abbreviates to `/_sprint_question`; full form is doc-only.
-            "okto_pulse_ask_sprint_question",
+            # Full aliases are doc-only.
+            "target_type",
         ),
     ]
 
@@ -484,14 +475,15 @@ async def test_consolidated_tool_descriptions_point_to_lazy_family_docs():
         # 3) the long migration detail is MOVED to the lazy resource, not deleted...
         landing_doc = load(landing_path)
         if detail_path != landing_path:
-            assert "okto-pulse://reference/tool-families/qa_ask" in landing_doc
+            detail_uri = "okto-pulse://" + detail_path.removesuffix(".md")
+            assert detail_uri in landing_doc
         doc = load(detail_path)
         assert doc and "R4 consolidation" in doc
-        for section in ("Legacy aliases", "Telemetry"):
+        for section in ("Consolidated tool", "Telemetry"):
             assert section in doc, f"{section} missing from {detail_path}"
         assert moved_detail in doc, f"{moved_detail} missing from {detail_path}"
         # 4) ...and is NOT re-embedded into the compact tools/list description.
-        assert moved_detail not in desc, (
+        assert "Legacy aliases" not in desc, (
             f"{tool_name} embeds migration detail '{moved_detail}' "
             f"instead of linking the lazy doc"
         )

@@ -1,0 +1,34 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "ARQVER:ADV-09",
+  "status": "verified",
+  "coverage": "A persisted BoardShare grants a second user viewer access. Actual REST GET succeeds and exposes the active IR; the same user cannot change its status to not_applicable or revoked through the structured writer. Write preflight returns the existing masked404 while subsequent GET still succeeds. The exact original IR/cause, structured Spec snapshot, classification receipts, Spec history and outbox counts remain unchanged.",
+  "executions": [
+    {
+      "terminal_session": 17079,
+      "exit_code": 0,
+      "passed": 2,
+      "seconds": 13.85,
+      "cases": [
+        "tests.test_verification_start_transition::test_read_only_user_cannot_dispense_active_ir_or_replace_its_cause[not_applicable]",
+        "tests.test_verification_start_transition::test_read_only_user_cannot_dispense_active_ir_or_replace_its_cause[revoked]"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-ir-authority2-community.xml",
+          "sha256": "6f9091e17d03cd695c7615fddb732f373eed6f78164d5f795592bb8f4e65604b"
+        },
+        {
+          "file": "learning-reconciliation-ir-authority2-community.log",
+          "sha256": "07413099ab6c406941b1d985e1d3d85976e4abbf67c4b051a4b5a48382e96f22"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "User identity extraction is supplied by the REST fixture. Board sharing/role, scoped reads, mutation preflight, structured writer path and SQL state are real. This tests an unauthorized viewer, not every granular permission combination or the MCP transport.",
+    "Initial requirement, cause and planning content are fixtures in Draft. No claim of an authorized waiver, migration, full delivery or an externally generated contract is made.",
+    "Probe87043 exit1 expected403. The existing write preflight deliberately masks resources unavailable for mutation as404 Spec not found. The positive before/after reads and unchanged state qualify the final refusal; no product behavior was changed.",
+    "No productive or UI changes. Source/site/wheels remain the byte-proven policy-race-fix-final pair, provenance-policy-race-final.json. Latest relevant F16 session90981 exit0 has eight ZERO budgets; frontend39859 passed8."
+  ]
+}

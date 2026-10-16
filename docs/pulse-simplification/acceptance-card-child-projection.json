@@ -1,0 +1,366 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "criteria": [
+    "KG:KG-04",
+    "KG:KG-05"
+  ],
+  "status": "verified",
+  "change": "Card-owned supports now project all authoritative child collections. Complete source validation, closed per-family ownership, exact source identities, typed Entity/Bug roots, old/new consumer invalidation, pending-endpoint removal and compensating before-images share the existing pipeline. GraphTransaction edge existence accepts explicit rule/layer/writer filters so a parallel human edge or earlier observed scenario rule cannot suppress the current fact.",
+  "coverage": "All nine child collections are assigned to normal/test/bug Cards through disposable SQL and projected by the ordinary worker onto full native Grafx schema. Exact typed support sets, removal, restoration and complete logical relationship multiset replay are asserted. Reciprocal scenario provenance replaces unilateral provenance with one fact. Closed native fixtures cover all eight added families for Entity/Bug, foreign owners, parallel human/unrelated writers, invalid logical sources, pending endpoints, repeated compensation and injected post-delete failure. A real structured Decision unlink retains the last consumer in durable outbox; every collection exercises scoped consumer invalidation.",
+  "executions": [
+    {
+      "terminal_session": 4586,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "123",
+          "time": "17.193",
+          "timestamp": "2026-10-01T01:29:21.432710-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_card_child_projection::test_every_declared_child_has_one_typed_card_support[normal]",
+        "tests.test_card_child_projection::test_every_declared_child_has_one_typed_card_support[test]",
+        "tests.test_card_child_projection::test_every_declared_child_has_one_typed_card_support[bug]",
+        "tests.test_card_child_projection::test_incomplete_child_source_cannot_authorize_any_replacement[missing_collection]",
+        "tests.test_card_child_projection::test_incomplete_child_source_cannot_authorize_any_replacement[invalid_collection]",
+        "tests.test_card_child_projection::test_incomplete_child_source_cannot_authorize_any_replacement[duplicate_id]",
+        "tests.test_card_child_projection::test_incomplete_child_source_cannot_authorize_any_replacement[missing_id]",
+        "tests.test_card_child_projection::test_registry_and_old_new_consumers_cover_all_declared_child_collections",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[card-normal]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[card-test]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[card-bug]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[spec-normal]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[spec-test]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[spec-bug]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[both-normal]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[both-test]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[both-bug]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[cancelled-False-normal]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[cancelled-False-test]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[cancelled-False-bug]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[done-True-normal]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[done-True-test]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[done-True-bug]",
+        "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[card_scope]",
+        "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[incomplete_card]",
+        "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[parent_scope]",
+        "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[duplicate_target]",
+        "tests.test_kg_card_scenario_projection::test_known_absence_produces_empty_owned_set_and_durable_diagnostic[parent]",
+        "tests.test_kg_card_scenario_projection::test_known_absence_produces_empty_owned_set_and_durable_diagnostic[target]",
+        "tests.test_kg_card_scenario_projection::test_known_absence_produces_empty_owned_set_and_durable_diagnostic[unlinked]",
+        "tests.test_kg_card_scenario_projection::test_source_provider_failure_does_not_become_absence_or_cleanup",
+        "tests.test_projection_known_removals::test_lookup_failure_is_not_permission_to_remove",
+        "tests.test_projection_known_removals::test_pending_target_keeps_its_logical_identity_and_complete_source_set",
+        "tests.test_projection_known_removals::test_incomplete_source_declaration_cannot_be_pruned",
+        "tests.test_projection_known_removals::test_source_is_read_only_after_graph_lease_and_sql_claim_fence[True]",
+        "tests.test_projection_known_removals::test_source_is_read_only_after_graph_lease_and_sql_claim_fence[False]",
+        "tests.test_deterministic_projection_planner::test_derived_decisions_require_exact_current_spec_signals[none]",
+        "tests.test_deterministic_projection_planner::test_derived_decisions_require_exact_current_spec_signals[hash]",
+        "tests.test_deterministic_projection_planner::test_derived_decisions_require_exact_current_spec_signals[owner]",
+        "tests.test_deterministic_projection_planner::test_derived_decisions_require_exact_current_spec_signals[missing]",
+        "tests.test_deterministic_projection_planner::test_derived_decisions_require_exact_current_spec_signals[unknown]",
+        "tests.test_deterministic_projection_planner::test_derived_decisions_require_exact_current_spec_signals[foreign]",
+        "tests.test_deterministic_projection_planner::test_declared_requirement_plan_matches_live_and_rejects_changed_links[integration_requirements-integration_requirement-ir_requirement]",
+        "tests.test_deterministic_projection_planner::test_declared_requirement_plan_matches_live_and_rejects_changed_links[observability_requirements-observability_requirement-or_requirement]",
+        "tests.test_deterministic_projection_planner::test_preparation_matches_live_proposals_without_starting_a_graph_session",
+        "tests.test_deterministic_projection_planner::test_missing_or_foreign_source_does_not_become_an_empty_projection[None-unavailable]",
+        "tests.test_deterministic_projection_planner::test_missing_or_foreign_source_does_not_become_an_empty_projection[artifact1-scope_mismatch]",
+        "tests.test_deterministic_projection_planner::test_missing_or_foreign_source_does_not_become_an_empty_projection[artifact2-identity_mismatch]",
+        "tests.test_deterministic_projection_planner::test_foreign_lineage_endpoint_fails_before_any_proposal",
+        "tests.test_deterministic_projection_planner::test_cancelled_source_remains_explicitly_skipped",
+        "tests.test_deterministic_projection_planner::test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash[none]",
+        "tests.test_deterministic_projection_planner::test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash[missing_plan]",
+        "tests.test_deterministic_projection_planner::test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash[node]",
+        "tests.test_deterministic_projection_planner::test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash[extra_field]",
+        "tests.test_deterministic_projection_planner::test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash[census]",
+        "tests.test_deterministic_projection_planner::test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash[source]",
+        "tests.test_deterministic_projection_planner::test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash[cognitive]",
+        "tests.test_deterministic_projection_planner::test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash[dependency]",
+        "tests.test_deterministic_projection_planner::test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash[source_read]",
+        "tests.test_deterministic_projection_planner::test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash[scope]",
+        "tests.test_deterministic_projection_planner::test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash[source_metadata]",
+        "tests.test_deterministic_projection_planner::test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash[source_date]",
+        "tests.test_deterministic_projection_planner::test_terminal_refinement_cleanup_matches_live_without_reviving_root_or_census[cancelled]",
+        "tests.test_deterministic_projection_planner::test_terminal_refinement_cleanup_matches_live_without_reviving_root_or_census[archived]",
+        "tests.test_deterministic_projection_planner::test_retained_terminal_cleanup_is_complete_and_owner_scoped[missing]",
+        "tests.test_deterministic_projection_planner::test_retained_terminal_cleanup_is_complete_and_owner_scoped[wrong_owner]",
+        "tests.test_deterministic_projection_planner::test_retained_terminal_cleanup_is_complete_and_owner_scoped[retained_child]",
+        "tests.test_deterministic_projection_planner::test_retained_terminal_cleanup_is_complete_and_owner_scoped[duplicate]",
+        "tests.test_deterministic_projection_planner::test_retained_terminal_cleanup_is_complete_and_owner_scoped[foreign_board]",
+        "tests.test_deterministic_projection_planner::test_reopened_refinement_cannot_use_earlier_terminal_census",
+        "tests.test_deterministic_projection_planner::test_terminal_cleanup_is_included_in_aggregate_byte_limit",
+        "tests.test_deterministic_projection_planner::test_empty_complete_census_and_retired_source_are_distinct",
+        "tests.test_deterministic_projection_planner::test_source_kind_is_closed[sprint]",
+        "tests.test_deterministic_projection_planner::test_source_kind_is_closed[unknown]",
+        "tests.test_deterministic_projection_planner::test_source_kind_is_closed[None]",
+        "tests.test_deterministic_projection_planner::test_source_kind_is_closed[kind3]",
+        "tests.test_deterministic_projection_planner::test_aggregate_projection_limit_stops_before_reading_further_sources",
+        "tests.test_deterministic_projection_planner::test_dependency_provider_cannot_rewrite_the_captured_source_set[omit]",
+        "tests.test_deterministic_projection_planner::test_dependency_provider_cannot_rewrite_the_captured_source_set[change]",
+        "tests.test_deterministic_projection_planner::test_dependency_provider_cannot_rewrite_the_captured_source_set[duplicate]",
+        "tests.test_deterministic_projection_planner::test_dependency_provider_cannot_rewrite_the_captured_source_set[invent]",
+        "tests.test_deterministic_projection_planner::test_evidence_projection_requires_an_explicit_dependency_reader",
+        "tests.test_card_scenario_invalidation::test_removed_and_added_references_survive_as_bounded_event_metadata",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[acceptance_criteria]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[api_contracts]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[business_rules]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[decisions]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[functional_requirements]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[integration_requirements]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[observability_requirements]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[technical_requirements]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[test_scenarios]",
+        "tests.test_card_scenario_invalidation::test_direct_card_mutation_invalidates_both_parents_without_duplicates[old-new]",
+        "tests.test_card_scenario_invalidation::test_direct_card_mutation_invalidates_both_parents_without_duplicates[old-None]",
+        "tests.test_card_scenario_invalidation::test_direct_card_mutation_invalidates_both_parents_without_duplicates[None-new]",
+        "tests.test_card_scenario_invalidation::test_direct_card_mutation_invalidates_both_parents_without_duplicates[same-same]",
+        "tests.test_card_scenario_invalidation::test_real_scenario_unlink_retains_removed_card_in_outbox",
+        "tests.test_card_scenario_invalidation::test_real_structured_child_unlink_retains_last_consumer",
+        "tests.test_card_scenario_invalidation::test_real_card_update_emits_one_durable_invalidation_and_no_event_for_noop",
+        "tests.test_card_scenario_invalidation::test_real_scenario_deletion_reenqueues_both_reference_sources_after_cascade",
+        "tests.test_kg_transaction::test_create_edge_requires_materialized_relationship",
+        "tests.test_kg_transaction::test_create_edge_counts_only_confirmed_relationship",
+        "tests.test_kg_transaction::test_create_edge_ambiguous_relationship_requires_endpoint_hints",
+        "tests.test_kg_transaction::test_create_edge_implements_constraint_honors_endpoint_hints",
+        "tests.test_kg_transaction::test_create_edge_skips_existing_relationship",
+        "tests.test_kg_transaction::test_invalid_local_edge_pair_gets_contextual_error",
+        "tests.test_kg_transaction::test_structured_bug_edges_are_valid_deterministic_pairs",
+        "tests.test_kg_transaction::test_agent_instructions_define_kg_consolidation_boundaries",
+        "tests.test_kg_transaction::test_agent_instructions_require_qna_for_ambiguity_and_artifacts",
+        "tests.test_kg_transaction::test_agent_instructions_contract_matches_current_mcp_surface",
+        "tests.test_kg_transaction::test_registered_mcp_tool_description_forbidden_terms_fail_closed",
+        "tests.test_kg_transaction::test_agent_facing_scan_ignores_internal_unregistered_text",
+        "tests.test_kg_transaction::test_agent_instructions_do_not_use_bare_mcp_tool_aliases",
+        "tests.test_projection_active_set_session_cleanup::test_a_restored_projection_edge_survives_the_session_sweep",
+        "tests.test_projection_active_set_session_cleanup::test_compensation_runs_before_the_generic_sweep",
+        "tests.test_projection_active_set_session_cleanup::test_projection_edges_are_preserved_with_no_spec_lineage_at_all",
+        "tests.test_projection_active_set_session_cleanup::test_two_reconciliations_preserve_only_the_state_the_session_started_from",
+        "tests.test_projection_active_set_session_cleanup::test_a_scope_that_cannot_preserve_fails_typed_before_deleting_anything",
+        "tests.test_projection_active_set_session_cleanup::test_a_session_without_projections_makes_the_call_it_always_made",
+        "tests.test_projection_active_set_session_cleanup::test_two_removals_of_different_members_both_come_back",
+        "tests.test_projection_active_set_session_cleanup::test_a_provider_that_only_swallows_kwargs_is_never_called",
+        "tests.test_projection_active_set_session_cleanup::test_a_before_image_does_not_shelter_a_second_edge_of_the_same_identity",
+        "tests.test_projection_active_set_session_cleanup::test_a_new_dependency_rule_does_not_cancel_the_old_one_it_shares_endpoints_with"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-card-children-qualified-core.log",
+          "sha256": "a33a097c406e3243515ddbc00ecbb9090878c2aa8cc32cf3a9cd78c6bbf0bd51"
+        },
+        {
+          "file": "learning-reconciliation-card-children-qualified-core.xml",
+          "sha256": "8b48f50e4a9d1bbc225c7f3d64072840c8dc2dfa629296005a3339c91ac64896"
+        }
+      ]
+    },
+    {
+      "terminal_session": 17784,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "38",
+          "time": "32.819",
+          "timestamp": "2026-10-01T01:31:15.579162-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_grafx_card_scenario_projection::test_removal_and_repeated_compensation_preserve_other_sources[Entity]",
+        "tests.test_grafx_card_scenario_projection::test_removal_and_repeated_compensation_preserve_other_sources[Bug]",
+        "tests.test_grafx_card_scenario_projection::test_cancelled_owner_cleanup_does_not_require_or_recreate_root[Entity]",
+        "tests.test_grafx_card_scenario_projection::test_cancelled_owner_cleanup_does_not_require_or_recreate_root[Bug]",
+        "tests.test_grafx_card_scenario_projection::test_origin_change_keeps_one_owned_relation[Entity]",
+        "tests.test_grafx_card_scenario_projection::test_origin_change_keeps_one_owned_relation[Bug]",
+        "tests.test_grafx_card_scenario_projection::test_worker_origin_change_compensation_preserves_previous_provenance[Entity]",
+        "tests.test_grafx_card_scenario_projection::test_worker_origin_change_compensation_preserves_previous_provenance[Bug]",
+        "tests.test_grafx_card_scenario_projection::test_invalid_target_refuses_before_removal[Entity]",
+        "tests.test_grafx_card_scenario_projection::test_invalid_target_refuses_before_removal[Bug]",
+        "tests.test_grafx_card_scenario_projection::test_failure_after_delete_restores_exact_owned_edge[Entity]",
+        "tests.test_grafx_card_scenario_projection::test_failure_after_delete_restores_exact_owned_edge[Bug]",
+        "tests.test_grafx_card_scenario_projection::test_known_removal_retains_expected_edges_without_materializing_missing_targets[Entity-True]",
+        "tests.test_grafx_card_scenario_projection::test_known_removal_retains_expected_edges_without_materializing_missing_targets[Entity-False]",
+        "tests.test_grafx_card_scenario_projection::test_known_removal_retains_expected_edges_without_materializing_missing_targets[Bug-True]",
+        "tests.test_grafx_card_scenario_projection::test_known_removal_retains_expected_edges_without_materializing_missing_targets[Bug-False]",
+        "tests.test_grafx_card_scenario_projection::test_known_removal_rejects_untrusted_logical_source_before_deleting[Entity]",
+        "tests.test_grafx_card_scenario_projection::test_known_removal_rejects_untrusted_logical_source_before_deleting[Bug]",
+        "tests.test_grafx_card_parent_projection::test_unlink_and_repeated_compensation_preserve_board_human_and_other_owner[Entity]",
+        "tests.test_grafx_card_parent_projection::test_unlink_and_repeated_compensation_preserve_board_human_and_other_owner[Bug]",
+        "tests.test_grafx_card_parent_projection::test_parent_change_and_retry_leave_exactly_one_owned_relation[Entity]",
+        "tests.test_grafx_card_parent_projection::test_parent_change_and_retry_leave_exactly_one_owned_relation[Bug]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Entity-fr]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Entity-tr]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Entity-business_rule]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Entity-ac]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Entity-api_contract]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Entity-integration_requirement]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Entity-observability_requirement]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Entity-decision]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Bug-fr]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Bug-tr]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Bug-business_rule]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Bug-ac]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Bug-api_contract]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Bug-integration_requirement]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Bug-observability_requirement]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[Bug-decision]"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-card-children-qualified2-community.log",
+          "sha256": "c263c4f8eaa029199189d7e1dabd68e1059578be42c34bbb7737537a53c34602"
+        },
+        {
+          "file": "learning-reconciliation-card-children-qualified2-community.xml",
+          "sha256": "c4d71e2897482a43b41e925901935bb3373a8884ed398d72e9284e905b465d27"
+        }
+      ]
+    },
+    {
+      "terminal_session": 26257,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx",
+          "timestamp": "2026-10-01T04:15:53.048Z",
+          "hostname": "Alienware_m15",
+          "tests": "17",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "2.8219648"
+        },
+        {
+          "name": "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx",
+          "timestamp": "2026-10-01T04:15:53.054Z",
+          "hostname": "Alienware_m15",
+          "tests": "14",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.441457"
+        }
+      ],
+      "cases": [
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > keeps existing Knowledge content read-only and expandable",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > hides governed propagation mutations while a Rejected card is frozen",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > downloads the existing snapshot as Markdown",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > renders an honest empty state after both governed reads finish",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > renders inherited effective Knowledge and deduplicates a copied snapshot",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > shows revision, mode, stale state and origin metadata from the technical read",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > builds the selectable source inventory from effective spec roots and ref metadata",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > paginates the source spec inventory with summary projections only",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > assigns selected stable roots with the current revision",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > preserves an explicit-empty DROP separately from Resource Gate N/A",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > refreshes only a stale snapshot by stable root ID and current revision",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > reuses the refresh key for an exact retry and rotates it after a successful new revision",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > reports busy for the complete assign operation lifetime",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > reports busy for the complete drop operation lifetime",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > reports busy for the complete refresh operation lifetime",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > reloads the technical revision after a conflict instead of retrying the stale write",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > uses typed HTTP 409 metadata to reload the revision and require reconfirmation",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > keeps the selected Entity navigable after its parent edge is removed",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > keeps the selected Bug navigable after its parent edge is removed",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > keeps observed Entity-to-scenario endpoints independently navigable",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > keeps observed Bug-to-scenario endpoints independently navigable",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > starts with no selection when initialSelectedNodeId is null",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > reflects initialSelectedNodeId on mount",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > updates when initialSelectedNodeId prop changes",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > does not invoke onSelect for a single click (single-click is reserved for toggle)",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > single-click toggles selection on and off (AC-4)",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > double-click fires onSelect with the KG node (AC-4)",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > renders the accessible fallback (not a crash) when WebGL is unavailable",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > renders the empty-state fallback when filters exclude every node",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > filters and styles Code Traceability Entity subtypes by kind_of",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > prop-driven selection can be cleared externally by passing null"
+      ],
+      "artifacts": [
+        {
+          "file": "frontend-card-children-fix1.log",
+          "sha256": "8582e691c11ae3e231bdb2eae559a81a1aa6aa20159bc63e1c0e82d3d2758b28"
+        },
+        {
+          "file": "frontend-card-children-fix1.xml",
+          "sha256": "46a3814019722e3861bb3ca0c3cf26d8538df93d861ce4d7093ccb52ac1aa597"
+        }
+      ]
+    },
+    {
+      "terminal_session": 43921,
+      "exit_code": 1,
+      "selection": "Only the three successful full-schema materialized cases are retained from this campaign. A later native fixture failed because its minimal DDL lacked created_at/fallback_reason; the final native campaign fixes and covers it.",
+      "cases": [
+        {
+          "classname": "tests.test_projection_materialized_parity",
+          "name": "test_card_supports_every_declared_child_and_removes_only_current_assignments[normal]",
+          "time": "83.310"
+        },
+        {
+          "classname": "tests.test_projection_materialized_parity",
+          "name": "test_card_supports_every_declared_child_and_removes_only_current_assignments[test]",
+          "time": "73.218"
+        },
+        {
+          "classname": "tests.test_projection_materialized_parity",
+          "name": "test_card_supports_every_declared_child_and_removes_only_current_assignments[bug]",
+          "time": "77.178"
+        }
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-card-children-fix2-community.log",
+          "sha256": "5768d8e98141b665b3391d1280de01f89f1d112cf5238245142234ef7d83b5f7"
+        },
+        {
+          "file": "learning-reconciliation-card-children-fix2-community.xml",
+          "sha256": "dbadae8459cfe76ffbdc15ff3187725d378f3a48c61507e45b65500b2f1eb158"
+        }
+      ]
+    }
+  ],
+  "architecture": {
+    "terminal_session": 84561,
+    "exit_code": 0,
+    "file": "learning-reconciliation-card-children-qualified-closure.log",
+    "sha256": "3a9397fedf1bf4e844b9e9a5dc50e5bc521a65f2f841459f64cb115215200023",
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    }
+  },
+  "provenance": [
+    {
+      "file": "provenance-card-children-before.json",
+      "sha256": "aca68d7f34649e18c4365e2673c205c89cb08697235b20ce371d0c160e75b7d0"
+    },
+    {
+      "file": "provenance-card-children-fix2.json",
+      "sha256": "7dc0236a4a94b1d3c53f767df288c1de990800b3d0908c523fc71094f1168072"
+    },
+    {
+      "file": "provenance-card-children-qualified.json",
+      "sha256": "65b4c1c719a9f77e48825da9ffc9ab723a252ed930577eefc1f5a0b520416cbd"
+    }
+  ],
+  "limits": [
+    "SQL setup directly declares source links; this does not claim that every typed Card may author every link through every transport. Authorization/gates are unchanged. Supports records observed assignment, never implementation or passing evidence.",
+    "The three full-schema cases ran against fix2. Final runtime changes after that were docstrings and the existing in-memory testing scope accepting the extended public port; the native productive behavior was unchanged. Final installed pair was proven byte-for-byte, then core and native compensation suites ran in fresh processes.",
+    "The initial pre-change reproduction failed on missing eight supports. First productive probe also exposed endpoint-only deduplication of changed scenario provenance; fixed without loosening ownership. Later fixture DDL failure is retained rather than reporting its campaign as green. Native probe70893 correctly refused to restore an older before-image over a new writer payload; the fixture now compensates that intervening write first, preserving the product guard.",
+    "Frontend regression covers GraphCanvas selection and CardKnowledgeTab states; no UI production change was needed. G3 dependencies, G5 inferred violates, complete snapshot rebuild parity and the pending KG-10/T23 decisions are outside this increment."
+  ]
+}

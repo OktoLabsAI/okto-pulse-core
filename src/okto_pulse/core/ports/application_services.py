@@ -18,11 +18,15 @@ from okto_pulse.core.ports.traceability import (
     LineageGraphView,
 )
 
-from okto_pulse.core.domain.code_traceability_kg import (
-    KGDeadLetterReprocessScope,
-)
 
 if TYPE_CHECKING:
+    from okto_pulse.core.services.delivery_readiness import DeliveryReadinessService
+    from okto_pulse.core.ports.spec_coverage_query import SpecCoverageQuery
+    from okto_pulse.core.ports.decision_impact import DecisionImpactQuery
+    from okto_pulse.core.ports.lineage_query import LineageQuery
+    from okto_pulse.core.ports.bug_clusters import BugClustersQuery
+    from okto_pulse.core.services.architecture_classification import ArchitectureClassificationService
+    from okto_pulse.core.domain.architecture_candidates import ArchitectureCandidatePopulation
     from okto_pulse.core.application.use_cases.entity_pagination import (
         EntityPageService,
     )
@@ -77,8 +81,6 @@ if TYPE_CHECKING:
         SpecKnowledgeService,
         SpecQAService,
         SpecService,
-        SprintQAService,
-        SprintService,
         StoryService,
     )
     from okto_pulse.core.services.resource_gate import ResourceGateService
@@ -139,6 +141,12 @@ class ApplicationServiceCatalog(Protocol):
 
     @property
     def delivery_evidence(self): ...
+
+    @property
+    def delivery_readiness_lifecycle(self): ...
+
+    @property
+    def delivery_readiness(self) -> DeliveryReadinessService: ...
 
     @property
     def code_traceability_read(self) -> "CodeTraceabilityReadPort": ...
@@ -219,16 +227,13 @@ class ApplicationServiceCatalog(Protocol):
     def specs(self) -> "SpecService": ...
 
     @property
-    def sprint_qa(self) -> "SprintQAService": ...
-
-    @property
-    def sprints(self) -> "SprintService": ...
-
-    @property
     def stories(self) -> "StoryService": ...
 
     @property
     def structured_specs(self) -> "StructuredSpecEntityService": ...
+
+    @property
+    def architecture_classifications(self) -> "ArchitectureClassificationService": ...
 
     async def resolve_user_permissions(
         self, user_id: str, board_id: str
@@ -265,7 +270,7 @@ class ApplicationServiceCatalog(Protocol):
 
     async def compute_card_seen_status(self, card_id: str) -> object: ...
 
-    async def build_propagation_legacy_report(
+    async def build_propagation_report(
         self,
         *,
         board_id: str,
@@ -352,17 +357,7 @@ class ApplicationServiceCatalog(Protocol):
         require_spec_resource_task_coverage: bool,
     ) -> dict[str, object] | None: ...
 
-    async def get_runtime_settings(self) -> dict[str, object]: ...
 
-    async def put_runtime_settings(
-        self,
-        values: dict[str, int],
-        *,
-        actor_id: str,
-        migration_plan_ref: str | None,
-        restart_policy: str | None,
-        scheduler_control: object | None,
-    ) -> dict[str, object]: ...
 
     async def build_lineage_graph(
         self,
@@ -407,6 +402,10 @@ class ApplicationServiceCatalog(Protocol):
         includes: tuple[str, ...] = (),
     ) -> object | None: ...
 
+    async def load_spec_architecture_candidates(
+        self, *, board_id: str, spec_id: str,
+    ) -> "ArchitectureCandidatePopulation": ...
+
     async def list_application_records(self, query: object) -> tuple[object, ...]: ...
 
     async def ideation_skip_overrides(
@@ -434,6 +433,22 @@ class ApplicationServiceCatalog(Protocol):
 
 
 class AnalyticsOperations(Protocol):
+    async def lineage(self, query: "LineageQuery", *, timeout_ms: int) -> dict:
+        """Read bounded origin/dependency paths with explicit source limitations."""
+        ...
+
+    async def spec_coverage(self, query: "SpecCoverageQuery", *, timeout_ms: int) -> dict:
+        """Read structural coverage and admitted proof without combining their authority."""
+        ...
+
+    async def decision_impact(self, query: "DecisionImpactQuery", *, timeout_ms: int) -> dict:
+        """Explain bounded source/graph paths without granting proof or execution authority."""
+        ...
+
+    async def bug_clusters(self, query: BugClustersQuery, *, timeout_ms: int) -> dict[str, object]:
+        """Project a previously authorized, bounded Bug cluster query."""
+        ...
+
     async def board_is_owned_by(self, board_id: str, user_id: str) -> bool: ...
 
     async def blockers(
@@ -462,7 +477,6 @@ class AnalyticsOperations(Protocol):
         exclusions: object,
     ) -> object: ...
 
-    async def delivery_forecast(self, *, query: object) -> object: ...
 
     async def delivery_intelligence(
         self,
@@ -536,11 +550,7 @@ class AnalyticsOperations(Protocol):
 
     async def spec(self, board_id: str, spec_id: str) -> object | None: ...
 
-    async def sprint(self, board_id: str, sprint_id: str) -> object | None: ...
 
-    async def sprints(
-        self, board_id: str, *, dt_from: datetime | None, dt_to: datetime | None
-    ) -> object: ...
 
     async def agents(
         self, board_id: str, *, dt_from: datetime | None, dt_to: datetime | None
@@ -568,14 +578,13 @@ class BoardErasureLease(Protocol):
 
 
 class KnowledgeGraphOperations(Protocol):
-    async def dispatch_manual_tick(
-        self,
-        *,
-        tick_id: str,
-        board_id: str | None,
-        force_full_rebuild: bool,
-        scheduled_at: str | None = None,
-    ) -> list[str]: ...
+
+    async def stage_new_learning_capture(self, request: object, *, author_id: str) -> object: ...
+
+    async def get_learning_capture_source(self, *, board_id: str, bug_id: str, candidate_query: str | None = None) -> dict[str, object]: ...
+
+    async def list_learning_captures(self, *, board_id: str, bug_id: str,
+        cursor: str | None = None, limit: int = 20) -> dict[str, object]: ...
 
     async def evaluate_bug_cognitive_closure(
         self, readiness_service: object, **request: object
@@ -652,7 +661,6 @@ class KnowledgeGraphOperations(Protocol):
         *,
         profile: str,
         surface: str,
-        artifact_ref: str | None,
         scheduler_control: object | None = None,
     ) -> dict[str, object]: ...
 
@@ -664,15 +672,9 @@ class KnowledgeGraphOperations(Protocol):
         include_code_traceability: bool = True,
     ) -> object: ...
 
-    async def stage_spec_projection_repair(
-        self, *, board_id: str, spec_ids: tuple[str, ...], actor_id: str, reason: str,
-    ) -> dict[str, object]: ...
 
-    async def start_historical_consolidation(self, board_id: str) -> object: ...
 
-    async def cancel_historical(self, board_id: str) -> object: ...
 
-    async def get_historical_progress(self, board_id: str) -> object: ...
 
     def board_erasure_scope(
         self,
@@ -708,80 +710,15 @@ class KnowledgeGraphOperations(Protocol):
         purge_relational: bool = True,
     ) -> object: ...
 
-    async def list_pending_entries(
-        self,
-        board_id: str,
-        *,
-        include_code_traceability: bool = True,
-    ) -> object: ...
 
-    async def build_pending_tree(self, board_id: str, *, depth: int) -> object: ...
 
-    async def retry_pending_entry(
-        self,
-        board_id: str,
-        queue_entry_id: str,
-        *,
-        recursive: bool,
-        include_code_traceability: bool = True,
-    ) -> object: ...
 
-    async def boost_node(
-        self, board_id: str, node_id: str, *, actor_id: str
-    ) -> object: ...
 
-    async def mutate_boost_node_graph(
-        self,
-        board_id: str,
-        node_id: str,
-        *,
-        actor_id: str,
-    ) -> object: ...
 
-    def stage_boost_node_audit(self, mutation: object) -> dict[str, object]: ...
 
-    async def reprocess_dead_letter_rows(
-        self,
-        board_id: str,
-        *,
-        dead_letter_ids: list[str] | None,
-        limit: int,
-        scope: KGDeadLetterReprocessScope = KGDeadLetterReprocessScope.GENERIC,
-    ) -> dict[str, object]: ...
 
-    async def diagnose_connectivity_guard_dlq(
-        self, board_id: str
-    ) -> dict[str, object]: ...
 
-    async def reprocess_connectivity_guard_dlq(
-        self, board_id: str, dead_letter_ids: list[str]
-    ) -> dict[str, object]: ...
 
-    async def verify_connectivity_class_cleared(
-        self, board_id: str, *, artifact_refs: list[str] | None
-    ) -> dict[str, object]: ...
-
-    async def list_cognitive_dlq_rows(
-        self,
-        board_id: str,
-        *,
-        limit: int,
-        offset: int,
-        include_code_traceability: bool = False,
-    ) -> object: ...
-
-    async def list_dead_letter_rows(
-        self,
-        board_id: str,
-        *,
-        limit: int,
-        offset: int,
-        include_code_traceability: bool = True,
-    ) -> dict[str, object]: ...
-
-    async def list_stale_canonical_parity(
-        self, board_id: str, *, limit: int, offset: int
-    ) -> object: ...
 
     async def query_takedown_telemetry(
         self,
@@ -791,41 +728,11 @@ class KnowledgeGraphOperations(Protocol):
         delivery_key: str | None = None,
     ) -> dict[str, object]: ...
 
-    async def list_canonical_debt(
-        self,
-        *,
-        board_id: str,
-        artifact_type: str | None,
-        state: str | None,
-        limit: int,
-        offset: int,
-        include_code_traceability: bool = True,
-    ) -> object: ...
 
-    async def schedule_canonical_debt_retry(
-        self,
-        *,
-        board_id: str,
-        debt_id: str,
-        actor_id: str,
-        kg_health_state: str,
-    ) -> dict[str, object]: ...
 
-    async def list_canonical_partition_integrity(
-        self, *, board_id: str, **filters: object
-    ) -> object: ...
 
-    async def canonical_partition_integrity_detail(
-        self, *, board_id: str, node_id: str
-    ) -> object: ...
 
-    async def list_digest_layer_mismatches(
-        self, *, board_id: str, limit: int, offset: int
-    ) -> object: ...
 
-    async def enqueue_digest_layer_reconciliation(
-        self, *, board_id: str, reason: str
-    ) -> dict[str, object]: ...
 
     async def capture_global_discovery_recovery_seed_inputs(
         self,
@@ -838,22 +745,6 @@ class KnowledgeGraphOperations(Protocol):
         self, *, run_id: str, board_ids: list[str], dead_letter_limit: int
     ) -> dict[str, object]: ...
 
-    async def queue_health(self) -> dict[str, object]: ...
-
-    async def queue_drilldown(
-        self,
-        board_id: str | None,
-        *,
-        include_code_traceability: bool = True,
-    ) -> dict[str, object]: ...
-
-    async def invoke_rebuild_admission(
-        self,
-        refusal_check: object,
-        board_id: str,
-        *,
-        scheduler_control: object | None,
-    ) -> object: ...
 
     async def read_latest_kg_tick_completed_at(self) -> datetime | None: ...
 

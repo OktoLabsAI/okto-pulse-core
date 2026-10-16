@@ -231,12 +231,6 @@ class ChecklistService:
                 or board_id.strip() != current_binding.board_id
             ):
                 raise ChecklistContractError("checklist_binding_board_mismatch")
-            if current_binding.is_synthetic:
-                return ChecklistBinding(
-                    board_id=current_binding.board_id,
-                    mode=mode,
-                    version=1,
-                )
             if current_binding.mode is mode:
                 raise ChecklistValidationError("checklist_binding_unchanged")
             return ChecklistBinding(
@@ -265,13 +259,7 @@ class ChecklistService:
             ChecklistBinding,
         ):
             raise ChecklistValidationError("checklist_binding_predecessor_invalid")
-        if previous_binding is None or previous_binding.is_synthetic:
-            if previous_binding is not None and (
-                previous_binding.board_id != binding.board_id
-                or previous_binding.target_type is not binding.target_type
-                or previous_binding.phase is not binding.phase
-            ):
-                raise ChecklistValidationError("checklist_binding_predecessor_invalid")
+        if previous_binding is None:
             if binding.version != 1:
                 raise ChecklistValidationError("checklist_binding_version_invalid")
             expected_version = 0
@@ -478,8 +466,6 @@ class ChecklistService:
     def _canonical_native_items(
         submission: ChecklistSubmission,
     ) -> tuple[ChecklistItemResult, ...]:
-        if submission.is_legacy_manual:
-            return ()
         actual_ids = tuple(item.item_id for item in submission.items)
         actual_set = set(actual_ids)
         duplicate_ids = sorted(
@@ -602,11 +588,6 @@ class ChecklistService:
                 submission,
                 actor_id=actor,
             )
-            source = (
-                ChecklistReceiptSource.LEGACY_UNVERIFIED
-                if submission.is_legacy_manual
-                else ChecklistReceiptSource.NATIVE
-            )
             receipt = ChecklistReceipt(
                 id=self._id_factory("clr"),
                 board_id=preflight.subject.board_id,
@@ -620,13 +601,12 @@ class ChecklistService:
                 binding_digest=preflight.binding.digest or "",
                 binding_mode=preflight.binding.mode,
                 items=ordered_items,
-                source=source,
+                source=ChecklistReceiptSource.NATIVE,
                 request_digest=request_digest,
                 created_by=actor,
                 created_at=now,
                 head_revision=submission.expected_head_revision + 1,
                 idempotency_key=submission.idempotency_key,
-                manual_checklist_ref=submission.manual_checklist_ref,
                 predecessor_receipt_id=preflight.current_head_receipt_id,
                 spec_edition=preflight.subject.spec_edition,
             )
@@ -672,8 +652,6 @@ class ChecklistService:
 
         if not isinstance(submission, ChecklistSubmission):
             raise ChecklistValidationError("checklist_submission_invalid")
-        if submission.is_legacy_manual:
-            raise ChecklistValidationError("manual_checklist_non_replayable")
         if not isinstance(result, ChecklistCommitResult):
             raise ChecklistPortContractError("checklist_commit_result_invalid")
         if not result.replayed:
@@ -846,6 +824,27 @@ class ChecklistService:
         )
         return result
 
+    @staticmethod
+    async def resolve_edition_binding(
+        *, subject: ChecklistSpecSnapshot, persistence: ChecklistPersistencePort,
+    ) -> ChecklistBinding:
+        """Use frozen governance after admission; preview without pinning beforehand."""
+        binding = await persistence.get_validation_binding(
+            board_id=subject.board_id, spec_id=subject.spec_id,
+            spec_edition=subject.spec_edition,
+            target_type=ChecklistTargetType.SPEC, phase=ChecklistPhase.SPEC_VALIDATION,
+        )
+        if binding is None and subject.status in {"draft", "review", "cancelled"}:
+            binding = await persistence.get_binding(
+                board_id=subject.board_id, target_type=ChecklistTargetType.SPEC,
+                phase=ChecklistPhase.SPEC_VALIDATION,
+            )
+        if binding is None:
+            raise ChecklistPortContractError("checklist_validation_binding_snapshot_missing")
+        if not isinstance(binding, ChecklistBinding):
+            raise ChecklistPortContractError("checklist_validation_binding_port_invalid")
+        return binding
+
     async def evaluate_spec_gate(
         self,
         *,
@@ -863,28 +862,13 @@ class ChecklistService:
             raise ChecklistNotFoundError("checklist_spec_not_found")
         if not isinstance(snapshot, ChecklistSpecSnapshot):
             raise ChecklistPortContractError("checklist_subject_port_invalid")
-        binding = await persistence.get_binding(
+        binding = await self.resolve_edition_binding(subject=snapshot, persistence=persistence)
+        current = await persistence.get_current(
             board_id=board_id,
-            target_type=ChecklistTargetType.SPEC,
+            spec_id=spec_id,
             phase=ChecklistPhase.SPEC_VALIDATION,
+            spec_edition=snapshot.spec_edition,
         )
-        # A missing binding is the deliberate legacy-board compatibility state:
-        # effective OFF, with no retroactive row materialization.
-        if binding is None:
-            binding = ChecklistBinding.synthetic_off(board_id=board_id)
-        try:
-            current = await persistence.get_current(
-                board_id=board_id,
-                spec_id=spec_id,
-                phase=ChecklistPhase.SPEC_VALIDATION,
-                spec_edition=snapshot.spec_edition,
-            )
-        except TypeError:
-            current = await persistence.get_current(
-                board_id=board_id,
-                spec_id=spec_id,
-                phase=ChecklistPhase.SPEC_VALIDATION,
-            )
         receipt = None if current is None else current[0]
         if receipt is not None and receipt.spec_edition != snapshot.spec_edition:
             receipt = None
@@ -940,11 +924,6 @@ class ChecklistService:
         ):
             raise ChecklistPortContractError("checklist_commit_identity_mismatch")
         if bundle is not None:
-            if (
-                bundle.receipt.source is ChecklistReceiptSource.LEGACY_UNVERIFIED
-                and result.replayed
-            ):
-                raise ChecklistPortContractError("manual_checklist_replay_forbidden")
             if not result.replayed and result.receipt_id != bundle.receipt.id:
                 raise ChecklistPortContractError("checklist_commit_receipt_mismatch")
 
@@ -972,19 +951,12 @@ class ChecklistService:
         current_binding: ChecklistBinding,
         persistence: ChecklistPersistencePort,
     ) -> CurrentChecklistView:
-        try:
-            resolved = await persistence.get_current(
-                board_id=board_id,
-                spec_id=spec_id,
-                phase=ChecklistPhase.SPEC_VALIDATION,
-                spec_edition=current_subject.spec_edition,
-            )
-        except TypeError:
-            resolved = await persistence.get_current(
-                board_id=board_id,
-                spec_id=spec_id,
-                phase=ChecklistPhase.SPEC_VALIDATION,
-            )
+        resolved = await persistence.get_current(
+            board_id=board_id,
+            spec_id=spec_id,
+            phase=ChecklistPhase.SPEC_VALIDATION,
+            spec_edition=current_subject.spec_edition,
+        )
         if resolved is None:
             raise ChecklistNotFoundError("checklist_current_not_found")
         if (
@@ -1113,14 +1085,9 @@ class ChecklistService:
                         currentness=currentness,
                         gate=gate,
                         state=(
-                            ChecklistReceiptState.HISTORY_ONLY
-                            if receipt.spec_edition is None
-                            else (
-                                ChecklistReceiptState.CURRENT
-                                if receipt.id == head_receipt_id
-                                and currentness.current
-                                else ChecklistReceiptState.PREVIOUS
-                            )
+                            ChecklistReceiptState.CURRENT
+                            if receipt.id == head_receipt_id and currentness.current
+                            else ChecklistReceiptState.PREVIOUS
                         ),
                     )
                 )

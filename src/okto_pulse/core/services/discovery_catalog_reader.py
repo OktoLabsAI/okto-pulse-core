@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from okto_pulse.core.discovery_intent_catalog import RETIRED_DISCOVERY_INTENT_NAMES
+
 from okto_pulse.core.ports.discovery_catalog import (
     DiscoveryIntentRecord,
     DiscoverySavedSearchRecord,
@@ -49,7 +51,7 @@ class DiscoveryCatalogReader:
         rows = await get_discovery_catalog_read_port().list_active_intents(
             self.session
         )
-        return list(rows)
+        return [row for row in rows if row.name not in RETIRED_DISCOVERY_INTENT_NAMES]
 
     async def list_saved_searches(
         self, board_id: str
@@ -72,10 +74,11 @@ class DiscoveryCatalogReader:
         return list(rows)
 
     async def get_intent(self, intent_id: str) -> DiscoveryIntentRecord | None:
-        return await get_discovery_catalog_read_port().get_intent(
+        row = await get_discovery_catalog_read_port().get_intent(
             self.session,
             intent_id=intent_id,
         )
+        return row if row is not None and row.name not in RETIRED_DISCOVERY_INTENT_NAMES else None
 
 
 __all__ = ["DiscoveryCatalogReader", "DiscoverySelectorRestAccessPolicy"]

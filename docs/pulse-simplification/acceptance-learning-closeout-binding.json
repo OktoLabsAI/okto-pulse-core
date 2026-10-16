@@ -1,0 +1,151 @@
+{
+  "scope": "F6 typed closeout linkage and additive nullable storage; producer integration pending",
+  "suites": {
+    "learning-closeout-binding-core": {
+      "tests": 126,
+      "failures": 16,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-closeout-binding-community": {
+      "tests": 113,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-closeout-binding-final-core": {
+      "tests": 126,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-closeout-binding-final-community": {
+      "tests": 143,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-closeout-binding-migrator-r2": {
+      "tests": 30,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Exact source comparison admits only status/version and the server review append; new conclusions cannot requalify an older capture.",
+    "Binding preserves capture identity/revision/fingerprint and before/closed digests without duplicating authored content.",
+    "Reopen and changed evidence invalidate current applicability while retaining historical linkage.",
+    "Transition retry is idempotent; conflicting identities and corrupt history are rejected.",
+    "Additive migration is idempotent, preserves old Done/conclusions, leaves old cards unbound and rejects column drift.",
+    "Community composition guards remain enforced; full R16B golden replay and idempotence suite passes after updating explicit step oracles."
+  ],
+  "limits": [
+    "Contract and storage are not yet connected to lifecycle writers, policy, preview, transports, frontend or worker.",
+    "Hash/shape validation is not authorization, semantic truth, a signature or authenticated evidence admission.",
+    "Initial fixture failures and two fixed migration-step oracles remain recorded; original failed campaigns are not relabeled green.",
+    "Final passing Core126 plus passing Community tests and migrator30 rerun overlap; do not sum repeated counts as unique cases.",
+    "No real database migration, installed recovery campaign, frontend change, release or whole-plan completion is claimed."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-binding-core.xml": "14c4cba1eab16dfb0d5f54c99b4a4315a5758ea1a05029f6f2be435b3db730df",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-binding-test-core.log": "8440c669c837e5edc39a72b08a32397078fcac363f9e7cf788637b6051dfe519",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-binding-community.xml": "84c3cb2e1c8abb527c7d28881f1748de43c22640da068c9edba7e6973fcd3466",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-binding-test-community.log": "035019ea013217a2a3cbc85d3df11065f1bf2351a773bdb0c610d6748f17a5c0",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-binding-final-core.xml": "55d237c28260f198e413e9a5ad02795529937ee3f23d2fb6f53a365513b0646c",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-binding-final-test-core.log": "44c9ae01a1bf2fe041053d2a3e0e2474c4da408295a20c844b90145163c884ce",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-binding-final-community.xml": "347cbd043efd47e9f56b1619cc40877c4ce9da503a9740d64c10dad46c4085b1",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-binding-final-test-community.log": "6690b049d12ba0a95d636267d4fc80977ed1f2d5ef1d74e2d16dc17c11f2dd10",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-binding-migrator-r2.xml": "662775c2885fc690b30b572d75e1d49201bd6e2ea5063964693ae5c1179bcc27",
+    "PULSE_REFACTOR/.validation-v040/learning-closeout-binding-migrator-r2.log": "cbd1d994df4456564aab6dcee35060ceabbfe1a7291bebc043e9d49df0107d9b",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-closeout-binding.json": "57ce44bbf68cb6f36abcd443795f3910e6bfe158c634d445bf56fc8f487c50aa",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-closeout-binding-final.json": "a4e6f1f452c41aa8f20b2bee79678e69b12ddad905b180e390c879ec43c9ec6d",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-closeout-binding.json": "d1fed578b42b17be30ab9c04ab25cb943a049cbeefe6b39fad831d16fc7e85a0",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-closeout-binding-final.json": "5ce3d18aa5a0100974e5384af4633e09f4df08b5374f26d66b0a34293472cb44",
+    "PULSE_REFACTOR/.validation-v040/run_learning_closeout_binding.py": "2a8037608756bd86832c486800ad86904005657f041c6a7947cf7e72d1d2ee00",
+    "PULSE_REFACTOR/.validation-v040/run_learning_closeout_binding_final.py": "1670289d97fe58608c12890eade92d6a4d8ad4d5fc738058f10c08817bca4a95",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/learning_closeout.py": "5a59881d4d31b0cb9cfc3b4ad4de8498d483d9a2ab7546ea64ea35a2c8925675",
+    "okto_labs_pulse_core/tests/test_learning_closeout_binding.py": "0cae1bb2f67711001e6634a89ad010923f630a6cc1a4a835c85f2d4985dd9b3e",
+    "okto_labs_pulse_core/tests/sqlalchemy_test_models.py": "f0e72fd09a0a91b59b0db09889260851100e2ade8fa726224e12585a62553452",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_models.py": "de58d0e8be63490920d4e4063ed39e64aa9bf8867372d0070bb122a71caf2a6c",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_policy_subject_versioning.py": "9561e430f4b46850674bc32ebc2cfe6638a3718f62889fc5b93d4a64706343d2",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/relational_schema_steps.py": "4bd48f90a4af6562195574d3126a69a3c3d78206b5239e6e7b2d2c7761c17c81",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/relational_schema_migrator.py": "737a210a9b0ced375170626bdcc8f8397d5ead43254edcf62479d39f54e09f81",
+    "okto_labs_pulse_community/tests/test_learning_closeout_binding_storage.py": "e195b79b5202e74e26b774d51b576744235d660cdebe47d0c6c4ac765746c3a9",
+    "okto_labs_pulse_community/tests/test_r16b_relational_schema_migrator.py": "632f2893853a1d1738359e11c183194d93ae4effd8d65aa52cb25496f5e70dc3"
+  }
+}

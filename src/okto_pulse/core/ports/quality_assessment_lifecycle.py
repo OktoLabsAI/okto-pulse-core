@@ -41,9 +41,8 @@ class QualityAssessmentLifecyclePersistencePort(Protocol):
     The adapter must atomically mutate/rebuild heads, stage lifecycle
     event/history/outbox, and reconcile the targeted projection/KG intent.  It
     fences replay by ``transition.idempotency_key`` plus
-    ``transition.transition_digest`` and records each
-    ``stale_transition_key`` at most once.  A valid stale receipt is historical
-    head state, not an orphan.  The adapter never commits, rolls back, closes
+    ``transition.transition_digest``. It preserves immutable receipt history
+    while rebuilding current-edition heads. The adapter never commits, rolls back, closes
     the transaction, or opens another UoW.
 
     ``admit_validation`` additionally freezes the effective policy, checklist,

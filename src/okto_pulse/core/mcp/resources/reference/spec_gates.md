@@ -7,9 +7,11 @@ version: "1.2"
 ## Delivery evidence gate at Done
 
 Allowed transitions and authoritative completion evaluate the same delivery proof.
-All active FR/TR/BR/AC/API/IR/OR/decision obligations need committed task/bug proof
+All active FR/TR/BR/AC/API/IR/OR obligations need committed task/bug proof
 and authenticated passed TEST-card results for the implementation records actually
-tested. No structured obligations produces one explicit Spec-scope obligation, not
+tested. Decisions reuse the current proofs of their selected obligations and/or
+require their declared direct inspection; they need no artificial task or Test Card.
+Both verification paths, when declared, must pass. No executable structured obligations produces one explicit Spec-scope obligation, not
 vacuous 100% coverage. Waivers are human-authorized, exact-scope and phase-specific.
 Skip Code Evidence/Test Coverage/Test Evidence, advisory posture and greenfield do
 not bypass delivery. Existing done status is preserved, with missing proof exposed
@@ -18,7 +20,7 @@ read-only for repair. See `okto-pulse://reference/code-traceability` and
 
 ## Spec Status Transitions
 
-Transitions table: see `okto-pulse://reference/transitions` (single source). Note the `in_progress` → `done` gate: all linked non-bug, non-archived cards must be `done` or `cancelled`, and when the spec has sprints, all sprints must be `closed` or `cancelled` (minimum 1 closed — see `okto-pulse://workflows/sprints`).
+Transitions table: see `okto-pulse://reference/transitions` (single source). The `in_progress` → `done` gate requires linked non-bug, non-archived cards to be `done` or `cancelled`, together with the applicable verification and Delivery Evidence gates.
 
 ### Spec edition versus technical revision
 
@@ -35,6 +37,21 @@ Always pass `version`, never `edition`, to fields such as
 `expected_spec_version` or `spec_version`. Reopening a terminal Spec may
 advance both counters independently. Restoring an archived Spec is not a new
 edition.
+
+### Decomposition evaluations belong to an edition
+
+New Spec Evaluations record the server's `spec_edition` and technical
+`spec_version`. Reopening to Draft marks prior evaluations as Previous in the
+same transaction; their IDs, authors, scores, verdicts, explanations and dates
+remain intact. Every evaluation records its native edition; reopening preserves
+that original edition.
+
+The new edition requires its own applicable approval before validation and execution under
+the existing policy. An approval does not override an active rejection in the
+same edition. Correct a rejected plan through authorized reopening and review
+the corrected edition. `okto_pulse_list_spec_evaluations` exposes Current and
+Previous consistently with this gate; reading a prior approval grants no new
+authority. Existing skip policies and thresholds retain their own controls.
 
 ## Spec Validation Gate — `okto_pulse_submit_spec_validation`
 
@@ -62,7 +79,16 @@ When the board has `require_spec_validation=true`, advancing from `approved` to 
 5. If coverage passes, the gate computes `outcome` atomically:
    - `outcome=failed` if ANY threshold is violated OR `recommendation=reject`
    - `outcome=success` ONLY if all thresholds pass AND `recommendation=approve`
-6. On `success`, the spec is atomically promoted to `validated` AND enters **content lock**.
+6. Promotion additionally requires the Current decomposition gate. Supply an
+   optional typed `decomposition` review in the same request (both submit
+   permissions and critical contexts required), or consume independent Current
+   reviews already recorded in Approved. A valid negative opinion is persisted
+   without promotion. The response distinguishes native quality `outcome` from
+   `planning_result`, `planning_blockers` and `spec_status`. Approved already
+   locks content; reopen to Draft to correct it under the existing edition rules.
+   A direct transition with `require_spec_validation=false` also checks applicable
+   decomposition. Its native mean and rejection veto are unchanged; there is no
+   aggregate score across different evaluations.
 
 **Thresholds (defaults 70/80/80/80/30):**
 
@@ -248,7 +274,17 @@ Avoid justifications such as “looks good”, “meets the threshold”, or “
 appropriate”. They do not make an evaluation reproducible.
 
 Pinpoints use the closed shape
-`{metric, anchor_type, anchor_ref?, detail}`:
+`{metrics, kind, severity, excerpt, detail, recommendation, anchor_type, anchor_ref?}`.
+Each pinpoint identifies one small, actionable issue. `metrics` is a nonempty
+unique list of affected dimensions; `kind` is `problem` or `opportunity` and
+`severity` is `low`, `medium`, `high` or `critical`. Severity describes impact;
+it does not introduce another gate. `excerpt`, `detail` and `recommendation`
+are required and each is limited to 1000 characters. Prefer a short sentence
+or clause for the verbatim excerpt; never reproduce the whole specification.
+Include `rationale` (up to 1000 characters) to defend the finding: explain why
+the quoted condition is a problem or opportunity and its concrete impact on
+the associated dimensions. Do not repeat the issue or the recommended action.
+This explanation does not add a gate. Sealed records without it remain unchanged.
 
 | `anchor_type` | Use it for | `anchor_ref` |
 |---|---|---|
@@ -257,11 +293,13 @@ Pinpoints use the closed shape
 | `qa` | A specific unresolved, conflicting, or decision-bearing Q&A item. | The stable Q&A ID. |
 | `whole_artifact` | A systemic issue that cannot honestly be localized. Use sparingly. | Omit `anchor_ref`. |
 
-The client submits only the selector. Pulse resolves it against the authorized
+The client submits the selector and a verbatim excerpt. Pulse resolves it against the authorized
 current Spec and seals the human-readable label/text plus stable ID into
-history. The `detail` must state **observable defect + impact + concrete
-remediation**; an ID alone is never sufficient. Reuse one anchor for multiple
-metrics only when each pinpoint explains a distinct metric-specific impact.
+history and rejects excerpts absent from that source. The `detail` states the
+observable problem and impact; `recommendation` states the concrete action.
+Use one finding with multiple dimensions for the same issue, explaining their
+impact, instead of duplicating the finding. Sealed native records remain intact;
+missing classification is never inferred retrospectively.
 
 Pinpoints remain optional in the transport contract, but this evaluator method
 requires:
@@ -303,10 +341,14 @@ Example pinpoint for the “before” version:
 
 ```json
 {
-  "metric": "decidability",
+  "metrics": ["decidability", "assertiveness"],
+  "kind": "problem",
+  "severity": "high",
+  "excerpt": "The application must have high availability.",
   "anchor_type": "structured_child",
   "anchor_ref": "tr_availability",
-  "detail": "The requirement names high availability but supplies no topology, SLO, scaling bounds, or recovery rule, so implementers must invent materially different operating models; specify those constraints and measurable defaults."
+  "detail": "High availability supplies no topology, SLO, scaling bounds or recovery rule, leaving materially different operating models and no objective test.",
+  "recommendation": "Specify topology, SLO, scaling bounds and recovery constraints with measurable defaults."
 }
 ```
 
@@ -353,17 +395,22 @@ identify the exceptional blocker and a pinpoint must locate it. `reject`
 always wins; `approve` never overrides a threshold violation.
 
 Each score requires its own evaluator justification. Pulse validates and stores
-this externally supplied assessment but does not run an evaluator. Historical
-`score`/`summary` and `completeness` records remain readable compatibility
-evidence and do not define the canonical five-metric gate.
+this externally supplied assessment but does not run an evaluator. Current and
+Previous retain native v0.4.0 assessments and their lifecycle editions.
+Incompatible records containing removed `score`/`summary` or `completeness`
+fields are refused before history filtering or pagination, without conversion.
 
-**Anti-pattern — GRAVE violation:** Re-submitting with higher numbers without actually improving the spec. The correct response to a failed dimension is to ADD content (new test scenarios, refined BRs, edge cases) until you genuinely believe the score is higher.
+**After a failed dimension:** correct the evidenced findings, then re-read and
+re-evaluate with the same rubric and effective thresholds. A correction may
+add missing coverage, remove redundancy, clarify scope or resolve contradictory
+requirements. More text is not itself improvement. Never raise scores without
+new supporting evidence or change severity merely to pass the gate.
 
 **FR coverage source:** the deterministic FR coverage gate is `Functional Requirement -> Business Rule`. It reads `business_rules[].linked_requirements`; direct task links on `functional_requirements[].linked_task_ids` are traceability only and do not close `fr_coverage_pct`.
 
 **MCP tools for the gate:**
 - `okto_pulse_submit_spec_validation(...)` — requires spec in `approved` status.
-- `okto_pulse_list_spec_validations(board_id, spec_id)` — returns Current and Previous results by lifecycle edition; legacy SQL `NULL` editions are history-only under Previous.
+- `okto_pulse_list_spec_validations(board_id, spec_id)` — returns Current and Previous results by lifecycle edition; prior editions remain history-only under Previous.
 - `okto_pulse_move_spec(board_id, spec_id, status="draft")` — the single-hop reopen path. It starts a new edition, clears `current_validation_id`, and preserves earlier results under Previous.
 
 Current Spec Validation is owned by this human validation lifecycle. It stays
@@ -379,24 +426,25 @@ submission replaces Current within an edition.
 
 Every board resolves one versioned binding for target `spec`, phase
 `spec_validation`, and mode `off`, `advisory`, or `blocking`. New boards
-snapshot the mode selected by the active Global Default; absent and historical
-default values resolve to `advisory`. Legacy boards without a binding resolve
-effective `off` without creating a row. Only an authenticated human session
+persist the mode selected by the active Global Default. Every Board requires an
+explicit binding, including mode `off`. Entry into validation freezes this binding
+for the Spec edition; later Board changes apply to the next edition. Before entry,
+preview reads Board configuration without creating a snapshot. A missing snapshot
+after entry is rejected. Only an authenticated human session
 can change the board binding or the checklist mode on a Global Default.
 Agents can read and execute the curated checklist but cannot mutate either of
 those human-owned controls.
 
 The execution flow is:
 
-1. Read `okto_pulse_get_checklist_binding(board_id)` and the required full Spec
+1. Read `okto_pulse_get_checklist_binding(board_id, spec_id)` and the required full Spec
    context.
 2. If mode is `advisory` or `blocking`, call
-   `okto_pulse_start_checklist_execution` with the current binding digest and
+   `okto_pulse_start_checklist_execution` with the returned `version` as `binding_version` and
    exact Spec edition plus its technical version.
 3. Submit all ten immutable items exactly once with `pass`, `fail`, or allowed
    `not_applicable`; every result needs an anchor and N/A needs a rationale.
-4. Read the submitted result with `okto_pulse_get_checklist_receipt` (the
-   compatibility API name), then re-run full Spec context or
+4. Read the submitted result with `okto_pulse_get_checklist_receipt`, then re-run full Spec context or
    `okto_pulse_get_allowed_transitions`. Canonical human readiness requires a
    passing Current result for the exact Spec edition. Frozen content, template,
    and binding identities remain technical audit evidence and do not create a
@@ -414,10 +462,11 @@ The same pure readiness predicate drives
 `okto_pulse_get_allowed_transitions`, `okto_pulse_move_spec`,
 `okto_pulse_submit_spec_validation`, full Spec context, and REST/UI state.
 Canonical blocking codes are `spec_checklist_gate_required` plus technical
-compatibility reason codes such as `checklist_receipt_required`,
-`checklist_receipt_stale`, `checklist_item_failed`, or
-`manual_checklist_legacy_unverified`. The `receipt`/`stale` vocabulary in those
-stable codes does not define the human UI state, which is Current or Previous.
+reason codes `checklist_receipt_required` and `checklist_item_failed`.
+Every Checklist execution and result requires a positive Spec edition. Only
+`current` and `previous` history filters are accepted; imported manual results
+and editionless rows are outside the storage contract. Version/content/template
+changes remain write fences and audit facts, not a second human-validity model.
 
 MCP read/execution tools:
 
@@ -431,7 +480,9 @@ Exact arguments and result envelopes are documented in
 
 ## Spec Evaluation Gate — `okto_pulse_submit_spec_evaluation`
 
-After a spec reaches `validated`, it must undergo qualitative evaluation before moving to `in_progress`.
+Qualitative evaluation can be recorded in `approved` or `validated`. Recording
+does not promote the Spec. A Current evaluation is reused when starting work;
+advancing to Validated in the same edition does not require another review.
 
 **Tool:** `okto_pulse_submit_spec_evaluation(board_id, spec_id, breakdown_completeness, breakdown_justification, granularity, granularity_justification, dependency_coherence, dependency_justification, test_coverage_quality, test_coverage_justification, overall_score, overall_justification, recommendation)`
 
@@ -466,13 +517,30 @@ After a spec reaches `validated`, it must undergo qualitative evaluation before 
 
 ## Decisions Coverage Gate
 
-`skip_decisions_coverage` defaults to `False` on newly created specs. `okto_pulse_submit_spec_validation` calls `check_decisions_coverage` and rejects the spec if any Decision with `status="active"` has no `linked_task_ids`.
+There is no minimum number of Decisions. Do not invent a Decision solely to
+advance a Spec. An empty collection does not waive any other planning gate.
+
+`check_decisions_coverage` rejects active Decisions without a complete explicit
+verification plan: exact active obligation_refs in the same Spec and/or inspection
+condition with bounded scope_refs. Task links are contextual and confer no proof.
+`skip_decisions_coverage` and its Board counterpart do not bypass this contract.
+Do not create an implementation task or Test Card solely to cover a Decision.
+
+At delivery, selected obligations must have their current effective proofs and
+every declared inspection must be verified. Both are required when declared.
+The direct inspection command requires spec.validation.submit and applicable
+reads/interaction, applies reviewer separation, and preserves conflicts/history.
+Semantic Spec Validation checks the adequacy of references and must reject
+executable product behavior hidden only inside a Decision.
 
 **Coverage summary** in `okto_pulse_get_spec_context`:
 - `decisions_total`: total count of `active` decisions.
-- `decisions_linked`: `active` decisions that have at least one entry in `linked_task_ids`.
-- `decisions_coverage_pct`: 0-100.
-- `decisions_uncovered_ids`: list of `decision.id` values with no linked tasks.
+- `decisions_planned`: active Decisions with a resolved verification plan.
+- `decisions_planning_pct`: 0-100, planning only, never evidence of delivery.
+- `decisions_pending_ids`: Decisions whose verification plan remains incomplete.
+
+Current adherence and proof references come from the shared delivery evaluator;
+read `okto_pulse_get_decision_reviews` before inspection or closeout.
 
 ## Task Validation Gate — `okto_pulse_submit_task_validation`
 
@@ -497,9 +565,9 @@ new conclusion, and hands off a new validation attempt. Every call carries
 `expected_subject_version` and `idempotency_key`; exact retries resolve before
 the mutable status check, while key reuse with a different payload fails.
 
-The `resolved_from` field in `validation_config` tells you which level provided the active configuration (`"board"`, `"spec"`, or `"sprint"`).
+The `resolved_from` field in `validation_config` tells you which level provided the active configuration (`"board"` or `"spec"`).
 
-**Independent reviewer policy:** `reviewer_separation_mode` is resolved from the board before any task-validation mutation. The full task context projects the current caller's `reviewer_separation` decision against card creator, assignee, and executor identities. `enforce` blocks with the action-required code `reviewer_separation_required`; `warn` and `off` proceed and persist the decision in the append-only validation. Legacy persisted boards with the setting absent resolve explicitly to `off` / `legacy_absent_compat`; new boards and new default-board template versions use `enforce` unless configured otherwise.
+**Independent reviewer policy:** `reviewer_separation_mode` is resolved from the board before any task-validation mutation. The full task context projects the current caller's `reviewer_separation` decision against card creator, assignee, and executor identities. `enforce` blocks with the action-required code `reviewer_separation_required`; `warn` and `off` proceed and persist the decision in the append-only validation. Omitted settings use the current `enforce` default with `source=board_default`; invalid policy values are refused. Community bootstrap Boards explicitly select `off`; authored Boards and new default-board template versions use `enforce` unless configured otherwise.
 
 **Coverage summary tools:**
 - `okto_pulse_list_spec_evaluations(board_id, spec_id)` — evaluations history.
@@ -531,14 +599,14 @@ per-Spec skip is changed through the Code Evidence Matrix surface. Resolution
 matches the other coverage gates: `effective_skip = board_global OR spec_local`.
 Either flag bypasses only `code_evidence_disposition_required`; neither admits
 an incomplete bounded projection nor disables separately applicable
-traceability/currentness controls. Historical absent flags resolve to `false`.
+traceability/currentness controls. New authored flags default to `false`.
 An authenticated external agent performs source access checks and deterministic
 investigation before submission. Pulse Core validates the receipt and Community
 persists/projects it; neither reads a repository to satisfy the gate.
 
 For the broader Code Traceability posture,
-historical absent, `null`, or `off` settings resolve to the default Advisory
-behavior; that compatibility rule does not disable the deterministic matrix
-coverage gate described above.
+creation defaults to Advisory. Persisted and authored settings share the same
+closed contract: `null` and `off` are refused without conversion. The deterministic
+matrix coverage gate described above remains separately applicable.
 
 Read `okto-pulse://reference/code-traceability` before operating this domain.

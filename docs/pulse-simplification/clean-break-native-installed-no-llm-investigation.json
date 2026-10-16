@@ -1,0 +1,501 @@
+{
+  "criterion": "KG:KG-39",
+  "qualification": "pending_current_pair_review",
+  "product_pair": {
+    "core": "47be6152",
+    "community": "4a992007",
+    "wheel_directory": "dist-native-main66"
+  },
+  "scope": "Fresh disposable installed CLI init followed by fresh-process composed health reads. No real data/runtime touched.",
+  "proof": "Byte-identical source/wheel/install before behavior: core 835 Python/896 payload, community 317/403.",
+  "results": {
+    "init_exit_code": 0,
+    "credential_handoff": true,
+    "credential_exposed": false,
+    "global_bootstrap": "materialized",
+    "board_bootstrap_schema": "0.8.0",
+    "relational_source": "available",
+    "global_discovery": "healthy",
+    "overall_health": "at_risk",
+    "direct_graph_query": "successful empty Spec relevance_score result",
+    "observed_failure": "graph_health_deadline_exceeded",
+    "layer_counts": "layer_columns_unavailable"
+  },
+  "limitations": [
+    "Not a passing full health acceptance test. Product unmodified.",
+    "CLI embedding mode stub384, demo seed disabled; no claim of production embedding validation.",
+    "Provider configuration environment removed and board cognitive_llm_config absent; no provider activation spy yet.",
+    "Initial -I health invocation failed because SQLAlchemy is in user-site; rerun with same environment as installed CLI, without PYTHONPATH/PYTHONHOME.",
+    "Scheduler stopped/no decay run in this offline composition.",
+    "global_discovery_legacy_primary_present is emitted for this NEW Grafx install; native bootstrap versus recovery layout must be traced before removal."
+  ],
+  "next_action": "Investigate bounded health query work exceeding its deadline on initialized Grafx; preserve fail-closed telemetry and authority. Add repeatable automated acceptance before qualifying KG39.",
+  "artifacts": {
+    "provenance-native-main66-health-init.json": {
+      "sha256": "95e66e7917f413f6b7a0a7592ae8a06469742fa2faf3e89407e34ce67fd3d82a"
+    },
+    "run_native_no_llm_init1.py": {
+      "sha256": "6bcd52d41d2f82cfc064c0629c7c44e58732be76e67f9d6f30ff9b6ef12dc860"
+    },
+    "run_native_no_llm_health1.py": {
+      "sha256": "a726ec99ca5b7584f170203fcf2b8c577af45e01132d92d7d9a7b79310a85a2d"
+    },
+    "probe_native_no_llm_health1.py": {
+      "sha256": "a9c95925f9638563545c492be1ef4464415da4a10a5fab4da50f7aa221a12adb"
+    },
+    "native-no-llm-init1/init.log": {
+      "sha256": "f6f15b66aeb864a53c257c9ff53b3de5d05a0a664c80ef2e0813bd290c00b480"
+    },
+    "native-no-llm-init1/health.log": {
+      "sha256": "ac9f47353a2ab93b9447a1f83ce8fe90b817866e568b0a0af8f487b5b1a176cd"
+    },
+    "native-no-llm-init1/health.json": {
+      "sha256": "7c5b0112212b69b70b1d9a0818d75828fa263590bd208a4d90164466a548a79c"
+    },
+    "native-no-llm-init1/health-observations.json": {
+      "sha256": "40a1a04e306c60c3733d6e35aaa9cd975431330501eab2bc8b1d0b19a8c15d4f"
+    }
+  },
+  "reproduction_sources": {
+    "run_native_no_llm_init1.py": "import json, os, subprocess, sys\nfrom pathlib import Path\nbase=Path(__file__).parent\nroot=base/\"native-no-llm-init1\"\nroot.mkdir(exist_ok=False)\nenv=dict(os.environ)\nfor name in list(env):\n    if name in (\"PYTHONPATH\",\"PYTHONHOME\") or any(x in name.upper() for x in (\"OPENAI\",\"ANTHROPIC\",\"LLM\",\"GEMINI\",\"COHERE\")):\n        env.pop(name)\nenv.update(DATA_DIR=str(root),DATABASE_URL=\"sqlite+aiosqlite:///\"+(root/\"data/pulse.db\").as_posix(),KG_BASE_DIR=str(root),UPLOAD_DIR=str(root/\"uploads\"),METRICS_DIR=str(root/\"metrics\"),KG_EMBEDDING_MODE=\"stub\",KG_EMBEDDING_DIM=\"384\",KG_GRAPH_BACKEND=\"grafx\",KG_GLOBAL_GRAPH_BACKEND=\"grafx\",OKTO_PULSE_SKIP_DEMO_SEED=\"1\",OKTO_PULSE_TERMS_ACCEPTED=\"1\",OKTO_PULSE_NO_BANNER=\"1\",HF_HUB_OFFLINE=\"1\",TRANSFORMERS_OFFLINE=\"1\",PYTHONUTF8=\"1\")\nresult=subprocess.run([str(base/\"venv/Scripts/okto-pulse.exe\"),\"init\",\"--bootstrap-key-handoff\",str(root/\"bootstrap-key\")],env=env,cwd=root,capture_output=True,text=True,encoding=\"utf-8\",timeout=300)\nkeypath=root/\"bootstrap-key\"\nkey=keypath.read_text().strip() if keypath.exists() else \"\"\noutput=result.stdout+result.stderr\nassert not key or key not in output\n(root/\"init.log\").write_text(output,encoding=\"utf-8\")\nprint(json.dumps({\"exit_code\":result.returncode,\"credential_handoff\":bool(key),\"root\":str(root)}))\nprint(output[-6000:])\nsys.exit(result.returncode)\n",
+    "run_native_no_llm_health1.py": "import json, os, subprocess, sys\nfrom pathlib import Path\nbase=Path(__file__).parent\nroot=base/\"native-no-llm-init1\"\nassert root.is_dir()\nenv=dict(os.environ)\nfor name in list(env):\n    if name in (\"PYTHONPATH\",\"PYTHONHOME\") or any(x in name.upper() for x in (\"OPENAI\",\"ANTHROPIC\",\"LLM\",\"GEMINI\",\"COHERE\")):\n        env.pop(name)\nenv.update(DATA_DIR=str(root),DATABASE_URL=\"sqlite+aiosqlite:///\"+(root/\"data/pulse.db\").as_posix(),KG_BASE_DIR=str(root),UPLOAD_DIR=str(root/\"uploads\"),METRICS_DIR=str(root/\"metrics\"),KG_EMBEDDING_MODE=\"stub\",KG_EMBEDDING_DIM=\"384\",KG_GRAPH_BACKEND=\"grafx\",KG_GLOBAL_GRAPH_BACKEND=\"grafx\",OKTO_PULSE_SKIP_DEMO_SEED=\"1\",OKTO_PULSE_TERMS_ACCEPTED=\"1\",OKTO_PULSE_NO_BANNER=\"1\",HF_HUB_OFFLINE=\"1\",TRANSFORMERS_OFFLINE=\"1\",PYTHONUTF8=\"1\")\nresult=subprocess.run([str(base/\"venv/Scripts/python.exe\"),\"-X\",\"utf8\",str(base/\"probe_native_no_llm_health1.py\")],env=env,cwd=root,capture_output=True,text=True,encoding=\"utf-8\",timeout=300)\n(root/\"health.log\").write_text(result.stdout+result.stderr,encoding=\"utf-8\")\nprint(\"\\n\".join(line for line in result.stdout.splitlines() if not line.startswith(\"{\")))\nprint(result.stderr[-4000:])\nsys.exit(result.returncode)\n",
+    "probe_native_no_llm_health1.py": "import asyncio,json,logging\nlogger=logging.getLogger(\"okto_pulse.services.kg_health\")\nlogger.setLevel(logging.DEBUG)\nlogger.addHandler(logging.StreamHandler())\nfrom pathlib import Path\nfrom sqlalchemy import select\nfrom okto_pulse.core import configure_settings\nfrom okto_pulse.community.config import CommunitySettings\nfrom okto_pulse.community.cli import _configure_community_relational_runtime\nfrom okto_pulse.community.adapters.sqlalchemy_database import get_session_factory,close_db\nfrom okto_pulse.community.adapters.sqlalchemy_models import Board\nfrom okto_pulse.community.adapters.composition import configure_community_kg_registry\nfrom okto_pulse.community.adapters.coordination import register_community_coordination_providers\nfrom okto_pulse.community.adapters.kg_shutdown import close_all_graphs_on_shutdown\nfrom okto_pulse.core.services.kg_health_service import get_kg_health\nasync def main():\n    settings=CommunitySettings()\n    configure_settings(settings)\n    _configure_community_relational_runtime(settings)\n    factory=get_session_factory()\n    register_community_coordination_providers()\n    configure_community_kg_registry(factory,settings=settings)\n    try:\n        async with factory() as db:\n            board=(await db.execute(select(Board))).scalars().one()\n            assert not (board.settings or {}).get(\"cognitive_llm_config\")\n            from okto_pulse.core.kg.interfaces import get_kg_registry\n            cypher=get_kg_registry().cypher_executor\n            try:\n                result=await asyncio.to_thread(cypher.execute_read_only,board.id,\"MATCH (n:Spec) RETURN n.relevance_score\",{},max_rows=10000)\n                print(\"direct_probe\",result)\n            except Exception as exc:\n                print(\"direct_probe_error\",type(exc).__name__,str(exc))\n            from okto_pulse.core.services import kg_health_service as service\n            original=service._read_health_query_group\n            def observed(*args,**kwargs):\n                results=original(*args,**kwargs)\n                for result in results:\n                    if isinstance(result,Exception):\n                        print(\"query_failure\",type(result).__name__,getattr(result,\"code\",None),getattr(result,\"details\",None),repr(result.__cause__))\n                return results\n            service._read_health_query_group=observed\n            health=await get_kg_health(board.id,db)\n            observations=[health]\n            for attempt in range(6):\n                if not any(v.get(\"refresh_in_progress\") for v in health[\"probe_diagnostics\"].values() if isinstance(v,dict)):\n                    break\n                await asyncio.sleep(2)\n                health=await get_kg_health(board.id,db)\n                observations.append(health)\n            Path(settings.data_dir,\"health-observations.json\").write_text(json.dumps(observations,indent=2,default=str),encoding=\"utf-8\")\n            Path(settings.data_dir,\"health.json\").write_text(json.dumps(health,indent=2,default=str),encoding=\"utf-8\")\n            print(json.dumps(health,default=str))\n    finally:\n        await asyncio.to_thread(close_all_graphs_on_shutdown)\n        await close_db()\nasyncio.run(main())\n"
+  },
+  "health": {
+    "board_id": "75ca38c7-b20e-4486-b099-6fc6345bd33e",
+    "graph_state": "at_risk",
+    "discovery_state": "healthy",
+    "overall_state": "at_risk",
+    "current_kg_generation_id": null,
+    "metric_status": "unavailable",
+    "classification_reason": "board_graph_metadata_present;graph:metric.unavailable;graph_metrics_observation_incomplete;health_probe_unavailable:digest_layer_parity",
+    "materialization_state": "materialized",
+    "materialization_generation": "unmaterialized-v1",
+    "probe_reason_codes": {
+      "board_graph": "board_graph_metadata_present",
+      "board_census": "board_census_available",
+      "global_discovery": "global_discovery_legacy_primary_present"
+    },
+    "correlation_id": "c54c8250411344b7ba84f9bf161122bb",
+    "recent_events": [],
+    "checked_at": "2026-10-07T23:57:25.291625+00:00",
+    "probe_diagnostics": {
+      "graph_snapshot": {
+        "status": "available",
+        "reason": "ok",
+        "age_seconds": 1.084,
+        "refresh_in_progress": false
+      },
+      "artifact_snapshot": {
+        "status": "available",
+        "reason": "ok",
+        "age_seconds": 2.59,
+        "refresh_in_progress": false
+      },
+      "parity_snapshot": {
+        "status": "stale",
+        "reason": "cache_expired_refresh_scheduled",
+        "age_seconds": 0.0,
+        "refresh_in_progress": false
+      },
+      "discovery_snapshot": {
+        "status": "available",
+        "reason": "global_discovery_legacy_primary_present",
+        "age_seconds": 0.0,
+        "refresh_in_progress": false
+      },
+      "graph_metrics": {
+        "status": "unavailable",
+        "reason": "graph_metrics_query_unavailable"
+      },
+      "schema_version": {
+        "status": "unavailable",
+        "reason": "ok"
+      },
+      "discovery_telemetry": {
+        "status": "available",
+        "reason": "global_discovery_legacy_primary_present"
+      },
+      "current_generation": {
+        "status": "available",
+        "reason": "ok",
+        "source_status": "available",
+        "snapshot_freshness": {
+          "status": "available",
+          "reason": "ok",
+          "age_seconds": 2.59,
+          "refresh_in_progress": false,
+          "is_stale": false,
+          "max_age_seconds": 30.0
+        }
+      },
+      "storage_footprint": {
+        "status": "available",
+        "reason": null
+      },
+      "native_runtime_budget": {
+        "status": "available",
+        "reason": null
+      },
+      "layer_counts": {
+        "status": "unavailable",
+        "reason": "layer_columns_unavailable"
+      },
+      "cognitive_items": {
+        "status": "available",
+        "reason": "ok",
+        "source_status": "available",
+        "snapshot_freshness": {
+          "status": "available",
+          "reason": "ok",
+          "age_seconds": 2.59,
+          "refresh_in_progress": false,
+          "is_stale": false,
+          "max_age_seconds": 30.0
+        }
+      },
+      "rebuild_source_diagnostics": {
+        "status": "available",
+        "reason": "ok",
+        "source_status": "available",
+        "snapshot_freshness": {
+          "status": "available",
+          "reason": "ok",
+          "age_seconds": 2.59,
+          "refresh_in_progress": false,
+          "is_stale": false,
+          "max_age_seconds": 30.0
+        }
+      },
+      "stale_canonical_parity": {
+        "status": "available",
+        "reason": "ok"
+      },
+      "digest_layer_parity": {
+        "status": "unavailable",
+        "reason": "global_discovery_read_failed"
+      }
+    },
+    "queue_depth": 0,
+    "oldest_pending_age_s": 0.0,
+    "dead_letter_count": 0,
+    "global_outbox_dead_letter_count": 0,
+    "active_queue": {
+      "board_id": "75ca38c7-b20e-4486-b099-6fc6345bd33e",
+      "worker_mode": "stopped",
+      "worker_modes": {
+        "consolidation_queue": "stopped",
+        "global_update_outbox": "stopped"
+      },
+      "total_active_depth": 0,
+      "classification": "idle",
+      "next_action": "none",
+      "diagnostic": {
+        "bounded": true,
+        "worst_source": "global_update_outbox",
+        "classification": "idle",
+        "worker_mode": "stopped",
+        "reason": "no_active_work"
+      },
+      "alert_threshold": 5000,
+      "stuck_age_seconds": 300,
+      "drill_down_tool": null,
+      "sources": [
+        {
+          "source": "consolidation_queue",
+          "worker_family": "consolidation_worker",
+          "worker_mode": "stopped",
+          "queue_depth": 0,
+          "by_status": {
+            "pending": 0,
+            "claimed": 0
+          },
+          "by_category": {},
+          "oldest_age_seconds": 0.0,
+          "oldest_actionable_age_seconds": 0.0,
+          "state_counts": {
+            "ready": 0,
+            "scheduled_retry": 0,
+            "claimed": 0,
+            "overdue_claimed": 0
+          },
+          "by_work_kind": {},
+          "max_attempts": 0,
+          "next_retry_at": null,
+          "items": [],
+          "items_truncated": false,
+          "classification": "idle",
+          "reason": "no_active_work",
+          "next_action": "none"
+        },
+        {
+          "source": "global_update_outbox",
+          "worker_family": "outbox_worker",
+          "worker_mode": "stopped",
+          "queue_depth": 0,
+          "by_status": {
+            "pending": 0
+          },
+          "by_category": {},
+          "oldest_age_seconds": 0.0,
+          "classification": "idle",
+          "reason": "no_active_work",
+          "next_action": "none"
+        }
+      ]
+    },
+    "operational_domains": {
+      "active_queue": {
+        "domain": "active_queue",
+        "semantics": "transient_operational",
+        "count": 0,
+        "classification": "idle",
+        "drill_down_tool": null
+      },
+      "dead_letter": {
+        "domain": "dead_letter",
+        "semantics": "terminal_failure",
+        "count": 0,
+        "drill_down_tool": null
+      },
+      "global_outbox_dead_letter": {
+        "domain": "global_outbox_dead_letter",
+        "semantics": "terminal_global_discovery_delivery_failure",
+        "count": 0,
+        "oldest_age_seconds": 0.0,
+        "drill_down_tool": null,
+        "drill_down_signal": "global_outbox_dead_letter"
+      },
+      "canonical_debt": {
+        "domain": "canonical_debt",
+        "semantics": "semantic_canonicality_pending",
+        "count": 0,
+        "status": "available",
+        "drill_down_tool": null
+      },
+      "policy_constraint_projection": {
+        "domain": "policy_constraint_projection",
+        "semantics": "policy_constraint_event_delivery",
+        "handler_name": "PolicyConstraintProjectionHandler",
+        "pending_count": 0,
+        "processing_count": 0,
+        "retry_scheduled_count": 0,
+        "dlq_count": 0,
+        "active_count": 0,
+        "max_attempt_count": 0,
+        "oldest_pending_at": null,
+        "oldest_processing_at": null,
+        "oldest_retry_scheduled_at": null,
+        "oldest_retry_due_at": null,
+        "oldest_dlq_at": null,
+        "oldest_pending_age_seconds": 0.0,
+        "oldest_processing_age_seconds": 0.0,
+        "oldest_retry_scheduled_age_seconds": 0.0,
+        "retry_overdue_age_seconds": 0.0,
+        "oldest_dlq_age_seconds": 0.0,
+        "stuck_after_seconds": 300,
+        "classification": "idle",
+        "severity": "info",
+        "drill_down_tool": "okto_pulse_kg_health_readiness",
+        "drill_down_signal": "policy_constraint_projection_dlq"
+      }
+    },
+    "root_cause": {
+      "scope": "graph",
+      "classification_reasons": [
+        "graph:metric.unavailable"
+      ],
+      "materialized_node_count": null,
+      "source_count": 0,
+      "queue_state": {
+        "queue_depth": 0,
+        "active_classification": "idle",
+        "active_depth": 0,
+        "dead_letter_count": 0
+      },
+      "last_safe_write_outcome": "unknown",
+      "categories": {
+        "wal_or_commit_errors": {
+          "present": false,
+          "scope": "graph",
+          "present_scopes": []
+        },
+        "empty_after_materialized_history": {
+          "present": false,
+          "scope": "graph",
+          "applicable": true,
+          "materialized_node_count": null,
+          "source_count": 0
+        },
+        "source_enumeration_failure": {
+          "present": false,
+          "scope": "graph",
+          "applicable": true,
+          "error": null
+        },
+        "safe_write_drain_failure": {
+          "present": false,
+          "scope": "graph",
+          "applicable": true,
+          "outcomes": {}
+        }
+      },
+      "drilldown_unavailable": false,
+      "present_categories": []
+    },
+    "total_nodes": null,
+    "default_score_count": null,
+    "default_score_ratio": null,
+    "avg_relevance": null,
+    "source_count": 0,
+    "schema_version": "1.0",
+    "health_schema_version": "1.3",
+    "graph_schema_version": null,
+    "contradict_warn_count": 0,
+    "last_decay_tick_at": null,
+    "last_tick_status": null,
+    "last_tick_error": null,
+    "nodes_recomputed_in_last_tick": 0,
+    "tick_in_progress": false,
+    "boards_processed_in_last_tick": 0,
+    "boards_failed_in_last_tick": 0,
+    "state": "at_risk",
+    "memory_pressure_status": "unconfirmed",
+    "classification_reasons": [
+      "board_graph_metadata_present",
+      "graph:metric.unavailable",
+      "graph_metrics_observation_incomplete",
+      "health_probe_unavailable:digest_layer_parity"
+    ],
+    "dlq_auto_drain_last_run_at": null,
+    "dlq_auto_drain_requeued_count": 0,
+    "decay_scheduler_diagnostics": {
+      "status": "never_run",
+      "severity": "warning",
+      "last_success_at": null,
+      "last_failure_at": null,
+      "last_error": null,
+      "next_scheduled_at": null,
+      "stale_tolerance_seconds": 86400,
+      "recommended_action": "run_tick_now",
+      "operational_debt": true,
+      "graph_recovery_required": false,
+      "reason": "no_tick_run",
+      "running_started_at": null,
+      "source": "kg_tick_runs"
+    },
+    "storage_footprint_proxy": {
+      "source": "runtime_capability",
+      "status": "available",
+      "percentage": null,
+      "percentage_status": "not_applicable",
+      "percentage_reason": "no_capacity_limit_configured",
+      "high_water_mark_pct": null,
+      "graph_primary_bytes": 213354356,
+      "primary_bytes": 213354356,
+      "sidecar_bytes": 0,
+      "total_bytes": 213354356,
+      "configured_max_db_size_bytes": null,
+      "configured_max_db_size_gb": null,
+      "is_direct_memory_telemetry": false,
+      "description": "Storage footprint projection derived from the graph runtime adapter.",
+      "tooltip": "This is not live graph memory telemetry. It is an adapter-provided early warning signal.",
+      "unavailable_reason": null
+    },
+    "native_runtime_budget": {
+      "source": "runtime_capability",
+      "status": "available",
+      "requested": {
+        "board_buffer_pool_mb": 64,
+        "global_buffer_pool_mb": 64,
+        "read_participants": 2
+      },
+      "normalized": {},
+      "effective": {
+        "board_buffer_pool_mb": 64,
+        "global_buffer_pool_mb": 64,
+        "read_participants": 2
+      },
+      "sources": {},
+      "process_envelope": {
+        "buffer_pool_per_board_mb": 192,
+        "global_buffer_pool_mb": 192,
+        "total_process_bound_available": false
+      },
+      "is_direct_memory_telemetry": false,
+      "description": "Derived native graph runtime budget from configured limits and edition operational caps.",
+      "tooltip": "This is a deterministic, non-live capacity envelope; it is not process RSS or direct allocator telemetry.",
+      "unavailable_reason": null
+    },
+    "orphan_integrity": {
+      "classification_delta": "none",
+      "integrity_warning": false,
+      "orphan_count": 0,
+      "orphan_count_by_type": {},
+      "unresolved_reasons": {},
+      "allowlisted_root_count": 0,
+      "generation_id": null,
+      "correlation_id": "kg-orphan-scan-bc742fbb14ac4ddd",
+      "zero_orphan_validation": "passed",
+      "reason": "zero_non_allowlisted_orphans"
+    },
+    "kg_layer_counts": {
+      "status": "unavailable",
+      "by_layer": {},
+      "by_maturity_status": {},
+      "reason": "layer_columns_unavailable",
+      "failed_node_types": 11
+    },
+    "canonical_debt": {
+      "open_count": 0,
+      "retryable_count": 0,
+      "blocked_count": 0,
+      "retry_scheduled_count": 0,
+      "terminal_count": 0,
+      "by_state": {},
+      "status": "available"
+    },
+    "rebuild_diagnostics": {
+      "last_outcome": "no_generation",
+      "canonical_open_debt_count": 0,
+      "layer_counts_status": "unavailable",
+      "operator_action": "inspect_telemetry"
+    },
+    "graph_read_status": "not_materialized_or_unreadable",
+    "board_graph_queryable": false,
+    "board_graph_recovery_required": false,
+    "discovery_recovery_required": false,
+    "discovery_health_cause": "healthy",
+    "primary_health_cause": "telemetry_unavailable",
+    "operator_action": "inspect_telemetry",
+    "health_issues": [
+      {
+        "code": "telemetry_unavailable",
+        "component": "health_telemetry",
+        "severity": "warning",
+        "reason": "metric_status:unavailable",
+        "description": "Health sensors are unavailable, so canonical state remains at_risk by policy even when the graph is queryable.",
+        "operator_action": "inspect_telemetry"
+      },
+      {
+        "code": "decay_scheduler_never_run",
+        "component": "decay_scheduler",
+        "severity": "warning",
+        "reason": "decay_scheduler:no_tick_run",
+        "description": "Decay scheduler has operational debt. This does not imply board graph corruption or require KG rebuild by itself.",
+        "operator_action": "run_tick_now"
+      },
+      {
+        "code": "health_probe_unavailable",
+        "component": "kg_health",
+        "severity": "warning",
+        "reason": "health_probe_unavailable:digest_layer_parity",
+        "description": "One or more bounded KG Health probes did not complete within the read budget; the endpoint returned fail-safe projections.",
+        "operator_action": "inspect_probe_diagnostics",
+        "probes": [
+          "digest_layer_parity"
+        ]
+      }
+    ]
+  }
+}

@@ -636,20 +636,19 @@ def test_endpoint_derives_entity_type_from_source_ref_prefix(
     )
 
 
-# -------- Regression: existing KG-02/03 routes still up -----------------
+# -------- Regression: cognitive routes survive public maintenance retirement ---
 
 
 def test_existing_kg_routes_still_registered() -> None:
-    """AC11 regression — adding KG-03.6 does not unwire KG-02/03 surfaces."""
+    """Cognitive reads remain available; retired rebuild routes stay absent."""
 
     app = FastAPI()
     app.include_router(api_router)
     paths = set(app.openapi()["paths"])
     for required in (
-        "/api/v1/kg/rebuild/preflight",
-        "/api/v1/kg/rebuild/confirm",
-        "/api/v1/kg/rebuild/run",
         "/api/v1/kg/cognitive-pending",
         "/api/v1/kg/cognitive-pending/badges",
     ):
         assert required in paths, f"{required} unwired"
+    for retired in ("preflight", "confirm", "run"):
+        assert f"/api/v1/kg/rebuild/{retired}" not in paths

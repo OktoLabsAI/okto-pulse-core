@@ -17,7 +17,7 @@ endpoint.
 `integration_type` accepted values: `api`, `queue`, `stored_procedure`,
 `data_contract`, `event`, `file`, `external_service`, `mcp_tool`, `other`.
 
-`linked_requirements` is pipe-separated and fail-closed. It accepts FR
+`linked_requirements` is a native string array and fail-closed. It accepts FR
 index/fr_id/text and structured TR id/text, then persists canonical IDs.
 Unresolved tokens abort the append before persistence.
 

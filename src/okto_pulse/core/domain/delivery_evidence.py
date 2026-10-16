@@ -9,7 +9,9 @@ provider, filesystem access, execution or state transitions occur here.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from okto_pulse.core.domain.enums import CardStatus, CardType, TestScenarioStatus
 
@@ -17,6 +19,29 @@ from okto_pulse.core.domain.enums import CardStatus, CardType, TestScenarioStatu
 class DeliveryPhase(str, Enum):
     IMPLEMENTATION = "implementation"
     TEST = "test"
+
+
+def require_delivery_entry_card_type(card_type: object, kind: str) -> None:
+    """A batch groups writes; it cannot borrow another Card type's authority."""
+    card_type = getattr(card_type, "value", card_type)
+    allowed = {
+        "progress": {"normal", "bug", "test"},
+        "implementation": {"normal", "bug"},
+        "test": {"test"},
+    }
+    if card_type not in allowed.get(kind, set()):
+        raise ValueError("delivery_entry_card_type_invalid")
+
+
+def require_delivery_batch_state(card: object) -> None:
+    status = getattr(card, "status", None)
+    # Done keeps the existing authorized proof-association repair path. A
+    # progress entry has its separate execution-only predicate. Neither kind
+    # may start rework or mutate a frozen submission through a batch.
+    if getattr(card, "archived", None) is not False or getattr(status, "value", status) not in {
+        "started", "in_progress", "done",
+    }:
+        raise ValueError("delivery_batch_card_frozen")
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +54,31 @@ class DeliveryScope:
         if not self.board_id.strip() or not self.spec_id.strip():
             raise ValueError("delivery_scope_identity_required")
         if type(self.edition) is not int or self.edition < 1:
+            raise ValueError("delivery_scope_edition_invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class CardDeliveryScope:
+    """Card-scoped addressing for the per-task delivery ledger.
+
+    The snapshot scope itself remains ``DeliveryScope`` so the deterministic
+    evaluator keeps comparing like with like; this type addresses the store
+    surface (one task's bindings) without changing proof semantics.
+    """
+
+    board_id: str
+    card_id: str
+    spec_id: str
+    spec_edition: int
+
+    def __post_init__(self) -> None:
+        if (
+            not self.board_id.strip()
+            or not self.card_id.strip()
+            or not self.spec_id.strip()
+        ):
+            raise ValueError("delivery_scope_identity_required")
+        if type(self.spec_edition) is not int or self.spec_edition < 1:
             raise ValueError("delivery_scope_edition_invalid")
 
 
@@ -53,6 +103,82 @@ class DeliveryObligation:
 
 
 @dataclass(frozen=True, slots=True)
+class DeliveryContribution:
+    binding: DeliveryBinding
+    contribution: Literal["partial", "complete"]
+    execution_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.contribution not in {"partial", "complete"}:
+            raise ValueError("delivery_contribution_invalid")
+
+
+def read_delivery_contributions(
+    payload: dict, bindings: tuple[DeliveryBinding, ...]
+) -> tuple[DeliveryContribution, ...]:
+    """Decode explicit server-persisted declarations in the current ledger.
+
+    Never infer complete from a receipt, a missing new-format field or an empty
+    collection. Declaration data does not establish receipt validity.
+    """
+    rows = payload.get("contributions")
+    version = payload.get("contribution_contract_version")
+    if version != "card-binding-contribution/v2" or not isinstance(rows, list) or not rows:
+        raise ValueError("delivery_contribution_payload_invalid")
+    by_ref = {binding.obligation_ref: binding for binding in bindings}
+    if len(by_ref) != len(bindings) or len(rows) != len(bindings):
+        raise ValueError("delivery_contribution_payload_invalid")
+    seen = set()
+    result = []
+    execution_count = 0
+    for row in rows:
+        fields = {"obligation_ref", "contribution", "execution_ids"}
+        if not isinstance(row, dict) or set(row) != fields:
+            raise ValueError("delivery_contribution_payload_invalid")
+        ref = row["obligation_ref"]
+        if not isinstance(ref, str) or ref not in by_ref or ref in seen:
+            raise ValueError("delivery_contribution_payload_invalid")
+        seen.add(ref)
+        execution_ids = row["execution_ids"]
+        if (
+            not isinstance(execution_ids, list) or not 1 <= len(execution_ids) <= 100
+            or any(not isinstance(identity, str) or not identity.strip() or len(identity) > 512 for identity in execution_ids)
+            or len(set(execution_ids)) != len(execution_ids)
+        ):
+            raise ValueError("delivery_execution_set_invalid")
+        execution_count += len(execution_ids)
+        result.append(DeliveryContribution(by_ref[ref], row["contribution"], tuple(execution_ids)))
+    if execution_count + len(rows) > 200:
+        raise ValueError("delivery_execution_set_invalid")
+    return tuple(result)
+
+
+def delivery_execution_ids(payload: dict, selected_bindings: tuple[DeliveryBinding, ...] | None = None) -> tuple[str, ...]:
+    """Exact immutable receipt references, optionally restricted to tested bindings."""
+    bindings = tuple(DeliveryBinding(**value) for value in payload.get("bindings", []))
+    contributions = read_delivery_contributions(payload, bindings)
+    return tuple(sorted({identity for item in contributions
+        if selected_bindings is None or item.binding in selected_bindings
+        for identity in item.execution_ids}))
+
+
+@dataclass(frozen=True, slots=True)
+class ImplementationExecutionProof:
+    execution_id: str
+    target_id: str
+    target_revision: int
+    source_ref: str
+    result_revision: str
+    relative_path: str
+    current_accepted_execution: bool
+    symbol: str | None = None
+    blocking_progress_ids: tuple[str, ...] = ()
+    blocking_progress_truncated: bool = False
+    observed_at: datetime | None = None
+    rejection_reasons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class ImplementationDeliveryFact:
     id: str
     scope: DeliveryScope
@@ -60,16 +186,66 @@ class ImplementationDeliveryFact:
     card_type: CardType
     card_status: CardStatus
     bindings: tuple[DeliveryBinding, ...]
-    source_ref: str
-    result_revision: str
-    relative_path: str
     explanation: str
-    receipt_id: str
-    # Projection of an authenticated, non-revoked current target execution
-    # record (not merely a planned target, receipt ID or agent-supplied flag).
-    current_accepted_execution: bool
     actor_id: str
-    symbol: str | None = None
+    # Missing declarations never establish completion.
+    contributions: tuple[DeliveryContribution, ...] = ()
+    executions: tuple[ImplementationExecutionProof, ...] = ()
+    blocking_progress_ids: tuple[str, ...] = ()
+    blocking_progress_truncated: bool = False
+
+
+def implementation_binding_proof_issue(fact: ImplementationDeliveryFact, binding: DeliveryBinding) -> str | None:
+    """Check only the declared receipt set; no head is transferred to a new binding."""
+    if binding not in fact.bindings:
+        return "delivery_execution_set_unresolved"
+    selected = [item for item in fact.contributions or () if item.binding == binding]
+    if len(selected) != 1 or not selected[0].execution_ids:
+        return "delivery_execution_set_unresolved"
+    by_id = {proof.execution_id: proof for proof in fact.executions}
+    ids = selected[0].execution_ids
+    if len(by_id) != len(fact.executions) or len(set(ids)) != len(ids) or any(identity not in by_id for identity in ids):
+        return "delivery_execution_set_unresolved"
+    proofs = [by_id[identity] for identity in ids]
+    # Different commits/repos are not evidence of a compatible integrated base.
+    # Each binding can independently name a different observed immutable base.
+    if not all(proof.current_accepted_execution is True
+            and type(proof.target_revision) is int and proof.target_revision >= 1
+            and _text(proof.execution_id, proof.target_id, proof.source_ref, proof.result_revision, proof.relative_path)
+            for proof in proofs):
+        return "delivery_accepted_committed_task_execution_required"
+    if len({proof.target_id for proof in proofs}) != len(proofs):
+        return "delivery_execution_set_ambiguous"
+    if len({(proof.source_ref, proof.result_revision) for proof in proofs}) != 1:
+        return "delivery_execution_base_conflict"
+    return None
+
+
+def implementation_binding_proof_current(fact: ImplementationDeliveryFact, binding: DeliveryBinding) -> bool:
+    return implementation_binding_proof_issue(fact, binding) is None
+
+
+def implementation_binding_ready(fact: ImplementationDeliveryFact, binding: DeliveryBinding) -> bool:
+    return implementation_binding_complete(fact, binding) and implementation_binding_proof_current(fact, binding)
+
+
+def implementation_binding_complete(fact: ImplementationDeliveryFact, binding: DeliveryBinding) -> bool:
+    """One completion predicate for the pre-Done gate and final rollup.
+
+    Two partial records do not accumulate completion. Technical admission,
+    scope, lifecycle and review remain independent predicates of the caller.
+    """
+    if binding not in fact.bindings:
+        return False
+    if not fact.contributions:
+        return False
+    declarations = {item.binding: item.contribution for item in fact.contributions}
+    return (
+        len(declarations) == len(fact.contributions) == len(fact.bindings)
+        and set(declarations) == set(fact.bindings)
+        and all(value in {"partial", "complete"} for value in declarations.values())
+        and declarations.get(binding) == "complete"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +265,47 @@ class TestDeliveryFact:
     current_verified_run: bool
     actor_id: str
     verified_implementation_ids: tuple[str, ...] = ()
+    rejection_reasons: tuple[str, ...] = ()
+
+
+def require_test_result_admission(snapshot: DeliveryEvidenceSnapshot, fact: TestDeliveryFact | None) -> None:
+    """Preserve authenticated outcomes before final lifecycle/coverage credit.
+
+    Failed runs and partial implementations are useful execution facts. Neither
+    is promoted to successful delivery by this admission predicate.
+    """
+    error = "delivery_current_verified_test_and_implementation_required"
+    if (snapshot.complete is not True or fact is None or fact.scope != snapshot.scope
+        or fact.card_type != CardType.TEST or fact.current_verified_run is not True
+        or fact.card_status not in {CardStatus.STARTED, CardStatus.IN_PROGRESS, CardStatus.DONE}
+        or fact.result not in {TestScenarioStatus.PASSED, TestScenarioStatus.FAILED}
+        or not _text(fact.id, fact.card_id, fact.scenario_id, fact.receipt_id, fact.actor_id)):
+        raise ValueError(error)
+    expected = {row.binding for row in snapshot.obligations}
+    selected = set(fact.bindings)
+    ids = fact.verified_implementation_ids
+    implementations = {row.id: row for row in snapshot.implementations}
+    if (not selected or len(selected) != len(fact.bindings) or not selected <= expected
+        or not ids or len(set(ids)) != len(ids)
+        or len(implementations) != len(snapshot.implementations) or not set(ids) <= implementations.keys()):
+        raise ValueError(error)
+    covered = set()
+    from okto_pulse.core.domain.effective_delivery_coverage import test_observes_contribution
+
+    for identity in ids:
+        implementation = implementations[identity]
+        matches = {binding for binding in selected.intersection(implementation.bindings)
+                   if implementation_binding_proof_current(implementation, binding)
+                   and test_observes_contribution(snapshot, fact, implementation, binding)}
+        if (implementation.scope != snapshot.scope
+            or implementation.card_type not in {CardType.NORMAL, CardType.BUG}
+            or implementation.card_status in {CardStatus.CANCELLED, CardStatus.REJECTED}
+            or not _text(implementation.id, implementation.card_id, implementation.actor_id, implementation.explanation)
+            or not matches):
+            raise ValueError(error)
+        covered.update(matches)
+    if covered != selected:
+        raise ValueError(error)
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +318,35 @@ class DeliveryWaiverFact:
     actor_id: str
     authorization_receipt_id: str
     current_authorized: bool
+    disposition: Literal["not_applicable", "risk_accepted"] | None = None
+
+    @property
+    def legacy_disposition_unspecified(self) -> bool:
+        return self.disposition is None
+
+
+def delivery_waiver_current(item: DeliveryWaiverFact, scope: DeliveryScope,
+                            binding: DeliveryBinding, phase: DeliveryPhase) -> bool:
+    """Shared authority/scope predicate for old projections and new applicability."""
+    return (item.scope == scope and item.binding == binding and item.phase == phase
+        and isinstance(item.phase, DeliveryPhase) and item.current_authorized is True
+        and item.disposition in {None, "not_applicable", "risk_accepted"}
+        and _text(item.id, item.justification, item.actor_id, item.authorization_receipt_id))
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryRecordRejection:
+    """Rejected selected input remains inspectable without becoming a blocker.
+
+    Scope/selection and current valid proof determine its relevance. Merely
+    retaining an invalid historical record must not revoke a sufficient proof.
+    """
+    record_id: str
+    scope: DeliveryScope
+    card_id: str
+    kind: Literal['implementation', 'test']
+    bindings: tuple[DeliveryBinding, ...]
+    reason_codes: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +357,12 @@ class DeliveryEvidenceSnapshot:
     tests: tuple[TestDeliveryFact, ...] = ()
     waivers: tuple[DeliveryWaiverFact, ...] = ()
     complete: bool = False
+    # Server-resolved contract. Missing context is incomplete, never a fallback.
+    effective_context: object | None = None
+    rejected_records: tuple[DeliveryRecordRejection, ...] = ()
+    # Legacy complete also includes planning. New assessments distinguish a
+    # fully read ledger from an unresolved verification plan/allocation.
+    facts_complete: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +387,7 @@ class DeliveryCoverageEvaluation:
     rows: tuple[DeliveryCoverageRow, ...]
     blockers: tuple[str, ...]
     rejected_record_ids: tuple[str, ...]
+    rejected_records: tuple[DeliveryRecordRejection, ...] = ()
 
     @property
     def allowed(self) -> bool:
@@ -146,9 +399,34 @@ def _text(*values: str) -> bool:
 
 
 def evaluate_delivery_coverage(
-    snapshot: DeliveryEvidenceSnapshot,
+    snapshot: DeliveryEvidenceSnapshot, *, require_lifecycle: bool = True,
 ) -> DeliveryCoverageEvaluation:
-    """Evaluate both obligations without mutating or auto-reopening any Spec.
+    """Project admitted proof; completion callers retain the lifecycle check.
+
+    Informational progress may observe current proof before Cards reach Done.
+    This never authorizes a transition or relaxes receipt/scope/currentness checks.
+    """
+    from okto_pulse.core.domain.effective_delivery_coverage import evaluate_effective_snapshot
+    return evaluate_effective_snapshot(snapshot, require_lifecycle=require_lifecycle)
+
+
+def delivery_proof_lifecycle_eligible(status: CardStatus, *, require_done: bool) -> bool:
+    """Keep proof validity distinct from completion without manufacturing Done facts."""
+    if require_done:
+        return status == CardStatus.DONE
+    return status in {
+        CardStatus.STARTED, CardStatus.IN_PROGRESS, CardStatus.VALIDATION,
+        CardStatus.ON_HOLD, CardStatus.DONE,
+    }
+
+
+def _evaluate_delivery_facts(
+    snapshot: DeliveryEvidenceSnapshot, *, require_lifecycle: bool = True,
+) -> DeliveryCoverageEvaluation:
+    """Internal receipt/lifecycle/waiver checks used by effective coverage.
+
+    This intermediate result is not a complete delivery verdict: the caller
+    must also resolve contributions, scopes and verification criteria.
 
     Spec status, advisory posture, greenfield context and existing Skip flags
     deliberately are not inputs. None can turn missing delivery proof into a
@@ -172,26 +450,28 @@ def evaluate_delivery_coverage(
     test_index: dict[DeliveryBinding, set[str]] = {}
     tested_implementation_index: dict[DeliveryBinding, set[str]] = {}
     waiver_index: dict[tuple[DeliveryBinding, DeliveryPhase], set[str]] = {}
-    rejected: set[str] = set()
+    rejected: set[str] = {
+        item.record_id for item in snapshot.rejected_records if item.scope == snapshot.scope
+    }
+    if any(item.scope != snapshot.scope for item in snapshot.rejected_records):
+        blockers.append('delivery_record_scope_mismatch')
 
     for item in snapshot.implementations:
         valid = (
             item.scope == snapshot.scope
             and item.card_type in (CardType.NORMAL, CardType.BUG)
-            and item.card_status == CardStatus.DONE
-            and item.current_accepted_execution is True
+            and delivery_proof_lifecycle_eligible(item.card_status, require_done=require_lifecycle)
             and _text(
                 item.id,
                 item.card_id,
-                item.source_ref,
-                item.result_revision,
-                item.relative_path,
                 item.explanation,
-                item.receipt_id,
                 item.actor_id,
             )
         )
-        matches = expected.intersection(item.bindings) if valid else set()
+        matches = {
+            binding for binding in expected.intersection(item.bindings)
+            if implementation_binding_ready(item, binding)
+        } if valid else set()
         if not matches:
             rejected.add(item.id)
         for binding in matches:
@@ -201,7 +481,7 @@ def evaluate_delivery_coverage(
         valid = (
             item.scope == snapshot.scope
             and item.card_type == CardType.TEST
-            and item.card_status == CardStatus.DONE
+            and delivery_proof_lifecycle_eligible(item.card_status, require_done=require_lifecycle)
             and item.result == TestScenarioStatus.PASSED
             and item.current_verified_run is True
             and _text(
@@ -238,18 +518,8 @@ def evaluate_delivery_coverage(
             test_index.pop(binding, None)
 
     for item in snapshot.waivers:
-        valid = (
-            item.scope == snapshot.scope
-            and item.binding in expected
-            and isinstance(item.phase, DeliveryPhase)
-            and item.current_authorized is True
-            and _text(
-                item.id,
-                item.justification,
-                item.actor_id,
-                item.authorization_receipt_id,
-            )
-        )
+        valid = item.binding in expected and delivery_waiver_current(
+            item, snapshot.scope, item.binding, item.phase)
         if not valid:
             rejected.add(item.id)
             continue

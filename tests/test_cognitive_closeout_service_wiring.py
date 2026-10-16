@@ -8,6 +8,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from native_subject_testing import record_native_subject_authority
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 from sqlalchemy import select
 
 from okto_pulse.core.domain.code_traceability import (
@@ -53,7 +55,7 @@ def _direct_spec_context_fields(spec_id: str) -> dict[str, object]:
         source_spec_id=spec_id,
         source_spec_version=1,
     )
-    manifest, manifest_sha256 = main_service._direct_spec_source_context_manifest(
+    manifest, manifest_sha256 = main_service.build_direct_spec_source_context_manifest(
         spec_id=spec_id,
         delivery_context=DeliveryContext.BROWNFIELD,
         provenance=provenance,
@@ -121,6 +123,10 @@ async def _seed_spec(
         )
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=USER_ID, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="CCG service wiring spec",
@@ -132,6 +138,7 @@ async def _seed_spec(
                 **_direct_spec_context_fields(spec_id),
             )
         )
+        await record_native_subject_authority(db)
         await db.commit()
     return board_id, spec_id
 
@@ -235,6 +242,10 @@ async def _seed_card(
         )
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=USER_ID, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="CCG card spec",
@@ -257,6 +268,7 @@ async def _seed_card(
                 created_by=USER_ID,
             )
         )
+        await record_native_subject_authority(db)
         await db.commit()
     return board_id, spec_id, card_id
 
@@ -302,8 +314,8 @@ async def test_submit_task_validation_records_cognitive_rejection() -> None:
         service._cognitive_closeout_gate_factory = lambda: gate
         result = await service.submit_task_validation(
             card_id=card_id,
-            reviewer_id=USER_ID,
-            reviewer_name=USER_ID,
+            reviewer_id="independent-reviewer",
+            reviewer_name="Independent Reviewer",
             data=validation_data,
         )
         await db.commit()
@@ -375,7 +387,13 @@ async def test_move_card_done_blocks_task_test_and_bug_before_status_mutation(
 @pytest.mark.asyncio
 async def test_board_skip_allows_done_but_keeps_pending_item_visible_and_status_done(
     isolated_closeout_kg_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Explicit accepted Delivery fixture isolates the cognitive skip contract;
+    # this skip does not grant missing implementation proof in production.
+    from delivery_evidence_testing import install_complete_card_delivery_port
+
+    delivery = install_complete_card_delivery_port(monkeypatch)
     board_id, _, card_id = await _seed_card(
         CardType.NORMAL,
         CardStatus.VALIDATION,
@@ -412,6 +430,7 @@ async def test_board_skip_allows_done_but_keeps_pending_item_visible_and_status_
 
     card = await _card_row(card_id)
     assert card.status == CardStatus.DONE
+    delivery.load_card_snapshot.assert_awaited()
 
     store = CognitiveConsolidationItemStore(
         artifact_store=require_rebuild_audit_artifact_store()
@@ -447,6 +466,14 @@ _APPROVE_VALIDATION = {
     "recommendation": "approve",
     "general_justification": "ready",
 }
+
+
+@pytest.fixture
+def accepted_card_delivery(monkeypatch):
+    """Only cognitive-policy positive cases use this independent accepted port."""
+    from delivery_evidence_testing import install_complete_card_delivery_port
+
+    return install_complete_card_delivery_port(monkeypatch)
 
 
 def _enable_global_blocking_flag(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -514,8 +541,9 @@ def test_blocking_active_needs_both_flag_and_policy(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.asyncio
-async def test_done_records_rejection_on_open_canonical_debt_without_active_item(
+async def test_done_preserves_validation_with_only_projection_debt(
     isolated_closeout_kg_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    accepted_card_delivery,
 ) -> None:
     board_id, _, card_id = await _seed_card(
         CardType.NORMAL, CardStatus.VALIDATION,
@@ -532,25 +560,22 @@ async def test_done_records_rejection_on_open_canonical_debt_without_active_item
         service = CardService(db)
         service._cognitive_closeout_gate_factory = lambda: _AllowGate()
         result = await service.submit_task_validation(
-            card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+            card_id=card_id, reviewer_id="independent-reviewer", reviewer_name="Independent Reviewer",
             data=_APPROVE_VALIDATION,
         )
         await db.commit()
 
     card = await _card_row(card_id)
     assert result["validation_outcome"] == "success"
-    assert result["completion_outcome"] == "rejected"
-    assert any(
-        item["code"] == "canonical_debt_open"
-        for item in result["completion_gate_failures"]
-    )
-    assert card.status == CardStatus.REJECTED
+    assert result["card_status"] == CardStatus.DONE.value, str(result.get("completion_gate_failures"))
+    assert card.status == CardStatus.DONE
     assert len(card.validations or []) == 1
 
 
 @pytest.mark.asyncio
-async def test_done_blocks_on_technical_dlq_before_status_mutation(
+async def test_done_does_not_require_technical_dlq_maintenance(
     isolated_closeout_kg_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    accepted_card_delivery,
 ) -> None:
     board_id, _, card_id = await _seed_card(
         CardType.NORMAL, CardStatus.VALIDATION,
@@ -565,28 +590,31 @@ async def test_done_blocks_on_technical_dlq_before_status_mutation(
 
     db_factory = get_session_factory()
     async with db_factory() as db:
+        await _mark_card_resources_na(db, board_id, card_id)
+        await db.commit()
+    async with db_factory() as db:
         service = CardService(db)
         service._cognitive_closeout_gate_factory = lambda: _AllowGate()
-        with pytest.raises(ValueError, match="technical_dlq"):
-            await service.move_card(
-                card_id=card_id, user_id=USER_ID,
-                data=CardMove(
-                    status=CardStatus.DONE, conclusion="impl",
-                    completeness=100, completeness_justification="c",
-                    drift=0, drift_justification="n",
-                ),
-                actor_name=USER_ID,
-            )
-        await db.rollback()
+        await service.move_card(
+            card_id=card_id, user_id=USER_ID,
+            data=CardMove(
+                status=CardStatus.DONE, conclusion="impl",
+                completeness=100, completeness_justification="c",
+                drift=0, drift_justification="n",
+            ),
+            actor_name=USER_ID,
+        )
+        await db.commit()
 
     card = await _card_row(card_id)
-    assert card.status == CardStatus.VALIDATION
-    assert card.conclusions in (None, [])
+    assert card.status == CardStatus.DONE
+    assert len(card.conclusions) == 1
 
 
 @pytest.mark.asyncio
 async def test_advisory_default_board_does_not_block_on_open_debt(
     isolated_closeout_kg_dir: Path,
+    accepted_card_delivery,
 ) -> None:
     # default board (no policy set) → advisory → readiness wiring is a NO-OP even
     # with open canonical_debt; done succeeds (rollout safety for existing boards).
@@ -601,11 +629,11 @@ async def test_advisory_default_board_does_not_block_on_open_debt(
         service = CardService(db)
         service._cognitive_closeout_gate_factory = lambda: _AllowGate()
         result = await service.submit_task_validation(
-            card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+            card_id=card_id, reviewer_id="independent-reviewer", reviewer_name="Independent Reviewer",
             data=_APPROVE_VALIDATION,
         )
         await db.commit()
-        assert result["card_status"] == CardStatus.DONE.value
+        assert result["card_status"] == CardStatus.DONE.value, str(result.get("completion_gate_failures"))
 
     assert (await _card_row(card_id)).status == CardStatus.DONE
 
@@ -613,6 +641,7 @@ async def test_advisory_default_board_does_not_block_on_open_debt(
 @pytest.mark.asyncio
 async def test_blocking_policy_no_debt_passes(
     isolated_closeout_kg_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    accepted_card_delivery,
 ) -> None:
     # policy blocking + flag on, but NO debt/DLQ/active item → readiness ready,
     # done succeeds.
@@ -630,11 +659,11 @@ async def test_blocking_policy_no_debt_passes(
         service = CardService(db)
         service._cognitive_closeout_gate_factory = lambda: _AllowGate()
         result = await service.submit_task_validation(
-            card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+            card_id=card_id, reviewer_id="independent-reviewer", reviewer_name="Independent Reviewer",
             data=_APPROVE_VALIDATION,
         )
         await db.commit()
-        assert result["card_status"] == CardStatus.DONE.value
+        assert result["card_status"] == CardStatus.DONE.value, str(result.get("completion_gate_failures"))
 
     assert (await _card_row(card_id)).status == CardStatus.DONE
 
@@ -643,7 +672,7 @@ class _ExplodingReadiness:
     """Readiness service whose evaluation always fails — to prove blocking-active
     enforcement is fail-CLOSED (visible) rather than a silent skip."""
 
-    async def evaluate_artifact(self, *_a, **_k):
+    async def evaluate_completion(self, *_a, **_k):
         raise RuntimeError("readiness backend down")
 
 
@@ -669,7 +698,7 @@ async def test_blocking_active_fails_closed_when_readiness_service_errors(
         service._cognitive_readiness_service_factory = lambda: _ExplodingReadiness()
         with pytest.raises(ValueError, match="cognitive_readiness_unavailable"):
             await service.submit_task_validation(
-                card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+                card_id=card_id, reviewer_id="independent-reviewer", reviewer_name="Independent Reviewer",
                 data=_APPROVE_VALIDATION,
             )
         await db.rollback()
@@ -682,6 +711,7 @@ async def test_blocking_active_fails_closed_when_readiness_service_errors(
 @pytest.mark.asyncio
 async def test_advisory_default_does_not_instantiate_readiness_service(
     isolated_closeout_kg_dir: Path,
+    accepted_card_delivery,
 ) -> None:
     # default (advisory) board → the wiring is a NO-OP that never even touches
     # the readiness factory; done succeeds even if the factory would explode.
@@ -701,11 +731,11 @@ async def test_advisory_default_does_not_instantiate_readiness_service(
         service._cognitive_closeout_gate_factory = lambda: _AllowGate()
         service._cognitive_readiness_service_factory = _boom_factory
         result = await service.submit_task_validation(
-            card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+            card_id=card_id, reviewer_id="independent-reviewer", reviewer_name="Independent Reviewer",
             data=_APPROVE_VALIDATION,
         )
         await db.commit()
-        assert result["card_status"] == CardStatus.DONE.value
+        assert result["card_status"] == CardStatus.DONE.value, str(result.get("completion_gate_failures"))
 
     assert (await _card_row(card_id)).status == CardStatus.DONE
 
@@ -738,7 +768,7 @@ async def test_blocking_active_fails_closed_when_source_ref_resolution_errors(
         service._cognitive_closeout_gate_factory = lambda: _AllowGate()
         with pytest.raises(ValueError, match="cognitive_readiness_unavailable"):
             await service.submit_task_validation(
-                card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+                card_id=card_id, reviewer_id="independent-reviewer", reviewer_name="Independent Reviewer",
                 data=_APPROVE_VALIDATION,
             )
         await db.rollback()

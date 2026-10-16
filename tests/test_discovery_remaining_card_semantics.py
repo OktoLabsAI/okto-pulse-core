@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from okto_pulse.core.discovery_intent_catalog import DEFAULT_DISCOVERY_INTENTS
-from okto_pulse.core.domain.enums import CardPriority, CardStatus, SprintStatus
+from okto_pulse.core.domain.enums import CardPriority, CardStatus
 from okto_pulse.core.ports.discovery_execution import (
     DiscoveryActivityFact,
     DiscoveryCardFact,
@@ -20,7 +20,6 @@ from okto_pulse.core.ports.discovery_execution import (
     DiscoveryExecutionReadPort,
     DiscoveryMentionFact,
     DiscoverySpecFact,
-    DiscoverySprintFact,
 )
 from okto_pulse.core.services import discovery_executor
 
@@ -30,10 +29,10 @@ USER = "semantic-user"
 NOW = datetime.now(timezone.utc)
 
 
-def _card(card_id, *, status=CardStatus.IN_PROGRESS, sprint_id=None, **overrides):
+def _card(card_id, *, status=CardStatus.IN_PROGRESS, **overrides):
     values = dict(
         id=card_id, board_id=BOARD, title=f"Title {card_id}", status=status,
-        priority=CardPriority.HIGH, spec_id=None, sprint_id=sprint_id,
+        priority=CardPriority.HIGH, spec_id=None,
         archived=False, updated_at=NOW,
     )
     values.update(overrides)
@@ -213,22 +212,17 @@ async def test_scenarios_without_tasks_excludes_linked_scenarios_across_specs(re
 
 
 @pytest.mark.asyncio
-async def test_current_sprint_blockers_distinguish_unresolved_hold_rejected_and_stale(reader):
-    reader.list_sprints.return_value = (
-        DiscoverySprintFact("sprint-active", BOARD, "Current delivery", SprintStatus.ACTIVE),
-        DiscoverySprintFact("sprint-closed", BOARD, "Previous delivery", SprintStatus.CLOSED),
-        DiscoverySprintFact("sprint-draft", BOARD, "Future delivery", SprintStatus.DRAFT),
-    )
+async def test_board_card_blockers_distinguish_unresolved_hold_rejected_and_stale(reader):
     cards = (
-        _card("blocked", sprint_id="sprint-active"),
-        _card("hold", status=CardStatus.ON_HOLD, sprint_id="sprint-active"),
-        _card("rejected", status=CardStatus.REJECTED, sprint_id="sprint-active"),
-        _card("stale", sprint_id="sprint-active", updated_at=NOW - timedelta(days=10)),
-        _card("healthy", sprint_id="sprint-active"),
-        _card("done", status=CardStatus.DONE, sprint_id="sprint-active"),
-        _card("cancelled", status=CardStatus.CANCELLED, sprint_id="sprint-active"),
+        _card("blocked"),
+        _card("hold", status=CardStatus.ON_HOLD),
+        _card("rejected", status=CardStatus.REJECTED),
+        _card("stale", updated_at=NOW - timedelta(days=10)),
+        _card("healthy"),
+        _card("done", status=CardStatus.DONE),
+        _card("cancelled", status=CardStatus.CANCELLED),
     )
-    reader.list_cards_for_sprints.return_value = cards
+    reader.list_board_cards.return_value = cards
     reader.list_dependencies_for_cards.return_value = (
         DiscoveryDependencyFact("blocked", "external-pending", NOW),
         DiscoveryDependencyFact("blocked", "external-done", NOW),
@@ -241,14 +235,14 @@ async def test_current_sprint_blockers_distinguish_unresolved_hold_rejected_and_
         _card("external-pending"), _card("external-done", status=CardStatus.DONE),
     )
 
-    result = await _execute("blockers_current_sprint")
+    result = await _execute("blocked_cards")
 
     assert [(row["id"], row["type"]) for row in result["rows"]] == [
         ("blocked", "blocked_card"), ("hold", "on_hold_card"),
         ("rejected", "rejected_card"), ("stale", "stale_card"),
     ]
     assert result["total"] == 4
-    assert result["active_sprint_ids"] == ["sprint-active"]
+    assert "active_sprint_ids" not in result
     assert result["summary"] == {
         "blocked_card": 1, "on_hold_card": 1, "rejected_card": 1, "stale_card": 1,
     }
@@ -256,12 +250,11 @@ async def test_current_sprint_blockers_distinguish_unresolved_hold_rejected_and_
         {"id": "external-pending", "title": "Title external-pending", "status": "in_progress"},
         {"id": "missing-target", "title": None, "status": None},
     ]
-    assert all(row["meta"]["sprint_id"] == "sprint-active" for row in result["rows"])
+    assert all("sprint_id" not in row["meta"] for row in result["rows"])
     assert all(row["meta"]["entity_id"] == row["id"] for row in result["rows"])
     assert result["rows"][-1]["meta"]["age_hours"] >= 240
-    reader.list_sprints.assert_awaited_once_with(None, board_id=BOARD)
-    reader.list_cards_for_sprints.assert_awaited_once_with(
-        None, board_id=BOARD, sprint_ids=["sprint-active"],
+    reader.list_board_cards.assert_awaited_once_with(
+        None, board_id=BOARD,
     )
     reader.list_dependencies_for_cards.assert_awaited_once_with(
         None, card_ids=[card.id for card in cards],
@@ -274,7 +267,7 @@ async def test_current_sprint_blockers_distinguish_unresolved_hold_rejected_and_
 @pytest.mark.asyncio
 @pytest.mark.parametrize("name", [
     "recent_activity", "my_mentions", "dependencies_of_card",
-    "scenarios_without_tasks", "blockers_current_sprint",
+    "scenarios_without_tasks", "blocked_cards",
 ])
 async def test_relational_cards_meaningful_empty_results(reader, name):
     reader.list_recent_activity.return_value = ()
@@ -285,9 +278,7 @@ async def test_relational_cards_meaningful_empty_results(reader, name):
     reader.list_specs.return_value = (
         _spec("fully-linked", [{"id": "covered", "linked_task_ids": ["card-1"]}]),
     )
-    reader.list_sprints.return_value = (
-        DiscoverySprintFact("closed", BOARD, "Closed sprint", SprintStatus.CLOSED),
-    )
+    reader.list_board_cards.return_value = ()
     params = {"card_id": "independent-card"} if name == "dependencies_of_card" else {}
 
     result = await _execute(name, params=params)
@@ -295,7 +286,46 @@ async def test_relational_cards_meaningful_empty_results(reader, name):
     assert result["rows"] == []
     assert result["total"] == 0
     assert result["execution"] == "real_tool"
-    if name == "blockers_current_sprint":
-        assert "No active sprint" in result["message"]
-        reader.list_cards_for_sprints.assert_not_awaited()
+    if name == "blocked_cards":
+        assert result["summary"] == {}
+        reader.list_board_cards.assert_awaited_once_with(None, board_id=BOARD)
         reader.list_dependencies_for_cards.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_retired_sprint_intent_is_not_silently_reinterpreted(reader):
+    with pytest.raises(ValueError, match="discovery_intent_retired"):
+        await discovery_executor.execute_intent(None, USER, BOARD,
+            SimpleNamespace(name="blockers_current_sprint", tool_binding="okto_pulse_list_blockers"), {})
+    reader.list_board_cards.assert_not_awaited()
+    assert not any(row["name"] == "blockers_current_sprint" for row in DEFAULT_DISCOVERY_INTENTS)
+
+
+@pytest.mark.asyncio
+async def test_old_active_catalog_row_is_hidden_without_mutating_history(monkeypatch):
+    from okto_pulse.core.services import discovery_catalog_reader as catalog
+
+    old = SimpleNamespace(id="old", name="blockers_current_sprint", active=True)
+    current = SimpleNamespace(id="new", name="blocked_cards", active=True)
+    port = SimpleNamespace(list_active_intents=AsyncMock(return_value=(old, current)),
+                           get_intent=AsyncMock(return_value=old))
+    monkeypatch.setattr(catalog, "get_discovery_catalog_read_port", lambda: port)
+    service = catalog.DiscoveryCatalogReader(None)
+    assert await service.list_active_intents() == [current]
+    assert await service.get_intent("old") is None
+    assert old.active is True  # Read path does not rewrite persisted history.
+    seed = next(row for row in DEFAULT_DISCOVERY_INTENTS if row["name"] == "blocked_cards")
+    assert seed["min_permission"] == "kg.query.global"
+
+
+@pytest.mark.asyncio
+async def test_historical_sprint_activity_keeps_origin_without_live_navigation(reader):
+    details = {"sprint_id": "old", "from_status": "active", "to_status": "closed"}
+    reader.list_recent_activity.return_value = (
+        DiscoveryActivityFact("event", "sprint_moved", details, None, USER, "human", "Ada", NOW),
+    )
+    result = await _execute("recent_activity")
+    row = result["rows"][0]
+    assert row["meta"]["details"] == details
+    assert row["meta"]["entity_type"] is None and row["meta"]["entity_id"] is None
+    reader.resolve_entity_titles.assert_awaited_once_with(None, refs=[])

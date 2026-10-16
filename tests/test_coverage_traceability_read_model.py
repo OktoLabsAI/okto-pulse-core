@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
+
 from okto_pulse.core.domain.code_traceability import (
     CodeTraceabilityLifecycleStatus,
     ImplementationTargetResolutionState,
@@ -17,6 +19,43 @@ from okto_pulse.core.services.coverage_traceability_read_model import (
 
 
 NOW = datetime(2026, 8, 20, 12, tzinfo=UTC)
+
+
+@pytest.mark.parametrize('status,covered', [('verified', True), ('inspection_pending', False),
+    ('conflict', False), ('revoked', False), ('failed', False)])
+def test_decisions_use_effective_adherence_without_task_credit_or_skip(status, covered):
+    spec = _spec()
+    spec.decisions = [{'id': 'choice', 'status': 'active', 'linked_task_ids': ['card-test']}]
+    spec.skip_decisions_coverage = True
+    current = SimpleNamespace(decision_verification_status=status,
+        test_ids=(), decision_review_ids=('review-1',) if covered else ())
+    projection = build_coverage_traceability_projection(query=_query(), as_of=NOW,
+        specs=[spec], cards=[_card()], decision_delivery={'spec-1': {'choice': current}})
+    group = next(group for group in projection.coverage if group.obligation_type.value == 'decision')
+    row, = group.rows
+    assert row.covered is covered
+    assert row.evidence == () and not row.skip.effective
+    assert row.decision_proof_refs == current.decision_review_ids
+
+
+def test_missing_decision_authority_does_not_promote_done_card_into_approval():
+    spec = _spec()
+    spec.decisions = [{'id': 'choice', 'linked_task_ids': ['card-test']}]
+    projection = build_coverage_traceability_projection(query=_query(), as_of=NOW,
+        specs=[spec], cards=[_card()])
+    group = next(group for group in projection.coverage if group.obligation_type.value == 'decision')
+    assert group.counts.value is None
+    assert group.rows[0].covered is None
+    assert group.rows[0].reason == 'decision_verification_unavailable'
+
+
+def test_verified_decision_without_canonical_proof_reference_is_rejected():
+    spec = _spec()
+    spec.decisions = [{'id': 'choice'}]
+    with pytest.raises(ValueError, match='adherence_proof_invalid'):
+        build_coverage_traceability_projection(query=_query(), as_of=NOW, specs=[spec], cards=[],
+            decision_delivery={'spec-1': {'choice': SimpleNamespace(
+                decision_verification_status='verified', test_ids=(), decision_review_ids=())}})
 
 
 def _query() -> AnalyticsFoundationQuery:

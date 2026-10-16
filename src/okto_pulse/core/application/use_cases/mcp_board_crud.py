@@ -28,6 +28,7 @@ from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
+    CommandValidationError,
     EntityNotFoundError,
     commit,
 )
@@ -41,9 +42,6 @@ from okto_pulse.core.application.use_cases.policy_governance import (
     require_policy_governance_capabilities,
 )
 from okto_pulse.core.application.scope import ActorScope, QueryScope
-from okto_pulse.core.ports.guideline_policy import (
-    GuidelinePolicyBindingConflict,
-)
 from okto_pulse.core.services.default_board_configuration import (
     guideline_ref_diff_has_changes,
 )
@@ -157,7 +155,6 @@ class McpListBoardMembersUseCase:
             actor,
             PermissionRequirement(
                 "board.share.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -202,7 +199,6 @@ class McpGetActiveDefaultBoardConfigUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
         )
@@ -231,7 +227,6 @@ class McpListDefaultBoardConfigVersionsUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
         )
@@ -263,7 +258,6 @@ class McpGetBoardDefaultConfigDiffUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.diff_read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -319,7 +313,6 @@ class McpCreateDefaultBoardConfigVersionUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.create",
-                legacy_operation="spec.entity.edit_fields",
             ),
             uow=uow,
         )
@@ -336,12 +329,12 @@ class McpCreateDefaultBoardConfigVersionUseCase:
                 actor,
                 PermissionRequirement(
                     "default_board_config.guidelines.edit",
-                    legacy_operation="guidelines.adoption.manage",
                 ),
                 uow=uow,
             )
         data = await service.create_version(
             actor=actor.actor_id,
+            actor_kind=actor.actor_kind,
             settings_payload=settings_payload,
             scope=command.scope,
             guideline_default_refs=command.guideline_default_refs,
@@ -396,7 +389,6 @@ class McpActivateDefaultBoardConfigVersionUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.activate",
-                legacy_operation="spec.entity.edit_fields",
             ),
             uow=uow,
         )
@@ -411,13 +403,13 @@ class McpActivateDefaultBoardConfigVersionUseCase:
                 actor,
                 PermissionRequirement(
                     "default_board_config.guidelines.edit",
-                    legacy_operation="guidelines.adoption.manage",
                 ),
                 uow=uow,
             )
         data = await uow.services.default_board_config.activate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
+            actor_kind=actor.actor_kind,
             query_scope=query_scope,
         )
         await commit(uow)
@@ -445,7 +437,6 @@ class McpDeactivateDefaultBoardConfigVersionUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.deactivate",
-                legacy_operation="spec.entity.edit_fields",
             ),
             uow=uow,
         )
@@ -459,12 +450,11 @@ class McpDeactivateDefaultBoardConfigVersionUseCase:
                 actor,
                 PermissionRequirement(
                     "default_board_config.guidelines.edit",
-                    legacy_operation="guidelines.adoption.manage",
                 ),
                 uow=uow,
             )
         data = await uow.services.default_board_config.deactivate_version(
-            template_id=command.template_id, actor=actor.actor_id
+            template_id=command.template_id, actor=actor.actor_id, actor_kind=actor.actor_kind,
         )
         await commit(uow)
         return _DataResult(data)
@@ -501,32 +491,8 @@ class McpGetBoardGuidelinesUseCase:
         return _DataResult(items)
 
 
-class McpLinkGuidelineToBoardCommand:
-    __slots__ = ("board_id", "guideline_id", "priority")
-
-    def __init__(self, board_id: str, guideline_id: str, priority: int) -> None:
-        self.board_id = board_id
-        self.guideline_id = guideline_id
-        self.priority = priority
 
 
-class McpLinkGuidelineToBoardUseCase:
-    """Link a global guideline to a board (write). A missing guideline is
-    ``EntityNotFoundError("guideline", ...)`` → adapter ``"Guideline not found"``.
-    Returns the link (the adapter reads ``.priority``)."""
-
-    async def execute(
-        self,
-        command: McpLinkGuidelineToBoardCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> _DataResult:
-
-        require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
-        raise GuidelinePolicyBindingConflict(
-            "guideline_impact_preview_required"
-        )
 
 
 class McpUnlinkGuidelineFromBoardCommand:
@@ -570,29 +536,8 @@ class McpUnlinkGuidelineFromBoardUseCase:
         return _DataResult(unlinked)
 
 
-class McpUpdateBoardGuidelinePriorityCommand:
-    __slots__ = ("board_id", "guideline_id", "priority")
-
-    def __init__(self, board_id: str, guideline_id: str, priority: int) -> None:
-        self.board_id = board_id
-        self.guideline_id = guideline_id
-        self.priority = priority
 
 
-class McpUpdateBoardGuidelinePriorityUseCase:
-    """Update a board guideline through an MCP-authorized board grant."""
-
-    async def execute(
-        self,
-        command: McpUpdateBoardGuidelinePriorityCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> _DataResult:
-        require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
-        raise GuidelinePolicyBindingConflict(
-            "guideline_impact_preview_required"
-        )
 
 
 # --- board ↔ design-system links (DesignSystemService) ----------------------
@@ -640,7 +585,6 @@ class McpLinkBoardDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.board_link.create",
-                legacy_operation="spec.architecture.edit",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -678,7 +622,6 @@ class McpUnlinkBoardDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.board_link.delete",
-                legacy_operation="spec.architecture.edit",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -713,7 +656,6 @@ class McpGetBoardDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.board_link.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -977,6 +919,8 @@ class McpListByBoardUseCase:
     ) -> _DataResult:
 
         et = command.entity_type
+        if et not in ("spec", "ideation", "refinement", "story", "topic"):
+            raise CommandValidationError("unsupported_entity")
         f = command.filters
 
         # The transport authenticates the requested board, but this use case is
@@ -1049,22 +993,6 @@ class McpListByBoardUseCase:
                     )
                 )
             any_groups = _label_groups(f.get("labels"))
-        elif et == "sprint":
-            spec_id = f.get("spec_id", "")
-            parent = await uow.specs.get(spec_id)
-            if parent is None or parent.board_id != command.board_id:
-                return _DataResult(_empty_page(command.offset, command.limit))
-            surface = "mcp_sprint_list"
-            scope = _page_scope(
-                command.board_id,
-                include_archived=_strict_filter_bool(
-                    f.get("include_archived"),
-                    field="include_archived",
-                ),
-                spec_id=spec_id,
-            )
-            if f.get("status"):
-                filters.append(ApplicationFilter("status", "eq", f["status"]))
         elif et == "story":
             surface = "mcp_story_list"
             args = command.story_args
@@ -1206,11 +1134,6 @@ async def _attach_mcp_page_derivatives(
         counts = {row.values[0]: row.count for row in rows}
         for item in items:
             item.attach("active_spec_count", counts.get(item.id, 0))
-    elif entity_type == "sprint":
-        for item in items:
-            item.attach(
-                "normal_sprint_created", _enum_value(item.lane_type) == "normal"
-            )
     elif entity_type == "topic":
         rows = await uow.services.entity_pages.group_count(
             GroupCountRequest(

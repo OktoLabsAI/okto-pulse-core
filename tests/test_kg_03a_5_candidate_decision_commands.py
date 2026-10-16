@@ -100,7 +100,8 @@ async def _client_and_entities():
             id=spec_id, board_id=board_id, ideation_id=ideation_id,
             title="KG-03A.5 Spec",
             status=SpecStatus.DRAFT, created_by=USER_ID,
-            functional_requirements=["FR"], acceptance_criteria=["AC"],
+            functional_requirements=[{"id": "fr_one", "text": "FR"}],
+            acceptance_criteria=[{"id": "ac_one", "text": "AC"}],
             decisions=[
                 {
                     "id": existing_dec_id,
@@ -600,7 +601,8 @@ async def _seed_foreign_spec(db_factory) -> dict[str, str]:
             ideation_id=foreign_ideation_id,
             title="Foreign spec",
             status=SpecStatus.APPROVED, created_by=USER_ID,
-            functional_requirements=["FR"], acceptance_criteria=["AC"],
+            functional_requirements=[{"id": "fr_one", "text": "FR"}],
+            acceptance_criteria=[{"id": "ac_one", "text": "AC"}],
             decisions=[{
                 "id": foreign_dec_id,
                 "title": "Foreign existing decision",

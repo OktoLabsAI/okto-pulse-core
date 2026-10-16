@@ -79,6 +79,25 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
 @pytest.fixture(scope="module", autouse=True)
 def _bootstrap_global():
     reset_global_discovery_runtime_for_tests()
+    # The routed Global graph is fail-closed until its backend binding exists;
+    # the composition's explicit initialization door publishes it (inside the
+    # durable writer fence, like any Global mutation) before the runtime
+    # bootstrap can inspect the route.
+    from coordination_fakes import FakeWriteLockPort
+    from global_graph_testing import global_discovery_writer_scope
+    from kg_schema_testing import graph_composition
+    from okto_pulse.core.ports.coordination import (
+        CoordinationProviderMissing,
+        get_write_lock_port,
+        register_coordination_providers,
+    )
+
+    try:
+        get_write_lock_port()
+    except CoordinationProviderMissing:
+        register_coordination_providers(write_lock_port=FakeWriteLockPort())
+    with global_discovery_writer_scope(operation="test_global_route_init"):
+        graph_composition().initialize_global_route()
     bootstrap_global_discovery()
     yield
     reset_global_discovery_runtime_for_tests()
@@ -108,8 +127,8 @@ def _spec_dict(spec_id, board_id, status):
         "id": spec_id, "title": "sync spec",
         "description": "spec producing canonical children for GD sync",
         "status": status, "board_id": board_id,
-        "functional_requirements": [QUERY_TEXT, "FR beta parity sync"],
-        "acceptance_criteria": ["AC alpha parity sync"],
+        "functional_requirements": [{"id": "fr_alpha", "text": QUERY_TEXT}, {"id": "fr_fixture_1", "text": "FR beta parity sync"}],
+        "acceptance_criteria": [{"id": "ac_alpha", "text": "AC alpha parity sync"}],
     }
 
 
@@ -118,8 +137,8 @@ async def _insert_spec(db_factory, board_id, spec_id, *, status):
         db.add(Spec(
             id=spec_id, board_id=board_id, title="sync spec", status=status,
             created_by=USER_ID,
-            functional_requirements=[QUERY_TEXT, "FR beta parity sync"],
-            acceptance_criteria=["AC alpha parity sync"],
+            functional_requirements=[{"id": "fr_alpha", "text": QUERY_TEXT}, {"id": "fr_fixture_1", "text": "FR beta parity sync"}],
+            acceptance_criteria=[{"id": "ac_alpha", "text": "AC alpha parity sync"}],
         ))
         await db.commit()
 

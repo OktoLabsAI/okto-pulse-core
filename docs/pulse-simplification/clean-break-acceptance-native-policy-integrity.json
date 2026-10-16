@@ -1,0 +1,143 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_keys": [
+    "BASE:T27",
+    "BASE:T28",
+    "BASE:T31"
+  ],
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-next26",
+  "provenance_sha256": "e3d94bbdb837ea8e522282c3e6da320ecac2927ded4fb88627af2b6cb4ba4521",
+  "closure_sha256": "33b5ffb60f2384cb882c99726ded8f9d2476c6750b6ad363cc293e1455867390",
+  "runs": [
+    {
+      "name": "acceptance-native-integrity1",
+      "xml_sha256": "d942d6cb67530531ef21e6a22bd9ccb21e81a971f9718d0f5c39c5e43b6bd546",
+      "passed": 68,
+      "cases": [
+        "tests.test_current_relational_schema::test_community_refuses_postgresql_before_engine_or_storage_access",
+        "tests.test_current_relational_schema::test_fresh_schema_restart_preserves_data_and_identity",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[PRAGMA user_version=399]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[PRAGMA application_id=0]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[ALTER TABLE cards ADD COLUMN sprint_id TEXT]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[ALTER TABLE agents ADD COLUMN permissions JSON]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[ALTER TABLE checklist_receipts ADD COLUMN manual_checklist_ref TEXT]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[ALTER TABLE cards ADD COLUMN knowledge_bases JSON]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[ALTER TABLE card_delivery_evidence_records ADD COLUMN migrated_from JSON]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[ALTER TABLE guideline_revisions ADD COLUMN rules JSON]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[ALTER TABLE semantic_guideline_revisions ADD COLUMN authority_state TEXT]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[ALTER TABLE semantic_guideline_revisions ADD COLUMN legacy_rules_digest TEXT]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[ALTER TABLE semantic_subject_versions ADD COLUMN editor_source TEXT]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[ALTER TABLE semantic_subject_version_events ADD COLUMN editor_source TEXT]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[CREATE TABLE semantic_guideline_legacy_migrations (migration_id TEXT PRIMARY KEY)]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[CREATE TABLE card_rejected_lifecycle_migrations (migration_id TEXT PRIMARY KEY)]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[CREATE TABLE spec_validation_pointer_repairs (migration_id TEXT PRIMARY KEY)]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[CREATE TABLE quality_assessment_lifecycle_stale_transitions (stale_transition_key TEXT PRIMARY KEY)]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[CREATE TABLE kg_cognitive_source_fingerprint_epoch_permits (revision_id TEXT PRIMARY KEY)]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[CREATE TABLE kg_cognitive_source_fingerprint_epoch_receipts (epoch TEXT PRIMARY KEY)]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[CREATE TABLE sprints (id TEXT PRIMARY KEY)]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[CREATE TABLE policy_compliance_receipts (receipt_id TEXT PRIMARY KEY)]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[CREATE TABLE policy_compliance_adopted_revisions (receipt_id TEXT PRIMARY KEY)]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[CREATE TABLE policy_compliance_findings (finding_id TEXT PRIMARY KEY)]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[CREATE TABLE policy_waivers (waiver_id TEXT PRIMARY KEY)]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[CREATE TABLE policy_waiver_events (event_id TEXT PRIMARY KEY)]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[DROP INDEX ix_boards_realm_id]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[DROP TRIGGER trg_global_discovery_source_revision_singleton_delete_guard]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[DROP TRIGGER trg_guideline_impact_v2_binding_insert]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[DROP TRIGGER trg_guideline_impact_v2_guideline_impact_adoptions_insert]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[DROP TRIGGER trg_guideline_impact_v2_guideline_impact_unlinks_insert]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[DROP TRIGGER trg_guideline_impact_v2_guideline_retirement_impacts_insert]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[ALTER TABLE quality_assessment_lifecycle_transitions ADD COLUMN legacy_edition INTEGER]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[DROP TRIGGER trg_quality_assessment_lifecycle_transitions_before_edition_positive]",
+        "tests.test_current_relational_schema::test_incompatible_schema_is_refused_without_wal_or_content_changes[DROP TRIGGER trg_quality_assessment_lifecycle_transitions_after_edition_positive]",
+        "tests.test_current_relational_schema::test_connection_rechecks_format_before_wal_if_file_changes_after_composition",
+        "tests.test_current_relational_schema::test_pending_wal_is_inspected_without_touching_source_files[False]",
+        "tests.test_current_relational_schema::test_pending_wal_is_inspected_without_touching_source_files[True]",
+        "tests.test_current_relational_schema::test_creation_failure_rolls_back_ddl_and_version_then_can_retry",
+        "tests.test_current_relational_schema::test_lifecycle_never_seeds_incompatible_storage",
+        "tests.test_current_relational_schema::test_current_source_fence_advances_and_cannot_be_removed",
+        "tests.test_current_relational_schema::test_non_database_file_is_preserved",
+        "tests.test_current_relational_schema::test_current_catalog_seed_is_repeatable_and_preserves_user_choices",
+        "tests.test_current_relational_schema::test_orphan_in_current_schema_is_refused_without_writes_or_repair",
+        "tests.test_sqlalchemy_database_lifecycle_lock::test_schema_lifecycle_lock_path_is_derived_from_sqlite_database",
+        "tests.test_sqlalchemy_database_lifecycle_lock::test_schema_lifecycle_lock_timeout_is_typed_and_fail_closed",
+        "tests.test_sqlalchemy_database_lifecycle_lock::test_schema_lifecycle_lock_does_not_swallow_runtime_errors",
+        "tests.test_schema_lifecycle_reentry::test_same_task_nests_without_releasing_the_outer_process_mutex",
+        "tests.test_schema_lifecycle_reentry::test_child_task_cannot_inherit_live_or_expired_lock_ownership[False]",
+        "tests.test_schema_lifecycle_reentry::test_child_task_cannot_inherit_live_or_expired_lock_ownership[True]",
+        "tests.test_schema_lifecycle_reentry::test_other_database_does_not_borrow_current_database_ownership",
+        "tests.test_schema_lifecycle_reentry::test_cancellation_releases_the_mutex_and_invalidates_task_ownership",
+        "tests.test_schema_lifecycle_reentry::test_all_production_lifecycle_paths_keep_the_mutex_through_schema_and_seeds[concrete]",
+        "tests.test_schema_lifecycle_reentry::test_all_production_lifecycle_paths_keep_the_mutex_through_schema_and_seeds[core]",
+        "tests.test_schema_lifecycle_reentry::test_all_production_lifecycle_paths_keep_the_mutex_through_schema_and_seeds[community]",
+        "tests.test_relational_schema_transaction::test_engine_and_session_writers_share_one_reservation_and_restore_binding[False]",
+        "tests.test_relational_schema_transaction::test_engine_and_session_writers_share_one_reservation_and_restore_binding[True]",
+        "tests.test_relational_schema_transaction::test_writer_cannot_escape_outer_boundary[COMMIT]",
+        "tests.test_relational_schema_transaction::test_writer_cannot_escape_outer_boundary[-- annotation\\nCOMMIT;]",
+        "tests.test_relational_schema_transaction::test_writer_cannot_escape_outer_boundary[END TRANSACTION /* comment */;]",
+        "tests.test_relational_schema_transaction::test_writer_cannot_escape_outer_boundary[ROLLBACK]",
+        "tests.test_relational_schema_transaction::test_writer_cannot_escape_outer_boundary[sync-commit]",
+        "tests.test_relational_schema_transaction::test_writer_cannot_escape_outer_boundary[sync-rollback]",
+        "tests.test_relational_schema_transaction::test_implicit_read_transaction_is_not_a_write_reservation",
+        "tests.test_relational_schema_transaction::test_swallowing_boundary_error_cannot_publish_or_reuse_native_transaction",
+        "tests.test_relational_schema_transaction::test_exception_after_internal_commits_rolls_back_schema_and_rows",
+        "tests.test_relational_schema_transaction::test_binding_setup_failure_does_not_leave_boundary_listeners",
+        "tests.test_relational_schema_transaction::test_cancellation_rolls_back_internal_commits_and_releases_writer"
+      ]
+    },
+    {
+      "name": "acceptance-native-removed-grants1",
+      "xml_sha256": "e4af1bc9eae814cc1ae471f601120b513f3c82f7f636eab64a409c04863b74d0",
+      "passed": 14,
+      "cases": [
+        "tests.test_cached_mcp_revocation::test_removed_grants_refuse_current_tool_without_rewriting_identity",
+        "tests.test_task_validation_policy::test_each_field_resolves_from_current_spec_then_board[False]",
+        "tests.test_task_validation_policy::test_each_field_resolves_from_current_spec_then_board[True]",
+        "tests.test_task_validation_policy::test_required_default_and_explicit_null_keep_the_current_semantics[board0-True-board]",
+        "tests.test_task_validation_policy::test_required_default_and_explicit_null_keep_the_current_semantics[board1-False-default]",
+        "tests.test_task_validation_policy::test_required_default_and_explicit_null_keep_the_current_semantics[board2-False-board]",
+        "tests.test_task_validation_policy::test_cards_of_the_same_spec_follow_live_policy_changes",
+        "tests.test_task_validation_policy::test_removed_policy_input_is_rejected_including_null[None-CardCreate]",
+        "tests.test_task_validation_policy::test_removed_policy_input_is_rejected_including_null[None-CardUpdate]",
+        "tests.test_task_validation_policy::test_removed_policy_input_is_rejected_including_null[value1-CardCreate]",
+        "tests.test_task_validation_policy::test_removed_policy_input_is_rejected_including_null[value1-CardUpdate]",
+        "tests.test_task_validation_policy::test_removed_policy_input_is_rejected_including_null[value2-CardCreate]",
+        "tests.test_task_validation_policy::test_removed_policy_input_is_rejected_including_null[value2-CardUpdate]",
+        "tests.test_sprint_permission_retirement::test_sprint_has_no_live_lifecycle_permissions_or_new_builtin_preset"
+      ]
+    },
+    {
+      "name": "acceptance-native-removed-grants2",
+      "xml_sha256": "17cf221f7671d98c184bf4bb39b648f4059a326e9b7342e6909f7dd176c7f567",
+      "passed": 1,
+      "cases": [
+        "tests.test_cached_mcp_revocation::test_removed_grants_refuse_current_tool_without_rewriting_identity"
+      ]
+    }
+  ],
+  "reviewed_coverage": {
+    "BASE:T27": [
+      "Current Spec then Board precedence per field, mixed resolved_sources, explicit false/zero/null and unchanged inputs.",
+      "Cards share the live native policy; removed migration policy rejected in create/update including null, absent from response."
+    ],
+    "BASE:T28": [
+      "Removed Sprint operations absent from lifecycle, permission registry, introduction manifests, builtin presets and MCP tools.",
+      "Deliberately invalid removed-grant document in native storage cannot read its accessible Board via real MCP authentication/UOW; explicit permission denial and complete agent snapshot preserved. No migration runs."
+    ],
+    "BASE:T31": [
+      "Matching format with orphan FK reproduced as incorrectly admitted, then rejected by file admission and initialization without changing original bytes/sidecars.",
+      "Read-only quick_check and foreign_key_check run after exact format match and before WAL/schema/catalog writes.",
+      "Full native schema suite, lifecycle locking, reentry and transactional DDL/retry pass; incompatible shape, unreadable storage and pending WAL remain preserved."
+    ]
+  },
+  "reproduction": {
+    "fixture_attempt": "acceptance-native-integrity-reproduction1: missing test row primary key; not product evidence",
+    "product_gap": "acceptance-native-integrity-reproduction2 failed DID NOT RAISE before production fix; original artifacts retained locally."
+  },
+  "limits": [
+    "MCP credential extraction injected; authentication, permissions, Community host and UOW are real. In-process MCP is not external HTTP.",
+    "No converter, repair, deletion, permission change or frontend change.",
+    "One focused grant rerun overlaps the 14-case run; total distinct cases 82.",
+    "Installed recovery7 still running on main25; this increment does not certify next26 installed recovery."
+  ]
+}

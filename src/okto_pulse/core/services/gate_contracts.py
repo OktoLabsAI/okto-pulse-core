@@ -204,6 +204,30 @@ def spec_checklist_gate_error(
     )
 
 
+def spec_checklist_snapshot_missing_error(
+    *, board_id: str, spec_id: str, current_status: str,
+) -> GateContractError:
+    """Missing edition authority is unavailable, never an implicit OFF binding."""
+    return GateContractError(
+        code="checklist_validation_binding_snapshot_missing",
+        message=(
+            "The current Spec edition has no frozen Checklist configuration. "
+            "Inspect the validation cycle and Board Checklist settings; an authorized "
+            "reopening and admission is required before validation can continue."
+        ),
+        gate_type=GATE_SPEC_CHECKLIST,
+        entity_type="spec", entity_id=spec_id, current_status=current_status,
+        blocked_transition=f"{current_status}->validated",
+        required_status="validated",
+        next_action={
+            "tool": "okto_pulse_get_spec_validation_cycle",
+            "params": {"board_id": board_id, "spec_id": spec_id, "include_planning": True},
+            "hint": "Inspect this edition; reading does not create or repair its Checklist snapshot.",
+        },
+        extra_details={"checklist_reason": "checklist_validation_binding_snapshot_missing"},
+    )
+
+
 def _update_test_scenario_next_action(
     *, board_id: str | None, spec_id: str | None, card_id: str,
     pending_scenario_ids: list[str],
@@ -380,9 +404,6 @@ def incomplete_test_card_completion_error(
 # Linked-scenario statuses that still BLOCK a test card from done (mirror of the
 # move_card test_card_completion gate); automated/passed are complete.
 _BLOCKING_SCENARIO_STATUSES = ("draft", "ready")
-_SCENARIO_EVIDENCE_FIELDS = (
-    "test_run_id", "output_snippet", "last_run_at", "test_file_path", "test_function",
-)
 
 
 def _scenario_evidence_present(
@@ -400,15 +421,7 @@ def _scenario_evidence_present(
 
     status = str(scenario.get("status") or "")
     if status in GATED_STATUSES:
-        candidate = scenario
-        if not isinstance(scenario.get("evidence"), dict):
-            legacy_top_level = {
-                field: scenario.get(field)
-                for field in _SCENARIO_EVIDENCE_FIELDS
-                if scenario.get(field)
-            }
-            candidate = {**scenario, "evidence": legacy_top_level or None}
-        evidence = candidate.get("evidence") or candidate.get("latest_evidence")
+        evidence = scenario.get("evidence")
         claims_v2 = bool(
             isinstance(evidence, dict)
             and (
@@ -418,10 +431,10 @@ def _scenario_evidence_present(
             )
         )
         if evidence_validator is not None:
-            return evidence_validator(candidate)
+            return evidence_validator(scenario)
         if claims_v2:
             return False
-        return scenario_has_required_evidence(candidate)
+        return scenario_has_required_evidence(scenario)
     return False
 
 
@@ -921,21 +934,27 @@ def spec_evaluation_success_envelope(
     """submit_spec_evaluation is append-only and does NOT change the spec status.
     The success body reports the independently-captured before/after status (so a
     future regression that changed status surfaces as state_changed=true) and points
-    at the operator's next step (move_spec to in_progress) -- never an auto-transition."""
+    at conclusion in Approved or execution admission in Validated; never an auto-transition."""
+    next_action = (
+        {
+            "tool": "okto_pulse_submit_spec_validation",
+            "params": {"spec_id": spec_id},
+            "hint": "Decomposition recorded. Conclude the applicable Spec validation gates before execution.",
+        }
+        if status_after == "approved"
+        else {
+            "tool": "okto_pulse_move_spec",
+            "params": {"spec_id": spec_id, "status": "in_progress"},
+            "hint": "Evaluation recorded (append-only). Move the spec to in_progress when ready to begin execution.",
+        }
+    )
     return {
         "success": True,
         "evaluation": evaluation,
         "state_changed": status_before != status_after,
         "status_before": status_before,
         "status_after": status_after,
-        "next_action": {
-            "tool": "okto_pulse_move_spec",
-            "params": {"spec_id": spec_id, "status": "in_progress"},
-            "hint": (
-                "Evaluation recorded (append-only). Move the spec to in_progress when "
-                "ready to begin execution."
-            ),
-        },
+        "next_action": next_action,
     }
 
 
@@ -956,6 +975,7 @@ __all__ = [
     "operational_flow_for_test_card",
     "spec_evaluation_success_envelope",
     "spec_checklist_gate_error",
+    "spec_checklist_snapshot_missing_error",
     "spec_gate_readiness",
     "spec_validation_gate_error",
     "task_gate_readiness",

@@ -79,6 +79,20 @@ def test_logical_transfer_is_an_explicit_public_edition_contract() -> None:
     assert not is_public_core_contract("okto_pulse.core.kg.logical_transfer_private")
 
 
+def test_classification_error_contract_exports_only_the_public_projection() -> None:
+    from okto_pulse.core.inbound import architecture_classification
+
+    prefix = "okto_pulse.core.inbound.architecture_classification"
+    assert set(architecture_classification.__all__) == {
+        "CLASSIFICATION_REQUEST_ERRORS", "ClassificationErrorProjection", "classification_error",
+    }
+    for name in architecture_classification.__all__:
+        assert is_public_core_contract(f"{prefix}.{name}")
+    assert not is_public_core_contract(prefix)
+    assert not is_public_core_contract(f"{prefix}._ERRORS")
+    assert not is_public_core_contract(f"{prefix}.ValidationError")
+
+
 def test_blocking_graph_bridge_is_public_without_exporting_its_implementation_module() -> None:
     from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 

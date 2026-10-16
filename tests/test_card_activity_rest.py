@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
 from datetime import datetime, timezone
 import uuid
 
@@ -35,6 +37,10 @@ async def activity_client(db_factory):
         db.add(Board(id=board_id, name="Card Activity REST", owner_id=USER_ID))
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id,
+                    adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Readable Activity",

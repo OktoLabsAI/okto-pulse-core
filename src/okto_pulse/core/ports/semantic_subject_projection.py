@@ -3,19 +3,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import Literal, Protocol, runtime_checkable
 
-from okto_pulse.core.domain.guideline_policy import PolicySubjectRef
+from okto_pulse.core.domain.guideline_policy import PolicyEntityType, PolicySubjectRef
 from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticAssessmentContractError,
+    SemanticAssessmentState,
+    SemanticMetricOutcome,
 )
+from okto_pulse.core.domain.guideline_semantic_currentness import SemanticAssessmentCurrentness
 from okto_pulse.core.domain.guideline_semantic_findings_v2 import (
     SemanticAssessmentReceiptProjectionV2,
+    SemanticMetricFindingV2,
 )
 from okto_pulse.core.domain.guideline_semantic_v2 import (
     AnchorSnapshot,
     SemanticAssessmentRequestV2,
+    SemanticMetricResultV2,
     SemanticPinpointV2,
 )
 from okto_pulse.core.domain.quality_assessment import UnboundFindingAnchor
@@ -118,6 +124,32 @@ class SemanticAssessmentV2PersistencePort(Protocol):
 
 @runtime_checkable
 class SemanticAssessmentV2ReadPort(Protocol):
+    async def get_semantic_assessment_v2(
+        self, *, board_id: str, receipt_id: str,
+    ) -> SemanticAssessmentReceiptProjectionV2 | None:
+        """Read one immutable native receipt, constrained to its Board."""
+        ...
+
+    async def list_semantic_assessment_v2_receipts(
+        self, *, board_id: str,
+        entity_type: PolicyEntityType | None = None,
+        subject_id: str | None = None,
+        subject_edition: int | None = None,
+        guideline_id: str | None = None,
+        binding_id: str | None = None,
+        outcome: SemanticAssessmentState | None = None,
+        after: tuple[datetime, str] | None = None,
+        limit: int = 50,
+    ) -> tuple[tuple[SemanticAssessmentReceiptProjectionV2, ...], tuple[datetime, str] | None]:
+        """Page native history by descending recorded_at/id, without current-only filtering."""
+        ...
+
+    async def get_semantic_assessment_v2_currentness(
+        self, receipt: SemanticAssessmentReceiptProjectionV2, *, lock: bool = False,
+    ) -> SemanticAssessmentCurrentness:
+        """Resolve current authority and delegate its interpretation to Core."""
+        ...
+
     async def get_current_semantic_assessment_v2(
         self,
         *,
@@ -131,6 +163,37 @@ class SemanticAssessmentV2ReadPort(Protocol):
         ...
 
 
+@runtime_checkable
+class SemanticFindingV2ReadPort(Protocol):
+    async def list_semantic_findings_v2(
+        self, *, board_id: str,
+        entity_type: PolicyEntityType | None = None,
+        subject_id: str | None = None,
+        subject_edition: int | None = None,
+        receipt_id: str | None = None,
+        guideline_id: str | None = None,
+        binding_id: str | None = None,
+        metric_id: str | None = None,
+        outcome: SemanticMetricOutcome | None = None,
+        after: tuple[datetime, str] | None = None,
+        limit: int = 50,
+    ) -> tuple[tuple[SemanticMetricFindingV2, ...], tuple[datetime, str] | None]:
+        """Page native findings by descending created_at/id within this Board."""
+        ...
+
+    async def get_semantic_metric_result_v2(
+        self, *, board_id: str, metric_result_id: str,
+    ) -> SemanticMetricResultV2 | None:
+        """Read a metric sealed by a native receipt in this Board."""
+        ...
+
+    async def get_semantic_finding_v2(
+        self, *, board_id: str, finding_id: str,
+    ) -> SemanticMetricFindingV2 | None:
+        """Read a native finding and verify its immutable receipt identity."""
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class SemanticAssessmentV2CapabilitySnapshot:
     readers_ready: bool
@@ -138,7 +201,6 @@ class SemanticAssessmentV2CapabilitySnapshot:
     triggers_ready: bool
     rest_transport_ready: bool
     mcp_transport_ready: bool
-    writer_requested: bool
 
     @property
     def writer_active(self) -> bool:
@@ -149,7 +211,6 @@ class SemanticAssessmentV2CapabilitySnapshot:
                 self.triggers_ready,
                 self.rest_transport_ready,
                 self.mcp_transport_ready,
-                self.writer_requested,
             )
         )
 
@@ -157,14 +218,10 @@ class SemanticAssessmentV2CapabilitySnapshot:
     def reason_code(self) -> str | None:
         if self.writer_active:
             return None
-        if not self.writer_requested:
-            return "unsupported_contract_version"
         return "v2_writer_not_ready"
 
     @property
     def state(self) -> str:
-        if not self.writer_requested:
-            return "disabled"
         if not self.readers_ready:
             return "readers_not_ready"
         if not self.storage_ready:
@@ -190,7 +247,6 @@ class SemanticAssessmentV2WriterUnavailable(GuidelinePolicyAdapterMissing):
                 ("triggers_ready", str(snapshot.triggers_ready).lower()),
                 ("rest_transport_ready", str(snapshot.rest_transport_ready).lower()),
                 ("mcp_transport_ready", str(snapshot.mcp_transport_ready).lower()),
-                ("writer_requested", str(snapshot.writer_requested).lower()),
                 ("capability_state", snapshot.state),
             ),
         )
@@ -201,14 +257,6 @@ class SemanticAssessmentV2CapabilityPort(Protocol):
     async def semantic_assessment_v2_capabilities(
         self,
     ) -> SemanticAssessmentV2CapabilitySnapshot: ...
-
-
-@dataclass(frozen=True, slots=True)
-class SemanticPinpointProjectionV1:
-    anchor_type: str
-    anchor_ref: str | None
-    excerpt_hash: str | None
-    contract_version: Literal[1] = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,18 +310,16 @@ class SemanticPinpointProjectionV2:
         )
 
 
-SemanticPinpointProjection = SemanticPinpointProjectionV1 | SemanticPinpointProjectionV2
 
 
 __all__ = [
+    "SemanticFindingV2ReadPort",
     "SemanticAssessmentV2PersistencePort",
     "SemanticAssessmentV2ReadPort",
     "SemanticAssessmentV2CapabilityPort",
     "SemanticAssessmentV2CapabilitySnapshot",
     "SemanticAssessmentV2WriterUnavailable",
     "SemanticAssessmentV2PersistenceResult",
-    "SemanticPinpointProjection",
-    "SemanticPinpointProjectionV1",
     "SemanticPinpointProjectionV2",
     "SemanticSubjectProjectionError",
     "SemanticSubjectProjectionFailure",

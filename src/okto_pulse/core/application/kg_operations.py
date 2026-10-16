@@ -5,13 +5,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
-from typing import Any
-
-from okto_pulse.core.domain.code_traceability_kg import (
-    KGDeadLetterReprocessScope,
-)
-from okto_pulse.core.kg.curation_policy import CurationPolicyError
-from okto_pulse.core.kg.graph_export import GraphExportError
 
 
 logger = logging.getLogger(__name__)
@@ -186,23 +179,21 @@ class CoreKnowledgeGraphOperations:
         self.__relational_context = relational_context
         self.__clock = clock or (lambda: datetime.now(timezone.utc))
 
-    async def dispatch_manual_tick(
-        self,
-        *,
-        tick_id: str,
-        board_id: str | None,
-        force_full_rebuild: bool,
-        scheduled_at: str | None = None,
-    ) -> list[str]:
-        from okto_pulse.core.application.kg_tick import dispatch_manual_tick
+    async def stage_new_learning_capture(self, request, *, author_id: str):
+        from okto_pulse.core.application.learning_capture import stage_new_learning_capture
+        return await stage_new_learning_capture(self.__relational_context, request,
+            author_id=author_id, captured_at=self.__clock())
 
-        return await dispatch_manual_tick(
-            tick_id=tick_id,
-            board_id=board_id,
-            force_full_rebuild=force_full_rebuild,
-            relational_context=self.__relational_context,
-            scheduled_at=scheduled_at,
-        )
+    async def get_learning_capture_source(self, *, board_id: str, bug_id: str, candidate_query: str | None = None):
+        from okto_pulse.core.application.learning_capture import get_learning_capture_source
+        return await get_learning_capture_source(self.__relational_context, board_id=board_id, bug_id=bug_id,
+            candidate_query=candidate_query)
+
+    async def list_learning_captures(self, *, board_id: str, bug_id: str, cursor=None, limit=20):
+        from okto_pulse.core.application.learning_capture import list_learning_captures
+        return await list_learning_captures(self.__relational_context, board_id=board_id, bug_id=bug_id,
+            cursor=cursor, limit=limit)
+
 
     async def evaluate_bug_cognitive_closure(
         self, readiness_service: object, **request: object
@@ -390,7 +381,6 @@ class CoreKnowledgeGraphOperations:
         *,
         profile: str,
         surface: str,
-        artifact_ref: str | None,
         scheduler_control: object | None = None,
     ) -> dict[str, object]:
         from okto_pulse.core.services.kg_health_readiness_service import (
@@ -402,7 +392,6 @@ class CoreKnowledgeGraphOperations:
             self.__relational_context,
             profile=profile,
             surface=surface,
-            artifact_ref=artifact_ref,
             scheduler_control=scheduler_control,
         )
 
@@ -422,32 +411,9 @@ class CoreKnowledgeGraphOperations:
             include_code_traceability=include_code_traceability,
         )
 
-    async def stage_spec_projection_repair(
-        self, *, board_id: str, spec_ids: tuple[str, ...], actor_id: str, reason: str,
-    ) -> dict[str, object]:
-        from okto_pulse.core.kg.deterministic_projection_repair import stage_spec_projection_repair
 
-        return await stage_spec_projection_repair(
-            self.__relational_context, board_id=board_id, spec_ids=spec_ids,
-            actor_id=actor_id, reason=reason,
-        )
 
-    async def start_historical_consolidation(self, board_id: str):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import (
-            start_historical_consolidation,
-        )
 
-        return await start_historical_consolidation(self.__relational_context, board_id)
-
-    async def cancel_historical(self, board_id: str):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import cancel_historical
-
-        return await cancel_historical(self.__relational_context, board_id)
-
-    async def get_historical_progress(self, board_id: str):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import get_historical_progress
-
-        return await get_historical_progress(self.__relational_context, board_id)
 
     def board_erasure_scope(self, board_id: str, *, actor_id: str):  # noqa: ANN201
         from okto_pulse.core.kg.governance import board_erasure_scope
@@ -519,192 +485,15 @@ class CoreKnowledgeGraphOperations:
             purge_relational=purge_relational,
         )
 
-    async def list_pending_entries(
-        self,
-        board_id: str,
-        *,
-        include_code_traceability: bool = True,
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import list_pending_entries
 
-        if include_code_traceability:
-            return await list_pending_entries(self.__relational_context, board_id)
-        return await list_pending_entries(
-            self.__relational_context,
-            board_id,
-            include_code_traceability=False,
-        )
 
-    async def build_pending_tree(self, board_id: str, *, depth: int):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import build_pending_tree
 
-        return await build_pending_tree(
-            self.__relational_context,
-            board_id,
-            depth=depth,
-        )
 
-    async def retry_pending_entry(
-        self,
-        board_id: str,
-        queue_entry_id: str,
-        *,
-        recursive: bool,
-        include_code_traceability: bool = True,
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import retry_pending_entry
 
-        kwargs = {"recursive": recursive}
-        if not include_code_traceability:
-            kwargs["include_code_traceability"] = False
-        return await retry_pending_entry(
-            self.__relational_context,
-            board_id,
-            queue_entry_id,
-            **kwargs,
-        )
 
-    async def boost_node(self, board_id: str, node_id: str, *, actor_id: str):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import boost_node
 
-        return await boost_node(
-            self.__relational_context,
-            board_id,
-            node_id,
-            actor_id=actor_id,
-        )
 
-    async def mutate_boost_node_graph(
-        self,
-        board_id: str,
-        node_id: str,
-        *,
-        actor_id: str,
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import (
-            mutate_boost_node_graph,
-        )
 
-        return await mutate_boost_node_graph(
-            board_id,
-            node_id,
-            actor_id=actor_id,
-        )
-
-    def stage_boost_node_audit(self, mutation: object):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import (
-            stage_boost_node_audit,
-        )
-
-        return stage_boost_node_audit(self.__relational_context, mutation)
-
-    async def reprocess_dead_letter_rows(
-        self,
-        board_id: str,
-        *,
-        dead_letter_ids: list[str] | None,
-        limit: int,
-        scope: KGDeadLetterReprocessScope = KGDeadLetterReprocessScope.GENERIC,
-    ) -> dict[str, object]:
-        from okto_pulse.core.services.dead_letter_inspector_service import (
-            reprocess_dead_letter_rows,
-        )
-
-        return await reprocess_dead_letter_rows(
-            self.__relational_context,
-            board_id,
-            dead_letter_ids=dead_letter_ids,
-            limit=limit,
-            scope=scope,
-        )
-
-    async def diagnose_connectivity_guard_dlq(self, board_id: str) -> dict[str, object]:
-        from okto_pulse.core.services.connectivity_dlq_reprocess_service import (
-            diagnose_connectivity_guard_dlq,
-        )
-
-        return await diagnose_connectivity_guard_dlq(
-            self.__relational_context,
-            board_id,
-        )
-
-    async def reprocess_connectivity_guard_dlq(
-        self, board_id: str, dead_letter_ids: list[str]
-    ) -> dict[str, object]:
-        from okto_pulse.core.services.connectivity_dlq_reprocess_service import (
-            reprocess_connectivity_guard_dlq,
-        )
-
-        return await reprocess_connectivity_guard_dlq(
-            self.__relational_context,
-            board_id,
-            dead_letter_ids,
-        )
-
-    async def verify_connectivity_class_cleared(
-        self, board_id: str, *, artifact_refs: list[str] | None
-    ) -> dict[str, object]:
-        from okto_pulse.core.services.connectivity_dlq_reprocess_service import (
-            verify_connectivity_class_cleared,
-        )
-
-        return await verify_connectivity_class_cleared(
-            self.__relational_context,
-            board_id,
-            artifact_refs=artifact_refs,
-        )
-
-    async def list_cognitive_dlq_rows(
-        self,
-        board_id: str,
-        *,
-        limit: int,
-        offset: int,
-        include_code_traceability: bool = False,
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.dead_letter_inspector_service import (
-            list_cognitive_dlq_rows,
-        )
-
-        return await list_cognitive_dlq_rows(
-            self.__relational_context,
-            board_id,
-            limit=limit,
-            offset=offset,
-            include_code_traceability=include_code_traceability,
-        )
-
-    async def list_dead_letter_rows(
-        self,
-        board_id: str,
-        *,
-        limit: int,
-        offset: int,
-        include_code_traceability: bool = True,
-    ) -> dict[str, object]:
-        from okto_pulse.core.services.dead_letter_inspector_service import (
-            list_dead_letter_rows,
-        )
-
-        return await list_dead_letter_rows(
-            self.__relational_context,
-            board_id,
-            limit=limit,
-            offset=offset,
-            include_code_traceability=include_code_traceability,
-        )
-
-    async def list_stale_canonical_parity(
-        self, board_id: str, *, limit: int, offset: int
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import list_stale_canonical_parity
-
-        return await list_stale_canonical_parity(
-            self.__relational_context,
-            board_id=board_id,
-            limit=limit,
-            offset=offset,
-        )
 
     async def query_takedown_telemetry(
         self,
@@ -773,103 +562,11 @@ class CoreKnowledgeGraphOperations:
             "e2e_health": e2e_health,
         }
 
-    async def list_canonical_debt(
-        self,
-        *,
-        board_id: str,
-        artifact_type: str | None,
-        state: str | None,
-        limit: int,
-        offset: int,
-        include_code_traceability: bool = True,
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.canonical_debt_service import list_canonical_debt
 
-        return await list_canonical_debt(
-            self.__relational_context,
-            board_id=board_id,
-            artifact_type=artifact_type,
-            state=state,
-            limit=limit,
-            offset=offset,
-            include_code_traceability=include_code_traceability,
-        )
 
-    async def schedule_canonical_debt_retry(
-        self,
-        *,
-        board_id: str,
-        debt_id: str,
-        actor_id: str,
-        kg_health_state: str,
-    ) -> dict[str, object]:
-        from okto_pulse.core.services.canonical_debt_service import (
-            schedule_canonical_debt_retry,
-        )
 
-        return await schedule_canonical_debt_retry(
-            self.__relational_context,
-            board_id=board_id,
-            debt_id=debt_id,
-            actor_id=actor_id,
-            kg_health_state=kg_health_state,
-        )
 
-    async def list_canonical_partition_integrity(
-        self, *, board_id: str, **filters: object
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import (
-            list_canonical_partition_integrity,
-        )
 
-        return await list_canonical_partition_integrity(
-            self.__relational_context,
-            board_id=board_id,
-            **filters,
-        )
-
-    async def canonical_partition_integrity_detail(
-        self, *, board_id: str, node_id: str
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import (
-            get_canonical_partition_integrity_detail,
-        )
-
-        return await get_canonical_partition_integrity_detail(
-            self.__relational_context,
-            board_id=board_id,
-            node_id=node_id,
-        )
-
-    async def list_digest_layer_mismatches(
-        self, *, board_id: str, limit: int, offset: int
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import list_digest_layer_mismatches
-
-        return await list_digest_layer_mismatches(
-            self.__relational_context,
-            board_id=board_id,
-            limit=limit,
-            offset=offset,
-        )
-
-    async def enqueue_digest_layer_reconciliation(
-        self, *, board_id: str, reason: str
-    ) -> dict[str, object]:
-        """Request board/digest layer convergence through the durable outbox.
-
-        The relational context stays private to this transaction-scoped service;
-        the application use case depends only on this Core-owned capability.
-        """
-        from okto_pulse.core.kg.canonical_demotion_global_sync import (
-            enqueue_digest_layer_reconciliation,
-        )
-
-        return await enqueue_digest_layer_reconciliation(
-            self.__relational_context,
-            board_id=board_id,
-            reason=reason,
-        )
 
     async def capture_global_discovery_recovery_seed_inputs(
         self,
@@ -907,64 +604,6 @@ class CoreKnowledgeGraphOperations:
             )
         return tuple(rows)
 
-    async def list_global_outbox_dead_letters(
-        self,
-        *,
-        limit: int,
-        cursor: str | None,
-        classification: str | None,
-        include_code_traceability: bool = True,
-    ) -> dict[str, object]:
-        from okto_pulse.core.application.global_outbox_dead_letter import (
-            GlobalOutboxDeadLetterOperations,
-        )
-        from okto_pulse.core.ports.global_outbox import get_global_outbox_store
-
-        return await GlobalOutboxDeadLetterOperations(
-            store=get_global_outbox_store()
-        ).list(
-            context=self.__relational_context,
-            limit=limit,
-            cursor=cursor,
-            classification=classification,
-            include_code_traceability=include_code_traceability,
-        )
-
-    async def reprocess_global_outbox_dead_letters(
-        self,
-        *,
-        dead_letter_ids: list[str],
-        reason: str,
-    ) -> dict[str, object]:
-        from okto_pulse.core.application.global_outbox_dead_letter import (
-            GlobalOutboxDeadLetterOperations,
-        )
-        from okto_pulse.core.ports.global_outbox import get_global_outbox_store
-
-        return await GlobalOutboxDeadLetterOperations(
-            store=get_global_outbox_store()
-        ).reprocess(
-            context=self.__relational_context,
-            dead_letter_ids=dead_letter_ids,
-            reason=reason,
-        )
-
-    async def verify_global_outbox_dead_letters(
-        self,
-        *,
-        dead_letter_ids: list[str],
-    ) -> dict[str, object]:
-        from okto_pulse.core.application.global_outbox_dead_letter import (
-            GlobalOutboxDeadLetterOperations,
-        )
-        from okto_pulse.core.ports.global_outbox import get_global_outbox_store
-
-        return await GlobalOutboxDeadLetterOperations(
-            store=get_global_outbox_store()
-        ).verify(
-            context=self.__relational_context,
-            dead_letter_ids=dead_letter_ids,
-        )
 
     async def recover_global_discovery_delivery(
         self, *, run_id: str, board_ids: list[str], dead_letter_limit: int
@@ -1044,71 +683,7 @@ class CoreKnowledgeGraphOperations:
             "selective_error_class": "global_open",
         }
 
-    async def queue_health(self) -> dict[str, object]:
-        from okto_pulse.core.services.queue_health_service import get_queue_health
-
-        return await get_queue_health(self.__relational_context)
-
-    async def queue_drilldown(
-        self,
-        board_id: str | None,
-        *,
-        include_code_traceability: bool = True,
-    ) -> dict[str, object]:
-        from okto_pulse.core.services.queue_health_service import (
-            get_active_queue_drilldown,
-        )
-
-        return await get_active_queue_drilldown(
-            self.__relational_context,
-            board_id,
-            include_code_traceability=include_code_traceability,
-        )
-
-    async def invoke_rebuild_admission(
-        self,
-        refusal_check: object,
-        board_id: str,
-        *,
-        scheduler_control: object | None,
-    ):  # noqa: ANN201
-        if not isinstance(refusal_check, Callable):
-            raise TypeError("refusal_check must be callable")
-
-        async def health_probe(
-            probe_board_id: str,
-            _context: object,
-            *,
-            scheduler_control: object | None = None,
-        ) -> dict[str, object]:
-            return await self.health(
-                probe_board_id,
-                scheduler_control=scheduler_control,
-            )
-
-        if scheduler_control is None:
-            return await refusal_check(
-                board_id,
-                self.__relational_context,
-                health_probe=health_probe,
-            )
-        return await refusal_check(
-            board_id,
-            self.__relational_context,
-            scheduler_control=scheduler_control,
-            health_probe=health_probe,
-        )
-
-
-def export_board_jsonld(board_id: str) -> dict[str, Any]:
-    from okto_pulse.core.kg.graph_export import export_board_jsonld as _export
-
-    return _export(board_id)
-
 
 __all__ = [
     "CoreKnowledgeGraphOperations",
-    "CurationPolicyError",
-    "GraphExportError",
-    "export_board_jsonld",
 ]

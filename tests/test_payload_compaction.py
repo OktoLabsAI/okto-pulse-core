@@ -422,7 +422,7 @@ async def test_traceability_default_omits_artifacts_and_dedups_bug_cards(caplog)
     drill = summary["artifact_drilldown"]
     assert drill["available"] is True
     assert drill["tool_name"] == "okto_pulse_get_traceability_report"
-    assert drill["include_artifacts"] == "true"
+    assert drill["include_artifacts"] is True
     assert drill["entity_type"] == "spec"
     assert drill["entity_id"] == spec_id
 
@@ -491,7 +491,7 @@ async def test_traceability_full_mode_still_expands_artifacts():
             "okto_pulse_get_traceability_report",
             board_id=board_id,
             spec_id=spec_id,
-            include_artifacts="true",
+            include_artifacts=True,
         )
 
     spec = report["orphan_specs"][0]
@@ -525,7 +525,7 @@ async def test_list_business_rules_does_not_duplicate_fr_text(caplog):
                         "id": "br_1",
                         "title": "SSO rule",
                         "status": "active",
-                        "linked_requirements": ["0"],
+                        "linked_requirements": ["fr_sso"],
                     }
                 ],
                 api_contracts=[],
@@ -542,8 +542,7 @@ async def test_list_business_rules_does_not_duplicate_fr_text(caplog):
 
     data = json.loads(raw)
     rule = data["business_rules"][0]
-    # IMPL-2: projection now emits canonical fr_id, not the re-derived index.
-    # Stored value was legacy index "0"; frs[0].id = "fr_sso" → emitted as "fr_sso".
+    # Projection preserves the stored canonical requirement ID.
     assert rule["linked_requirements"] == ["fr_sso"]
     # Human text is resolved exactly once, under resolved_requirements.
     assert rule["resolved_requirements"] == [f"[FR-0] {fr_text}"]
@@ -580,7 +579,7 @@ async def test_list_api_contracts_does_not_duplicate_fr_text(caplog):
                         "method": "GET",
                         "path": "/cards",
                         "status": "active",
-                        "linked_requirements": ["0"],
+                        "linked_requirements": ["fr_cards"],
                         "linked_rules": [],
                     }
                 ],
@@ -597,8 +596,7 @@ async def test_list_api_contracts_does_not_duplicate_fr_text(caplog):
 
     data = json.loads(raw)
     contract = data["api_contracts"][0]
-    # IMPL-2: projection now emits canonical fr_id, not the re-derived index.
-    # Stored value was legacy index "0"; frs[0].id = "fr_cards" → emitted as "fr_cards".
+    # Projection preserves the stored canonical requirement ID.
     assert contract["linked_requirements"] == ["fr_cards"]
     assert contract["resolved_requirements"] == [f"[FR-0] {fr_text}"]
     assert raw.count(fr_text) == 1
@@ -610,7 +608,7 @@ async def test_list_api_contracts_does_not_duplicate_fr_text(caplog):
 
 
 @pytest.mark.asyncio
-async def test_list_business_rules_preserves_unresolved_legacy_refs():
+async def test_list_business_rules_preserves_unresolved_requirement_ids():
     db_factory = get_session_factory()
     board_id = _id("br-unres-board")
     spec_id = _id("br-unres-spec")
@@ -627,12 +625,12 @@ async def test_list_business_rules_preserves_unresolved_legacy_refs():
                 functional_requirements=[{"id": "fr_x", "text": "Known FR"}],
                 business_rules=[
                     {
-                        "id": "br_legacy",
-                        "title": "Legacy rule",
+                        "id": "br_current",
+                        "title": "Current rule",
                         "status": "active",
                         "linked_requirements": [
-                            "0",
-                            "dangling-legacy-ref-no-fr",
+                            "fr_x",
+                            "fr_missing",
                         ],
                     }
                 ],
@@ -649,11 +647,10 @@ async def test_list_business_rules_preserves_unresolved_legacy_refs():
         )
 
     rule = data["business_rules"][0]
-    # IMPL-2: stored index "0" resolves to frs[0].id = "fr_x" → emitted as "fr_x".
     assert rule["linked_requirements"] == ["fr_x"]
     assert rule["resolved_requirements"] == ["[FR-0] Known FR"]
-    # Legacy ref that maps to no FR is preserved, not silently dropped.
-    assert rule["unresolved_requirements"] == ["dangling-legacy-ref-no-fr"]
+    # Unknown requirement ID remains visible in diagnostics.
+    assert rule["unresolved_requirements"] == ["fr_missing"]
 
 
 async def _call_raw(name: str, **kwargs) -> str:

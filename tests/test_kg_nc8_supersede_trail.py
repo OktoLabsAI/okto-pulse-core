@@ -163,7 +163,7 @@ async def test_s7_replay_uses_active_successor_without_duplicate_pk(
     """An at-least-once replay must resolve generation 1, not stale generation 0.
 
     Both generations intentionally retain the same source_artifact_ref.  If
-    NC-8 uses an unordered ``LIMIT 1``, Ladybug returns generation 0 again and
+    NC-8 uses an unordered ``LIMIT 1``, Grafx returns generation 0 again and
     the replay tries to CREATE the deterministic generation-1 primary key a
     second time.
     """

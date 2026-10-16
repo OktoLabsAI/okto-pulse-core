@@ -69,9 +69,7 @@ def _real_board_graph_registry(_kg_registry_test_fakes, _tmp_rebuild_dir):
     from okto_pulse.community.adapters.rebuild_audit_storage import (
         CommunityFileSystemRebuildAuditArtifactStore,
     )
-    from okto_pulse.community.adapters.quarantine_restore import (
-        CommunityQuarantineRestore,
-    )
+    from kg_schema_testing import graph_composition
 
     configure_test_kg_registry(
         cypher_executor=RealBoardCypherExecutorForTests(),
@@ -80,7 +78,7 @@ def _real_board_graph_registry(_kg_registry_test_fakes, _tmp_rebuild_dir):
         rebuild_audit_artifact_store=(
             CommunityFileSystemRebuildAuditArtifactStore(_tmp_rebuild_dir)
         ),
-        quarantine_restore=CommunityQuarantineRestore(),
+        quarantine_restore=graph_composition().quarantine_restore,
     )
 
 

@@ -118,10 +118,10 @@ Full Spec context preserves `project_structure=null` (not authored) versus
 Task/Test projections report direct versus context-only nodes and affected
 references after revocation or reclassification. When the whole Spec is
 exported to HTML or Markdown, its active tree and node notes are included in
-deterministic preorder under **Note / Description**. For a legacy
-`reference_scaffold` whose `note` and `interpretation_limit` differ, readers
-show the interpretation limit as the single description because it carries
-the stricter non-inference boundary; the next edit must converge both fields.
+deterministic preorder under **Note / Description**. For a `reference_scaffold`,
+readers show its required `interpretation_limit` as the single description
+because it states the non-inference boundary. Reading this description does
+not rewrite the stored node.
 UI collapse state is presentation-only and is never stored or exported.
 
 Code Evidence remains immutable AS-IS observation. A Project structure node is

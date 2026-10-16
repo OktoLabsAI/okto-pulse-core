@@ -59,9 +59,6 @@ class KnowledgeAssignmentState(str, Enum):
 
 class KnowledgeOriginClass(str, Enum):
     V2 = "v2"
-    LEGACY_ALL = "legacy_all"
-    SELECTED_LEGACY = "selected_legacy"
-    LEGACY_UNRESOLVED = "legacy_unresolved"
 
 
 class KnowledgeRelevanceEntityType(str, Enum):

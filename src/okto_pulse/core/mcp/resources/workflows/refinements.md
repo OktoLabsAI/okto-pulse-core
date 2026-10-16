@@ -31,7 +31,7 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 - **Editing only in "draft"**: `okto_pulse_update_refinement` only works when status is `draft`
 - **Use Q&A** to clarify scope and decisions with the user. If investigation reveals two or more valid interpretations, ask before inferring; refinement assumptions become expensive rework in specs, tasks, mockups, Architecture Designs, tests, and validations.
 - **Spec creation from refinement**: Only from **"done"** status — a spec draft can be created from a done refinement
-- **Triage pending derivations**: the canonical surface to find done refinements that still lack a derived spec is `okto_pulse_list_by_board(entity_type="refinement", filters={"ideation_id": "...", "derivation_pending": true})` — see `okto-pulse://reference/list_tools`. `entity_type="refinement"` **REQUIRES** `filters.ideation_id` (omitting it fails with `missing_required_filter`); `entity_type="sprint"` likewise requires `filters.spec_id`.
+- **Triage pending derivations**: the canonical surface to find done refinements that still lack a derived spec is `okto_pulse_list_by_board(entity_type="refinement", filters={"ideation_id": "...", "derivation_pending": true})` — see `okto-pulse://reference/list_tools`. `entity_type="refinement"` **REQUIRES** `filters.ideation_id` (omitting it fails with `missing_required_filter`).
 
 ## Lifecycle Ambiguity Results and Pinpointing
 
@@ -50,8 +50,9 @@ Use this sequence:
    `okto_pulse_get_current_quality_assessment(subject_type="refinement",
    assessment_kind="ambiguity")`; use head revision 0 if none exists.
 3. Call `okto_pulse_record_ambiguity_assessment` with the current Refinement
-   version, lifecycle edition, and head revision with a 1–5 lower-is-better
-   score. Pinpoint every issue to a stable field, structured-child ID, Q&A ID,
+   version, lifecycle edition, and head revision with a 0–5 lower-is-better
+   score. Zero means no identified residual ambiguity; nonzero scores require
+   findings. Pinpoint every issue to a stable field, structured-child ID, Q&A ID,
    or the whole artifact. Mutable list positions are forbidden anchors.
 4. Proposed questions are immutable evidence in the result; they never create
    or update Q&A. If a question requires clarification or semantic edits,
@@ -102,21 +103,17 @@ keep the ledger provenance precise and independently readable.
 
 ### 2.2a Selective Knowledge propagation when deriving a spec
 
-`okto_pulse_derive_spec_from_refinement` has two intentionally separate
-Knowledge paths:
+`okto_pulse_derive_spec_from_refinement` uses one Knowledge selection contract.
+Omitting `knowledge_propagation` creates an `omitted` selection with no inherited
+Knowledge and a fresh operation key. Supply an envelope with a caller-stable
+key when the derivation must support exact retries.
 
-- Omit `knowledge_propagation` to preserve the legacy v1 derivation exactly.
-  Legacy `kb_ids` keeps its existing meaning on this path.
-- Supply `knowledge_propagation` to opt into contract v2. In this case,
-  `kb_ids` and `knowledge_propagation` are mutually exclusive; passing both
-  fails with `conflicting_propagation_parameters`.
-
-The v2 envelope has `contract_version=2`, a caller-stable
+The envelope has `contract_version=2`, a caller-stable
 `idempotency_key`, and one coherent tri-state selection:
 
 | `selection_state` | Required shape | Effect |
 |---|---|---|
-| `omitted` | no `mode`; empty `knowledge_ids`; justification optional | Records an authoritative v2 omission. It does not fall back to v1. |
+| `omitted` | no `mode`; empty `knowledge_ids`; justification optional | Records no inherited Knowledge selection. |
 | `explicit_empty` | `mode="drop"`; empty `knowledge_ids`; non-empty `justification` | Derives the spec with an authoritative empty Knowledge selection. |
 | `explicit_ids` | non-empty `knowledge_ids`; `mode="reference"`, `"snapshot"`, or `"drop"`; non-empty `justification` | Derives the spec with only the selected stable roots, or explicitly drops the named roots. |
 
@@ -128,7 +125,7 @@ original `spec_id`, operation, selection, and assignments with
 selection. A rare `knowledge_creation_race` is retryable and the MCP surface
 already performs one retry in a fresh unit of work before exposing it.
 
-Selective Knowledge v2 does not change mockup or Architecture Design
+Selective Knowledge does not change mockup or Architecture Design
 parameters. Continue to pass `mockup_ids`, `architecture_design_ids`, and
 `architecture_propagation_mode` independently.
 
@@ -179,13 +176,10 @@ receipts. See the Code Traceability reference for the exact citation-only rule.
 **Stop condition — the refinement is genuinely ready when:**
 - A reviewer reading the `analysis` field can resolve every source-code claim to immutable Code Evidence or an explicit unavailable receipt/waiver, without requiring Pulse to open a repository.
 - The full context has an explicit `delivery_context`; its `source_context`
-  reports complete role counts and classification state independently from
+  reports complete role counts independently from
   any bounded item list.
-- No new item is `uncategorized_legacy`. Any legacy item remains visibly
-  unclassified until an authorized actor appends classification. Agents use
-  `okto_pulse_classify_legacy_code_evidence` with
-  `code_traceability.evidence.classify_legacy`; humans may use UI/REST. Neither
-  path permits guessed provenance or upgrades the V1 investigation receipt.
+- Every Evidence item requires an authored role and explicit baseline provenance.
+  Earlier formats are rejected without conversion.
 - Every decision in the refinement traces to either a source, a KG node, a Q&A answer, or an explicit user instruction.
 - There are zero unresolved Q&A items on the refinement.
 - New evidence discovered during investigation has been attached as a KE, mockup, or Architecture Design, not buried in prose.

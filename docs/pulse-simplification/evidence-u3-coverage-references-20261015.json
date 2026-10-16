@@ -1,0 +1,99 @@
+{
+  "date": "2026-10-15",
+  "checkpoint": {
+    "core_product": "8291a648",
+    "community": "be799c37"
+  },
+  "scope": "U3/3d Coverage and References; resources/dependencies remain",
+  "runtime": {
+    "api_port": 8200,
+    "mcp_port": 8201,
+    "vite_port": 5274,
+    "kind": "checkout, not installed"
+  },
+  "tests": {
+    "distinct_cases_with_pass": 96,
+    "parent_cases": 79,
+    "coverage_component_cases": 17,
+    "typescript_exit": 0,
+    "eslint_errors": 0,
+    "eslint_existing_warnings": 11,
+    "initial_failure": "New origin selector matched both header and References; scoped to the References panel.",
+    "qualification_timeout": "One parent tree recovery case timed out at 5000ms. Same case passed alone with unchanged timeout/assertions; report retained."
+  },
+  "native": {
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "dec9410f-d455-4506-a8fd-f791ee31dc77",
+    "spec_version": 20,
+    "spec_updated_at": "2026-10-15T18:08:35",
+    "spec_version_and_timestamp_unchanged": true,
+    "coverage_requests_before": [
+      "4056. [GET] http://127.0.0.1:8200/api/v1/boards/7bbd65c3-8738-45a2-8fab-a5216ab7e98c/specs/dec9410f-d455-4506-a8fd-f791ee31dc77/coverage?limit=200 => [200] OK"
+    ],
+    "coverage_requests_after": [
+      "4056. [GET] http://127.0.0.1:8200/api/v1/boards/7bbd65c3-8738-45a2-8fab-a5216ab7e98c/specs/dec9410f-d455-4506-a8fd-f791ee31dc77/coverage?limit=200 => [200] OK",
+      "4092. [GET] http://127.0.0.1:8200/api/v1/boards/7bbd65c3-8738-45a2-8fab-a5216ab7e98c/specs/dec9410f-d455-4506-a8fd-f791ee31dc77/coverage?limit=200 => [200] OK"
+    ],
+    "coverage_action": "One additional HTTP200 coverage read after native Card rename; no manual reload.",
+    "references_action": "Second native Card rename observed automatically with Derived cards still selected; screenshot inspected.",
+    "card_id": "d14ef50a-189e-5282-99fd-8a636bc698df",
+    "final_title": "Mock - maintain disposable scope document (UI and MCP synchronized)"
+  },
+  "limits": [
+    "No percentage/evidence credit was created. Proof remained unavailable in this fixture; screenshot inspected.",
+    "Native probe demonstrates Card-triggered invalidation and reference text convergence, not a completed Delivery percentage change.",
+    "Origin updates, failure recovery and blocked override have parent tests; no claim of native origin mutation.",
+    "Resources and dependencies remain unintegrated. Architecture revision handling clears selected design and must preserve authored drafts before adding its subscription.",
+    "No Python/schema/gate change, build or reinstall. Full UV18-21 and installed U4 remain."
+  ],
+  "artifacts": [
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-coverage-reference-qualified.xml",
+      "sha256": "a172fc7f362bc34aeb259727e5fd70f39ff3c0010f0d7d45a31a7aa7682269ff"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-coverage-reference-timeout-recheck.xml",
+      "sha256": "6086e036e33df88dc263eda7f2abb93f91e957701c583b418afe96167c90fae1"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-coverage-component-qualified.xml",
+      "sha256": "103190984b15fb35345405225ba1659868681cb3152d9d70c29e1d886f3a9fee"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-coverage-reference-parent.xml",
+      "sha256": "80f73f0f2f73469641d7568438ec3247fc4ec73330480a8188ad51049b6fa6f6"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-card-reader-before.json",
+      "sha256": "aafa72066ed7d5ec2099d216676814813ba56c297d9482f359090a92140e5852"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-card-reader-rename.json",
+      "sha256": "3a210b24c126ad2a264cf54815237f83431e98c62ab95de419a5ae3e5838ff87"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-card-reader-rename-reference.json",
+      "sha256": "1c3e2d09983ca13ecc7e2f109bb54be3e9f3f335b71dceebbcd41c149c48bcdf"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-coverage-requests-before.txt",
+      "sha256": "c21c2557dd92a60434005a7cd8f76b92d03c78e5b202f0c02ab0f4e321ae4c96"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-coverage-requests-after.txt",
+      "sha256": "27c97c85598ca748f3762534982d15cfd2fdfbe303ca8ba4695e038c46755803"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-coverage-after-card-change.png",
+      "sha256": "8c96a6ede6a86dd34dcd52de56dbf0e61b4e5f8a572c2bf1b5ef06d7e7aa2f87"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-references-after-card-change.yml",
+      "sha256": "def8845076995fbfc966bea35818bf73d1ee98079535f3d08ce93577a4edf158"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-references-after-card-change.png",
+      "sha256": "b676ce2352b76323ce0655cd6ce434f6e3e0eaf62c35f36fd9851c5812309718"
+    }
+  ]
+}

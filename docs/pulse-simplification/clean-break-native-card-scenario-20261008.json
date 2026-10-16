@@ -1,0 +1,30 @@
+{
+  "scope": "DEI-T61 rewritten native Card to scenario projection",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "DEI:DEI-T61",
+  "result": {
+    "passed": 24,
+    "failed": 0,
+    "seconds": 473.04,
+    "terminal_session": 33625
+  },
+  "evidence": [
+    "Current schema in relational source; actual consolidation processor and Okto Grafx transactions. Normal/test/bug Cards preserve one canonical observed Card-to-scenario relation after add/replace/remove/restore/replay.",
+    "Full logical relationship multiset from incremental projection equals independent clean rebuild, including owner rule, logical endpoints, layer/maturity and provenance. No duplicate owned relation.",
+    "Unlinked native Card retracts old relation while preserving parent_absent diagnosis; rebuild matches incremental state.",
+    "Pending new scenario retracts known old relation without acknowledging completed consolidation; replay stays pending until prerequisite materializes, then converges.",
+    "Injected failure before relational progress commit restores exact graph before-image.",
+    "18 Grafx adapter cases verify ownership isolation, origin rule replacement, repeated compensation, invalid endpoint refusal, delete failure rollback and removal-only reconciliation."
+  ],
+  "limits": [
+    "Explicit rewritten fresh-native scope only; no old-source migration or converter is tested or restored.",
+    "Relationship comparisons normalize physical IDs/session identities. No all-family KG parity or installed E2E claim.",
+    "No product/frontend/SPA change. Main88 closure remains applicable with eight zero budgets."
+  ],
+  "artifacts": {
+    "provenance-native-card-scenario-20261008.json": "77a53d52a00fdb219e06d56b9dc0cada36b1ab9d019a752a58664a5bf2f107ad",
+    "native-card-scenario-20261008.xml": "10871b28c064814a86d6f1a530e2fdee1bfacd84abd94ec9851e6c667143bf6e",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

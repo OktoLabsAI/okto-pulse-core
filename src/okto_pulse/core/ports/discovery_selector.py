@@ -34,7 +34,6 @@ class SelectorCardFact:
     priority: Any
     card_type: Any
     spec_id: str | None
-    sprint_id: str | None
     position: int | None
 
 

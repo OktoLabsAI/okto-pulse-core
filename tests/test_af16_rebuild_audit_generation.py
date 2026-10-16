@@ -185,10 +185,9 @@ def test_af16_rest_mcp_health_wire_generation_through_artifact_store() -> None:
     community_root = community_source_for(repo_root)
 
     # Concrete generation access belongs to the health authority and to the
-    # offline recovery executor. Online REST/MCP transports delegate through
+    # health service. Online REST/MCP transports delegate through
     # public use-case/service seams and must not reconstruct this repository.
     generation_owner_sources = [
-        community_root / "kg_recovery_only.py",
         core_root / "services" / "kg_health_service.py",
     ]
     for path in generation_owner_sources:
@@ -203,14 +202,9 @@ def test_af16_rest_mcp_health_wire_generation_through_artifact_store() -> None:
     community_health_probe = (community_root / "api" / "kg_health_probe.py").read_text(
         encoding="utf-8"
     )
-    community_rebuild = (community_root / "api" / "kg_rebuild.py").read_text(
-        encoding="utf-8"
-    )
     mcp_server = (core_root / "mcp" / "server.py").read_text(encoding="utf-8")
 
     assert "uow.services.kg.health" in community_health_probe
-    assert "community.api.kg_health_probe import get_kg_health" in community_rebuild
     assert "GetKgHealthUseCase" in mcp_server
     assert "RebuildAuditKGGenerationRepository" not in community_health_probe
-    assert "RebuildAuditKGGenerationRepository" not in community_rebuild
     assert "RebuildAuditKGGenerationRepository" not in mcp_server

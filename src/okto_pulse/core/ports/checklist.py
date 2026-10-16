@@ -70,6 +70,12 @@ class ChecklistBindingConflict(ChecklistPersistenceError):
     code = "checklist_binding_conflict"
 
 
+class ChecklistBoardBindingMissing(ChecklistBindingConflict):
+    """Validation admission requires explicit Board governance before freezing."""
+
+    code = "checklist_board_binding_missing"
+
+
 class ChecklistIdempotencyConflict(ChecklistPersistenceError):
     code = "checklist_idempotency_conflict"
 
@@ -92,8 +98,16 @@ class ChecklistListQuery:
     spec_id: str
     offset: int
     limit: int
-    current_spec_edition: int | None = None
+    current_spec_edition: int
     state: ChecklistReceiptState | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.current_spec_edition, int)
+            or isinstance(self.current_spec_edition, bool)
+            or self.current_spec_edition < 1
+        ):
+            raise ValueError("checklist_spec_edition_invalid")
 
 
 @runtime_checkable
@@ -130,8 +144,8 @@ class ChecklistPersistencePort(Protocol):
     audit facts on executions and receipts, but a governance-only mode/version
     revision is not an executable-identity conflict. A native matching key plus
     request digest returns the original commit result; a different digest raises
-    :class:`ChecklistIdempotencyConflict`. Legacy manual references carry no
-    idempotency key and must never replay.
+    :class:`ChecklistIdempotencyConflict`. Every receipt is native and has
+    an idempotency key.
 
     The method stages the append-only receipt and head update but never commits
     or creates a unit of work.  Every conflict is expressed as one of the
@@ -184,15 +198,15 @@ class ChecklistPersistencePort(Protocol):
         spec_edition: int,
         target_type: ChecklistTargetType,
         phase: ChecklistPhase,
-    ) -> ChecklistBinding:
+    ) -> ChecklistBinding | None:
         """Resolve the immutable governance snapshot for one Spec edition.
 
         The snapshot includes ``OFF`` and is keyed by board/Spec/edition. The
         adapter pins it atomically when the edition first enters its validation
-        lifecycle (with a first-read/write fallback for migrated rows). Later
+        lifecycle. This read never creates or repairs a missing snapshot. Later
         board binding/template changes never alter this result; they apply only
-        after the Spec returns to Draft and opens a new edition. Legacy subjects
-        without an edition continue to use ``get_binding``.
+        after the Spec returns to Draft and opens a new edition. ``None`` means
+        that validation has not begun; it cannot authorize an execution.
         """
 
         ...
@@ -203,7 +217,7 @@ class ChecklistPersistencePort(Protocol):
         board_id: str,
         spec_id: str,
         phase: ChecklistPhase,
-        spec_edition: int | None = None,
+        spec_edition: int,
     ) -> tuple[ChecklistReceipt, ChecklistExecutionHead] | None: ...
 
     async def get_execution(

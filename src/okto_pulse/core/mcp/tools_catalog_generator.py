@@ -54,14 +54,11 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"list_alternatives|get_learning_from_bugs|query_global)$"),
     ("KG — Query (Power)", "kg",
      r"^okto_pulse_kg_(query_cypher|query_natural|query_reflective|schema_info|"
-     r"verify_grounding|provenance_drift|export_jsonld)$"),
+     r"verify_grounding|export_jsonld)$"),
     ("KG — Cognitive readiness & closeout", "kg",
-     r"^okto_pulse_kg_(evaluate_bug_cognitive_closure|evaluate_cognitive_readiness|"
-     r"list_cognitive_dlq|list_cognitive_pending_items|list_cognitive_readiness_items|"
+     r"^okto_pulse_kg_(get_learning_capture_context|create_learning_capture|list_learning_captures|evaluate_bug_cognitive_closure|evaluate_cognitive_readiness|"
+     r"list_cognitive_pending_items|list_cognitive_readiness_items|"
      r"update_cognitive_pending_item|record_cognitive_skip|clear_cognitive_skip)$"),
-    ("KG — Rebuild & recovery", "kg",
-     r"^okto_pulse_kg_(rebuild_preflight|rebuild_confirm|rebuild_run|quarantine_restore|"
-     r"global_discovery_recovery_(preflight|confirm|run))$"),
     ("KG — Operational & health", "kg", r"^okto_pulse_kg_"),
     # --- Boards, agents & session -----------------------------------------
     ("Session & Agents", "agent",
@@ -88,7 +85,7 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
     ("Guidelines", "guideline",
      r"guideline"),
     ("Code Traceability", "code-traceability",
-     r"^okto_pulse_(get|record)_delivery_evidence$"),
+     r"^okto_pulse_(get|record)_(delivery_evidence|decision_reviews)$"),
     ("Code Traceability", "code-traceability",
      r"^okto_pulse_(?:.*code_(?:evidence|investigation|traceability)|"
      r".*implementation_(?:target|overlap)|acknowledge_implementation_overlap)"),
@@ -108,8 +105,8 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"^okto_pulse_(add|list|remove)_spec_dependenc(?:y|ies)$"),
     ("Specs — lifecycle & gates", "spec",
      r"^okto_pulse_(create_spec|update_spec$|delete_spec$|move_spec|get_spec$|"
-     r"get_spec_context|get_spec_history|derive_spec_from_ideation|"
-     r"submit_spec_validation|list_spec_validations|submit_spec_evaluation|"
+     r"get_spec_context|get_spec_history|get_requirement_verification|derive_spec_from_ideation|"
+     r"submit_spec_validation|get_spec_validation_cycle|list_spec_validations|submit_spec_evaluation|"
      r"get_spec_evaluation|list_spec_evaluations|delete_spec_evaluation|"
      r"get_checklist_binding|"
      r"start_checklist_execution|submit_checklist_execution|"
@@ -121,7 +118,7 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"(business_rule|decision$|decisions$|api_contract|integration_requirement|"
      r"observability_requirement)"),
     ("Test Scenarios", "test-scenario",
-     r"test_scenario|resolve_bug_regression_scenarios"),
+     r"test_scenario|admit_test_verification_report|resolve_bug_regression_scenarios"),
     ("Cards & Tasks", "card",
      r"(^okto_pulse_(create_card|update_card|move_card|delete_card|get_card)|"
      r"card_dependency|card_dependencies|cards_by_status|card_knowledge|"
@@ -130,8 +127,6 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"copy_.*_to_card)"),
     ("Amendments", "card",
      r"amendment"),
-    ("Sprints", "sprint",
-     r"sprint"),
     ("Q&A", "qa",
      r"(^okto_pulse_ask|_question$|^okto_pulse_answer|choice|^okto_pulse_list_qa$)"),
     ("Knowledge", "knowledge",

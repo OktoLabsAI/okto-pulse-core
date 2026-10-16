@@ -1,0 +1,49 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "ARQVER:ADV-11",
+  "status": "verified",
+  "coverage": "Three criteria are allocated before recording implementation. Real signed HTTP results pass two criteria; the third is absent or failed. Fresh Community SQL sessions retain complete implementation, identify exactly the missing third criterion and refuse the real Spec delivery gate. A later signed passing third result releases that same gate without rewriting previous ledger payloads.",
+  "executions": [
+    {
+      "terminal_session": 68937,
+      "exit_code": 0,
+      "passed": 11,
+      "seconds": 45.88,
+      "cases": [
+        "tests.test_multicard_delivery_integration::test_two_of_three_passing_criteria_never_satisfy_requirement[absent]",
+        "tests.test_multicard_delivery_integration::test_two_of_three_passing_criteria_never_satisfy_requirement[failed]",
+        "tests.test_multicard_delivery_integration::test_ui_completion_cannot_deliver_authorization_or_its_inherited_rule",
+        "tests.test_multicard_delivery_integration::test_failed_authorization_remains_visible_beside_passing_ui",
+        "tests.test_multicard_delivery_integration::test_ui_result_cannot_name_authorization_proof_to_gain_its_criterion[requirement]",
+        "tests.test_multicard_delivery_integration::test_ui_result_cannot_name_authorization_proof_to_gain_its_criterion[criterion]",
+        "tests.test_multicard_delivery_integration::test_changed_authorization_never_rewrites_or_invalidates_independent_ui[target_revision]",
+        "tests.test_multicard_delivery_integration::test_changed_authorization_never_rewrites_or_invalidates_independent_ui[contribution_scope]",
+        "tests.test_multicard_delivery_integration::test_changed_authorization_never_rewrites_or_invalidates_independent_ui[later_failed_run]",
+        "tests.test_multicard_delivery_integration::test_two_partial_authorization_records_never_sum_to_the_inherited_obligation",
+        "tests.test_multicard_delivery_integration::test_one_signed_report_preserves_distinct_criterion_verdicts"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-three-criteria1-community.xml",
+          "sha256": "6eacb2014c670d0ce21948577bede6ebfe993ab986181479d2b5ae458ac0653f"
+        },
+        {
+          "file": "learning-reconciliation-three-criteria1-community.log",
+          "sha256": "b92a96552fff0150f9f927c165ce582fdd9c24d0d5982b411979262cfab09af3"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "file": "provenance-three-criteria1.json",
+    "terminal_chunk": "7a0101",
+    "exit_code": 0,
+    "sha256": "42522342d09f6221ef1c538a9c7c9aee54719e09e7d83e9dbba8f54df9d643f9"
+  },
+  "limits": [
+    "Two new parameter cases plus nine existing regressions. The runner uses paired absolute Core/Community PYTHONPATH; productive source, installed payload and wheels were byte-compared before execution.",
+    "Spec, Card completion states and accepted external implementation receipts are fixture inputs. Test HTTP execution, evidence signing/verifying, Card evidence persistence, fresh-session projection and delivery gate are real.",
+    "Scenario evidence is persisted by the test fixture after the actual issuer runs. This does not claim REST/MCP authentication or a full Spec Done transition; it exercises the delivery predicate used by that transition.",
+    "No productive code, UI, authority, history semantics or registry changed. Latest relevant F16 remains session31859 exit0 with eight ZERO budgets; frontend46579 passed54."
+  ]
+}

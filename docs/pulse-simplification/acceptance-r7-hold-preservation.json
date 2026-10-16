@@ -1,0 +1,133 @@
+{
+  "scope": "KG7.5 / KG-37 preservation of existing R7 restrictions during new technical observation",
+  "suites": {
+    "core": {
+      "passed": 44,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 20,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "reproduction": {
+    "failed": 4,
+    "cause": "Legacy marker plus unconditional update erased substantive state and reopened terminal history."
+  },
+  "verified": [
+    "A technical observation inserts only absent work behind the public atomic revision storage port.",
+    "Pending, in-progress, skipped and consolidated existing states survive verbatim, including authority, session and evidence metadata.",
+    "Replay preserves the original session; another origin can be appended without replacing existing items.",
+    "A concurrent substantive writer between generation selection and atomic transform is preserved.",
+    "Existing authored technical-debt recovery and substantive restriction tests remain passing.",
+    "Paired installed Python/payloads were byte-proved before campaigns; final F16 has eight zero budgets."
+  ],
+  "limits": [
+    "This prevents overwrite; it does not claim that a later Learning of the same Bug authorizes releasing an old source-only hold.",
+    "Historical upgrade/reconciliation requires exact source/version/session qualification and remains pending.",
+    "Integration fixtures isolate unrelated lifecycle gates/health; no full release or lifecycle acceptance is inferred.",
+    "No frontend or public transport changed. No real data migrated; no new runtime mechanism enters Core.",
+    "Global acceptance counts remain 78 verified / 33 partial / 135 unaudited; KG-37/KG-38 are not promoted by this focused fix."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-r7-hold-final.json": "d7475a54c0a2d600a68712b49c81902e3293645bbbda9c644b2598dd4c8b1459",
+    "PULSE_REFACTOR/.validation-v040/r7-hold-repro.xml": "df50f82f28e47644be99b94b1f76ef42a7c61faf40e5d619504ffa11911352da",
+    "PULSE_REFACTOR/.validation-v040/r7-hold-repro.log": "6693c490d931375f7b5d3eae1a04ee448e3ff3bbc2a18a9c5c1b42b381f633c7",
+    "PULSE_REFACTOR/.validation-v040/r7-hold-r1-core.xml": "ed9976ec20827d1aa1e374bf7ca323e690ee58fa14a77ddf833d6b02fc04907e",
+    "PULSE_REFACTOR/.validation-v040/r7-hold-r1-test-core.log": "630c2ce505ae1cf6cda7b7201db29b40173aa7de7d2303704d4d3f6834eb1e27",
+    "PULSE_REFACTOR/.validation-v040/r7-hold-r1-community.xml": "0c3ccedbc75ad113f319be04a77099ee37b99c65594a27ae0d4291b6788606e6",
+    "PULSE_REFACTOR/.validation-v040/r7-hold-r1-test-community.log": "ea528261a46e3c6149d350ec749c07a2afd5414b087588d4043fefcd1174c5cc",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-fanin.json": "813244c202fd7957aee266ce8732ccf4810da40e632b5591a0ad646e5d20a969",
+    "PULSE_REFACTOR/.validation-v040/provenance-r7-hold-r1.json": "9c49efa2fa7aca8c712d7bb14c246c9f1349c2a96fd34b6c8d4d67ddcbc2cecf",
+    "PULSE_REFACTOR/.validation-v040/provenance-r7-hold-final.json": "4c95df35df0254ca7f1611f9b5c5ae65b6781d9105aa2f6077f18a326fecc83d",
+    "PULSE_REFACTOR/.validation-v040/closure-r7-hold-r1.json": "bba13701bac5be9d9b5e3dfcee0734e92f3d017c5e45352988585b87381baf68",
+    "PULSE_REFACTOR/.validation-v040/run_r7_hold.py": "2e29dddf7125b6045f3f9b24feeec5f2502060bfc7ead26191aeb7d66980618c",
+    "PULSE_REFACTOR/.validation-v040/run_r7_hold_probe.py": "46ac8e1c1291d47cb2f142d277264a1d0a6ecb1c7c0d845c78549a98972f5001",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/rebuild_audit.py": "09eb78a06bb868ac007bee7db71dc5de112c8f409628e01e4dea16aafe226463",
+    "okto_labs_pulse_core/tests/test_kg_r7_imp1.py": "42d02158e46cd5482b2574c162856572d5fe6027f685028b276620f889ed5892",
+    "okto_labs_pulse_core/tests/test_learning_partition_reconciliation_scope.py": "5e6eaf6728826252ef600bbf29bd0b25e39a4c0471dfbdd5d0be19499fb6b17d",
+    "okto_labs_pulse_core/tests/test_projection_independent_cognitive_readiness.py": "90a01868809163698baa553c94a9ed735336cc0160d08aa246f85ff209508387",
+    "okto_labs_pulse_community/tests/test_r7_hold_preservation.py": "faf0ed77eda24f89af36deb352f141e9c00ac3270eadb8d6ed12f18091efd66b",
+    "okto_labs_pulse_community/tests/test_authored_learning_debt_recovery.py": "22e7d6d064018de969a8c7ef3992fd5a0ad63289d559154f0f6c68f2f3cf1e43",
+    "okto_labs_pulse_community/tests/test_learning_materialization_worker.py": "7f42bdeef54b401bf22931397a107f322e64423ea53ac1fbdaf795ee0391f7ca",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/rebuild_audit_storage.py": "c7f2170a488b6c5c83b9731ebe206aa40441787a464d5597ce9c115f35ee147e"
+  }
+}

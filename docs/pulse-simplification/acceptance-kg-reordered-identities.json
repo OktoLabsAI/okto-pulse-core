@@ -1,0 +1,45 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "KG:KG-03",
+  "status": "verified",
+  "coverage": "A real native Grafx graph is initialized from a complete relational Spec by the private rebuild fixture. A second scenario is added and materialized through the ordinary consolidation queue. Two FRs, two criteria and two scenarios have six distinct stable source identities. Each collection is then reversed independently in SQL and processed through the normal worker, followed by replay. All six native node keys and the complete logical relationship multiset (endpoint refs/types/layers/maturity, ownership rule, confidence and provenance) remain exactly equal. Scenario one still tests criterion two and scenario two still tests criterion one; no positional reassociation occurs.",
+  "execution": {
+    "terminal_session": 16064,
+    "exit_code": 0,
+    "suites": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "1",
+        "time": "55.196",
+        "timestamp": "2026-10-01T00:51:25.051909-03:00",
+        "hostname": "Alienware_m15"
+      }
+    ],
+    "cases": [
+      "tests.test_projection_materialized_parity::test_reordering_fr_criteria_and_scenarios_preserves_native_ids_and_relations"
+    ],
+    "artifacts": [
+      {
+        "file": "learning-reconciliation-kg-reorder1-community.xml",
+        "sha256": "940b4781f0b5cc6dddb574d2c138aefc2f708bee979d489dcb647e6032936f04"
+      },
+      {
+        "file": "learning-reconciliation-kg-reorder1-community.log",
+        "sha256": "f7f716b4cfd16b0b06d1463d9f4c1b9f169f1c7ed8c012a1caaa223955c40e5d"
+      }
+    ]
+  },
+  "test_source": {
+    "repository": "community",
+    "file": "tests/test_projection_materialized_parity.py",
+    "sha256": "b73c5a89aacbc000eb3407adf85c3000b99ddeed82aeb4cfd643f9bdec13b244"
+  },
+  "limits": [
+    "Reordering is supplied directly to the disposable relational source to isolate the projection invariant; this is not a UI/REST reorder-permission or content-lock test. The normal SQL queue, worker, receipts and native Grafx graph are real. Each processed queue is confirmed empty after successful work.",
+    "The comparison includes full logical relationship facts and physical keys of the six relevant children, but excludes execution-specific relationship/session ids. This qualifies the original FR/AC/scenario reorder criterion, not every other KG family or whole incremental/rebuild parity.",
+    "No productive code, schema, authority, gate, history or frontend changed. Current source/site/wheels remain byte-identical to provenance-independent-profiles1.json. Latest relevant F16 session90981 had all eight budgets ZERO."
+  ]
+}

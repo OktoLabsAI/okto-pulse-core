@@ -1,0 +1,31 @@
+{
+  "scope": "DEI-T42 legitimate rework with distinct proof and delivery revision",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main88",
+  "criterion": "DEI:DEI-T42",
+  "result": {
+    "passed": 4,
+    "failed": 0,
+    "seconds": 24.38,
+    "terminal_session": 23030
+  },
+  "evidence": [
+    "Native relational schema, real Agent/Board grants and MCP catalog: reviewer cannot reopen rejected task; executor with explicit grant can.",
+    "Accepted new source observation and execution supersede the previous execution. Reusing stale execution in the report refuses with accepted_committed and leaves Card/report/history unchanged.",
+    "New report with execution-2 succeeds, distinct record ID and increasing delivery revision. Card semantic policy version stays unchanged because content is unchanged.",
+    "Prior rejection, validation, conclusion and proof payload remain intact. New report selects the new proof and requires independent review; only subsequent reviewer approval reaches Done.",
+    "Both denied review grant and enforced executor/reviewer separation are tested; approval-without-rework controls also pass."
+  ],
+  "limits": [
+    "New accepted source attestation is coherent controlled fixture input through native append/CAS, not an end-to-end authenticated attestation submission.",
+    "MCP credentials are fixture-supplied, with real authentication/grant resolution; no installed transport or frontend interaction claimed.",
+    "No product, governance semantics, frontend or SPA changes. Main88 closure remains applicable with eight zero exception budgets.",
+    "First campaign had 2 pass/2 fail because the test incorrectly expected semantic policy version to increase on a report-only mutation; corrected to assert increasing delivery revision."
+  ],
+  "artifacts": {
+    "provenance-native-rework-proof-20261008.json": "25da411d343a2eb8c9d648bdc34fc75c07db08bab58c8d9d41c350183be8372e",
+    "native-rework-proof-20261008.xml": "fe8a95192e24ce50d0762ede0505647e57ab8f330b4a4c6d3155ace25c7c9fb5",
+    "native-rework-proof-20261008-2.xml": "224651ea7bc13cd8b3ed2d1e9ac28ff00d48bfe1c4e2a98324e0634c12cf68d1",
+    "closure-native-main88-final.json": "5133de6ecfc09d534afc959f98e8cd528f7ca7dd32787bc78215b2c3cec2844c"
+  }
+}

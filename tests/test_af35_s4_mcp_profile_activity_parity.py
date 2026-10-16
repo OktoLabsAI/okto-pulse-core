@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from okto_pulse.core.infra.permissions import Permissions
+from native_permission_fixtures import native_permission_flags
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import (
     ActivityLog,
@@ -21,11 +21,13 @@ from sqlalchemy_test_models import (
     Board,
     Card,
     Comment,
+    PermissionPreset,
 )
 from okto_pulse.core.services import AgentService
 
 
 AGENT_NAME = "AF35Bot"
+PROFILE_ACTIVITY_CAPABILITIES = ["board.read", "board.activity_read", "board.mentions_read", "board.mentions_mark_seen", "agent.entity.read", "profile.update"]
 
 
 def _id(prefix: str) -> str:
@@ -38,7 +40,7 @@ def _ctx(
     agent_id: str = "af35-agent",
     permissions: list[str] | None = None,
 ) -> SimpleNamespace:
-    default_permissions = [*Permissions.DEFAULT, "board.activity_read"]
+    default_permissions = PROFILE_ACTIVITY_CAPABILITIES.copy()
     return SimpleNamespace(
         agent_id=agent_id,
         agent_name=AGENT_NAME,
@@ -55,7 +57,7 @@ def _agent_stub(
     return SimpleNamespace(
         id=agent_id,
         name=AGENT_NAME,
-        permissions=permissions if permissions is not None else Permissions.DEFAULT,
+        permissions=permissions if permissions is not None else PROFILE_ACTIVITY_CAPABILITIES.copy(),
     )
 
 
@@ -71,7 +73,9 @@ async def _seed_profile_activity_fixture(db_factory) -> dict[str, str]:
     key_hash = AgentService.hash_api_key(_id("api-key"))
     peer_key_hash = AgentService.hash_api_key(_id("api-key-peer"))
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="AF35 S4 Board", description="Board", owner_id="owner"))
+        db.add(PermissionPreset(id="peer-reader", name="Reader", owner_id="owner",
+            flags=native_permission_flags("board.read")))
+        db.add(Board(id=board_id, realm_id="local", name="AF35 S4 Board", description="Board", owner_id="owner"))
         db.add(
             Agent(
                 id=agent_id,
@@ -80,7 +84,7 @@ async def _seed_profile_activity_fixture(db_factory) -> dict[str, str]:
                 objective="old objective",
                 api_key=AgentService.credential_marker(key_hash),
                 api_key_hash=key_hash,
-                permissions=Permissions.DEFAULT,
+                permission_flags=None,
                 created_by="owner",
                 created_at=now,
             )
@@ -93,7 +97,7 @@ async def _seed_profile_activity_fixture(db_factory) -> dict[str, str]:
                 objective="peer objective",
                 api_key=AgentService.credential_marker(peer_key_hash),
                 api_key_hash=peer_key_hash,
-                permissions=[Permissions.BOARD_READ],
+                preset_id="peer-reader", permission_flags={},
                 created_by="owner",
                 created_at=now,
             )
@@ -318,7 +322,7 @@ async def test_auth_and_permission_denial_envelopes_are_preserved(db_factory) ->
         AsyncMock(
             return_value=_agent_stub(
                 agent_id="agent-no-self-update",
-                permissions=[Permissions.BOARD_READ],
+                permissions=["board.read"],
             )
         ),
     ):
@@ -348,7 +352,7 @@ async def test_mark_as_seen_validation_envelopes_are_preserved(db_factory) -> No
         empty = json.loads(
             await mcp_server.okto_pulse_mark_as_seen.fn(
                 board_id="board-validation",
-                item_ids="",
+                item_ids=[],
             )
         )
         assert empty == {"error": "No item_ids provided"}
@@ -360,4 +364,4 @@ async def test_mark_as_seen_validation_envelopes_are_preserved(db_factory) -> No
             )
         )
         assert comma_only["error"].startswith("Invalid item_ids:")
-        assert "comma-separated input is rejected" in comma_only["error"]
+        assert "expected a native array of strings" in comma_only["error"]

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 
 import pytest
 
@@ -13,15 +12,11 @@ from okto_pulse.core.domain.enums import CardStatus
 from okto_pulse.core.domain.permissions import (
     ALL_FLAGS,
     DefaultPermissionPolicy,
-    PERMISSION_INTRODUCTION_MANIFESTS,
-    PERMISSION_REGISTRY,
     PermissionContext,
     SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1,
     TASK_REJECTED_PERMISSION_INTRODUCTION_V1,
     PermissionSet,
     get_builtin_presets,
-    normalize_agent_permission_overrides,
-    resolve_permissions,
 )
 from okto_pulse.core.domain.sdlc_registry import (
     SDLC_REGISTRY,
@@ -63,14 +58,14 @@ def test_registry_move_flags_are_exact_sdlc_projection() -> None:
     expected = set(transition_permission_flags())
     actual = {flag for flag in ALL_FLAGS if ".move." in flag}
 
-    assert len(expected) == 93
+    assert len(expected) == 83
     assert actual == expected
     introduced_moves = {
         leaf
         for leaf in SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1.leaves
         if ".move." in leaf
     }
-    assert len(introduced_moves) == 66
+    assert len(introduced_moves) == 59
     assert introduced_moves < expected
     assert set(SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1.leaves) - introduced_moves == {
         "ideation.interact_in.review",
@@ -124,11 +119,10 @@ def test_transition_requirement_normalizes_enum_values_and_keeps_state_gate() ->
         "card",
         CardStatus.REJECTED,
         CardStatus.IN_PROGRESS,
-        legacy_operation="cards:move",
     )
 
     assert requirement.operation == "card.move.rejected_to_in_progress"
-    assert requirement.legacy_operation == "cards:move"
+    assert not hasattr(requirement, "legacy_operation")
     assert requirement.entity == "card"
     assert requirement.state == "rejected"
 
@@ -139,7 +133,6 @@ def test_rejected_transition_introduction_is_fail_closed_to_legacy_tokens() -> N
         "card",
         "rejected",
         "in_progress",
-        legacy_operation="cards:move",
     )
 
     allowed = policy.evaluate(
@@ -148,7 +141,6 @@ def test_rejected_transition_introduction_is_fail_closed_to_legacy_tokens() -> N
             permissions=["cards:move"],
             entity=requirement.entity,
             state=requirement.state,
-            legacy_operation=requirement.legacy_operation,
         )
     )
     denied = policy.evaluate(
@@ -157,7 +149,6 @@ def test_rejected_transition_introduction_is_fail_closed_to_legacy_tokens() -> N
             permissions=["cards:update"],
             entity=requirement.entity,
             state=requirement.state,
-            legacy_operation=requirement.legacy_operation,
         )
     )
 
@@ -220,52 +211,3 @@ def test_spec_preset_preserves_historical_test_scenario_status_authority() -> No
         "test_scenario",
         "draft",
     ) is None
-
-
-def test_pre_registry_full_control_snapshot_normalizes_without_transition_denials() -> None:
-    snapshot = copy.deepcopy(PERMISSION_REGISTRY)
-    for manifest in PERMISSION_INTRODUCTION_MANIFESTS:
-        for leaf in manifest.leaves:
-            _delete(snapshot, leaf)
-    for retired in (
-        "card.move.any_to_cancelled",
-        "card.move.validation_to_not_started",
-        "ideation.move.any_to_cancelled",
-        "ideation.move.draft_to_evaluating",
-        "ideation.move.evaluating_to_refined",
-        "ideation.move.refined_to_done",
-        "refinement.move.any_to_cancelled",
-        "refinement.move.draft_to_in_progress",
-        "refinement.move.in_progress_to_review",
-        "spec.move.any_to_cancelled",
-        "sprint.move.any_to_cancelled",
-        "ideation.interact_in.refined",
-        "refinement.interact_in.in_progress",
-    ):
-        _set(snapshot, retired, True)
-
-    normalized = normalize_agent_permission_overrides(snapshot)
-
-    assert normalized is None
-    permissions = resolve_permissions(normalized, None, None)
-    assert all(permissions.has(flag) for flag in transition_permission_flags())
-
-
-def test_legacy_cancellation_wildcard_does_not_become_an_exact_deny() -> None:
-    executor = next(
-        preset for preset in get_builtin_presets() if preset["name"] == "Executor"
-    )
-    snapshot = copy.deepcopy(executor["flags"])
-    for manifest in PERMISSION_INTRODUCTION_MANIFESTS:
-        for leaf in manifest.leaves:
-            _delete(snapshot, leaf)
-    _set(snapshot, "card.move.any_to_cancelled", True)
-    # Historical wildcard authorization dominated this stale exact value.
-    _set(snapshot, "card.move.validation_to_cancelled", False)
-
-    normalized = normalize_agent_permission_overrides(snapshot, executor["flags"])
-    permissions = resolve_permissions(normalized, executor["flags"], None)
-
-    assert permissions.has("card.move.validation_to_cancelled") is True
-    for flag in transition_permission_flags("card"):
-        assert permissions.has(flag) is PermissionSet(executor["flags"]).has(flag)

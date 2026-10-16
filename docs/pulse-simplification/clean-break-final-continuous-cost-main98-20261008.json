@@ -1,0 +1,99 @@
+{
+  "format": "pulse-040-reviewed-increment/v1",
+  "status": "verified_current_pair_review",
+  "criterion_keys": [
+    "BASE:T43",
+    "KG:KG-64"
+  ],
+  "proof_pair": "dist-native-main98",
+  "tested_product_commits": {
+    "core": "38d897c8",
+    "community": "51d85093"
+  },
+  "scope_authority": "CLEAN_BREAK_040_REASSESSMENT.md:187-197; current measurements and explicit limits replace historical-runtime comparison.",
+  "results": {
+    "passed": 4,
+    "seconds": 57.11,
+    "continuous_variants": 4,
+    "exact_semantic_parity": true
+  },
+  "summary": {
+    "tests/test_native_continuous_cost.py::test_continuous_native_classification_through_done[broad-agent-batch-native_schema]": {
+      "calls": 59,
+      "requests": 72,
+      "tokens_cl100k_base": 206754,
+      "bytes": 820575,
+      "sessions": 1,
+      "methods": {
+        "initialize": 1,
+        "tools/list": 1,
+        "resources/read": 11,
+        "tools/call": 59
+      },
+      "sql_queries": 2001,
+      "elapsed_ms": 4699.97960011824
+    },
+    "tests/test_native_continuous_cost.py::test_continuous_native_classification_through_done[broad-agent-individual-native_schema]": {
+      "calls": 84,
+      "requests": 97,
+      "tokens_cl100k_base": 214502,
+      "bytes": 857725,
+      "sessions": 1,
+      "methods": {
+        "initialize": 1,
+        "tools/list": 1,
+        "resources/read": 11,
+        "tools/call": 84
+      },
+      "sql_queries": 2701,
+      "elapsed_ms": 8032.496900093975
+    },
+    "tests/test_native_continuous_cost.py::test_continuous_native_classification_through_done[separate-reviewer-batch-native_schema]": {
+      "calls": 59,
+      "requests": 96,
+      "tokens_cl100k_base": 456659,
+      "bytes": 1901364,
+      "sessions": 4,
+      "methods": {
+        "initialize": 4,
+        "tools/list": 4,
+        "resources/read": 29,
+        "tools/call": 59
+      },
+      "sql_queries": 2001,
+      "elapsed_ms": 5941.421900090063
+    },
+    "tests/test_native_continuous_cost.py::test_continuous_native_classification_through_done[separate-reviewer-individual-native_schema]": {
+      "calls": 84,
+      "requests": 121,
+      "tokens_cl100k_base": 465990,
+      "bytes": 1938514,
+      "sessions": 4,
+      "methods": {
+        "initialize": 4,
+        "tools/list": 4,
+        "resources/read": 29,
+        "tools/call": 84
+      },
+      "sql_queries": 2701,
+      "elapsed_ms": 7375.412900000811
+    }
+  },
+  "limits": [
+    "Same current native Draft-to-Done fixture, individual versus batch under the same policy; no historical runtime is reintroduced.",
+    "Initial fixture facts and accepted external receipt are controlled inputs, not measured public authorship.",
+    "cl100k_base estimates are not billing; UUID content changes token counts without changing byte counts. Single timing sample is not a production latency claim.",
+    "Nested external execution timing is retained but not added to MCP timing. No 50% token or 30% global call gain is claimed.",
+    "Exact call reduction within this fixture is 25/84 (29.7619%). Broad and separate-reviewer policies are not compared as equivalent populations."
+  ],
+  "artifact": {
+    "file": "benchmark-native-continuous-main98-20261008.json.gz",
+    "sha256": "7cad28e1951a654a32243d6eca28b2a8b282ae6deee842967603cb2d4616d9d0",
+    "raw_sha256": "ba93022889346115c440e79b90a8ed5c1936e8ca2e3aba801fc1ab6455b6a227"
+  },
+  "artifacts": {
+    "native-continuous-measurement98-20261008.xml": "7285195285a8e4c442af2940947cb37904b938a064446c5a4fe821f0570d57f0",
+    "native-continuous-measurement98-20261008.log": "5d1fe8b312a0f3523f243ee38c2e38d59d9d282df6077d5c8ce91d4a33ab326d",
+    "provenance-native-missing-link-context-main98-20261008.json": "b6538592ef0cbbe1130576d975f58931500796d890bb46107f009a5ec46292eb"
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "scope": "F6/KG7.6 explicit supersedence scope contract and generic-operation characterization",
+  "suites": {
+    "core": {
+      "passed": 85,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 89,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "learning-capture/v2 requires an explicit source_bug scope and supersede intent; v1 field representation and history remain unchanged.",
+    "SQL admission preserves the existing target, commits one scoped capture, retries exactly and rejects changing the same capture identity back to unscoped intent.",
+    "The typed capture source reference round-trips opaque identities and rejects malformed/unknown reserved representations; parsing grants no relationship authority.",
+    "Portable projection still reports scoped captures as pending and refuses to restore them as literal canonical nodes.",
+    "Disposable SQL/Grafx characterization proves generic supersede_node globally hides the old Learning for both Bugs while preserving physical historical edges. It cannot implement a partial source scope.",
+    "Final F16 has no documentation drift or architectural exceptions; the documented rebuild kept both package payload aggregates unchanged."
+  ],
+  "limits": [
+    "This is a prerequisite, not implementation or acceptance of scoped supersedence. No source reference is emitted and no target relationship is altered by the new materializer yet.",
+    "v1 supersede captures acquire no retroactive scope. v2 remains non-materializable until target/successor atomic CAS and provenance qualification are integrated.",
+    "Generic graph characterization deliberately bypasses the future scoped writer and leaves SQL history untouched; it is evidence of the old operation limitation, not complete lifecycle proof.",
+    "First Community campaign retained with one fixture comparison failure: the original seed DTO was compared with its normalized persisted representation. The corrected oracle compares the full persisted baseline.",
+    "No public wire/UI intent authoring, frontend or real data changed. KG7.6, K3/K4 and full plan acceptance remain pending."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-supersedence-scope-r2.json": "6276c9389c9efeb1b4c75406a3549b0129b96ef06a13356da36b06148c2c203b",
+    "PULSE_REFACTOR/.validation-v040/learning-supersedence-scope-r1-core.xml": "1a333b609c9595cb8dbefff021eb9678b52ab2e538f8274f798247e775e52245",
+    "PULSE_REFACTOR/.validation-v040/learning-supersedence-scope-r2-community.xml": "d61f82b71e94df0815953cb68d5419d60ba6b1cd0e26fcd4222ac488ac553683",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-supersedence-scope-r1.json": "391a825f9ba7a6f550922c239561004362ca9c252336f5f0cafe2c072bb9dfcc",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-supersedence-scope-r2.json": "ec1176586ebbdb2c60d02fa98127a528abc3beeb6211469d771ef22def325ab3",
+    "PULSE_REFACTOR/.validation-v040/learning-supersedence-scope-r1-community.xml": "78dbe04d35f13e4b6688a5a0d53ef826e7c961d8905cf7fa55b1bef94d775601",
+    "PULSE_REFACTOR/.validation-v040/run_learning_supersedence_scope.py": "de70b797d35c327823b86281f9d0c456b56a4f2fc327ad850952eb4556d0bc2b",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/learning_capture.py": "cdc39757664801016a65d27e006e0cab58809171f77335b50dcdba816b231c25",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "871ca407e489fc017aab63be3182ca5340675adad071c22fa6c1da49ab122d13",
+    "okto_labs_pulse_core/tests/test_learning_scoped_supersedence_contract.py": "f5a671fdc0e86f6840dde648249a14ab80abb277a3016feac0e3bb6f825323cf",
+    "okto_labs_pulse_core/tests/test_learning_capture_projection.py": "1c605844823138bb7e5f062e59a43e59e372c685560ee1d1eb60430f21a6d8c8",
+    "okto_labs_pulse_community/tests/test_learning_supersedence_scope.py": "d6a6892a2d219843bf3b8340814b2f649529074faf6cb2ea65dca40d8dd931db"
+  }
+}

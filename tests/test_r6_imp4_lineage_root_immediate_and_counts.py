@@ -16,6 +16,9 @@ real KB rows; the counts are read from the REAL ``ResourceGateService.get_summar
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+from test_r4_imp4_gate_readiness import explicit_checklist_policy  # noqa: F401
+
 import uuid
 
 import pytest
@@ -58,7 +61,7 @@ async def test_multihop_preserves_root_and_tracks_immediate_parent(db_factory):
                         created_by=USER_ID, version=1))
         db.add(Refinement(id=refinement_id, board_id=board, ideation_id=ideation_id,
                           title="Refinement", created_by=USER_ID, version=2))
-        db.add(Spec(id=spec_id, board_id=board, title="Spec", status=SpecStatus.DRAFT,
+        db.add(Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"), id=spec_id, board_id=board, title="Spec", status=SpecStatus.DRAFT,
                     created_by=USER_ID, functional_requirements=[], acceptance_criteria=[],
                     test_scenarios=[], business_rules=[], api_contracts=[], version=3))
         db.add(IdeationKnowledgeBase(
@@ -121,7 +124,7 @@ async def test_lineage_counts_label_raw_vs_effective(db_factory):
     spec_id = _id("spec")
     async with db_factory() as db:
         db.add(Board(id=board, name="r6 imp4", owner_id=USER_ID))
-        db.add(Spec(id=spec_id, board_id=board, title="Spec", status=SpecStatus.DRAFT,
+        db.add(Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"), id=spec_id, board_id=board, title="Spec", status=SpecStatus.DRAFT,
                     created_by=USER_ID, functional_requirements=[], acceptance_criteria=[],
                     test_scenarios=[], business_rules=[], api_contracts=[]))
         db.add(SpecKnowledgeBase(

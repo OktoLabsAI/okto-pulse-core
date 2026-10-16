@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
 
+from pydantic import TypeAdapter, ValidationError
+
 from okto_pulse.core.ports.architecture_persistence import (
     ArchitectureFilter,
     ArchitectureOperator,
@@ -27,6 +29,7 @@ from okto_pulse.core.ports.architecture_persistence import (
     get_architecture_persistence_port,
 )
 from okto_pulse.core.models.schemas import (
+    ArchitectureBoundaries,
     ArchitectureDesignCreate,
     ArchitectureDesignResponse,
     ArchitectureDesignSummary,
@@ -40,6 +43,8 @@ from okto_pulse.core.services.architecture_observability import (
     observe_architecture_projection,
     observe_architecture_warning_ack,
 )
+
+_BOUNDARIES_ADAPTER = TypeAdapter(ArchitectureBoundaries)
 
 PARENT_MODELS = {
     "ideation": ("ideation", "ideation_id"),
@@ -753,12 +758,18 @@ def architecture_design_payload_schema() -> dict[str, Any]:
             "entity_contract": {
                 "required": ["id", "name", "entity_type"],
                 "recommended": ["responsibility", "boundaries", "technologies", "relationships", "notes"],
+                "boundaries": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1, "pattern": r"\S"},
+                    "default": [],
+                    "description": "Ordered boundary statements; preserve each item's content. No scalar or null coercion.",
+                },
                 "rules": [
                     "name must be a concrete component name, not just the category",
                     "name comparison is normalized by removing spaces, underscores and hyphens",
                     "entity_type is the category, for example api, web_app, database, queue, worker, external_service",
                     "responsibility should say what the component owns or guarantees",
-                    "boundaries should say what runtime, data, team, or external boundary the entity represents",
+                    "boundaries is an array of non-blank strings describing runtime, data, team, or external limits; omitted means []; scalar text and null are rejected",
                 ],
                 "bad_examples": [
                     {"id": "entity-api", "name": "API", "entity_type": "api"},
@@ -771,7 +782,7 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                         "name": "Checkout API",
                         "entity_type": "api",
                         "responsibility": "Validates checkout commands and orchestrates payment authorization.",
-                        "boundaries": "Backend application boundary",
+                        "boundaries": ["Backend application boundary"],
                         "technologies": ["FastAPI", "SQLAlchemy"],
                     },
                     {
@@ -921,7 +932,7 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                     "Nodes should set linkedEntityId to an entity id or name.",
                     "Edges should set sourceElementId, targetElementId, linkedInterfaceIds and connectionType.",
                     "For conceptual diagrams, diagram.connectivity_justifications may suppress isolated_entity_node and disconnected_subgraph warnings only with valid explicit reasons.",
-                    "Use linkedInterfaceIds for one or more contracts on the same connection; linkedInterfaceId remains accepted for legacy single-contract edges.",
+                    "Use linkedInterfaceIds for one or more contracts on the same connection.",
                     "The source and target linkedEntityId values of the edge define the two endpoint entities for linked interfaces.",
                     "connectionType accepts only direct or elbow. Use elbow for routed/orthogonal connections. Do not use curved.",
                 ],
@@ -995,6 +1006,23 @@ def architecture_design_payload_schema() -> dict[str, Any]:
             },
         }
     )
+
+
+class ArchitectureVersionConflict(ValueError):
+    """The authored design base no longer matches the authoritative record."""
+
+    def __init__(self, design_id: str, expected_version: int) -> None:
+        self.design_id = design_id
+        self.expected_version = expected_version
+        super().__init__("Architecture changed. Reload and review the current design before submitting.")
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "code": "architecture_version_conflict",
+            "message": str(self),
+            "design_id": self.design_id,
+            "expected_version": self.expected_version,
+        }
 
 
 class ArchitecturePayloadValidationError(ValueError):
@@ -1085,34 +1113,33 @@ def _custom_or_top_level(item: dict[str, Any], key: str) -> Any:
 
 
 def _linked_interface_refs(item: dict[str, Any], path: str, issues: list[str] | None = None) -> list[Any]:
-    """Return legacy and multi-interface refs from a diagram connection element."""
+    """Read the current array contract; reject the retired scalar field."""
     refs: list[Any] = []
-    legacy_ref = _custom_or_top_level(item, "linkedInterfaceId")
-    if legacy_ref not in (None, ""):
-        refs.append(legacy_ref)
+    custom = item.get("customData")
+    if "linkedInterfaceId" in item or (isinstance(custom, dict) and "linkedInterfaceId" in custom):
+        if issues is not None:
+            issues.append(f"{path}.linkedInterfaceId is not supported; use linkedInterfaceIds.")
 
     multi_ref = _custom_or_top_level(item, "linkedInterfaceIds")
-    if multi_ref in (None, ""):
+    if multi_ref is None:
         return refs
     if not isinstance(multi_ref, list):
         if issues is not None:
             issues.append(f"{path}.linkedInterfaceIds must be a JSON array of interface ids or names.")
         return refs
 
-    legacy_keys: set[str] = set(_canonical_ref(ref) for ref in refs if _canonical_ref(ref))
-    seen: set[str] = set(legacy_keys)
+    seen: set[str] = set()
     for index, ref in enumerate(multi_ref):
-        ref_key = _canonical_ref(ref)
+        ref_key = _canonical_ref(ref) if isinstance(ref, str) else ""
         if not ref_key:
             if issues is not None:
                 issues.append(f"{path}.linkedInterfaceIds[{index}] must be a non-empty interface id or name.")
             continue
         if ref_key in seen:
             if issues is not None:
-                if ref_key not in legacy_keys:
-                    issues.append(
-                        f"{path}.linkedInterfaceIds[{index}] duplicates another linked interface on the same connection."
-                    )
+                issues.append(
+                    f"{path}.linkedInterfaceIds[{index}] duplicates another linked interface on the same connection."
+                )
             continue
         seen.add(ref_key)
         refs.append(ref)
@@ -1836,117 +1863,6 @@ class ArchitectureFindingRunStore:
         }
 
 
-async def backfill_architecture_finding_runs(
-    db: Any,
-    *,
-    board_id: str | None = None,
-    only_missing: bool = False,
-) -> dict[str, int]:
-    """Materializa finding runs para designs existentes (self-heal).
-
-    Investigação 2026-06-10: o AFG avalia FINDINGS PERSISTIDOS, mas eles só
-    nascem num save pós-AFG — 83% dos designs do board 0.2.3 nunca tiveram
-    um run (criados antes da feature ou nunca re-salvos), então a tabela
-    estava vazia e o gate nunca bloqueou nada. Este sweep re-avalia os
-    designs com os payloads RE-HIDRATADOS (o segundo furo: refs
-    externalizadas eram puladas pelo engine) e grava o run atual de cada
-    um. Idempotente: ``upsert_latest_run`` substitui o run corrente.
-
-    ``only_missing=True`` restringe a designs sem nenhum run (sweep de boot
-    barato); o default re-avalia tudo (reconcilia runs imprecisos gravados
-    antes do fix da re-hidratação).
-    """
-    repo = ArchitectureDesignRepository(db)
-    persistence = get_architecture_persistence_port()
-    filters: tuple[ArchitectureFilter, ...] = ()
-    if board_id:
-        filters = (_arf("board_id", "eq", board_id),)
-    designs = await _architecture_list(
-        db,
-        "architecture_design",
-        filters=filters,
-    )
-
-    stats = {"designs": 0, "skipped": 0, "with_findings": 0, "findings": 0, "errors": 0}
-    for design in designs:
-        try:
-            if only_missing:
-                existing = await _architecture_list(
-                    db,
-                    "architecture_finding_run",
-                    filters=(_arf("design_id", "eq", design.id),),
-                    limit=1,
-                )
-                if existing:
-                    stats["skipped"] += 1
-                    continue
-            diagrams = await repo._diagrams_for_validation(design.diagrams or [])
-            critique = repo.critique_payload(
-                {
-                    "title": design.title,
-                    "global_description": design.global_description,
-                    "entities": design.entities or [],
-                    "interfaces": design.interfaces or [],
-                    "diagrams": diagrams,
-                }
-            )
-            if critique.get("valid") is False:
-                # Designs com payload inválido nunca persistem run (contrato
-                # da store) — ficam para correção manual.
-                stats["skipped"] += 1
-                continue
-            warnings = repo._structured_warnings_with_keys(
-                design.id, list(critique.get("structured_warnings") or [])
-            )
-            store = ArchitectureFindingRunStore(db)
-            await store.upsert_latest_run(
-                board_id=design.board_id,
-                design_id=design.id,
-                design_version=design.version,
-                critic_run_id=(
-                    f"archcrit-backfill:{design.id}:v{design.version}:"
-                    f"{uuid.uuid4().hex[:8]}"
-                ),
-                actor={
-                    "actor_type": "system",
-                    "actor_id": "architecture-finding-backfill",
-                    "actor_name": "Architecture finding backfill",
-                },
-                validator_summary={
-                    "valid": True,
-                    "issues": [],
-                    "warnings_count": len(critique.get("warnings") or []),
-                    "structured_warnings_count": len(warnings),
-                    "suppressed_warnings_count": len(
-                        critique.get("suppressed_warnings") or []
-                    ),
-                    "summary": critique.get("summary") or {},
-                },
-                structured_warnings=warnings,
-            )
-            # The sweep is best-effort per design. Commit each successful unit
-            # immediately so SQLite never holds its single writer lock while
-            # the remaining designs are hydrated and critiqued.
-            await persistence.commit(db)
-            stats["designs"] += 1
-            if warnings:
-                stats["with_findings"] += 1
-                stats["findings"] += len(warnings)
-        except Exception:
-            logger.exception(
-                "architecture.finding_backfill.design_failed design_id=%s",
-                design.id,
-            )
-            stats["errors"] += 1
-            try:
-                await persistence.rollback(db)
-            except Exception:
-                logger.exception(
-                    "architecture.finding_backfill.rollback_failed design_id=%s",
-                    design.id,
-                )
-                raise
-    return stats
 
 
 
@@ -2653,6 +2569,17 @@ class ArchitectureDesignRepository:
             )
         return design
 
+    async def _fence_design_version(
+        self, design: ArchitectureRecord, expected_version: int | None = None,
+    ) -> None:
+        expected_version = design.version if expected_version is None else expected_version
+        if type(expected_version) is not int or expected_version < 1:
+            raise ValueError("expected_version must be a positive integer")
+        if design.version != expected_version or not await get_architecture_persistence_port().fence_version(
+            self.db, design_id=design.id, expected_version=expected_version,
+        ):
+            raise ArchitectureVersionConflict(design.id, expected_version)
+
     async def update(
         self,
         design_id: str,
@@ -2669,6 +2596,10 @@ class ArchitectureDesignRepository:
             allow=allow_card_parent_write,
         )
         payload = _dump_model_or_dict(patch, exclude_unset=True)
+        expected_version = payload.pop("expected_version", None)
+        # Internal updates protect the state read by this operation. An editor
+        # additionally supplies the version on which its unsaved content rests.
+        await self._fence_design_version(design, expected_version)
         change_summary = payload.pop("change_summary", None)
         acknowledgement = payload.pop("architecture_warning_acknowledgement", None)
         semantic_change = bool(SEMANTIC_PATCH_FIELDS & payload.keys())
@@ -2920,6 +2851,7 @@ class ArchitectureDesignRepository:
         actor_id: str | None = None,
         *,
         allow_card_parent_write: bool = False,
+        expected_version: int | None = None,
     ) -> bool:
         design = await self.get(design_id)
         if design is None:
@@ -2928,6 +2860,7 @@ class ArchitectureDesignRepository:
             design.parent_type,
             allow=allow_card_parent_write,
         )
+        await self._fence_design_version(design, expected_version)
         spec_parent_id = (
             self.parent_id_for(design) if design.parent_type == "spec" else None
         )
@@ -3206,6 +3139,15 @@ class ArchitectureDesignRepository:
                 issues.append(f"{path} must be a JSON object; received {type(raw_entity).__name__}.")
                 continue
             entities.append(raw_entity)
+            try:
+                _BOUNDARIES_ADAPTER.validate_python(raw_entity.get("boundaries", []))
+            except ValidationError as exc:
+                for error in exc.errors():
+                    suffix = "".join(f"[{part}]" for part in error["loc"])
+                    issues.append(
+                        f"{path}.boundaries{suffix}: expected an array of non-blank strings; "
+                        f"{error['msg']}"
+                    )
             entity_id = _canonical_ref(raw_entity.get("id"))
             entity_name = str(raw_entity.get("name") or "").strip()
             entity_type = str(raw_entity.get("entity_type") or "").strip()
@@ -3226,7 +3168,7 @@ class ArchitectureDesignRepository:
                     warnings.append(
                         f"{path}.responsibility is empty. Tasks may implement behavior in the wrong component or skip owned duties."
                     )
-                if not str(raw_entity.get("boundaries") or "").strip():
+                if raw_entity.get("boundaries", []) == []:
                     warnings.append(
                         f"{path}.boundaries is empty. Runtime, data, tenant, or external boundaries may be crossed accidentally."
                     )
@@ -3605,7 +3547,7 @@ class ArchitectureDesignRepository:
             elif "responsibility" in lower:
                 fixes.append("Add a concise responsibility that states what the component owns, guarantees, or persists.")
             elif "boundaries" in lower:
-                fixes.append("Add boundaries describing runtime, data, tenancy, external-system, or ownership limits.")
+                fixes.append("Set boundaries to an array of non-blank strings describing runtime, data, tenancy, external-system, or ownership limits; use [] when unspecified.")
             elif "semantic_node_registry" in lower or "canonical mapping" in lower:
                 fixes.append(
                     "Add the entity_type to SEMANTIC_NODE_REGISTRY or rename the entity to a known type. "

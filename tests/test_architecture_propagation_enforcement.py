@@ -27,6 +27,7 @@ from mcp_runtime_testing import register_mcp_test_runtime
 import uuid
 
 import pytest
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 from sqlalchemy import func, select
 
 from sqlalchemy_test_models import (
@@ -134,7 +135,11 @@ async def _seed_spec_card(db_factory) -> tuple[str, str, str]:
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Propagation Enforcement Board", owner_id=USER_ID))
         db.add(Spec(id=spec_id, board_id=board_id, title="spec", status=SpecStatus.APPROVED,
-                    created_by=USER_ID, functional_requirements=["FR"], acceptance_criteria=["AC"],
+                    architecture_adoption=ArchitectureAdoptionScope(
+                        board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=(),
+                    ).model_dump(mode="json"),
+                    created_by=USER_ID, functional_requirements=[{"id": "fr-1", "text": "FR"}],
+                    acceptance_criteria=[{"id": "ac-1", "text": "AC"}],
                     test_scenarios=[], business_rules=[], api_contracts=[]))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="card",
                     status=CardStatus.NOT_STARTED, card_type=CardType.NORMAL, created_by=USER_ID))
@@ -153,6 +158,9 @@ async def _seed_ideation_refinement_spec(db_factory) -> tuple[str, str, str, str
         db.add(Refinement(id=refinement_id, board_id=board_id, ideation_id=ideation_id,
                           title="refinement", created_by=USER_ID))
         db.add(Spec(id=spec_id, board_id=board_id, refinement_id=refinement_id, title="spec",
+                    architecture_adoption=ArchitectureAdoptionScope(
+                        board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=(),
+                    ).model_dump(mode="json"),
                     created_by=USER_ID, functional_requirements=[], technical_requirements=[],
                     acceptance_criteria=[], test_scenarios=[], business_rules=[], api_contracts=[]))
         await db.commit()
@@ -320,6 +328,9 @@ async def test_explicit_mixed_valid_and_foreign_selection_fails_atomically(db_fa
                 id=second_spec_id,
                 board_id=_board_id,
                 refinement_id=refinement_id,
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=_board_id, spec_id=second_spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 title="atomic target",
                 created_by=USER_ID,
             )

@@ -52,25 +52,24 @@ def test_mapping_normalizes_to_permission_set_and_none_stays_trusted() -> None:
 def test_permission_set_uses_granular_permission_without_legacy_fallback() -> None:
     decision = decide_authorization(
         _actor(PermissionSet({"board": {"read": False}})),
-        PermissionRequirement("board.read", legacy_operation="board:read"),
+        PermissionRequirement("board.read"),
     )
     assert decision.allowed is False
 
 
-def test_flat_permissions_allow_granular_and_explicit_legacy_tokens() -> None:
-    requirement = PermissionRequirement("board.read", legacy_operation="board:read")
+def test_capabilities_require_canonical_tokens() -> None:
+    requirement = PermissionRequirement("board.read")
     assert decide_authorization(_actor(["board.read"]), requirement).allowed is True
-    assert decide_authorization(_actor(("board:read",)), requirement).allowed is True
+    assert decide_authorization(_actor(("board:read",)), requirement).allowed is False
 
 
-def test_introduced_leaf_accepts_bounded_flat_token_for_historical_authority() -> None:
+def test_introduced_leaf_rejects_substitute_and_retired_tokens() -> None:
     requirement = PermissionRequirement(
         "agent.entity.read",
-        legacy_operation="board.read",
     )
     assert decide_authorization(_actor(["agent.entity.read"]), requirement).allowed
-    assert decide_authorization(_actor(["board.read"]), requirement).allowed
-    assert decide_authorization(_actor(["board:read"]), requirement).allowed
+    assert not decide_authorization(_actor(["board.read"]), requirement).allowed
+    assert not decide_authorization(_actor(["board:read"]), requirement).allowed
     assert not decide_authorization(_actor(["cards:update"]), requirement).allowed
 
 
@@ -94,7 +93,7 @@ def test_none_is_trusted_full_access_but_unknown_flag_fails_closed() -> None:
 def test_internal_sources_preserve_legacy_trusted_wildcard(source: str) -> None:
     decision = decide_authorization(
         _actor(["*"], source=source),
-        PermissionRequirement("card.entity.create", legacy_operation="cards:create"),
+        PermissionRequirement("card.entity.create"),
     )
     assert decision.allowed is True
 
@@ -102,7 +101,7 @@ def test_internal_sources_preserve_legacy_trusted_wildcard(source: str) -> None:
 def test_rest_does_not_treat_legacy_wildcard_as_trusted() -> None:
     decision = decide_authorization(
         _actor(["*"], source="rest"),
-        PermissionRequirement("card.entity.create", legacy_operation="cards:create"),
+        PermissionRequirement("card.entity.create"),
     )
     assert decision.allowed is False
 
@@ -216,9 +215,9 @@ async def test_explicit_mapping_override_denial_precedes_accepted_role() -> None
 
 
 @pytest.mark.asyncio
-async def test_explicit_legacy_denial_precedes_role_for_introduced_flag() -> None:
+async def test_explicit_canonical_denial_precedes_role_for_introduced_flag() -> None:
     actor = _actor(
-        PermissionSet({"kg": {"admin": {"settings_read": False}}}),
+        PermissionSet({"metrics": {"local": {"summary": {"read": False}}}}),
         roles=("operator",),
     )
 
@@ -226,8 +225,7 @@ async def test_explicit_legacy_denial_precedes_role_for_introduced_flag() -> Non
         await require_any_authority(
             actor,
             PermissionRequirement(
-                "runtime.settings.read",
-                legacy_operation="kg.admin.settings_read",
+                "metrics.local.summary.read",
             ),
             roles=("operator",),
         )
@@ -236,7 +234,7 @@ async def test_explicit_legacy_denial_precedes_role_for_introduced_flag() -> Non
 @pytest.mark.asyncio
 async def test_role_does_not_bypass_missing_historical_authority() -> None:
     actor = _actor(
-        PermissionSet({"runtime": {"settings": {"read": True}}}),
+        PermissionSet({"metrics": {"local": {"summary": {"read": True}}}}),
         roles=("operator",),
     )
 
@@ -244,8 +242,7 @@ async def test_role_does_not_bypass_missing_historical_authority() -> None:
         await require_any_authority(
             actor,
             PermissionRequirement(
-                "runtime.settings.read",
-                legacy_operation="kg.admin.settings_read",
+                "metrics.local.summary.read",
             ),
             roles=("operator",),
         )

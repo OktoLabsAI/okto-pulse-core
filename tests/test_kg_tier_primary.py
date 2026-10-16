@@ -71,7 +71,7 @@ def _seed_data():
 
     with open_board_connection(BOARD) as (_db, conn):
         for nid, title, content, emb, score in [
-            ("dec-1", "Use Kuzu for KG", "Embedded graph DB", emb_a, 0.8),
+            ("dec-1", "Use Grafx for KG", "Embedded graph DB", emb_a, 0.8),
             ("dec-2", "Use DuckDB for analytics", "Columnar DB", emb_b, 0.8),
             ("dec-3", "Deprecated SQLite KG", "Old approach", emb_c, 0.2),
         ]:
@@ -147,15 +147,15 @@ class TestDefaultFiltersCache:
 
     def test_cache_hit_on_repeated_query(self):
         svc = get_kg_service()
-        r1 = svc.get_decision_history(BOARD, "Kuzu")
+        r1 = svc.get_decision_history(BOARD, "Grafx")
         stats1 = cache_stats()
-        r2 = svc.get_decision_history(BOARD, "Kuzu")
+        r2 = svc.get_decision_history(BOARD, "Grafx")
         assert r1 == r2
         assert stats1["size"] >= 1
 
     def test_invalidation_clears_board_cache(self):
         svc = get_kg_service()
-        svc.get_decision_history(BOARD, "Kuzu")
+        svc.get_decision_history(BOARD, "Grafx")
         assert cache_stats()["size"] >= 1
         evicted = invalidate_board(BOARD)
         assert evicted >= 1
@@ -180,9 +180,9 @@ class TestACLDecisionHistory:
 
     def test_decision_history_returns_matching(self):
         svc = get_kg_service()
-        results = svc.get_decision_history(BOARD, "Kuzu")
+        results = svc.get_decision_history(BOARD, "Grafx")
         assert len(results) >= 1
-        assert results[0]["title"] == "Use Kuzu for KG"
+        assert results[0]["title"] == "Use Grafx for KG"
 
     def test_decision_history_empty_topic(self):
         svc = get_kg_service()
@@ -230,7 +230,7 @@ class TestRankingContradictions:
 
     def test_find_similar_decisions_no_crash(self):
         svc = get_kg_service()
-        results = svc.find_similar_decisions(BOARD, "Use Kuzu for graph storage")
+        results = svc.find_similar_decisions(BOARD, "Use Grafx for graph storage")
         assert isinstance(results, list)
 
 
@@ -271,7 +271,7 @@ class TestContextToolsErrors:
 
     def test_query_global_with_board(self):
         svc = get_kg_service()
-        results = svc.query_global("Kuzu", user_boards=[BOARD])
+        results = svc.query_global("Grafx", user_boards=[BOARD])
         assert isinstance(results, list)
 
     def test_schema_drift_detection(self):

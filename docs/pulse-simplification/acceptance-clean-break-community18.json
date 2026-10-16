@@ -1,0 +1,89 @@
+{
+  "scope": "Community18 native fixtures and signed report serialization",
+  "runs": [
+    {
+      "name": "clean-break-full-run18-community",
+      "pair": "dist-native-main24",
+      "xml_sha256": "f3461775b71d274d0bd6c240c7fc0486956d83f0cf3ca9efd3c38317064555fc",
+      "tests": 390,
+      "failed": 16,
+      "skipped": 0,
+      "failed_cases": [
+        "tests.test_ts2_delayed_event_tombstone_fence::test_ts2_delayed_spec_moved_is_fenced_after_governed_delete",
+        "tests.test_ts_2215bcca_b7_selector_resource_gate_evidence::test_ts_2215bcca_b7_selector_drop_keeps_gate_and_history",
+        "tests.test_verification_report_admission::test_rest_mcp_admission_and_real_status_write_with_freshness[inspection]",
+        "tests.test_verification_report_admission::test_rest_mcp_admission_and_real_status_write_with_freshness[static_analysis]",
+        "tests.test_verification_report_admission::test_rest_mcp_admission_and_real_status_write_with_freshness[demonstration]",
+        "tests.test_verification_report_admission::test_nonconclusive_report_is_authenticated_pending_work_not_test_credit[inconclusive]",
+        "tests.test_verification_report_admission::test_nonconclusive_report_is_authenticated_pending_work_not_test_credit[aborted]",
+        "tests.test_verification_report_admission::test_nonconclusive_report_is_authenticated_pending_work_not_test_credit[unavailable]",
+        "tests.test_verification_report_admission::test_bulk_ready_report_writes_cannot_bypass_authentication",
+        "tests.test_verification_start_transition::test_real_start_requires_four_profile_plan_and_valid_inheritance[missing_profile]",
+        "tests.test_verification_start_transition::test_real_start_requires_four_profile_plan_and_valid_inheritance[missing_operational_work]",
+        "tests.test_verification_start_transition::test_real_start_requires_four_profile_plan_and_valid_inheritance[cycle]",
+        "tests.test_verification_start_transition::test_real_start_requires_four_profile_plan_and_valid_inheritance[missing_terminal]",
+        "tests.test_verification_start_transition::test_real_start_requires_four_profile_plan_and_valid_inheritance[orphan_criterion]",
+        "tests.test_verification_start_transition::test_semantic_review_is_distinct_from_structural_readiness[review_rejects-insufficient_inheritance]",
+        "tests.test_verification_start_transition::test_semantic_review_is_distinct_from_structural_readiness[condition_corrected-insufficient_inheritance]"
+      ]
+    },
+    {
+      "name": "community18-native-fixtures1",
+      "pair": "dist-native-main25",
+      "xml_sha256": "95744edd90deebedead13d75657671a2a76daf5c53776069d2f9068f850a1b06",
+      "tests": 29,
+      "failed": 4,
+      "skipped": 0,
+      "failed_cases": [
+        "tests.test_verification_report_admission::test_rest_mcp_admission_and_real_status_write_with_freshness[inspection]",
+        "tests.test_verification_report_admission::test_rest_mcp_admission_and_real_status_write_with_freshness[static_analysis]",
+        "tests.test_verification_report_admission::test_rest_mcp_admission_and_real_status_write_with_freshness[demonstration]",
+        "tests.test_verification_report_admission::test_bulk_ready_report_writes_cannot_bypass_authentication"
+      ]
+    },
+    {
+      "name": "community18-native-reports2",
+      "pair": "dist-native-main25",
+      "xml_sha256": "910598a2c75c8f7f35638ac76d05e71eb88fc2e2e9801bd076a7464343c35916",
+      "tests": 11,
+      "failed": 0,
+      "skipped": 0,
+      "failed_cases": []
+    },
+    {
+      "name": "community18-native-report-schema1",
+      "pair": "dist-native-main25",
+      "xml_sha256": "6065ecbc2e27e10c8720a04ac7542066bf24fd586c09d411ed07165f933155a4",
+      "tests": 33,
+      "failed": 0,
+      "skipped": 0,
+      "failed_cases": []
+    }
+  ],
+  "qualified_distinct_community_cases": 29,
+  "core_report_contract_cases": 33,
+  "provenance": "provenance-native-main25.json",
+  "closure": "closure-native-main25.json",
+  "closure_budgets": {
+    "import_boundary_baseline": 0,
+    "singleton_baseline": 0,
+    "dependency_temporary_exceptions": 0,
+    "graph_runtime_compatibility": 0,
+    "rebuild_artifact_compatibility": 0,
+    "community_private_reach_ins": 0,
+    "community_adapter_bridges": 0,
+    "af35_relational_residue": 0
+  },
+  "production_change": "TestScenarioEvidence serializes its typed verification_report in JSON mode even within Python-mode dumps; receipt bytes are preserved across scoped and bulk writers without relaxing authenticity.",
+  "fixture_changes": [
+    "Explicit local realm and typed architecture adoption.",
+    "Current edition approval after authorized reopen; canonical FR id in BR links.",
+    "Seal final fixture semantic heads after changing criteria and scenario links.",
+    "Forged report must fail actual receipt binding and evidence tamper checks."
+  ],
+  "limitations": [
+    "Installed recovery E2E and remaining fixed C4 criteria pending.",
+    "PostgreSQL optional SaaS isolation test remains unqualified; DSN absent.",
+    "No frontend change."
+  ]
+}

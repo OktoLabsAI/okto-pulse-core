@@ -348,7 +348,8 @@ def test_agent_instructions_contract_matches_current_mcp_surface():
     assert "okto_pulse_kg_begin_consolidation" in instructions
     assert "okto_pulse_kg_query_natural" in instructions
     assert "okto_pulse_get_analytics" in instructions
-    assert "Sprint closes (moves to `closed`)" in instructions
+    assert "Sprint closes (moves to `closed`)" not in instructions
+    assert "sprint evaluation" not in instructions
     assert "Session/card pre-flight sequence" in instructions
     assert "MCP server does not prove that you read context" in instructions
     # "interfaces do not own source/target" is still enforced (architecture.py)

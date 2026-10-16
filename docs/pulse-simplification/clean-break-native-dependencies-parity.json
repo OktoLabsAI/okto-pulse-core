@@ -1,0 +1,95 @@
+{
+  "format": "pulse-040-reviewed-increment/v1",
+  "status": "increment_verified_not_full_delivery",
+  "scope": [
+    "KG:KG-16 typed dependency removal and Bug proxy retraction",
+    "KG:KG-24 identical native source rebuild parity"
+  ],
+  "proof_pair": "dist-native-main47",
+  "provenance_sha256": "005fd0062af68d50edebfa0d0ede56f50a9ce75575860f801cd4d287be6c408d",
+  "runs": [
+    {
+      "name": "acceptance-native-dependencies-contract3",
+      "sha256": "411fa91d515fb3b21ea4bca3f494bef3e4ca05196ab1d68d8232e66f6f9cfccc",
+      "passed": 25,
+      "cases": [
+        "tests.test_rebuild_card_dependency_order::test_prerequisites_precede_dependents_independent_of_input_order[source_types0]",
+        "tests.test_rebuild_card_dependency_order::test_prerequisites_precede_dependents_independent_of_input_order[source_types1]",
+        "tests.test_rebuild_card_dependency_order::test_prerequisites_precede_dependents_independent_of_input_order[source_types2]",
+        "tests.test_rebuild_card_dependency_order::test_invalid_closure_refuses_without_modifying_sources[identities0-edges0-rebuild_card_source_missing]",
+        "tests.test_rebuild_card_dependency_order::test_invalid_closure_refuses_without_modifying_sources[identities1-edges1-rebuild_card_source_missing]",
+        "tests.test_rebuild_card_dependency_order::test_invalid_closure_refuses_without_modifying_sources[identities2-edges2-rebuild_card_dependency_prerequisite_missing]",
+        "tests.test_rebuild_card_dependency_order::test_invalid_closure_refuses_without_modifying_sources[identities3-edges3-rebuild_card_dependency_prerequisite_missing]",
+        "tests.test_rebuild_card_dependency_order::test_invalid_closure_refuses_without_modifying_sources[identities4-edges4-rebuild_card_dependency_cycle]",
+        "tests.test_rebuild_card_dependency_order::test_invalid_closure_refuses_without_modifying_sources[identities5-edges5-rebuild_card_dependency_cycle]",
+        "tests.test_rebuild_card_dependency_order::test_unrelated_sources_do_not_join_selected_board_closure",
+        "tests.test_af04_rebuild_ingestion_adapter::test_rebuild_ingestion_enqueue_preserves_adapter_coverage",
+        "tests.test_af04_rebuild_ingestion_adapter::test_rebuild_ingestion_leaves_active_rows_and_resets_terminal_rows",
+        "tests.test_af04_rebuild_ingestion_adapter::test_rebuild_adopts_live_and_stale_claims_without_losing_live_retry",
+        "tests.test_af04_rebuild_ingestion_adapter::test_empty_manifest_releases_preclaimed_board_work",
+        "tests.test_af04_rebuild_ingestion_adapter::test_enqueue_preserves_unrelated_pending_stale_sweep_backoff_exactly",
+        "tests.test_af04_rebuild_ingestion_adapter::test_queue_observation_scopes_depth_to_active_rows_and_board",
+        "tests.test_af04_rebuild_ingestion_adapter::test_queue_observation_reports_active_graph_memory_pressure",
+        "tests.test_af04_rebuild_ingestion_adapter::test_rebuild_observation_blocks_new_dead_letter_even_at_zero_depth",
+        "tests.test_af04_rebuild_ingestion_adapter::test_queue_observation_does_not_abort_for_claimed_retry_in_progress",
+        "tests.test_code_traceability_kg_rebuild_e2e::test_rebuild_closes_historical_evidence_chain_without_counting_it_as_canonical",
+        "tests.test_code_traceability_kg_rebuild_e2e::test_evidence_dependency_closure_fails_closed_for_invalid_manifest_chain[missing-rebuild_evidence_predecessor_missing]",
+        "tests.test_code_traceability_kg_rebuild_e2e::test_evidence_dependency_closure_fails_closed_for_invalid_manifest_chain[hash_drift-rebuild_evidence_predecessor_identity_drift]",
+        "tests.test_code_traceability_kg_rebuild_e2e::test_evidence_dependency_closure_fails_closed_for_invalid_manifest_chain[cycle-rebuild_evidence_supersedence_cycle]",
+        "tests.test_code_traceability_kg_rebuild_e2e::test_evidence_dependency_closure_fails_closed_for_invalid_manifest_chain[cross_board-rebuild_evidence_predecessor_cross_board]",
+        "tests.test_code_traceability_kg_rebuild_e2e::test_full_rebuild_materializes_traceability_with_zero_orphan_endpoints"
+      ],
+      "selection": "all"
+    },
+    {
+      "name": "acceptance-native-dependencies-parity4",
+      "sha256": "99ff67cff4b0c02ab1121275ec87a91be5f424d7f2d1d8fa0dc7357e2301dd2c",
+      "passed": 1,
+      "cases": [
+        "tests.test_native_bug_proxy_parity::test_bug_proxy_retraction_matches_identical_native_snapshot"
+      ],
+      "selection": "test_bug_proxy_retraction_matches_identical_native_snapshot"
+    },
+    {
+      "name": "acceptance-native-dependencies-parity5",
+      "sha256": "92f0430ad4360a9736e9eebf0663e3c8536edf97be7cf68be257aae90dc24fa9",
+      "passed": 1,
+      "cases": [
+        "tests.test_native_dependency_parity::test_native_typed_dependencies_match_identical_rebuild_snapshot"
+      ],
+      "selection": "all"
+    }
+  ],
+  "frontend": {
+    "name": "acceptance-native-dependencies-ui1",
+    "sha256": "01fa8cacde717f45a872f4a2c393c97c74bc5b95ac534559fef2d62156c77c39",
+    "passed": 17,
+    "scope": "GraphCanvas selection/navigation, jsdom accessible fallback; unchanged frontend payload"
+  },
+  "closure": {
+    "name": "closure-native-main47.json",
+    "sha256": "aaf5c5b4e86427b50a630488825698d3eea0e7d5aa01192c383abf92034197b5",
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    }
+  },
+  "verified": [
+    "Community orders typed task/test/bug/card prerequisites before dependents without changing strict queue CAS/head.",
+    "Missing selected source/prerequisite, cross-board prerequisite and cycles refuse before queue mutation.",
+    "Four physical Card dependency endpoint pairs, Spec dependency tombstone/replacement, replay, complete source snapshot and relationship multiset equality.",
+    "Six Bug-origin proxy families, two consumers, removal/restoration/replay and identical-source rebuild preserve inferred provenance and confidence."
+  ],
+  "limits": [
+    "27 distinct Python cases: failed dependency case in parity4 explicitly excluded and superseded by parity5; Bug proxy alone selected from parity4.",
+    "Fixture timestamps pinned after native CardDependency triggers; production trigger and full comparison oracle unchanged.",
+    "No legacy conversion, real storage intervention or authority changes.",
+    "KG-16/24 remain incomplete; native Decision history parity remains outstanding. Acceptance index stays 63/172/11."
+  ]
+}

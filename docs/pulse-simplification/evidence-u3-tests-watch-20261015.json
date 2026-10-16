@@ -1,0 +1,98 @@
+{
+  "date": "2026-10-15",
+  "scope": "U3/5c Tests writers and revision subscription",
+  "core_code": "8291a648",
+  "community_commit": "28ec1871a400599f316de30561f78d70c21e920a",
+  "tests": {
+    "name": "vitest tests",
+    "tests": "166",
+    "failures": "0",
+    "errors": "0",
+    "time": "139.2054756"
+  },
+  "test_command": "npx vitest run SpecModal.activity ScenarioVerificationMethodEditor TestScenarioPolicyCompliance VerificationReportSubmission SpecModal.validationTabs --maxWorkers=1",
+  "qualification_notes": [
+    "Same 166 tests and 5000ms test timeouts; parallel run had three timeouts, no assertion failures. Serial run is recorded separately.",
+    "Report retention test initially lacked the required authority envelope. Fixed the fixture; no relaxation of product parsing or assertions."
+  ],
+  "typescript_exit": 0,
+  "eslint_errors": 0,
+  "eslint_warnings": 11,
+  "native": {
+    "spec_id": "dec9410f-d455-4506-a8fd-f791ee31dc77",
+    "method_version": 16,
+    "created_version": 17,
+    "unlinked_version": 17,
+    "created_scenario_id": "ts_1792068986509",
+    "method": "Real PATCH commits; one successful response aborted; read reconciles without another write.",
+    "watcher": "MCP changes draft to ready; open scenario and report drafts retained without Refresh; explicit scenario-base review then one UI create confirmed by MCP.",
+    "unlink": "Real unlink succeeds; one following GET aborted; cached operations disabled; Reload scenario state restores actions without repeating unlink.",
+    "report_submission": "No report submitted in browser. Receipt reconciliation and admission interleaving are component tests, not native signed-proof qualification.",
+    "screenshots_inspected": true
+  },
+  "remaining": [
+    "U3/5d Project Structure and Details controls.",
+    "U3/3d remaining Coverage/resources/references/dependencies readers.",
+    "Integrated UV18-UV21 acceptance, installed U4 and Done/KG canonical end-to-end."
+  ],
+  "environment": {
+    "frontend": "http://127.0.0.1:5274",
+    "api_port": 8200,
+    "mcp_port": 8201,
+    "runtime": "isolated checkout, no user-home installation"
+  },
+  "artifacts": [
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-tests-watch-qualified.xml",
+      "sha256": "28a0a888659b448ccbf8607f42a60c0cbc0c9a46e4100bdf9bf910e717e508a9"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-tests-watch-final.xml",
+      "sha256": "36f847affafe897fb34c5f6130ece401e6188c8c659dc4c4ed3f5485b8dea498"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-tests-watcher-parent.xml",
+      "sha256": "07b2a38ade5133d217dc9bb80f7f5d9b1c0cab7a280b3cc23ed3ef55def54d35"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-native-method-after.json",
+      "sha256": "bbaab03b21c13f052d309ed77df54f8cc805d088640b5cf60e2e3392b75464f7"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-native-watch-status.json",
+      "sha256": "0091cdb50ee2f1ab8a295c3ab89f862493a77ee5a234830bd5deeca953b452fe"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-native-watch-after.json",
+      "sha256": "2f523592e58b0bcbe29cd7057367650ae0507953c8a146e276bbc53ace7dfece"
+    },
+    {
+      "path": "PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-snapshot-native-unlink-after.json",
+      "sha256": "5a38c750f523a8940a120389052f01361a464a4327b1b5c6fa151a20fa82d4a1"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-method-write-uncertain.png",
+      "sha256": "0b66ead101cc1aa0bbe82e6b32280798b9968cb58b8fe9c658ab5dc31924dae6"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-method-write-reconciled.png",
+      "sha256": "cd57fae793d4e52b5bb2e4d8b40e76b8ba28490851e7e336de1832df71900a0d"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-tests-watch-updated.yml",
+      "sha256": "97d719459f7ce552ba37075ed5d48320fe4ab7bcfab5c9129cd82c43ba9b8c86"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-tests-watch-report-preserved.png",
+      "sha256": "bb895979bbb41e56edfe7eb4091f8763ef810fff6ed720efa42724cdfa2d6169"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-tests-watch-created.png",
+      "sha256": "78a91c5bc64b5b9cc5821b9f88f8095182ea81a822fbafac3fa1bbc7194298c5"
+    },
+    {
+      "path": "okto_labs_pulse_community\\output\\playwright\\u3-unlink-saved-read-failed.png",
+      "sha256": "cda042e3b8d50f1b14c7b75d6fb572b0c1278134aa186ba016e19a149eebd39e"
+    }
+  ]
+}

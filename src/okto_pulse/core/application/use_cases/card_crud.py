@@ -13,6 +13,11 @@ from __future__ import annotations
 
 from pydantic import ValidationError
 
+from okto_pulse.core.domain.task_validation_policy import (
+    ResolvedTaskValidationConfig,
+    resolve_task_validation_config,
+)
+
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from typing import Any
@@ -178,13 +183,35 @@ class GetCardUseCase:
             card,
             target_type="card",
         )
-        return GetCardResult(
-            await project_card_validation_visibility(
-                projected,
-                actor=actor,
-                uow=uow,
-            )
-        )
+        visible = await project_card_validation_visibility(projected, actor=actor, uow=uow)
+        response = CardResponse.model_validate(visible)
+        response.validation_config = await _read_card_validation_config(card, uow=uow)
+        from okto_pulse.core.application.use_cases.card_reference_context import GetCardScenarioReferenceContextUseCase
+        response.scenario_reference_context = await GetCardScenarioReferenceContextUseCase().execute(
+            board_id=card.board_id, card_id=card.id, actor=actor, uow=uow)
+        from okto_pulse.core.application.use_cases.missing_link_context import attach_missing_link_context
+        response = await attach_missing_link_context(response, entity_type="card", actor=actor, uow=uow)
+        return GetCardResult(response)
+
+
+async def _read_card_validation_config(card: Any, *, uow: PulseUnitOfWork) -> ResolvedTaskValidationConfig | None:
+    """Read the current Spec/Board policy after Card access.
+
+    Missing or cross-Board source records must not turn into default thresholds.
+    The Card remains readable, but validation input stays unavailable in the UI.
+    """
+
+    board = await uow.services.get_application_record(entity="board", record_id=card.board_id, includes=())
+    if board is None:
+        return None
+    spec_id = getattr(card, "spec_id", None)
+    spec = (await uow.services.get_application_record(entity="spec", record_id=spec_id, includes=())
+            if spec_id else None)
+    if spec_id and (spec is None or spec.board_id != card.board_id):
+        return None
+    return ResolvedTaskValidationConfig.model_validate(resolve_task_validation_config(
+        spec, board.settings or {},
+    ))
 
 
 # --- update -----------------------------------------------------------------
@@ -243,13 +270,18 @@ class UpdateCardUseCase:
             refreshed,
             target_type="card",
         )
-        return UpdateCardResult(
-            await project_card_validation_visibility(
+        visible = await project_card_validation_visibility(
                 projected,
                 actor=actor,
                 uow=uow,
             )
-        )
+        response = CardResponse.model_validate(visible)
+        from okto_pulse.core.application.use_cases.card_reference_context import GetCardScenarioReferenceContextUseCase
+        response.scenario_reference_context = await GetCardScenarioReferenceContextUseCase().execute(
+            board_id=refreshed.board_id, card_id=refreshed.id, actor=actor, uow=uow)
+        from okto_pulse.core.application.use_cases.missing_link_context import attach_missing_link_context
+        response = await attach_missing_link_context(response, entity_type="card", actor=actor, uow=uow)
+        return UpdateCardResult(response)
 
 
 # --- delete -----------------------------------------------------------------
@@ -285,7 +317,6 @@ class DeleteCardUseCase:
             card_requirement(
                 "card.entity.delete",
                 state=entity_state(existing),
-                legacy_operation="cards:delete",
             ),
             uow=uow,
             board_id=existing.board_id,
@@ -355,19 +386,33 @@ class MoveCardUseCase:
             allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
         )
         current_state = entity_state(existing)
+        transition_from = existing.status
         target_state = str(getattr(command.data.status, "value", command.data.status))
+        learning_submission = getattr(command.data, 'learning_submission', None)
+        if learning_submission is not None:
+            from okto_pulse.core.application.use_cases.learning_capture import authorize_learning_submission
+            from okto_pulse.core.domain.learning_submission import (
+                learning_submission_replay, learning_submission_request_digest,
+            )
+
+            await authorize_learning_submission(command.data, actor=actor, uow=uow, board_id=existing.board_id)
+            replay = learning_submission_replay(existing.conclusions, actor_id=actor.actor_id,
+                capture_id=learning_submission.capture_id,
+                request_digest=learning_submission_request_digest(board_id=existing.board_id,
+                    bug_id=existing.id, actor_id=actor.actor_id, move=command.data))
+            if replay is not None:
+                current_state = replay.from_status
+                transition_from = replay.from_status
         requirement = (
             card_requirement(
                 "card.entity.edit_fields",
                 state=current_state,
-                legacy_operation="cards:move",
             )
             if current_state == target_state
             else transition_permission_requirement(
                 "card",
-                existing.status,
+                transition_from,
                 command.data.status,
-                legacy_operation="cards:move",
             )
         )
         await require_authorization(
@@ -376,10 +421,15 @@ class MoveCardUseCase:
             uow=uow,
             board_id=existing.board_id,
         )
-        card = await service.move_card(command.card_id, actor.actor_id, command.data)
-        if not card:
-            raise EntityNotFoundError("card", command.card_id)
-        await commit(uow)
+        try:
+            card = await service.move_card(command.card_id, actor.actor_id, command.data)
+            if not card:
+                raise EntityNotFoundError("card", command.card_id)
+            await commit(uow)
+        except BaseException:
+            if learning_submission is not None:
+                await uow.rollback()
+            raise
         refreshed = await service.get_card(command.card_id)
         if not refreshed:
             raise EntityNotFoundError("card", command.card_id)
@@ -388,6 +438,8 @@ class MoveCardUseCase:
             refreshed,
             target_type="card",
         )
+        from okto_pulse.core.application.use_cases.missing_link_context import attach_missing_link_context
+        projected = await attach_missing_link_context(projected, entity_type="card", actor=actor, uow=uow)
         return MoveCardResult(
             await project_card_validation_visibility(
                 projected,
@@ -526,7 +578,7 @@ class AddCardDependencyUseCase:
             board_id=card.board_id,
         )
 
-        dep = await service.add_dependency(command.card_id, command.depends_on_id)
+        dep = await service.add_dependency(command.card_id, command.depends_on_id, actor_id=actor.actor_id)
         dependency_id = dep.id
         await commit(uow)
         return AddCardDependencyResult(dependency_id)
@@ -585,7 +637,7 @@ class RemoveCardDependencyUseCase:
             board_id=source.board_id,
         )
         removed = await service.remove_dependency(
-            command.card_id, command.depends_on_id
+            command.card_id, command.depends_on_id, actor_id=actor.actor_id,
         )
         if not removed:
             raise EntityNotFoundError("dependency", command.card_id)
@@ -665,7 +717,7 @@ class SubmitTaskValidationUseCase:
         if data.get("recommendation") not in ("approve", "reject"):
             raise CommandValidationError("recommendation must be 'approve' or 'reject'")
         try:
-            data = TaskValidationSubmit.model_validate(data).model_dump()
+            data = TaskValidationSubmit.model_validate(data).model_dump(exclude_none=True)
         except ValidationError as exc:
             raise CommandValidationError(str(exc)) from exc
 
@@ -698,13 +750,27 @@ class SubmitTaskValidationUseCase:
             except Exception:
                 reviewer_name = actor.actor_id
 
-        result = await service.submit_task_validation(
-            card_id=command.card_id,
-            reviewer_id=actor.actor_id,
-            reviewer_name=reviewer_name,
-            data=data,
-        )
-        await commit(uow)
+        if data.get("learning_capture") is not None:
+            from okto_pulse.core.application.use_cases.learning_capture import LEARNING_CAPTURE_HISTORY_PERMISSIONS
+
+            await require_all(actor,
+                *(PermissionRequirement(flag) for flag in LEARNING_CAPTURE_HISTORY_PERMISSIONS),
+                uow=uow, board_id=card.board_id)
+        try:
+            result = await service.submit_task_validation(
+                card_id=command.card_id,
+                reviewer_id=actor.actor_id,
+                reviewer_name=reviewer_name,
+                data=data,
+            )
+            await commit(uow)
+        except BaseException:
+            # The selected-capture command owns one compound transaction.
+            # A late binding/outbox error must remain atomic even if a caller
+            # catches it and subsequently commits its outer UOW.
+            if data.get("learning_capture") is not None:
+                await uow.rollback()
+            raise
         return SubmitTaskValidationResult(result)
 
 
@@ -1058,7 +1124,6 @@ class LinkTestTaskToBugUseCase:
             card_requirement(
                 "card.entity.link_tests",
                 state=entity_state(bug_card),
-                legacy_operation="cards:update",
             ),
             uow=uow,
             board_id=bug_card.board_id,
@@ -1134,7 +1199,6 @@ class UnlinkTestTaskFromBugUseCase:
             card_requirement(
                 "card.entity.link_tests",
                 state=entity_state(bug_card),
-                legacy_operation="cards:update",
             ),
             uow=uow,
             board_id=bug_card.board_id,

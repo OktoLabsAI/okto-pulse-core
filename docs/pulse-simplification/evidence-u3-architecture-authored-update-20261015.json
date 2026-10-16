@@ -1,0 +1,154 @@
+{
+  "date": "2026-10-15",
+  "scope": "U3/3d Architecture authored update and read recovery; Resources incomplete",
+  "commits": {
+    "core": "867ef70efc003d273d54b97132e5aed8fbb2ebda",
+    "community": "b1b831387f148f8e39f70c40f3a2b426b0af3db4"
+  },
+  "tests": {
+    "core_distinct": 80,
+    "community_adapter": 3,
+    "frontend_component": 26,
+    "typescript_exit": 0,
+    "eslint_errors": 0,
+    "eslint_preexisting_warnings": 1
+  },
+  "closure": {
+    "ok": true,
+    "evidence": {
+      "af35_s5_ok": true,
+      "community_to_core_import_rows": 1154,
+      "conformance_matrix_ok": true,
+      "core_import_rows": 7860,
+      "dependency_rows": 25,
+      "distribution_report_ok": true,
+      "rebuild_storage_violation_count": 0,
+      "singleton_gate_status": "passed"
+    },
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    }
+  },
+  "native": {
+    "api_port": 8200,
+    "mcp_port": 8201,
+    "pid": 20700,
+    "frontend_port": 5274,
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "dec9410f-d455-4506-a8fd-f791ee31dc77",
+    "design_id": "dff796ef-47da-438f-a373-f87e0cece5d5",
+    "versions": [
+      1,
+      2,
+      3,
+      3
+    ],
+    "stale_mcp_code": "architecture_version_conflict",
+    "draft_retained": true,
+    "explicit_base_review": true,
+    "refresh": "manual component refresh",
+    "patch_count": 1,
+    "get_fault_count": 1,
+    "read_recovery_without_write": true,
+    "screenshots_inspected": true,
+    "request_lines": [
+      "4990. [GET] http://127.0.0.1:8200/api/v1/architecture/dff796ef-47da-438f-a373-f87e0cece5d5?include_payloads=true => [200] OK",
+      "5008. [GET] http://127.0.0.1:8200/api/v1/architecture/dff796ef-47da-438f-a373-f87e0cece5d5?include_payloads=true => [200] OK",
+      "5009. [GET] http://127.0.0.1:8200/api/v1/architecture/dff796ef-47da-438f-a373-f87e0cece5d5?include_payloads=true => [200] OK",
+      "5023. [PATCH] http://127.0.0.1:8200/api/v1/architecture/dff796ef-47da-438f-a373-f87e0cece5d5 => [200] OK",
+      "5024. [GET] http://127.0.0.1:8200/api/v1/architecture/dff796ef-47da-438f-a373-f87e0cece5d5?include_payloads=true => [FAILED] net::ERR_FAILED",
+      "5033. [GET] http://127.0.0.1:8200/api/v1/architecture/dff796ef-47da-438f-a373-f87e0cece5d5?include_payloads=true => [200] OK",
+      "5043. [GET] http://127.0.0.1:8200/api/v1/architecture/dff796ef-47da-438f-a373-f87e0cece5d5?include_payloads=true => [200] OK"
+    ]
+  },
+  "limits": [
+    "No automatic Resources watcher integration or parent callback qualification yet.",
+    "Create/delete/import recovery and their concurrency contracts remain pending.",
+    "Missing expected_version protects service-read concurrency only, not an older authored base.",
+    "Checkout runtime, not installed wheel/frontend qualification. No user runtime installation.",
+    "No execution, proof, approval, Done transition or canonical KG qualification performed.",
+    "Native helper first assumed an unwrapped MCP outcome and then asserted against expected isError; raw records retain valid rejection. Neither write was repeated.",
+    "Two multi-step frontend cases exceeded the default five-second limit; isolated runs passed at 15 seconds, then the full suite passed with per-case limits."
+  ],
+  "artifacts": [
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-concurrency-before.xml",
+      "sha256": "4caa45614f24a2a5f9d12e046423080143821ce0034e390ca3bd52c3cb3edfef"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-fence-core.xml",
+      "sha256": "848dd96ea7969a44f23c00c5f9f512faf0ab8b5c3a544814e4986aebc5d9826c"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-fence-core.xml.environment.json",
+      "sha256": "5277b20b56d8a05a7b6d19f1a57d143c34cd161acf49cc09fef7da475006fc0b"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-fence-community.xml",
+      "sha256": "f310fe3cd9ca16a4633153d19f395c2754948f086d380a877364653251f8b194"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-fence-community.xml.environment.json",
+      "sha256": "5277b20b56d8a05a7b6d19f1a57d143c34cd161acf49cc09fef7da475006fc0b"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-fence-catalog.xml",
+      "sha256": "19330594c253bd6a396638428d5243a583c5a8afb3f33adee8157b7b80212c95"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-authoring-before.xml",
+      "sha256": "aae88ea7eb48afbb21df841500b01f3d6659dc790844b75989170563eb49b426"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-authoring-qualified-final.xml",
+      "sha256": "a5323e7b34d6bbb446834d747e1fb0782f6ff5b036a62abf13ef38b12dbf7e9b"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/closure-u3-architecture-fence-final.json",
+      "sha256": "4c84d1bca70c83dca823375c6d726257d2ca355cc4a7e3230339ea787b07889a"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-native-seed.json",
+      "sha256": "885a9cc5d3427cf6670202b1b0a6680e793f66f9fcee4037a8c38282ecb547fe"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-native-external.json",
+      "sha256": "4278cfd25250c22e4558b0bcf9707166f80629f75082e77a444c66f3d2945b16"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-native-saved-read-failure.json",
+      "sha256": "c8017f76dc3ed9652e27a4c2ce6ff92f3675020a354c226a6d60c7be43f54bcc"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-architecture-native-recovered.json",
+      "sha256": "c8017f76dc3ed9652e27a4c2ce6ff92f3675020a354c226a6d60c7be43f54bcc"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-architecture-authoring-requests.txt",
+      "sha256": "59338c5d7960065cf565f8a74344ee67a2680cc1d517df6079ef85a575682d35"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-architecture-draft-conflict.png",
+      "sha256": "b015df657bcf68545424ef82d94d2a08e7295dca63cf54111e82a6a4cd96d3f4"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-architecture-saved-read-failure.png",
+      "sha256": "7a5a3860d62b6ee5a7990e6594326a8fc7933a3042f5f1ce746591ae9ef0844c"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-architecture-recovered.png",
+      "sha256": "b62317c07f904fb8e65b5e01c6d6861359962544aa15385d09ce17453dc925a7"
+    },
+    {
+      "path": "okto_labs_pulse_community/output/playwright/u3-architecture-recovered.yml",
+      "sha256": "9c3d5db023b8bd567da6ed072a4257fd27f356096eb54327460bf477a19e70dd"
+    }
+  ]
+}

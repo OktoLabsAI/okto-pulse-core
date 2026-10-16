@@ -145,6 +145,8 @@ class CoverageTraceabilityService:
                 authority_ref=fact.authority_ref,
                 reason="obligation_not_applicable",
             )
+        if fact.decision_status is not None:
+            eligible = fact.decision_status == 'verified'
         return CoverageObligationRow(
             identity=fact.identity,
             state=(
@@ -155,6 +157,8 @@ class CoverageTraceabilityService:
             skip=fact.skip,
             evidence=evidence_rows,
             authority_ref=fact.authority_ref,
+            decision_status=fact.decision_status,
+            decision_proof_refs=fact.decision_proof_refs,
         )
 
     @staticmethod

@@ -32,7 +32,6 @@ _REQUIRED_FILES = [
     "workflows/refinements.md",
     "workflows/specs.md",
     "workflows/cards.md",
-    "workflows/sprints.md",
     "workflows/kg.md",
     "workflows/preflight.md",
     "reference/errors.md",
@@ -65,7 +64,6 @@ EXPECTED_URIS = [
     "okto-pulse://workflows/refinements",
     "okto-pulse://workflows/specs",
     "okto-pulse://workflows/cards",
-    "okto-pulse://workflows/sprints",
     "okto-pulse://workflows/kg",
     "okto-pulse://workflows/preflight",
     "okto-pulse://reference/errors",
@@ -155,7 +153,7 @@ def test_design_system_board_docs_match_live_single_link_schema() -> None:
     assert "no design_system_id argument" in unlink
 
 
-def test_tool_family_docs_distinguish_registry_short_names_from_mcp_aliases() -> None:
+def test_tool_family_docs_publish_only_canonical_names() -> None:
     for filename, short_name in (
         ("qa_ask.md", "ask"),
         ("spec_entity_remove.md", "remove_spec_entity"),
@@ -163,9 +161,8 @@ def test_tool_family_docs_distinguish_registry_short_names_from_mcp_aliases() ->
         content = (RESOURCES_DIR / "reference" / "tool-families" / filename).read_text(
             encoding="utf-8"
         )
-        assert f"Registry-only short name: `{short_name}`" in content
-        assert "not** an MCP" in content
-        assert "does not appear in `tools/list`" in content
+        assert f"`okto_pulse_{short_name}(" in content
+        assert "Registry-only short name:" not in content
 
 
 @pytest.mark.parametrize(
@@ -177,7 +174,7 @@ def test_tool_family_docs_distinguish_registry_short_names_from_mcp_aliases() ->
         ("spec.md", "okto_pulse_ask_spec_choice_question"),
     ),
 )
-def test_choice_tool_docs_explain_structured_options_json(
+def test_choice_tool_docs_explain_native_options(
     filename: str,
     tool_name: str,
 ) -> None:
@@ -186,10 +183,11 @@ def test_choice_tool_docs_explain_structured_options_json(
     )
     section = content.split(f"## `{tool_name}`", 1)[1].split("\n## `", 1)[0]
 
-    assert "options_json: Preferred structured options" in section
+    assert "options: Required native array of objects" in section
+    assert "options_json" not in section
     assert "native array" in section
     assert '"recommended":true' in section
-    assert "takes precedence over options" in section
+    assert "Strings and unknown fields are rejected" in section
 
 
 # ---------------------------------------------------------------------------
@@ -345,9 +343,9 @@ def test_test_scenario_resource_documents_write_omission_and_raw_legacy_filter()
     assert "omit `scenario_type` to preserve the current type" in normalized_update
     assert "an empty string is not part of the closed enum" in normalized_update
     assert 'scenario_type/notes: New value, or "" to leave as-is' not in update_section
-    assert "raw persisted value" in normalized_list
-    assert "Historical values such as regression" in normalized_list
-    assert "read-only compatibility filter" in normalized_list
+    assert "closed native enum" in normalized_list
+    assert "Unsupported values are rejected" in normalized_list
+    assert "read-only compatibility filter" not in normalized_list
 
 
 def test_guideline_resources_match_governed_lifecycle_and_priority_semantics() -> None:
@@ -359,9 +357,11 @@ def test_guideline_resources_match_governed_lifecycle_and_priority_semantics() -
     normalized_guideline = " ".join(guideline.split())
     normalized_board = " ".join(board.split())
 
-    assert "Compatibility name for retiring a guideline" in normalized_guideline
-    assert normalized_guideline.count("Deprecated direct-adoption shim") == 2
-    assert "guideline_impact_preview_required" in normalized_guideline
+    assert "Compatibility name for retiring a guideline" not in normalized_guideline
+    assert "Deprecated direct-adoption shim" not in normalized_guideline
+    assert "okto_pulse_retire_guideline" in normalized_guideline
+    assert "okto-pulse://reference/policy-compliance" in normalized_guideline
+    assert "Create immutable impact evidence before an adoption" in normalized_guideline
     assert "ascending priority (lower values first)" in normalized_guideline
     assert "higher = more important" not in guideline
     assert "highest first" not in guideline
@@ -409,8 +409,10 @@ def test_spec_quality_guidance_routes_lifecycle_without_contract_duplication() -
     assert "finding count and severity are advisory" in normalized_specs
     assert "Previous validation results are history" in normalized_specs
     assert "Current result for this lifecycle edition" in normalized_specs
-    assert "System legacy import" in normalized_quality
-    assert "is migrated audit evidence" in normalized_quality
+    assert "System legacy import" not in normalized_quality
+    assert "migrated audit evidence" not in normalized_quality
+    assert "Quality results require a positive subject edition" in normalized_quality
+    assert "Use the Validation surface for those results" in normalized_quality
     assert (
         "This resource intentionally does not repeat those lifecycle steps"
         in normalized_quality
@@ -419,7 +421,7 @@ def test_spec_quality_guidance_routes_lifecycle_without_contract_duplication() -
     # Shared operational details have one canonical home to control token use.
     for detail in (
         "limits `25|50|100`",
-        "edition is SQL `NULL`",
+        "missing editions are invalid",
         "`{subject}.quality.read`",
     ):
         assert detail in quality
@@ -479,6 +481,9 @@ def test_spec_validation_mcp_schema_is_canonical_and_pinpoints_are_closed() -> N
         "expected_validation_edition",
         "expected_spec_version",
         "expected_head_revision",
+        "idempotency_key",
+        "expected_planning_manifest",
+        "decomposition",
         "confidence",
         "confidence_justification",
         "clarity",
@@ -493,18 +498,18 @@ def test_spec_validation_mcp_schema_is_canonical_and_pinpoints_are_closed() -> N
         "pinpoints",
     }
     assert set(properties) == expected
-    assert set(parameters["required"]) == expected - {"pinpoints"}
+    assert set(parameters["required"]) == expected - {"pinpoints", "decomposition"}
 
     pinpoint = properties["pinpoints"]["anyOf"][0]["items"]
     assert pinpoint["additionalProperties"] is False
     assert set(pinpoint["properties"]) == {
-        "metric",
+        "metrics", "kind", "severity", "excerpt", "recommendation", "rationale",
         "anchor_type",
         "anchor_ref",
         "detail",
     }
-    assert set(pinpoint["required"]) == {"metric", "anchor_type", "detail"}
-    assert pinpoint["properties"]["metric"]["enum"] == [
+    assert set(pinpoint["required"]) == {"metrics", "kind", "severity", "excerpt", "recommendation", "anchor_type", "detail"}
+    assert pinpoint["properties"]["metrics"]["items"]["enum"] == [
         "confidence",
         "clarity",
         "assertiveness",
@@ -568,7 +573,8 @@ def test_spec_validation_resources_publish_the_calibrated_evaluator_method() -> 
 
     assert "The stable item ID" in gates
     assert "never a list index or human ordinal" in gates
-    assert "observable defect + impact + concrete remediation" in normalized_gates
+    assert "observable problem and impact" in normalized_gates
+    assert "rejects excerpts absent from that source" in normalized_gates
     assert "at least one pinpoint for every metric" in normalized_gates
     assert "The application must have high availability" in gates
     assert "Run active-active across at least three availability zones" in gates
@@ -592,25 +598,14 @@ def test_spec_validation_resources_publish_the_calibrated_evaluator_method() -> 
 
 
 def test_initial_footprint_under_budget() -> None:
-    """ts_edd149c4 — Initial MCP server footprint stays within budget per component.
+    """ts_edd149c4 — Guard Core instructions and the declared tool inventory.
 
-    Measures via tiktoken (cl100k_base) the two payloads any MCP client sees
-    on session start:
-      1. ``instructions=`` passed to FastMCP (loaded from agent_instructions.md).
-      2. ``tools/list`` metadata: name + description + JSON schema per tool.
-
-    Budget rationale (post-P0.A + post-P0.B, pre-P1 lazy-loading):
-      - instructions ≤ 10K tokens — P0.A goal (was ~71K pre-rewrite).
-      - tools metadata ≤ 49.85K tokens — reviewed ceiling for 338 tools,
-        including the 20 closed policy-governance schemas and the typed
-        impact_evidence contract (SK-B2-S1); P1 lazy-loading by role will
-        reduce this drastically per session.
-      - combined ≤ 52.5K tokens — overall regression guard.
-
-    A failure in any of the three asserts pinpoints which subsystem regressed.
+    The edition materializes this transport-neutral catalog. Its serialized
+    tools/list schema differs from Core parameters, so public metadata and
+    combined budgets are tested through the real Client in Community's
+    test_mcp_installed_inventory_smoke.py. Do not import FastMCP into Core or
+    weaken the closed-schema assertions above to reduce the measured cost.
     """
-    import json
-
     tiktoken = pytest.importorskip("tiktoken")
     from okto_pulse.core.mcp import server as _srv
 
@@ -622,32 +617,9 @@ def test_initial_footprint_under_budget() -> None:
         f"P0.A rewrite regression."
     )
 
-    parts: list[str] = []
-    for tool_name, tool in _srv.mcp._tool_manager._tools.items():
-        desc = getattr(tool, "description", "") or ""
-        schema = json.dumps(getattr(tool, "parameters", {}), separators=(",", ":"))
-        parts.append(f"{tool_name}\n{desc}\n{schema}")
-    tools_tokens = len(enc.encode("\n".join(parts)))
-    # 49_850: the closed Code Traceability schemas remain fully typed; 70
-    # reviewed descriptions point to lazy family docs and generated JSON-Schema
-    # titles are omitted because property names already carry that identity.
-    # Prior baseline: 338 tools, 49,722 metadata tokens. Delivery adds read and
-    # closed write contracts; reviewed bounds below include their explicit schemas.
-    # Always-loaded prose remains within its unchanged 11,250-character budget.
-    # Further growth needs explicit review; do not weaken closed schemas.
-    assert len(parts) == 340, "MCP tool-count ratchet changed"
-    # Delivery evidence adds two closed, bounded tools (340 total). Measured
-    # metadata is 50,505 tokens; retain explicit schema/authority constraints.
-    assert tools_tokens <= 50_800, (
-        f"tools/list metadata {tools_tokens} tokens exceeds 50.8K guard — "
-        f"P1 lazy-loading by role will reduce this per session."
-    )
-
-    total = instructions_tokens + tools_tokens
-    assert total <= 53_500, (
-        f"Combined initial footprint {total} tokens exceeds 53.5K guard "
-        f"(instructions={instructions_tokens}, tools={tools_tokens})."
-    )
+    # The reviewed 282-tool baseline gains the decision-review read/write pair
+    # and the unified Spec validation-cycle read.
+    assert len(_srv.mcp.iter_tools()) == 285, "MCP tool-count ratchet changed"
 
 
 # ---------------------------------------------------------------------------
@@ -704,3 +676,59 @@ def test_smoke_detects_synthetic_broken_link() -> None:
         "Pattern + effective-catalog lookup must surface the broken URI; "
         f"got {found!r}."
     )
+
+def test_scenario_evidence_guidance_uses_current_taxonomy_without_legacy_readers() -> None:
+    from okto_pulse.core.services.test_scenario_lifecycle import EVIDENCE_CLASSES
+
+    body = (RESOURCES_DIR / "reference/tool-docs/test-scenario.md").read_text(
+        encoding="utf-8"
+    )
+    documented = set(re.findall(r"^\s*- `([a-z_]+)`(?: \([^\n]+\))?:", body, re.MULTILINE))
+    assert set(EVIDENCE_CLASSES) <= documented
+    assert "unsupported and rejected on reads and writes" in body
+    for stale_promise in (
+        "reader-only legacy alias",
+        "pre-hardening records",
+        "Legacy execution contracts",
+        "sprint gate",
+        "grandfathered",
+    ):
+        assert stale_promise not in body
+
+def test_served_resources_reference_only_live_tools_and_resource_uris() -> None:
+    import asyncio
+    from okto_pulse.core.mcp import server
+
+    catalog = server.effective_resource_catalog().specs()
+    uris = {spec.uri for spec in catalog}
+    tools = set(asyncio.run(server.mcp.get_tools()))
+    # Resolve the three documented family shorthands before checking exact names.
+    expansions = {
+        "okto_pulse_move_*": "okto_pulse_move_card",
+        "okto_pulse_kg_*": "okto_pulse_kg_health",
+        "okto_pulse_get_{ideation,refinement,spec}_context": (
+            "okto_pulse_get_ideation_context okto_pulse_get_refinement_context "
+            "okto_pulse_get_spec_context"
+        ),
+    }
+    for spec in catalog:
+        body = spec.read()
+        for shorthand, expanded in expansions.items():
+            body = body.replace(shorthand, expanded)
+        referenced_tools = set(re.findall(r"okto_pulse_[a-z0-9_]+", body))
+        referenced_uris = set(_RESOURCE_URI_PATTERN.findall(body))
+        assert referenced_tools <= tools, (spec.uri, sorted(referenced_tools - tools))
+        assert referenced_uris <= uris, (spec.uri, sorted(referenced_uris - uris))
+
+
+def test_served_guidance_has_no_sprint_or_automatic_migration_instructions() -> None:
+    from okto_pulse.core.mcp import server
+
+    for spec in server.effective_resource_catalog().specs():
+        body = spec.read().lower()
+        assert not re.search(r"\bsprints?\b", body), spec.uri
+        for retired_instruction in (
+            "schema migrations self-heal", "backfill embeddings",
+            "kg checkpoints (not optional)", "one-shot legacy import",
+        ):
+            assert retired_instruction not in body, (spec.uri, retired_instruction)

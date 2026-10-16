@@ -23,6 +23,8 @@ from typing import get_args
 
 import pytest
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
 from sqlalchemy_test_models import Board, SpecStatus
 from okto_pulse.core.services import resource_gate, resource_lineage, spec_resource_propagation
 from okto_pulse.core.services.design_system import DesignSystemService
@@ -95,6 +97,10 @@ async def test_runtime_resource_gate_summary_excludes_design_system():
         board = await _board_with_design_system(db)
         spec = Spec(id=str(uuid.uuid4()), board_id=board.id, title="S",
                     status=SpecStatus.DRAFT, created_by=USER_ID)
+        spec.architecture_adoption = ArchitectureAdoptionScope(
+            board_id=board.id, spec_id=spec.id, adopted_in_edition=1,
+            actor_id=USER_ID, inherited_resource_ids=(),
+        ).model_dump(mode="json")
         db.add(spec)
         await db.flush()
 
@@ -122,6 +128,10 @@ async def test_runtime_resource_coverage_keys_exclude_design_system():
             id=str(uuid.uuid4()), board_id=board.id, title="S",
             status=SpecStatus.DRAFT, created_by=USER_ID,
         )
+        spec.architecture_adoption = ArchitectureAdoptionScope(
+            board_id=board.id, spec_id=spec.id, adopted_in_edition=1,
+            actor_id=USER_ID, inherited_resource_ids=(),
+        ).model_dump(mode="json")
         db.add(spec)
         await db.flush()
         svc = resource_gate.ResourceGateService(db)

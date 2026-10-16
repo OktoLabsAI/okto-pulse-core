@@ -1,0 +1,26 @@
+{
+  "baseline_core_commit": "207072509a282e8adec1481d05aee2d54c382bde",
+  "proof_before_product_import": true,
+  "packages": {
+    "core": {
+      "python_files": 769,
+      "byte_identical": true,
+      "wheel_sha256": "fe539c5a16fef738344afc8327322f326c6d6cc76d40a0128e0736d0093f4dfb",
+      "source_sha256": "7bc8d61e66a00a6a3aed2c187a41883bd4ea38e6a849e11c8cd022bb9be5b3d6"
+    },
+    "community": {
+      "python_files": 358,
+      "byte_identical": true,
+      "wheel_sha256": "1694848e6065887d6c48e84799c5b89d8d085c847b59544cffb89dac87f44f97",
+      "source_sha256": "346106b44ef72f05e38c5bd30d94dfccba4ee34bbd3c123e73ff2d1b2bc190dc"
+    }
+  },
+  "refusal": {
+    "reason": "core_contract_unavailable",
+    "message": "incompatible_pulse_distribution: core_contract_unavailable; install Core and Community from the same qualified release before starting Pulse."
+  },
+  "data_directory_created": false,
+  "configuration_or_composition_loaded": false,
+  "same_version_incompatible_contract_refused": true,
+  "status": "passed"
+}

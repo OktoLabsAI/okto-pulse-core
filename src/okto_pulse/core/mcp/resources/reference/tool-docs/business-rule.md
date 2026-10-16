@@ -18,8 +18,8 @@ Args:
     rule: The business rule statement
     when: Condition that triggers the rule
     then: Expected behavior / outcome
-    linked_requirements: Pipe-separated functional requirement refs. Accepted forms:
-        0-based indices ("0|2|5"), canonical fr_... ids, or exact FR text.
+    linked_requirements: Native string array of functional requirement refs. Accepted forms:
+        0-based indices (["0", "2", "5"]), canonical fr_... ids, or exact FR text.
         Human labels such as "FR-1" are not accepted because they are display
         labels, not stable identifiers.
     notes: Additional notes (optional)
@@ -38,34 +38,11 @@ Args:
 Returns:
     JSON array of business rules with resolved linked requirements
 
-## `okto_pulse_remove_business_rule`
+## `okto_pulse_remove_spec_entity` (`target_type="business_rule"`)
 
-Remove a business rule from a spec.
+Use `okto_pulse_remove_spec_entity` with `target_type="business_rule"` and `entity_id` naming the target.
+See `okto-pulse://reference/tool-families/spec_entity_remove` for parameters, authorization and results.
 
-Args:
-    board_id: Board ID
-    spec_id: Spec ID
-    rule_id: Business rule ID to remove
+## `okto_pulse_update_spec_entity` — business_rule
 
-Returns:
-    JSON confirmation
-
-## `okto_pulse_update_business_rule`
-
-Update an existing business rule on a spec.
-
-Args:
-    board_id: Board ID
-    spec_id: Spec ID
-    rule_id: Business rule ID (e.g. "br_abc12345")
-    title: New title (optional, empty = no change)
-    rule: New rule statement (optional)
-    when: New condition (optional)
-    then: New outcome (optional)
-    linked_requirements: Pipe-separated functional requirement refs. Accepted forms:
-        0-based indices, canonical fr_... ids, or exact FR text. Labels such
-        as "FR-1" are not accepted. Pass "CLEAR" to remove all links. Empty = no change.
-    notes: New notes (optional, "CLEAR" to remove)
-
-Returns:
-    JSON with the updated business rule
+Use `entity_type="business_rule", entity_id`, `operation="update"` and an object `payload_json` containing the fields to change. Omit unchanged fields; use JSON null to clear optional fields. Use exact same-Spec IDs for links.

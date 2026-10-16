@@ -44,7 +44,7 @@ CONTRACT_TEST = (
 
 
 def _tools() -> dict:
-    return asyncio.new_event_loop().run_until_complete(mcp_server.mcp.get_tools())
+    return asyncio.run(mcp_server.mcp.get_tools())
 
 
 # ---------------------------------------------------------------------------
@@ -68,17 +68,12 @@ BASELINE_TOOLS = {
 
 def test_tool_names_stable_after_compaction():
     names = set(_tools().keys())
-    # No tool dropped or renamed.
+    # Required native capabilities remain available.
     assert BASELINE_TOOLS.issubset(names)
     # Compaction only touched docstrings; every tool keeps the okto_pulse_ prefix.
-    # Surface size is additive after the R1 baseline. Keep the current reviewed
-    # surface pinned so accidental tool drops/duplicates remain visible.
-    # 2026-07-12 (auditoria MCP): re-pinned 259→265 (pin apodrecido enquanto 6
-    # tools entraram); o delta exato agora é nomeado por
-    # test_mcp_tools_catalog_drift.py.
-    # 2026-08-22: reviewed surface is 338 tools after adding governed agent
-    # legacy-Evidence classification.
-    assert len(names) == 340
+    # F3/F4 and clean-break retire Sprint, maintenance and compatibility writers. Pin the
+    # surface; the generated catalog guard checks exact names independently.
+    assert len(names) == 282
     assert all(n.startswith("okto_pulse_") for n in names)
 
 

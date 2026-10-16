@@ -18,18 +18,17 @@ Profiles (deterministic, BR br_94b4e897):
     summary  — IDs / counts / minimal state (default/slim profile)
     detail   — adds selected bodies
     full     — complete current modern body within hard safety caps
-    legacy   — preserves prior compatibility fields where required
 
-Success migration (TR tr_7e1f918c / tr_2509ce27, BR br_801f3e2a):
-    * ``full`` and ``legacy`` preserve both ``success: true`` and
-      ``success: false`` exactly where the legacy shape exposes them.
+Success projection (TR tr_7e1f918c / tr_2509ce27, BR br_801f3e2a):
+    * ``full`` preserves both ``success: true`` and
+      ``success: false`` exactly where the domain body exposes them.
     * ``summary``/``detail`` omit positive ``success`` and rely on ``outcome``;
       failures still expose ``outcome=error`` plus ``error``/``error_code`` so
       callers never need ``result.get("success")`` truthiness.
     * ``outcome`` defaults to ``None`` = INFER: a payload that signals failure
-      (``success is False`` / ``error`` / ``error_code`` / ``legacy_success=False``)
+      (``success is False`` / ``error`` / ``error_code``)
       yields ``outcome=error`` even when the caller passes no explicit outcome —
-      a legacy failure can never silently become a canonical success. An explicit
+      a domain failure can never silently become a canonical success. An explicit
       ``outcome=ok`` over a failing payload returns a structured
       ``projection_contract_violation`` instead of an ambiguous envelope. Any
       ``outcome=error`` response is guaranteed to carry ``error`` + ``error_code``
@@ -49,12 +48,11 @@ from typing import Any
 
 
 class ProjectionProfile(str, Enum):
-    """The four deterministic projection profiles."""
+    """The three deterministic projection profiles."""
 
     SUMMARY = "summary"
     DETAIL = "detail"
     FULL = "full"
-    LEGACY = "legacy"
 
 
 SUPPORTED_PROFILES: tuple[str, ...] = tuple(p.value for p in ProjectionProfile)
@@ -81,11 +79,10 @@ _BODY_FALLBACK: dict[str, tuple[str, ...]] = {
     "summary": ("summary",),
     "detail": ("detail", "summary"),
     "full": ("full", "detail", "summary"),
-    "legacy": ("legacy", "full", "detail", "summary"),
 }
 
-# Profiles that preserve a legacy ``success`` boolean.
-_SUCCESS_PRESERVING = frozenset({"full", "legacy"})
+# Profiles that preserve a domain ``success`` boolean.
+_SUCCESS_PRESERVING = frozenset({"full"})
 
 # Unsupported-profile structured error code.
 UNSUPPORTED_PROFILE_CODE = "unsupported_projection"
@@ -143,7 +140,7 @@ def projection_contract_violation_error(
 
 
 def _body_has_failure_signal(body: Any) -> bool:
-    """True when a payload carries a legacy failure signal: ``success is False``,
+    """True when a payload carries a domain failure signal: ``success is False``,
     a non-empty ``error``, or a non-empty ``error_code``."""
     if not isinstance(body, Mapping):
         return False
@@ -202,7 +199,6 @@ class MCPProjectionEnvelopeHelper:
         deduped_count: int = 0,
         truncated: bool = False,
         follow_up: Sequence[Any] | None = None,
-        legacy_success: bool | None = None,
     ) -> dict[str, Any]:
         resolved = resolve_profile(profile)
         if resolved is None:
@@ -212,15 +208,14 @@ class MCPProjectionEnvelopeHelper:
 
         # --- Resolve the canonical outcome deterministically -----------------
         # A failure is signalled by the payload (success is False / error /
-        # error_code), by explicit error args, or by legacy_success=False. The
+        # error_code), or by explicit error arguments. The
         # default (outcome=None) INFERS the outcome from those signals so a
-        # legacy failure can never silently become a canonical success
+        # domain failure can never silently become a canonical success
         # (fr_5c7bccbd / tr_7e1f918c / br_801f3e2a / ac_38572be7).
         failure_signal = (
             _body_has_failure_signal(selected)
             or bool(error)
             or bool(error_code)
-            or legacy_success is False
         )
         if outcome is None:
             outcome_value = OUTCOME_ERROR if failure_signal else OUTCOME_OK
@@ -245,10 +240,8 @@ class MCPProjectionEnvelopeHelper:
 
         if resolved in _SUCCESS_PRESERVING:
             # Preserve both success true and success false (TR-3, AC-2): explicit
-            # arg wins, else keep the body's own success, else derive from outcome.
-            if legacy_success is not None:
-                result["success"] = bool(legacy_success)
-            elif "success" in result:
+            # body signal wins; otherwise derive from outcome.
+            if "success" in result:
                 result["success"] = bool(result["success"])
             else:
                 result["success"] = outcome_value == OUTCOME_OK
@@ -309,7 +302,6 @@ def project_response(
     deduped_count: int = 0,
     truncated: bool = False,
     follow_up: Sequence[Any] | None = None,
-    legacy_success: bool | None = None,
 ) -> dict[str, Any]:
     """Module-level convenience over a shared envelope-helper instance."""
     return _ENVELOPE.project(
@@ -323,5 +315,4 @@ def project_response(
         deduped_count=deduped_count,
         truncated=truncated,
         follow_up=follow_up,
-        legacy_success=legacy_success,
     )

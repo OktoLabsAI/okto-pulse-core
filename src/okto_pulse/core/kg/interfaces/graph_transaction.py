@@ -171,8 +171,37 @@ class ProjectionActiveSetIntent:
 
 
 @dataclass(frozen=True)
+class ProjectionLogicalEdgeRef:
+    """Expected source identity, independent of graph materialization."""
+
+    edge_type: str
+    from_type: str
+    to_type: str
+    source_ref: str
+    target_ref: str
+    rule_id: str
+
+
+@dataclass(frozen=True)
+class ProjectionRemovalOnlyIntent(ProjectionActiveSetIntent):
+    """Remove obsolete owned edges from a complete, fenced source snapshot.
+
+    Logical edges are the entire desired set, including unmaterialized targets.
+    Retain existing matches; never create endpoints or acknowledge convergence.
+    Physical active_nodes/active_edges must be empty. Unsupported namespaces
+    must refuse this mode, rather than interpreting the empty physical set.
+    """
+
+    expected_edges: tuple[ProjectionLogicalEdgeRef, ...] = ()
+
+
+@dataclass(frozen=True)
 class ProjectionEdgeBeforeImage:
-    """Complete relationship state removed by projection reconciliation."""
+    """Complete relationship state for exact restoration and session cleanup.
+
+    Also used by cognitive association replacement; using the before-image
+    shape does not grant ownership of a relational projection namespace.
+    """
 
     edge_type: str
     from_type: str
@@ -180,6 +209,100 @@ class ProjectionEdgeBeforeImage:
     from_id: str
     to_id: str
     attrs: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class LearningBugAssociationReceipt:
+    """The exact old association removed after its replacement exists.
+
+    This is a mechanical before-image, not a semantic supersedence decision.
+    The governed caller must qualify source, capture, target and CAS separately.
+    """
+
+    board_id: str
+    previous_learning_id: str
+    replacement_learning_id: str
+    bug_id: str
+    removed_edges: tuple[ProjectionEdgeBeforeImage, ...] = ()
+
+    def __post_init__(self) -> None:
+        if (any(type(value) is not str or not value.strip() or len(value) > 4096
+                for value in (self.board_id, self.previous_learning_id, self.replacement_learning_id, self.bug_id))
+                or self.previous_learning_id == self.replacement_learning_id
+                or type(self.removed_edges) is not tuple
+                or any((edge.edge_type, edge.from_type, edge.to_type, edge.from_id, edge.to_id)
+                    != ('validates', 'Learning', 'Bug', self.previous_learning_id, self.bug_id)
+                    for edge in self.removed_edges)):
+            raise ValueError('learning_association_receipt_invalid')
+
+
+@runtime_checkable
+class LearningBugAssociationTransaction(Protocol):
+    """Optional bounded capability; unsupported editions must fail closed."""
+
+    def snapshot_learning_bug_association(self, previous_learning_id: str,
+        replacement_learning_id: str, bug_id: str) -> LearningBugAssociationReceipt:
+        """Require the new association and snapshot every old parallel edge."""
+        ...
+
+    def remove_learning_bug_association(self, receipt: LearningBugAssociationReceipt) -> None:
+        """Compare the complete before-image, then remove only that old pair.
+
+        The replacement association must still exist. Never mark the old node
+        globally superseded or remove any other origin. A failure after staging
+        must discard the scope or leave effects compensable by this receipt.
+        """
+        ...
+
+    def restore_learning_bug_association(self, receipt: LearningBugAssociationReceipt) -> None:
+        """Restore exact properties/multiplicity, idempotently; refuse conflicts."""
+        ...
+
+
+@dataclass(frozen=True)
+class LearningAssociationInvalidationReceipt:
+    """Exact before-image for one qualified stale origin, without replacement.
+
+    This receipt provides compensation, never authority to invalidate a source.
+    The caller must retain its semantic source fence through graph mutation.
+    """
+
+    board_id: str
+    learning_id: str
+    bug_id: str
+    removed_edges: tuple[ProjectionEdgeBeforeImage, ...] = ()
+
+    def __post_init__(self) -> None:
+        if (any(type(value) is not str or not value.strip() or len(value) > 4096
+                for value in (self.board_id, self.learning_id, self.bug_id))
+                or type(self.removed_edges) is not tuple
+                or any(not isinstance(edge, ProjectionEdgeBeforeImage)
+                    or (edge.edge_type, edge.from_type, edge.to_type, edge.from_id, edge.to_id)
+                    != ('validates', 'Learning', 'Bug', self.learning_id, self.bug_id)
+                    for edge in self.removed_edges)):
+            raise ValueError('learning_invalidation_receipt_invalid')
+
+
+@runtime_checkable
+class LearningAssociationInvalidationTransaction(Protocol):
+    """Optional pair-scoped removal; no node or other-origin mutation."""
+
+    def snapshot_learning_invalidation(self, learning_id: str,
+        bug_id: str) -> LearningAssociationInvalidationReceipt:
+        """Snapshot all parallel edges for the exact pair, including properties."""
+        ...
+
+    def invalidate_learning_association(self, receipt: LearningAssociationInvalidationReceipt) -> None:
+        """Compare the entire before-image before removing the selected pair.
+
+        Missing pairs are idempotent; changed pairs fail closed. Discard staged
+        effects on failure or leave them compensable with the exact receipt.
+        """
+        ...
+
+    def restore_learning_invalidation(self, receipt: LearningAssociationInvalidationReceipt) -> None:
+        """Restore exact multiplicity/properties idempotently; refuse conflicts."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -245,6 +368,18 @@ class GraphStatementResult:
 
 @runtime_checkable
 class GraphTransactionScope(Protocol):
+    def find_active_node_ids_by_source_refs(
+        self, node_type: str, source_refs: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        """Read at most two distinct active identities in this transaction.
+
+        Match exact references and the requested node type in this Board only.
+        Active means no superseding identity (NULL or empty). Two results prove
+        ambiguity; never choose by generation or silently swallow read errors.
+        Reads must include this transaction's staged changes.
+        """
+        ...
+
     def execute(
         self,
         statement: str,
@@ -322,6 +457,9 @@ class GraphTransactionScope(Protocol):
         from_id: str,
         to_id: str,
         rule_id: str | None = None,
+        *,
+        layer: str | None = None,
+        created_by: str | None = None,
     ) -> bool: ...
 
     def create_edge(
@@ -430,6 +568,10 @@ class GraphTransaction(Protocol):
 
 
 __all__ = [
+    "LearningBugAssociationReceipt",
+    "LearningBugAssociationTransaction",
+    "LearningAssociationInvalidationReceipt",
+    "LearningAssociationInvalidationTransaction",
     "GraphStatementResult",
     "GraphNodePropertyBeforeImage",
     "GraphTransaction",

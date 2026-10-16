@@ -76,9 +76,6 @@ def test_selection_enums_expose_the_v2_wire_values() -> None:
     ]
     assert [item.value for item in KnowledgeOriginClass] == [
         "v2",
-        "legacy_all",
-        "selected_legacy",
-        "legacy_unresolved",
     ]
     assert [item.value for item in KnowledgeTargetType] == ["spec", "card"]
 
@@ -374,11 +371,11 @@ def test_v2_assignment_requires_revision_and_canonical_hash_evidence() -> None:
         )
     assert malformed.value.code == "invalid_source_content_sha256"
 
-    legacy = _assignment(
-        origin_class="legacy_all",
-        revision_stamp=ResourceRevisionStamp(root_id="kb-root"),
-    )
-    assert legacy.revision_stamp.source_revision is None
+    with pytest.raises(KnowledgePropagationContractError, match="origin_class"):
+        _assignment(
+            origin_class="legacy_all",
+            revision_stamp=ResourceRevisionStamp(root_id="kb-root"),
+        )
 
 
 def test_only_snapshot_assignments_can_be_stale() -> None:
@@ -402,12 +399,11 @@ def test_every_explicit_v2_assignment_requires_justification() -> None:
         _assignment(mode="reference", state="active", justification=" ")
     assert raised.value.code == "knowledge_assignment_justification_required"
 
-    legacy = _assignment(
-        origin_class="legacy_all",
-        justification=" ",
-        revision_stamp=ResourceRevisionStamp(root_id="kb-root"),
-    )
-    assert legacy.justification is None
+    with pytest.raises(KnowledgePropagationContractError, match="origin_class"):
+        _assignment(
+            origin_class="legacy_all", justification=" ",
+            revision_stamp=ResourceRevisionStamp(root_id="kb-root"),
+        )
 
 
 def test_selection_and_relevance_links_are_order_invariant() -> None:

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import pytest
 
 from okto_pulse.core.application.use_cases.checklist import (
+    GetChecklistBindingUseCase,
     GetChecklistReceiptUseCase,
     StartChecklistExecutionUseCase,
     SubmitChecklistExecutionUseCase,
@@ -16,6 +17,7 @@ from okto_pulse.core.domain.checklist import (
     SPECIFY_CHECKLIST_ITEM_IDS,
     SPECIFY_CHECKLIST_TEMPLATE_V1,
     ChecklistCommitResult,
+    ChecklistBinding,
     ChecklistExecution,
     ChecklistExecutionStartResult,
     ChecklistItemOutcome,
@@ -85,8 +87,9 @@ def _failed_items() -> tuple[ChecklistItemResult, ...]:
     )
 
 
-def _legacy_receipt() -> ChecklistReceipt:
+def _incomplete_native_receipt() -> ChecklistReceipt:
     return ChecklistReceipt(
+        spec_edition=1,
         id="receipt-legacy",
         board_id="board-1",
         spec_id="spec-1",
@@ -99,18 +102,18 @@ def _legacy_receipt() -> ChecklistReceipt:
         binding_digest="b" * 64,
         binding_mode=ChecklistMode.BLOCKING,
         items=(),
-        source=ChecklistReceiptSource.LEGACY_UNVERIFIED,
+        source=ChecklistReceiptSource.NATIVE,
         request_digest="f" * 64,
         created_by="legacy-import",
         created_at=datetime(2026, 7, 27, tzinfo=timezone.utc),
         head_revision=1,
-        manual_checklist_ref="legacy://manual-checklist",
+        idempotency_key="native-incomplete",
     )
 
 
-def test_legacy_unverified_receipt_never_projects_a_vacuous_pass() -> None:
-    assert _legacy_receipt().blocking_satisfied is False
-    assert server._checklist_receipt_outcome(_legacy_receipt()) == "fail"
+def test_incomplete_native_receipt_is_rejected_before_projection() -> None:
+    with pytest.raises(ValueError, match="checklist_items_incomplete"):
+        _incomplete_native_receipt()
 
 
 @pytest.mark.asyncio
@@ -253,6 +256,9 @@ async def test_mcp_edition_conflict_emits_one_audit_and_rolls_back(
 @pytest.mark.asyncio
 async def test_live_registry_excludes_redundant_reads_and_closes_results_schema():
     tools = await server.mcp.get_tools()
+    binding_schema = tools["okto_pulse_get_checklist_binding"].parameters
+    assert "spec_id" in binding_schema["properties"]
+    assert binding_schema["required"] == ["board_id"]
     assert "okto_pulse_get_checklist_state" not in tools
     assert "okto_pulse_list_checklist_executions" not in tools
 
@@ -266,6 +272,30 @@ async def test_live_registry_excludes_redundant_reads_and_closes_results_schema(
         "fail",
         "not_applicable",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("spec_id", [None, "spec-1"])
+async def test_mcp_binding_forwards_optional_spec_scope(monkeypatch, spec_id):
+    async def agent_ctx(_board_id):
+        return _ctx()
+
+    monkeypatch.setattr(server, "_get_agent_ctx", agent_ctx)
+    monkeypatch.setattr(server, "check_permission", lambda *_args: None)
+    monkeypatch.setattr(server, "get_unit_of_work_factory_for_mcp",
+                        lambda: lambda **_kwargs: _UowContext())
+
+    async def execute(self, command, *, actor, uow):
+        assert command.board_id == "board-1"
+        assert command.spec_id == spec_id
+        return ChecklistBinding(board_id="board-1", mode=ChecklistMode.BLOCKING, version=2)
+
+    monkeypatch.setattr(GetChecklistBindingUseCase, "execute", execute)
+    result = json.loads(await server.okto_pulse_get_checklist_binding.fn(
+        board_id="board-1", spec_id=spec_id,
+    ))
+    assert result["outcome"] == "success"
+    assert result["data"]["version"] == 2
 
 
 @pytest.mark.asyncio
@@ -298,6 +328,7 @@ async def test_mcp_submit_and_receipt_expose_failed_aggregate_outcome(
     async def receipt_execute(self, command, *, actor, uow):
         del self, command, actor, uow
         return ChecklistReceipt(
+            spec_edition=3,
             id="receipt-1",
             board_id="board-1",
             spec_id="spec-1",

@@ -1,0 +1,46 @@
+{
+  "scope": "Partial U3: CardModal live title, Delivery and progress draft protection",
+  "community_commit": "2a6324d3",
+  "core_baseline": "a5bf9f2e",
+  "test_artifact": "D:/Projetos/Techridy/PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-card-delivery-final.xml",
+  "test_artifact_sha256": "ad3e2db85ca06d8b7164a796183fd07317b030d3d6c77ebe7fa1e22fa390a85c",
+  "tests": { "CardModal": 83, "CardDeliveryDoDPanel": 33, "CardProgressPanel": 19, "EditableField.liveUpdates": 2, "failures": 0 },
+  "commands": [
+    "npx vitest run src/components/kanban/__tests__/CardModal.test.tsx src/components/code-traceability/__tests__/CardDeliveryDoDPanel.test.tsx src/components/code-traceability/__tests__/CardProgressPanel.test.tsx src/components/shared/__tests__/EditableField.liveUpdates.test.tsx --maxWorkers=1 --reporter=dot --reporter=junit --outputFile.junit=D:/Projetos/Techridy/PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-card-delivery-final.xml",
+    "npx tsc -b",
+    "npx eslint src/components/code-traceability/CardDeliveryDoDPanel.tsx src/components/code-traceability/CardProgressPanel.tsx src/components/code-traceability/__tests__/CardDeliveryDoDPanel.test.tsx src/components/code-traceability/__tests__/CardProgressPanel.test.tsx src/components/kanban/CardModal.tsx src/components/kanban/__tests__/CardModal.test.tsx src/components/shared/EditableField.tsx src/components/shared/__tests__/EditableField.liveUpdates.test.tsx",
+    "git diff --check"
+  ],
+  "typecheck": "passed after adding missing Spec test type import",
+  "lint": "exit 0; 14 warnings, including existing any types and effect dependencies; no lint errors",
+  "browser": {
+    "url": "http://127.0.0.1:5274/",
+    "api_port": 8200,
+    "mcp_port": 8201,
+    "runtime_pid": 27316,
+    "vite_pid": 38836,
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "2baa5f88-eb1a-4aac-9aeb-453707cef290",
+    "card_id": "c8a1a9b4-691c-5175-84be-1d512b6bdda4",
+    "mutation": "Authenticated okto_pulse_update_card changes title while the real UI has an unsaved title draft",
+    "observed": [
+      "Kanban cover receives remote title without Refresh",
+      "CardModal remains on Details and preserves the exact local draft",
+      "Conflict shows current remote title and explicit review/discard actions",
+      "Use current value discards the draft and shows the remote title"
+    ],
+    "receipt": "PULSE_REFACTOR/.validation-v040/spec-unified-20261014/u3-update-card-title-after-restart.json",
+    "screenshot": "okto_labs_pulse_community/output/playwright/u3-card-concurrent-draft.png",
+    "screenshot_sha256": "75b4f5e1e66aa8f8af46c735f49f44926760dae1c88c2430577b01179044afe0",
+    "screenshot_visually_inspected": true,
+    "interruption": "First attempt lost Vite PID 44604; confirmed process/listener absent before restart. Vite reloaded the development page. That attempt is not evidence of draft recovery or successful synchronization. A new edit and distinct MCP mutation produced the successful proof above."
+  },
+  "limits": [
+    "Source runtime and Vite, not installed-wheel qualification",
+    "No change to the user's default home/runtime",
+    "No fabricated completion or execution evidence; Card remains Not Started",
+    "Delivery/progress CAS and retry behavior proved in component tests; live run here proves title synchronization only",
+    "CardUpdate has no generic server CAS; visual conflict detection does not add one",
+    "Remaining CardModal consumers, Spec editors/readers, U2 parity and U4 remain open"
+  ]
+}

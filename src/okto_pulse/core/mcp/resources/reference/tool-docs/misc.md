@@ -39,13 +39,13 @@ Returns:
 ## `okto_pulse_get_allowed_transitions`
 
 Return the allowed lifecycle transitions for a story, ideation, refinement,
-spec, card, or sprint from the Core SDLC registry — the same authority the move
+spec, card, or test_scenario from the Core SDLC registry — the same authority the move
 tools/endpoints enforce. Use it to know which `status` values a move will
 accept before calling `okto_pulse_move_*`.
 
 Args:
     board_id: Board ID
-    entity_type: One of: story, ideation, refinement, spec, card, sprint
+    entity_type: One of: story, ideation, refinement, spec, card, test_scenario
     entity_id: Target entity ID
     current_status: Optional status to evaluate from (empty = the entity's
         current status)
@@ -53,6 +53,9 @@ Args:
 Returns:
     JSON with target statuses plus gate, preconditions, capabilities, effects,
     stable reason codes and the registry source identifier.
+
+Supply entity_id for an entity-scoped Policy Compliance decision. Status-only
+discovery returns policy_subject_required on gated edges, never an unscoped pass.
 
 ## `okto_pulse_get_resource_gate_summary`
 
@@ -98,15 +101,14 @@ an agent needs to understand what to build, how to test it, and what rules apply
 Args:
     board_id: Board ID
     card_id: Card ID
-    include_knowledge: Include spec knowledge base entries (default "true")
-    include_mockups: Include screen mockups from card and spec (default "true")
-    include_qa: Include Q&A items from card and spec (default "true")
-    include_comments: Include card comments (default "true")
-    include_architecture: Include Architecture Designs from card and spec (default "true")
-    include_superseded: When "false" (default), superseded/revoked decisions are
-        filtered out; set "true" for full decision history.
-    profile: Response projection — one of: summary (default), detail, full,
-        legacy. Use `summary` for exploration, `detail` plus follow-ups for
+    include_knowledge: Include spec knowledge base entries (default true)
+    include_mockups: Include screen mockups from card and spec (default true)
+    include_qa: Include Q&A items from card and spec (default true)
+    include_comments: Include card comments (default true)
+    include_architecture: Include Architecture Designs from card and spec (default true)
+    include_superseded: When false (default), superseded/revoked decisions are
+        filtered out; set true for full decision history.
+    profile: Response projection — one of: summary (default), detail, full. Use `summary` for exploration, `detail` plus follow-ups for
         bounded body reads, and `full` + `context_scope="gate"` before
         status-changing moves. See okto-pulse://reference/projection-profiles.
     context_scope: `all` (default, historical complete body) or `gate`
@@ -205,11 +207,11 @@ Returns:
 ## `okto_pulse_list_my_mentions`
 
 List comments and Q&A items where you are mentioned via @name.
-By default only returns UNSEEN mentions. Use include_seen="true" to get all.
+By default only returns UNSEEN mentions. Use include_seen=true to get all.
 
 Args:
     board_id: Board ID to search within
-    include_seen: "true" to include already-seen mentions (default "false")
+    include_seen: true to include already-seen mentions (default false)
 
 Returns:
     JSON with unseen mentions, each with an item_id you can pass to mark_as_seen
@@ -224,7 +226,7 @@ List Q&A items for a spec, ideation, or refinement.
         board_id: Board ID
         entity_type: One of: spec, ideation, refinement
         entity_id: ID of the entity (spec_id, ideation_id, or refinement_id)
-        filters: Optional filter dict OR JSON string.
+        filters: Optional native filter object.
             status: filter by answer status
             asked_by: filter by agent/user who asked
 
@@ -323,13 +325,13 @@ Submit a fenced, idempotent task validation for a Normal or Bug card in
 
 Evaluates the implementation quality of a completed task against three
 dimensions: confidence, completeness, and drift. The system applies
-threshold checks (resolved from sprint → spec → board hierarchy) and
+threshold checks (resolved from Spec overrides and Board defaults) and
 the board's `reviewer_separation_mode` against task creator, assignee, and
 executor conflicts. `enforce` returns the action-required code
 `reviewer_separation_required` with remediation
 `request_independent_task_validator` before any mutation. `warn` and `off`
-continue and persist/return `reviewer_separation`; a legacy board with the
-setting absent is explicitly `off` with `source=legacy_absent_compat`.
+continue and persist/return `reviewer_separation`. An omitted setting uses
+`enforce` with `source=board_default`; invalid values are refused.
 
 The result separates two decisions:
 

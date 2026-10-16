@@ -1,0 +1,38 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "ARQVER:ADV-14",
+  "status": "verified",
+  "coverage": "A validated Spec with accepted evaluation and a complete execution plan passes the real readiness predicate. Authorized REST DELETE removes its sole Test Card through the existing use case, content guard and cascade cleanup. Requirement/criterion JSON and evaluations are unchanged; the scenario stays ready without fabricated evidence and loses the deleted Card link. The same readiness predicate now refuses spec_execution_plan_incomplete. Actual REST start refuses at the earlier existing test-coverage gate, leaving the post-delete structured state/history/outbox unchanged.",
+  "executions": [
+    {
+      "terminal_session": 86677,
+      "exit_code": 0,
+      "passed": 7,
+      "cases": [
+        "tests.test_architecture_start_transition::test_pending_architecture_blocks_actual_start_without_workflow_mutation[3]",
+        "tests.test_architecture_start_transition::test_pending_architecture_blocks_actual_start_without_workflow_mutation[31]",
+        "tests.test_architecture_start_transition::test_approved_spec_cannot_start_with_incomplete_decomposition[contribution]",
+        "tests.test_architecture_start_transition::test_approved_spec_cannot_start_with_incomplete_decomposition[test_owner]",
+        "tests.test_architecture_start_transition::test_removing_only_test_card_invalidates_previously_complete_approved_plan",
+        "tests.test_architecture_start_transition::test_task_approvals_do_not_replace_spec_integrated_verification[absent]",
+        "tests.test_architecture_start_transition::test_task_approvals_do_not_replace_spec_integrated_verification[unexecuted]"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-planning-boundary-removal4-community.xml",
+          "sha256": "fa1439e1a5396acda4a207f9bcd9e9902359afc0e3b573cb171897e457e204ab"
+        },
+        {
+          "file": "learning-reconciliation-planning-boundary-removal4-community.log",
+          "sha256": "2c3f7a42d9510f00e5c4da479587827e8d9928ecde89cbe872d18731435b2e9c"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "One new test and six existing regressions. Draft content, accepted evaluation and validated state are fixture inputs; no claim that this test submits a real assessment. REST identity is the fixture Board owner; deletion, guards, SQL, cleanup and start admission are real.",
+    "Initial Test Card is not_started and mutable. This tests permitted deletion under existing authority, not permission revocation or bypass of a locked Card. No new lock, gate, policy or historical semantics introduced.",
+    "Probe1 session32641 lacked RealmScope for the direct service check. Probe2 session75437 mounted the Card router at the wrong fixture prefix. Probe3 session60948 reached the real behavior but expected the later planning error; the earlier test-coverage gate correctly refused first. Final asserts both predicates separately without disabling either gate.",
+    "No productive source or UI change. The paired installed build remains byte-identical to provenance-three-criteria1.json; latest relevant F16 session31859 has eight ZERO budgets. Latest frontend session4747 passed34 in the preceding increment."
+  ]
+}

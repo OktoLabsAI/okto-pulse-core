@@ -48,6 +48,8 @@ async def _build_rest_spec(db_factory, *, scenarios: list[dict]):
             status=SpecStatus.DRAFT, created_by=USER_ID,
             functional_requirements=[], acceptance_criteria=[],
             test_scenarios=scenarios, business_rules=[], api_contracts=[],
+            architecture_adoption={"contract_version": "architecture-adoption/v1", "board_id": board_id, "spec_id": spec_id, "adopted_in_edition": 1, "actor_id": USER_ID, "inherited_resource_ids": []},
+            execution_contract={"contract_version": "spec-execution-contract/v1", "board_id": board_id, "spec_id": spec_id, "adopted_in_edition": 1, "actor_id": USER_ID, "origin": "new_spec"},
         ))
         await db.commit()
 
@@ -178,6 +180,117 @@ def test_rest_patch_spec_valid_scenario_type_persists(rest_spec):
     assert [s["scenario_type"] for s in scenarios] == ["negative"]
 
 
+def test_scenario_collection_rejects_stale_authored_version_without_erasing_first_write(rest_spec):
+    client, _board, spec_id = rest_spec
+    before = client.get(f"/api/v1/specs/{spec_id}").json()
+    base = before["version"]
+    first = client.patch(
+        f"/api/v1/specs/{spec_id}",
+        json={"test_scenarios": [_scenario("manual")], "expected_spec_version": base,
+              "expected_scenario_snapshot": before["scenario_snapshot"]},
+    )
+    assert first.status_code == 200, first.text
+    stale = client.patch(
+        f"/api/v1/specs/{spec_id}",
+        json={"test_scenarios": [], "expected_spec_version": base,
+              "expected_scenario_snapshot": before["scenario_snapshot"]},
+    )
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["detail"] == "spec_version_conflict"
+    current = client.get(f"/api/v1/specs/{spec_id}").json()
+    assert current["test_scenarios"] == first.json()["test_scenarios"]
+    assert current["version"] == base + 1
+    assert "expected_spec_version" not in current
+
+
+@pytest.mark.parametrize("expected", [True, 0, -1, "1", 1.5])
+def test_scenario_collection_version_is_strict_positive_integer(rest_spec, expected):
+    client, _board, spec_id = rest_spec
+    response = client.patch(
+        f"/api/v1/specs/{spec_id}",
+        json={"test_scenarios": [], "expected_spec_version": expected},
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_scenario_snapshot_conflict_is_actionable_and_reviewed_write_succeeds(rest_spec):
+    client, _board, spec_id = rest_spec
+    before = client.get(f"/api/v1/specs/{spec_id}").json()
+    response = client.patch(f"/api/v1/specs/{spec_id}", json={
+        "test_scenarios": [_scenario("manual")], "expected_spec_version": before["version"],
+        "expected_scenario_snapshot": "0" * 64,
+    })
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == "scenario_snapshot_conflict"
+    current = client.get(f"/api/v1/specs/{spec_id}").json()
+    assert current["scenario_snapshot"] == before["scenario_snapshot"]
+    assert current["test_scenarios"] == before["test_scenarios"]
+    saved = client.patch(f"/api/v1/specs/{spec_id}", json={
+        "test_scenarios": [_scenario("manual")], "expected_spec_version": current["version"],
+        "expected_scenario_snapshot": current["scenario_snapshot"],
+    })
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["scenario_snapshot"] != current["scenario_snapshot"]
+    assert "expected_scenario_snapshot" not in saved.json()
+
+
+@pytest.mark.parametrize("snapshot", [None, "", "wrong", True, "A" * 64])
+def test_authored_version_requires_a_well_formed_scenario_snapshot(rest_spec, snapshot):
+    client, _board, spec_id = rest_spec
+    response = client.patch(f"/api/v1/specs/{spec_id}", json={
+        "test_scenarios": [], "expected_spec_version": 1, "expected_scenario_snapshot": snapshot,
+    })
+    assert response.status_code == 422, response.text
+
+
+def test_scenario_version_guard_cannot_be_presented_as_generic_spec_cas(rest_spec):
+    client, _board, spec_id = rest_spec
+    before = client.get(f"/api/v1/specs/{spec_id}").json()
+    response = client.patch(
+        f"/api/v1/specs/{spec_id}",
+        json={"title": "Not a scenario write", "expected_spec_version": before["version"]},
+    )
+    assert response.status_code == 422, response.text
+    assert "expected_spec_version_requires_test_scenarios" in response.text
+    assert client.get(f"/api/v1/specs/{spec_id}").json()["title"] == before["title"]
+
+
+def test_mockup_collection_rejects_old_base_without_erasing_new_screen(rest_spec):
+    client, _board, spec_id = rest_spec
+    path = f"/api/v1/specs/{spec_id}"
+    before = client.get(path).json()
+    first = client.patch(path, json={"screen_mockups": [{
+        "id": "new-screen", "title": "Current mockup", "screen_type": "page",
+        "html_content": "<main>Current content</main>", "order": 0,
+    }]})
+    assert first.status_code == 200, first.text
+    assert first.json()["version"] == before["version"], 'Mockup edits preserve the established version semantics'
+    assert first.json()["mockup_snapshot"] != before["mockup_snapshot"]
+    persisted = client.get(path).json()
+    stale = client.patch(path, json={"screen_mockups": [], "expected_spec_version": before["version"],
+                                     "expected_mockup_snapshot": before["mockup_snapshot"]})
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["detail"] == "mockup_snapshot_conflict"
+    current = client.get(path).json()
+    assert current == persisted
+    reviewed = client.patch(path, json={"screen_mockups": [], "expected_spec_version": current["version"],
+                                        "expected_mockup_snapshot": current["mockup_snapshot"]})
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["screen_mockups"] == []
+    assert reviewed.json()["version"] == current["version"]
+    assert reviewed.json()["mockup_snapshot"] == before["mockup_snapshot"]
+    assert "expected_spec_version" not in reviewed.json()
+
+
+@pytest.mark.parametrize("snapshot", [None, "", "bad", True, "A" * 64])
+def test_authored_mockup_collection_requires_a_valid_snapshot(rest_spec, snapshot):
+    client, _board, spec_id = rest_spec
+    response = client.patch(f"/api/v1/specs/{spec_id}", json={
+        "screen_mockups": [], "expected_spec_version": 1, "expected_mockup_snapshot": snapshot,
+    })
+    assert response.status_code == 422, response.text
+
+
 def test_rest_patch_rejects_type_alias_without_mutation(rest_spec):
     client, _board, spec_id = rest_spec
     scenario = _scenario(None)
@@ -224,7 +337,7 @@ def test_rest_patch_omitted_type_preserves_existing_and_defaults_new(rest_spec):
     }
 
 
-def test_rest_patch_omitted_type_preserves_unknown_legacy_and_defaults_new(
+def test_rest_patch_omitted_type_refuses_unknown_stored_type(
     rest_legacy_spec,
 ):
     client, _board, spec_id = rest_legacy_spec
@@ -241,11 +354,5 @@ def test_rest_patch_omitted_type_preserves_unknown_legacy_and_defaults_new(
             ]
         },
     )
-    assert response.status_code == 200, response.text
-    assert {
-        scenario["id"]: scenario["scenario_type"]
-        for scenario in response.json()["test_scenarios"]
-    } == {
-        "ts_legacy": "regression",
-        "ts_new": "integration",
-    }
+    assert response.status_code == 422, response.text
+    assert "regression" in response.text

@@ -1,0 +1,160 @@
+{
+  "date": "2026-10-15",
+  "scope": "U3/3d Dependencies; not full U3 or U4",
+  "core_product": "8291a648",
+  "community_commit": "5c1d8f73",
+  "behavior": [
+    "Authored version/edition and input retained across refresh; explicit review for new base.",
+    "Uncertain response retries the exact original native request; confirmed writes retry only the read.",
+    "Read must meet both receipt version and latest observed Spec version.",
+    "Watcher resets stale cursors and preserves filters; denied list/lookup clears protected input.",
+    "Identity switch discards late completions; existing dependency authority/lifecycle unchanged."
+  ],
+  "tests": {
+    "suites": [
+      {
+        "name": "src/components/specs/__tests__/SpecModal.activity.test.tsx",
+        "timestamp": "2026-10-15T18:45:34.833Z",
+        "hostname": "Alienware_m15",
+        "tests": "47",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "41.7487524"
+      },
+      {
+        "name": "src/components/specs/__tests__/SpecModal.dependencies.test.tsx",
+        "timestamp": "2026-10-15T18:45:34.857Z",
+        "hostname": "Alienware_m15",
+        "tests": "19",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "20.4647124"
+      },
+      {
+        "name": "src/components/specs/__tests__/SpecModal.validationTabs.test.tsx",
+        "timestamp": "2026-10-15T18:45:34.866Z",
+        "hostname": "Alienware_m15",
+        "tests": "79",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "110.5615118"
+      }
+    ],
+    "distinct_final_passes": 145,
+    "typescript_exit": 0,
+    "eslint_errors": 0,
+    "eslint_existing_warnings": 11,
+    "baseline": "12 tests, one obsolete automatic-edition-rebase expectation failed; replaced with explicit review and separate exact-replay assertions.",
+    "overlap": "19 directed and first 145 integrated passes are not added to the final 145."
+  },
+  "runtime": {
+    "api": "http://127.0.0.1:8200",
+    "mcp": "http://127.0.0.1:8201/mcp",
+    "browser": "http://127.0.0.1:5274",
+    "runtime_pid": 39712,
+    "vite_pid": 17304,
+    "kind": "existing isolated checkout runtime, frontend served by Vite; no install or build qualification"
+  },
+  "native": {
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "dec9410f-d455-4506-a8fd-f791ee31dc77",
+    "spec_versions": [
+      20,
+      21,
+      22,
+      23
+    ],
+    "edition": 1,
+    "mcp_added": "e6bfd978-1623-4107-9ef2-64118a068104",
+    "ui_added_then_removed": "820ebe3f-6b5f-4aca-ba3f-fe598e24c304",
+    "observed": [
+      "MCP add while UI add dialog open updated rows/readiness, retained selected radio and disabled submission until explicit review.",
+      "UI add produced v22, confirmed by public MCP read.",
+      "UI remove produced v23; next full Spec GET deliberately aborted once; saved state retained and read-only recovery offered.",
+      "Reload closed the dialog without another DELETE; MCP v23 and tombstone unchanged; lifecycle history expanded and screenshot inspected."
+    ],
+    "ui_writes": [
+      "4385. [POST] http://127.0.0.1:8200/api/v1/boards/7bbd65c3-8738-45a2-8fab-a5216ab7e98c/specs/dec9410f-d455-4506-a8fd-f791ee31dc77/dependencies => [201] Created",
+      "4414. [DELETE] http://127.0.0.1:8200/api/v1/boards/7bbd65c3-8738-45a2-8fab-a5216ab7e98c/specs/dec9410f-d455-4506-a8fd-f791ee31dc77/dependencies/820ebe3f-6b5f-4aca-ba3f-fe598e24c304 => [200] OK"
+    ],
+    "limits": [
+      "No native execution/delivery progress or Done result claimed. Cards remain Not Started.",
+      "Revocation, delayed responses, exact uncertain replay and old receipt floor have frontend regression evidence, not a new native authorization scenario.",
+      "One expected browser network error from the deliberately aborted GET; no pending route remains (times=1).",
+      "Resources, integrated UV18-21 and installed U4 remain open."
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-dependencies-final.xml",
+      "sha256": "aefe1fff225ee7961cd8dcdaa2914e2c05450ec9ea5ff5796278f281ebf3a2c4"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-dependencies-existing.xml",
+      "sha256": "1dd5f0cd1d49674143b7a3ef897f117370ed845f2089a2e93d16e8b09c2d466e"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-dependencies-recovery.xml",
+      "sha256": "63fb625a16f3d7b2240db5414649ae57c3f579594d78a245db1d68dae854e5e2"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-dependencies-integrated.xml",
+      "sha256": "8676578d8e6c6b06a3e6ee63a46c1667d84dbf5397ace8eb34ec60436df151c5"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-dependencies-requests.txt",
+      "sha256": "ffe1d2f3d82cd7fe13ef40e40947e58a9e2893764661665527f962b744e4f943"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-dependency-native-before.json",
+      "sha256": "35f51ac59a31440a14491fa3e4f05d7a8a287265c541517c5673a5074a142482"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-dependency-native-add.json",
+      "sha256": "e72a244fb35aaffc0343af2881fdc261726f86bd1d92455f019f9b9bb30d0dfa"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-dependency-native-ui-added.json",
+      "sha256": "ce5a704e1cdc7fcb51c1cfe12aeb3a03a83abd599937a4162f1d2a330aca6904"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-dependency-native-ui-removed.json",
+      "sha256": "653fa414e9b787beebb7068aefba862b6296be8592d9613fdb1bae28fd96f5e8"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-dependency-native-recovered.json",
+      "sha256": "653fa414e9b787beebb7068aefba862b6296be8592d9613fdb1bae28fd96f5e8"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-dependencies-external-draft.yml",
+      "sha256": "0b729583a5de41a7167c82352a5606b4b7add042c5f97847ec337ec7ede86d32"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-dependencies-external-draft.png",
+      "sha256": "84ef805d2bc242591aae4ac24a5c42179a4eda87b5b08452d6eba1c72b92f277"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-dependencies-saved-read-failure.yml",
+      "sha256": "179a0e7f377cb463475ffb8d0ce265f0cdf8267a412ce3496a88c655a930077d"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-dependencies-saved-read-failure.png",
+      "sha256": "9a300a53026cc9e50bd4b136b62c376b0b81511274edafdb3d2bac4955eca270"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-dependencies-recovered.yml",
+      "sha256": "e3402b75077d64ef2f2bf597731a307c152d45679844f630e3d239cad15235c8"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-dependencies-history.yml",
+      "sha256": "597d80be103587b05f49acde57663954aa25fac8ba16e48d3c0bb185fef94be8"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-dependencies-recovered-history.png",
+      "sha256": "022abc99aff0f725de6dd045fdcf5de3583d1499d601ee0ffbd78b6e275209a8"
+    }
+  ]
+}

@@ -9,55 +9,26 @@ import pytest
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
-    PermissionDeniedError,
 )
 from okto_pulse.core.application.use_cases.discovery_crud import (
     ExecuteDiscoveryIntentCommand,
     ExecuteDiscoveryIntentUseCase,
 )
-from okto_pulse.core.application.use_cases.list_dead_letter_rows import (
-    DeadLetterBoardNotFoundError,
-    ListDeadLetterRowsCommand,
-    ListDeadLetterRowsUseCase,
-)
 from okto_pulse.core.application.use_cases.operational_rest import (
     BoardNotFoundError,
     BugNotFoundError,
-    CanonicalDebtListCommand,
-    CanonicalDebtRetryCommand,
-    CanonicalPartitionDetailCommand,
-    CanonicalPartitionListCommand,
     ClearCognitiveSkipUseCase,
     CognitiveClearCommand,
     CognitiveEffectivenessInventoryCommand,
     CognitiveReadinessMetricsCommand,
     CognitiveSkipCommand,
-    DigestLayerMismatchListCommand,
     EvaluateBugCognitiveClosureByBugIdCommand,
     EvaluateBugCognitiveClosureByBugIdUseCase,
-    GetCanonicalPartitionIntegrityDetailUseCase,
     GetCognitiveEffectivenessInventoryUseCase,
     GetCognitiveReadinessMetricsUseCase,
     GetLineageGraphCommand,
     GetLineageGraphUseCase,
-    GetOrphanIntegrityReportUseCase,
-    ListCanonicalDebtUseCase,
-    ListCanonicalPartitionIntegrityUseCase,
-    ListDigestLayerMismatchUseCase,
-    OrphanBackfillCommand,
-    OrphanIntegrityReportCommand,
-    PutRuntimeSettingsCommand,
-    PutRuntimeSettingsUseCase,
     RecordCognitiveSkipUseCase,
-    RetryCanonicalDebtUseCase,
-    RunOrphanBackfillUseCase,
-)
-from okto_pulse.core.application.use_cases.queue_health import (
-    GetQueueDrilldownCommand,
-    GetQueueDrilldownUseCase,
-    GetQueueHealthCommand,
-    GetQueueHealthUseCase,
-    QueueBoardNotFoundError,
 )
 from okto_pulse.core.ports.traceability import TraceabilityReadError
 
@@ -158,9 +129,6 @@ class _Services:
         self._events.append("dispatch")
         return {"rows": []}
 
-    async def put_runtime_settings(self, values, **kwargs):
-        self._events.append("put-runtime")
-        return {**values, "actor_id": kwargs["actor_id"]}
 
 
 class _Uow:
@@ -471,68 +439,6 @@ def _operational_case_builders():
                 ),
             ),
         ),
-        (
-            "canonical-debt-list",
-            lambda _events: (
-                ListCanonicalDebtUseCase(),
-                CanonicalDebtListCommand("board-b", None, None, 20, 0),
-            ),
-        ),
-        (
-            "canonical-debt-retry",
-            lambda _events: (
-                RetryCanonicalDebtUseCase(),
-                CanonicalDebtRetryCommand("board-b", "debt-1", None),
-            ),
-        ),
-        (
-            "canonical-partition-list",
-            lambda _events: (
-                ListCanonicalPartitionIntegrityUseCase(),
-                CanonicalPartitionListCommand(
-                    "board-b", None, None, None, None, None, 20, 0
-                ),
-            ),
-        ),
-        (
-            "canonical-partition-detail",
-            lambda _events: (
-                GetCanonicalPartitionIntegrityDetailUseCase(),
-                CanonicalPartitionDetailCommand("board-b", "node-1"),
-            ),
-        ),
-        (
-            "digest-layer-mismatch",
-            lambda _events: (
-                ListDigestLayerMismatchUseCase(),
-                DigestLayerMismatchListCommand("board-b", 20, 0),
-            ),
-        ),
-        (
-            "orphan-integrity-report",
-            lambda events: (
-                GetOrphanIntegrityReportUseCase(
-                    scanner_factory=lambda: events.append("scanner-factory")
-                ),
-                OrphanIntegrityReportCommand("board-b", None, 20),
-            ),
-        ),
-        (
-            "orphan-backfill",
-            lambda events: (
-                RunOrphanBackfillUseCase(
-                    health_reader=lambda *args, **kwargs: events.append(
-                        "health-reader"
-                    ),
-                    reconciler_factory=lambda: events.append(
-                        "reconciler-factory"
-                    ),
-                ),
-                OrphanBackfillCommand(
-                    "board-b", None, True, None, 20, None
-                ),
-            ),
-        ),
     ]
 
 
@@ -589,181 +495,3 @@ async def test_operational_owner_reaches_cognitive_skip_writer() -> None:
         "evaluate-readiness",
         "read-enforcement",
     ]
-
-
-@pytest.mark.asyncio
-async def test_runtime_settings_viewer_is_denied_before_writer() -> None:
-    uow = _Uow(board=None)
-    viewer = ActorContext("user-a", "rest", roles=("viewer",), permissions={})
-
-    with pytest.raises(PermissionDeniedError):
-        await PutRuntimeSettingsUseCase().execute(
-            PutRuntimeSettingsCommand({"kg_queue_max_attempts": 5}, None, None, None),
-            actor=viewer,
-            uow=uow,
-        )
-
-    assert "put-runtime" not in uow.events
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "actor",
-    [
-        ActorContext("admin-a", "rest", roles=("admin",)),
-        ActorContext("operator-a", "rest", roles=("operator",)),
-        ActorContext(
-            "capability-a",
-            "rest",
-            permissions={
-                "runtime": {"settings": {"write": True}},
-                "kg": {"admin": {"settings_write": True}},
-            },
-        ),
-    ],
-    ids=["admin", "operator", "capability"],
-)
-async def test_runtime_settings_authorized_actor_reaches_writer(actor) -> None:
-    uow = _Uow(board=None)
-
-    result = await PutRuntimeSettingsUseCase().execute(
-        PutRuntimeSettingsCommand({"kg_queue_max_attempts": 5}, None, None, None),
-        actor=actor,
-        uow=uow,
-    )
-
-    assert result.data["actor_id"] == actor.actor_id
-    assert uow.events == ["put-runtime"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("board", [None, FOREIGN_BOARD], ids=["missing", "foreign"])
-async def test_queue_drilldown_board_scope_fails_before_reader(board) -> None:
-    uow = _Uow(board=board)
-
-    with pytest.raises(QueueBoardNotFoundError):
-        await GetQueueDrilldownUseCase().execute(
-            GetQueueDrilldownCommand("board-b"),
-            actor=ACTOR,
-            uow=uow,
-        )
-
-    expected = ["board:board-b"]
-    if board is FOREIGN_BOARD:
-        expected.append("share:board-b:user-a")
-    assert uow.events == expected
-
-
-@pytest.mark.asyncio
-async def test_queue_drilldown_owner_reaches_reader() -> None:
-    uow = _Uow(board=SimpleNamespace(id="board-b", owner_id="user-a"))
-
-    result = await GetQueueDrilldownUseCase().execute(
-        GetQueueDrilldownCommand("board-b"),
-        actor=KG_QUEUE_READER,
-        uow=uow,
-    )
-
-    assert result.data == {
-        "board_id": "board-b",
-        "include_code_traceability": False,
-    }
-    assert uow.events == ["board:board-b", "queue-drilldown:board-b"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("use_case", "command"),
-    [
-        (GetQueueHealthUseCase(), GetQueueHealthCommand()),
-        (GetQueueDrilldownUseCase(), GetQueueDrilldownCommand()),
-    ],
-    ids=["health", "drilldown"],
-)
-async def test_global_queue_viewer_is_denied_before_reader(use_case, command) -> None:
-    uow = _Uow(board=None)
-    viewer = ActorContext("user-a", "rest", roles=("viewer",), permissions={})
-
-    with pytest.raises(PermissionDeniedError):
-        await use_case.execute(command, actor=viewer, uow=uow)
-
-    assert uow.events == []
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "actor",
-    [
-        ActorContext("admin-a", "rest", roles=("admin",)),
-        ActorContext("operator-a", "rest", roles=("operator",)),
-        ActorContext(
-            "capability-a",
-            "rest",
-            permissions={
-                "kg": {
-                    "operations": {"queue": {"read": True}},
-                    "admin": {"settings_read": True},
-                }
-            },
-        ),
-    ],
-    ids=["admin", "operator", "capability"],
-)
-async def test_global_queue_authorized_actor_reaches_readers(actor) -> None:
-    uow = _Uow(board=None)
-
-    health = await GetQueueHealthUseCase().execute(
-        GetQueueHealthCommand(),
-        actor=actor,
-        uow=uow,
-    )
-    drilldown = await GetQueueDrilldownUseCase().execute(
-        GetQueueDrilldownCommand(),
-        actor=actor,
-        uow=uow,
-    )
-
-    assert health.data == {"queue_depth": 0}
-    assert drilldown.data == {
-        "board_id": None,
-        "include_code_traceability": False,
-    }
-    assert uow.events == ["queue-health", "queue-drilldown:None"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("board", [None, FOREIGN_BOARD], ids=["missing", "foreign"])
-async def test_dead_letter_board_scope_fails_before_reader(board) -> None:
-    uow = _Uow(board=board)
-
-    with pytest.raises(DeadLetterBoardNotFoundError):
-        await ListDeadLetterRowsUseCase().execute(
-            ListDeadLetterRowsCommand("board-b", limit=20, offset=0),
-            actor=ACTOR,
-            uow=uow,
-        )
-
-    expected = ["board:board-b"]
-    if board is FOREIGN_BOARD:
-        expected.append("share:board-b:user-a")
-    assert uow.events == expected
-
-
-@pytest.mark.asyncio
-async def test_dead_letter_owner_reaches_reader() -> None:
-    uow = _Uow(board=SimpleNamespace(id="board-b", owner_id="user-a"))
-
-    result = await ListDeadLetterRowsUseCase().execute(
-        ListDeadLetterRowsCommand("board-b", limit=20, offset=0),
-        actor=KG_QUEUE_READER,
-        uow=uow,
-    )
-
-    assert result.data == {
-        "rows": [],
-        "total": 0,
-        "limit": 20,
-        "offset": 0,
-        "include_code_traceability": False,
-    }
-    assert uow.events == ["board:board-b", "dead-letter:board-b"]

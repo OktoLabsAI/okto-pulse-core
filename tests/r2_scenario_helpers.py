@@ -4,7 +4,7 @@ NOT a test module (no ``test_`` prefix -> pytest does not collect it). Every
 canonical-current starting state these helpers build goes through the REAL
 pipeline (``DeterministicWorker`` + ``begin/propose/commit_consolidation`` for
 deterministic nodes, the consolidation orchestrator for cognitive nodes, and the
-Global Discovery outbox worker for DecisionDigests) — never a raw Kuzu /
+Global Discovery outbox worker for DecisionDigests) — never a raw Grafx /
 DecisionDigest seed of a demotion/sync proof target. This is the anti-test-theater
 contract the R2 brief requires for AC1/AC2/AC6/AC7/AC11/TR12.
 """
@@ -42,6 +42,24 @@ from sqlalchemy_test_models import Board, Card, Spec
 
 USER_ID = "user-r2-scenarios"
 WORKER_AGENT = "system:layer1_worker"
+
+
+async def health_with_completed_probes(db_factory, board_id):
+    """Observe real probe results after bounded cold-start work completes.
+
+    Health's production latency budget remains unchanged. These scenarios test
+    parity semantics, not whether a cold Grafx handle opens within 350 ms.
+    """
+    from okto_pulse.core.services.application_kg import drain_kg_health_probes
+    from okto_pulse.core.services.kg_health_service import get_kg_health
+
+    async with db_factory() as db:
+        initial = await get_kg_health(board_id, db)
+    assert drain_kg_health_probes(timeout_s=10) == 0, initial["probe_diagnostics"]
+    async with db_factory() as db:
+        health = await get_kg_health(board_id, db)
+    assert health["probe_diagnostics"]["stale_canonical_parity"]["status"] == "available", health["probe_diagnostics"]
+    return health
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,122 @@
+{
+  "scope": "F6 authorized REST source preview and standalone Learning capture submission",
+  "suites": {
+    "core": {
+      "tests": 89,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "tests": 30,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Real SQL commit and exact retry persist one capture authored by the authenticated principal.",
+    "Read permissions do not grant capture write; stale digest/version and authority fields are refused.",
+    "Missing Bug is not found; unexpected runtime details are not disclosed.",
+    "Read preview authenticates linked scenarios but write independently rereads its serialized source."
+  ],
+  "limits": [
+    "MCP/frontend surfaces, listing, reuse/supersedence and other evidence references remain pending.",
+    "Policy/Done binding/outbox/materialization and installed recovery of this pair remain pending.",
+    "The selected suites are not full repository acceptance; Core tests overlap prior runs.",
+    "Preview is not approval of authored narrative or permission to close the Bug."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-capture-rest.json": "33f80b118f51055101cb666fa9de8018a24bf26d862b93334ddcbf758948da6e",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-capture-rest-final.json": "161b9cec72105187993a86feb64688bfbe56258b2ce7c2fa4eb606fee4d66f48",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-capture-rest-final.json": "2469d87f629e285c132e6c72123b8e2ea6596a05b9bafd9f9f9b2e5990fa2838",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-capture-rest.json": "fadcea2dd4987e8828002fc49f241e94586dfa1092e81b2305207ebd6fe295cc",
+    "PULSE_REFACTOR/.validation-v040/run_learning_capture_rest.py": "c58be3fef227be1f9f88d5004d661e23ab092259c37c1715cd329f9f79da9299",
+    "PULSE_REFACTOR/.validation-v040/run_learning_capture_rest_final.py": "b326e12c051519619a0452f502705afa0942953fef66e2f3c876e1afeed83222",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-rest-core.xml": "19a1bfe1360b4b9e8768ec6bb2b92767b312bc006988ff7e481b671f09cb029b",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-rest-test-core.log": "04d648900c126b21adb117fc0aed3ea894fd7972b454801610d09b52ef874432",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-rest-community.xml": "d43e822eb8e80a57c53c11b2c9b9cde4ffced55c5f73326d7b8c27c48e4a1f49",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-rest-test-community.log": "0be803d29852ba83d4e4b124591784a84be28c9a05be4cc364639b40d730c462",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "eafd3cc1b5cbd2496823261a2a079b9b096342fb18bb1d4d26fb666859cc73e7",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/learning_capture.py": "e8e23cebdd218e02f2509e9e104134dbe175c7bd4d1d588f73323b408d316bb0",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/kg_operations.py": "649a4c8b964e532a933ff7ec0c3edc827a2a045d92aa416eab081db0da27f810",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/application_services.py": "85c7f39d6206abb0fa117a349c9421baf805e704c9b31b02b71642121575f5d8",
+    "okto_labs_pulse_core/src/okto_pulse/core/models/learning_capture.py": "cda31584248235a58d05849b11eb9c81d5f455625842767709321d6e94dc9b6c",
+    "okto_labs_pulse_community/src/okto_pulse/community/api/bug_cognitive_closure.py": "eac137f7e4c4632106928c1ef874835a6b57e8422aa99e3a6491db31ca8c311e",
+    "okto_labs_pulse_community/tests/test_learning_capture_rest.py": "1f2c5f9660c34b24b41e03723d204de5842415634a58802fb7caa233c2b68f00"
+  }
+}

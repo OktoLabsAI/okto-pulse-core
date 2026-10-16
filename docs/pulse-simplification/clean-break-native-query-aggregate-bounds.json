@@ -1,0 +1,62 @@
+{
+  "criteria": [
+    "KG:KG-43"
+  ],
+  "proof_pair": "dist-native-main67",
+  "product_pair": {
+    "core": "b98d2ea2",
+    "community": "21097591"
+  },
+  "verified": [
+    "Actual Grafx aggregation of 10001 elements into one row is refused with explicit graph_query_resource_limit/result_value limit1024, independently of max_rows=1.",
+    "Actual Grafx accepts one row collecting100 strings of50000 characters each, all within individual value/collection limits; the Pulse public query rejects the serialized response over4MiB.",
+    "The smaller two-element native aggregation is returned intact. Current Python tuple representation is preserved; no normalization added.",
+    "Actual oversized payload exception maps to HTTP413 with resource/limit/observed and without result contents. Typed native limits are non-retryable; malformed errors do not get reclassified as budgets.",
+    "MCP compound response budget and curated coverage/impact/cluster/lineage serialized payload bounds pass, preserving server counts and explicit continuation/limitation instead of partial aggregate success."
+  ],
+  "tests": {
+    "community1": {
+      "passed": 9,
+      "seconds": 16.89
+    },
+    "community2": {
+      "passed": 10,
+      "failed": 1,
+      "seconds": 20.82,
+      "failure": "Positive-case assertion expected list instead of declared Python tuple; corrected expectation only."
+    },
+    "community3": {
+      "passed": 2,
+      "seconds": 3.19
+    },
+    "community4": {
+      "passed": 2,
+      "seconds": 8.24,
+      "change": "Added actual serialized limit HTTP mapping assertions."
+    },
+    "core1": {
+      "passed": 15,
+      "seconds": 6.18
+    },
+    "core2": {
+      "passed": 4,
+      "seconds": 5.31
+    },
+    "distinct_passed": 30,
+    "count_basis": "11 Community +19 Core, repeated executions counted once."
+  },
+  "limits": [
+    "Budget refusal is an explicit limitation under complement section6.5; it does not return a fabricated partial aggregate or pretend continuation exists for an indivisible raw query result.",
+    "Transport framing is outside the data-envelope budget. Tests include real native query plus HTTP problem mapping, not a live authenticated server.",
+    "No product/frontend modifications; prior closure67 and frontend validation preserved without rerun."
+  ],
+  "artifacts": {
+    "provenance-native-generation-pagination1.json": "0b451108cc6c90bdb967c67cb38700b683a5e915fe8205ec497882f082c0999e",
+    "acceptance-native-query-aggregate1.xml": "c59afdd756f185c82df83fa37b109d1839d593eaf2ea3d287874835120cd931e",
+    "acceptance-native-query-aggregate2.xml": "2a53e8473c7f47188feabaecf00dbcec974bdb1b162d7bb48b86ba84fb388fca",
+    "acceptance-native-query-aggregate3.xml": "bf0009866e07d5f4c4fa96637b9d2afb8025563b3f0fbebdd6cdc9a023879f54",
+    "acceptance-native-query-aggregate4.xml": "64d7914239e69920f659eeaa68035819231ba825aa756949d50974ff8ff22ccb",
+    "acceptance-native-query-aggregate-core1.xml": "1272b1c950f65fd6ca6f98fbea64bf348328b342156fbf2be5c9f2abe128cfc2",
+    "acceptance-native-query-aggregate-core2.xml": "8b92b124edc01cd47e19c09b31a823f97a779341969ce9c352f96535e445b031"
+  }
+}

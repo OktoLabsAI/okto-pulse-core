@@ -180,7 +180,7 @@ def _community_wiring_observations() -> list[RuntimeProviderObservation]:
             composition_path=f"RuntimeComposition.providers.{key}",
         )
         for key, obj in (
-            ("graph_store", "LadybugGraphStore"),
+            ("graph_store", "GrafxGraphStore"),
             ("event_bus", "PostgresEventBus"),
             ("embedding_provider", "SentenceTransformerEmbeddingProvider"),
         )

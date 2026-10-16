@@ -1,0 +1,120 @@
+{
+  "scope": "KG6.5/D18 native Cypher deadline propagation and termination",
+  "campaigns": {
+    "query-deadline1-core": 68,
+    "query-deadline-fixture2-community": 31,
+    "query-deadline-routed-community": 94
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Core forwards the bounded call timeout to scalar or same-snapshot paired execution.",
+    "Community applies one native deadline across statements and retries; a shorter Health deadline cannot be widened.",
+    "Real Grafx with a controlled clock terminates scalar/pair/batch execution and permits subsequent write/checkpoint/read.",
+    "MCP Cypher reports a typed native timeout after execution ends, without an outer wait_for abandoning its thread.",
+    "Existing routed facade and Cypher executor regression suites pass."
+  ],
+  "limits": [
+    "This is not full D18 acceptance: Board/default policy, required defaults/row caps, aggregate result bounds, natural/reflective query execution and quota retirement remain pending.",
+    "The native termination test uses the actual engine with a controlled clock; it is not a wall-clock performance benchmark.",
+    "First Community run failed in fixture DDL setup outside a write transaction; the corrected fixture and rerun are retained.",
+    "No UI changed and no real data or running Pulse instance was altered."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-deadline-final2-closure.log": "f30eea196e8b4f19e44d48e96906a9cc659201649bc072bc70d122af47bcfb3e",
+    "PULSE_REFACTOR/.validation-v040/record_query_deadline.py": "76f68434f9a81523b377933f3a09af74478507324b4f1667c4194c0da940a784",
+    "PULSE_REFACTOR/.validation-v040/provenance-query-deadline1.json": "cb8704930ca54f88850e76f203d57b3e5cd8ce3cab573810c81aeb3f7065252a",
+    "PULSE_REFACTOR/.validation-v040/provenance-query-deadline-final2.json": "d318caa4f4ac1b1e3ed365187bf485d81ac1fcb01e80dc9dcc1f76f040438e66",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-deadline1-core.xml": "da5de58c156fa83f86d8453d75c7d2b2c7128b142a7f265e0a5359f387a6b3a2",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-deadline1-core.log": "992ae4600d4483c04f42b944965b66700ca72d7f389fd9fcf6b3ec56f27c61ff",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-deadline-fixture2-community.xml": "1debe652c6003426c16f89152b7dce8b0d16a77ede27078c9458d5de2b429ed4",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-deadline-fixture2-community.log": "e67dd54afe7dbff5b2f31c4639c41d734e5c11761c7f4dc153ad8662cee9b221",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-deadline-routed-community.xml": "3a9042aa4a4392f7d59dad28785ea42574b65cfb2760a2be1502ddc1d2e2ce02",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-deadline-routed-community.log": "de63867cc19362fb226cea2efce85b29e7d81f454eff477b83cf13446baa69ce",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-deadline1-community.xml": "b7226226e46a5b0ec5a97ded22d72978a48cfde268bf7360766194bac9a3912f",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-deadline1-community.log": "c497ce2b204746a12bfc013e9942a8d8903228219752ca46bcee0223d980bb90",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/interfaces/cypher_executor.py": "13b8e477cf4776e4350486f358e046b148d4c55f4629308f5ad3fe1050613f56",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/interfaces/graph_errors.py": "4d12038a8469a9d20333ef944c0657fc81de75d7542788d82a96b3d672c80625",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/providers/testing/memory_graph_store.py": "244a55bc7b758d21002af2ea5f80655b3bd9acfae169dec4161b30f8659a8758",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/tier_power.py": "9aa3288b3fb780fb62a5936e84c9c0a9dc14f0d66399757cf9720eb1df4858ae",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/kg_power_tools.py": "a0325f23b9db5b6de5dd61ef62d959b3379f78e6409646f62b5437f4f07a8050",
+    "okto_labs_pulse_core/tests/test_kg_native_query_deadline.py": "92a935fc1a886b343c3fd7a36f4da98215cd762dcccd3b5875d9cbc8ac1aef4a",
+    "okto_labs_pulse_core/tests/test_kg_query_safety.py": "a1f6251654e6c1c82a7dfdb9167498cf5ede153abdb1fe6f86110b95d4b3d614",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/grafx_cypher_executor.py": "0d6b1e2201cb67aa8b0fe9902e3e023d86a65807fb598a1cc0680ee68bdcc795",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/grafx_error_mapping.py": "35203420b330bc864c7cea9e606e660f3fb693903bfc444953edf73439a7dd71",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/routed_board_graph_facades.py": "9321e0e6d812a7c2c87b53ae357fb288a115a8ade73cab99401a1b1501cd4753",
+    "okto_labs_pulse_community/tests/test_grafx_query_deadline.py": "05ced1f3b427ff299ca338ece633d7b56740ef5b3393b2a9eebe5b8404481b08"
+  }
+}

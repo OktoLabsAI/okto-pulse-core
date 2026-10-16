@@ -1,0 +1,168 @@
+{
+  "scope": "K2 G14 scenario consumers: old/new references, direct Card mutation and Board-scoped invalidation",
+  "acceptance_promotions": [],
+  "source_install_wheel_proof": {
+    "checked_at": "2026-09-30T17:02:18.454507+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 854,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "37afe926367f220aeef3e7533b4d1995be17fbca",
+        "dirty": true,
+        "dirty_entry_count": 10,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-card-invalidation-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "c7b0ee44ed2e402a0490a1cd2212ed0c8d074c5fcf275e09f8a4c790e50f2770",
+          "size": 3780388
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 917,
+        "byte_identical": true,
+        "aggregate_sha256": "daf0b2bba544a50081ef06d7faec405b39783fc77805aa0e5fc32ac176d23389",
+        "chain_hashes": {
+          "source": "daf0b2bba544a50081ef06d7faec405b39783fc77805aa0e5fc32ac176d23389",
+          "wheel": "daf0b2bba544a50081ef06d7faec405b39783fc77805aa0e5fc32ac176d23389",
+          "site_packages": "daf0b2bba544a50081ef06d7faec405b39783fc77805aa0e5fc32ac176d23389"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 373,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "432b0b8cb62211642a477e02584f72b686cd9d08",
+        "dirty": true,
+        "dirty_entry_count": 1,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-card-invalidation-final\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "dc34e6956b0d4c87811fd32b09e414085f70461c8b09d04689ab076f7c633dd2",
+          "size": 4531806
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 458,
+        "byte_identical": true,
+        "aggregate_sha256": "b189e29057ddc02ed41b2be088cc14ffde8729223626d6d969269e165539e970",
+        "chain_hashes": {
+          "source": "b189e29057ddc02ed41b2be088cc14ffde8729223626d6d969269e165539e970",
+          "wheel": "b189e29057ddc02ed41b2be088cc14ffde8729223626d6d969269e165539e970",
+          "site_packages": "b189e29057ddc02ed41b2be088cc14ffde8729223626d6d969269e165539e970"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "campaigns": {
+    "learning-reconciliation-k2-card-invalidation2-core": {
+      "passed": 76,
+      "xml_sha256": "b43860aa1e283f3f254b1775ce11bc5c8d545ebbadc1e823527999273347612d"
+    },
+    "learning-reconciliation-k2-card-invalidation-focused1-core": {
+      "passed": 9,
+      "xml_sha256": "7bb8ed0f5f9e405f035ea4c74397afcdd6d4d98b65cfc9c9e9249eb47b9bfd03"
+    },
+    "learning-reconciliation-k2-card-invalidation-structured1-core": {
+      "passed": 10,
+      "xml_sha256": "36f248fee21fcbc2d4fd5383c2f9709665835bc8045bdd893b50dbcfec836ada"
+    }
+  },
+  "frontend_evidence": "acceptance-k2-card-projection-foundation.json (unchanged frontend source)",
+  "closure": {
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": [],
+    "report_sha256": "b13e6a407301b78979d2291a1b1697a93eda1db2c51b52fa7625dfac119b9b25"
+  },
+  "limits": [
+    "Not complete G2/G14: remaining families, semantic findings and known unresolved removal still pending",
+    "Historical stored event payloads unchanged; new DTO fields default empty on replay",
+    "No authority, domain gate, graph schema or source-hash change"
+  ]
+}

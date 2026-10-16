@@ -1,0 +1,172 @@
+{
+  "scope": "F6/KG7.4 human bug_learning_closeout policy and request-local preview",
+  "suites": {
+    "bug-learning-policy-core": {
+      "tests": 118,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "bug-learning-policy-community": {
+      "tests": 86,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "bug-learning-policy-final-core": {
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "bug-learning-policy-final-community": {
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "frontend_observed_tool_results": {
+    "settings": {
+      "passed": 23,
+      "exit_code": 0
+    },
+    "settings_and_capture_and_modal_session_25875": {
+      "passed": 114,
+      "exit_code": 0,
+      "seconds": 47.87
+    },
+    "build_session_34760": {
+      "exit_code": 0
+    },
+    "lint_session_91299": {
+      "exit_code": 0,
+      "warnings": 331,
+      "baseline_unchanged": true
+    },
+    "note": "Observed tool outputs; no standalone frontend JUnit/log was produced in this round."
+  },
+  "frontend_tree_sha256": "53327b2fab6109bee324e0795a09bea41424e74a68553dc1f4c2be19fad78013",
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Omission is advisory, invalid explicit policy fails closed, normal/test cards are outside this Bug policy.",
+    "Authenticated human authors Board/template changes; executor omission inherits active template policy.",
+    "Board creation/update and template create/activate/deactivate/import cannot let executor weaken policy.",
+    "Direct Done requires joint valid capture in blocking, including rollback after stale/unsigned/late failure.",
+    "Successful task validation without selected admitted capture yields existing completion-gate Rejected consequence.",
+    "Capture presence alone is not proof; selected valid capture supports blocking Done without graph materialization.",
+    "Preview adds request precondition without source writes or preventing joint submission.",
+    "Legacy cognitive controls remain independent and skip cannot waive required capture.",
+    "Paired builds/install/source-and-payload byte proof, SPA distribution and F16 eight ZERO budgets passed."
+  ],
+  "limits": [
+    "SQL compound tests explicitly fixture independent completion gates; no whole-gate E2E claim.",
+    "Preview test fixtures independent gate previews; existing preview regression suite also passed.",
+    "Frontend tests use JSDOM, not deployed browser E2E.",
+    "Materialization, reopen applicability/recovery, reuse/supersedence and remaining integrated plan are unfinished.",
+    "Global acceptance inventory unchanged. No real migration, release/tag/merge/deployment.",
+    "Counts across suites overlap; initial F16 README-only drift evidence remains preserved."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-bug-learning-policy-final.json": "a4fa0fac79572612b2a0029f582a8b8e291beab6099396fe29abd53aaba9289f",
+    "PULSE_REFACTOR/.validation-v040/bug-learning-policy-core.xml": "63d78639ba90dccc0fdc6b19487f9960c6f93c085657f72737c368da63ff023e",
+    "PULSE_REFACTOR/.validation-v040/bug-learning-policy-community.xml": "5264a776377920950721f1d8090351ecb3faac966dc3ec3efc53d23c08a39121",
+    "PULSE_REFACTOR/.validation-v040/bug-learning-policy-final-core.xml": "281081c11d4193fdabb01ab9cbc3597294e9a8ab4a84c9be1cc568978e9e2d25",
+    "PULSE_REFACTOR/.validation-v040/bug-learning-policy-final-community.xml": "a90caa1517e300819f07e33ac37e360d60919049046dcb04273fb049bb626324",
+    "PULSE_REFACTOR/.validation-v040/provenance-bug-learning-policy.json": "a0f1d081a29e212f39fed8b39bfb1f535b632fb10129d8c8704601d7a5579e74",
+    "PULSE_REFACTOR/.validation-v040/provenance-bug-learning-policy-final.json": "99e5768358627ca0b95ae70ac3def68f0ea3c9b7e1bad4674802742ee40ad0b0",
+    "PULSE_REFACTOR/.validation-v040/run_bug_learning_policy.py": "dc11137eb29faf78c2bade62fdf5e181158ce93aee24eb08bc5cdd58051bbac8",
+    "PULSE_REFACTOR/.validation-v040/run_bug_learning_policy_final.py": "9938f31cce954998d81f37f6ccbf6df97b23ee843cf211c49d59533228a1d888",
+    "PULSE_REFACTOR/.validation-v040/closure-bug-learning-policy.json": "f67e9ef51b9f35eb71324b5e0fab810fb781c3a00d8ffa74a169e83c4217f9dc",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/bug_learning_policy.py": "8fa65671a76a7855906e1fa87c8777d84011828f238fb84e18ccdebd90ecdd0c",
+    "okto_labs_pulse_core/src/okto_pulse/core/models/schemas.py": "e9a841e390c82abc28439262ab01f95d0446c2c8dc05575420caa8cee461ace2",
+    "okto_labs_pulse_core/src/okto_pulse/core/services/main.py": "52ca47c26012a1421f92be8049cace335732ab72c77865865bcbe1f37974ca7b",
+    "okto_labs_pulse_core/src/okto_pulse/core/services/default_board_configuration.py": "b7a32df0201bf79db406fec1284941048269a42d0708f9264a3ef9c43fd5ad5b",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/create_board.py": "b32030920ad578faa2d30b6b731f643d96ef7a5af5f847aee0b499c405fe711b",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/boards_crud.py": "3f559e10b52db3b03e0f447a2196b0855f1f2402544589d7c2b787b02a97c425",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/allowed_transitions.py": "15d54097111d8d716b7ccd8fde5ed95a95aebf51c274cc32887cb81d797591d1",
+    "okto_labs_pulse_core/tests/test_bug_learning_policy.py": "86dd89bb6f3b5db3a8c72aa62f48e7bdb2e7d7bcc84952be6516dff9dfa136a0",
+    "okto_labs_pulse_core/tests/test_board_cognitive_policy_authority.py": "34cbfe291ac91e7ffae73db7c24c9d900167b1b10a66476da4f5a8995f8db353",
+    "okto_labs_pulse_community/tests/test_bug_learning_closeout_policy.py": "c3969c70906145c15abfbd4ae6cd9c7c039ccc27a73f04078532a4be38a65014",
+    "okto_labs_pulse_community/tests/test_learning_submission_writer.py": "af87e310c0d5fb95c478b7086215c7bc80d320c73012287bce0a1c1d33e740ef",
+    "okto_labs_pulse_community/tests/test_learning_capture_validation_binding.py": "5fc482c7c8601f726f07f96256b1325bf3f6eec4d7bb5b08609a95290aabc80e",
+    "okto_labs_pulse_community/frontend/src/components/board/BoardSettingsForm.tsx": "8f6cc3ef1e9a9204acb8fb0228ca2a6ad705e8c1c21c9d8252c09d1ba86f33e3",
+    "okto_labs_pulse_community/frontend/src/components/board/__tests__/BoardSettingsForm.test.tsx": "c1782efe3734579347d994166f6809689abee442b8eadbcc6f20d484e963da0d",
+    "okto_labs_pulse_community/frontend/src/components/kanban/LearningCaptureSelector.tsx": "4b055091594d5b7183c2af11b2f712f7e23065958d6d96c4ce3352a77518db54",
+    "okto_labs_pulse_community/frontend/src/components/kanban/LearningSubmissionEditor.tsx": "88de794eb36119052c4694b2c76ed6833cdf48a796c4b964528f6a6fce32b2db",
+    "okto_labs_pulse_community/src/okto_pulse/community/frontend_dist/pulse-frontend-contract.json": "5908c762fedea537f77ae06a9b49053997fe2feedb3629acef30655fb347cd2c"
+  }
+}

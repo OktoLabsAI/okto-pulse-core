@@ -9,7 +9,7 @@ from okto_pulse.core.application.use_cases.authorization import PermissionRequir
 from okto_pulse.core.domain.sdlc_registry import transition_permission_flag
 
 
-_CARD_ASSIGN_FIELDS = {"assignee_id", "sprint_id"}
+_CARD_ASSIGN_FIELDS = {"assignee_id"}
 _CARD_LABEL_FIELDS = {"labels"}
 _CARD_LINK_SPEC_FIELDS = {"spec_id"}
 _CARD_LINK_TEST_FIELDS = {"test_scenario_ids", "linked_test_task_ids"}
@@ -20,18 +20,6 @@ _CARD_BUG_FIELDS = {
     "steps_to_reproduce",
     "action_plan",
 }
-_SPRINT_COVERAGE_FIELDS = {
-    "skip_test_coverage",
-    "skip_rules_coverage",
-    "skip_qualitative_validation",
-    "validation_threshold",
-    "require_task_validation",
-    "validation_min_confidence",
-    "validation_min_completeness",
-    "validation_max_drift",
-}
-_SPRINT_LABEL_FIELDS = {"labels"}
-_SPRINT_NON_MUTATION_FIELDS = {"expected_version"}
 
 
 def payload_fields_set(data: Any) -> set[str]:
@@ -76,16 +64,14 @@ def entity_state(entity: Any) -> str | None:
 
 def _requirement(
     operation: str,
-    legacy_operation: str,
     *,
     entity: str | None = None,
     state: str | None = None,
 ) -> PermissionRequirement:
     if entity is None or state is None:
-        return PermissionRequirement(operation, legacy_operation=legacy_operation)
+        return PermissionRequirement(operation)
     return PermissionRequirement(
         operation,
-        legacy_operation=legacy_operation,
         entity=entity,
         state=state,
     )
@@ -95,36 +81,20 @@ def card_requirement(
     operation: str,
     *,
     state: str | None = None,
-    legacy_operation: str = "cards:update",
 ) -> PermissionRequirement:
     return _requirement(
         operation,
-        legacy_operation,
         entity="card" if state is not None else None,
         state=state,
     )
 
 
-def sprint_requirement(
-    operation: str,
-    *,
-    state: str | None = None,
-    legacy_operation: str = "specs:update",
-) -> PermissionRequirement:
-    return _requirement(
-        operation,
-        legacy_operation,
-        entity="sprint" if state is not None else None,
-        state=state,
-    )
 
 
 def transition_permission_requirement(
     entity: str,
     current_state: Any,
     target_state: Any,
-    *,
-    legacy_operation: str | None,
 ) -> PermissionRequirement:
     """Build the exact state-aware requirement for one registered SDLC edge."""
 
@@ -132,7 +102,6 @@ def transition_permission_requirement(
     target = str(getattr(target_state, "value", target_state))
     return PermissionRequirement(
         transition_permission_flag(entity, current, target),
-        legacy_operation=legacy_operation,
         entity=entity,
         state=current,
     )
@@ -150,7 +119,7 @@ def card_create_permission_requirement(data: Any) -> PermissionRequirement:
         if card_type == "test"
         else "card.entity.create"
     )
-    return card_requirement(operation, legacy_operation="cards:create")
+    return card_requirement(operation)
 
 
 def card_update_permission_requirements(
@@ -159,6 +128,10 @@ def card_update_permission_requirements(
     state: str | None = None,
 ) -> tuple[PermissionRequirement, ...]:
     fields = payload_fields_set(data)
+    if "sprint_id" in fields:
+        # DTOs already reject this field; transport-free callers must not
+        # reclassify a retired relationship as an ordinary content update.
+        raise ValueError("sprint_id_retired")
     operations: set[str] = set()
     if fields & _CARD_ASSIGN_FIELDS:
         operations.add("card.entity.assign")
@@ -182,24 +155,6 @@ def card_update_permission_requirements(
     return tuple(card_requirement(operation, state=state) for operation in sorted(operations))
 
 
-def sprint_update_permission_requirements(
-    data: Any,
-    *,
-    state: str | None = None,
-) -> tuple[PermissionRequirement, ...]:
-    supplied_fields = payload_fields_set(data)
-    fields = supplied_fields - _SPRINT_NON_MUTATION_FIELDS
-    if supplied_fields and not fields:
-        return ()
-    operations: set[str] = set()
-    if fields & _SPRINT_COVERAGE_FIELDS:
-        operations.add("sprint.entity.edit_coverage_flags")
-    if fields & _SPRINT_LABEL_FIELDS:
-        operations.add("sprint.entity.label")
-    categorized = _SPRINT_COVERAGE_FIELDS | _SPRINT_LABEL_FIELDS
-    if not fields or fields - categorized:
-        operations.add("sprint.entity.edit_fields")
-    return tuple(sprint_requirement(operation, state=state) for operation in sorted(operations))
 
 
 __all__ = [
@@ -208,7 +163,5 @@ __all__ = [
     "card_update_permission_requirements",
     "entity_state",
     "payload_fields_set",
-    "sprint_requirement",
-    "sprint_update_permission_requirements",
     "transition_permission_requirement",
 ]

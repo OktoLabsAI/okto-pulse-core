@@ -168,16 +168,16 @@ async def test_get_active_rejects_corrupt_persisted_checklist_mode():
         assert exc.value.code == "invalid_spec_checklist_mode"
 
 
-async def test_diff_legacy_board_reports_no_snapshot():
+async def test_diff_native_board_without_template_reports_no_snapshot():
     from okto_pulse.core.infra.database import get_session_factory
 
     async with get_session_factory()() as db:
-        # board created with no active template -> no snapshot (legacy-like).
+        # board created with no active template -> no applied template snapshot.
         board = await BoardService(db).create_board(
             USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
         )
         diff = await DefaultBoardConfigApiService(db).get_board_diff(board_id=board.id)
-        assert diff["snapshot_state"] == "legacy_no_snapshot"
+        assert diff["snapshot_state"] == "no_template_snapshot"
         assert diff["fields"] == []
 
 

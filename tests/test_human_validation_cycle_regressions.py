@@ -4,6 +4,8 @@ from pathlib import Path
 from types import SimpleNamespace
 import uuid
 
+from spec_validation_fixtures import native_validation
+
 import pytest
 from sqlalchemy import func, select
 
@@ -77,7 +79,7 @@ def _direct_spec_context_fields(
         source_spec_id=spec_id,
         source_spec_version=version,
     )
-    manifest, manifest_sha256 = main_service._direct_spec_source_context_manifest(
+    manifest, manifest_sha256 = main_service.build_direct_spec_source_context_manifest(
         spec_id=spec_id,
         delivery_context=DeliveryContext.BROWNFIELD,
         provenance=provenance,
@@ -464,16 +466,15 @@ async def test_lifecycle_move_lost_write_fence_has_zero_writes(
 
 
 @pytest.mark.asyncio
-async def test_spec_current_previous_and_legacy_history_follow_real_reopen(
+async def test_spec_current_previous_and_native_history_follow_real_reopen(
     db_factory,
 ) -> None:
     board_id = _id("board")
     spec_id = _id("spec")
     validations = [
-        {"id": "legacy", "outcome": "success"},
-        {"id": "prior-edition", "edition": 3, "outcome": "success"},
-        {"id": "attempt-1", "edition": 4, "outcome": "failed"},
-        {"id": "attempt-2", "edition": 4, "outcome": "success"},
+        native_validation("prior-edition", 3, outcome="success"),
+        native_validation("attempt-1", 4, outcome="failed"),
+        native_validation("attempt-2", 4, outcome="success"),
     ]
     async with db_factory() as db:
         db.add(Board(id=board_id, name="History", owner_id=_ACTOR, settings={}))
@@ -501,29 +502,13 @@ async def test_spec_current_previous_and_legacy_history_follow_real_reopen(
             spec_id,
             lifecycle_state="previous",
         )
-        legacy = await service.list_spec_validations(
-            spec_id,
-            lifecycle_state="history_only",
-        )
-
         assert [item["id"] for item in current["validations"]] == ["attempt-2"]
         assert current["validations"][0]["is_current"] is True
         assert [item["id"] for item in previous["validations"]] == [
             "attempt-1",
             "prior-edition",
-            "legacy",
         ]
-        assert previous["previous_count"] == 3
-        assert legacy["validations"] == [
-            {
-                "id": "legacy",
-                "outcome": "success",
-                "is_current": False,
-                "active": False,
-                "lifecycle_state": "history_only",
-            }
-        ]
-
+        assert previous["previous_count"] == 2
         moved = await service.move_spec(
             spec_id,
             _ACTOR,
@@ -539,12 +524,11 @@ async def test_spec_current_previous_and_legacy_history_follow_real_reopen(
         assert moved.edition == 5
         assert moved.current_validation_id is None
         assert after_reopen["current_validation"] is None
-        assert after_reopen["previous_count"] == 4
+        assert after_reopen["previous_count"] == 3
         assert [item["id"] for item in after_reopen["validations"]] == [
             "attempt-2",
             "attempt-1",
             "prior-edition",
-            "legacy",
         ]
 
 
@@ -752,12 +736,11 @@ async def test_ac23_rejects_missing_or_additional_done_proof(
     assert raised.value.code == "spec_refinement_snapshot_required"
 
 
-def test_production_sources_do_not_call_the_compatibility_lint_writer() -> None:
+def test_retired_lint_writer_is_absent_from_product() -> None:
     root = Path(__file__).parents[1] / "src" / "okto_pulse" / "core"
+    assert not (root / "services/requirement_lint_writer.py").exists()
     callers = []
     for path in root.rglob("*.py"):
-        if path.name == "requirement_lint_writer.py":
-            continue
         if "stage_spec_requirement_lint" in path.read_text(encoding="utf-8"):
             callers.append(path.relative_to(root).as_posix())
     assert callers == []

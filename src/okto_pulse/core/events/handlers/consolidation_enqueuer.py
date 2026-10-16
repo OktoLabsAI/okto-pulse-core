@@ -1,4 +1,4 @@
-"""ConsolidationEnqueuer — first (and so far only) event handler.
+"""ConsolidationEnqueuer â€” first (and so far only) event handler.
 
 Subscribes to the 12 MVP event types and inserts the matching row in
 ConsolidationQueue so the existing consolidation_worker can pick it up
@@ -6,7 +6,7 @@ and push the artifact into the Knowledge Graph.
 
 Replaces the ad-hoc `db.add(ConsolidationQueue(...))` calls that used to
 live scattered across services/main.py. New handlers (activity log,
-notifications, webhooks) follow the same pattern — subscribe, map, do.
+notifications, webhooks) follow the same pattern â€” subscribe, map, do.
 
 Idempotency is delegated to the registered relational effects port. The
 Community SQLAlchemy adapter owns database-specific conflict mechanics; this
@@ -33,7 +33,6 @@ logger = logging.getLogger("okto_pulse.core.events.consolidation_enqueuer")
 _CARD_EVENT_PREFIX = "card."
 _SPEC_EVENT_PREFIX = "spec."
 _STRUCTURED_ENTITY_EVENT_PREFIX = "structured_entity."
-_SPRINT_EVENT_PREFIX = "sprint."
 _REFINEMENT_EVENT_PREFIX = "refinement."
 _STORY_EVENT_PREFIX = "story."
 _IDEATION_EVENT_PREFIX = "ideation."
@@ -63,7 +62,6 @@ _CODE_EVIDENCE_EVENTS = {
     "code_evidence.linked",
     "code_evidence.unlinked",
     "code_evidence.disposition_changed",
-    "code_evidence.legacy_classified",
 }
 _IMPLEMENTATION_TARGET_EVENTS = {
     "implementation_target.created",
@@ -73,14 +71,11 @@ _IMPLEMENTATION_TARGET_EVENTS = {
     "implementation_target.execution_receipt_submitted",
 }
 
-# Spec eaf78891 (Ideação #2): card.linked_to_spec / card.unlinked_from_spec
-# re-enqueue the SPEC, not the card. The card extractor in
-# deterministic_worker does not reference spec_id, so a card re-enqueue
-# would be wasted work; the spec extractor is the one that reflects the
-# updated cards list.
+# Linking changes both the Spec children and the Card-owned observed links.
+# The removed Spec id stays in the unlink event, while the Card is reread.
 _CARD_TO_SPEC_EVENTS = {"card.linked_to_spec", "card.unlinked_from_spec"}
 
-# Spec 4007e4a3 (Ideação #3): card.moved / card.conclusion_added re-enqueue
+# Spec 4007e4a3 (IdeaÃ§Ã£o #3): card.moved / card.conclusion_added re-enqueue
 # BOTH the card itself (status/conclusion lives on the card node) AND the
 # parent spec (aggregated children-state on the spec node). Orphan cards
 # (spec_id is None) skip the spec-side enqueue gracefully.
@@ -103,6 +98,8 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "card.restored",
     "card.linked_to_spec",
     "card.unlinked_from_spec",
+    "card.scenario_projection_changed.v1",
+    "card.dependency_changed.v1",
     "spec.created",
     "spec.dependency_added",
     "spec.dependency_removed",
@@ -118,9 +115,6 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "quality.clarification_changed.v1",
     "research_decision.appended",
     "research_decision.superseded",
-    "sprint.created",
-    "sprint.moved",
-    "sprint.closed",
     "ideation.moved",
     "ideation.derived_to_spec",
     "refinement.derived_to_spec",
@@ -138,7 +132,6 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "code_evidence.linked",
     "code_evidence.unlinked",
     "code_evidence.disposition_changed",
-    "code_evidence.legacy_classified",
     "implementation_target.created",
     "implementation_target.updated",
     "implementation_target.revoked",
@@ -153,6 +146,61 @@ class ConsolidationEnqueuer:
 
     async def handle(self, event: DomainEvent, session: object) -> None:
         targets = self._map_targets(event)
+        dependency_source = (getattr(event, 'card_id', None) if event.event_type.startswith('card.')
+            else getattr(event, 'artifact_id', None) if event.event_type == 'artifact.archive_changed'
+                and getattr(event, 'artifact_type', None) == 'card' else None)
+        if dependency_source:
+            from okto_pulse.core.ports.application_persistence import (
+                ApplicationFilter, ApplicationQuery, get_application_persistence_port,
+            )
+            persistence = get_application_persistence_port()
+            dependencies = await persistence.list(session, ApplicationQuery(entity='card_dependency',
+                filters=(ApplicationFilter('depends_on_id', 'eq', dependency_source),)))
+            owners = tuple(dict.fromkeys(row.card_id for row in dependencies))
+            if owners:
+                scoped = await persistence.list(session, ApplicationQuery(entity='card', filters=(
+                    ApplicationFilter('board_id', 'eq', event.board_id), ApplicationFilter('id', 'in', owners))))
+                for card in scoped:
+                    if ('card', card.id) not in targets:
+                        targets.append(('card', card.id))
+        from okto_pulse.core.ports.card_projection import CARD_PROJECTION_FIELDS
+        if (event.event_type in {'spec.semantic_changed', 'spec.version_bumped'}
+                and CARD_PROJECTION_FIELDS.intersection(getattr(event, 'changed_fields', ()))):
+            # A Card-side reference can exist without a reciprocal linked_task_id.
+            # Read consumers of this Spec through the public relational port,
+            # never by scanning the Board or consulting the derived graph.
+            from okto_pulse.core.ports.application_persistence import (
+                ApplicationFilter, ApplicationQuery, get_application_persistence_port,
+            )
+            cards = await get_application_persistence_port().list(session, ApplicationQuery(
+                entity='card', filters=(ApplicationFilter('board_id', 'eq', event.board_id),
+                    ApplicationFilter('spec_id', 'eq', event.spec_id))))
+            for card in cards:
+                target = ('card', card.id)
+                if target not in targets:
+                    targets.append(target)
+        explicit_ids = tuple(dict.fromkeys(getattr(event, 'projection_card_ids', ())))
+        if explicit_ids:
+            from okto_pulse.core.ports.application_persistence import (
+                ApplicationFilter, ApplicationQuery, get_application_persistence_port,
+            )
+            scoped = await get_application_persistence_port().list(session, ApplicationQuery(
+                entity='card', filters=(ApplicationFilter('board_id', 'eq', event.board_id),
+                    ApplicationFilter('id', 'in', explicit_ids))))
+            scoped_ids = {card.id for card in scoped}
+            targets = [target for target in targets
+                       if target[0] != 'card' or target[1] not in explicit_ids or target[1] in scoped_ids]
+        origin_ids = tuple(dict.fromkeys(identity for kind, identity in targets if kind == 'card'))
+        if origin_ids:
+            from okto_pulse.core.ports.application_persistence import (
+                ApplicationFilter, ApplicationQuery, get_application_persistence_port,
+            )
+            bugs = await get_application_persistence_port().list(session, ApplicationQuery(
+                entity='card', filters=(ApplicationFilter('board_id', 'eq', event.board_id),
+                    ApplicationFilter('card_type', 'eq', 'bug'), ApplicationFilter('origin_task_id', 'in', origin_ids))))
+            for bug in bugs:
+                if ('card', bug.id) not in targets:
+                    targets.append(('card', bug.id))
         if not targets:
             # Defensive: unknown event_type or missing payload field.
             return
@@ -183,13 +231,13 @@ class ConsolidationEnqueuer:
         # concurrent events for the same (board_id, artifact_type, artifact_id)
         # without the SELECT-then-INSERT TOCTOU race that the previous v1 path
         # had. Semantics preserved bit-for-bit:
-        #   - row inexistente → INSERT (status=pending, attempts=0)
-        #   - row em pending/claimed → no-op (the WHERE on the conflict_update
-        #     branch filters those out — the existing row keeps its identity)
-        #   - row em terminal (done/failed/paused) → reset to pending so the
+        #   - row inexistente â†’ INSERT (status=pending, attempts=0)
+        #   - row em pending/claimed â†’ no-op (the WHERE on the conflict_update
+        #     branch filters those out â€” the existing row keeps its identity)
+        #   - row em terminal (done/failed/paused) â†’ reset to pending so the
         #     worker re-processes the artifact under the new event
         # Earlier dedup was implemented by the SELECT block at lines 104-129
-        # of the v1 file — see git history before bug 4a430c6d.
+        # of the v1 file â€” see git history before bug 4a430c6d.
 
         # Spec bdcda842 (TR4 + BR1 zero-loss): every non-tombstoned event is
         # admitted regardless of depth; backpressure flows from the consumer
@@ -226,7 +274,7 @@ class ConsolidationEnqueuer:
             )
 
         if alert_threshold is not None and depth_after_insert == alert_threshold:
-            # Crossing edge only — fired exactly once per low→high transition
+            # Crossing edge only â€” fired exactly once per lowâ†’high transition
             # so log volume stays bounded under sustained backlog.
             logger.warning(
                 "consolidation.queue.alert_fired board=%s depth=%d threshold=%d "
@@ -251,7 +299,7 @@ class ConsolidationEnqueuer:
 
             record_alert_fired()
 
-        # Spec 4007e4a3 (Ideação #3, FR5): structured counter for dual-target
+        # Spec 4007e4a3 (IdeaÃ§Ã£o #3, FR5): structured counter for dual-target
         # spec re-enqueue. Emitted only when the spec-side enqueue actually
         # fires (after dedup short-circuit for orphan and duplicate paths).
         if (
@@ -333,7 +381,7 @@ class ConsolidationEnqueuer:
     def _map_targets(self, event: DomainEvent) -> list[tuple[str, str]]:
         """Return one or more (artifact_type, artifact_id) targets per event.
 
-        Most events map to a single target. Spec 4007e4a3 (Ideação #3)
+        Most events map to a single target. Spec 4007e4a3 (IdeaÃ§Ã£o #3)
         introduces dual-target events (card.moved, card.conclusion_added)
         that re-enqueue both the card AND the parent spec. Orphan cards
         (spec_id is None) skip the spec-side target gracefully and emit a
@@ -341,6 +389,17 @@ class ConsolidationEnqueuer:
         """
         et = event.event_type
         targets: list[tuple[str, str]] = []
+
+        if et == 'card.dependency_changed.v1':
+            return [('card', identity) for identity in dict.fromkeys(
+                (event.prerequisite_card_id, event.card_id))]
+
+        if et == 'card.scenario_projection_changed.v1':
+            for identity in dict.fromkeys((event.old_spec_id, event.new_spec_id)):
+                if identity:
+                    targets.append(('spec', identity))
+            targets.append(('card', event.card_id))
+            return targets
 
         # Code Traceability events contain only bounded identifiers/states/
         # digests/counts.  Queue targets are relational Pulse artifacts; this
@@ -359,9 +418,11 @@ class ConsolidationEnqueuer:
             return targets
         if et in _IMPLEMENTATION_TARGET_EVENTS:
             target_id = getattr(event, "target_id", None)
-            if target_id:
-                targets.append(("implementation_target", target_id))
-            return targets
+            # Snapshot-derived owners are captured before/after mutation in the
+            # same UOW, including a pair which no longer exists in current SQL.
+            identities = (*getattr(event, "overlap_projection_owner_ids", ()), target_id)
+            return [("implementation_target", identity)
+                for identity in dict.fromkeys(identities) if identity]
         if et == "implementation_overlap.acknowledged":
             for attr in ("target_a_id", "target_b_id"):
                 target_id = getattr(event, attr, None)
@@ -385,7 +446,7 @@ class ConsolidationEnqueuer:
                 return targets
             artifact_type = str(getattr(event, "artifact_type", ""))
             artifact_id = getattr(event, "artifact_id", None)
-            if artifact_type and artifact_id:
+            if artifact_type and artifact_type != "sprint" and artifact_id:
                 targets.append((artifact_type, artifact_id))
             return targets
 
@@ -413,14 +474,17 @@ class ConsolidationEnqueuer:
             # the mutation-specific event.
             return targets
 
-        # Dual-target spec-only events (Ideação #2): spec re-enqueue, no card.
+        # Materialize the Spec first, then reconcile the Card's current links.
         if et in _CARD_TO_SPEC_EVENTS:
             spec_id = getattr(event, "spec_id", None)
             if spec_id:
                 targets.append(("spec", spec_id))
+            card_id = getattr(event, "card_id", None)
+            if card_id:
+                targets.append(("card", card_id))
             return targets
 
-        # Dual-target card+spec events (Ideação #3): both targets.
+        # Dual-target card+spec events (IdeaÃ§Ã£o #3): both targets.
         if et in _CARD_DUAL_TARGET_EVENTS:
             card_id = getattr(event, "card_id", None)
             if card_id:
@@ -450,6 +514,8 @@ class ConsolidationEnqueuer:
             sid = getattr(event, "spec_id", None)
             if sid:
                 targets.append(("spec", sid))
+            targets.extend(('card', identity) for identity in dict.fromkeys(
+                getattr(event, 'projection_card_ids', ())))
             return targets
         if et.startswith(_CARD_EVENT_PREFIX):
             cid = getattr(event, "card_id", None)
@@ -478,6 +544,8 @@ class ConsolidationEnqueuer:
             sid = getattr(event, "spec_id", None)
             if sid:
                 targets.append(("spec", sid))
+            targets.extend(('card', identity) for identity in dict.fromkeys(
+                getattr(event, 'projection_card_ids', ())))
             return targets
         if et.startswith(_REFINEMENT_EVENT_PREFIX):
             rid = getattr(event, "refinement_id", None)
@@ -510,10 +578,5 @@ class ConsolidationEnqueuer:
             story_id = getattr(event, "story_id", None)
             if story_id:
                 targets.append(("story", story_id))
-            return targets
-        if et.startswith(_SPRINT_EVENT_PREFIX):
-            spid = getattr(event, "sprint_id", None)
-            if spid:
-                targets.append(("sprint", spid))
             return targets
         return targets

@@ -43,11 +43,11 @@ from okto_pulse.core.application.boundary.packaging_ownership_gate import (
 
 # Community-owned adapters whose required dependency family is `ladybug`.
 _LADYBUG_ADAPTERS = {
-    "kuzu_graph_store",
-    "kuzu_cypher_executor",
-    "kuzu_graph_schema_manager",
-    "kuzu_graph_lifecycle",
-    "kuzu_graph_transaction",
+    "grafx_graph_store",
+    "grafx_cypher_executor",
+    "grafx_graph_schema_manager",
+    "grafx_graph_lifecycle",
+    "grafx_graph_transaction",
 }
 # Community-owned adapters whose required dependency family is `sentence_transformers`.
 _SENTENCE_ADAPTERS = {
@@ -281,9 +281,9 @@ def test_ts_abce12bb_community_manifest_missing_adapter_dep_blocks(tmp_path):
     blocking_by_key = {f.adapter_key: f for f in audit.blocking}
     assert _LADYBUG_ADAPTERS <= set(blocking_by_key)
 
-    finding = blocking_by_key["kuzu_graph_store"]
+    finding = blocking_by_key["grafx_graph_store"]
     assert finding.dependency_family == "ladybug"  # dependency family
-    assert finding.adapter_key == "kuzu_graph_store"  # adapter_key
+    assert finding.adapter_key == "grafx_graph_store"  # adapter_key
     assert finding.declared is False
     assert finding.scope == "absent"
     assert finding.diagnostic_code == DIAG_COMMUNITY_DEPENDENCY_NOT_DECLARED

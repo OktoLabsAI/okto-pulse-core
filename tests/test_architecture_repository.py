@@ -31,6 +31,7 @@ from okto_pulse.core.services.architecture import (
     ArchitecturePropagationBlocked,
     ArchitecturePropagationService,
     ArchitectureWarningAcknowledgementRequired,
+    ArchitectureVersionConflict,
 )
 from okto_pulse.core.services.architecture_observability import (
     METRIC_FINDING_RUN_PERSIST_TOTAL,
@@ -42,6 +43,44 @@ from okto_pulse.core.services.architecture_observability import (
 
 
 USER_ID = "architecture-repository-user"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("conflict", ["authored_version", "persistence_fence"])
+@pytest.mark.parametrize("operation", ["update", "delete"])
+async def test_conflicting_write_has_no_content_history_or_event_effects(db_factory, monkeypatch, conflict, operation):
+    from okto_pulse.core.ports.architecture_persistence import get_architecture_persistence_port
+
+    _, ideation_id = await _seed_ideation(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        design = await repo.create("ideation", ideation_id, _architecture_payload(), USER_ID)
+        await repo.update(design.id, ArchitectureDesignUpdate(title="Winner", expected_version=1), USER_ID)
+        await db.commit()
+
+        async def snapshot():
+            tables = [ArchitectureDesign, ArchitectureDesignVersion, ArchitectureDiagramPayload,
+                      ArchitectureFinding, ArchitectureFindingRun, ArchitectureWarningAcknowledgement,
+                      DomainEventRow, Ideation]
+            result = {}
+            for model in tables:
+                rows = (await db.execute(select(model.__table__))).mappings().all()
+                result[model.__tablename__] = copy.deepcopy([dict(row) for row in rows])
+            return result
+
+        before = await snapshot()
+        if conflict == "persistence_fence":
+            async def reject_fence(*args, **kwargs):
+                return False
+            monkeypatch.setattr(get_architecture_persistence_port(), "fence_version", reject_fence)
+        with pytest.raises(ArchitectureVersionConflict):
+            expected = 1 if conflict == "authored_version" else 2
+            if operation == "delete":
+                await repo.delete(design.id, USER_ID, expected_version=expected)
+            else:
+                await repo.update(design.id, ArchitectureDesignUpdate(title="Stale", expected_version=expected), USER_ID)
+        await db.flush()
+        assert await snapshot() == before
 
 
 def _id(prefix: str) -> str:
@@ -139,6 +178,7 @@ def _architecture_payload(source_ref: str = "ideation:source") -> ArchitectureDe
                 "name": "ArchitectureDesignRepository",
                 "entity_type": "service",
                 "responsibility": "Persist architecture envelopes and versions.",
+                "boundaries": ["Domain API, no transport access", "Repository ownership"],
                 "technologies": ["SQLAlchemy"],
             },
             {
@@ -188,7 +228,7 @@ def _architecture_payload(source_ref: str = "ideation:source") -> ArchitectureDe
                             "type": "arrow",
                             "sourceElementId": "node-repository",
                             "targetElementId": "node-payload",
-                            "linkedInterfaceId": "interface-diagram-store",
+                            "linkedInterfaceIds": ["interface-diagram-store"],
                             "connectionType": "elbow",
                         },
                     ],
@@ -309,6 +349,43 @@ async def test_create_rejects_entity_name_that_duplicates_type(db_factory):
 
         with pytest.raises(ValueError, match=r"entities\[0\]\.name duplicates entity_type"):
             await repo.create("ideation", ideation_id, payload, USER_ID)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("boundaries", ["Backend", None, [""], ["Valid", 2]])
+async def test_raw_writes_reject_invalid_boundaries_without_version_change(db_factory, boundaries):
+    _, ideation_id = await _seed_ideation(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        payload = _architecture_payload().model_dump(mode="json")
+        payload["entities"][0]["boundaries"] = boundaries
+        with pytest.raises(ValueError, match=r"entities\[0\]\.boundaries"):
+            await repo.create("ideation", ideation_id, payload, USER_ID)
+        assert await repo.list("ideation", ideation_id) == []
+        design = await repo.create("ideation", ideation_id, _architecture_payload(), USER_ID)
+        with pytest.raises(ValueError, match=r"entities\[0\]\.boundaries"):
+            await repo.update(design.id, {"entities": payload["entities"]}, USER_ID)
+        assert design.version == 1
+        assert design.entities[0]["boundaries"] == _architecture_payload().entities[0].boundaries
+
+
+@pytest.mark.asyncio
+async def test_boundary_edits_preserve_previous_snapshot_and_current_list(db_factory):
+    _, ideation_id = await _seed_ideation(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        design = await repo.create("ideation", ideation_id, _architecture_payload(), USER_ID)
+        original = copy.deepcopy(design.entities)
+        replacement = copy.deepcopy(original)
+        replacement[0]["boundaries"] = ["Only public ports", "Tenant data, isolated\nNo cross-tenant access"]
+        await repo.update(design.id, ArchitectureDesignUpdate(entities=replacement), USER_ID)
+        await db.flush()
+        versions = (await db.execute(select(ArchitectureDesignVersion).where(
+            ArchitectureDesignVersion.design_id == design.id,
+        ).order_by(ArchitectureDesignVersion.version))).scalars().all()
+        assert versions[0].envelope_snapshot["entities"] == original
+        assert versions[1].envelope_snapshot["entities"] == replacement
+        assert (await repo.get(design.id)).entities == replacement
 
 
 @pytest.mark.asyncio
@@ -497,6 +574,9 @@ async def test_create_design_stores_diagram_payload_separately(db_factory):
             )
         ).scalars().all()
         assert [snapshot.version for snapshot in versions] == [1]
+        assert versions[0].envelope_snapshot["entities"][0]["boundaries"] == [
+            "Domain API, no transport access", "Repository ownership",
+        ]
 
 
 @pytest.mark.asyncio
@@ -810,6 +890,9 @@ async def test_copy_preserves_connectivity_justifications_as_content_but_reevalu
         await db.flush()
 
         assert copied.diagrams[0]["connectivity_justifications"] == source.diagrams[0]["connectivity_justifications"]
+        assert copied.entities[0]["boundaries"] == source.entities[0]["boundaries"] == [
+            "Domain API, no transport access", "Repository ownership",
+        ]
         assert copied.diagrams[0]["source_diagram_id"] == source.diagrams[0]["id"]
         assert copied.diagrams[0]["id"] != source.diagrams[0]["id"]
 
@@ -949,3 +1032,18 @@ async def test_refinement_architecture_create_emits_semantic_changed_event(db_fa
         assert event.actor_id == USER_ID
         assert event.payload_json["refinement_id"] == refinement_id
         assert event.payload_json["changed_fields"] == ["architecture_designs"]
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("obsolete_value", [None, "interface-diagram-store"])
+async def test_retired_scalar_link_is_rejected_without_writes(db_factory, nested, obsolete_value):
+    _, ideation_id = await _seed_ideation(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        payload = _architecture_payload().model_dump(mode="json")
+        edge = payload["diagrams"][0]["adapter_payload"]["elements"][-1]
+        target = edge.setdefault("customData", {}) if nested else edge
+        target["linkedInterfaceId"] = obsolete_value
+        with pytest.raises(ValueError, match="linkedInterfaceId is not supported"):
+            await repo.create("ideation", ideation_id, payload, USER_ID)
+        assert not db.new

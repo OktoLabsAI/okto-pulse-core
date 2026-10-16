@@ -58,17 +58,6 @@ def _aware_utc(value: object, code: str) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def _sha256(value: object, code: str) -> str:
-    normalized = _required_text(value, code).lower()
-    if len(normalized) != 64:
-        raise AssessmentLifecycleContractError(code)
-    try:
-        int(normalized, 16)
-    except ValueError as exc:
-        raise AssessmentLifecycleContractError(code) from exc
-    return normalized
-
-
 class AssessmentLifecycleAction(str, Enum):
     ADMIT_VALIDATION = "admit_validation"
     ARCHIVE = "archive"
@@ -120,21 +109,12 @@ class AssessmentPurgeResource(str, Enum):
     RESEARCH_HEADS = "research_heads"
     RESEARCH_ENTRIES = "research_entries"
     QUALITY_RECEIPTS = "quality_receipts"
-    QUALITY_LIFECYCLE_STALE_TRANSITIONS = (
-        "quality_lifecycle_stale_transitions"
-    )
     QUALITY_LIFECYCLE_TRANSITIONS = "quality_lifecycle_transitions"
     SUBJECT_HISTORY = "subject_history"
     KG_PROJECTIONS = "kg_projections"
-    LEGACY_IMPORT_RESOLUTIONS = "legacy_import_resolutions"
-    LEGACY_IMPORT_CHECKPOINTS = "legacy_import_checkpoints"
-    LEGACY_IMPORT_COMPLETIONS = "legacy_import_completions"
-    LEGACY_IMPORT_CANDIDATES = "legacy_import_candidates"
-    LEGACY_IMPORT_RUNS = "legacy_import_runs"
 
 
-# Children and pointers precede their immutable parents.  The epoch ledger is
-# intentionally absent: subject purge must not reopen a completed epoch.
+# Children and pointers precede their immutable parents.
 ASSESSMENT_SUBJECT_PURGE_ORDER: tuple[AssessmentPurgeResource, ...] = (
     AssessmentPurgeResource.QUALITY_PROJECTIONS,
     AssessmentPurgeResource.QUALITY_OUTBOX,
@@ -156,43 +136,17 @@ ASSESSMENT_SUBJECT_PURGE_ORDER: tuple[AssessmentPurgeResource, ...] = (
     AssessmentPurgeResource.RESEARCH_HEADS,
     AssessmentPurgeResource.RESEARCH_ENTRIES,
     AssessmentPurgeResource.QUALITY_RECEIPTS,
-    AssessmentPurgeResource.QUALITY_LIFECYCLE_STALE_TRANSITIONS,
     AssessmentPurgeResource.QUALITY_LIFECYCLE_TRANSITIONS,
     AssessmentPurgeResource.SUBJECT_HISTORY,
     AssessmentPurgeResource.KG_PROJECTIONS,
 )
 
-# A board erasure is the only operation allowed to delete the durable epoch.
+# Board erasure also removes the board-owned binding configuration.
 ASSESSMENT_BOARD_PURGE_ORDER: tuple[AssessmentPurgeResource, ...] = (
     *ASSESSMENT_SUBJECT_PURGE_ORDER,
     AssessmentPurgeResource.CHECKLIST_BINDING_HEADS,
     AssessmentPurgeResource.CHECKLIST_BINDING_VERSIONS,
-    AssessmentPurgeResource.LEGACY_IMPORT_RESOLUTIONS,
-    AssessmentPurgeResource.LEGACY_IMPORT_CHECKPOINTS,
-    AssessmentPurgeResource.LEGACY_IMPORT_COMPLETIONS,
-    AssessmentPurgeResource.LEGACY_IMPORT_CANDIDATES,
-    AssessmentPurgeResource.LEGACY_IMPORT_RUNS,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class AssessmentLifecycleCurrentInput:
-    assessment_kind: AssessmentKind
-    input_digest: str
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.assessment_kind, AssessmentKind):
-            raise AssessmentLifecycleContractError(
-                "assessment_lifecycle_kind_invalid"
-            )
-        object.__setattr__(
-            self,
-            "input_digest",
-            _sha256(
-                self.input_digest,
-                "assessment_lifecycle_input_digest_invalid",
-            ),
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,13 +154,16 @@ class AssessmentLifecycleSubjectSnapshot:
     subject: AssessmentSubjectRef
     status: str
     archived: bool
-    current_inputs: tuple[AssessmentLifecycleCurrentInput, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.subject, AssessmentSubjectRef):
             raise AssessmentLifecycleContractError(
                 "assessment_lifecycle_subject_invalid"
             )
+        _strict_positive_int(
+            self.subject.subject_edition,
+            "assessment_lifecycle_subject_edition_invalid",
+        )
         object.__setattr__(
             self,
             "status",
@@ -218,20 +175,6 @@ class AssessmentLifecycleSubjectSnapshot:
         if not isinstance(self.archived, bool):
             raise AssessmentLifecycleContractError(
                 "assessment_lifecycle_archived_invalid"
-            )
-        inputs = tuple(self.current_inputs)
-        object.__setattr__(self, "current_inputs", inputs)
-        if any(
-            not isinstance(item, AssessmentLifecycleCurrentInput)
-            for item in inputs
-        ):
-            raise AssessmentLifecycleContractError(
-                "assessment_lifecycle_current_input_invalid"
-            )
-        kinds = [item.assessment_kind for item in inputs]
-        if len(set(kinds)) != len(kinds):
-            raise AssessmentLifecycleContractError(
-                "assessment_lifecycle_current_input_duplicate"
             )
 
     @property
@@ -322,23 +265,12 @@ class AssessmentLifecycleTransition:
         else:
             before_edition = self.before.subject.subject_edition
             after_edition = self.after.subject.subject_edition
-            if before_edition is not None or after_edition is not None:
-                valid = (
-                    self.after.status == "draft"
-                    and self.before.status != "draft"
-                    and before_edition is not None
-                    and after_edition == before_edition + 1
-                    and not self.after.archived
-                )
-            else:
-                # Compatibility for pre-edition lifecycle events.
-                valid = (
-                    self.after.status == "draft"
-                    and self.before.status in {"done", "cancelled"}
-                    and self.after.subject.subject_version
-                    == self.before.subject.subject_version + 1
-                    and not self.after.archived
-                )
+            valid = (
+                self.after.status == "draft"
+                and self.before.status != "draft"
+                and after_edition == before_edition + 1
+                and not self.after.archived
+            )
         if not valid:
             raise AssessmentLifecycleContractError(
                 "assessment_lifecycle_transition_invalid"
@@ -399,7 +331,6 @@ class AssessmentLifecycleReceipt:
     receipt_id: str
     subject: AssessmentSubjectRef
     assessment_kind: AssessmentKind
-    input_digest: str
     created_at: datetime
 
     def __post_init__(self) -> None:
@@ -415,18 +346,14 @@ class AssessmentLifecycleReceipt:
             raise AssessmentLifecycleContractError(
                 "assessment_lifecycle_receipt_subject_invalid"
             )
+        _strict_positive_int(
+            self.subject.subject_edition,
+            "assessment_lifecycle_subject_edition_invalid",
+        )
         if not isinstance(self.assessment_kind, AssessmentKind):
             raise AssessmentLifecycleContractError(
                 "assessment_lifecycle_receipt_kind_invalid"
             )
-        object.__setattr__(
-            self,
-            "input_digest",
-            _sha256(
-                self.input_digest,
-                "assessment_lifecycle_receipt_input_digest_invalid",
-            ),
-        )
         object.__setattr__(
             self,
             "created_at",
@@ -445,8 +372,6 @@ class AssessmentHeadRebuild:
     selected_receipt_id: str | None
     selected_state: AssessmentReceiptState | None
     resulting_revision: int
-    stale_transition_required: bool
-    stale_transition_key: str | None
 
     def __post_init__(self) -> None:
         if not isinstance(self.assessment_kind, AssessmentKind):
@@ -486,41 +411,14 @@ class AssessmentHeadRebuild:
             raise AssessmentLifecycleContractError(
                 "assessment_head_rebuild_revision_mismatch"
             )
-        if not isinstance(self.stale_transition_required, bool):
-            raise AssessmentLifecycleContractError(
-                "assessment_head_rebuild_stale_flag_invalid"
-            )
         if self.selected_receipt_id is None:
             if self.selected_state is not None:
                 raise AssessmentLifecycleContractError(
                     "assessment_head_rebuild_selected_state_invalid"
                 )
-        elif self.selected_state not in {
-            AssessmentReceiptState.CURRENT,
-            AssessmentReceiptState.STALE,
-        }:
+        elif self.selected_state is not AssessmentReceiptState.CURRENT:
             raise AssessmentLifecycleContractError(
                 "assessment_head_rebuild_selected_state_invalid"
-            )
-        if self.stale_transition_required:
-            object.__setattr__(
-                self,
-                "stale_transition_key",
-                _sha256(
-                    self.stale_transition_key,
-                    "assessment_head_rebuild_stale_key_invalid",
-                ),
-            )
-            if (
-                self.previous_receipt_id is None
-                or self.selected_state is not AssessmentReceiptState.STALE
-            ):
-                raise AssessmentLifecycleContractError(
-                    "assessment_head_rebuild_stale_flag_mismatch"
-                )
-        elif self.stale_transition_key is not None:
-            raise AssessmentLifecycleContractError(
-                "assessment_head_rebuild_stale_key_unexpected"
             )
 
 
@@ -731,8 +629,7 @@ class AssessmentPurgePostcondition:
 
     Permit ownership intentionally does not appear in this contract.  The
     quality adapter executes while the outer board-erasure permit is still
-    active, so it can prove only its own rows, orphans, projections, outbox,
-    and epoch consistency.  Only the outer board-erasure orchestrator may
+    active, so it can prove only its own rows, orphans, projections and outbox.  Only the outer board-erasure orchestrator may
     attest that every purge finished and the permit was released.
     """
 
@@ -741,7 +638,6 @@ class AssessmentPurgePostcondition:
     zero_orphans: bool
     projections_reconciled: bool
     outbox_reconciled: bool
-    epoch_consistency_preserved: bool
     verified_at: datetime
 
     def __post_init__(self) -> None:
@@ -767,7 +663,6 @@ class AssessmentPurgePostcondition:
             "zero_orphans",
             "projections_reconciled",
             "outbox_reconciled",
-            "epoch_consistency_preserved",
         ):
             if not isinstance(getattr(self, field_name), bool):
                 raise AssessmentLifecycleContractError(

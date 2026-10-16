@@ -1,0 +1,104 @@
+{
+  "date": "2026-10-15",
+  "scope": "U3/3c/5c scenario write confirmation and identity; partial integration",
+  "base": {
+    "core": "db34c785",
+    "community": "7566db17"
+  },
+  "community_commit": "3057e84e",
+  "tests": [
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-parent-before.xml",
+      "sha256": "e98f783e5f7b0e2962c62d65d7e40e81ba1319103be4d12263f02d67772c2b4a",
+      "name": "vitest tests",
+      "tests": "28",
+      "failures": "3",
+      "errors": "0",
+      "time": "7.7446273",
+      "skipped": 25
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-scenario-parent-confirmation.xml",
+      "sha256": "a6e3f2d38f798e3c70186c051b36a78b044b265c803afb8a69aefaadc2e201b3",
+      "name": "vitest tests",
+      "tests": "43",
+      "failures": "0",
+      "errors": "0",
+      "time": "37.9089723",
+      "skipped": 0
+    }
+  ],
+  "final_unique_cases": 43,
+  "observed_failures": [
+    "Draft removed while the write is pending.",
+    "Native rejection swallowed by parent and authored text removed.",
+    "Late write response restores the previous Spec after identity switch."
+  ],
+  "checks": {
+    "types": {
+      "initial_session": 51347,
+      "initial_exit_code": 1,
+      "cause": "Test used unsupported ByRole option exact; replaced with equivalent /^Cancel$/ name selector.",
+      "final_session": 17695,
+      "exit_code": 0
+    },
+    "lint": {
+      "session": 9679,
+      "exit_code": 0,
+      "errors": 0,
+      "warnings": 12
+    },
+    "diff_check": "passed"
+  },
+  "ui_mcp": {
+    "board_id": "7bbd65c3-8738-45a2-8fab-a5216ab7e98c",
+    "spec_id": "dec9410f-d455-4506-a8fd-f791ee31dc77",
+    "edition": 1,
+    "version": 10,
+    "created_scenario": {
+      "id": "ts_1792040763309",
+      "title": "U3 mock - confirm scenario creation",
+      "linked_criteria": null,
+      "scenario_type": "integration",
+      "given": "An author has an unsaved mock scenario.",
+      "when": "The author submits the scenario through the native UI.",
+      "then": "The confirmed scenario appears once in the Spec and is readable through MCP; no test execution is claimed.",
+      "notes": null,
+      "status": "draft",
+      "linked_task_ids": null
+    },
+    "observations": [
+      "Created the scenario through the native browser form using the working-tree frontend.",
+      "After confirmation, the form closed and exactly one new row appeared.",
+      "MCP returned the exact authored Given/When/Then and integration type with draft status, no evidence and no Test Card allocation.",
+      "Saved screenshot inspected; existing scenario and AC coverage remain visible. Planning coverage is not execution credit."
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u3-decision-native-scenario-confirmed.json",
+      "sha256": "66a48ab0bbcd95478c69a0eba80d231fa6f3ab96752e677801987c8bcf5d5c92"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-scenario-created.yml",
+      "sha256": "a2490ad8c068498de1de8ff577e45ba004be42e10f3f6c7843393c500107f548"
+    },
+    {
+      "path": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\output\\playwright\\u3-scenario-created.png",
+      "sha256": "a80f734c37eb60599c1b8e7b8c539e9b50fcebe01df0e1aca7aa1bcce553a767"
+    }
+  ],
+  "remaining_5c": [
+    "Capture/review original authoring base and wire current-read state to the parent and method editor.",
+    "Retain method drafts for removed scenarios, clear protected state on permission loss, and discard late reloads.",
+    "Confer native guarantees for collection writes: scenarioWriteGuard still calls updateSpec without a version. Do not claim server CAS or enable Tests polling yet.",
+    "Resolve unknown write outcomes without unsafe resubmission; an HTTP failure is not proof that a commit did not happen.",
+    "Check existing link/unlink and policy writers; complete parent integration tests and browser/MCP concurrent-edit proof."
+  ],
+  "limits": [
+    "Vite 5274 with the older isolated API/MCP 8200/8201. Not the exact installed U4 pair.",
+    "Pending/negative/identity behavior demonstrated by integrated frontend tests; browser proof covers native positive creation only.",
+    "The equivalent Cancel selector type correction followed the 43-case run; final typecheck passed. No new runtime behavior from that test-only correction.",
+    "No backend, schema, permissions, policies, gates or user runtime changed. U3/5c remains open."
+  ]
+}
