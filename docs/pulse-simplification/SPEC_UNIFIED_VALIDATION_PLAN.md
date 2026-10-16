@@ -1,8 +1,24 @@
 # Validação unificada do planejamento da Spec
 
-## Planejamento vigente — fechamento de U4 após consolidação, 15/10/2026
+## Estado vigente — U1–U4 qualificados, 15/10/2026
 
-Esta seção é a única fila operacional vigente. Os roteiros seguintes são
+Implementação e qualificação encerradas conforme
+[matriz UV01–UV24](SPEC_UNIFIED_VALIDATION_ACCEPTANCE.md) e
+[evidências finais](evidence-u4-final-20261015.json). A conclusão unificada
+preserva avaliações, critérios, severidades, permissões e históricos.
+Spec/Task/Test do percurso instalado estão Done, percentuais aplicáveis 100%,
+consolidação committed/canonical e item cognitivo consolidated. Pacotes finais
+conferidos byte a byte, incluindo overlays; closure aprovado com oito budgets ZERO.
+
+A limitação operacional de probes KG indisponíveis está descrita no aceite:
+consulta/proveniência funcionam; saúde geral ainda `at_risk`. Não foi ocultada
+nem usada para dispensar autoridade ou prova. Não resta etapa de implementação
+da unificação. Os roteiros seguintes registram checkpoints anteriores e não
+constituem fila para repetir ensaios já concluídos. Publicação rastreada no ledger.
+
+## Histórico — fechamento de U4 após consolidação, 15/10/2026
+
+Esta seção registra a fila anterior ao fechamento. Os roteiros seguintes são
 históricos; os contratos de §§3–5, milestones U1–U4 e aceites UV01–UV24
 continuam normativos e inalterados. Revisão de planejamento: não executa
 novos testes, mutações no Pulse, instalação ou reinício.

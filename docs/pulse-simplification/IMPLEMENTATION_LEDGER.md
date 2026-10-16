@@ -2,6 +2,47 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — U4 e validação unificada: qualificação final concluída
+
+Plano [SPEC_UNIFIED_VALIDATION_PLAN.md](SPEC_UNIFIED_VALIDATION_PLAN.md)
+qualificado em U1–U4. [Matriz final dos 24 aceites](SPEC_UNIFIED_VALIDATION_ACCEPTANCE.md)
+e [conferência executável](evidence-u4-final-20261015.json): 107 artefatos,
+208 entradas de casos U2 por nome/hash e 37 hashes U3 reconferidos. Três falhas
+históricas de fixture no XML Checklist têm sucessor verde identificado; não
+foram omitidas nem tratadas como passe no relatório original.
+
+Fechada pelo MCP a pendência `cogn_8b95ff6fdf9191abd72855a7865c9ea4`, vinculada
+à sessão committed `kgses_071cefe2a81c4506`, outcome relation_created. Fila:
+pending 0/consolidated 1; sem segunda consolidação. Leitura instalada confirma
+Alternative canonical, origem exata e vínculos com a Spec real.
+
+Documentação health/readiness Core e overlay Community corrigida para
+`would_block_done=null`; essa observação não decide o fechamento do artefato.
+Geradores oficiais de manifest e catálogo executados, sem diff adicional.
+Testes novos executados: 168 Core resources/catálogo, 17 Community overlay,
+15 plano de Decision, 5 dimensões de Spec Validation. Os cinco últimos
+estendem a suíte de composição com persistência real: uma dimensão insuficiente
+impede promoção apesar de decomposição 100; pareceres negativos ficam registrados.
+Não foi necessária nova mudança de semântica ou frontend.
+
+Wheels R3 instalados em u4-venv; paridade 867/326 Python, 79 frontend,
+58 resources Core/5 Community. Closure final passou, sem findings, budgets ZERO.
+PID3776 iniciou depois da instalação; API8240/MCP8241. MCP serviu os resources
+efetivos corretos, inclusive o overlay. UI final inspecionada: Coverage,
+Validation, Project Structure, KG e Delivery dos dois Cards. Spec/Task Done
+100%/100%; Test Done só verificação 100%, nenhuma pendência de entrega.
+
+Limite operacional: após refresh o grafo/discovery estão healthy e consultáveis,
+mas probes de paridade ainda indisponíveis mantêm overall at_risk. Diagnóstico,
+reasons e correlation ID preservados no aceite; não foi declarado health integral.
+Home padrão intacta. Nenhum novo milestone ou expansão de escopo.
+
+Comandos e evidências: helpers locais `u4_qualify_final_r3.py`, `u4_native.py`
+e `u4_final_audit.py`; testes via `run_scenario_checkout.py` com os dois imports
+fixados. Playwright CLI no runtime instalado. Pacote/recibos/capturas mantidos
+em `.validation-v040/spec-unified-20261014` e `output/playwright`.
+Resta apenas publicar este fechamento; registrar os hashes dos commits abaixo.
+
 ### 2026-10-15 — planejamento final reconciliado após consolidação
 
 Checkpoint salvo e publicado antes da revisão do plano: Core `ff471088` /

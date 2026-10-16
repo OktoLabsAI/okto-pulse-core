@@ -78,6 +78,38 @@ async def test_composition_keeps_native_results_and_promotes_only_joint_success(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("metric,value", [
+    ("confidence", 0), ("clarity", 0), ("assertiveness", 0),
+    ("decidability", 0), ("ambiguity", 100),
+])
+async def test_composed_approval_cannot_compensate_a_failed_quality_dimension(
+    db_factory, monkeypatch, metric, value,
+):
+    """UV05: independent native thresholds remain gates in joint submission."""
+    _install_current_external_requirement_lint(monkeypatch)
+    async with db_factory() as db:
+        _, spec_id = await _seed_board_and_spec(db)
+        result = await SpecService(db).submit_spec_validation(
+            spec_id, USER_ID, "Evaluator", {
+                **_validation_payload(), metric: value,
+                "decomposition": decomposition_payload("approve", 100),
+            }, actor_type="agent",
+        )
+        await get_application_persistence_port().flush(db)
+        db.expire_all()
+        spec = await db.get(Spec, spec_id)
+        assert spec.status.value == "approved"
+        assert result["planning_result"] == "blocked"
+        assert result["outcome"] == "failed"
+        assert "spec_validation_failed" in result["planning_blockers"]
+        assert len(spec.validations) == len(spec.evaluations) == 1
+        assert spec.validations[0][metric] == value
+        assert spec.validations[0]["outcome"] == "failed"
+        assert spec.evaluations[0]["recommendation"] == "approve"
+        assert spec.evaluations[0]["overall_score"] == 100
+
+
+@pytest.mark.asyncio
 async def test_conclusion_consumes_another_reviewers_current_review(db_factory, monkeypatch):
     _install_current_external_requirement_lint(monkeypatch)
     async with db_factory() as db:
