@@ -14,8 +14,14 @@ A Decision records a contextual CHOICE — the reasoning behind picking one
 path over alternatives. Different from BusinessRule (which is a NORM, a
 prescriptive "DEVE" statement): use a Decision to capture design
 intent, tradeoffs, or team consensus. The KG extracts Decisions into
-queryable nodes, and the optional coverage gate (opt-in) can require each
-Decision to have ≥1 linked task.
+queryable nodes. Every active Decision needs a complete verification plan:
+selected active obligations and/or an inspection condition with bounded scope.
+Task links provide context, not proof. There is no minimum number of Decisions;
+do not create a Task or Test Card solely to cover a Decision.
+
+Planning and delivery rules: `okto-pulse://reference/spec_gates` (Decisions
+Coverage Gate). Inspection and current proof: `okto-pulse://reference/tool-docs/code-traceability`
+(`okto_pulse_get_decision_reviews`, `okto_pulse_record_decision_reviews`).
 
 Args:
     board_id: Board ID
@@ -29,9 +35,31 @@ Args:
         FR index/fr_id/text and structured TR id/text. Persisted values are
         canonical ids when the write path resolves them.
     notes: Additional notes
+    verification: Native object with `obligation_refs` and/or `inspection`.
+        Obligation refs identify active same-Spec FR/TR/BR/IR/OR/AC/API items.
+        Inspection has a non-empty `condition` and bounded `scope_refs`.
+        Both selected obligation proof and inspection must pass when declared.
 
 Returns:
     JSON with created decision and spec coverage snapshot
+
+Example verification plan for a scope choice (replace the Spec ID):
+
+```json
+{
+  "verification": {
+    "obligation_refs": [],
+    "inspection": {
+      "condition": "Confirm that the release scope excludes recurring bookings and that its requirements and acceptance criteria do not promise them.",
+      "scope_refs": [{"kind": "spec", "id": "<spec_id>"}]
+    }
+  }
+}
+```
+
+This is a partial `okto_pulse_add_decision` payload, not an approval. At delivery,
+the authorized reviewer records an observed inspection through the review tool;
+reviewer separation, currentness and historical conflicts still apply.
 
 
 ## `okto_pulse_remove_spec_entity` (`target_type="decision"`)

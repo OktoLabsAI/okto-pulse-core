@@ -25,10 +25,10 @@ You MUST `resources/read` the matching URI below before operating on that entity
 | Revise/adopt guidelines, evaluate policy, or operate waivers | `okto-pulse://reference/policy-compliance` |
 | Record Technical Evidence, Technical Anchors/Implementation Targets, Spec evidence links, or task target resolutions | `okto-pulse://reference/code-traceability` |
 | Author/evaluate a Spec, decide Project structure applicability, or edit its tree | `okto-pulse://reference/project-structure` |
-| Move a card / sprint / spec | `okto-pulse://reference/transitions` |
+| Move a card / spec | `okto-pulse://reference/transitions` |
 | Use the consolidated `list_*` tools | `okto-pulse://reference/list_tools` |
 | Look up a specific tool by name | `okto-pulse://reference/tools_catalog` |
-| Choose a response projection profile (summary/detail/full/legacy) | `okto-pulse://reference/projection-profiles` |
+| Choose a response projection profile (summary/detail/full) | `okto-pulse://reference/projection-profiles` |
 | Use the polymorphic `okto_pulse_ask` family | `okto-pulse://reference/tool-families/qa_ask` |
 | Use the polymorphic `okto_pulse_remove_spec_entity` family | `okto-pulse://reference/tool-families/spec_entity_remove` |
 
@@ -38,7 +38,7 @@ You MUST `resources/read` the matching URI below before operating on that entity
 
 Before a Spec leaves Draft, author Project Structure or justify `Project Structure: not applicable` in its `context` for the reviewed edition/scope. This mandatory agent protocol is not a server gate; see the reference above.
 
-Before operating on an entity you MUST `resources/read` its Quick Navigation URI: status transitions, spec saturation/validation, card execution past `not_started`, sprint moves, KG consolidation and queries.
+Before operating on an entity you MUST `resources/read` its Quick Navigation URI: status transitions, spec authoring/validation, card execution past `not_started`, KG consolidation and queries. Use the preflight action map to distinguish exploration, planning, execution and completion.
 
 Read each applicable resource once per effective catalog/session. Reuse it when
 switching back to a domain if its catalog identity/content hash is unchanged;
@@ -75,7 +75,7 @@ Prefer soft-delete (`okto_pulse_archive_tree`, `okto_pulse_remove_spec_entity(ta
 
 ## Consolidated List Tools
 
-4 polymorphic tools replace 15 entity-specific `list_*`: `okto_pulse_list_by_board`, `okto_pulse_list_qa`, `okto_pulse_list_knowledge`, `okto_pulse_list_snapshots`. Replacement table and required filters: `okto-pulse://reference/list_tools`.
+Use `okto_pulse_list_by_board`, `okto_pulse_list_qa`, `okto_pulse_list_knowledge`, and `okto_pulse_list_snapshots`. Supported entities and required filters: `okto-pulse://reference/list_tools`.
 
 ---
 
@@ -83,7 +83,7 @@ Prefer soft-delete (`okto_pulse_archive_tree`, `okto_pulse_remove_spec_entity(ta
 
 Schemas: MCP `tools/list`. Catalog and exact args/results/examples: `okto-pulse://reference/tools_catalog`.
 
-Before Spec Done, use `okto_pulse_get_delivery_evidence` / `okto_pulse_record_delivery_evidence`: tasks prove code; **test cards** verify it. No implicit exemption. Protocol: `okto-pulse://reference/code-traceability`.
+Before Spec Done, inspect `okto_pulse_get_delivery_evidence` and record applicable proof through `okto_pulse_record_delivery_evidence`. Follow each obligation's implementation/verification plan; Decisions use selected obligations and/or inspection. Do not invent a Task or Test Card solely to cover a Decision. No implicit exemption. Protocol: `okto-pulse://reference/code-traceability`.
 Use `view="readiness"` for independent implementation/verification metrics and minimal next actions. Proof is separate from lifecycle: 100/100 does not authorize Done. N/A, unknown and human exceptions are distinct; never translate deprecated `delivery_completeness` stages into the new metrics. Follow paginated detail before claiming a complete diagnosis, and reuse valid existing proof when only association is missing.
 
 - **Validation & move gates**: `okto_pulse_move_{card,ideation,refinement,spec}`, `submit_{task_validation,spec_validation,spec_evaluation}`; coverage check: `okto_pulse_get_traceability_report`.
@@ -92,7 +92,7 @@ Use `view="readiness"` for independent implementation/verification metrics and m
 
 ### Response projection profiles — summary-first reads
 Use `summary` for exploration, `detail`/drilldowns for bodies, `full` for gate
-context, and `legacy` only for compatibility. **Summary-first is for exploration
+context. **Summary-first is for exploration
 ONLY.** It never replaces the mandatory full gate read before any
 status-changing move: for cards use
 `okto_pulse_get_task_context(profile="full", context_scope="gate")`; other
@@ -120,16 +120,16 @@ Do not stop processes, replace storage or bypass a fence without authority.
 
 1. **Board guidelines first** — `okto_pulse_get_board_guidelines(board_id)` before any work.
 2. **Mentions first** — `okto_pulse_list_my_mentions` → act → `okto_pulse_mark_as_seen`.
-3. **Card execution pre-flight before ANY card work** (sequence above).
+3. **Card execution pre-flight before implementation or rework**. For exploration and planning use the matching route in `okto-pulse://workflows/preflight`.
 4. **Never move an entity without its full `get_*_context`** before the status change.
 5. **Query the KG at every planning stage** (ideation/refinement/spec) and **consolidate on every mandatory trigger** — `okto-pulse://workflows/kg`.
-6. **Comment as you work** — start, key decisions, obstacles, completion. Use `@Name` to direct items (they become unseen mentions).
+6. **Comment as you work** — communicate start, key decisions, obstacles and completion. Reference recorded Delivery evidence rather than duplicating every receipt in prose. Use `@Name` to direct items (they become unseen mentions).
 7. **Respect dependencies** — resolve blockers before moving blocked cards.
 8. **One card does one thing** — create sub-tasks instead of over-scoping.
 9. **Keep `objective` current** via `okto_pulse_update_my_profile`.
 10. **Never ASCII-draw UI** — use `okto_pulse_add_screen_mockup` (HTML + Tailwind).
 11. **Avoid literal protocol tags** (`<parameter>`) inside string content — see MCP XML tags bug pattern.
-12. **Never create cards for a spec that is not `approved` or later** (test cards also accept `validated`) — move the spec forward first. Create test cards and link their scenarios BEFORE calling `okto_pulse_submit_spec_validation`.
+12. **Plan normal/Test Cards in Draft as `not_started`**; this does not authorize execution. Create Test Cards with their scenario IDs before Spec Validation; creation links those scenarios atomically. Read `okto-pulse://reference/card_types` for the creation matrix and post-Done restrictions.
 
 ---
 

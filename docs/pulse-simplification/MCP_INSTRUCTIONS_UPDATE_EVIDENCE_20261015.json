@@ -1,0 +1,293 @@
+{
+  "tools": 285,
+  "resources": 54,
+  "tool_contracts_unchanged": true,
+  "argument_drift": 0,
+  "broken_published_links": 0,
+  "unknown_concrete_tools": 0,
+  "common_plus_operational_kg_exact": true,
+  "runtime_pid": 6312,
+  "runtime_started_at": 1792114317.1693914,
+  "newest_installed_mtime": 1792113888.9262445,
+  "tests": {
+    "update-core.xml": {
+      "passed": 197,
+      "failures": []
+    },
+    "update-community.xml": {
+      "passed": 40,
+      "failures": [
+        "tests.test_r11d_capability_descriptors::test_ts_bd58a427_golden_replay_resources_read_tooldoc_payload"
+      ]
+    },
+    "update-community-descriptors.xml": {
+      "passed": 4,
+      "failures": []
+    },
+    "update-native-journeys.xml": {
+      "passed": 21,
+      "failures": []
+    },
+    "update-inventory.xml": {
+      "passed": 2,
+      "failures": []
+    }
+  },
+  "artifacts": {
+    "updated/wire-inventory.json": {
+      "sha256": "9d1e8bacb16da05ec74a910c8756d78b808f26e0ec4b3ce092a28a7738091bee",
+      "bytes": 586455
+    },
+    "updated/served-bodies.json": {
+      "sha256": "66428442ed3b224d1d908fb5bea6be6c422243ec08f4342173e73fc372623777",
+      "bytes": 708879
+    },
+    "updated/served-instructions.md": {
+      "sha256": "e376ad418361075daa083b12d880c815bd9226d34b8b548d0280d3a2990ec95c",
+      "bytes": 11405
+    },
+    "updated/scan.json": {
+      "sha256": "e3cfbe8598952239523299d1dbfee7f59634cc0185dc751581266c6b69ec58da",
+      "bytes": 57719
+    },
+    "update-parity.json": {
+      "sha256": "ae369db39c0e1b83e4ade5159748318ef21ff5f5fa2e23f1551a9c088f2809b1",
+      "bytes": 900
+    },
+    "update-core.xml": {
+      "sha256": "cc67dcfc5edfed0713709236754012072ca38d0328ef56f583a6436df6fcce37",
+      "bytes": 26612
+    },
+    "update-community.xml": {
+      "sha256": "32f36889b80881dd3b65c96bc012432b287bfec55ef8f011c8e39fe988779524",
+      "bytes": 9050
+    },
+    "update-community-descriptors.xml": {
+      "sha256": "268fff9e9d006049a23672c61b7caa082e05a245b44001a6a27bfd679e4b9149",
+      "bytes": 778
+    },
+    "update-native-journeys.xml": {
+      "sha256": "d1f9f8eb85ce7aec8cb6ca00bba697d6977bc1d0cc12c77fb4f2326f270a9652",
+      "bytes": 3280
+    },
+    "update-inventory.xml": {
+      "sha256": "e1f81706f73345befa33bb26593618d3384e1d56030f5cbccae503eaacbd9ac6",
+      "bytes": 644
+    },
+    "update-closure-source.json": {
+      "sha256": "a032981982c05a075bea88f287e82cc7c430c047f5ad9dca7f9ad5a65c8f0e6b",
+      "bytes": 3809103
+    },
+    "update-closure-wheels.json": {
+      "sha256": "253ecd4ae5b2c7bec6e1d9b46ecb42be188308e70e491747dea15aa2b2e96bf8",
+      "bytes": 3809136
+    }
+  },
+  "scope": "A01-A09 and O01-O05; MCP instructions and effective resource composition",
+  "baseline": {
+    "core": "428e8793",
+    "community": "8e75f23f",
+    "branch": "feature/v0.4.0"
+  },
+  "parity": {
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\spec-unified-20261014\\u4-venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "source_count": 867,
+        "installed_count": 867,
+        "differences": []
+      },
+      "community": {
+        "source_count": 326,
+        "installed_count": 326,
+        "differences": []
+      }
+    },
+    "resources": {
+      "core": {
+        "source_count": 58,
+        "installed_count": 58,
+        "differences": []
+      },
+      "community": {
+        "source_count": 2,
+        "installed_count": 2,
+        "differences": []
+      }
+    },
+    "wheels": {
+      "okto_pulse-0.4.0-py3-none-any.whl": "f3051623e8fa0d786482320d0dd28ea126b4aa219d260fe27bb682f95b29764c",
+      "okto_pulse_core-0.4.0-py3-none-any.whl": "3964329e281c93b8fe006e6549b79dee098bc4a8fff6270352617bd592e2f128"
+    },
+    "newest_installed_mtime": 1792113888.9262445
+  },
+  "closure": {
+    "update-closure-source.json": {
+      "ok": true,
+      "findings": [],
+      "budgets": [
+        {
+          "key": "import_boundary_baseline",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "singleton_baseline",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every singleton_baseline allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "dependency_temporary_exceptions",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "graph_runtime_compatibility",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "rebuild_artifact_compatibility",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "community_private_reach_ins",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "community_adapter_bridges",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "af35_relational_residue",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        }
+      ]
+    },
+    "update-closure-wheels.json": {
+      "ok": true,
+      "findings": [],
+      "documentation_findings": [],
+      "budgets": [
+        {
+          "key": "import_boundary_baseline",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "singleton_baseline",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every singleton_baseline allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "dependency_temporary_exceptions",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "graph_runtime_compatibility",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "rebuild_artifact_compatibility",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "community_private_reach_ins",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "community_adapter_bridges",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        },
+        {
+          "key": "af35_relational_residue",
+          "current": 0,
+          "limit": 0,
+          "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+          "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion.",
+          "expires_on": null,
+          "ok": true
+        }
+      ]
+    }
+  },
+  "distinct_passed_tests": 261,
+  "historical_failures_resolved": [
+    "tests.test_r11d_capability_descriptors::test_ts_bd58a427_golden_replay_resources_read_tooldoc_payload"
+  ],
+  "failure_resolution": "Capability descriptor fixture expected four edition overrides. Updated to one KG operational extension and three common Core documents; exact failing case passes in update-community-descriptors.xml.",
+  "limitations": [
+    "Focused tests and installed MCP publication audit, not execution of all 285 tools.",
+    "Only the isolated qualification installation was reinstalled and restarted; default installation/home untouched.",
+    "No frontend changes; no new frontend test run for this documentation/composition update."
+  ]
+}

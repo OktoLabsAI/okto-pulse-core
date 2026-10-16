@@ -17,7 +17,7 @@ board-specific alternative.
 
 | From | To | Pre-requisites |
 |------|-----|---------------|
-| `not_started` | `started` | Spec must be `in_progress` or later |
+| `not_started` | `started` | Spec must be `in_progress`; Done blocks normal-card start/reopen |
 | `not_started` | `in_progress` | Direct start only when current permissions and readiness allow it; same execution gates apply |
 | `started` | `in_progress` | — |
 | `in_progress` | `validation` | — |
@@ -54,7 +54,7 @@ Type rules — scenario cap (`max_scenarios_per_card`), evidence gate, validatio
 | `draft` | `review` | — |
 | `review` | `approved` | — |
 | `approved` | `validated` | `okto_pulse_submit_spec_validation` with all coverage gates passing + `recommendation=approve`; when the curated checklist binding is `blocking`, a passing Current `/specify/v1` result for the same Spec edition is also required (see `okto-pulse://reference/spec_gates`) |
-| `validated` | `in_progress` | `okto_pulse_submit_spec_evaluation` with `recommendation=approve` |
+| `validated` | `in_progress` | Sufficient Current decomposition evaluation from `approved` or `validated`, with `recommendation=approve`, plus current execution gates. Reuse the existing judgment within the same edition. |
 | `in_progress` | `done` | All linked normal, non-archived cards `done` or `cancelled`; applicable coverage, resource, cognitive, policy and delivery-evidence gates satisfied |
 
 ## Ideation transitions

@@ -2,6 +2,53 @@
 
 ## Estado para retomada
 
+### 2026-10-15 — Atualização das instruções e resources MCP concluída
+
+Implementado o escopo fechado do [assessment](MCP_INSTRUCTIONS_ASSESSMENT_20261015.md):
+A01–A09 e O01–O05. Bootstrap, workflows e referências agora descrevem o
+planejamento em Draft sem início de execução, vínculo atômico de cenários,
+verificação de Decision por obrigações e/ou inspeção, arrays nativos, seleção
+explícita de Knowledge, contratos cognitivos atuais e histórico nativo.
+Retiradas receitas obsoletas de Sprint, perfil legacy e migração/reparo inexistente.
+
+Contratos comuns têm uma fonte no Core. Community deixou de manter cópias de
+errors e tool-docs KG/Decision; seu workflow KG compõe o corpo comum injetado
+pela porta pública com notas próprias de Grafx/host, recuperação e catchup.
+Freeze cobre o corpo composto. Testes verificam atualização da fonte comum,
+recusa de fonte ausente/substituída e conteúdo servido por cliente MCP real.
+Manutenção futura: alterar a regra no resource Core proprietário; acrescentar
+apenas operação específica no suplemento Community. Não restaurar cópias.
+
+Mudanças explícitas de protocolo do agente: preflight de execução não é exigido
+para mera consulta/planejamento; corpos completos, atuais e não truncados podem
+ser reutilizados, preservando leituras de gate e paginação necessárias. Knowledge
+advisory não pede justificativa por cada item omitido. Comentários comunicam
+decisões/obstáculos, sem duplicar recibos Delivery. Corrigir achados não significa
+obrigatoriamente acrescentar texto. Gates, permissões, avaliações, critérios,
+severidades e thresholds do servidor permanecem iguais.
+
+Qualificação: **261 testes distintos aprovados** (197 Core documental,
+41 Community, 21 jornadas nativas, 2 inventário/budget). Uma asserção antiga
+esperava quatro overrides; corrigida para a extensão operacional única e
+reexecutada com sucesso. O XML original com essa falha foi preservado, com
+sucessor nominal no [recibo de evidências](MCP_INSTRUCTIONS_UPDATE_EVIDENCE_20261015.json).
+Catálogo e manifesto regenerados oficialmente; catálogo sem drift adicional.
+Closure de fontes e wheels passou, sem findings, todos os oito budgets ZERO.
+
+Wheels locais instalados no u4-venv isolado: paridade byte a byte de 867/326
+arquivos Python e 58/2 resources Core/Community; bootstrap conferido. PID6312
+iniciado depois da instalação, API8240/MCP8241. Nova captura autenticada:
+285 ferramentas com schemas/descrições inalterados, 54 resources, zero templates,
+zero divergência de argumentos, tools concretas inexistentes ou links publicados
+quebrados. KG publicado corresponde exatamente ao corpo comum mais suplemento.
+Isso qualifica documentação/composição e jornadas focadas, não execução das
+285 ferramentas. Nenhuma mudança de frontend; instalação/home padrão intactas.
+
+Evidências locais e helpers em
+`PULSE_REFACTOR/.validation-v040/mcp-instructions-review-20261015/`, resultados
+`update-*` e captura `updated/`; assessment original preservado. Trabalho
+concluído; U1–U4 continuam fechados, sem novo milestone ou expansão de escopo.
+
 ### 2026-10-15 — Assessment integral da superfície documental MCP
 
 Solicitação do usuário: conferir instruções e resources quanto a clareza,

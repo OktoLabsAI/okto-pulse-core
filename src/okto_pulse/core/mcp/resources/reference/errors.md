@@ -52,15 +52,27 @@ is created.
 
 ## Card / Move Transitions
 
+Normal/Bug validation can produce `rejected` as an admitted assessment/completion
+consequence. Read its sealed Current cause, take the sole public rework edge
+`rejected` → `in_progress`, then record a new report and validation attempt.
+Do not resubmit while Rejected or edit/delete causal history. Test Cards retain
+their separate lifecycle; see `okto-pulse://reference/transitions`.
+
 | Error message | Cause | Fix |
 |---|---|---|
 | `"A conclusion is required when moving a card to Validation"` / `"A conclusion is required when moving a card to Done"` | Missing executor report: `conclusion`, `completeness`, `completeness_justification`, `drift`, `drift_justification` | Add all 5 parameters to `okto_pulse_move_card`. |
 | `"Card type 'test' is not subject to validation gate"` | Called `okto_pulse_submit_task_validation` on a test card | Test cards use scenario execution, not normal task validation. Record honest terminal results (`passed`, `failed`, or `automated`) with required evidence, then request `done` with the executor report. Completion is not product approval. |
 | `"N test scenario(s) still have status 'draft'"` / `"ready"` | Test card's linked scenarios not executed/reported | Execute the test and call `okto_pulse_update_test_scenario_status` with its actual result and required evidence, then retry `okto_pulse_move_card`. Never relabel a failure as passed. On a locked Spec, the scenario must already be linked to an executable test card; otherwise `status_not_mutable` still applies. |
-| `"Cannot move card forward: spec must be at least 'in_progress'"` | Spec is in `approved` or `validated` | Move the spec to `in_progress` first via `okto_pulse_move_spec` (requires `okto_pulse_submit_spec_evaluation` with `recommendation=approve` on a `validated` spec). |
+| `"Cannot move card forward: spec must be at least 'in_progress'"` | Spec is in `approved` or `validated` | Move the spec to `in_progress` first via `okto_pulse_move_spec` (requires a sufficient Current decomposition evaluation recorded in `approved` or `validated`; reuse it within the same edition rather than submitting again solely for this transition). |
 | `"Validation gate is active. Move card to 'validation' first"` | Tried to move a normal card directly to `done` | Move to `validation` with the executor report, then `okto_pulse_submit_task_validation`. |
 | `"Card is not in 'validation' status"` | Validation was requested before the implementor successfully moved the card out of `in_progress` | The implementor must call `okto_pulse_move_card(status="validation", ...)` with the complete executor report and confirm that it succeeded. Only then can a validator submit. |
 | `card_rejected_rework_handoff_required` | An implementation/content/evidence mutation was attempted while the card is Rejected | Read the Current rejection cause, move the card `rejected` → `in_progress`, then begin the new implementation attempt. |
+| `current_rejection_cause_missing` | A Rejected Card has no sealed Current cause | Stop and report the Card ID, edition/version and error to the operator. No public migration/repair command is exposed; do not invent a cause, delete history or bypass the gate. |
+| `card_initial_status_invalid` | Card creation requested a non-initial status | Use `not_started` or an admitted `started`; Draft permits only `not_started`. Rejected is an internal consequence, not an initial state. |
+| `card_transition_not_allowed` | Requested edge is not in the public lifecycle | Read current allowed transitions and gate context; never assign Rejected manually. |
+| `task_validation_history_append_only` | Attempted to delete an admitted validation | Preserve causal history; after rework submit a new attempt. |
+| `normal_card_spec_done` | Attempted normal-card authoring/start/reopen on a Done Spec | Preserve delivered history; use the governed revision path for new normal work. Collaboration and Bug/regression operations retain their own controls. |
+| `spec_status_too_early` | Tried to execute a Card while its Spec is still Draft | Keep planned Cards `not_started`; finish Spec planning/validation before execution. |
 | `task_validation_subject_version_conflict` | The card changed after the validation payload was prepared | Reload gate context and retry with the new `expected_subject_version` and a new idempotency key. |
 | `task_validation_policy_conflict` | The Board policy could not be fenced for the validation transaction | Reload gate context and retry only after current Board access and policy are available. No validation or status change is admitted. Policy is reloaded under the Board fence; a newly enforced independence rule returns `reviewer_separation_required`. |
 | `card_dependency_conflict` | The Board could not be fenced for a dependency mutation | Reload the Cards and retry with current Board access. The dependency and its projection event are not admitted. |
@@ -74,13 +86,13 @@ An omitted `reviewer_separation_mode` uses `enforce` with `source="board_default
 | Error message | Cause | Fix |
 |---|---|---|
 | `"Every task must be linked to a spec"` | `spec_id` missing on `okto_pulse_create_card` | Always pass `spec_id`. |
-| `"<Type> cards can only be created for specs in <list> status. Spec '<title>' is currently '<status>'."` | Spec status doesn't accept card creation of this `card_type` | See card type governance rules. Move the spec forward with `okto_pulse_move_spec`. |
+| `"<Type> cards can only be created for specs in <list> status. Spec '<title>' is currently '<status>'."` | Spec status doesn't accept card creation of this `card_type` | Read `okto-pulse://reference/card_types`. Normal/Test planning is allowed in Draft only as `not_started`; do not promote solely to create them. A Done Spec blocks new normal content; Bug/regression paths retain their own controls. |
 | `"Test scenario(s) not found in spec '<title>': [...]"` | Passed `test_scenario_ids` that don't exist on that spec | List scenarios with `okto_pulse_list_test_scenarios` and use a valid id. |
 | `max_scenarios_per_card_exceeded` | A test-card create/link request exceeded `board.settings.max_scenarios_per_card` | Split the scenarios across multiple `card_type="test"` cards and keep each card within the board cap. |
 
 ## Bug Cards
 
-**The bug regression protocol (Path A / B / C)** — the rows below reference these paths instead of restating them:
+**Bug regression paths A/B.** The complete ordered workflow is in `okto-pulse://workflows/cards`; these summaries route the errors below:
 
 - **Path A — same-spec reuse.** Run `okto_pulse_resolve_bug_regression_scenarios` first. Reuse an existing scenario ONLY when it is eligible by lineage (same spec AND linked to the bug's `origin_task_id` or an explicitly supplied affected task), then create a fresh post-bug `card_type="test"` card referencing it and link it to the bug. Leave validated spec content unchanged. Pre-existing scenarios DO count; the "after the bug" temporal applies to the test TASK (card), not the scenario.
 - **Path B — formal amendment.** When no eligible scenario exists, expected behavior changed, or the evidence is cross-spec: create/associate a formal `AmendmentHotfixRevision` (`okto_pulse_create_amendment_revision` — binds to the bug's own spec, starts `draft` — or `okto_pulse_associate_amendment_revision_artifacts`), complete its lineage, register re-executable evidence, and have the validator confirm coverage via `okto_pulse_confirm_amendment_coverage` (the only writer of the non-forgeable `coverage_confirmed` signal). Refinement or spec-revision authoring alone NEVER satisfies the bug gate; there is no skip/override.

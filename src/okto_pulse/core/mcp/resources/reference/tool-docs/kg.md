@@ -53,13 +53,25 @@ Missing authentication or board access returns the non-enumerating
 }
 ```
 
-The JSON-LD export keeps its legacy flat error projection while carrying the
-same information:
+Inside the outer MCP outcome, the JSON-LD domain error carries the same
+information in its flat projection. Read the outer envelope first; see
+okto-pulse://reference/projection-profiles:
 `{"error":"permission_denied","message":"...","required_permission":"board.read"}`.
 
 ## `okto_pulse_kg_abort_consolidation`
 
-Covered fully by the live tool description.
+Drop an in-flight session without committing.
+
+No compensating delete is applied — commit was never called, so the graph runtime
+has no partial writes. The session is marked aborted and removed from
+the in-memory registry.
+
+Args:
+    session_id: Session from begin_consolidation
+    reason: Optional reason (logged for audit)
+
+Returns:
+    JSON with session_id, status=aborted
 
 ## `okto_pulse_kg_add_edge_candidate`
 
@@ -126,11 +138,38 @@ Returns:
 
 ## `okto_pulse_kg_begin_consolidation`
 
-Covered fully by the live tool description.
+Open a transactional consolidation session against a board.
+
+Computes SHA256(board + artifact + content) for nothing-changed detection.
+Returns a session_id the agent uses in all subsequent primitives. The
+session has a TTL (default 1h, configurable via kg_session_ttl_seconds)
+and is owned exclusively by the authenticated agent.
+
+Args:
+    board_id: Target board
+    artifact_type: Typed artifact kind; consult the live schema/query contract. Use `spec` for a formalized Spec.
+    artifact_id: Source artifact id
+    raw_content: Full artifact content used for SHA256 dedup
+    deterministic_candidates: Pre-extracted node candidates (ORNs, refs)
+
+Returns:
+    JSON with session_id, content_hash, nothing_changed flag, expires_at
 
 ## `okto_pulse_kg_commit_consolidation`
 
-Covered fully by the live tool description.
+Atomically commit the session: the graph runtime writes + audit row + outbox event.
+
+agent_overrides map candidate_id → ReconciliationHint for cases where
+the agent's semantic reasoning produces a different op than the
+server's deterministic default.
+
+Args:
+    session_id: Session from begin_consolidation
+    summary_text: Optional session summary (surfaced in dashboard)
+    agent_overrides: Optional per-candidate hint overrides
+
+Returns:
+    JSON with session_id, status=committed, counts, committed_at
 
 
 ## `okto_pulse_kg_health_readiness`
@@ -195,11 +234,31 @@ reject missing or duplicate refs rather than guessing an id.
 
 ## `okto_pulse_kg_find_contradictions`
 
-Covered fully by the live tool description.
+Find contradictory decision pairs via :contradicts relationship.
+When node_id is provided, returns only pairs involving that node.
+Without node_id, returns all contradiction pairs (limit 50).
+
+Args:
+    board_id: Board ID
+    node_id: Optional Decision node ID (empty = all pairs)
+    max_rows: Maximum pairs (default 50)
+
+Returns:
+    JSON with pairs: [{id_a, title_a, id_b, title_b, confidence}]
 
 ## `okto_pulse_kg_find_similar_decisions`
 
-Covered fully by the live tool description.
+Find decisions similar to a topic using hybrid ranking:
+0.5*semantic + 0.2*graph_centrality + 0.2*recency + 0.1*confidence.
+
+Args:
+    board_id: Board ID
+    topic: Natural language description to match against
+    top_k: Maximum results (default 10)
+    min_similarity: Minimum similarity threshold (default 0.3)
+
+Returns:
+    JSON with decisions ordered by combined_score DESC
 
 ## `okto_pulse_kg_get_decision_history`
 
@@ -226,7 +285,17 @@ Returns:
 
 ## `okto_pulse_kg_get_learning_from_bugs`
 
-Covered fully by the live tool description.
+Get lessons learned from bugs in a specific area. Returns Learning
+nodes connected to Bug nodes via :validates relationship.
+
+Args:
+    board_id: Board ID
+    area: Area keyword to filter bugs by (matches title/content)
+    min_confidence: Minimum confidence (default 0.5)
+    max_rows: Maximum results (default 100)
+
+Returns:
+    JSON with learnings: [{learning_id, learning_title, bug_id, bug_title}]
 
 ## `okto_pulse_kg_get_related_context`
 
@@ -257,12 +326,28 @@ Returns:
 
 ## `okto_pulse_kg_get_similar_nodes`
 
-Covered fully by the live tool description.
+Fetch existing the graph runtime nodes similar to an in-session candidate.
+
+MVP uses title-prefix match as a deterministic fallback; production
+replaces with HNSW k-NN via vector index (card 00dae72a).
+
+Args:
+    session_id: Session from begin_consolidation
+    candidate_id: Candidate to compare against
+    top_k: Max neighbors (1-50, default 5)
+    min_similarity: Threshold (0.0-1.0, default 0.3)
+
+Returns:
+    JSON with similar: [SimilarNode]
 
 ## `okto_pulse_kg_get_supersedence_chain`
 
-Covered fully by the live tool description (args: board_id, decision_id,
-node_type — node_type defaults to Decision).
+Trace the supersedence chain for a node.
+
+Args:
+    board_id: Board ID.
+    decision_id: Canonical node ID.
+    node_type: Node type; defaults to `Decision`.
 
 ## `okto_pulse_kg_health`
 
@@ -305,7 +390,16 @@ Returns:
 
 ## `okto_pulse_kg_list_alternatives`
 
-Covered fully by the live tool description.
+List alternatives that were considered and discarded for a decision,
+including their reason_discarded from the narrative.
+
+Args:
+    board_id: Board ID
+    decision_id: Decision node ID
+    max_rows: Maximum results (default 100)
+
+Returns:
+    JSON with alternatives list
 
 ## `okto_pulse_kg_list_cognitive_pending_items`
 
@@ -452,7 +546,12 @@ Returns:
 
 ## `okto_pulse_kg_propose_reconciliation`
 
-Covered fully by the live tool description.
+Request reconciliation hints for the current consolidation session. Inspect
+the returned candidates and hints before committing; a hint is not a persisted
+change or permission to replace unrelated knowledge.
+
+Args:
+    session_id: Session returned by `okto_pulse_kg_begin_consolidation`.
 
 ## `okto_pulse_kg_query_cypher`
 
@@ -524,9 +623,22 @@ Returns:
 
 ## `okto_pulse_kg_query_global`
 
-Covered fully by the live tool description. Delta: the default
-`graph_layer=canonical` never leaks working nodes; each result also carries
-its own `graph_layer`.
+Cross-board semantic search via the global discovery layer. Returns
+matching decisions from all boards the agent has access to, filtered
+by ACL.
+
+Args:
+    board_id: Optional board_id to restrict search (empty = all boards)
+    nl_query: Natural language query string
+    top_k: Maximum results (default 10)
+    graph_layer: `canonical` (default) | `working` | `all`. Filters which graph
+        layer the cross-board search reads. Default `canonical` never leaks
+        working nodes; an invalid value fails closed with a structured error.
+
+Returns:
+    JSON `{results: [{board_id, id, title, similarity, graph_layer}], count,
+    applied_graph_layer}`. `applied_graph_layer` echoes the layer actually
+    applied; each result also carries its own `graph_layer`.
 
 ## `okto_pulse_kg_query_natural`
 
@@ -597,7 +709,12 @@ Returns:
 
 ## `okto_pulse_kg_schema_info`
 
-Summary and Args covered by the live tool description. Delta:
+Inspect the public graph schema and query contract.
+
+Args:
+    board_id: Board ID. An empty value returns static global contract metadata
+        without opening or enumerating a Board graph. There is no
+        `include_internal` argument on this MCP tool.
 
 Returns:
     JSON with schema_version, stable_node_types, stable_rel_types,

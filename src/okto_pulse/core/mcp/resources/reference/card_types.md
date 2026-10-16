@@ -12,7 +12,7 @@ version: "1.0"
 
 ## Normal Card Rules
 
-- `card_type="normal"` → spec must be in `approved`, `in_progress`, or `done`
+- `card_type="normal"` → create in Spec `draft` (only `not_started`), `approved`, or `in_progress`. Creation in Draft is planning, not execution. Spec `done` blocks normal-card creation/content changes and start/reopen; use the governed revision path for new normal work.
 - Goes through the standard validation gate when `validation_config.required == true`
 - Requires conclusion, completeness, and drift when moving to `validation` or `done`
 - Transition: `not_started` → `started` → `in_progress` → `validation` → `done`; an admitted failed completion internally enters `rejected`, whose sole exit is `in_progress`
@@ -21,7 +21,7 @@ version: "1.0"
 
 - `card_type="test"` **requires** `test_scenario_ids` to be non-empty — the server rejects card creation without it.
 - A single test card may link at most `board.settings.max_scenarios_per_card` scenarios (default 3; some boards configure 2). Split larger sets before creation; the API rejects over-limit requests with `max_scenarios_per_card_exceeded`.
-- Spec must be in `approved`, `validated`, `in_progress`, or `done` for test card creation.
+- Spec must be in `draft`, `approved`, `validated`, `in_progress`, or `done` for test card creation. In Draft the Card must remain `not_started`; creation does not authorize execution. On a locked/Done Spec, only eligible existing scenario links and governed operational evidence are allowed; new semantic coverage follows the amendment/revision path.
 - The scenario-coverage gate counts **only cards with `card_type="test"`**. A `card_type="normal"` card with `test_scenario_ids` does NOT count toward scenario coverage.
 - **Always use `card_type="test"` when the intent is to cover a scenario.**
 - Test cards skip `okto_pulse_submit_task_validation` — moving to `done` is controlled by scenario status.
@@ -99,7 +99,7 @@ authenticated family, see `okto-pulse://reference/policy-compliance`.
        coverage (refinement/spec-revision authoring alone does NOT satisfy
        the bug gate)
 3. Create a fresh test task & link to bug (still started)
-   └── okto_pulse_update_card(card_id=bug_id, linked_test_task_ids="<test_task_id>")
+   └── okto_pulse_update_card(card_id=bug_id, linked_test_task_ids=["<test_task_id>"])
 4. Move to in_progress (BLOCKED until step 3 is done)
    └── System validates:
        ✓ At least 1 test task linked

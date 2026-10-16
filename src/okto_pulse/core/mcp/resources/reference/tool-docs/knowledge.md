@@ -18,9 +18,9 @@ assignments use the replace, drop and refresh tools below.
 
 Add a knowledge base item to an ideation.
 
-Provide exactly ONE of content or content_reference. Ideation KBs are
-propagated to refinements/specs by default when those artifacts are derived
-or created from the ideation.
+Provide exactly ONE of content or content_reference. Inherited Knowledge is
+selected explicitly in the derivation/creation envelope. Omitting that envelope
+selects no inherited Knowledge; adding a source KB does not imply copy-all.
 
 Args:
     board_id: Board ID

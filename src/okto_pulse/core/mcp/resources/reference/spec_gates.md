@@ -395,11 +395,16 @@ identify the exceptional blocker and a pinpoint must locate it. `reject`
 always wins; `approve` never overrides a threshold violation.
 
 Each score requires its own evaluator justification. Pulse validates and stores
-this externally supplied assessment but does not run an evaluator. Historical
-`score`/`summary` and `completeness` records remain readable compatibility
-evidence and do not define the canonical five-metric gate.
+this externally supplied assessment but does not run an evaluator. Current and
+Previous retain native v0.4.0 assessments and their lifecycle editions.
+Incompatible records containing removed `score`/`summary` or `completeness`
+fields are refused before history filtering or pagination, without conversion.
 
-**Anti-pattern — GRAVE violation:** Re-submitting with higher numbers without actually improving the spec. The correct response to a failed dimension is to ADD content (new test scenarios, refined BRs, edge cases) until you genuinely believe the score is higher.
+**After a failed dimension:** correct the evidenced findings, then re-read and
+re-evaluate with the same rubric and effective thresholds. A correction may
+add missing coverage, remove redundancy, clarify scope or resolve contradictory
+requirements. More text is not itself improvement. Never raise scores without
+new supporting evidence or change severity merely to pass the gate.
 
 **FR coverage source:** the deterministic FR coverage gate is `Functional Requirement -> Business Rule`. It reads `business_rules[].linked_requirements`; direct task links on `functional_requirements[].linked_task_ids` are traceability only and do not close `fr_coverage_pct`.
 

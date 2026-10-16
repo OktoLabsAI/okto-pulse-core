@@ -181,7 +181,11 @@ the mandatory sweep happens before the spec leaves `draft`.
 | `okto_pulse_kg_query_natural` | Natural language search via embedding + HNSW |
 | `okto_pulse_kg_schema_info` | Schema introspection: node types, rel types, vector indexes |
 
-**Safety rails:** Timeout: 5s default, 30s max. Max rows: 50 by default and 1000 hard cap. Rate limit: **30 queries/min per agent**. Cypher injection: blacklist keywords rejected.
+**Safety rails:** query limits and read-only syntax are defined in
+`okto-pulse://reference/tool-docs/kg` and the live query contract returned by
+`okto_pulse_kg_schema_info`. Calls may narrow the Board timeout, not raise it.
+Only the authorized human can change Board policy; a resource-limit refusal
+requires a smaller query, not an unchanged retry.
 
 **Layer contract:** Graph nodes expose `graph_layer` (`canonical` or `working`). `kg_layer_counts` is a health payload aggregate, not a node property. `okto_pulse_kg_query_cypher` enforces canonical-only visibility by default and should be called with `include_working=true` for working graph checks, rebuild validation, or E2E ingestion tests.
 

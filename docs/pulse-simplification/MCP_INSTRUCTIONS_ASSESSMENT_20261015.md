@@ -292,6 +292,14 @@ própria antes de qualquer alteração.
 
 ## Estado para retomada
 
-Assessment concluído. Próxima ação concreta, se solicitado implementar:
-**etapa 1, A01–A09**, seguida das demais etapas acima, sem ampliar o escopo.
-O produto e as instruções MCP publicadas continuam na base avaliada.
+Atualização solicitada e concluída em 2026-10-15: etapas 1–4, A01–A09 e
+O01–O05 implementados. Este documento preserva os achados da base avaliada;
+eles não representam pendências atuais. Detalhes no
+[ledger](IMPLEMENTATION_LEDGER.md) e no
+[recibo de qualificação](MCP_INSTRUCTIONS_UPDATE_EVIDENCE_20261015.json).
+
+261 testes distintos aprovados; 285 tools e 54 resources preservados.
+Contratos comuns servidos pelo Core, com um suplemento operacional KG composto
+no Community. Captura instalada isolada conferida após reinstalação e reinício;
+zero drift de argumentos/links e oito budgets arquiteturais em zero.
+Nenhuma alteração dos gates/avaliações do servidor ou da instalação padrão.
