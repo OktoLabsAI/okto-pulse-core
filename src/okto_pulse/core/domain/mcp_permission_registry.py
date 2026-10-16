@@ -467,6 +467,17 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_get_spec_evaluation", "spec.evaluations.read"),
     _policy("okto_pulse_get_spec_history", "spec.history_read"),
     _policy("okto_pulse_get_spec_knowledge", "spec.knowledge.read"),
+    # Board/entity admission and per-component visibility; these flags are an
+    # inventory, not a grant to expose sections the current actor cannot read.
+    _policy(
+        "okto_pulse_get_spec_validation_cycle",
+        "board.read",
+        "spec.entity.read",
+        "spec.validation.read",
+        "spec.quality.read",
+        "spec.checklist.read",
+        "guidelines.assessments.read",
+    ),
     _policy("okto_pulse_get_task_conclusions", "card.conclusion.read"),
     _policy(
         "okto_pulse_get_task_context",

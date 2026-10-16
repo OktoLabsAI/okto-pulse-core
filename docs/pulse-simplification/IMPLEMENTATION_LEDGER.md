@@ -4,6 +4,16 @@
 
 ### 2026-10-16 — Promoção v0.4.0 autorizada, em execução
 
+PRs Core #107 / Community #116 integradas em develop; conteúdo idêntico às
+features. Promoções para main: Core #108 / Community #117. Primeira rodada CI:
+Core recusou ausência de get_spec_validation_cycle no manifesto de permissões;
+Community passou closure e parou a coleta por tiktoken ausente no extra dev.
+Correções delimitadas: inventário da autoridade já aplicada por Board/Spec e
+seções, sem mudar execução/autorização; contagens 285 tools/282 policies/3
+exemptions; dependência dev tiktoken declarada com lock. Testes focados de
+registry/autorização e medição MCP: 53 aprovados com os dois src explícitos.
+Os checks remotos devem ser reexecutados; nenhuma proteção será contornada.
+
 Usuário autorizou PRs feature/v0.4.0 → develop → main, merges e tag v0.4.0
 nos dois repositórios. Bases: Core 8cc4d962 / Community 21ba464f; develop é
 ancestral das duas features, sem divergência. Main exige CI e histórico linear;
