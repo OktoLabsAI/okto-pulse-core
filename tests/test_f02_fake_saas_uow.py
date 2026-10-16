@@ -12,6 +12,19 @@ from okto_pulse.core.testing.fake_saas_uow import FakeSaaSUnitOfWorkFactory
 
 
 @pytest.mark.asyncio
+async def test_fake_planning_capabilities_refuse_unconfigured_operations() -> None:
+    factory = FakeSaaSUnitOfWorkFactory()
+    async with factory(realm_scope=RealmScope.tenant("realm-a")) as uow:
+        await uow.begin_write()
+        await uow.begin_write()
+        with pytest.raises(NotImplementedError, match="receipts were not configured"):
+            await uow.spec_validation_receipts.get(object())
+        with pytest.raises(NotImplementedError, match="manifests were not configured"):
+            await uow.spec_planning_manifest.read_many(board_id="board-a", spec_ids=("spec-a",))
+        assert uow.commit_calls == 0
+
+
+@pytest.mark.asyncio
 async def test_f02_fake_uow_commits_once_and_isolates_transactions() -> None:
     factory = FakeSaaSUnitOfWorkFactory()
     realm = RealmScope.tenant("realm-a")

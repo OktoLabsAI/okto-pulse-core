@@ -106,6 +106,20 @@ class _UnsupportedSemanticAssessmentPort:
 
 
 
+class _UnsupportedSpecPlanningPort:
+    async def get(self, scope: object) -> None:
+        raise NotImplementedError("fake SaaS Spec validation receipts were not configured")
+
+    async def save(self, receipt: object) -> None:
+        raise NotImplementedError("fake SaaS Spec validation receipts were not configured")
+
+    async def read_many(self, *, board_id: str, spec_ids: tuple[str, ...]) -> None:
+        raise NotImplementedError("fake SaaS Spec planning manifests were not configured")
+
+    async def require_current(self, expected: object) -> None:
+        raise NotImplementedError("fake SaaS Spec planning manifests were not configured")
+
+
 class FakeSaaSUnitOfWork:
     """Copy-on-write UnitOfWork with no native persistence handle."""
 
@@ -140,6 +154,8 @@ class FakeSaaSUnitOfWork:
         self.semantic_assessment_v2_reader = unsupported_semantic_port
         self.semantic_assessment_v2_capability = unsupported_semantic_port
         self.entity_exports = unsupported_semantic_port
+        self.spec_validation_receipts = _UnsupportedSpecPlanningPort()
+        self.spec_planning_manifest = _UnsupportedSpecPlanningPort()
         self.commit_calls = 0
         self.rollback_calls = 0
         self.close_calls = 0
@@ -179,6 +195,10 @@ class FakeSaaSUnitOfWork:
             self.realm_scope,
             parent_boards=self._working_state.boards,
         )
+
+    async def begin_write(self) -> None:
+        # Copy-on-write already isolates this fake's mutations until commit.
+        return None
 
     async def begin_consistent_read(self) -> None:
         # The fake takes a deep copy when the UoW is created, so every read in
