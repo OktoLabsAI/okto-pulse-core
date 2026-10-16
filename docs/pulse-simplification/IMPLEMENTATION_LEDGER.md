@@ -2,6 +2,17 @@
 
 ## Estado para retomada
 
+### 2026-10-16 — Promoção v0.4.0 autorizada, em execução
+
+Usuário autorizou PRs feature/v0.4.0 → develop → main, merges e tag v0.4.0
+nos dois repositórios. Bases: Core 8cc4d962 / Community 21ba464f; develop é
+ancestral das duas features, sem divergência. Main exige CI e histórico linear;
+promoção por squash respeitará os checks, sem bypass. Versões Python/frontend
+e Docker estão em 0.4.0. Changelogs/release notes recebem data 2026-10-16.
+Core deve receber a tag antes do Community, cujo push dispara Release/GHCR.
+Retomada: conferir PRs, resultados de CI e refs remotas antes de declarar
+concluído; nenhuma tag existia no início desta promoção.
+
 ### 2026-10-15 — Changelog da v0.4.0 e aviso de breaking change
 
 Changelogs Core/Community consolidados em `0.4.0 — Unreleased`, sem inventar

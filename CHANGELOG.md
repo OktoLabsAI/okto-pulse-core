@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ---
 
-## [0.4.0] - Unreleased
+## [0.4.0] - 2026-10-16
 
 ### BREAKING CHANGE — no compatibility with earlier Pulse versions
 
@@ -79,7 +79,6 @@ an in-place upgrade of an existing data directory.**
   duplicate scenario writes or task-only coverage of Decisions.
 
 See the Community changelog for fresh-start instructions and UI/runtime changes.
-The release date will be recorded when 0.4.0 is published.
 
 ## [0.3.3] - 2026-08-23
 
