@@ -20,6 +20,7 @@ Fallback Confidence Cap`).
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -1480,14 +1481,14 @@ async def _abort_open_consolidation_after_fence(
 
 
 class _DirectBlockingExecution:
-    """Task-free fallback for direct processor tests.
+    """Offload blocking graph work when no production executor is injected.
 
-    Production editions inject an adapter that offloads and tracks blocking
-    operations. This implementation intentionally performs no scheduling.
+    Projection preparation can call back into the event loop to commit its
+    SQLite journal. Running graph work on the loop would deadlock that handoff.
     """
 
     async def run(self, operation):
-        return operation()
+        return await asyncio.to_thread(operation)
 
     async def join(self, timeout: float) -> int:
         del timeout
