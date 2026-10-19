@@ -87,6 +87,7 @@ from okto_pulse.core.kg.primitives import (
     finalize_deferred_consolidation,
     propose_reconciliation,
     run_cancellation_atomic,
+    stage_recovered_projection_output,
 )
 from okto_pulse.core.kg.memory_pressure import FailureEvent
 from okto_pulse.core.kg.memory_pressure_collector import record_failure
@@ -1022,6 +1023,8 @@ def _same_claim(
 async def _queue_claim_is_current_and_unfenced(
     db: Any,
     entry: ConsolidationQueueRecord,
+    *,
+    reserve_writer: bool = True,
 ) -> bool:
     """Check the exact claim and governed-deletion fence in storage.
 
@@ -1045,6 +1048,7 @@ async def _queue_claim_is_current_and_unfenced(
             source=_queue_source(entry),
             generation=_generation(entry),
             delete_event_id=_delete_event_id(entry),
+            **({"reserve_writer": False} if not reserve_writer else {}),
         )
     )
 
@@ -1589,6 +1593,8 @@ async def _commit_consolidation_with_board_graph_lifecycle(
     defer_session_finalization: bool = False,
     enter_graph_write: _GraphWriteEnter | None = None,
     allow_known_removals: bool = False,
+    journaled_prepared: list[str] | None = None,
+    journaled_receipts: list[tuple[str, str]] | None = None,
 ):
     """Commit a queue item and prove the persisted graph before ACK.
 
@@ -1600,15 +1606,53 @@ async def _commit_consolidation_with_board_graph_lifecycle(
     """
 
     mutation_ref = f"{entry.artifact_type}:{entry.artifact_id}:{session_id}"
+    journaled_operation_id = (
+        str(uuid.uuid5(uuid.NAMESPACE_URL, f"pulse:projection:{session_id}"))
+        if journaled_prepared is not None else None
+    )
+    graph_after: str | None = None
+
+    async def _stage_projection_precommit(payload: dict[str, object]) -> None:
+        nonlocal graph_after
+        if journaled_operation_id is None:
+            raise RuntimeError("projection_operation_id_missing")
+        baseline = payload.get("graph_after")
+        output = payload.get("output")
+        if type(baseline) is not str or type(output) is not dict:
+            raise RuntimeError("projection_precommit_payload_invalid")
+        store = get_consolidation_persistence_port()
+        # Source preparation and health checks have finished. End their WAL
+        # read snapshot before acquiring the brief prepared-operation writer.
+        await store.rollback(db)
+        prepared = await store.prepare_projection_operation(
+            db,
+            operation_id=journaled_operation_id,
+            entry_id=entry.id,
+            claim_token=_claim_token(entry) or "",
+            board_id=entry.board_id,
+            artifact_type=entry.artifact_type,
+            artifact_id=entry.artifact_id,
+            source=_queue_source(entry),
+            graph_after=baseline,
+            output=output,
+        )
+        if not prepared:
+            await store.rollback(db)
+            raise _QueueClaimLostOrFenced(
+                f"projection_precommit_claim_lost entry_id={entry.id}"
+            )
+        await store.commit(db)
+        graph_after = baseline
+        journaled_prepared.append(journaled_operation_id)
 
     async def _commit_with_lease(write_lease: GuardedWriteLease):
         # The storage CAS deliberately runs *after* graph-writer acquisition.
         # This keeps the global order graph-writer -> relational writer in
         # lockstep with rebuild (writer A -> BEGIN IMMEDIATE) and avoids the
         # DB-writer -> graph-writer inversion that can deadlock recovery.
-        if _claim_token(
+        if (journaled_operation_id is None and _claim_token(
             entry
-        ) is not None and not await _queue_claim_is_current_and_unfenced(db, entry):
+        ) is not None and not await _queue_claim_is_current_and_unfenced(db, entry)):
             await _abort_open_consolidation_after_fence(
                 entry=entry,
                 session_id=session_id,
@@ -1628,6 +1672,9 @@ async def _commit_consolidation_with_board_graph_lifecycle(
                 defer_session_finalization=defer_session_finalization,
                 **({'allow_known_removals': True} if allow_known_removals else {}),
                 **({"rebuild_cognitive": True} if _queue_source(entry).startswith("rebuild:") else {}),
+                **({"projection_operation_id": journaled_operation_id,
+                    "projection_precommit": _stage_projection_precommit}
+                   if journaled_operation_id is not None else {}),
             )
         except KGPrimitiveError as exc:
             # The dependency endpoint barrier is deliberately read-only.  It
@@ -1665,6 +1712,17 @@ async def _commit_consolidation_with_board_graph_lifecycle(
             blocking_execution=blocking_execution,
             failure_timestamp=now,
         )
+        if journaled_operation_id is not None:
+            if graph_after is None or journaled_receipts is None:
+                raise RuntimeError("projection_prepared_operation_missing")
+            from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+            receipt = await get_kg_registry().graph_transaction.projection_commit_receipt(
+                entry.board_id, journaled_operation_id, after=graph_after
+            )
+            if receipt is None:
+                raise RuntimeError("projection_native_commit_receipt_missing")
+            journaled_receipts.append((journaled_operation_id, receipt))
         return commit_resp
 
     if enter_graph_write is not None:
@@ -1690,6 +1748,8 @@ async def _process_queue_entry_serialized(
     stale_reconcile_telemetry: dict[str, object] | None = None,
     deferred_session_ids: list[str] | None = None,
     enter_graph_write: _GraphWriteEnter | None = None,
+    journaled_prepared: list[str] | None = None,
+    journaled_receipts: list[tuple[str, str]] | None = None,
 ) -> bool | StaleSweepRunReceipt | DeferredProjectionProgress:
     """Process one queue row under a process-local per-board mutex.
 
@@ -1709,6 +1769,8 @@ async def _process_queue_entry_serialized(
             stale_reconcile_telemetry=stale_reconcile_telemetry,
             deferred_session_ids=deferred_session_ids,
             enter_graph_write=enter_graph_write,
+            journaled_prepared=journaled_prepared,
+            journaled_receipts=journaled_receipts,
         )
 
 
@@ -3250,6 +3312,8 @@ async def _process_queue_entry(
     stale_reconcile_telemetry: dict[str, object] | None = None,
     deferred_session_ids: list[str] | None = None,
     enter_graph_write: _GraphWriteEnter | None = None,
+    journaled_prepared: list[str] | None = None,
+    journaled_receipts: list[tuple[str, str]] | None = None,
 ) -> bool | StaleSweepRunReceipt | DeferredProjectionProgress:
     """Process one queue entry through the primitives pipeline.
     Returns True on success, False on failure."""
@@ -3289,7 +3353,10 @@ async def _process_queue_entry(
     )
     if allow_known_removals:
         source_lease = enter_graph_write(f'{entry.artifact_type}:{entry.artifact_id}:{entry.id}:source')
-        if not await _queue_claim_is_current_and_unfenced(db, entry):
+        if not await _queue_claim_is_current_and_unfenced(
+            db, entry,
+            **({'reserve_writer': False} if journaled_prepared is not None else {})
+        ):
             raise _QueueClaimLostOrFenced(f'queue_claim_lost_before_source entry_id={entry.id}')
         enter_graph_write = lambda mutation_ref: source_lease
     preparation = await _prepare_deterministic_projection(db, entry)
@@ -3402,6 +3469,9 @@ async def _process_queue_entry(
         defer_session_finalization=deferred_session_ids is not None,
         enter_graph_write=enter_graph_write,
         **({'allow_known_removals': True} if allow_known_removals else {}),
+        **({"journaled_prepared": journaled_prepared,
+            "journaled_receipts": journaled_receipts}
+           if allow_known_removals and journaled_prepared is not None else {}),
     )
 
     if isinstance(commit_resp, DeferredProjectionProgress):
@@ -3647,6 +3717,7 @@ class ConsolidationProcessor:
         *,
         clock: WorkerClockPort | None = None,
         blocking_execution: BlockingExecutionPort | None = None,
+        durable_projection_protocol: bool = False,
     ):
         if relational_scope_factory is None:
             from okto_pulse.core.ports.relational_runtime import get_db_session
@@ -3657,6 +3728,7 @@ class ConsolidationProcessor:
         self.batch_size = batch_size
         self._clock = clock
         self._blocking_execution = blocking_execution or _DirectBlockingExecution()
+        self._durable_projection_protocol = bool(durable_projection_protocol)
         self._last_attempted_count = 0
         # FR5/FR6 (spec R2c): per-board DLQ auto-drain state.
         # _dlq_drain_last_run: board_id -> datetime of last drain attempt.
@@ -3668,6 +3740,130 @@ class ConsolidationProcessor:
         return (
             self._clock.now() if self._clock is not None else datetime.now(timezone.utc)
         )
+
+    async def recover_projection_operations(self, *, limit: int = 100) -> int:
+        """Resolve prepared operations while holding the kernel graph writer.
+
+        The kernel hold excludes a paused predecessor. Under that hold the
+        native history can prove both a committed receipt and a stable absence.
+        """
+
+        if not self._durable_projection_protocol:
+            return 0
+        store = get_consolidation_persistence_port()
+        async with self.relational_scope_factory() as db:
+            pending = await store.list_unsettled_projection_operations(
+                db, limit=limit
+            )
+            await store.rollback(db)
+        recovered = 0
+        for item in pending:
+            board_id = str(item["board_id"])
+            operation_id = str(item["operation_id"])
+            baseline = str(item["graph_after"])
+            async with advisory_lock(board_id, "consolidation"):
+                with guarded_board_write(
+                    board_id,
+                    operation=CONSOLIDATION_COMMIT_OPERATION,
+                    owner_id=f"{AGENT_ID}:recover:{operation_id}",
+                    mutation_ref=f"projection-recover:{operation_id}",
+                    required_steps=WORKER_COMMIT_LIFECYCLE_STEPS,
+                ) as lease:
+                    try:
+                        graph_commit = await get_kg_registry().graph_transaction.projection_commit_receipt(
+                            board_id, operation_id, after=baseline
+                        )
+                        lease.ensure_owned(failure_phase="projection_recovery")
+                        async with self.relational_scope_factory() as db:
+                            queue = await store.get_queue_entry(
+                                db, entry_id=str(item["queue_id"])
+                            )
+                            same_claim = bool(
+                                queue is not None
+                                and queue.board_id == board_id
+                                and queue.artifact_type == item["artifact_type"]
+                                and queue.artifact_id == item["artifact_id"]
+                                and queue.status == "claimed"
+                                and queue.claim_token == item["claim_token"]
+                                and _queue_source(queue) == item["source"]
+                            )
+                            newer_pending = bool(
+                                queue is not None
+                                and queue.board_id == board_id
+                                and queue.artifact_type == item["artifact_type"]
+                                and queue.artifact_id == item["artifact_id"]
+                                and queue.status == "pending"
+                            )
+                            if graph_commit is None:
+                                if same_claim:
+                                    queue.status = "pending"
+                                    queue.claimed_at = None
+                                    queue.claim_timeout_at = None
+                                    queue.worker_id = None
+                                    queue.claimed_by_session_id = None
+                                    queue.claim_token = None
+                                    await store.save_queue_entries(db, [queue])
+                                await store.abandon_projection_operation(
+                                    db, operation_id=operation_id,
+                                    board_id=board_id,
+                                )
+                            else:
+                                if not (same_claim or newer_pending):
+                                    raise RuntimeError(
+                                        "projection_recovery_queue_identity_lost"
+                                    )
+                                output = dict(item["output"])
+                                if output.get("progress_kind") == "removal_progress":
+                                    if same_claim:
+                                        await self._defer_relational_projection_endpoint(
+                                            db, queue,
+                                            error_text=(
+                                                "relational_projection_endpoint_pending:"
+                                                "Known removals applied; projection awaits its target."
+                                            ),
+                                        )
+                                else:
+                                    await stage_recovered_projection_output(
+                                        db, operation_id=operation_id,
+                                        output=output,
+                                    )
+                                    if (
+                                        item["artifact_type"] == "spec"
+                                        and int(output.get("nodes_superseded") or 0)
+                                    ):
+                                        await _enqueue_superseded_spec_consumers(
+                                            db, board_id=board_id,
+                                            spec_id=str(item["artifact_id"]),
+                                        )
+                                    if same_claim and not await store.ack_claimed_queue_entry(
+                                        db,
+                                        entry_id=str(item["queue_id"]),
+                                        claim_token=str(item["claim_token"]),
+                                        board_id=board_id,
+                                        source=str(item["source"]),
+                                        work_kind="consolidate",
+                                        generation=0,
+                                        delete_event_id=None,
+                                    ):
+                                        raise RuntimeError(
+                                            "projection_recovery_ack_lost"
+                                        )
+                                await store.finalize_projection_operation(
+                                    db, operation_id=operation_id,
+                                    board_id=board_id,
+                                    graph_commit=graph_commit,
+                                )
+                            await store.commit(db)
+                        recovered += 1
+                    finally:
+                        await _ensure_board_graph_durable(
+                            board_id=board_id,
+                            mutation_ref=f"projection-recover:{operation_id}",
+                            write_lease=lease,
+                            blocking_execution=self._blocking_execution,
+                            failure_timestamp=self._now(),
+                        )
+        return recovered
 
     @property
     def last_attempted_count(self) -> int:
@@ -4259,6 +4455,20 @@ class ConsolidationProcessor:
                     list(ready_entries),
                 )
             )
+            if self._durable_projection_protocol and ready_entries:
+                unsettled_boards = {
+                    board_id
+                    for board_id in {entry.board_id for entry in ready_entries}
+                    if await store.has_unsettled_projection_operation(
+                        db, board_id=board_id
+                    )
+                }
+                if exact_protocol and unsettled_boards:
+                    raise RuntimeError("exact_rebuild_projection_operation_unsettled")
+                ready_entries = tuple(
+                    entry for entry in ready_entries
+                    if entry.board_id not in unsettled_boards
+                )
             entries = _select_board_aware_entries(
                 list(ready_entries),
                 claimed_board_ids=claimed_boards,
@@ -4358,6 +4568,15 @@ class ConsolidationProcessor:
         max_attempts = settings.kg_queue_max_attempts
         for entry in entries:
             deferred_session_ids: list[str] = []
+            journaled_live = bool(
+                self._durable_projection_protocol
+                and not exact_protocol
+                and _work_kind(entry) == "consolidate"
+                and entry.artifact_type in {"spec", "card"}
+                and not _queue_source(entry).startswith("rebuild:")
+            )
+            journaled_prepared: list[str] | None = [] if journaled_live else None
+            journaled_receipts: list[tuple[str, str]] | None = [] if journaled_live else None
             relational_commit_confirmed = False
             post_commit_cleanup_failed = False
             precommit_compensation_confirmed = False
@@ -4472,6 +4691,8 @@ class ConsolidationProcessor:
                             stale_reconcile_telemetry=stale_reconcile_telemetry,
                             deferred_session_ids=deferred_session_ids,
                             enter_graph_write=_enter_graph_write,
+                            journaled_prepared=journaled_prepared,
+                            journaled_receipts=journaled_receipts,
                         )
                         if isinstance(outcome, DeferredProjectionProgress):
                             if exact_protocol or deferred_session_ids != [outcome.session_id]:
@@ -4481,6 +4702,14 @@ class ConsolidationProcessor:
                                 raise _QueueClaimLostOrFenced('projection_removal_progress_claim_lost')
                             await self._defer_relational_projection_endpoint(db, fresh,
                                 error_text=f'{outcome.error_code}:Known removals applied; projection awaits its target.')
+                            if journaled_receipts:
+                                if len(journaled_receipts) != 1:
+                                    raise RuntimeError("projection_commit_receipt_count_invalid")
+                                operation_id, graph_commit = journaled_receipts[0]
+                                await store.finalize_projection_operation(
+                                    db, operation_id=operation_id,
+                                    board_id=entry.board_id, graph_commit=graph_commit,
+                                )
                             # Commit queue retry + finalize compensable removals below.
                             # No audit, ACK, processed count or post-ACK maintenance.
                         elif isinstance(outcome, StaleSweepRunReceipt):
@@ -4565,6 +4794,35 @@ class ConsolidationProcessor:
                                 if graph_write_lease is not None:
                                     graph_write_lease.ensure_owned(
                                         failure_phase="before_queue_ack",
+                                    )
+                                if journaled_receipts:
+                                    if len(journaled_receipts) != 1:
+                                        raise RuntimeError(
+                                            "projection_commit_receipt_count_invalid"
+                                        )
+                                    operation_id, _ = journaled_receipts[0]
+                                    prepared_operations = (
+                                        await store.list_unsettled_projection_operations(
+                                            db, board_id=entry.board_id
+                                        )
+                                    )
+                                    prepared = next(
+                                        (item for item in prepared_operations
+                                         if item["operation_id"] == operation_id),
+                                        None,
+                                    )
+                                    if prepared is None:
+                                        raise RuntimeError(
+                                            "projection_prepared_operation_missing"
+                                        )
+                                    output = dict(prepared["output"])
+                                    if output.get("progress_kind") != "complete":
+                                        raise RuntimeError(
+                                            "projection_output_kind_invalid"
+                                        )
+                                    await stage_recovered_projection_output(
+                                        db, operation_id=operation_id,
+                                        output=output,
                                     )
                                 token = _claim_token(entry)
                                 if token is not None:
@@ -4707,6 +4965,31 @@ class ConsolidationProcessor:
                                                     ),
                                                 )
                                             )
+                                            if (
+                                                not acknowledged
+                                                and journaled_receipts
+                                                and fresh.status == "pending"
+                                                and fresh.id == entry.id
+                                                and fresh.board_id == entry.board_id
+                                                and fresh.artifact_type == entry.artifact_type
+                                                and fresh.artifact_id == entry.artifact_id
+                                            ):
+                                                # A newer source event won after this
+                                                # operation was prepared. Keep its queue
+                                                # intent and finish the older audit.
+                                                acknowledged = True
+                                            if acknowledged and journaled_receipts:
+                                                if len(journaled_receipts) != 1:
+                                                    raise RuntimeError(
+                                                        "projection_commit_receipt_count_invalid"
+                                                    )
+                                                operation_id, graph_commit = journaled_receipts[0]
+                                                await store.finalize_projection_operation(
+                                                    db,
+                                                    operation_id=operation_id,
+                                                    board_id=entry.board_id,
+                                                    graph_commit=graph_commit,
+                                                )
                                 if not acknowledged and (
                                     deferred_session_ids or exact_protocol
                                 ):
@@ -4842,6 +5125,11 @@ class ConsolidationProcessor:
                                         agent_id=AGENT_ID,
                                     )
                                 else:
+                                    if journaled_prepared:
+                                        # The graph may already have committed;
+                                        # its durable receipt decides recovery.
+                                        # In-memory compensation is forbidden.
+                                        continue
                                     # The owning transaction rolled back (or never
                                     # committed), so compensate graph auto-commits
                                     # before the queue can be retried from scratch.
@@ -4866,7 +5154,7 @@ class ConsolidationProcessor:
                                     "core.kg.consolidation_worker_deferred_cleanup"
                                 ),
                             )
-                            if not relational_commit_confirmed:
+                            if not relational_commit_confirmed and not journaled_prepared:
                                 precommit_compensation_confirmed = True
                         except BaseException:
                             if relational_commit_confirmed:
@@ -5062,6 +5350,12 @@ class ConsolidationProcessor:
                     exc,
                     exc_info=True,
                 )
+                if journaled_prepared and not relational_commit_confirmed:
+                    # The native transaction may already be durable. Preserve
+                    # the claim and its journal until receipt reconciliation;
+                    # ordinary failure handling could move it to a terminal
+                    # state and make an applied graph commit unrecoverable.
+                    continue
                 if exact_protocol and relational_commit_confirmed:
                     assert claim_scope is not None
                     if post_commit_cleanup_failed:

@@ -116,6 +116,7 @@ PUBLIC_CORE_CONTRACT_SURFACES: tuple[str, ...] = tuple(
             "okto_pulse.core.reset_relational_schema_lifecycle_orchestrator",
             "okto_pulse.core.resolve_relational_schema_lifecycle_orchestrator",
             "okto_pulse.core.runtime_registry",
+            "okto_pulse.core.services.ProjectionOperationInFlight",
             "okto_pulse.core.services.amendment_revision",
             "okto_pulse.core.services.amendment_revision_api",
             "okto_pulse.core.services.analytics_contract",

@@ -1408,6 +1408,7 @@ class ConsolidationPersistencePort(Protocol):
         source: str,
         generation: int,
         delete_event_id: str | None,
+        reserve_writer: bool = True,
     ) -> bool:
         """Validate claim ownership and the governed-deletion generation fence.
 
@@ -1416,7 +1417,71 @@ class ConsolidationPersistencePort(Protocol):
         the exact generation and delete-event identity carried by the work
         row. Implementations must evaluate the claim and tombstone predicates
         in one storage statement/snapshot.
+        ``reserve_writer=False`` is only a read-only preflight. A caller that
+        will mutate the graph must repeat the writer CAS in a short transaction
+        when it persists the prepared operation, before graph commit.
         """
+        ...
+
+    async def prepare_projection_operation(
+        self,
+        context: Any,
+        *,
+        operation_id: str,
+        entry_id: str,
+        claim_token: str,
+        board_id: str,
+        artifact_type: str,
+        artifact_id: str,
+        source: str,
+        graph_after: str,
+        output: dict[str, Any],
+    ) -> bool:
+        """Persist a recoverable graph output under a short queue/source CAS.
+
+        The caller commits this relational transaction before committing the
+        graph. The operation remains discoverable even if the queue claim is
+        later replaced by a newer source event.
+        """
+
+        ...
+
+    async def finalize_projection_operation(
+        self,
+        context: Any,
+        *,
+        operation_id: str,
+        board_id: str,
+        graph_commit: str,
+    ) -> None:
+        """Stage an idempotent completion marker with the audit and queue ACK."""
+
+        ...
+
+    async def list_unsettled_projection_operations(
+        self, context: Any, *, board_id: str | None = None, limit: int = 100
+    ) -> tuple[dict[str, Any], ...]:
+        """Return prepared operations lacking a durable final/absent marker."""
+
+        ...
+
+    async def has_unsettled_projection_operation(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+        artifact_type: str | None = None,
+        artifact_id: str | None = None,
+    ) -> bool:
+        """Protect source deletion while a prepared graph operation can commit."""
+
+        ...
+
+    async def abandon_projection_operation(
+        self, context: Any, *, operation_id: str, board_id: str
+    ) -> None:
+        """Mark an operation absent only after a stable native history check."""
+
         ...
 
     async def ack_claimed_queue_entry(

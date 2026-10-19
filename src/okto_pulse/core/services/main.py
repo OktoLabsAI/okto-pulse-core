@@ -999,6 +999,16 @@ class GovernedArtifactDeletionReceipt:
         return payload
 
 
+class ProjectionOperationInFlight(RuntimeError):
+    """A source deletion must wait for a prepared graph commit to settle."""
+
+    def __init__(self, board_id: str, artifact_type: str, artifact_id: str) -> None:
+        self.board_id = board_id
+        self.artifact_type = artifact_type
+        self.artifact_id = artifact_id
+        super().__init__("projection_operation_in_flight")
+
+
 async def _prepare_governed_artifact_deletion(
     context: Any,
     *,
@@ -1023,6 +1033,12 @@ async def _prepare_governed_artifact_deletion(
     )
 
     persistence = get_consolidation_persistence_port()
+    unsettled_probe = getattr(persistence, "has_unsettled_projection_operation", None)
+    if callable(unsettled_probe) and await unsettled_probe(
+        context,
+        board_id=board_id,
+    ):
+        raise ProjectionOperationInFlight(board_id, artifact_type, artifact_id)
     intent_occurred_at = occurred_at or datetime.now(timezone.utc)
     await persistence.discard_artifact_work(
         context,
