@@ -85,10 +85,14 @@ from okto_pulse.core.kg.primitives import (
     abort_consolidation,
     begin_consolidation,
     commit_consolidation,
+    compensate_recovered_projection,
     finalize_deferred_consolidation,
     propose_reconciliation,
     run_cancellation_atomic,
     stage_recovered_projection_output,
+)
+from okto_pulse.core.kg.projection_journal_records import (
+    graph_write_records_from_payload,
 )
 from okto_pulse.core.kg.memory_pressure import FailureEvent
 from okto_pulse.core.kg.memory_pressure_collector import record_failure
@@ -3804,28 +3808,36 @@ class ConsolidationProcessor:
                             failure_timestamp=self._now(),
                         )
                         if graph_commit is None:
-                            # The native history proves this operation did not
-                            # commit. Discard its live session before the journal
-                            # is abandoned, so repeated failed commits cannot
-                            # accumulate OPEN sessions in this process. Aborting
-                            # may compensate graph auto-commits; make that
-                            # compensation durable before allowing a retry.
+                            # Native history proves this operation did not
+                            # commit. Statements may still have auto-committed
+                            # before graph_scope.commit() failed. Restore the
+                            # durable before-images even after process restart,
+                            # then discard any live session before repending.
                             output = item["output"]
                             session_id = output.get("session_id")
                             agent_id = output.get("agent_id")
-                            if type(session_id) is str and type(agent_id) is str:
-                                await abort_deferred_consolidation(
-                                    session_id,
-                                    agent_id=agent_id,
-                                    blocking_execution=self._blocking_execution,
-                                )
-                                await _ensure_board_graph_durable(
-                                    board_id=board_id,
-                                    mutation_ref=f"projection-recover-abort:{operation_id}",
-                                    write_lease=lease,
-                                    blocking_execution=self._blocking_execution,
-                                    failure_timestamp=self._now(),
-                                )
+                            if type(session_id) is not str or type(agent_id) is not str:
+                                raise RuntimeError("projection_recovery_identity_missing")
+                            records = graph_write_records_from_payload(
+                                output.get("graph_write_records")
+                            )
+                            await compensate_recovered_projection(
+                                board_id, session_id, records,
+                                blocking_execution=self._blocking_execution,
+                            )
+                            await abort_deferred_consolidation(
+                                session_id,
+                                agent_id=agent_id,
+                                blocking_execution=self._blocking_execution,
+                                compensation_already_applied=True,
+                            )
+                            await _ensure_board_graph_durable(
+                                board_id=board_id,
+                                mutation_ref=f"projection-recover-abort:{operation_id}",
+                                write_lease=lease,
+                                blocking_execution=self._blocking_execution,
+                                failure_timestamp=self._now(),
+                            )
                         async with self.relational_scope_factory() as db:
                             queue = await store.get_queue_entry(
                                 db, entry_id=str(item["queue_id"])
