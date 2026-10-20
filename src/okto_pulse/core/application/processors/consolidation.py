@@ -1629,24 +1629,30 @@ async def _commit_consolidation_with_board_graph_lifecycle(
         # Source preparation and health checks have finished. End their WAL
         # read snapshot before acquiring the brief prepared-operation writer.
         await store.rollback(db)
-        prepared = await store.prepare_projection_operation(
-            db,
-            operation_id=journaled_operation_id,
-            entry_id=entry.id,
-            claim_token=_claim_token(entry) or "",
-            board_id=entry.board_id,
-            artifact_type=entry.artifact_type,
-            artifact_id=entry.artifact_id,
-            source=_queue_source(entry),
-            graph_after=baseline,
-            output=output,
-        )
-        if not prepared:
-            await store.rollback(db)
-            raise _QueueClaimLostOrFenced(
-                f"projection_precommit_claim_lost entry_id={entry.id}"
+        try:
+            prepared = await store.prepare_projection_operation(
+                db,
+                operation_id=journaled_operation_id,
+                entry_id=entry.id,
+                claim_token=_claim_token(entry) or "",
+                board_id=entry.board_id,
+                artifact_type=entry.artifact_type,
+                artifact_id=entry.artifact_id,
+                source=_queue_source(entry),
+                graph_after=baseline,
+                output=output,
             )
-        await store.commit(db)
+            if not prepared:
+                raise _QueueClaimLostOrFenced(
+                    f"projection_precommit_claim_lost entry_id={entry.id}"
+                )
+            await store.commit(db)
+        except BaseException:
+            # A failed prepare or commit may leave a SQLite writer open. The
+            # graph failure path performs durability I/O before retrying, so
+            # release that writer before the graph barrier runs.
+            await store.rollback(db)
+            raise
         graph_after = baseline
         journaled_prepared.append(journaled_operation_id)
 
