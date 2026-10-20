@@ -3875,6 +3875,24 @@ class ConsolidationProcessor:
                                 await finalize_deferred_consolidation(
                                     session_id, agent_id=agent_id,
                                 )
+                                if output.get("progress_kind") != "removal_progress":
+                                    # The normal ACK path runs these hooks after
+                                    # its durable commit. Recovery must do the
+                                    # same without reopening the ACK transaction.
+                                    try:
+                                        async with self.relational_scope_factory() as maintenance_db:
+                                            await _run_post_commit_maintenance(
+                                                maintenance_db,
+                                                entry=queue,
+                                                session_id=session_id,
+                                            )
+                                            await store.commit(maintenance_db)
+                                    except Exception:
+                                        logger.exception(
+                                            "kg.post_commit.recovery_maintenance_failed "
+                                            "board=%s operation=%s",
+                                            board_id, operation_id,
+                                        )
                         recovered += 1
                     finally:
                         if not durability_attempted:
