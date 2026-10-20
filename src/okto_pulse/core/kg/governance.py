@@ -655,6 +655,14 @@ async def stage_board_relational_erasure(
     Legacy KG-only callers omit it and retain their historical behavior.
     """
 
+    from okto_pulse.core.ports.consolidation import get_consolidation_persistence_port
+
+    projection_store = get_consolidation_persistence_port()
+    unsettled = getattr(projection_store, "has_unsettled_projection_operation", None)
+    if callable(unsettled) and await unsettled(db, board_id=board_id):
+        raise BoardErasureLockContention(
+            f"board_projection_operation_unsettled board={board_id}"
+        )
     store = get_kg_governance_store()
     if actor_id is not None:
         await store.stage_board_erasure_job(

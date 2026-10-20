@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager, contextmanager, nullcontext
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from okto_pulse.core.application.processors import consolidation
+from okto_pulse.core.kg.projection_journal_records import graph_write_records_to_payload
+from okto_pulse.core.kg.transaction import GraphWriteRecord
+from okto_pulse.core.services import main as main_services
 from okto_pulse.core.ports import consolidation as consolidation_ports
 from okto_pulse.core.application.processors.consolidation import (
     ConsolidationProcessor,
@@ -718,6 +721,150 @@ async def _scope():
     yield object()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("already_finalized", [False, True])
+async def test_absent_native_projection_commit_aborts_session_before_repending(
+    monkeypatch,
+    already_finalized: bool,
+) -> None:
+    entry = _entry(status="claimed", claim_token="prepared-claim")
+    events: list[str] = []
+
+    class _JournalStore(_MemoryConsolidationStore):
+        scan_count = 0
+
+        async def list_unsettled_projection_operations(
+            self, _db, *, limit=100, board_id=None,
+        ):
+            self.scan_count += 1
+            if board_id is not None:
+                assert board_id == entry.board_id
+                if already_finalized:
+                    return ()
+            else:
+                assert limit == 100
+            return ({
+                "board_id": entry.board_id,
+                "operation_id": "prepared-op",
+                "graph_after": "baseline",
+                "queue_id": entry.id,
+                "artifact_type": entry.artifact_type,
+                "artifact_id": entry.artifact_id,
+                "claim_token": entry.claim_token,
+                "source": entry.source,
+                "output": {
+                    "session_id": "live-session",
+                    "agent_id": "system:worker",
+                    "graph_write_records": graph_write_records_to_payload([
+                        GraphWriteRecord(
+                            kind="node", entity_type="Spec", entity_id="node-1"
+                        )
+                    ]),
+                },
+            },)
+
+        async def get_queue_entry(self, _db, *, entry_id):
+            assert entry_id == entry.id
+            return entry
+
+        async def save_queue_entries(self, _db, entries):
+            assert entries == [entry]
+            events.append("repend")
+
+        async def abandon_projection_operation(self, _db, **_kwargs):
+            events.append("abandon")
+
+        async def commit(self, _db):
+            events.append("sqlite_commit")
+
+    class _Lease:
+        def ensure_owned(self, **_kwargs):
+            pass
+
+    @asynccontextmanager
+    async def _advisory(*_args):
+        yield
+
+    @contextmanager
+    def _guard(*_args, **_kwargs):
+        yield _Lease()
+
+    async def _receipt(*_args, **_kwargs):
+        return None
+
+    async def _durable(**_kwargs):
+        events.append("durable")
+
+    async def _abort(session_id, *, agent_id, **_kwargs):
+        assert (session_id, agent_id) == ("live-session", "system:worker")
+        assert _kwargs["compensation_already_applied"] is True
+        events.append("abort")
+
+    async def _compensate(board_id, session_id, records, **_kwargs):
+        assert (board_id, session_id) == (entry.board_id, "live-session")
+        assert len(records) == 1
+        assert records[0].entity_id == "node-1"
+        events.append("compensate")
+
+    monkeypatch.setattr(consolidation, "advisory_lock", _advisory)
+    monkeypatch.setattr(consolidation, "guarded_board_write", _guard)
+    monkeypatch.setattr(consolidation, "get_kg_registry", lambda: SimpleNamespace(
+        graph_transaction=SimpleNamespace(projection_commit_receipt=_receipt)
+    ))
+    monkeypatch.setattr(consolidation, "_ensure_board_graph_durable", _durable)
+    monkeypatch.setattr(consolidation, "abort_deferred_consolidation", _abort)
+    monkeypatch.setattr(consolidation, "compensate_recovered_projection", _compensate)
+    processor = ConsolidationProcessor(_scope, durable_projection_protocol=True)
+
+    with _registered(_JournalStore((entry,))):
+        assert await processor.recover_projection_operations() == (
+            0 if already_finalized else 1
+        )
+
+    if already_finalized:
+        assert events == ["durable"]
+        assert entry.status == "claimed"
+        assert entry.claim_token == "prepared-claim"
+    else:
+        assert events == [
+            "durable", "compensate", "abort", "durable",
+            "repend", "abandon", "sqlite_commit",
+        ]
+        assert entry.status == "pending"
+        assert entry.claim_token is None
+
+
+@pytest.mark.asyncio
+async def test_deletion_rechecks_prepared_journal_after_reserving_sqlite_writer(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+
+    class _Store:
+        async def has_unsettled_projection_operation(self, _db, *, board_id):
+            assert board_id == "board-race"
+            events.append("probe")
+            return len(events) > 2
+
+        async def discard_artifact_work(self, _db, **identity):
+            assert identity == {
+                "board_id": "board-race",
+                "artifact_type": "spec",
+                "artifact_id": "spec-race",
+            }
+            events.append("reserve_writer_and_discard")
+
+    monkeypatch.setattr(
+        consolidation_ports, "get_consolidation_persistence_port", lambda: _Store()
+    )
+    with pytest.raises(main_services.ProjectionOperationInFlight):
+        await main_services._prepare_governed_artifact_deletion(
+            object(), board_id="board-race", artifact_type="spec",
+            artifact_id="spec-race",
+        )
+    assert events == ["probe", "reserve_writer_and_discard", "probe"]
+
+
 @contextmanager
 def _registered(store: _MemoryConsolidationStore):
     previous = get_consolidation_persistence_port()
@@ -1290,6 +1437,35 @@ async def test_recovery_clears_token_and_reclaim_uses_fresh_token(monkeypatch):
     assert observed_tokens[0] != old_token
     assert store.ack_calls == []
     assert entry.attempts == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("journal_unsettled", [False, True])
+async def test_stale_recovery_preserves_claim_with_prepared_projection(
+    journal_unsettled: bool,
+) -> None:
+    entry = _entry(status="claimed", claim_token="prepared-claim")
+    entry.claim_timeout_at = datetime.now(UTC) - timedelta(seconds=1)
+
+    class _JournalStore(_MemoryConsolidationStore):
+        async def has_unsettled_projection_operation(self, _db, *, board_id):
+            assert board_id == entry.board_id
+            return journal_unsettled
+
+    store = _JournalStore((entry,))
+    processor = ConsolidationProcessor(_scope, durable_projection_protocol=True)
+    with _registered(store):
+        assert await processor.recover_stale_claims() == (
+            0 if journal_unsettled else 1
+        )
+
+    assert len(store.fence_calls) == 1
+    assert store.fence_calls[0]["claim_token"] == "prepared-claim"
+    assert entry.status == ("claimed" if journal_unsettled else "pending")
+    assert entry.claim_token == (
+        "prepared-claim" if journal_unsettled else None
+    )
+    assert store.rollback_count == (1 if journal_unsettled else 0)
 
 
 @pytest.mark.asyncio

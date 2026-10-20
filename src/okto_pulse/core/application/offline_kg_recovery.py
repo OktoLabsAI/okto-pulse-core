@@ -71,7 +71,8 @@ def reserve_consolidation(*, claim_scope, recovery_capability, write_lock_port,
     failed = False
     try:
         reservation = _Reservation(claim_scope, recovery_capability, lock, acquired.owner_token,
-            ConsolidationProcessor(relational_scope_factory, batch_size=1), ttl_seconds)
+            ConsolidationProcessor(relational_scope_factory, batch_size=1,
+                                   durable_projection_protocol=True), ttl_seconds)
         if not reservation.is_authorized():
             raise RuntimeError('offline_consolidation_authority_lost')
         yield reservation

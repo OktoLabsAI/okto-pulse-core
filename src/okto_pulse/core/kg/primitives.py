@@ -28,7 +28,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial
@@ -48,6 +48,7 @@ from okto_pulse.core.domain.code_traceability_kg import (
 )
 from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
+from okto_pulse.core.kg.projection_journal_records import graph_write_records_to_payload
 from okto_pulse.core.kg.consolidation_timing import observe_consolidation_phase
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 from okto_pulse.core.runtime_context import runtime_state
@@ -1390,6 +1391,25 @@ def _compensate_graph_writes(board_id: str, session_id: str, records: list) -> N
             await orchestrator.compensate()
 
     run_async_blocking(_run())
+
+
+async def compensate_recovered_projection(
+    board_id: str,
+    session_id: str,
+    records: list,
+    *,
+    blocking_execution: BlockingExecutionPort | None = None,
+) -> None:
+    """Restore journaled before-images after native history proves no commit."""
+
+    if records:
+        await _run_graph_io(
+            _compensate_graph_writes,
+            board_id,
+            session_id,
+            records,
+            executor=blocking_execution,
+        )
 
 
 def _connectivity_writer_path(agent_id: str) -> str:
@@ -3166,6 +3186,8 @@ def _do_graph_commit(
     learning_projection: CapturedLearningProjection | None = None,
     allow_known_removals: bool = False,
     cognitive_rebuild_heads: dict | None = None,
+    projection_operation_id: str | None = None,
+    projection_precommit: Callable[..., None] | None = None,
 ) -> tuple[dict, object, list, datetime, dict, list[dict]] | GraphRemovalProgress:
     """Synchronous graph writes for ``commit_consolidation``.
 
@@ -3209,7 +3231,10 @@ def _do_graph_commit(
     )
 
     graph_scope = run_async_blocking(
-        get_kg_registry().graph_transaction.begin(board_id)
+        get_kg_registry().graph_transaction.begin(
+            board_id, **({"operation_id": projection_operation_id}
+                       if projection_operation_id is not None else {})
+        )
     )
     orch = TransactionOrchestrator(
         graph_scope=graph_scope,
@@ -3217,6 +3242,7 @@ def _do_graph_commit(
         session_id=session_id,
         board_id=board_id,
     )
+    projection_journal_prepared = False
     candidate_to_graph_id: dict[str, str] = {}
     candidate_to_node_type: dict[str, str] = {}
     # Spec MKG-A-S1 (FR4): durable-source records collected for cognitive
@@ -3358,6 +3384,19 @@ def _do_graph_commit(
             if removal_intents:
                 for removal_intent in removal_intents:
                     orch.reconcile_projection_active_set(removal_intent)
+                if projection_precommit is not None:
+                    start_commit_token = getattr(graph_scope, "start_commit_token", None)
+                    if not start_commit_token:
+                        raise KGPrimitiveError(
+                            "projection_commit_receipt_unavailable",
+                            "The graph scope has no durable commit-history baseline.",
+                            session_id=session_id,
+                        )
+                    projection_precommit(
+                        start_commit_token, list(orch.records), orch.counters,
+                        datetime.now(timezone.utc), [], progress_kind="removal_progress",
+                    )
+                    projection_journal_prepared = True
                 run_async_blocking(graph_scope.commit())
                 return GraphRemovalProgress(tuple(orch.records), orch.counters, datetime.now(timezone.utc))
         resolved_dependency_endpoints = {}
@@ -4632,6 +4671,19 @@ def _do_graph_commit(
             orch.counters.projection_property_effects = capture_projection_property_effects(
                 graph_scope, orch.records, board_id=board_id, session_id=session_id)
         committed_at = datetime.now(timezone.utc)
+        if projection_precommit is not None:
+            start_commit_token = getattr(graph_scope, "start_commit_token", None)
+            if not start_commit_token:
+                raise KGPrimitiveError(
+                    "projection_commit_receipt_unavailable",
+                    "The graph scope has no durable commit-history baseline.",
+                    session_id=session_id,
+                )
+            projection_precommit(
+                start_commit_token, list(orch.records), orch.counters,
+                committed_at, list(cognitive_source_records),
+            )
+            projection_journal_prepared = True
         run_async_blocking(graph_scope.commit())
         return (
             candidate_to_graph_id,
@@ -4648,6 +4700,17 @@ def _do_graph_commit(
             run_async_blocking(graph_scope.rollback())
         except Exception as exc:
             rollback_error = exc
+        if projection_operation_id is not None and projection_journal_prepared:
+            if rollback_error is not None:
+                raise KGPrimitiveError(
+                    "projection_graph_outcome_ambiguous",
+                    "The native graph scope could not be settled.",
+                    session_id=session_id,
+                    retryable=True,
+                    details={"operation_id": projection_operation_id,
+                             "rollback_failure_type": type(rollback_error).__name__},
+                ) from rollback_error
+            raise
         if orch.records:
             try:
                 _compensate_graph_writes(board_id, session_id, orch.records)
@@ -4691,6 +4754,17 @@ def _do_graph_commit(
             run_async_blocking(graph_scope.rollback())
         except Exception as cleanup_error:
             rollback_error = cleanup_error
+        if projection_operation_id is not None and projection_journal_prepared:
+            raise KGPrimitiveError(
+                "projection_graph_outcome_pending",
+                "Inspect the native operation receipt before retrying graph effects.",
+                session_id=session_id,
+                retryable=True,
+                details={"operation_id": projection_operation_id,
+                         "rollback_failure_type": (
+                             type(rollback_error).__name__ if rollback_error else None
+                         ), **failure_details},
+            ) from exc
         if orch.records:
             try:
                 _compensate_graph_writes(board_id, session_id, orch.records)
@@ -4757,6 +4831,8 @@ async def commit_consolidation(
     learning_capture: LearningCaptureSelection | None = None,
     allow_known_removals: bool = False,
     rebuild_cognitive: bool = False,
+    projection_operation_id: str | None = None,
+    projection_precommit: Callable[[dict[str, object]], Awaitable[None]] | None = None,
 ) -> CommitConsolidationResponse | DeferredProjectionProgress:
     """Atomically write graph backend nodes/edges + audit + outbox event.
 
@@ -4778,6 +4854,8 @@ async def commit_consolidation(
     from okto_pulse.core.kg.write_barrier import require_write_token
 
     registry = get_kg_registry()
+    if (projection_operation_id is None) != (projection_precommit is None):
+        raise ValueError("projection_operation_requires_precommit_callback")
     session = await _require_open_session(
         req.session_id,
         agent_id,
@@ -4884,6 +4962,8 @@ async def commit_consolidation(
         request_payload = req.model_dump(mode="json")
         if rebuild_cognitive:
             request_payload["rebuild_cognitive"] = True
+        if projection_operation_id is not None:
+            request_payload["projection_operation_id"] = projection_operation_id
         learning_projection = None
         if learning_capture is not None:
             from okto_pulse.core.application.learning_materialization import prepare_captured_learning_commit
@@ -4977,6 +5057,49 @@ async def commit_consolidation(
                 confidence=1.0, reason='Explicit durable Learning capture intent')}
 
         # --- graph backend writes (offloaded to thread pool) ---
+        stage_precommit = None
+        if projection_precommit is not None:
+            loop = asyncio.get_running_loop()
+
+            def stage_precommit(graph_after, records, counters, committed_at, cognitive_records,
+                                *, progress_kind="complete"):
+                effects = getattr(counters, "projection_property_effects", None)
+                output: dict[str, object] = {
+                    "session_id": req.session_id,
+                    "board_id": session.board_id,
+                    "artifact_id": session.artifact_id,
+                    "artifact_type": session.artifact_type,
+                    "agent_id": agent_id,
+                    "started_at": session.started_at.isoformat(),
+                    "committed_at": committed_at.isoformat(),
+                    "summary_text": req.summary_text,
+                    "content_hash": session.content_hash,
+                    "nodes_added": counters.nodes_added,
+                    "nodes_updated": counters.nodes_updated,
+                    "nodes_superseded": counters.nodes_superseded,
+                    "edges_added": counters.edges_added,
+                    "node_refs": [
+                        {"node_id": item.entity_id, "node_type": item.entity_type}
+                        for item in records if item.kind == "node"
+                    ],
+                    "graph_write_records": graph_write_records_to_payload(records),
+                    "projection_property_effects": (
+                        effects.to_payload() if effects is not None else None
+                    ),
+                    "reference_findings": (
+                        session.reference_findings.to_payload()
+                        if getattr(session, "reference_findings", None) is not None
+                        else None
+                    ),
+                    "cognitive_source_records": cognitive_records,
+                    "progress_kind": progress_kind,
+                }
+                future = asyncio.run_coroutine_threadsafe(
+                    projection_precommit({"graph_after": graph_after, "output": output}),
+                    loop,
+                )
+                future.result()
+
         try:
             graph_result = await observe_consolidation_phase(
                 "graph_dispatch",
@@ -5010,6 +5133,10 @@ async def commit_consolidation(
                     **({'learning_projection': learning_projection} if learning_projection else {}),
                     **({'allow_known_removals': True} if allow_known_removals else {}),
                     **({"cognitive_rebuild_heads": cognitive_rebuild_heads} if cognitive_rebuild_heads else {}),
+                    **({"projection_operation_id": projection_operation_id}
+                       if projection_operation_id is not None else {}),
+                    **({"projection_precommit": stage_precommit}
+                       if stage_precommit is not None else {}),
                 ),
             )
         except KGPrimitiveError:
@@ -5044,74 +5171,78 @@ async def commit_consolidation(
         # graph state acknowledged as committed. In-place UPDATE/NC-8,
         # attestation, supersedence and relational projection mutations all
         # carry exact before-images in GraphWriteRecord.
-        failure_stage = "cognitive_source_append"
-        try:
-            await observe_consolidation_phase(
-                "cognitive_source_append",
-                req.session_id,
-                _append_cognitive_source_records(
-                    session.board_id,
-                    req.session_id,
-                    cognitive_source_records,
-                    context=db,
-                    store=cognitive_source_store,
-                    **({'learning_projection': learning_projection} if learning_projection else {}),
-                ),
-            )
-
-            failure_stage = "audit_outbox_stage"
-            await observe_consolidation_phase(
-                "audit_outbox_stage",
-                req.session_id,
-                _commit_audit_records(
-                    registry,
-                    db,
-                    records,
-                    counters,
-                    req,
-                    session,
-                    agent_id,
-                    committed_at,
-                ),
-            )
-        except Exception as staging_error:
+        if projection_operation_id is None:
+            # Journaled workers stage this output only after the graph
+            # durability lifecycle. Staging here would acquire SQLite's sole
+            # writer slot and retain it while the graph closes/reopens.
+            failure_stage = "cognitive_source_append"
             try:
-                await _run_graph_io(
-                    _compensate_graph_writes,
-                    session.board_id,
+                await observe_consolidation_phase(
+                    "cognitive_source_append",
                     req.session_id,
-                    records,
-                    executor=blocking_execution,
+                    _append_cognitive_source_records(
+                        session.board_id,
+                        req.session_id,
+                        cognitive_source_records,
+                        context=db,
+                        store=cognitive_source_store,
+                        **({'learning_projection': learning_projection} if learning_projection else {}),
+                    ),
                 )
-            except Exception as compensation_error:
-                logger.error(
-                    "kg.post_graph.compensation_failed board=%s session=%s "
-                    "failure_stage=%s staging_error=%s compensation_error=%s",
-                    session.board_id,
+
+                failure_stage = "audit_outbox_stage"
+                await observe_consolidation_phase(
+                    "audit_outbox_stage",
                     req.session_id,
-                    failure_stage,
-                    staging_error,
-                    compensation_error,
-                    extra={
-                        "event": "kg.post_graph.compensation_failed",
-                        "board_id": session.board_id,
-                        "session_id": req.session_id,
-                        "failure_stage": failure_stage,
-                    },
+                    _commit_audit_records(
+                        registry,
+                        db,
+                        records,
+                        counters,
+                        req,
+                        session,
+                        agent_id,
+                        committed_at,
+                    ),
                 )
-                raise KGPrimitiveError(
-                    "graph_compensation_failed",
-                    "Relational staging failed and the graph before-image could "
-                    "not be restored; the session remains retryable and must "
-                    "not be acknowledged.",
-                    session_id=req.session_id,
-                    details={
-                        "failure_stage": failure_stage,
-                        "staging_failure_type": type(staging_error).__name__,
-                        "compensation_failure_type": type(compensation_error).__name__,
-                    },
-                ) from compensation_error
-            raise
+            except Exception as staging_error:
+                try:
+                    await _run_graph_io(
+                        _compensate_graph_writes,
+                        session.board_id,
+                        req.session_id,
+                        records,
+                        executor=blocking_execution,
+                    )
+                except Exception as compensation_error:
+                    logger.error(
+                        "kg.post_graph.compensation_failed board=%s session=%s "
+                        "failure_stage=%s staging_error=%s compensation_error=%s",
+                        session.board_id,
+                        req.session_id,
+                        failure_stage,
+                        staging_error,
+                        compensation_error,
+                        extra={
+                            "event": "kg.post_graph.compensation_failed",
+                            "board_id": session.board_id,
+                            "session_id": req.session_id,
+                            "failure_stage": failure_stage,
+                        },
+                    )
+                    raise KGPrimitiveError(
+                        "graph_compensation_failed",
+                        "Relational staging failed and the graph before-image could "
+                        "not be restored; the session remains retryable and must "
+                        "not be acknowledged.",
+                        session_id=req.session_id,
+                        details={
+                            "failure_stage": failure_stage,
+                            "staging_failure_type": type(staging_error).__name__,
+                            "compensation_failure_type": type(compensation_error).__name__,
+                        },
+                    ) from compensation_error
+                raise
 
         response = CommitConsolidationResponse(
             session_id=req.session_id,
@@ -5212,6 +5343,7 @@ async def commit_consolidation(
                 defer_session_finalization
                 and owns_deferred_claim
                 and isinstance(pending, _PendingConsolidationCommit)
+                and projection_operation_id is None
             ):
                 await _run_cancellation_atomic(
                     _abort_deferred_consolidation_unlocked(
@@ -5264,12 +5396,15 @@ async def finalize_deferred_consolidation(
     session_id: str,
     *,
     agent_id: str,
+    recovered_native_commit: bool = False,
 ) -> None:
     """Remove a deferred session only after its caller UOW committed.
 
     This hook deliberately performs no relational work.  Its sole authority is
     the caller's successful ``commit()`` return; until then the pending snapshot
     remains retryable and graph writes are never replayed.
+    ``recovered_native_commit`` also accepts an OPEN session when recovery has
+    independently proved the native receipt and committed the relational ACK.
     """
 
     registry = get_kg_registry()
@@ -5286,6 +5421,15 @@ async def finalize_deferred_consolidation(
     async with session.lock:
         pending = getattr(session, "pending_commit", None)
         if not isinstance(pending, _PendingConsolidationCommit):
+            if recovered_native_commit and session.status == SessionStatus.OPEN:
+                # The native commit may have succeeded and then raised before
+                # commit_consolidation could create its pending snapshot. The
+                # recovery caller has already proved the native receipt and
+                # committed the relational audit/ACK before opting in here.
+                await _finalize_consolidation_session_unlocked(
+                    registry, session, (), session_id=session_id,
+                )
+                return
             raise KGPrimitiveError(
                 "session_commit_not_pending",
                 f"Session {session_id} has no deferred commit to finalize",
@@ -5337,19 +5481,21 @@ async def _abort_deferred_consolidation_unlocked(
     session_id: str,
     *,
     blocking_execution: BlockingExecutionPort | None = None,
+    compensation_already_applied: bool = False,
 ) -> None:
     """Compensate/discard a deferred session while its lock is already held."""
 
     pending = getattr(session, "pending_commit", None)
     if isinstance(pending, _PendingConsolidationCommit):
         pending.in_flight = False
-        await _run_graph_io(
-            _compensate_graph_writes,
-            session.board_id,
-            session_id,
-            list(pending.records),
-            executor=blocking_execution,
-        )
+        if not compensation_already_applied:
+            await _run_graph_io(
+                _compensate_graph_writes,
+                session.board_id,
+                session_id,
+                list(pending.records),
+                executor=blocking_execution,
+            )
     session.pending_commit = None
     session.status = SessionStatus.ABORTED
     await registry.require_session_store().remove(session_id)
@@ -5361,6 +5507,7 @@ async def abort_deferred_consolidation(
     *,
     agent_id: str,
     blocking_execution: BlockingExecutionPort | None = None,
+    compensation_already_applied: bool = False,
 ) -> None:
     """Compensate a deferred graph write and discard its session.
 
@@ -5383,6 +5530,7 @@ async def abort_deferred_consolidation(
             session,
             session_id,
             blocking_execution=blocking_execution,
+            compensation_already_applied=compensation_already_applied,
         )
 
 
@@ -6854,4 +7002,88 @@ async def _commit_audit_records(
             "the registry with an AuditRepository adapter."
         ),
         session_id=req.session_id,
+    )
+
+
+async def stage_recovered_projection_output(
+    db: object, *, operation_id: str, output: dict[str, object]
+) -> None:
+    """Restage a native-committed projection from its durable SQLite journal."""
+
+    from okto_pulse.core.kg.interfaces.audit_dtos import (
+        ConsolidationAuditData, NodeRefData, OutboxEventData,
+    )
+
+    if type(output) is not dict or output.get("session_id") is None:
+        raise ValueError("projection_recovery_output_invalid")
+    board_id = str(output["board_id"])
+    session_id = str(output["session_id"])
+    cognitive_records = output.get("cognitive_source_records") or []
+    if type(cognitive_records) is not list:
+        raise ValueError("projection_recovery_cognitive_records_invalid")
+    if cognitive_records:
+        from okto_pulse.core.ports.kg_cognitive_source import require_cognitive_source_store
+
+        await _append_cognitive_source_records(
+            board_id, session_id, list(cognitive_records), context=db,
+            store=require_cognitive_source_store(),
+        )
+    references = output.get("node_refs") or []
+    if type(references) is not list or any(type(item) is not dict for item in references):
+        raise ValueError("projection_recovery_refs_invalid")
+    graph_refs = [NodeRefData(
+        session_id=session_id,
+        board_id=board_id,
+        graph_node_id=str(item["node_id"]),
+        graph_node_type=str(item["node_type"]),
+        operation="add",
+    ) for item in references]
+    audit_data = ConsolidationAuditData(
+        session_id=session_id,
+        board_id=board_id,
+        artifact_id=str(output["artifact_id"]),
+        artifact_type=str(output["artifact_type"]),
+        agent_id=str(output["agent_id"]),
+        started_at=datetime.fromisoformat(str(output["started_at"])),
+        committed_at=datetime.fromisoformat(str(output["committed_at"])),
+        nodes_added=int(output["nodes_added"]),
+        nodes_updated=int(output["nodes_updated"]),
+        nodes_superseded=int(output["nodes_superseded"]),
+        edges_added=int(output["edges_added"]),
+        summary_text=str(output["summary_text"]),
+        content_hash=str(output["content_hash"]),
+    )
+    payload: dict[str, object] = {
+        "session_id": session_id,
+        "artifact_id": audit_data.artifact_id,
+        "nodes_added": audit_data.nodes_added,
+        "nodes_updated": audit_data.nodes_updated,
+        "nodes_superseded": audit_data.nodes_superseded,
+        "edges_added": audit_data.edges_added,
+    }
+    effects = output.get("projection_property_effects")
+    if effects is not None:
+        payload["projection_property_effects"] = effects
+    outbox_data = OutboxEventData(
+        event_id=f"evt_{uuid.uuid5(uuid.NAMESPACE_URL, 'pulse:projection:outbox:' + operation_id).hex}",
+        board_id=board_id,
+        session_id=session_id,
+        event_type="consolidation_committed",
+        payload=payload,
+    )
+    snapshot = output.get("reference_findings")
+    if snapshot is not None:
+        from okto_pulse.core.ports.projection_findings import ProjectionFindingSnapshot
+
+        snapshot = ProjectionFindingSnapshot.from_payload(snapshot)
+    audit_repo = get_kg_registry().audit_repo
+    if audit_repo is None:
+        raise KGPrimitiveError(
+            "audit_repository_required",
+            "Projection recovery requires a composed audit repository.",
+            session_id=session_id,
+        )
+    await audit_repo.stage_consolidation_records(
+        db, audit_data, graph_refs, outbox_data,
+        **({"reference_findings": snapshot} if snapshot is not None else {}),
     )

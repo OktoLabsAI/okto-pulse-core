@@ -1716,8 +1716,21 @@ class InMemoryGraphTransaction:
     def __init__(self, store: InMemoryGraphStore | None = None) -> None:
         self.store = store or InMemoryGraphStore()
 
-    async def begin(self, board_id: str) -> _InMemoryGraphTransactionScope:
+    async def begin(
+        self, board_id: str, *, operation_id: str | None = None
+    ) -> _InMemoryGraphTransactionScope:
+        if operation_id is not None:
+            from okto_pulse.core.kg.interfaces.graph_errors import GraphCapabilityUnavailable
+
+            raise GraphCapabilityUnavailable("projection_commit_history_unavailable")
         return _InMemoryGraphTransactionScope(board_id, self.store)
+
+    async def projection_commit_receipt(
+        self, board_id: str, operation_id: str, *, after: str
+    ) -> str | None:
+        from okto_pulse.core.kg.interfaces.graph_errors import GraphCapabilityUnavailable
+
+        raise GraphCapabilityUnavailable("projection_commit_history_unavailable")
 
 
 class InMemoryGraphRuntimeStore:

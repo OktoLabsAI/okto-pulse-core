@@ -562,8 +562,17 @@ class GraphTransactionScope(Protocol):
 
 @runtime_checkable
 class GraphTransaction(Protocol):
-    async def begin(self, board_id: str) -> GraphTransactionScope:
+    async def begin(
+        self, board_id: str, *, operation_id: str | None = None
+    ) -> GraphTransactionScope:
         """Open a staged-write scope for ``board_id``."""
+        ...
+
+    async def projection_commit_receipt(
+        self, board_id: str, operation_id: str, *, after: str
+    ) -> str | None:
+        """Find the operation's durable native commit after the recorded baseline."""
+
         ...
 
 
