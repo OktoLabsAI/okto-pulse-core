@@ -310,6 +310,47 @@ async def test_finalize_deferred_is_terminal_and_idempotent(
 
 
 @pytest.mark.asyncio
+async def test_recovered_native_commit_finalizes_open_session_without_pending_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = SimpleNamespace(
+        session_id="session-ambiguous-native-commit",
+        board_id="board-ambiguous-native-commit",
+        agent_id="agent-ambiguous-native-commit",
+        status=SessionStatus.OPEN,
+        pending_commit=None,
+        committed_graph_node_refs=[],
+        lock=asyncio.Lock(),
+    )
+    session.check_ownership = lambda agent_id: agent_id == session.agent_id
+    store = _SessionStore(session)
+    cache = _Cache()
+    monkeypatch.setattr(primitives, "get_kg_registry", lambda: SimpleNamespace(
+        require_session_store=lambda: store,
+        require_cache_backend=lambda: cache,
+    ))
+
+    with pytest.raises(primitives.KGPrimitiveError) as ordinary:
+        await primitives.finalize_deferred_consolidation(
+            session.session_id, agent_id=session.agent_id,
+        )
+    assert ordinary.value.code == "session_commit_not_pending"
+    assert store.session is session
+
+    await primitives.finalize_deferred_consolidation(
+        session.session_id, agent_id=session.agent_id,
+        recovered_native_commit=True,
+    )
+    await primitives.finalize_deferred_consolidation(
+        session.session_id, agent_id=session.agent_id,
+        recovered_native_commit=True,
+    )
+    assert session.status == SessionStatus.COMMITTED
+    assert store.removed == 1
+    assert cache.invalidated == [session.board_id]
+
+
+@pytest.mark.asyncio
 async def test_mutators_recheck_pending_after_waiting_for_session_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
