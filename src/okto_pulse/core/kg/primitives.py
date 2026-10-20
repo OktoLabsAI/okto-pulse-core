@@ -5062,7 +5062,11 @@ async def commit_consolidation(
                     "projection_property_effects": (
                         effects.to_payload() if effects is not None else None
                     ),
-                    "reference_findings": getattr(session, "reference_findings", None),
+                    "reference_findings": (
+                        session.reference_findings.to_payload()
+                        if getattr(session, "reference_findings", None) is not None
+                        else None
+                    ),
                     "cognitive_source_records": cognitive_records,
                     "progress_kind": progress_kind,
                 }
@@ -7028,6 +7032,10 @@ async def stage_recovered_projection_output(
         payload=payload,
     )
     snapshot = output.get("reference_findings")
+    if snapshot is not None:
+        from okto_pulse.core.ports.projection_findings import ProjectionFindingSnapshot
+
+        snapshot = ProjectionFindingSnapshot.from_payload(snapshot)
     audit_repo = get_kg_registry().audit_repo
     if audit_repo is None:
         raise KGPrimitiveError(

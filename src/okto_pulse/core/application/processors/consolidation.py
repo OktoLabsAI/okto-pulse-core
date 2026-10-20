@@ -3770,11 +3770,23 @@ class ConsolidationProcessor:
                     mutation_ref=f"projection-recover:{operation_id}",
                     required_steps=WORKER_COMMIT_LIFECYCLE_STEPS,
                 ) as lease:
+                    durability_attempted = False
                     try:
                         graph_commit = await get_kg_registry().graph_transaction.projection_commit_receipt(
                             board_id, operation_id, after=baseline
                         )
                         lease.ensure_owned(failure_phase="projection_recovery")
+                        # A native receipt alone does not prove that checkpoint,
+                        # flush and fsync have completed. Keep the prepared row
+                        # unsettled until that barrier succeeds under this lease.
+                        durability_attempted = True
+                        await _ensure_board_graph_durable(
+                            board_id=board_id,
+                            mutation_ref=f"projection-recover:{operation_id}",
+                            write_lease=lease,
+                            blocking_execution=self._blocking_execution,
+                            failure_timestamp=self._now(),
+                        )
                         async with self.relational_scope_factory() as db:
                             queue = await store.get_queue_entry(
                                 db, entry_id=str(item["queue_id"])
@@ -3855,15 +3867,24 @@ class ConsolidationProcessor:
                                     graph_commit=graph_commit,
                                 )
                             await store.commit(db)
+                        if graph_commit is not None:
+                            output = item["output"]
+                            session_id = output.get("session_id")
+                            agent_id = output.get("agent_id")
+                            if type(session_id) is str and type(agent_id) is str:
+                                await finalize_deferred_consolidation(
+                                    session_id, agent_id=agent_id,
+                                )
                         recovered += 1
                     finally:
-                        await _ensure_board_graph_durable(
-                            board_id=board_id,
-                            mutation_ref=f"projection-recover:{operation_id}",
-                            write_lease=lease,
-                            blocking_execution=self._blocking_execution,
-                            failure_timestamp=self._now(),
-                        )
+                        if not durability_attempted:
+                            await _ensure_board_graph_durable(
+                                board_id=board_id,
+                                mutation_ref=f"projection-recover:{operation_id}",
+                                write_lease=lease,
+                                blocking_execution=self._blocking_execution,
+                                failure_timestamp=self._now(),
+                            )
         return recovered
 
     @property
