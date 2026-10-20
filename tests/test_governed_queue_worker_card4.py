@@ -11,6 +11,8 @@ from typing import Any
 import pytest
 
 from okto_pulse.core.application.processors import consolidation
+from okto_pulse.core.kg.projection_journal_records import graph_write_records_to_payload
+from okto_pulse.core.kg.transaction import GraphWriteRecord
 from okto_pulse.core.services import main as main_services
 from okto_pulse.core.ports import consolidation as consolidation_ports
 from okto_pulse.core.application.processors.consolidation import (
@@ -750,7 +752,15 @@ async def test_absent_native_projection_commit_aborts_session_before_repending(
                 "artifact_id": entry.artifact_id,
                 "claim_token": entry.claim_token,
                 "source": entry.source,
-                "output": {"session_id": "live-session", "agent_id": "system:worker"},
+                "output": {
+                    "session_id": "live-session",
+                    "agent_id": "system:worker",
+                    "graph_write_records": graph_write_records_to_payload([
+                        GraphWriteRecord(
+                            kind="node", entity_type="Spec", entity_id="node-1"
+                        )
+                    ]),
+                },
             },)
 
         async def get_queue_entry(self, _db, *, entry_id):
@@ -787,7 +797,14 @@ async def test_absent_native_projection_commit_aborts_session_before_repending(
 
     async def _abort(session_id, *, agent_id, **_kwargs):
         assert (session_id, agent_id) == ("live-session", "system:worker")
+        assert _kwargs["compensation_already_applied"] is True
         events.append("abort")
+
+    async def _compensate(board_id, session_id, records, **_kwargs):
+        assert (board_id, session_id) == (entry.board_id, "live-session")
+        assert len(records) == 1
+        assert records[0].entity_id == "node-1"
+        events.append("compensate")
 
     monkeypatch.setattr(consolidation, "advisory_lock", _advisory)
     monkeypatch.setattr(consolidation, "guarded_board_write", _guard)
@@ -796,6 +813,7 @@ async def test_absent_native_projection_commit_aborts_session_before_repending(
     ))
     monkeypatch.setattr(consolidation, "_ensure_board_graph_durable", _durable)
     monkeypatch.setattr(consolidation, "abort_deferred_consolidation", _abort)
+    monkeypatch.setattr(consolidation, "compensate_recovered_projection", _compensate)
     processor = ConsolidationProcessor(_scope, durable_projection_protocol=True)
 
     with _registered(_JournalStore((entry,))):
@@ -809,7 +827,8 @@ async def test_absent_native_projection_commit_aborts_session_before_repending(
         assert entry.claim_token == "prepared-claim"
     else:
         assert events == [
-            "durable", "abort", "durable", "repend", "abandon", "sqlite_commit"
+            "durable", "compensate", "abort", "durable",
+            "repend", "abandon", "sqlite_commit",
         ]
         assert entry.status == "pending"
         assert entry.claim_token is None

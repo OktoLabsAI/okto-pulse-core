@@ -48,6 +48,7 @@ from okto_pulse.core.domain.code_traceability_kg import (
 )
 from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
+from okto_pulse.core.kg.projection_journal_records import graph_write_records_to_payload
 from okto_pulse.core.kg.consolidation_timing import observe_consolidation_phase
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 from okto_pulse.core.runtime_context import runtime_state
@@ -1390,6 +1391,25 @@ def _compensate_graph_writes(board_id: str, session_id: str, records: list) -> N
             await orchestrator.compensate()
 
     run_async_blocking(_run())
+
+
+async def compensate_recovered_projection(
+    board_id: str,
+    session_id: str,
+    records: list,
+    *,
+    blocking_execution: BlockingExecutionPort | None = None,
+) -> None:
+    """Restore journaled before-images after native history proves no commit."""
+
+    if records:
+        await _run_graph_io(
+            _compensate_graph_writes,
+            board_id,
+            session_id,
+            records,
+            executor=blocking_execution,
+        )
 
 
 def _connectivity_writer_path(agent_id: str) -> str:
@@ -5062,6 +5082,7 @@ async def commit_consolidation(
                         {"node_id": item.entity_id, "node_type": item.entity_type}
                         for item in records if item.kind == "node"
                     ],
+                    "graph_write_records": graph_write_records_to_payload(records),
                     "projection_property_effects": (
                         effects.to_payload() if effects is not None else None
                     ),
@@ -5460,19 +5481,21 @@ async def _abort_deferred_consolidation_unlocked(
     session_id: str,
     *,
     blocking_execution: BlockingExecutionPort | None = None,
+    compensation_already_applied: bool = False,
 ) -> None:
     """Compensate/discard a deferred session while its lock is already held."""
 
     pending = getattr(session, "pending_commit", None)
     if isinstance(pending, _PendingConsolidationCommit):
         pending.in_flight = False
-        await _run_graph_io(
-            _compensate_graph_writes,
-            session.board_id,
-            session_id,
-            list(pending.records),
-            executor=blocking_execution,
-        )
+        if not compensation_already_applied:
+            await _run_graph_io(
+                _compensate_graph_writes,
+                session.board_id,
+                session_id,
+                list(pending.records),
+                executor=blocking_execution,
+            )
     session.pending_commit = None
     session.status = SessionStatus.ABORTED
     await registry.require_session_store().remove(session_id)
@@ -5484,6 +5507,7 @@ async def abort_deferred_consolidation(
     *,
     agent_id: str,
     blocking_execution: BlockingExecutionPort | None = None,
+    compensation_already_applied: bool = False,
 ) -> None:
     """Compensate a deferred graph write and discard its session.
 
@@ -5506,6 +5530,7 @@ async def abort_deferred_consolidation(
             session,
             session_id,
             blocking_execution=blocking_execution,
+            compensation_already_applied=compensation_already_applied,
         )
 
 
