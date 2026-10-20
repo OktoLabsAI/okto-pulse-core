@@ -56,3 +56,14 @@ Date: 2026-10-19. Plan: [SQLITE_TRANSACT_LOCK_PLAN.md](SQLITE_TRANSACT_LOCK_PLAN
 - New regression evidence: Core deferred finalization suite 5 passed, Community receipt/recovery suite 7 passed, and an actual Grafx commit that succeeded before raising recovered its OPEN session and queue ACK (1 integration test passed). Cancelling a routed receipt scan now waits until its Board window and pool lease are released.
 - Protected `main` still requires current GitHub Actions checks. Runs Core `39346891611` and Community `39346943824` have remained `queued` since 00:18/00:19 UTC; no runner or test result is yet available. Merges and tags remain pending these checks.
 - At approximately 01:05 UTC, both release PRs remained open with `mergeStateStatus=BLOCKED`, both CI runs remained queued, and no `v0.4.1` tag existed remotely. Do not force the protected merges or create release tags before the required checks pass.
+
+## Release review and CI resumed — 2026-10-20
+
+- GitHub-hosted runners resumed. The then-current Core checks all passed; Community CI entered its full suite. Review then surfaced two additional issues, addressed through Core PR #116 and Community PR #142, both merged into `develop`.
+- The latest Core release PR #112 and Community release PR #138 heads are `8ad03f601444e9b64414a2018db8798476875551` and `cf9b6c9d596e31c82ca693a1a56c57f28011fc89`. The ten substantive review threads are resolved.
+- Core CI run `39352723203`: security/license passed, lint/typecheck/build in progress at the last check. Community CI run `39352770130`: F16 closure ratchet in progress. Neither release PR has merged yet; tags still pending.
+
+## Recovery session cleanup — 2026-10-20
+
+- A new Core release review found that an absent native commit receipt could leave an OPEN session alive after the prepared operation was abandoned. The recovery path now aborts that session while holding the graph writer and completes a second graph durability barrier before repending the queue and abandoning the SQLite journal row. If abort or durability fails, the prepared row remains available for recovery.
+- Focused regression: `test_absent_native_projection_commit_aborts_session_before_repending` passed (1 passed, 62 deselected). The two affected test modules ran 66 passed / 2 failed; those two failures are the previously recorded unrelated `sprint` source-set expectation and the test's plain `object()` database lacking `get()`. Core release PR #112 remains open pending promotion of this fix and refreshed checks; Community PR #138 remains open while its Docker verification runs.

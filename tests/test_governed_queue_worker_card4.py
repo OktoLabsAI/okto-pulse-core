@@ -718,6 +718,83 @@ async def _scope():
     yield object()
 
 
+@pytest.mark.asyncio
+async def test_absent_native_projection_commit_aborts_session_before_repending(
+    monkeypatch,
+) -> None:
+    entry = _entry(status="claimed", claim_token="prepared-claim")
+    events: list[str] = []
+
+    class _JournalStore(_MemoryConsolidationStore):
+        async def list_unsettled_projection_operations(self, _db, *, limit):
+            assert limit == 100
+            return ({
+                "board_id": entry.board_id,
+                "operation_id": "prepared-op",
+                "graph_after": "baseline",
+                "queue_id": entry.id,
+                "artifact_type": entry.artifact_type,
+                "artifact_id": entry.artifact_id,
+                "claim_token": entry.claim_token,
+                "source": entry.source,
+                "output": {"session_id": "live-session", "agent_id": "system:worker"},
+            },)
+
+        async def get_queue_entry(self, _db, *, entry_id):
+            assert entry_id == entry.id
+            return entry
+
+        async def save_queue_entries(self, _db, entries):
+            assert entries == [entry]
+            events.append("repend")
+
+        async def abandon_projection_operation(self, _db, **_kwargs):
+            events.append("abandon")
+
+        async def commit(self, _db):
+            events.append("sqlite_commit")
+
+    class _Lease:
+        def ensure_owned(self, **_kwargs):
+            pass
+
+    @asynccontextmanager
+    async def _advisory(*_args):
+        yield
+
+    @contextmanager
+    def _guard(*_args, **_kwargs):
+        yield _Lease()
+
+    async def _receipt(*_args, **_kwargs):
+        return None
+
+    async def _durable(**_kwargs):
+        events.append("durable")
+
+    async def _abort(session_id, *, agent_id, **_kwargs):
+        assert (session_id, agent_id) == ("live-session", "system:worker")
+        events.append("abort")
+
+    monkeypatch.setattr(consolidation, "advisory_lock", _advisory)
+    monkeypatch.setattr(consolidation, "guarded_board_write", _guard)
+    monkeypatch.setattr(consolidation, "get_kg_registry", lambda: SimpleNamespace(
+        graph_transaction=SimpleNamespace(projection_commit_receipt=_receipt)
+    ))
+    monkeypatch.setattr(consolidation, "_ensure_board_graph_durable", _durable)
+    monkeypatch.setattr(consolidation, "abort_deferred_consolidation", _abort)
+    processor = ConsolidationProcessor(_scope, durable_projection_protocol=True)
+
+    with _registered(_JournalStore((entry,))):
+        assert await processor.recover_projection_operations() == 1
+
+    assert events == [
+        "durable", "abort", "durable", "repend", "abandon", "sqlite_commit"
+    ]
+    assert entry.status == "pending"
+    assert entry.claim_token is None
+
+
 @contextmanager
 def _registered(store: _MemoryConsolidationStore):
     previous = get_consolidation_persistence_port()
