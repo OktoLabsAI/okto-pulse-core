@@ -3787,6 +3787,29 @@ class ConsolidationProcessor:
                             blocking_execution=self._blocking_execution,
                             failure_timestamp=self._now(),
                         )
+                        if graph_commit is None:
+                            # The native history proves this operation did not
+                            # commit. Discard its live session before the journal
+                            # is abandoned, so repeated failed commits cannot
+                            # accumulate OPEN sessions in this process. Aborting
+                            # may compensate graph auto-commits; make that
+                            # compensation durable before allowing a retry.
+                            output = item["output"]
+                            session_id = output.get("session_id")
+                            agent_id = output.get("agent_id")
+                            if type(session_id) is str and type(agent_id) is str:
+                                await abort_deferred_consolidation(
+                                    session_id,
+                                    agent_id=agent_id,
+                                    blocking_execution=self._blocking_execution,
+                                )
+                                await _ensure_board_graph_durable(
+                                    board_id=board_id,
+                                    mutation_ref=f"projection-recover-abort:{operation_id}",
+                                    write_lease=lease,
+                                    blocking_execution=self._blocking_execution,
+                                    failure_timestamp=self._now(),
+                                )
                         async with self.relational_scope_factory() as db:
                             queue = await store.get_queue_entry(
                                 db, entry_id=str(item["queue_id"])
