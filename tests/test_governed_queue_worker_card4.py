@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager, contextmanager, nullcontext
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -1418,6 +1418,35 @@ async def test_recovery_clears_token_and_reclaim_uses_fresh_token(monkeypatch):
     assert observed_tokens[0] != old_token
     assert store.ack_calls == []
     assert entry.attempts == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("journal_unsettled", [False, True])
+async def test_stale_recovery_preserves_claim_with_prepared_projection(
+    journal_unsettled: bool,
+) -> None:
+    entry = _entry(status="claimed", claim_token="prepared-claim")
+    entry.claim_timeout_at = datetime.now(UTC) - timedelta(seconds=1)
+
+    class _JournalStore(_MemoryConsolidationStore):
+        async def has_unsettled_projection_operation(self, _db, *, board_id):
+            assert board_id == entry.board_id
+            return journal_unsettled
+
+    store = _JournalStore((entry,))
+    processor = ConsolidationProcessor(_scope, durable_projection_protocol=True)
+    with _registered(store):
+        assert await processor.recover_stale_claims() == (
+            0 if journal_unsettled else 1
+        )
+
+    assert len(store.fence_calls) == 1
+    assert store.fence_calls[0]["claim_token"] == "prepared-claim"
+    assert entry.status == ("claimed" if journal_unsettled else "pending")
+    assert entry.claim_token == (
+        "prepared-claim" if journal_unsettled else None
+    )
+    assert store.rollback_count == (1 if journal_unsettled else 0)
 
 
 @pytest.mark.asyncio
