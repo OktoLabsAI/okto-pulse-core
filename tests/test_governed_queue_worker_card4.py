@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from okto_pulse.core.application.processors import consolidation
+from okto_pulse.core.services import main as main_services
 from okto_pulse.core.ports import consolidation as consolidation_ports
 from okto_pulse.core.application.processors.consolidation import (
     ConsolidationProcessor,
@@ -719,15 +720,27 @@ async def _scope():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("already_finalized", [False, True])
 async def test_absent_native_projection_commit_aborts_session_before_repending(
     monkeypatch,
+    already_finalized: bool,
 ) -> None:
     entry = _entry(status="claimed", claim_token="prepared-claim")
     events: list[str] = []
 
     class _JournalStore(_MemoryConsolidationStore):
-        async def list_unsettled_projection_operations(self, _db, *, limit):
-            assert limit == 100
+        scan_count = 0
+
+        async def list_unsettled_projection_operations(
+            self, _db, *, limit=100, board_id=None,
+        ):
+            self.scan_count += 1
+            if board_id is not None:
+                assert board_id == entry.board_id
+                if already_finalized:
+                    return ()
+            else:
+                assert limit == 100
             return ({
                 "board_id": entry.board_id,
                 "operation_id": "prepared-op",
@@ -786,13 +799,51 @@ async def test_absent_native_projection_commit_aborts_session_before_repending(
     processor = ConsolidationProcessor(_scope, durable_projection_protocol=True)
 
     with _registered(_JournalStore((entry,))):
-        assert await processor.recover_projection_operations() == 1
+        assert await processor.recover_projection_operations() == (
+            0 if already_finalized else 1
+        )
 
-    assert events == [
-        "durable", "abort", "durable", "repend", "abandon", "sqlite_commit"
-    ]
-    assert entry.status == "pending"
-    assert entry.claim_token is None
+    if already_finalized:
+        assert events == ["durable"]
+        assert entry.status == "claimed"
+        assert entry.claim_token == "prepared-claim"
+    else:
+        assert events == [
+            "durable", "abort", "durable", "repend", "abandon", "sqlite_commit"
+        ]
+        assert entry.status == "pending"
+        assert entry.claim_token is None
+
+
+@pytest.mark.asyncio
+async def test_deletion_rechecks_prepared_journal_after_reserving_sqlite_writer(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+
+    class _Store:
+        async def has_unsettled_projection_operation(self, _db, *, board_id):
+            assert board_id == "board-race"
+            events.append("probe")
+            return len(events) > 2
+
+        async def discard_artifact_work(self, _db, **identity):
+            assert identity == {
+                "board_id": "board-race",
+                "artifact_type": "spec",
+                "artifact_id": "spec-race",
+            }
+            events.append("reserve_writer_and_discard")
+
+    monkeypatch.setattr(
+        consolidation_ports, "get_consolidation_persistence_port", lambda: _Store()
+    )
+    with pytest.raises(main_services.ProjectionOperationInFlight):
+        await main_services._prepare_governed_artifact_deletion(
+            object(), board_id="board-race", artifact_type="spec",
+            artifact_id="spec-race",
+        )
+    assert events == ["probe", "reserve_writer_and_discard", "probe"]
 
 
 @contextmanager

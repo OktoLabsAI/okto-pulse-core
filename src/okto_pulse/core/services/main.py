@@ -1046,6 +1046,15 @@ async def _prepare_governed_artifact_deletion(
         artifact_type=artifact_type,
         artifact_id=artifact_id,
     )
+    # discard_artifact_work acquires the SQLite writer in this UoW. A worker
+    # may have prepared its journal after the read-only probe above but before
+    # this transaction reserved that writer. Recheck under the reservation;
+    # the caller rolls back the discard if the operation is now unsettled.
+    if callable(unsettled_probe) and await unsettled_probe(
+        context,
+        board_id=board_id,
+    ):
+        raise ProjectionOperationInFlight(board_id, artifact_type, artifact_id)
     delete_event_id = str(uuid.uuid4())
     tombstone = await get_tombstone_port().advance_deletion_tombstone(
         context,

@@ -3761,7 +3761,6 @@ class ConsolidationProcessor:
         for item in pending:
             board_id = str(item["board_id"])
             operation_id = str(item["operation_id"])
-            baseline = str(item["graph_after"])
             async with advisory_lock(board_id, "consolidation"):
                 with guarded_board_write(
                     board_id,
@@ -3772,6 +3771,23 @@ class ConsolidationProcessor:
                 ) as lease:
                     durability_attempted = False
                     try:
+                        # The initial scan is only a hint. A worker or another
+                        # recovery process may have finalized this operation
+                        # before we acquired the board writer. Re-read under
+                        # the lease before interpreting a missing queue row.
+                        async with self.relational_scope_factory() as db:
+                            current = await store.list_unsettled_projection_operations(
+                                db, board_id=board_id,
+                            )
+                            await store.rollback(db)
+                        item = next(
+                            (record for record in current
+                             if record["operation_id"] == operation_id),
+                            None,
+                        )
+                        if item is None:
+                            continue
+                        baseline = str(item["graph_after"])
                         graph_commit = await get_kg_registry().graph_transaction.projection_commit_receipt(
                             board_id, operation_id, after=baseline
                         )
