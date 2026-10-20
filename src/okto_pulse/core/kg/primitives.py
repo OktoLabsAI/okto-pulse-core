@@ -3222,6 +3222,7 @@ def _do_graph_commit(
         session_id=session_id,
         board_id=board_id,
     )
+    projection_journal_prepared = False
     candidate_to_graph_id: dict[str, str] = {}
     candidate_to_node_type: dict[str, str] = {}
     # Spec MKG-A-S1 (FR4): durable-source records collected for cognitive
@@ -3375,6 +3376,7 @@ def _do_graph_commit(
                         start_commit_token, list(orch.records), orch.counters,
                         datetime.now(timezone.utc), [], progress_kind="removal_progress",
                     )
+                    projection_journal_prepared = True
                 run_async_blocking(graph_scope.commit())
                 return GraphRemovalProgress(tuple(orch.records), orch.counters, datetime.now(timezone.utc))
         resolved_dependency_endpoints = {}
@@ -4661,6 +4663,7 @@ def _do_graph_commit(
                 start_commit_token, list(orch.records), orch.counters,
                 committed_at, list(cognitive_source_records),
             )
+            projection_journal_prepared = True
         run_async_blocking(graph_scope.commit())
         return (
             candidate_to_graph_id,
@@ -4677,7 +4680,7 @@ def _do_graph_commit(
             run_async_blocking(graph_scope.rollback())
         except Exception as exc:
             rollback_error = exc
-        if projection_operation_id is not None:
+        if projection_operation_id is not None and projection_journal_prepared:
             if rollback_error is not None:
                 raise KGPrimitiveError(
                     "projection_graph_outcome_ambiguous",
@@ -4731,7 +4734,7 @@ def _do_graph_commit(
             run_async_blocking(graph_scope.rollback())
         except Exception as cleanup_error:
             rollback_error = cleanup_error
-        if projection_operation_id is not None:
+        if projection_operation_id is not None and projection_journal_prepared:
             raise KGPrimitiveError(
                 "projection_graph_outcome_pending",
                 "Inspect the native operation receipt before retrying graph effects.",
