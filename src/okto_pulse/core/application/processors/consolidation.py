@@ -3874,6 +3874,7 @@ class ConsolidationProcessor:
                             if type(session_id) is str and type(agent_id) is str:
                                 await finalize_deferred_consolidation(
                                     session_id, agent_id=agent_id,
+                                    recovered_native_commit=True,
                                 )
                                 if output.get("progress_kind") != "removal_progress":
                                     # The normal ACK path runs these hooks after

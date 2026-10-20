@@ -5372,12 +5372,15 @@ async def finalize_deferred_consolidation(
     session_id: str,
     *,
     agent_id: str,
+    recovered_native_commit: bool = False,
 ) -> None:
     """Remove a deferred session only after its caller UOW committed.
 
     This hook deliberately performs no relational work.  Its sole authority is
     the caller's successful ``commit()`` return; until then the pending snapshot
     remains retryable and graph writes are never replayed.
+    ``recovered_native_commit`` also accepts an OPEN session when recovery has
+    independently proved the native receipt and committed the relational ACK.
     """
 
     registry = get_kg_registry()
@@ -5394,6 +5397,15 @@ async def finalize_deferred_consolidation(
     async with session.lock:
         pending = getattr(session, "pending_commit", None)
         if not isinstance(pending, _PendingConsolidationCommit):
+            if recovered_native_commit and session.status == SessionStatus.OPEN:
+                # The native commit may have succeeded and then raised before
+                # commit_consolidation could create its pending snapshot. The
+                # recovery caller has already proved the native receipt and
+                # committed the relational audit/ACK before opting in here.
+                await _finalize_consolidation_session_unlocked(
+                    registry, session, (), session_id=session_id,
+                )
+                return
             raise KGPrimitiveError(
                 "session_commit_not_pending",
                 f"Session {session_id} has no deferred commit to finalize",
