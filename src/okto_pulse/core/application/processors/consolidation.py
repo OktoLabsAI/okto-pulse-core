@@ -3988,24 +3988,51 @@ class ConsolidationProcessor:
             )
             if not stale:
                 return 0
+            recovered_entries = []
             for entry in stale:
+                if self._durable_projection_protocol and _work_kind(entry) == "consolidate":
+                    # Reserve SQLite's writer before checking the journal.
+                    # A worker that prepares in the gap after the stale scan
+                    # either wins this CAS (and is observed below) or loses
+                    # its claim before committing graph effects.
+                    if not await store.queue_claim_is_current_and_unfenced(
+                        db,
+                        entry_id=entry.id,
+                        claim_token=_claim_token(entry) or "",
+                        board_id=entry.board_id,
+                        artifact_type=entry.artifact_type,
+                        artifact_id=entry.artifact_id,
+                        work_kind=_work_kind(entry),
+                        source=_queue_source(entry),
+                        generation=_generation(entry),
+                        delete_event_id=_delete_event_id(entry),
+                    ):
+                        continue
+                    if await store.has_unsettled_projection_operation(
+                        db, board_id=entry.board_id,
+                    ):
+                        continue
                 entry.status = "pending"
                 entry.claimed_at = None
                 entry.claim_timeout_at = None
                 entry.worker_id = None
                 entry.claimed_by_session_id = None
                 entry.claim_token = None
-            await store.save_queue_entries(db, stale)
+                recovered_entries.append(entry)
+            if not recovered_entries:
+                await store.rollback(db)
+                return 0
+            await store.save_queue_entries(db, recovered_entries)
             await store.commit(db)
         logger.info(
             "kg.consolidation_worker.recovered count=%d",
-            len(stale),
+            len(recovered_entries),
             extra={
                 "event": "kg.queue.recovered",
-                "count": len(stale),
+                "count": len(recovered_entries),
             },
         )
-        return len(stale)
+        return len(recovered_entries)
 
     async def recover_exact_claims(
         self,
