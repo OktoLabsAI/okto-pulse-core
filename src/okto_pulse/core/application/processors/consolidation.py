@@ -1714,6 +1714,14 @@ async def _commit_consolidation_with_board_graph_lifecycle(
                 failure_timestamp=now,
             )
             raise
+        if isinstance(commit_resp, DeferredProjectionProgress) and commit_resp.graph_unchanged:
+            # The primitive rolled back a read-only removal scope. There is no
+            # native commit to make durable or acknowledge, and no prepared
+            # operation may have been persisted for this path.
+            if graph_after is not None or journaled_prepared or journaled_receipts:
+                raise RuntimeError("projection_noop_operation_prepared")
+            write_lease.complete_without_graph_change()
+            return commit_resp
         # The primitive may auto-commit before returning.  Prove durability
         # under this same live lease before the caller can acknowledge it.
         await _ensure_board_graph_durable(
