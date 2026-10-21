@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ---
 
+## [0.4.2] - 2026-10-21
+
+### Fixed
+
+- An unchanged Card removal pass no longer loops on a missing native graph
+  commit receipt. The queue remains deferred until its prerequisite is ready;
+  graph changes continue to require durable commit evidence before acknowledgement.
+- The graph writer guard now completes an explicitly unchanged pass without a
+  flush, while refusing any later write under that completed lease.
+
+### Upgrade
+
+- Use the paired Core and Community 0.4.2 packages. Stop all 0.4.1 Pulse
+  processes before starting 0.4.2 against the same data home. Existing 0.4.1
+  data remains in place; this patch does not require a fresh data home.
+
 ## [0.4.0] - 2026-10-16
 
 ### BREAKING CHANGE — no compatibility with earlier Pulse versions
