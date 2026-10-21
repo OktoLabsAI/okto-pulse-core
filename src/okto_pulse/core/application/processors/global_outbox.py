@@ -434,20 +434,21 @@ class GlobalOutboxProcessor:
                         # typed pressure signal so untouched rows do not spend
                         # retries while the adapter is deliberately cooling.
                         break
-                    event.retry_count += 1
-                    if self._retry_policy.after_failure(event.retry_count).terminal:
-                        event.retry_count = DEAD_LETTER_SENTINEL
-                        logger.warning(
-                            "outbox.dead_letter event=%s board=%s err=%s",
-                            event.event_id,
-                            event.board_id,
-                            exc,
-                            extra={
-                                "event": "outbox.dead_letter",
-                                "event_id": event.event_id,
-                                "board_id": event.board_id,
-                            },
-                        )
+                    if not _is_source_inventory_churn(exc):
+                        event.retry_count += 1
+                        if self._retry_policy.after_failure(event.retry_count).terminal:
+                            event.retry_count = DEAD_LETTER_SENTINEL
+                            logger.warning(
+                                "outbox.dead_letter event=%s board=%s err=%s",
+                                event.event_id,
+                                event.board_id,
+                                exc,
+                                extra={
+                                    "event": "outbox.dead_letter",
+                                    "event_id": event.event_id,
+                                    "board_id": event.board_id,
+                                },
+                            )
             if processed_events:
                 verification_errors, batch_flush_error = await self._run_graph_io(
                     lambda: self._verify_processed_batch(processed_events)
@@ -472,7 +473,9 @@ class GlobalOutboxProcessor:
                             "global_discovery_post_flush_failed: "
                             f"{_semantic_error_detail(batch_flush_error)}"
                         )[:500]
-                        if retry_after_s is None:
+                        if retry_after_s is None and not _is_source_inventory_churn(
+                            batch_flush_error
+                        ):
                             event.retry_count += 1
                             if self._retry_policy.after_failure(
                                 event.retry_count
@@ -507,7 +510,10 @@ class GlobalOutboxProcessor:
                             "global_discovery_post_flush_verification_failed: "
                             f"{_semantic_error_detail(error)}"
                         )[:500]
-                        if graph_memory_pressure_retry_after_seconds(error) is None:
+                        if (
+                            graph_memory_pressure_retry_after_seconds(error) is None
+                            and not _is_source_inventory_churn(error)
+                        ):
                             event.retry_count += 1
                             if self._retry_policy.after_failure(
                                 event.retry_count
@@ -2077,6 +2083,14 @@ def _semantic_error_detail(exc: BaseException) -> str:
     if isinstance(exc, GraphError):
         return f"{exc.code}:{exc}"
     return str(exc)
+
+
+def _is_source_inventory_churn(exc: BaseException) -> bool:
+    """A changed board snapshot needs a fresh pass, not a spent retry budget."""
+
+    return isinstance(exc, RuntimeError) and str(exc).startswith(
+        "outbox.source_inventory_changed:"
+    )
 
 
 __all__ = [

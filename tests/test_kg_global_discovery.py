@@ -900,7 +900,9 @@ async def test_post_flush_source_inventory_change_prevents_ack(
         lambda *_args: pytest.fail("global verify must follow source revalidation"),
     )
 
-    assert await GlobalOutboxProcessor(db_factory).process_once() == 0
+    processor = GlobalOutboxProcessor(db_factory)
+    for _ in range(6):
+        assert await processor.process_once() == 0
     async with db_factory() as db:
         row = (
             await db.execute(
@@ -910,5 +912,27 @@ async def test_post_flush_source_inventory_change_prevents_ack(
             )
         ).scalar_one()
         assert row.processed_at is None
-        assert row.retry_count == 1
+        assert row.retry_count == 0
         assert "outbox.source_inventory_changed" in (row.last_error or "")
+
+    monkeypatch.setattr(
+        GlobalOutboxProcessor,
+        "_assert_source_inventory_unchanged",
+        staticmethod(lambda *_args: None),
+    )
+    monkeypatch.setattr(
+        GlobalOutboxProcessor,
+        "_verify_reconciled_digest_layers",
+        lambda *_args: None,
+    )
+    assert await processor.process_once() == 1
+    async with db_factory() as db:
+        row = (
+            await db.execute(
+                select(GlobalUpdateOutbox).where(
+                    GlobalUpdateOutbox.event_id == event_id
+                )
+            )
+        ).scalar_one()
+        assert row.processed_at is not None
+        assert row.retry_count == 0
