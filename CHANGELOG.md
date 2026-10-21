@@ -15,6 +15,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   graph changes continue to require durable commit evidence before acknowledgement.
 - The graph writer guard now completes an explicitly unchanged pass without a
   flush, while refusing any later write under that completed lease.
+- A Test Card can enter Done only when every assigned scenario has current
+  Delivery verification proof linked to its implementation. The same gate is
+  shown in Delivery readiness; previous Done status remains historical if
+  evidence later becomes stale.
 
 ### Upgrade
 

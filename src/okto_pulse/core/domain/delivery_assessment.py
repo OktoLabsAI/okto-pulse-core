@@ -354,38 +354,49 @@ def assess_delivery_gate(assessment: DeliveryAssessment, *, mode='blocking', spe
 
     Normal/bug completion owns implementation only. Spec completion additionally
     owns verification and the evidence's native Card lifecycle. Test completion
-    has no gate in this seam; its existing execution/transition gates apply.
+    requires current verification proof without requiring the
+    lifecycle that the transition to Done will establish.
     Advisory and the Spec-only override retain deficits without changing facts.
     This verdict conveys neither actor authority nor other lifecycle gates.
     """
     if mode not in {'blocking', 'advisory'}:
         raise ValueError('delivery_evidence_policy_invalid')
-    if assessment.card_type == CardType.TEST:
-        return DeliveryGateAssessment('allowed', mode, (), ())
     is_spec = assessment.card_id is None
-    phases = (ReadinessPhase.IMPLEMENTATION, ReadinessPhase.VERIFICATION) if is_spec else (ReadinessPhase.IMPLEMENTATION,)
+    is_test = assessment.card_type == CardType.TEST
+    scope_phase = ReadinessPhase.VERIFICATION if is_test else ReadinessPhase.IMPLEMENTATION
+    units = assessment.scenarios if is_test else assessment.obligations
     blockers, exceptions = [], set()
-    if not assessment.completeness.population_known or not assessment.obligations:
-        blockers.append(DeliveryGateBlocker(ReadinessPhase.IMPLEMENTATION, None,
+    if not assessment.completeness.population_known or not units:
+        blockers.append(DeliveryGateBlocker(scope_phase, None,
             assessment.reasons or (FactualReason(ReadinessReason.SCOPE_UNAVAILABLE),), True))
     elif not assessment.completeness.scope_resolved:
-        blockers.append(DeliveryGateBlocker(ReadinessPhase.IMPLEMENTATION, None,
+        blockers.append(DeliveryGateBlocker(scope_phase, None,
             assessment.reasons or (FactualReason(ReadinessReason.SCOPE_ALLOCATION_UNRESOLVED),)))
-    for row in assessment.obligations:
-        for phase in phases:
-            value = row.implementation if phase == ReadinessPhase.IMPLEMENTATION else row.verification
+    for row in units:
+        if isinstance(row, ScenarioAssessment):
+            binding = None
+            scenario_ids = (row.scenario_id,)
+            phase_values = ((ReadinessPhase.VERIFICATION, row.verification),)
+        else:
+            binding = row.binding
+            scenario_ids = ()
+            phase_values = ((ReadinessPhase.IMPLEMENTATION, row.implementation),
+                            (ReadinessPhase.VERIFICATION, row.verification)) if is_spec else (
+                                (ReadinessPhase.IMPLEMENTATION, row.implementation),)
+        for phase, value in phase_values:
             if value.state == UnitState.NOT_APPLICABLE:
                 continue
             if value.state == UnitState.WAIVED and value.proof_satisfied is not None:
                 exceptions.update(value.exception_ids)
                 continue
             if value.proof_satisfied is not True:
-                blockers.append(DeliveryGateBlocker(phase, row.binding, value.reasons or
-                    (FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE),), value.proof_satisfied is None))
-            elif is_spec and value.lifecycle_satisfied is not True:
-                blockers.append(DeliveryGateBlocker(ReadinessPhase.LIFECYCLE, row.binding,
+                blockers.append(DeliveryGateBlocker(phase, binding, value.reasons or
+                    (FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE,
+                        scenario_ids=scenario_ids),), value.proof_satisfied is None))
+            elif is_spec and binding is not None and value.lifecycle_satisfied is not True:
+                blockers.append(DeliveryGateBlocker(ReadinessPhase.LIFECYCLE, binding,
                     (FactualReason(ReadinessReason.LIFECYCLE_CARD_OPEN,
-                        bindings=(row.binding,)),), value.lifecycle_satisfied is None))
+                        bindings=(binding,)),), value.lifecycle_satisfied is None))
     if blockers and mode == 'advisory':
         exceptions.add(f'board:{assessment.scope.board_id}:delivery_evidence_gate:advisory')
     elif blockers and is_spec and spec_override:

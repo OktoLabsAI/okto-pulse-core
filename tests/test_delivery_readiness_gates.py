@@ -65,12 +65,49 @@ def test_G05_G06_effective_override_does_not_change_metrics_or_fabricate_excepti
     assert aggregate_delivery_metrics(pending) == metrics and metrics.verification.percent == 0
 
 
-def test_spec_override_does_not_extend_to_card_and_test_seam_does_not_require_pass():
+def test_spec_override_does_not_extend_to_card_or_test():
     missing = assess_obligation_delivery(with_facts(snapshot(), implementations=()), card_id='ui', card_type='normal')
     assert not assess_delivery_gate(missing, spec_override=True).allowed
     tests = assess_test_delivery(outcome(snapshot(), 'scenario-ui', 'failed'), card_id='test-card-1', scenario_ids=('scenario-ui',))
-    assert assess_delivery_gate(tests).allowed
+    assert not assess_delivery_gate(tests, spec_override=True).allowed
     assert aggregate_delivery_metrics(tests).verification.percent == 0
+
+
+def test_test_completion_requires_current_delivery_verification_not_just_passed_scenarios():
+    value = with_facts(snapshot(), tests=())
+    assessment = assess_test_delivery(value, card_id='test-card-1',
+        scenario_ids=('scenario-ui', 'scenario-authorization'))
+    gate = assess_delivery_gate(assessment)
+    assert gate.status == 'blocked'
+    assert {blocker.phase for blocker in gate.blockers} == {'verification'}
+    assert aggregate_delivery_metrics(assessment).verification.percent == 0
+
+
+def test_test_completion_accepts_current_delivery_proof_before_done_lifecycle():
+    value = snapshot()
+    value = with_facts(value, tests=tuple(replace(test, fact=replace(test.fact,
+        card_status='in_progress')) for test in value.effective_context.tests))
+    assessment = assess_test_delivery(value, card_id='test-card-1',
+        scenario_ids=('scenario-ui', 'scenario-authorization'))
+    assert all(row.verification.proof_satisfied is True and row.verification.lifecycle_satisfied is False
+        for row in assessment.scenarios)
+    assert assess_delivery_gate(assessment).allowed
+
+
+@pytest.mark.asyncio
+async def test_test_card_done_gate_reads_cross_card_rollup_and_rejects_missing_association(monkeypatch):
+    load = AsyncMock(return_value=with_facts(snapshot(), tests=()))
+    monkeypatch.setattr(service, 'delivery_store', lambda _: SimpleNamespace(load_snapshot=load))
+    card = SimpleNamespace(id='test-card-1', board_id='board', spec_id='spec', card_type='test',
+        test_scenario_ids=['scenario-ui', 'scenario-authorization'])
+    spec = SimpleNamespace(id='spec', edition=2)
+    with pytest.raises(service.DeliveryGateBlocked) as error:
+        await service.require_card_delivery(None, card, spec)
+    assert error.value.gate.status == 'blocked'
+    assert load.await_count == 1
+    await service.require_card_delivery(None, card, spec, board=SimpleNamespace(settings={
+        'delivery_evidence_gate': 'advisory'}))
+    assert load.await_count == 1
 
 
 @pytest.mark.parametrize('disposition', ['risk_accepted', 'not_applicable'])
