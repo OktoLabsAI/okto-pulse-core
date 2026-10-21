@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
@@ -136,6 +135,13 @@ async def test_empty_removal_progress_needs_no_native_receipt(
     monkeypatch.setattr(
         consolidation, "_ensure_board_graph_durable", _unexpected_durability,
     )
+    class _Lease:
+        completed = False
+
+        def complete_without_graph_change(self) -> None:
+            self.completed = True
+
+    lease = _Lease()
     prepared: list[str] = []
     receipts: list[tuple[str, str]] = []
     entry = SimpleNamespace(
@@ -149,7 +155,7 @@ async def test_empty_removal_progress_needs_no_native_receipt(
         summary_text="No changes to remove",
         db=object(),
         defer_session_finalization=True,
-        enter_graph_write=lambda _mutation_ref: nullcontext(object()),
+        enter_graph_write=lambda _mutation_ref: lease,
         allow_known_removals=True,
         journaled_prepared=prepared,
         journaled_receipts=receipts,
@@ -159,6 +165,7 @@ async def test_empty_removal_progress_needs_no_native_receipt(
     assert result.graph_unchanged is True
     assert prepared == []
     assert receipts == []
+    assert lease.completed is True
 
 
 @pytest.mark.asyncio
@@ -185,7 +192,7 @@ async def test_empty_removal_cannot_bypass_an_existing_prepared_operation(
             summary_text="No changes to remove",
             db=object(),
             defer_session_finalization=True,
-            enter_graph_write=lambda _mutation_ref: nullcontext(object()),
+            enter_graph_write=lambda _mutation_ref: object(),
             allow_known_removals=True,
             journaled_prepared=["already-prepared"],
             journaled_receipts=[],
