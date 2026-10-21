@@ -3384,6 +3384,16 @@ def _do_graph_commit(
             if removal_intents:
                 for removal_intent in removal_intents:
                     orch.reconcile_projection_active_set(removal_intent)
+                if not orch.records:
+                    # Every removal adapter returned an empty before-image: no
+                    # graph mutation was applied. Grafx does not publish a
+                    # native commit for an empty transaction, so close it
+                    # without preparing a journal that could never get a receipt.
+                    run_async_blocking(graph_scope.rollback())
+                    return GraphRemovalProgress(
+                        tuple(), orch.counters, datetime.now(timezone.utc),
+                        graph_unchanged=True,
+                    )
                 if projection_precommit is not None:
                     start_commit_token = getattr(graph_scope, "start_commit_token", None)
                     if not start_commit_token:
@@ -5151,7 +5161,9 @@ async def commit_consolidation(
             ) from exc
 
         if isinstance(graph_result, GraphRemovalProgress):
-            response = DeferredProjectionProgress(req.session_id)
+            response = DeferredProjectionProgress(
+                req.session_id, graph_unchanged=graph_result.graph_unchanged,
+            )
             session.pending_commit = _PendingConsolidationCommit(
                 request_payload=request_payload, records=graph_result.records,
                 counters=graph_result.counters, cognitive_source_records=(),

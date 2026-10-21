@@ -19,6 +19,7 @@ class DeferredProjectionProgress:
 
     session_id: str
     error_code: str = 'relational_projection_endpoint_pending'
+    graph_unchanged: bool = False
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,7 @@ class GraphRemovalProgress:
     records: tuple
     counters: object
     committed_at: datetime
+    graph_unchanged: bool = False
 
 
 def card_removal_intents(*, intents, nodes, edges, resolve_endpoint):
