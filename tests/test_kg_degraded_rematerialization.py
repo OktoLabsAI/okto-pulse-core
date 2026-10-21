@@ -157,6 +157,47 @@ async def test_recovery_needed_with_readable_graph_commit_passes(
 
 
 @pytest.mark.asyncio
+async def test_discovery_only_recovery_does_not_block_board_commit(
+    board_id, agent_id, db_factory, board_handle, monkeypatch,
+):
+    source_ref = f"learning:discovery-recovery:{uuid.uuid4()}"
+    await run_blocking_graph_io(
+        lambda: _seed_learning_with_optional_parent(
+            board_id, source_ref=source_ref, connected=True
+        ),
+        task_name="tests.degraded_rematerialization.seed_discovery_learning",
+    )
+    begin = await _begin_with_learning(
+        board_id, agent_id, db_factory,
+        source_ref=source_ref, candidate_id="learning_discovery_recovery",
+    )
+
+    async def _discovery_only_recovery(_board_id, _db, scheduler_control=None):
+        return {
+            "overall_state": "recovery_needed",
+            "graph_state": "at_risk",
+            "discovery_state": "recovery_needed",
+            "total_nodes": None,
+        }
+
+    monkeypatch.setattr(
+        health_service, "get_kg_health", _discovery_only_recovery,
+    )
+    reset_commit_health_cache_for_tests()
+
+    async with db_factory() as db:
+        commit = await commit_consolidation(
+            CommitConsolidationRequest(session_id=begin.session_id),
+            agent_id=agent_id, db=db,
+        )
+    assert commit.processed_candidates == 1
+    assert await run_blocking_graph_io(
+        lambda: _count_by_source_ref(board_id, "Learning", source_ref),
+        task_name="tests.degraded_rematerialization.count_discovery_learning",
+    ) == 1
+
+
+@pytest.mark.asyncio
 async def test_quarantined_empty_graph_still_blocks(
     board_id, agent_id, db_factory, board_handle, monkeypatch,
 ):
@@ -286,7 +327,37 @@ async def test_malformed_health_payload_fails_closed(
                 "total_nodes": 0,
             },
             "recovery_needed",
-            id="discovery-recovery-is-not-board-rematerialization",
+            id="contradictory-discovery-recovery-fails-closed",
+        ),
+        pytest.param(
+            {
+                "overall_state": "recovery_needed",
+                "graph_state": "at_risk",
+                "discovery_state": "recovery_needed",
+                "total_nodes": None,
+            },
+            "at_risk",
+            id="discovery-only-recovery-allows-at-risk-board-write",
+        ),
+        pytest.param(
+            {
+                "overall_state": "recovery_needed",
+                "graph_state": "healthy",
+                "discovery_state": "recovery_needed",
+                "total_nodes": None,
+            },
+            "healthy",
+            id="discovery-only-recovery-allows-healthy-board-write",
+        ),
+        pytest.param(
+            {
+                "overall_state": "quarantined",
+                "graph_state": "at_risk",
+                "discovery_state": "quarantined",
+                "total_nodes": None,
+            },
+            "quarantined",
+            id="discovery-quarantine-still-blocks-board-write",
         ),
         pytest.param(
             {
