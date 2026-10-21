@@ -16,7 +16,8 @@ from test_delivery_scenario_assessment import outcome
 
 
 @pytest.mark.parametrize('failure', ['missing', 'failed', 'inconclusive', 'unknown', 'new_code'])
-def test_G01_G02_verification_cannot_acquire_implementation_authority(failure):
+@pytest.mark.parametrize('card_type', ['normal', 'bug'])
+def test_G01_G02_task_done_requires_verification_without_changing_implementation_credit(failure, card_type):
     value = snapshot()
     if failure == 'missing':
         value = with_facts(value, tests=())
@@ -24,7 +25,7 @@ def test_G01_G02_verification_cannot_acquire_implementation_authority(failure):
         value = outcome(value, 'scenario-ui', failure)
     elif failure == 'unknown':
         value = replace(value, effective_context=replace(value.effective_context, admitted_methods=None))
-    result = assess_obligation_delivery(value, card_id='ui', card_type='normal')
+    result = assess_obligation_delivery(value, card_id='ui', card_type=card_type)
     if failure == 'new_code':
         row = result.obligations[0]
         verification = replace(row.verification, state=UnitState.FAILED, intrinsic_state=UnitState.FAILED,
@@ -33,7 +34,9 @@ def test_G01_G02_verification_cannot_acquire_implementation_authority(failure):
         result = replace(result, obligations=(replace(row, verification=verification),))
     before = aggregate_delivery_metrics(result)
     gate = assess_delivery_gate(result)
-    assert gate.allowed and not gate.blockers and not gate.exception_refs
+    assert gate.status == ('unknown' if failure == 'unknown' else 'blocked')
+    assert {blocker.phase for blocker in gate.blockers} == {'verification'}
+    assert not gate.exception_refs
     assert before == aggregate_delivery_metrics(result)
     assert before.implementation.percent == 100
 
@@ -156,8 +159,9 @@ async def test_G10_spec_write_fence_precedes_loading_and_no_readiness_cache_is_a
 async def test_prospective_report_is_passed_to_native_loader_without_persistence(monkeypatch):
     value = snapshot()
     load = AsyncMock(return_value=value)
-    monkeypatch.setattr(service, 'card_delivery_store', lambda _: SimpleNamespace(load_card_snapshot=load))
+    monkeypatch.setattr(service, 'delivery_store', lambda _: SimpleNamespace(load_snapshot=load))
     report = {'delivery_manifest': {'selection': 'already-validated-by-native-path'}}
     await service.require_card_delivery(None, SimpleNamespace(id='ui', board_id='board', spec_id='spec', card_type='normal'),
         SimpleNamespace(id='spec', edition=2), prospective_report=report)
+    assert load.call_args.kwargs['prospective_card_id'] == 'ui'
     assert load.call_args.kwargs['prospective_report'] is report

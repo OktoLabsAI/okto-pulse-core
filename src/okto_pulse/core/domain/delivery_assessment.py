@@ -352,10 +352,9 @@ def resolve_delivery_gate_policy(settings: Mapping | None) -> Literal['blocking'
 def assess_delivery_gate(assessment: DeliveryAssessment, *, mode='blocking', spec_override=False) -> DeliveryGateAssessment:
     """Native delivery gate policy over assessed facts, never score thresholds.
 
-    Normal/bug completion owns implementation only. Spec completion additionally
-    owns verification and the evidence's native Card lifecycle. Test completion
-    requires current verification proof without requiring the
-    lifecycle that the transition to Done will establish.
+    Normal/bug and Test completion require current implementation/verification
+    proof without requiring the Card lifecycle that the transition to Done will
+    establish. Spec completion additionally requires native evidence lifecycle.
     Advisory and the Spec-only override retain deficits without changing facts.
     This verdict conveys neither actor authority nor other lifecycle gates.
     """
@@ -381,8 +380,7 @@ def assess_delivery_gate(assessment: DeliveryAssessment, *, mode='blocking', spe
             binding = row.binding
             scenario_ids = ()
             phase_values = ((ReadinessPhase.IMPLEMENTATION, row.implementation),
-                            (ReadinessPhase.VERIFICATION, row.verification)) if is_spec else (
-                                (ReadinessPhase.IMPLEMENTATION, row.implementation),)
+                            (ReadinessPhase.VERIFICATION, row.verification))
         for phase, value in phase_values:
             if value.state == UnitState.NOT_APPLICABLE:
                 continue

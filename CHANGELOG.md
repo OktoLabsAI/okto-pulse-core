@@ -19,6 +19,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   Delivery verification proof linked to its implementation. The same gate is
   shown in Delivery readiness; previous Done status remains historical if
   evidence later becomes stale.
+- A Task or Bug Card can enter Done only with accepted implementation proof
+  and current verification linked to that implementation. Missing or stale
+  tests now block the transition while preserving historical Done status.
 
 ### Upgrade
 

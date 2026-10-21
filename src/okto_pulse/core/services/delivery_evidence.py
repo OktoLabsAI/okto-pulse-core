@@ -85,13 +85,12 @@ async def require_card_delivery(
     """Card→done delivery gate (FR-3).
 
     In ``blocking`` mode, normal/bug cards require accepted implementation
-    proof. Test cards require current verification proof for every assigned
-    scenario, including the cross-card implementation association. The
-    ``advisory`` mode leaves the verdict visible without blocking.
+    and current cross-card verification proof. Test cards require current
+    verification proof for every assigned scenario. The ``advisory`` mode
+    leaves the verdict visible without blocking.
 
-    The shared factual assessment accepts current complete implementation
-    before DONE. Verification and lifecycle retain their own typed phases;
-    neither is reclassified through a list of exception strings here.
+    The shared factual assessment accepts current proof before DONE; Card
+    lifecycle remains separate from the proposed transition.
     """
     if resolve_delivery_gate_mode(board) != "blocking":
         return
@@ -102,26 +101,18 @@ async def require_card_delivery(
     spec_id = getattr(card, "spec_id", None)
     if not spec_id or spec_id != getattr(spec, "id", None):
         return
+    # The Spec rollup includes implementation and test records on sibling
+    # Cards. Apply a proposed report selection only to the transitioning Card.
+    snapshot = await delivery_store(session).load_snapshot(
+        DeliveryScope(getattr(card, "board_id"), spec_id, int(getattr(spec, "edition"))),
+        **({"prospective_card_id": getattr(card, "id"), "prospective_report": prospective_report}
+            if prospective_report is not None else {}),
+    )
     if card_type == "test":
-        # The Spec rollup includes implementation records on sibling cards.
-        snapshot = await delivery_store(session).load_snapshot(
-            DeliveryScope(getattr(card, "board_id"), spec_id, int(getattr(spec, "edition")))
-        )
         assessment = assess_test_delivery(snapshot, card_id=getattr(card, "id"),
             scenario_ids=tuple(getattr(card, "test_scenario_ids", None) or ()))
-        result = assess_delivery_gate(assessment)
-        if not result.allowed:
-            raise DeliveryGateBlocked(assessment, result)
-        return
-
-    store = card_delivery_store(session)
-    scope = CardDeliveryScope(
-        card.board_id, card.id, spec_id, int(spec.edition)
-    )
-    snapshot = await store.load_card_snapshot(scope, **(
-        {"prospective_report": prospective_report} if prospective_report is not None else {}
-    ))
-    assessment = assess_obligation_delivery(snapshot, card_id=card.id, card_type=card_type)
+    else:
+        assessment = assess_obligation_delivery(snapshot, card_id=getattr(card, "id"), card_type=card_type)
     result = assess_delivery_gate(assessment)
     if not result.allowed:
         raise DeliveryGateBlocked(assessment, result)

@@ -911,7 +911,7 @@ class _CoreTestRelationalApplicationAdapter:
             async def lock_scope(self, _scope) -> None:
                 return None
 
-            async def load_snapshot(self, scope):
+            async def load_snapshot(self, scope, *, prospective_card_id=None, prospective_report=None):
                 return DeliveryEvidenceSnapshot(scope=scope, obligations=())
 
             async def projection(self, board_id: str, spec_id: str) -> dict:
