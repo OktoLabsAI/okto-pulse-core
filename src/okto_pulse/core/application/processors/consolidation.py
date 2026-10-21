@@ -1720,6 +1720,7 @@ async def _commit_consolidation_with_board_graph_lifecycle(
             # operation may have been persisted for this path.
             if graph_after is not None or journaled_prepared or journaled_receipts:
                 raise RuntimeError("projection_noop_operation_prepared")
+            write_lease.complete_without_graph_change()
             return commit_resp
         # The primitive may auto-commit before returning.  Prove durability
         # under this same live lease before the caller can acknowledge it.
