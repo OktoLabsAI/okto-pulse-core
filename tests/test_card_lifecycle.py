@@ -3,7 +3,7 @@
 Covers the full card state machine, CRUD, dependencies, and activity logging.
 
 State machine:
-    not_started → started → in_progress → validation → done
+    not_started → in_progress → validation → done
 
 Rules:
     - Moving execution work to 'validation' or 'done' requires: conclusion, completeness (0-100),
