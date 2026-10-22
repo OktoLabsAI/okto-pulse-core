@@ -85,8 +85,16 @@ class PulseStatusScenarioTests(unittest.TestCase):
             "tests/test_card_start_authority_routes.py::test_start_requires_an_entire_authorized_route",
             "tests/test_card_start_authority_routes.py::test_start_respects_state_denial_on_legacy_route",
         )
+        self._run_companion_cases(
+            "tests/test_card_status_permission_reconciliation.py::test_custom_same_name_direct_grants_and_board_ceilings_are_converted",
+            "tests/test_card_status_migration_return.py::test_migrated_return_expires_after_governed_reentry",
+        )
 
     def test_sc08_presets_and_reconciliation(self) -> None:
+        self._run_cases(
+            "tests/test_sdlc_transition_permissions.py::test_transition_grants_are_fail_closed_and_explicit_per_preset",
+            "tests/test_card_start_authority_routes.py::test_migrated_test_bug_retains_only_its_former_return_right",
+        )
         self._run_companion_cases(
             "tests/test_card_status_permission_reconciliation.py::test_custom_same_name_direct_grants_and_board_ceilings_are_converted",
             "tests/test_card_status_permission_reconciliation.py::test_concurrent_permission_startups_do_not_duplicate_conversion",
