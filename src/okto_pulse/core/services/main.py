@@ -6336,6 +6336,15 @@ class CardService:
             raise ValueError(
                 "position_out_of_range: position must be None, -1 (end of column) or >= 0"
             )
+        # CardMove rejects Started at the public schema. Keep the same invariant
+        # at the service boundary for internal callers that bypass validation.
+        if data.status == CardStatus.STARTED:
+            raise CardOperationError(
+                "card_move_target_status_invalid",
+                "Started is a historical status and cannot be a move destination.",
+                remediation="choose_allowed_card_transition",
+                facts={"requested_status": CardStatus.STARTED.value},
+            )
         card = await self.get_card(card_id)
         if not card:
             return None

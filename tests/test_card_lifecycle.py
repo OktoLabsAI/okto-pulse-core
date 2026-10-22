@@ -430,6 +430,24 @@ class TestCardStatusTransitionMatrix:
             assert moved is not None
             assert moved.status == CardStatus.IN_PROGRESS
 
+    async def test_internal_move_cannot_reintroduce_started(self, db_factory):
+        """An internal caller cannot bypass the public CardMove status schema."""
+        card, _ = await self._create_card_for_transition(db_factory, CardStatus.NOT_STARTED)
+        async with db_factory() as db:
+            before_events = len((await db.execute(
+                select(DomainEventRow).where(DomainEventRow.board_id == BOARD_ID)
+            )).scalars().all())
+            with pytest.raises(CardOperationError) as caught:
+                await CardService(db).move_card(
+                    card.id, USER_ID,
+                    CardMove.model_construct(status=CardStatus.STARTED),
+                )
+            assert caught.value.code == "card_move_target_status_invalid"
+            assert (await db.get(Card, card.id)).status == CardStatus.NOT_STARTED
+            assert len((await db.execute(
+                select(DomainEventRow).where(DomainEventRow.board_id == BOARD_ID)
+            )).scalars().all()) == before_events
+
     async def test_same_status_move_is_idempotent_reorder(self, db_factory):
         """A lateral move preserves status while accepting a new position."""
         card, _ = await self._create_card_for_transition(

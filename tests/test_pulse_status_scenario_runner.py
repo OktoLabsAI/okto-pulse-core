@@ -66,6 +66,7 @@ class PulseStatusScenarioTests(unittest.TestCase):
             "tests/test_card_native_wire_contract.py::test_current_card_wire_status_excludes_historical_started",
             "tests/test_card_move_oneof_schema.py::test_historical_started_is_not_an_active_move_target",
             "tests/test_r01a_mcp_card_uow.py::test_move_tool_rejects_started_without_mutating_card",
+            "tests/test_card_lifecycle.py::TestCardStatusTransitionMatrix::test_internal_move_cannot_reintroduce_started",
         )
 
     def test_sc03_progress_and_historical_report(self) -> None:
