@@ -1134,6 +1134,16 @@ class ListAllowedTransitionsUseCase:
             if isinstance(raw_type, CardType)
             else CardType(getattr(raw_type, "value", raw_type or "normal"))
         )
+        if (
+            old_status is CardStatus.IN_PROGRESS
+            and target is CardStatus.NOT_STARTED
+            and card_type in {CardType.TEST, CardType.BUG}
+            and not await services.cards.legacy_started_return_eligible(card)
+        ):
+            return (
+                "card_legacy_return_not_eligible: This Test/Bug was not converted "
+                "from Started, or has since entered execution through a governed transition."
+            )
         board = await services.boards.get_board(card.board_id)
         board_settings = (getattr(board, "settings", None) or {}) if board else {}
         if target == CardStatus.DONE:

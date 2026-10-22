@@ -6319,6 +6319,16 @@ class CardService:
                     spec_id=card.spec_id,
                 )
 
+    async def legacy_started_return_eligible(self, card: ApplicationRecord) -> bool:
+        """Whether a migrated card still retains its former Started exit."""
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return await require_relational_application_adapter().card_status_migration(
+            self.db
+        ).return_to_planning_eligible(board_id=card.board_id, card_id=card.id)
+
     async def move_card(
         self, card_id: str, user_id: str, data: CardMove, actor_name: str | None = None
     ) -> ApplicationRecord | None:
@@ -6409,6 +6419,19 @@ class CardService:
 
         old_status = card.status
         card_type_value = getattr(card.card_type, "value", card.card_type or "normal")
+        if (
+            old_status is CardStatus.IN_PROGRESS
+            and data.status is CardStatus.NOT_STARTED
+            and str(card_type_value) in {"test", "bug"}
+            and not await self.legacy_started_return_eligible(card)
+        ):
+            raise CardOperationError(
+                "card_legacy_return_not_eligible",
+                "Only a Test/Bug converted from Started may use its former return "
+                "to Not Started before a new governed execution entry.",
+                remediation="choose_allowed_card_transition",
+                facts={"card_id": card.id, "card_type": str(card_type_value)},
+            )
         if old_status != data.status and not is_transition_allowed(
             "card",
             old_status.value,

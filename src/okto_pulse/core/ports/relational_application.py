@@ -144,8 +144,19 @@ class AgentAuthenticationGateway(Protocol):
 
 
 @runtime_checkable
+class CardStatusMigrationReadPort(Protocol):
+    """Read the durable origin of a legacy Started card in the current UoW."""
+
+    async def return_to_planning_eligible(
+        self, *, board_id: str, card_id: str
+    ) -> bool: ...
+
+
+@runtime_checkable
 class RelationalApplicationAdapter(Protocol):
     """Factory bundle scoped to one edition-owned persistence session."""
+
+    def card_status_migration(self, session: Any) -> "CardStatusMigrationReadPort": ...
 
     def permission_presets(self, session: Any) -> PermissionPresetGateway: ...
 

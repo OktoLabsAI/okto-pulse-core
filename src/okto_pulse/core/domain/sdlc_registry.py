@@ -413,6 +413,16 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         card_types=("normal",),
                     ),
                     _edge(
+                        "not_started",
+                        gate="legacy_migration_return",
+                        capabilities=("reopen",),
+                        card_types=("test", "bug"),
+                        reason_codes=(
+                            "card_legacy_return_not_eligible",
+                            "transition_not_allowed",
+                        ),
+                    ),
+                    _edge(
                         "validation", gate="task_validation", capabilities=("validate",)
                     ),
                     _edge(

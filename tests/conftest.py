@@ -891,6 +891,15 @@ class _CoreTestRelationalApplicationAdapter:
     def permission_presets(self, session):
         return _CoreTestPermissionPresetGateway(session)
 
+    def card_status_migration(self, session):
+        _ = session
+
+        class _NoLegacyMigration:
+            async def return_to_planning_eligible(self, *, board_id, card_id):
+                return False
+
+        return _NoLegacyMigration()
+
     def delivery_evidence(self, session):
         """Empty delivery-evidence seam for Core scenarios with no persistence.
 

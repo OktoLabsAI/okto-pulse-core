@@ -406,17 +406,32 @@ async def require_card_start_authorization(
 async def require_card_return_to_planning_authorization(
     actor: ActorContext,
     *,
+    card_type: str = "normal",
+    legacy_started_eligible: bool = False,
     uow: PulseUnitOfWork | None = None,
     board_id: str | None = None,
     permissions: PermissionOverride = _UNSET,
     policy: PermissionPolicyPort | None = None,
 ) -> PermissionDecision:
-    """Require the introduced capability and the former two-edge ceiling."""
+    """Preserve the old return route for each type without widening it."""
 
     _precheck_board_scope(actor, board_id)
     effective_permissions = permissions
     if effective_permissions is _UNSET:
         effective_permissions = await resolve_actor_permissions(actor, uow, board_id)
+    if legacy_started_eligible:
+        return _raise_if_denied(decide_authorization(
+            actor,
+            PermissionRequirement(
+                "card.move.started_to_not_started", entity="card", state="started"
+            ),
+            effective_permissions,
+            policy,
+        ))
+    if card_type in {"test", "bug"}:
+        raise PermissionDeniedError("card_legacy_return_not_eligible")
+    if card_type != "normal":
+        raise PermissionDeniedError("unknown_card_type")
     introduced = decide_authorization(
         actor,
         PermissionRequirement(

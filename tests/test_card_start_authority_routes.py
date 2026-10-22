@@ -8,6 +8,7 @@ from okto_pulse.core.application.use_cases.authorization import (
 )
 from okto_pulse.core.application.use_cases.base import ActorContext, PermissionDeniedError
 from okto_pulse.core.domain.permissions import PermissionSet
+from okto_pulse.core.domain.sdlc_registry import is_transition_allowed
 
 
 @pytest.mark.asyncio
@@ -117,3 +118,53 @@ async def test_return_to_planning_requires_materialized_new_capability() -> None
     actor = ActorContext("actor", "mcp", board_id="board", permissions=permissions)
     with pytest.raises(PermissionDeniedError):
         await require_card_return_to_planning_authorization(actor, board_id="board")
+
+
+@pytest.mark.asyncio
+async def test_migrated_normal_retains_its_former_started_exit() -> None:
+    actor = ActorContext("actor", "mcp", board_id="board", permissions=PermissionSet({
+        "card": {
+            "entity": {"read": True},
+            "interact_in": {"started": True},
+            "move": {"started_to_not_started": True},
+        },
+    }))
+    assert (await require_card_return_to_planning_authorization(
+        actor, card_type="normal", legacy_started_eligible=True, board_id="board"
+    )).allowed
+    with pytest.raises(PermissionDeniedError):
+        await require_card_return_to_planning_authorization(
+            actor, card_type="normal", board_id="board"
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("card_type", ["test", "bug"])
+async def test_migrated_test_bug_retains_only_its_former_return_right(card_type: str) -> None:
+    assert is_transition_allowed(
+        "card", "in_progress", "not_started", card_type=card_type
+    )
+    permissions = PermissionSet({
+        "card": {
+            "entity": {"read": True},
+            "interact_in": {"started": True},
+            "move": {"started_to_not_started": True},
+        },
+    })
+    actor = ActorContext("actor", "mcp", board_id="board", permissions=permissions)
+    with pytest.raises(PermissionDeniedError, match="card_legacy_return_not_eligible"):
+        await require_card_return_to_planning_authorization(
+            actor, card_type=card_type, board_id="board"
+        )
+    assert (await require_card_return_to_planning_authorization(
+        actor, card_type=card_type, legacy_started_eligible=True, board_id="board"
+    )).allowed
+    denied = ActorContext("actor", "mcp", board_id="board", permissions=PermissionSet({
+        "card": {"entity": {"read": True}, "interact_in": {"started": True},
+                 "move": {"started_to_not_started": False}},
+    }))
+    with pytest.raises(PermissionDeniedError):
+        await require_card_return_to_planning_authorization(
+            denied, card_type=card_type, legacy_started_eligible=True,
+            board_id="board",
+        )

@@ -425,8 +425,11 @@ class MoveCardUseCase:
                 board_id=existing.board_id,
             )
         elif current_state == "in_progress" and target_state == "not_started":
+            return_type = str(getattr(existing.card_type, "value", existing.card_type or "normal"))
             await require_card_return_to_planning_authorization(
                 actor,
+                card_type=return_type,
+                legacy_started_eligible=await service.legacy_started_return_eligible(existing),
                 uow=uow,
                 board_id=existing.board_id,
             )

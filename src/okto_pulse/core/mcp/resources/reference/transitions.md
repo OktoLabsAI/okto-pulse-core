@@ -28,6 +28,10 @@ board-specific alternative.
 
 **When moving to `validation`**, include: `conclusion`, `completeness`, `completeness_justification`, `drift`, `drift_justification`.
 
+A Normal card converted from historical `started` retains the old
+`started` → `not_started` permission until a subsequent governed entry to
+execution. Other Normal cards require the former composed return route.
+
 `rejected` is available only to Normal and Bug cards. Direct create, drag/drop, generic move, or permission grants cannot assign Rejected. A same-status `rejected` → `rejected` move is accepted only as a position reorder inside the existing Rejected column; it does not create or alter lifecycle state or causal history.
 
 ## Test cards (`card_type = "test"`)
@@ -37,6 +41,13 @@ board-specific alternative.
 | `not_started` | `in_progress` | Spec must be `validated` or later; current execution gates apply |
 | `validation` | `in_progress` | Test-only rework; Spec dependencies must still be ready |
 | `in_progress`/`validation` | `done` | Linked scenarios have an honest terminal result (`passed`, `failed`, or `automated`) and required evidence, plus `conclusion` + completeness/drift; other completion gates still apply |
+
+For Test and Bug cards converted from the historical `started` status, an
+`in_progress` → `not_started` return preserves the former
+`started` → `not_started` permission only until the card next enters execution
+through a governed transition. The migration audit supplies this provenance.
+Other Test/Bug cards do not gain that return route. The entity-scoped allowed
+transitions preview reports when the historical return is unavailable.
 
 A Test Card being `done` means its execution/report is complete, not that the
 product passed. Preserve `failed`; do not relabel it to unblock a move. Bug regression and delivery approval have their own success/evidence
