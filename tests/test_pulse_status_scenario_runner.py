@@ -36,8 +36,9 @@ class PulseStatusScenarioTests(unittest.TestCase):
     def test_sc01_create_only_not_started(self) -> None:
         self._run_cases(
             "tests/test_card_initial_status_contract.py::test_new_card_status_is_not_started_for_each_type",
-            "tests/test_mcp_card_type_validation.py::test_create_card_accepts_valid_normal",
-            "tests/test_mcp_card_type_validation.py::test_create_test_card_links_existing_scenario_on_validated_spec",
+            "tests/test_card_lifecycle.py::TestCardCreation::test_plan_cards_in_draft_without_starting_execution",
+            "tests/test_card_lifecycle.py::TestCardCreation::test_create_normal_card_with_all_fields",
+            "tests/test_card_lifecycle.py::TestCardCreation::test_create_card_with_test_scenario_ids",
         )
 
     def test_sc02_reject_non_planning_status(self) -> None:
