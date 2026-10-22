@@ -57,6 +57,16 @@ from okto_pulse.core.domain.enums import (
     StoryStatus,
     TestScenarioStatus,
 )
+
+OperationalCardStatus: TypeAlias = Literal[
+    CardStatus.NOT_STARTED,
+    CardStatus.IN_PROGRESS,
+    CardStatus.VALIDATION,
+    CardStatus.REJECTED,
+    CardStatus.ON_HOLD,
+    CardStatus.DONE,
+    CardStatus.CANCELLED,
+]
 from okto_pulse.core.domain.knowledge_governance import (
     project_knowledge_governance,
 )
@@ -2837,7 +2847,7 @@ class CardSummaryForSpec(BaseSchema):
 
     id: str
     title: str
-    status: CardStatus
+    status: OperationalCardStatus
     priority: CardPriority
     assignee_id: str | None
     card_type: str = "normal"
@@ -3372,15 +3382,7 @@ class ConclusionEntry(ConclusionEntrySummary):
         return data
 
 
-CardMoveTargetStatus: TypeAlias = Literal[
-    CardStatus.NOT_STARTED,
-    CardStatus.IN_PROGRESS,
-    CardStatus.VALIDATION,
-    CardStatus.ON_HOLD,
-    CardStatus.DONE,
-    CardStatus.CANCELLED,
-    CardStatus.REJECTED,
-]
+CardMoveTargetStatus: TypeAlias = OperationalCardStatus
 
 
 class CardMove(BaseModel):
@@ -3616,7 +3618,7 @@ class CardResponse(BaseSchema):
     title: str
     description: str | None
     details: str | None
-    status: CardStatus
+    status: OperationalCardStatus
     subject_version: int = Field(
         ...,
         ge=1,
@@ -3719,7 +3721,7 @@ class CardSummary(BaseSchema):
     spec_id: str | None
     title: str
     description: str | None
-    status: CardStatus
+    status: OperationalCardStatus
     priority: CardPriority
     position: int
     assignee_id: str | None
@@ -3768,7 +3770,7 @@ class CardPageItem(BaseSchema):
     spec_id: str | None
     title: str
     description: str | None
-    status: CardStatus
+    status: OperationalCardStatus
     priority: CardPriority
     card_type: CardType
     position: int
@@ -4772,7 +4774,7 @@ class ColumnPageResponse(BaseSchema):
     )
 
     board_id: str
-    column: CardStatus
+    column: OperationalCardStatus
     items: list[CardSummary]
     meta: ColumnMeta
     offset: int = Field(..., ge=0)

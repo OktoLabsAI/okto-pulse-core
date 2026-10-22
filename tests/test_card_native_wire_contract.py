@@ -45,3 +45,15 @@ def test_native_card_projection_excludes_retired_fields():
     result = CardResponse.model_validate(card_payload()).model_dump()
     assert "sprint_id" not in result
     assert "migrated_validation_policy" not in result
+
+
+@pytest.mark.parametrize("model", [CardResponse, CardSummaryForSpec])
+def test_current_card_wire_status_excludes_historical_started(model):
+    status_schema = model.model_json_schema()["properties"]["status"]
+    assert "started" not in status_schema["enum"]
+    assert "in_progress" in status_schema["enum"]
+
+
+def test_current_card_response_rejects_unmigrated_started_row():
+    with pytest.raises(ValidationError):
+        CardResponse.model_validate({**card_payload(), "status": "started"})
