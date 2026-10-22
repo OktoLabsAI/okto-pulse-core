@@ -914,8 +914,14 @@ async def test_test_card_done_preview_requires_authenticated_scenario_evidence(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("initial_status", "target_status"),
+    [("not_started", "in_progress"), ("in_progress", "validation")],
+)
 async def test_bug_execution_preview_blocks_missing_linked_test_task_id(
     db_factory,
+    initial_status: str,
+    target_status: str,
 ) -> None:
     board_id = _id("bug-missing-link-board")
     spec_id = _id("bug-missing-link-spec")
@@ -937,7 +943,7 @@ async def test_bug_execution_preview_blocks_missing_linked_test_task_id(
             board_id=board_id,
             spec_id=spec_id,
             title="Bug with a dangling test link",
-            status=CardStatus.NOT_STARTED,
+            status=CardStatus(initial_status),
             card_type=CardType.BUG,
             linked_test_task_ids=[missing_test_id],
             position=0,
@@ -946,16 +952,16 @@ async def test_bug_execution_preview_blocks_missing_linked_test_task_id(
     )
 
     async with db_factory() as db:
-        started = await _preview_transition(
+        transition = await _preview_transition(
             db,
             board_id=board_id,
             entity_type="card",
             entity_id=bug_id,
-            to_status="in_progress",
+            to_status=target_status,
         )
 
-    assert started.blocked_reason is not None
-    assert "regression_test_not_found" in started.blocked_reason
+    assert transition.blocked_reason is not None
+    assert "regression_test_not_found" in transition.blocked_reason
 
 
 @pytest.mark.asyncio
