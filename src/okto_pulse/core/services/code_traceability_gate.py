@@ -977,6 +977,12 @@ def phases_for_transition(
     ):
         return (CodeTraceabilityGatePhase.SPEC_EVIDENCE_DISPOSITION,)
     if subject_type is CodeTraceabilitySubjectType.CARD:
+        # Reopening a completed card is the recovery path for stale or missing
+        # targets. Requiring target coverage here can make that repair impossible:
+        # targets are read-only while the card is Done. Forward execution gates
+        # still apply when the card returns to Validation or Done.
+        if source == "done" and target == "in_progress":
+            return ()
         if target in {"started", "in_progress"} and source != target:
             return (CodeTraceabilityGatePhase.CARD_TARGET,)
         if target in {"validation", "done"} and source != target:

@@ -62,6 +62,7 @@ from okto_pulse.core.services.code_investigation import (
 from okto_pulse.core.services.code_traceability_gate import (
     CodeTraceabilityGateEvaluator,
     CodeTraceabilityGatePhase,
+    phases_for_transition,
     resolve_code_evidence_coverage_skip,
 )
 from okto_pulse.core.services.traceability import project_code_traceability_report
@@ -78,6 +79,17 @@ from test_code_traceability_application import (
 
 
 UTC = timezone.utc
+
+
+def test_done_card_can_reopen_to_repair_target_coverage() -> None:
+    subject = CodeTraceabilitySubjectType.CARD
+    assert phases_for_transition(subject, "done", "in_progress") == ()
+    assert phases_for_transition(subject, "not_started", "in_progress") == (
+        CodeTraceabilityGatePhase.CARD_TARGET,
+    )
+    assert phases_for_transition(subject, "in_progress", "done") == (
+        CodeTraceabilityGatePhase.CARD_EXECUTION,
+    )
 
 
 def test_code_evidence_coverage_skip_resolves_board_then_spec() -> None:
