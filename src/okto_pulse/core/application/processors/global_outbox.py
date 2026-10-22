@@ -400,6 +400,12 @@ class GlobalOutboxProcessor:
             # Refuse an invalid record before applying any graph effects.
             for event in events:
                 event.validate_retry_count()
+            # The claim is a read-only selection. Release its SQLite checkout
+            # before any native graph work; the global writer lease protects
+            # this batch, and final ACK is persisted only after verification.
+            rollback = getattr(db, "rollback", None)
+            if rollback is not None:
+                await rollback()
             processed_events: list[
                 tuple[GlobalOutboxEventRecord, dict[str, tuple[str, str]]]
             ] = []
@@ -696,14 +702,22 @@ class GlobalOutboxProcessor:
         # what was actually written to the per-board graph. We digest only
         # `add` ops; updates/supersedes don't produce new digest rows (a
         # future pass can refresh digest embeddings on update).
-        refs = list(
-            await get_global_outbox_store().list_added_node_refs(
-                db,
-                session_id=session_id,
-                board_id=board_id,
-                node_types=DIGESTED_NODE_TYPES,
+        try:
+            refs = list(
+                await get_global_outbox_store().list_added_node_refs(
+                    db,
+                    session_id=session_id,
+                    board_id=board_id,
+                    node_types=DIGESTED_NODE_TYPES,
+                )
             )
-        )
+        finally:
+            # The returned facts are detached values. Holding this read
+            # transaction across graph IO ties up a SQLite pool checkout for
+            # the entire batch (minutes under large source inventories).
+            rollback = getattr(db, "rollback", None)
+            if rollback is not None:
+                await rollback()
 
         gconn = global_runtime
         try:
@@ -825,11 +839,16 @@ class GlobalOutboxProcessor:
                 n.get("node_type") == "Learning" and n.get("graph_layer") == "canonical"
                 for n in per_board
             )
-            learning_exclusions = (
-                await pending_or_debt_exclusions(db, board_id=board_id)
-                if has_canonical_learning
-                else {}
-            )
+            try:
+                learning_exclusions = (
+                    await pending_or_debt_exclusions(db, board_id=board_id)
+                    if has_canonical_learning
+                    else {}
+                )
+            finally:
+                rollback = getattr(db, "rollback", None)
+                if rollback is not None:
+                    await rollback()
 
             # 3) Create one DecisionDigest per node + CONTAINS_DECISION edge.
             # graph backend's HNSW-indexed columns (DecisionDigest.embedding) cannot be
@@ -1584,11 +1603,16 @@ class GlobalOutboxProcessor:
             m.get("node_type") == "Learning" and m.get("graph_layer") == "canonical"
             for m in board_meta.values()
         )
-        overlay = (
-            await pending_or_debt_exclusions(db, board_id=board_id)
-            if needs_overlay
-            else {}
-        )
+        try:
+            overlay = (
+                await pending_or_debt_exclusions(db, board_id=board_id)
+                if needs_overlay
+                else {}
+            )
+        finally:
+            rollback = getattr(db, "rollback", None)
+            if rollback is not None:
+                await rollback()
 
         # ``count`` is the number of concrete cache mutations performed. Invalid
         # outgoing Board links are mutations too, even when the correct digest
