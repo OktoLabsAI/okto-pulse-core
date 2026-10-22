@@ -4626,7 +4626,6 @@ async def okto_pulse_move_card(
     status: Annotated[
         Literal[
             "not_started",
-            "started",
             "in_progress",
             "validation",
             "on_hold",
@@ -4674,7 +4673,7 @@ async def okto_pulse_move_card(
     (0-100), completeness_justification, drift (0-100), and
     drift_justification so the reviewer can validate the claim. Use -1 for
     completeness/drift when no execution report is required (e.g. moving to
-    on_hold or started). status='cancelled' requires cancellation_reason;
+    on_hold or returning to not_started). status='cancelled' requires cancellation_reason;
     reopening clears it. status='rejected' is valid only to reorder a card
     already in Rejected; every inbound transition to Rejected is refused.
     Errors: resource_gate_missing_resources;
@@ -4694,7 +4693,6 @@ async def okto_pulse_move_card(
 
     public_targets = (
         "not_started",
-        "started",
         "in_progress",
         "validation",
         "on_hold",
@@ -13862,7 +13860,7 @@ async def okto_pulse_list_blockers(
     classification. Each entry carries a `type` the agent can act on directly:
     dependency_blocked (active card with a not-DONE depends_on target),
     spec_dependency_blocked (Spec with prerequisite Specs not yet Done),
-    on_hold (explicitly paused card), stale (started/in_progress/validation
+    on_hold (explicitly paused card), stale (in_progress/validation
     card untouched beyond stale_hours), spec_pending_validation (approved spec
     with no 'approve' evaluation), spec_no_cards (validated/in_progress spec
     with zero linked cards), uncovered_scenario (test scenario with no linked

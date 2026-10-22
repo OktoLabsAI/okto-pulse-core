@@ -438,8 +438,8 @@ Delivery credit additionally requires the authenticated proof described above.
 
 Validated/done specs keep their semantic content lock. The only post-lock
 status update allowed here is operational evidence for a scenario that is
-already linked to an executable `card_type="test"` card (`started`,
-`in_progress`, `validation`, or `done`). If no such test card exists, the call
+already linked to an executable `card_type="test"` card (`in_progress`,
+`validation`, or `done`). If no such test card exists, the call
 returns `status_not_mutable`.
 
 Args:

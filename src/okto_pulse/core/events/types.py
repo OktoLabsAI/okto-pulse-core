@@ -501,6 +501,26 @@ class CardMoved(DomainEvent):
     moved_by: Optional[str] = None
 
 
+CARD_STATUS_MIGRATION_ID = "card-status-started-to-in-progress/v1"
+
+
+class CardStatusNormalized(DomainEvent):
+    """Startup-only correction of a persisted legacy status, never a user move."""
+
+    event_type: ClassVar[str] = "card.status_normalized.v1"
+    migration_id: Literal["card-status-started-to-in-progress/v1"] = CARD_STATUS_MIGRATION_ID
+    normalization_version: Literal[1] = 1
+    card_id: str
+    spec_id: Optional[str] = None
+    from_status: Literal["started"] = "started"
+    to_status: Literal["in_progress"] = "in_progress"
+    old_position: int | None = None
+    new_position: int | None = None
+    old_policy_version: int
+    new_policy_version: int
+    archived: bool
+
+
 class CardCompletionRejected(DomainEvent):
     """A governed completion attempt produced an actionable rework cause."""
 
@@ -1233,6 +1253,7 @@ EVENT_TYPES: list[str] = [
     ArtifactArchiveChanged.event_type,
     CardCreated.event_type,
     CardMoved.event_type,
+    CardStatusNormalized.event_type,
     CardCompletionRejected.event_type,
     CardConclusionAdded.event_type,
     CardCancelled.event_type,
@@ -1300,6 +1321,7 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     ArtifactArchiveChanged.event_type: ArtifactArchiveChanged,
     CardCreated.event_type: CardCreated,
     CardMoved.event_type: CardMoved,
+    CardStatusNormalized.event_type: CardStatusNormalized,
     CardCompletionRejected.event_type: CardCompletionRejected,
     CardConclusionAdded.event_type: CardConclusionAdded,
     CardCancelled.event_type: CardCancelled,

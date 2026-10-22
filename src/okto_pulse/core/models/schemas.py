@@ -3374,7 +3374,6 @@ class ConclusionEntry(ConclusionEntrySummary):
 
 CardMoveTargetStatus: TypeAlias = Literal[
     CardStatus.NOT_STARTED,
-    CardStatus.STARTED,
     CardStatus.IN_PROGRESS,
     CardStatus.VALIDATION,
     CardStatus.ON_HOLD,
@@ -3470,7 +3469,7 @@ class CardMove(BaseModel):
 
     status: CardMoveTargetStatus = Field(
         ...,
-        description="Novo status público do card: not_started, started, in_progress, validation, on_hold, done ou cancelled. rejected é aceito somente quando o card já está rejected, para reordenar dentro da mesma coluna; nenhuma transição pode ter rejected como destino manual.",
+        description="Novo status público do card: not_started, in_progress, validation, on_hold, done ou cancelled. rejected é aceito somente quando o card já está rejected, para reordenar dentro da mesma coluna; nenhuma transição pode ter rejected como destino manual.",
     )
     position: int | None = Field(
         None,

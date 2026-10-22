@@ -36,9 +36,12 @@ def test_registry_covers_every_sdlc_entity_and_exposes_transition_contracts() ->
         "test_scenario",
     }
     for definition in SDLC_REGISTRY.values():
-        assert set(definition.transitions) == {
+        expected_states = {
             member.value for member in definition.status_enum
         }
+        if definition.entity_type == "card":
+            expected_states.remove("started")  # legacy persisted value, not operational
+        assert set(definition.transitions) == expected_states
         for edges in definition.transitions.values():
             for edge in edges:
                 assert edge.label
@@ -46,7 +49,7 @@ def test_registry_covers_every_sdlc_entity_and_exposes_transition_contracts() ->
                 assert edge.effects
                 assert edge.reason_codes
 
-    assert not is_transition_allowed("card", "not_started", "in_progress")
+    assert is_transition_allowed("card", "not_started", "in_progress", card_type="normal")
     assert is_transition_allowed(
         "card", "not_started", "in_progress", card_type="test"
     )

@@ -262,20 +262,22 @@ def bug_regression_evidence_block(
 
 
 def bug_regression_gate_applies(facts: CardTransitionFacts) -> bool:
-    old_level = CARD_STATUS_ORDER.get(facts.old_status, 0)
-    new_level = CARD_STATUS_ORDER.get(facts.new_status, 0)
     bug_gate_applies = (
         facts.card_type is CardType.BUG
         and facts.require_test_task_for_bug
         and _SEVERITY_ORDER.get(facts.severity, 1)
         >= _SEVERITY_ORDER.get(facts.bug_test_gate_min_severity, 1)
     )
-    starts_execution = (
-        facts.new_status is not CardStatus.CANCELLED
-        and new_level >= CARD_STATUS_ORDER[CardStatus.IN_PROGRESS]
-        and old_level < CARD_STATUS_ORDER[CardStatus.IN_PROGRESS]
+    # A legacy Started Bug is migrated to In Progress without granting proof
+    # that its old entry gate passed. Recheck regression evidence on every later
+    # execution advance; pause, cancellation and same-column reorder stay usable.
+    advances_execution = (
+        facts.new_status in {
+            CardStatus.IN_PROGRESS, CardStatus.VALIDATION, CardStatus.DONE,
+        }
+        and facts.new_status is not facts.old_status
     )
-    return bug_gate_applies and starts_execution
+    return bug_gate_applies and advances_execution
 
 
 def evaluate_card_transition(facts: CardTransitionFacts) -> CardTransitionDecision:

@@ -6418,13 +6418,7 @@ class CardService:
                     f"Cannot move {card_type_value} card from '{old_status.value}' "
                     f"to '{data.status.value}'. Allowed: {allowed_values}."
                 ),
-                remediation=(
-                    "move_card_to_started_first"
-                    if old_status == CardStatus.NOT_STARTED
-                    and data.status == CardStatus.IN_PROGRESS
-                    and card_type_value == CardType.NORMAL.value
-                    else "choose_allowed_card_transition"
-                ),
+                remediation="choose_allowed_card_transition",
                 facts={
                     "card_id": card.id,
                     "card_type": str(card_type_value),
@@ -6522,7 +6516,7 @@ class CardService:
         is_normal_task = getattr(card, "card_type", CardType.NORMAL) == CardType.NORMAL
         starts_execution = (
             old_status == CardStatus.NOT_STARTED
-            and data.status in (CardStatus.STARTED, CardStatus.IN_PROGRESS)
+            and data.status == CardStatus.IN_PROGRESS
         ) or (new_level >= execution_start_level and old_level < execution_start_level)
         if (
             is_normal_task
@@ -6542,10 +6536,10 @@ class CardService:
         if data.status == CardStatus.DONE:
             await self.validate_completion_admission(card, board)
 
-        # --- Bug card: block execution-level moves without linked regression tests ---
-        # Gate triggers when the bug first crosses into execution level or beyond
-        # (in_progress, validation, on_hold, done) from a status before in_progress.
-        # Once in_progress is reached, the gate was already passed.
+        # --- Bug card: recheck regression evidence on execution advances ---
+        # Legacy Started rows become In Progress at startup without proof that
+        # their old entry gate passed. Later execution advances must verify it.
+        # Pause and cancellation remain available without that evidence.
         # NC-6 fix: gate is now conditional on board settings:
         #   - require_test_task_for_bug=False â†’ gate desligado (qualquer bug avanÃ§a)
         #   - bug_test_gate_min_severity controla qual severity entra no gate
@@ -7008,10 +7002,7 @@ class CardService:
             data.status == CardStatus.VALIDATION
             and old_status
             in (
-                CardStatus.NOT_STARTED,
-                CardStatus.STARTED,
                 CardStatus.IN_PROGRESS,
-                CardStatus.ON_HOLD,
             )
             and getattr(card, "card_type", CardType.NORMAL) != CardType.TEST
         ):

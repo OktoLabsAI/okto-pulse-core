@@ -75,8 +75,9 @@ class CardStatus(str, PyEnum):
     """Card status values, including Started for reading legacy stored rows.
 
     Started is not a valid creation or delivery-report target. The startup
-    normalization must consume existing rows before the operational lifecycle
-    can stop advertising that column.
+    normalization consumes existing rows before the operational lifecycle.
+    Remove this temporary operational enum member in the next version, while
+    retaining the versioned SQL upgrade path for installations that skip releases.
     """
 
     NOT_STARTED = "not_started"

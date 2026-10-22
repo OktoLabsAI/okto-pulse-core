@@ -37,6 +37,8 @@ from okto_pulse.core.application.use_cases.authorization import (
     decide_authorization,
     require_all,
     require_authorization,
+    require_card_start_authorization,
+    require_card_return_to_planning_authorization,
     resolve_actor_permissions,
 )
 from okto_pulse.core.application.use_cases.mutation_permissions import (
@@ -415,12 +417,26 @@ class MoveCardUseCase:
                 command.data.status,
             )
         )
-        await require_authorization(
-            actor,
-            requirement,
-            uow=uow,
-            board_id=existing.board_id,
-        )
+        if current_state == "not_started" and target_state == "in_progress":
+            await require_card_start_authorization(
+                actor,
+                card_type=str(getattr(existing.card_type, "value", existing.card_type or "normal")),
+                uow=uow,
+                board_id=existing.board_id,
+            )
+        elif current_state == "in_progress" and target_state == "not_started":
+            await require_card_return_to_planning_authorization(
+                actor,
+                uow=uow,
+                board_id=existing.board_id,
+            )
+        else:
+            await require_authorization(
+                actor,
+                requirement,
+                uow=uow,
+                board_id=existing.board_id,
+            )
         try:
             card = await service.move_card(command.card_id, actor.actor_id, command.data)
             if not card:

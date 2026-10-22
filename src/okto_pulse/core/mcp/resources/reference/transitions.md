@@ -17,29 +17,26 @@ board-specific alternative.
 
 | From | To | Pre-requisites |
 |------|-----|---------------|
-| `not_started` | `started` | Spec must be `in_progress`; Done blocks normal-card start/reopen |
-| `not_started` | `in_progress` | Direct start only when current permissions and readiness allow it; same execution gates apply |
-| `started` | `in_progress` | — |
+| `not_started` | `in_progress` | Spec must be `in_progress`; Done blocks normal-card start/reopen. Current permissions and all execution readiness gates apply |
+| `in_progress` | `not_started` | Governed return to planning; current authorization and gates apply |
 | `in_progress` | `validation` | — |
 | `validation` | `done` | Internal consequence of a successful `okto_pulse_submit_task_validation` and all completion gates |
 | `validation` | `rejected` | Internal consequence only: failed validation or admitted governed completion blocker; never an inbound manual transition |
 | `rejected` | `in_progress` | Executor accepts the sealed cause and starts a new attempt; this is the only public exit |
-| `started`/`in_progress`/`validation` | `on_hold` | Rejected is excluded; it can only start rework |
-| `not_started`/`started`/`in_progress`/`validation`/`on_hold` | `cancelled` | Rejected and Done are excluded |
+| `in_progress`/`validation` | `on_hold` | Rejected is excluded; it can only start rework |
+| `not_started`/`in_progress`/`validation`/`on_hold` | `cancelled` | Rejected and Done are excluded |
 
 **When moving to `validation`**, include: `conclusion`, `completeness`, `completeness_justification`, `drift`, `drift_justification`.
 
-`rejected` is available only to Normal and Bug cards. Test-card transitions are unchanged. Direct create, drag/drop, generic move, or permission grants cannot assign Rejected. A same-status `rejected` → `rejected` move is accepted only as a position reorder inside the existing Rejected column; it does not create or alter lifecycle state or causal history.
+`rejected` is available only to Normal and Bug cards. Direct create, drag/drop, generic move, or permission grants cannot assign Rejected. A same-status `rejected` → `rejected` move is accepted only as a position reorder inside the existing Rejected column; it does not create or alter lifecycle state or causal history.
 
 ## Test cards (`card_type = "test"`)
 
 | From | To | Pre-requisites |
 |------|-----|---------------|
-| `not_started` | `started` | Spec must be `validated` or later |
-| `not_started` | `in_progress` | Spec must be `validated` or later (direct start is accepted by the API for executable test cards) |
-| `started` | `in_progress` | Spec must be `validated` or later |
+| `not_started` | `in_progress` | Spec must be `validated` or later; current execution gates apply |
 | `validation` | `in_progress` | Test-only rework; Spec dependencies must still be ready |
-| `started`/`in_progress`/`validation` | `done` | Linked scenarios have an honest terminal result (`passed`, `failed`, or `automated`) and required evidence, plus `conclusion` + completeness/drift; other completion gates still apply |
+| `in_progress`/`validation` | `done` | Linked scenarios have an honest terminal result (`passed`, `failed`, or `automated`) and required evidence, plus `conclusion` + completeness/drift; other completion gates still apply |
 
 A Test Card being `done` means its execution/report is complete, not that the
 product passed. Preserve `failed`; do not relabel it to unblock a move. Bug regression and delivery approval have their own success/evidence
@@ -90,7 +87,7 @@ investigation in its own environment.
 |---|---|
 | Refinement → `review`/`approved`/`done` | Current accepted agent receipt and Evidence/disposition coverage required by policy, or an applicable human waiver. |
 | Spec `draft` → `review` | Every inherited Evidence item is linked to applicable Spec entities or has an explicit disposition; coverage is 100%. |
-| Card `not_started`/`started` → executable state | Every active required Target has a current accepted resolution; blocking overlaps are resolved by dependency or current acknowledgement. |
+| Card `not_started` → `in_progress` | Every active required Target has a current accepted resolution; blocking overlaps are resolved by dependency or current acknowledgement. |
 | Card → `validation`/`done` | Every active required Target has an execution disposition bound to a current accepted result receipt. |
 
 In `advisory` mode the same currentness, coverage, and overlap decisions remain
