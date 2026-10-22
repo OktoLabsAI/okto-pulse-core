@@ -3292,7 +3292,7 @@ async def okto_pulse_create_card(
     spec_id: str,
     description: str = "",
     details: str = "",
-    status: Literal["not_started", "started"] = "not_started",
+    status: str = "not_started",
     priority: str = "none",
     assignee_id: str = "",
     labels: list[str] | None = None,
@@ -3328,12 +3328,12 @@ async def okto_pulse_create_card(
     )
     from okto_pulse.core.models.schemas import CardCreate
 
-    if status not in (CardStatus.NOT_STARTED.value, CardStatus.STARTED.value):
+    if status != CardStatus.NOT_STARTED.value:
         return json.dumps(
             {
                 "error": "card_initial_status_invalid",
-                "detail": "A card can only be created in not_started or started.",
-                "allowed_statuses": ["not_started", "started"],
+                "detail": "A card can only be created in not_started.",
+                "allowed_statuses": ["not_started"],
             }
         )
     card_status = CardStatus(status)
@@ -5422,13 +5422,15 @@ async def okto_pulse_list_cards_by_status(
 ) -> str:
     """List cards on the board with optional filters and pagination.
 
-    status: empty = all, or one of not_started/started/in_progress/validation/rejected/on_hold/done/cancelled/open.
+    status: empty = all, or one of not_started/in_progress/validation/rejected/on_hold/done/cancelled/open.
     Use 'open' for all cards NOT in done/cancelled. Archived cards are excluded
     unless include_archived=true. Max limit is 200.
     """
     from okto_pulse.core.domain.enums import CardPriority, CardStatus
 
-    allowed_statuses = {"", "open", *(item.value for item in CardStatus)}
+    allowed_statuses = {
+        "", "open", *(item.value for item in CardStatus if item is not CardStatus.STARTED)
+    }
     if status not in allowed_statuses:
         return _structured_error(
             "invalid_filter",

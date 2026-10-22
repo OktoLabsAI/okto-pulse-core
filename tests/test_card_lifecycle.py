@@ -18,6 +18,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+from pydantic import ValidationError
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 from native_subject_testing import record_native_subject_authority
 from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
@@ -212,7 +213,7 @@ class TestCardCreation:
             spec.status = SpecStatus.DRAFT
             await db.flush()
             before = set((await db.execute(select(Card.id))).scalars())
-            with pytest.raises(CardOperationError) as exc:
+            with pytest.raises(ValidationError):
                 await CardService(db).create_card(
                     BOARD_ID, USER_ID, CardCreate(
                         title="Cannot execute a draft", spec_id=spec.id,
@@ -220,7 +221,6 @@ class TestCardCreation:
                         test_scenario_ids=["ts-001"] if card_type == "test" else None,
                     ),
                 )
-            assert exc.value.code == "spec_status_too_early"
             assert set((await db.execute(select(Card.id))).scalars()) == before
 
     @pytest.mark.parametrize("card_type,target", [

@@ -3438,12 +3438,12 @@ class CardService:
         # Every card type must enter through the beginning of the lifecycle.
         # Persisting an advanced state here bypasses move_card's transition,
         # resource, validation, audit, and KG event boundaries.
-        if data.status not in (CardStatus.NOT_STARTED, CardStatus.STARTED):
+        if data.status != CardStatus.NOT_STARTED:
             raise CardOperationError(
                 "card_initial_status_invalid",
                 (
-                    "Cards can only be created with status 'not_started' or "
-                    "'started'. Use move_card to advance the lifecycle."
+                    "Cards can only be created with status 'not_started'. "
+                    "Use move_card to advance the lifecycle."
                 ),
                 remediation=(
                     "Create the card in an initial status, then use move_card "
@@ -3451,10 +3451,7 @@ class CardService:
                 ),
                 facts={
                     "requested_status": data.status.value,
-                    "allowed_statuses": [
-                        CardStatus.NOT_STARTED.value,
-                        CardStatus.STARTED.value,
-                    ],
+                    "allowed_statuses": [CardStatus.NOT_STARTED.value],
                     "card_type": card_type_val,
                 },
             )
@@ -3491,36 +3488,28 @@ class CardService:
                     },
                 )
 
-            # Preserve the established fail-closed ordering for ordinary bug
-            # creation. Direct STARTED creation defers this physical write
-            # until after the precedence gate below, so the dependency graph
-            # fence remains the first mutation on that execution-start edge.
-            if not transition_starts_card_execution(
-                CardStatus.NOT_STARTED,
-                data.status,
-            ):
-                from okto_pulse.core.services.knowledge_propagation import (
-                    KnowledgePropagationServiceError,
-                )
+            from okto_pulse.core.services.knowledge_propagation import (
+                KnowledgePropagationServiceError,
+            )
 
-                expected_spec_id = data.spec_id
-                if not expected_spec_id or not await _application_fence(
-                    self.db,
-                    "card",
-                    origin_task_id,
-                    expected_values={
-                        "board_id": board_id,
-                        "spec_id": expected_spec_id,
+            expected_spec_id = data.spec_id
+            if not expected_spec_id or not await _application_fence(
+                self.db,
+                "card",
+                origin_task_id,
+                expected_values={
+                    "board_id": board_id,
+                    "spec_id": expected_spec_id,
+                },
+            ):
+                raise KnowledgePropagationServiceError(
+                    "knowledge_propagation_parent_changed",
+                    "the bug origin changed after propagation preflight",
+                    details={
+                        "origin_task_id": origin_task_id,
+                        "expected_spec_id": expected_spec_id,
                     },
-                ):
-                    raise KnowledgePropagationServiceError(
-                        "knowledge_propagation_parent_changed",
-                        ("the bug origin changed after propagation preflight"),
-                        details={
-                            "origin_task_id": origin_task_id,
-                            "expected_spec_id": expected_spec_id,
-                        },
-                    )
+                )
 
             # Auto-resolve spec_id from origin task
             data.spec_id = origin_task.spec_id
@@ -3614,68 +3603,6 @@ class CardService:
             self.db, board_id=board_id, card_type=card_type_val,
             spec_ids=(data.spec_id,), operation="create_card",
         )
-
-        # Direct creation in STARTED is the same execution-start edge as
-        # NOT_STARTED -> STARTED in move_card.  Acquire the dependency-graph
-        # fence, lock/revalidate the source Spec lifecycle identity, check the
-        # current readiness projection and mark this edition started before
-        # any card row, audit, propagation or domain event is staged.  The
-        # caller-owned transaction retains both the fence and marker through
-        # the eventual card write/commit; any later failure rolls them back
-        # together.
-        if transition_starts_card_execution(CardStatus.NOT_STARTED, data.status):
-            from okto_pulse.core.ports.relational_application import (
-                require_relational_application_adapter,
-            )
-            from okto_pulse.core.services.spec_dependency import (
-                SpecDependencyService,
-            )
-
-            await SpecDependencyService(
-                require_relational_application_adapter().spec_dependencies(self.db),
-                self.db,
-            ).require_ready_for_execution(
-                board_id=board_id,
-                spec_id=spec.id,
-                mark_started=True,
-                expected_edition=int(getattr(spec, "edition", 1) or 1),
-                expected_status=spec.status,
-                expected_archived=bool(getattr(spec, "archived", False)),
-            )
-
-        # The propagation parent CAS is intentionally after the precedence
-        # gate.  On STARTED creation this keeps the graph/source fence as the
-        # first physical write while preserving the existing fail-closed
-        # parent-change contract in the same transaction.
-        if (
-            card_type_val == "bug"
-            and transition_starts_card_execution(
-                CardStatus.NOT_STARTED,
-                data.status,
-            )
-        ):
-            from okto_pulse.core.services.knowledge_propagation import (
-                KnowledgePropagationServiceError,
-            )
-
-            expected_spec_id = data.spec_id
-            if not expected_spec_id or not await _application_fence(
-                self.db,
-                "card",
-                origin_task_id,
-                expected_values={
-                    "board_id": board_id,
-                    "spec_id": expected_spec_id,
-                },
-            ):
-                raise KnowledgePropagationServiceError(
-                    "knowledge_propagation_parent_changed",
-                    ("the bug origin changed after propagation preflight"),
-                    details={
-                        "origin_task_id": origin_task_id,
-                        "expected_spec_id": expected_spec_id,
-                    },
-                )
 
         await _authorize_critical_context_or_raise(
             self.db,

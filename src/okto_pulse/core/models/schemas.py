@@ -2972,7 +2972,6 @@ DeriveSpecResponse: TypeAlias = DeriveSpecKnowledgeMutationResponse
 
 CardInitialStatus: TypeAlias = Literal[
     CardStatus.NOT_STARTED,
-    CardStatus.STARTED,
 ]
 
 
@@ -3004,7 +3003,7 @@ class CardCreate(BaseModel):
     status: CardInitialStatus = Field(
         CardStatus.NOT_STARTED,
         description=(
-            "Status inicial do card no board: somente not_started ou started. "
+            "Status inicial do card no board: somente not_started. "
             "Use move_card para avancar o ciclo de vida."
         ),
     )

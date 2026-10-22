@@ -168,6 +168,18 @@ async def test_create_card_rejects_invalid_card_type(_seed_board_and_spec):
 
 
 @pytest.mark.asyncio
+async def test_create_card_rejects_legacy_started_with_stable_error(_seed_board_and_spec):
+    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())), \
+         patch.object(mcp_server, "check_permission", return_value=None):
+        payload = await _call_create_card(
+            board_id=BOARD_ID, title="legacy request", spec_id=_seed_board_and_spec,
+            status="started",
+        )
+    assert payload["error"] == "card_initial_status_invalid"
+    assert payload["allowed_statuses"] == ["not_started"]
+
+
+@pytest.mark.asyncio
 async def test_create_card_rejects_invalid_severity(_seed_board_and_spec):
     spec_id = _seed_board_and_spec
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())), \
