@@ -39,6 +39,7 @@ class PulseStatusScenarioTests(unittest.TestCase):
             "tests/test_card_lifecycle.py::TestCardCreation::test_plan_cards_in_draft_without_starting_execution",
             "tests/test_card_lifecycle.py::TestCardCreation::test_create_normal_card_with_all_fields",
             "tests/test_card_lifecycle.py::TestCardCreation::test_create_card_with_test_scenario_ids",
+            "tests/test_card_lifecycle.py::TestBugCardCreation::test_create_bug_card_with_required_fields",
         )
 
     def test_sc02_reject_non_planning_status(self) -> None:

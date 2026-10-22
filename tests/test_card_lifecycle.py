@@ -1511,6 +1511,7 @@ class TestBugCardCreation:
             card = await svc.create_card(BOARD_ID, USER_ID, data)
             assert card is not None
             assert card.card_type == CardType.BUG
+            assert card.status == CardStatus.NOT_STARTED
             assert card.severity == "critical"
             assert card.origin_task_id == origin_card.id
             assert card.expected_behavior == data.expected_behavior
