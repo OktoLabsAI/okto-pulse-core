@@ -469,6 +469,27 @@ def transition_starts_card_execution(
     }
 
 
+def transition_rechecks_card_prerequisites(
+    old_status: CardStatus | str,
+    new_status: CardStatus | str,
+) -> bool:
+    """Execution admission and later qualification use current prerequisites.
+
+    A legacy Started card can arrive in In Progress through data migration,
+    without having passed the entry gate. Validation and Done must therefore
+    check the same current facts. Recovery and cancellation stay available.
+    """
+    if transition_starts_card_execution(old_status, new_status):
+        return True
+    old_value = str(getattr(old_status, "value", old_status))
+    new_value = str(getattr(new_status, "value", new_status))
+    return (old_value, new_value) in {
+        (CardStatus.IN_PROGRESS.value, CardStatus.VALIDATION.value),
+        (CardStatus.IN_PROGRESS.value, CardStatus.DONE.value),
+        (CardStatus.VALIDATION.value, CardStatus.DONE.value),
+    }
+
+
 def spec_dependency_would_create_cycle(
     active_edges: Iterable[tuple[str, str] | SpecDependencyRecord],
     *,

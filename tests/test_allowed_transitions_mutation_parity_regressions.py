@@ -799,7 +799,8 @@ async def test_card_cognitive_preview_uses_canonical_gate_without_graph_health(
     card_id = _id("card-health")
     await _persist(
         db_factory,
-        _board(board_id, settings={"require_task_validation": False}),
+        _board(board_id, settings={"require_task_validation": False,
+                                   "skip_task_requirement_link_gate_global": True}),
         Spec(
             id=spec_id,
             board_id=board_id,
@@ -850,6 +851,72 @@ async def test_card_cognitive_preview_uses_canonical_gate_without_graph_health(
     assert "graph_state" not in observed
     assert observed["entity_id"] == card_id
     assert observed["target_status"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_migrated_in_progress_task_rechecks_link_before_validation_but_can_pause(
+    db_factory,
+) -> None:
+    board_id = _id("migrated-gate-board")
+    spec_id = _id("migrated-gate-spec")
+    card_id = _id("migrated-gate-card")
+    await _persist(
+        db_factory,
+        _board(board_id),
+        Spec(
+            id=spec_id,
+            board_id=board_id,
+            title="Migrated gate spec",
+            status=SpecStatus.IN_PROGRESS,
+            created_by=USER_ID,
+        ),
+        Card(
+            id=card_id,
+            board_id=board_id,
+            spec_id=spec_id,
+            title="Legacy card after normalization",
+            status=CardStatus.IN_PROGRESS,
+            card_type=CardType.NORMAL,
+            position=0,
+            created_by=USER_ID,
+        ),
+    )
+
+    async with db_factory() as db:
+        blocked = await _preview_transition(
+            db, board_id=board_id, entity_type="card", entity_id=card_id,
+            to_status="validation",
+        )
+        paused = await _preview_transition(
+            db, board_id=board_id, entity_type="card", entity_id=card_id,
+            to_status="on_hold",
+        )
+        assert "task_requirement_link_required" in blocked.blocked_reason
+        assert paused.blocked_reason is None
+
+        with pytest.raises(CardOperationError) as exc:
+            await CardService(db).move_card(
+                card_id, USER_ID,
+                CardMove(
+                    status=CardStatus.VALIDATION,
+                    conclusion="Cannot yet qualify the migrated task",
+                    completeness=0,
+                    completeness_justification="No current requirement link",
+                    drift=0,
+                    drift_justification="No implementation was accepted",
+                ),
+            )
+        assert exc.value.code == "task_requirement_link_required"
+
+    async with db_factory() as db:
+        card = await CardService(db).get_card(card_id)
+        assert card.status == CardStatus.IN_PROGRESS
+        assert not card.conclusions
+        paused_card = await CardService(db).move_card(
+            card_id, USER_ID, CardMove(status=CardStatus.ON_HOLD),
+        )
+        assert paused_card.status == CardStatus.ON_HOLD
+        await db.commit()
 
 
 @pytest.mark.asyncio

@@ -8,6 +8,7 @@ from okto_pulse.core.domain.enums import CardStatus, CardType, SpecStatus
 from okto_pulse.core.domain.spec_dependency import (
     spec_dependency_blocked_guidance,
     spec_dependency_blocking_facts,
+    transition_rechecks_card_prerequisites,
     transition_starts_card_execution,
 )
 
@@ -104,9 +105,9 @@ def archived_card_block(facts: CardTransitionFacts) -> CardTransitionBlock | Non
 
 
 def spec_dependency_block(facts: CardTransitionFacts) -> CardTransitionBlock | None:
-    """Block every exact Card execution-start/resume edge on prerequisites."""
+    """Block qualification as well as execution entry on current prerequisites."""
 
-    if not facts.spec_id or not transition_starts_card_execution(
+    if not facts.spec_id or not transition_rechecks_card_prerequisites(
         facts.old_status,
         facts.new_status,
     ):
@@ -172,12 +173,8 @@ def completed_spec_normal_work_block(
 
 
 def spec_maturity_block(facts: CardTransitionFacts) -> CardTransitionBlock | None:
-    if facts.new_status is CardStatus.CANCELLED:
-        return None
-    old_level = CARD_STATUS_ORDER.get(facts.old_status, 0)
-    new_level = CARD_STATUS_ORDER.get(facts.new_status, 0)
-    moves_forward = new_level > old_level
-    if not (moves_forward and facts.spec_id and facts.spec_status is not None):
+    if not (facts.spec_id and facts.spec_status is not None
+            and transition_rechecks_card_prerequisites(facts.old_status, facts.new_status)):
         return None
     minimum = (
         SpecStatus.VALIDATED

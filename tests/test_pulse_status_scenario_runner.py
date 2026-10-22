@@ -80,6 +80,27 @@ class PulseStatusScenarioTests(unittest.TestCase):
             "tests/test_delivery_report.py::test_pre_upgrade_started_report_only_replays_identical_receipt",
         )
 
+    def test_sc04_transition_gates_by_type(self) -> None:
+        self._run_cases(
+            "tests/test_card_lifecycle.py::TestCardStatusTransitionMatrix",
+            "tests/test_af23_allowed_transitions.py::test_card_read_model_and_mutation_admission_share_every_typed_edge",
+            "tests/test_skm_create_started_precedence.py::test_test_card_validation_rework_still_enforces_spec_precedence",
+        )
+
+    def test_sc05_migrated_cards_do_not_gain_qualification(self) -> None:
+        self._run_cases(
+            "tests/test_allowed_transitions_mutation_parity_regressions.py::test_migrated_in_progress_task_rechecks_link_before_validation_but_can_pause",
+            "tests/test_allowed_transitions_mutation_parity_regressions.py::test_bug_execution_preview_blocks_missing_linked_test_task_id",
+            "tests/test_skm_create_started_precedence.py::test_migrated_test_validation_rechecks_prerequisite_and_edition_fence",
+        )
+
+    def test_sc06_qualification_fences(self) -> None:
+        self._run_cases(
+            "tests/test_skm_create_started_precedence.py::test_migrated_test_validation_rechecks_prerequisite_and_edition_fence",
+            "tests/test_skm_create_started_precedence.py::test_test_card_validation_rework_fences_concurrent_spec_edition_change",
+            "tests/test_spec_dependencies_core.py::test_lifecycle_and_card_writers_take_dependency_fence_at_safe_boundary",
+        )
+
     def test_sc07_permission_truth_table(self) -> None:
         self._run_cases(
             "tests/test_card_start_authority_routes.py::test_start_requires_an_entire_authorized_route",

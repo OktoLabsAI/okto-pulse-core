@@ -48,6 +48,7 @@ from okto_pulse.core.domain.enums import (
 from okto_pulse.core.domain.spec_dependency import (
     spec_dependency_blocked_guidance,
     spec_dependency_blocking_facts,
+    transition_rechecks_card_prerequisites,
     transition_starts_card_execution,
     transition_starts_spec_execution,
 )
@@ -1172,7 +1173,7 @@ class ListAllowedTransitionsUseCase:
         dependency_archived_blocking_count = 0
         dependency_unfinished_blocking_count = 0
         dependency_blockers_truncated = False
-        if spec is not None and transition_starts_card_execution(old_status, target):
+        if spec is not None and transition_rechecks_card_prerequisites(old_status, target):
             if dependency_readiness is None:
                 dependency_readiness = await services.spec_dependencies.get_readiness(
                     board_id=card.board_id,
@@ -1325,13 +1326,8 @@ class ListAllowedTransitionsUseCase:
                 return f"{decision.block.code}: {detail}."
             return f"{decision.block.code}: {decision.block.detail}"
 
-        old_level = services.cards._STATUS_ORDER.get(old_status, 0)
-        new_level = services.cards._STATUS_ORDER.get(target, 0)
-        if new_level > old_level and target != CardStatus.CANCELLED:
-            if (
-                card_type == CardType.NORMAL
-                and old_level < services.cards._STATUS_ORDER[CardStatus.IN_PROGRESS]
-            ):
+        if transition_rechecks_card_prerequisites(old_status, target):
+            if card_type == CardType.NORMAL:
                 try:
                     await services.cards.check_card_requirement_link_gate(
                         card, spec, board

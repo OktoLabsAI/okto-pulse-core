@@ -105,6 +105,7 @@ from okto_pulse.core.domain.spec_validation import (
     SpecValidationVersionConflict,
 )
 from okto_pulse.core.domain.spec_dependency import (
+    transition_rechecks_card_prerequisites,
     transition_starts_card_execution,
     transition_starts_spec_execution,
 )
@@ -4245,8 +4246,7 @@ class CardService:
         self, card: ApplicationRecord, target: CardStatus,
     ) -> None:
         """Read the native forward-transition prerequisite without mutating."""
-        if (self._STATUS_ORDER.get(target, 0) <= self._STATUS_ORDER.get(card.status, 0)
-                or target == CardStatus.CANCELLED):
+        if not transition_rechecks_card_prerequisites(card.status, target):
             return
         deps_met, blocking = await self.check_dependencies_met(card.id)
         if not deps_met:
@@ -4671,6 +4671,45 @@ class CardService:
                         reason_codes=(maturity.code,),
                     )
                 )
+            if getattr(card, "card_type", CardType.NORMAL) == CardType.NORMAL:
+                try:
+                    await self.check_card_requirement_link_gate(card, spec, board)
+                except CardOperationError as exc:
+                    failures.append(CompletionGateFailure(
+                        code=exc.code,
+                        summary=str(exc),
+                        reason_codes=(exc.code,),
+                    ))
+
+            # A migrated Started card did not pass today's entry gate. Hold the
+            # dependency graph fence through validation's Done write, so an
+            # upstream edit cannot invalidate the facts after this check.
+            from okto_pulse.core.domain.spec_dependency import SpecDependencyOperationError
+            from okto_pulse.core.ports.relational_application import (
+                require_relational_application_adapter,
+            )
+            from okto_pulse.core.services.spec_dependency import SpecDependencyService
+
+            try:
+                await SpecDependencyService(
+                    require_relational_application_adapter().spec_dependencies(self.db),
+                    self.db,
+                ).require_ready_for_execution(
+                    board_id=card.board_id,
+                    spec_id=card.spec_id,
+                    mark_started=False,
+                    expected_edition=int(getattr(spec, "edition", 1) or 1),
+                    expected_status=spec.status,
+                    expected_archived=bool(getattr(spec, "archived", False)),
+                )
+            except SpecDependencyOperationError as exc:
+                if exc.code != "spec_dependencies_incomplete":
+                    raise
+                failures.append(CompletionGateFailure(
+                    code=exc.code,
+                    summary=str(exc),
+                    reason_codes=(exc.code,),
+                ))
 
         dependencies_met, blocking_dependencies = await self.check_dependencies_met(
             card.id
@@ -6498,7 +6537,7 @@ class CardService:
         precedence_expected_edition: int | None = None
         precedence_expected_status: SpecStatus | None = None
         precedence_expected_archived: bool | None = None
-        if transition_starts_card_execution(old_status, data.status) and card.spec_id:
+        if transition_rechecks_card_prerequisites(old_status, data.status) and card.spec_id:
             spec_for_precedence = await _application_get(self.db, "spec", card.spec_id)
             if spec_for_precedence is not None:
                 completed_spec_block = completed_spec_execution_block(CardTransitionFacts(
@@ -6523,7 +6562,7 @@ class CardService:
                 precedence_expected_archived = bool(
                     getattr(spec_for_precedence, "archived", False)
                 )
-        if new_level > old_level and card.spec_id:
+        if transition_rechecks_card_prerequisites(old_status, data.status) and card.spec_id:
             spec_for_status = await _application_get(self.db, "spec", card.spec_id)
             if spec_for_status:
                 card_type = getattr(card, "card_type", CardType.NORMAL)
@@ -6544,17 +6583,10 @@ class CardService:
         # Task requirement link gate: normal task cards must be traceable to at
         # least one FR/TR/BR/IR/OR before execution starts. Human-only skips are
         # stored on the board/card and are intentionally not exposed via MCP.
-        execution_start_level = self._STATUS_ORDER.get(CardStatus.IN_PROGRESS, 2)
         is_normal_task = getattr(card, "card_type", CardType.NORMAL) == CardType.NORMAL
-        starts_execution = (
-            old_status == CardStatus.NOT_STARTED
-            and data.status == CardStatus.IN_PROGRESS
-        ) or (new_level >= execution_start_level and old_level < execution_start_level)
         if (
             is_normal_task
-            and data.status != CardStatus.CANCELLED
-            and new_level > old_level
-            and starts_execution
+            and transition_rechecks_card_prerequisites(old_status, data.status)
         ):
             spec_for_requirement_gate = (
                 await _application_get(self.db, "spec", card.spec_id)

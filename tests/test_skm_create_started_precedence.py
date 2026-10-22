@@ -307,6 +307,10 @@ async def test_test_card_validation_rework_still_enforces_spec_precedence(
         case="test-rework-block",
         blocked=True,
     )
+    async with db_factory() as db:
+        source = await db.get(Spec, source_id)
+        source.status = SpecStatus.VALIDATED
+        await db.commit()
     card_id = await _seed_validation_test_card(
         db_factory,
         board_id=board_id,
@@ -345,6 +349,10 @@ async def test_test_card_validation_rework_fences_concurrent_spec_edition_change
         case="test-rework-fence",
         blocked=False,
     )
+    async with db_factory() as db:
+        source = await db.get(Spec, source_id)
+        source.status = SpecStatus.VALIDATED
+        await db.commit()
     card_id = await _seed_validation_test_card(
         db_factory,
         board_id=board_id,
@@ -394,3 +402,59 @@ async def test_test_card_validation_rework_fences_concurrent_spec_edition_change
     assert card is not None
     assert card.status is CardStatus.VALIDATION
     assert edition == 3
+
+
+@pytest.mark.asyncio
+async def test_migrated_test_validation_rechecks_prerequisite_and_edition_fence(
+    db_factory,  # noqa: ANN001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    board_id, source_id, target_id = await _seed_specs(
+        db_factory, case="migrated-qualification", blocked=True,
+    )
+    card_id = "skm-cs-migrated-qualification-test-card"
+    async with db_factory() as db:
+        source = await db.get(Spec, source_id)
+        source.status = SpecStatus.IN_PROGRESS
+        db.add(Card(
+            id=card_id, board_id=board_id, spec_id=source_id,
+            title="Converted Started test", status=CardStatus.IN_PROGRESS,
+            card_type=CardType.TEST, position=0, created_by=USER_ID,
+        ))
+        await db.commit()
+
+    async with db_factory() as db:
+        with pytest.raises(SpecDependencyOperationError) as caught:
+            await CardService(db).move_card(
+                card_id, USER_ID, CardMove(status=CardStatus.VALIDATION),
+            )
+    assert caught.value.code == "spec_dependencies_incomplete"
+
+    async with db_factory() as db:
+        prerequisite = await db.get(Spec, target_id)
+        prerequisite.status = SpecStatus.DONE
+        await db.commit()
+
+    from okto_pulse.core.services.spec_dependency import SpecDependencyService
+    original = SpecDependencyService.require_ready_for_execution
+
+    async def change_edition_before_locked_recheck(service, **kwargs):
+        await service.persistence._session.execute(  # noqa: SLF001
+            update(Spec).where(Spec.id == source_id).values(edition=4)
+        )
+        return await original(service, **kwargs)
+
+    monkeypatch.setattr(
+        SpecDependencyService, "require_ready_for_execution",
+        change_edition_before_locked_recheck,
+    )
+    async with db_factory() as db:
+        with pytest.raises(SpecDependencyOperationError) as caught:
+            await CardService(db).move_card(
+                card_id, USER_ID, CardMove(status=CardStatus.VALIDATION),
+            )
+    assert caught.value.code == "spec_dependency_state_conflict"
+    async with db_factory() as db:
+        card = await db.get(Card, card_id)
+        assert card.status is CardStatus.IN_PROGRESS
+        assert not card.conclusions

@@ -837,6 +837,11 @@ class TestCardValidationReportGate:
                     spec_id=specs[0].id,
                 ),
             )
+            specs[0].status = SpecStatus.IN_PROGRESS
+            specs[0].functional_requirements = [
+                {"id": "fr_lifecycle_report", "title": "Report fixture",
+                 "text": "Exercise the executor report", "linked_task_ids": [card.id]}
+            ]
             card.status = CardStatus.IN_PROGRESS
             await _record_card_fixture_state(db, card, CardStatus.IN_PROGRESS)
             await db.commit()
