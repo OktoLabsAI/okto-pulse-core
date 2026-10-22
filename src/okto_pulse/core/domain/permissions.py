@@ -3177,7 +3177,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         },
         {
             "name": "Executor",
-            "description": "Implement normal cards. Moves not_started→validation and accepts Rejected rework via rejected→in_progress. Cannot submit gates or assign Rejected directly.",
+            "description": "Implement normal cards through not_started→in_progress→validation and accept Rejected rework via rejected→in_progress. Cannot submit gates or assign Rejected directly.",
             "flags": executor,
         },
         {
