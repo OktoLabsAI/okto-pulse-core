@@ -79,3 +79,28 @@ class PulseStatusScenarioTests(unittest.TestCase):
         self._run_companion_cases(
             "tests/test_delivery_report.py::test_pre_upgrade_started_report_only_replays_identical_receipt",
         )
+
+    def test_sc07_permission_truth_table(self) -> None:
+        self._run_cases(
+            "tests/test_card_start_authority_routes.py::test_start_requires_an_entire_authorized_route",
+            "tests/test_card_start_authority_routes.py::test_start_respects_state_denial_on_legacy_route",
+        )
+
+    def test_sc08_presets_and_reconciliation(self) -> None:
+        self._run_companion_cases(
+            "tests/test_card_status_permission_reconciliation.py::test_custom_same_name_direct_grants_and_board_ceilings_are_converted",
+            "tests/test_card_status_permission_reconciliation.py::test_concurrent_permission_startups_do_not_duplicate_conversion",
+            "tests/test_card_status_permission_reconciliation.py::test_permission_conversion_failure_rolls_back_before_readiness",
+        )
+
+    def test_sc09_return_and_migration_provenance(self) -> None:
+        self._run_cases(
+            "tests/test_card_start_authority_routes.py::test_return_to_planning_needs_both_former_edges",
+            "tests/test_card_start_authority_routes.py::test_return_to_planning_requires_materialized_new_capability",
+            "tests/test_card_start_authority_routes.py::test_migrated_normal_retains_its_former_started_exit",
+            "tests/test_card_start_authority_routes.py::test_migrated_test_bug_retains_only_its_former_return_right",
+        )
+        self._run_companion_cases(
+            "tests/test_card_status_migration_return.py::test_migrated_return_expires_after_governed_reentry",
+            "tests/test_card_status_migration_return.py::test_migrated_card_can_return_once_before_new_execution",
+        )
