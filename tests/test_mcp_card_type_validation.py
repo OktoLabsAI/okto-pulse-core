@@ -27,7 +27,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from sqlalchemy_test_models import Board, BugSeverity, CardType, Spec, SpecStatus
+from sqlalchemy import func, select
+from sqlalchemy_test_models import (
+    Board, BugSeverity, Card, CardType, DomainEventRow, Spec, SpecStatus,
+)
 from okto_pulse.core.mcp import server as mcp_server
 
 
@@ -168,15 +171,34 @@ async def test_create_card_rejects_invalid_card_type(_seed_board_and_spec):
 
 
 @pytest.mark.asyncio
-async def test_create_card_rejects_legacy_started_with_stable_error(_seed_board_and_spec):
+@pytest.mark.parametrize("status", [
+    "started", "in_progress", "validation", "done", "on_hold", "rejected", "cancelled",
+])
+async def test_create_card_rejects_non_planning_status_without_writes(
+    _seed_board_and_spec, status,
+):
+    from okto_pulse.core.infra.database import get_session_factory
+
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        event_count_before = await db.scalar(select(func.count()).select_from(DomainEventRow).where(
+            DomainEventRow.board_id == BOARD_ID,
+        ))
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None):
         payload = await _call_create_card(
-            board_id=BOARD_ID, title="legacy request", spec_id=_seed_board_and_spec,
-            status="started",
+            board_id=BOARD_ID, title="invalid initial status", spec_id=_seed_board_and_spec,
+            status=status,
         )
     assert payload["error"] == "card_initial_status_invalid"
     assert payload["allowed_statuses"] == ["not_started"]
+    async with db_factory() as db:
+        assert await db.scalar(select(func.count()).select_from(Card).where(
+            Card.spec_id == _seed_board_and_spec,
+        )) == 0
+        assert await db.scalar(select(func.count()).select_from(DomainEventRow).where(
+            DomainEventRow.board_id == BOARD_ID,
+        )) == event_count_before
 
 
 @pytest.mark.asyncio
