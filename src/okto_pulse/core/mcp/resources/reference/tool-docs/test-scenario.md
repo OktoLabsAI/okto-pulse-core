@@ -71,6 +71,21 @@ The host operator explicitly registers a Python unittest profile once:
 okto-pulse test-runner capacity --workspace D:/project --source-ref SOURCE_ID --board-id BOARD_ID --spec-id SPEC_ID --scenario-id SCENARIO_ID --test tests/test_domain.py::DomainTests.test_capacity
 ```
 
+For a test that imports both Pulse repositories, the host can authorize a
+second immutable checkout at registration:
+
+```powershell
+okto-pulse test-runner paired-capacity --workspace D:/pulse-core --workspace-role core --source-ref CORE_SOURCE_ID --companion community D:/pulse-community COMMUNITY_SOURCE_ID COMMUNITY_COMMIT --board-id BOARD_ID --spec-id SPEC_ID --scenario-id SCENARIO_ID --test tests/test_domain.py::DomainTests.test_capacity
+```
+
+The replay request still supplies the primary Core revision. The runner extracts
+both committed trees, sets their test checkout roots for the child process, and
+includes the companion source identity and revision in the signed execution
+basis. Changing the companion commit requires a new local profile name; an MCP
+caller cannot select another workspace or companion revision. A paired profile
+requires distinct `core` and `community` roles. Its primary revision remains
+the source/revision used for Delivery association.
+
 Registration authorizes executing that project's code as the Pulse OS user.
 Profiles are scoped to Board/Spec/scenario, stored in `DATA_DIR/test-runners`,
 and cannot be created/changed by an MCP or REST execution request. To revoke,

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import inspect
 import os
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -41,6 +43,17 @@ class PulseStatusScenarioTests(unittest.TestCase):
             "tests/test_card_lifecycle.py::TestCardCreation::test_create_card_with_test_scenario_ids",
             "tests/test_card_lifecycle.py::TestBugCardCreation::test_create_bug_card_with_required_fields",
         )
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        self.assertIsNotNone(community, "SC01 requires an immutable paired Community checkout")
+        companion_root = Path(community).resolve()
+        self.assertTrue(companion_root.is_dir())
+        result = subprocess.run(
+            [sys.executable, "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider",
+             "tests/test_test_card_creation_surfaces.py::test_public_create_enters_planning_once"],
+            cwd=companion_root, env=os.environ.copy(), capture_output=True, text=True,
+            timeout=90, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout[-4000:] + result.stderr[-4000:])
 
     def test_sc02_reject_non_planning_status(self) -> None:
         self._run_cases(

@@ -399,6 +399,15 @@ class TestEvidenceProvenanceV2(BaseModel):
     environment: str = Field(..., min_length=1)
 
 
+class TestCompanionSourceRevision(BaseModel):
+    """A second immutable checkout exercised by a locally authorized runner."""
+
+    model_config = ConfigDict(extra="forbid")
+    role: Literal["core", "community"]
+    source_ref: str = Field(..., min_length=1)
+    revision: str = Field(..., pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+
+
 class TestExecutionBasis(BaseModel):
     """Observed immutable source used by an authenticated external test run."""
 
@@ -407,6 +416,7 @@ class TestExecutionBasis(BaseModel):
     revision: str = Field(..., pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
     runner_ref: str = Field(..., min_length=1)
     test_ids: list[str] = Field(..., min_length=1, max_length=100)
+    companion_sources: list[TestCompanionSourceRevision] | None = Field(default=None, min_length=1, max_length=1)
 
 
 class TestExecutionAttestationV2(BaseModel):
