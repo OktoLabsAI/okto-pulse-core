@@ -319,10 +319,16 @@ def _authority_for(entity_type: str):
 
 def _parse_status(entity_type: str, status: str) -> Enum:
     authority = _authority_for(entity_type)
+    if entity_type == "card" and status == "started":
+        allowed = [item.value for item in authority.status_enum if item.value != "started"]
+        raise CommandValidationError(
+            f"Invalid status for card. Must be one of: {allowed}"
+        )
     try:
         return authority.status_enum(status)
     except ValueError as exc:
-        allowed = [item.value for item in authority.status_enum]
+        allowed = [item.value for item in authority.status_enum
+                   if entity_type != "card" or item.value != "started"]
         raise CommandValidationError(
             f"Invalid status for {entity_type}. Must be one of: {allowed}"
         ) from exc
