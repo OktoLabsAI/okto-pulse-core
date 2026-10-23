@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from okto_pulse.core.domain.delivery_evidence import CardDeliveryScope
-from okto_pulse.core.domain.delivery_selection import current_delivery_selection, seal_delivery_selection
+from okto_pulse.core.domain.delivery_selection import current_delivery_selection, superseded_delivery_selection, seal_delivery_selection
 from okto_pulse.core.models.delivery_selection import DeliverySelectionInput
 from okto_pulse.core.models.schemas import CardMove
 from test_delivery_evidence_domain import SNAPSHOT
@@ -34,6 +34,22 @@ def test_manifest_pins_exact_records_and_rework_preserves_historical_report():
     assert selected(value, status="in_progress") is None
     assert value == original
     assert selected(dict(source="move_to_validation")) is None
+
+
+def test_intact_prior_edition_report_is_superseded_without_admitting_its_records():
+    card = SimpleNamespace(status="done", conclusions=[report()])
+    next_scope = CardDeliveryScope("b", "c", "s", 2)
+    assert superseded_delivery_selection(card, next_scope)
+    with pytest.raises(ValueError, match="manifest_invalid"):
+        current_delivery_selection(card, next_scope, obligations=SNAPSHOT.obligations,
+            record_hashes={})
+    assert not superseded_delivery_selection(card, SCOPE)
+
+    corrupted = deepcopy(card)
+    corrupted.conclusions[0]["delivery_manifest"]["sha256"] = "0" * 64
+    assert not superseded_delivery_selection(corrupted, next_scope)
+    foreign = SimpleNamespace(status="done", conclusions=[report()])
+    assert not superseded_delivery_selection(foreign, CardDeliveryScope("b", "other", "s", 2))
 
 
 @pytest.mark.parametrize("corrupt", [False, True])
