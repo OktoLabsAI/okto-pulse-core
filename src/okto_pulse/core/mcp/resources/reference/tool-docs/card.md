@@ -51,7 +51,7 @@ Args:
         For bug cards, this is auto-resolved from the origin task if not provided.
     description: Card description (optional). Supports Markdown and Mermaid diagrams (```mermaid code blocks).
     details: Card details/rich text (optional). Supports Markdown and Mermaid diagrams.
-    status: Initial card status - only not_started or started. Use move_card for later public lifecycle transitions; rejected is consequence-only and cannot be assigned on create.
+    status: Initial card status - only not_started. Use move_card for later public lifecycle transitions; rejected is consequence-only and cannot be assigned on create.
     priority: Card priority - one of: none, low, medium, high, very_high, critical (default: none)
     assignee_id: User ID to assign (optional)
     labels: Multi-value labels — formats: okto-pulse://reference/multivalue.
@@ -74,7 +74,7 @@ Args:
         eligible existing scenario after spec validation, but the linked test
         card itself must be created after the bug. On a validated/done spec,
         update the scenario status/evidence only after that test card is
-        executable (`started`, `in_progress`, `validation`, or `done`) so the
+        executable (`in_progress`, `validation`, or `done`) so the
         update is treated as operational evidence rather than semantic spec
         editing. If no eligible scenario
         exists or expected behavior changed, treat it as a semantic gap and
@@ -178,7 +178,7 @@ Every returned entry carries a `type` so the agent can act directly:
 - `rework_required` — a Rejected normal/bug card has a sealed Current cause
   and needs an executor to start a new implementation attempt. Rejected cards
   are deliberately excluded from `stale`.
-- `stale` — card is started/in_progress/validation and hasn't been
+- `stale` — card is in_progress/validation and hasn't been
   touched for more than `stale_hours`.
 - `spec_pending_validation` — spec is approved but has no 'approve'
   evaluation yet, blocking promotion to in_progress.
@@ -200,7 +200,7 @@ Returns:
 
 List cards on the board with optional filters and pagination.
 
-status: empty = all, or one of not_started/started/in_progress/validation/rejected/on_hold/done/cancelled/open.
+status: empty = all, or one of not_started/in_progress/validation/rejected/on_hold/done/cancelled/open.
 Use 'open' for all cards NOT in done/cancelled. Max limit is 200.
 
 ## `okto_pulse_move_card`
@@ -213,7 +213,7 @@ post-move policy-subject revision, not the pre-commit value.
 Moving to 'validation' or 'done' REQUIRES conclusion, completeness (0-100),
 completeness_justification, drift (0-100), and drift_justification so the
 reviewer can validate the claim. Use -1 for completeness/drift when no
-execution report is required (e.g. moving to on_hold or started).
+execution report is required (e.g. moving to on_hold or returning to not_started).
 
 `status="rejected"` is accepted only for a same-status position reorder of a
 card that is already Rejected. It cannot be used to enter Rejected manually;

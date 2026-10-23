@@ -81,6 +81,7 @@ _CARD_TO_SPEC_EVENTS = {"card.linked_to_spec", "card.unlinked_from_spec"}
 # (spec_id is None) skip the spec-side enqueue gracefully.
 _CARD_DUAL_TARGET_EVENTS = {
     "card.moved",
+    "card.status_normalized.v1",
     "card.conclusion_added",
     "card.completion_rejected",
 }
@@ -92,6 +93,7 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "artifact.archive_changed",
     "card.created",
     "card.moved",
+    "card.status_normalized.v1",
     "card.conclusion_added",
     "card.completion_rejected",
     "card.cancelled",
@@ -146,6 +148,28 @@ class ConsolidationEnqueuer:
 
     async def handle(self, event: DomainEvent, session: object) -> None:
         targets = self._map_targets(event)
+        if event.event_type == "card.status_normalized.v1":
+            from okto_pulse.core.ports.application_persistence import (
+                ApplicationFilter, ApplicationQuery, get_application_persistence_port,
+            )
+            current = await get_application_persistence_port().list(
+                session, ApplicationQuery(entity="card", filters=(
+                    ApplicationFilter("board_id", "eq", event.board_id),
+                    ApplicationFilter("id", "eq", event.card_id),
+                )),
+            )
+            if current:
+                # A delayed delivery must refresh the current parent as well
+                # as the parent captured at migration time (which may need
+                # removal of its former child). A current orphan has no parent.
+                spec_id = getattr(current[0], "spec_id", None)
+                target = ("spec", spec_id)
+                if spec_id and target not in targets:
+                    targets.append(target)
+            else:
+                # The card was deleted after the durable migration event.
+                # Its deletion event owns the tombstone; do not resurrect it.
+                targets = [target for target in targets if target != ("card", event.card_id)]
         dependency_source = (getattr(event, 'card_id', None) if event.event_type.startswith('card.')
             else getattr(event, 'artifact_id', None) if event.event_type == 'artifact.archive_changed'
                 and getattr(event, 'artifact_type', None) == 'card' else None)

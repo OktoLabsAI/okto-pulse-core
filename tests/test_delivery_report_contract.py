@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from okto_pulse.core.models.delivery_report import CardDeliveryReportInput
+from okto_pulse.core.models.delivery_report import CardDeliveryReportInput, CardDeliveryRecordInput
 from okto_pulse.core.models.delivery_evidence import card_delivery_command
 from okto_pulse.core.application.use_cases.delivery_evidence import RecordCardDeliveryEvidenceUseCase
 from okto_pulse.core.application.use_cases.base import PermissionDeniedError
@@ -37,6 +37,28 @@ def test_composed_contract_is_closed_and_bounded(mutation):
         value["existing_record_ids"] = [str(i) for i in range(200)]
     with pytest.raises(ValueError):
         CardDeliveryReportInput.model_validate(value)
+
+
+def test_legacy_started_report_is_parseable_only_for_exact_replay():
+    value = body()
+    value["expected_card_status"] = "started"
+    with pytest.raises(ValueError):
+        CardDeliveryReportInput.model_validate(value)
+    parsed = card_delivery_command(board_id="b", card_id="c", spec_id="s", evidence=value)
+    assert parsed.expected_card_status == "started"
+
+
+def test_active_wire_schema_does_not_advertise_started_report():
+    from pydantic import TypeAdapter
+    from okto_pulse.core.models.delivery_report import LegacyCardDeliveryReportReplayInput
+
+    adapter = TypeAdapter(CardDeliveryRecordInput)
+    schema = adapter.json_schema()
+    assert schema["$defs"]["CardDeliveryReportInput"]["properties"]["expected_card_status"]["const"] == "in_progress"
+    assert "LegacyCardDeliveryReportReplayInput" not in schema["$defs"]
+    historical = body()
+    historical["expected_card_status"] = "started"
+    assert isinstance(adapter.validate_python(historical), LegacyCardDeliveryReportReplayInput)
 
 
 @pytest.mark.asyncio

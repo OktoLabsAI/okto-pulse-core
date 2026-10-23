@@ -400,6 +400,12 @@ class GlobalOutboxProcessor:
             # Refuse an invalid record before applying any graph effects.
             for event in events:
                 event.validate_retry_count()
+            # The claim is a read-only selection. Release its SQLite checkout
+            # before any native graph work; the global writer lease protects
+            # this batch, and final ACK is persisted only after verification.
+            rollback = getattr(db, "rollback", None)
+            if rollback is not None:
+                await rollback()
             processed_events: list[
                 tuple[GlobalOutboxEventRecord, dict[str, tuple[str, str]]]
             ] = []
@@ -434,20 +440,21 @@ class GlobalOutboxProcessor:
                         # typed pressure signal so untouched rows do not spend
                         # retries while the adapter is deliberately cooling.
                         break
-                    event.retry_count += 1
-                    if self._retry_policy.after_failure(event.retry_count).terminal:
-                        event.retry_count = DEAD_LETTER_SENTINEL
-                        logger.warning(
-                            "outbox.dead_letter event=%s board=%s err=%s",
-                            event.event_id,
-                            event.board_id,
-                            exc,
-                            extra={
-                                "event": "outbox.dead_letter",
-                                "event_id": event.event_id,
-                                "board_id": event.board_id,
-                            },
-                        )
+                    if not _is_source_inventory_churn(exc):
+                        event.retry_count += 1
+                        if self._retry_policy.after_failure(event.retry_count).terminal:
+                            event.retry_count = DEAD_LETTER_SENTINEL
+                            logger.warning(
+                                "outbox.dead_letter event=%s board=%s err=%s",
+                                event.event_id,
+                                event.board_id,
+                                exc,
+                                extra={
+                                    "event": "outbox.dead_letter",
+                                    "event_id": event.event_id,
+                                    "board_id": event.board_id,
+                                },
+                            )
             if processed_events:
                 verification_errors, batch_flush_error = await self._run_graph_io(
                     lambda: self._verify_processed_batch(processed_events)
@@ -472,7 +479,9 @@ class GlobalOutboxProcessor:
                             "global_discovery_post_flush_failed: "
                             f"{_semantic_error_detail(batch_flush_error)}"
                         )[:500]
-                        if retry_after_s is None:
+                        if retry_after_s is None and not _is_source_inventory_churn(
+                            batch_flush_error
+                        ):
                             event.retry_count += 1
                             if self._retry_policy.after_failure(
                                 event.retry_count
@@ -507,7 +516,10 @@ class GlobalOutboxProcessor:
                             "global_discovery_post_flush_verification_failed: "
                             f"{_semantic_error_detail(error)}"
                         )[:500]
-                        if graph_memory_pressure_retry_after_seconds(error) is None:
+                        if (
+                            graph_memory_pressure_retry_after_seconds(error) is None
+                            and not _is_source_inventory_churn(error)
+                        ):
                             event.retry_count += 1
                             if self._retry_policy.after_failure(
                                 event.retry_count
@@ -690,14 +702,22 @@ class GlobalOutboxProcessor:
         # what was actually written to the per-board graph. We digest only
         # `add` ops; updates/supersedes don't produce new digest rows (a
         # future pass can refresh digest embeddings on update).
-        refs = list(
-            await get_global_outbox_store().list_added_node_refs(
-                db,
-                session_id=session_id,
-                board_id=board_id,
-                node_types=DIGESTED_NODE_TYPES,
+        try:
+            refs = list(
+                await get_global_outbox_store().list_added_node_refs(
+                    db,
+                    session_id=session_id,
+                    board_id=board_id,
+                    node_types=DIGESTED_NODE_TYPES,
+                )
             )
-        )
+        finally:
+            # The returned facts are detached values. Holding this read
+            # transaction across graph IO ties up a SQLite pool checkout for
+            # the entire batch (minutes under large source inventories).
+            rollback = getattr(db, "rollback", None)
+            if rollback is not None:
+                await rollback()
 
         gconn = global_runtime
         try:
@@ -819,11 +839,16 @@ class GlobalOutboxProcessor:
                 n.get("node_type") == "Learning" and n.get("graph_layer") == "canonical"
                 for n in per_board
             )
-            learning_exclusions = (
-                await pending_or_debt_exclusions(db, board_id=board_id)
-                if has_canonical_learning
-                else {}
-            )
+            try:
+                learning_exclusions = (
+                    await pending_or_debt_exclusions(db, board_id=board_id)
+                    if has_canonical_learning
+                    else {}
+                )
+            finally:
+                rollback = getattr(db, "rollback", None)
+                if rollback is not None:
+                    await rollback()
 
             # 3) Create one DecisionDigest per node + CONTAINS_DECISION edge.
             # graph backend's HNSW-indexed columns (DecisionDigest.embedding) cannot be
@@ -1578,11 +1603,16 @@ class GlobalOutboxProcessor:
             m.get("node_type") == "Learning" and m.get("graph_layer") == "canonical"
             for m in board_meta.values()
         )
-        overlay = (
-            await pending_or_debt_exclusions(db, board_id=board_id)
-            if needs_overlay
-            else {}
-        )
+        try:
+            overlay = (
+                await pending_or_debt_exclusions(db, board_id=board_id)
+                if needs_overlay
+                else {}
+            )
+        finally:
+            rollback = getattr(db, "rollback", None)
+            if rollback is not None:
+                await rollback()
 
         # ``count`` is the number of concrete cache mutations performed. Invalid
         # outgoing Board links are mutations too, even when the correct digest
@@ -2077,6 +2107,14 @@ def _semantic_error_detail(exc: BaseException) -> str:
     if isinstance(exc, GraphError):
         return f"{exc.code}:{exc}"
     return str(exc)
+
+
+def _is_source_inventory_churn(exc: BaseException) -> bool:
+    """A changed board snapshot needs a fresh pass, not a spent retry budget."""
+
+    return isinstance(exc, RuntimeError) and str(exc).startswith(
+        "outbox.source_inventory_changed:"
+    )
 
 
 __all__ = [

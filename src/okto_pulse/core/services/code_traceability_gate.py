@@ -977,7 +977,9 @@ def phases_for_transition(
     ):
         return (CodeTraceabilityGatePhase.SPEC_EVIDENCE_DISPOSITION,)
     if subject_type is CodeTraceabilitySubjectType.CARD:
-        if target in {"started", "in_progress"} and source != target:
+        if target == "started":
+            raise ValueError("card_started_target_removed")
+        if target == "in_progress" and source != target:
             return (CodeTraceabilityGatePhase.CARD_TARGET,)
         if target in {"validation", "done"} and source != target:
             return (CodeTraceabilityGatePhase.CARD_EXECUTION,)

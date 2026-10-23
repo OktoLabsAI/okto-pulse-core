@@ -216,8 +216,8 @@ async def test_card_gate_before_done_uses_the_same_completion_predicate(monkeypa
     from okto_pulse.core.services import delivery_evidence as service
     from test_delivery_card_readiness import ready_snapshot
 
-    store = SimpleNamespace(load_card_snapshot=AsyncMock())
-    monkeypatch.setattr(service, "card_delivery_store", lambda _: store)
+    store = SimpleNamespace(load_snapshot=AsyncMock())
+    monkeypatch.setattr(service, "delivery_store", lambda _: store)
     card = SimpleNamespace(
         id="ui", board_id="board", spec_id="spec", card_type="normal"
     )
@@ -229,12 +229,11 @@ async def test_card_gate_before_done_uses_the_same_completion_predicate(monkeypa
             card_status=CardStatus.IN_PROGRESS,
             contributions=(DeliveryContribution(BINDING, state, ("execution-receipt",)),),
         )
-        store.load_card_snapshot.return_value = replace(
+        store.load_snapshot.return_value = replace(
             current, implementations=(fact,), effective_context=replace(current.effective_context,
                 implementations=(replace(current.effective_context.implementations[0], fact=fact),)),
         )
-        if state == "partial":
-            with pytest.raises(ValueError, match="delivery_evidence_incomplete"):
-                await require_card_delivery(None, card, spec)
-        else:
+        with pytest.raises(ValueError, match="delivery_evidence_incomplete") as error:
             await require_card_delivery(None, card, spec)
+        assert {blocker.phase.value for blocker in error.value.gate.blockers} == (
+            {"implementation", "verification"} if state == "partial" else {"verification"})

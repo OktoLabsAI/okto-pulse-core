@@ -105,12 +105,19 @@ def test_implementation_serialization_has_current_defaults():
 
 
 @pytest.mark.parametrize(
-    "status", ["not_started", "validation", "rejected", "done", "cancelled", "on_hold"]
+    "status", ["not_started", "started", "validation", "rejected", "done", "cancelled", "on_hold"]
 )
 def test_progress_cannot_bypass_execution_lifecycle(status):
     with pytest.raises(ValueError, match="execution_state"):
         require_delivery_progress_mutable(
             SimpleNamespace(status=status, card_type="normal", archived=False)
+        )
+
+
+def test_archived_execution_card_cannot_record_new_progress():
+    with pytest.raises(ValueError, match="execution_state_required"):
+        require_delivery_progress_mutable(
+            SimpleNamespace(status="in_progress", card_type="normal", archived=True)
         )
 
 

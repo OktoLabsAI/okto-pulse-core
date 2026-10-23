@@ -76,11 +76,16 @@ def test_schema_publishes_null_tolerant_oneof() -> None:
 @pytest.mark.parametrize("payload", VALID_PAYLOADS)
 def test_valid_payloads_match_exactly_one_variant_and_construct(payload: dict) -> None:
     assert _matching_variants(payload) == 1, payload
-    CardMove(status="started", **payload)  # runtime agrees: constructs
+    CardMove(status="in_progress", **payload)  # runtime agrees: constructs
 
 
 @pytest.mark.parametrize("payload", INVALID_PAYLOADS)
 def test_invalid_payloads_match_zero_variants_and_reject(payload: dict) -> None:
     assert _matching_variants(payload) == 0, payload
     with pytest.raises(ValidationError):  # runtime agrees: 422 at the boundary
-        CardMove(status="started", **payload)
+        CardMove(status="in_progress", **payload)
+
+
+def test_historical_started_is_not_an_active_move_target() -> None:
+    with pytest.raises(ValidationError):
+        CardMove(status="started")

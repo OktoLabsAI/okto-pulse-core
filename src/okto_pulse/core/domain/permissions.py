@@ -728,6 +728,31 @@ _PRE_REGISTRY_TRANSITION_PERMISSION_LEAVES = frozenset(
         "story.move.triage_to_ready",
     }
 )
+# Stored permission documents can still contain these leaves. They remain
+# authority inputs for the replacement edges, never executable lifecycle edges.
+_LEGACY_CARD_MOVE_PERMISSION_LEAVES: tuple[str, ...] = (
+    "card.move.not_started_to_started",
+    "card.move.started_to_not_started",
+    "card.move.started_to_in_progress",
+    "card.move.started_to_validation",
+    "card.move.started_to_on_hold",
+    "card.move.started_to_cancelled",
+    "card.move.in_progress_to_started",
+    "card.move.on_hold_to_started",
+)
+_LEGACY_CARD_PRESET_GRANTS: Mapping[str, frozenset[str]] = {
+    "Full Control": frozenset(_LEGACY_CARD_MOVE_PERMISSION_LEAVES),
+    "Executor": frozenset({
+        "card.move.not_started_to_started",
+        "card.move.started_to_in_progress",
+        "card.move.started_to_cancelled",
+    }),
+    "QA": frozenset({
+        "card.move.not_started_to_started",
+        "card.move.started_to_in_progress",
+        "card.move.started_to_cancelled",
+    }),
+}
 _RETIRED_TRANSITION_PERMISSION_LEAVES: tuple[str, ...] = (
     "card.move.any_to_cancelled",
     "card.move.validation_to_not_started",
@@ -749,7 +774,7 @@ if not (
     _PRE_REGISTRY_TRANSITION_PERMISSION_LEAVES
     - set(_RETIRED_TRANSITION_PERMISSION_LEAVES)
     - set(_HISTORICAL_SPRINT_TRANSITIONS)
-) <= set(transition_permission_flags()):
+) <= set(transition_permission_flags()) | set(_LEGACY_CARD_MOVE_PERMISSION_LEAVES):
     raise PermissionContractViolation(
         "historical transition fingerprint is not present in SDLC_REGISTRY"
     )
@@ -864,14 +889,14 @@ def _transitions_to(entity: str, target: str) -> tuple[str, ...]:
 _EXECUTOR_TRANSITION_GRANTS = (
     *_transition_subset(
         "card",
-        ("not_started", "started"),
-        ("started", "in_progress"),
+        ("not_started", "in_progress"),
         ("in_progress", "on_hold"),
         ("on_hold", "in_progress"),
         ("in_progress", "validation"),
         ("rejected", "in_progress"),
     ),
     *_transitions_to("card", "cancelled"),
+    "card.move.started_to_cancelled",  # frozen SDLC-TRANSITIONS/v1 grant
 )
 
 _VALIDATOR_TRANSITION_GRANTS = (
@@ -893,14 +918,13 @@ _VALIDATOR_TRANSITION_GRANTS = (
 _QA_TRANSITION_GRANTS = (
     *_transition_subset(
         "card",
-        ("not_started", "started"),
         ("not_started", "in_progress"),
-        ("started", "in_progress"),
         ("in_progress", "on_hold"),
         ("on_hold", "in_progress"),
         ("in_progress", "done"),
     ),
     *_transitions_to("card", "cancelled"),
+    "card.move.started_to_cancelled",  # frozen SDLC-TRANSITIONS/v1 grant
     *transition_permission_flags("test_scenario"),
 )
 
@@ -1135,6 +1159,17 @@ TASK_REJECTED_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     ),
 )
 
+CARD_STATUS_UNIFICATION_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
+    version="CARD-STATUS-UNIFICATION/v1",
+    leaves=("card.move.in_progress_to_not_started",),
+    preset_grants=_explicit_preset_grants(
+        ("card.move.in_progress_to_not_started",), {}
+    ),
+    historical_authorities=(
+        ("card.move.in_progress_to_not_started", "card.move.in_progress_to_started"),
+    ),
+)
+
 
 # Ordered oldest-to-newest.  Upgrade and normalization logic depends on this
 # order so that each introduction generation is classified independently.
@@ -1149,6 +1184,7 @@ PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = 
     CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1,
     SKM_PERMISSION_INTRODUCTION_V1,
     TASK_REJECTED_PERMISSION_INTRODUCTION_V1,
+    CARD_STATUS_UNIFICATION_PERMISSION_INTRODUCTION_V1,
 )
 
 # Preserve the original generations for documents that still carry retired data.
@@ -1186,6 +1222,7 @@ PERMISSION_INTRODUCTION_MANIFESTS = tuple(
     CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1,
     SKM_PERMISSION_INTRODUCTION_V1,
     TASK_REJECTED_PERMISSION_INTRODUCTION_V1,
+    CARD_STATUS_UNIFICATION_PERMISSION_INTRODUCTION_V1,
 ) = PERMISSION_INTRODUCTION_MANIFESTS
 
 
@@ -1699,7 +1736,10 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "ir": True,
             "or": True,
         },
-        "move": transition_permission_registry("card"),
+        "move": {
+            **transition_permission_registry("card"),
+            **{leaf.removeprefix("card.move."): True for leaf in _LEGACY_CARD_MOVE_PERMISSION_LEAVES},
+        },
         "interact_in": lifecycle_state_permission_registry("card"),
         "validation": {
             "submit": True,
@@ -2722,7 +2762,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
     # ------------------------------------------------------------------
     # Executor — implements normal cards
     # ------------------------------------------------------------------
-    # Owns: card lifecycle from not_started → started → in_progress → validation
+    # Owns: card lifecycle from not_started → in_progress → validation
     # (and on_hold detours). Reads spec context to implement correctly.
     # Cannot: create cards, submit validation, promote validation→done,
     # create/edit spec content, submit gates.
@@ -3137,7 +3177,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         },
         {
             "name": "Executor",
-            "description": "Implement normal cards. Moves not_started→validation and accepts Rejected rework via rejected→in_progress. Cannot submit gates or assign Rejected directly.",
+            "description": "Implement normal cards through not_started→in_progress→validation and accept Rejected rework via rejected→in_progress. Cannot submit gates or assign Rejected directly.",
             "flags": executor,
         },
         {
@@ -3185,6 +3225,12 @@ def get_builtin_presets() -> list[dict[str, Any]]:
                 definition["flags"],
                 flag_path,
                 flag_path in allowed_transitions,
+            )
+        for flag_path in _LEGACY_CARD_MOVE_PERMISSION_LEAVES:
+            _set_nested(
+                definition["flags"],
+                flag_path,
+                flag_path in _LEGACY_CARD_PRESET_GRANTS.get(definition["name"], frozenset()),
             )
         for flag_path in (
             *_RETIRED_TRANSITION_PERMISSION_LEAVES,

@@ -1,4 +1,4 @@
-"""Card completion may ignore test phase, never unknown structural coverage."""
+"""Card completion requires current implementation and verification coverage."""
 
 from dataclasses import replace
 from types import SimpleNamespace
@@ -22,15 +22,16 @@ def ready_snapshot():
 
 
 async def require(snapshot, monkeypatch, *, mode="blocking"):
-    monkeypatch.setattr(service, "card_delivery_store", lambda _: SimpleNamespace(load_card_snapshot=AsyncMock(return_value=snapshot)))
+    monkeypatch.setattr(service, "delivery_store", lambda _: SimpleNamespace(load_snapshot=AsyncMock(return_value=snapshot)))
     card = SimpleNamespace(id="ui", board_id="board", spec_id="spec", card_type="normal")
     spec = SimpleNamespace(id="spec", edition=2)
     await service.require_card_delivery(None, card, spec, board=SimpleNamespace(settings={"delivery_evidence_gate": mode}))
 
 
 @pytest.mark.asyncio
-async def test_current_complete_implementation_can_finish_before_done_or_passing_tests(monkeypatch):
-    await require(ready_snapshot(), monkeypatch)
+async def test_current_complete_implementation_still_waits_for_passing_tests(monkeypatch):
+    with pytest.raises(ValueError, match="delivery_evidence_incomplete"):
+        await require(ready_snapshot(), monkeypatch)
 
 
 @pytest.mark.asyncio
@@ -52,10 +53,11 @@ async def test_structural_unknown_cannot_be_mistaken_for_no_missing_obligations(
 
 
 @pytest.mark.asyncio
-async def test_unavailable_verification_registry_does_not_block_ready_implementation(monkeypatch):
+async def test_unavailable_verification_registry_blocks_task_done(monkeypatch):
     snapshot = ready_snapshot()
     snapshot = replace(snapshot, effective_context=replace(snapshot.effective_context, admitted_methods=None))
-    await require(snapshot, monkeypatch)
+    with pytest.raises(ValueError, match="delivery_evidence_incomplete"):
+        await require(snapshot, monkeypatch)
 
 
 @pytest.mark.asyncio
