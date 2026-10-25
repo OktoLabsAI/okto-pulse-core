@@ -67,6 +67,34 @@ class GetDeliveryReadinessBoardSummaryUseCase:
         return result.model_dump(mode='json', exclude_none=False)
 
 
+class GetPersistedDeliveryReadinessUseCase:
+    """Read metrics without running the proof evaluator on GET."""
+
+    async def execute(self, command, *, actor, uow: PulseUnitOfWork):
+        from okto_pulse.core.ports.delivery_readiness import ReadinessActor
+
+        await require_authorization(actor, PermissionRequirement('code_traceability.evidence.read'),
+            uow=uow, board_id=command.board_id)
+        return await uow.services.delivery_readiness.read_persisted(
+            board_id=command.board_id, spec_id=command.spec_id,
+            actor=ReadinessActor(actor.actor_id, actor.actor_kind, actor.realm_id, actor.board_id),
+            card_id=command.card_id, unit_limit=command.unit_limit,
+            cursor=command.cursor)
+
+
+class RequeuePersistedReadinessUseCase:
+    """Authorized, audited retry of a terminal derived job."""
+
+    async def execute(self, command, *, actor, uow: PulseUnitOfWork):
+        from okto_pulse.core.ports.delivery_readiness import ReadinessActor
+
+        await require_authorization(actor, PermissionRequirement('board.admin.edit'),
+            uow=uow, board_id=command.board_id)
+        return await uow.services.delivery_readiness.requeue_terminal(
+            board_id=command.board_id, spec_id=command.spec_id,
+            actor=ReadinessActor(actor.actor_id, actor.actor_kind, actor.realm_id, actor.board_id))
+
+
 class RecordDeliveryEvidenceUseCase:
     """Spec-scoped exceptions only; historical proof remains readable."""
 

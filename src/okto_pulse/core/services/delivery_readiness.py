@@ -38,6 +38,50 @@ class DeliveryReadinessService:
     def __init__(self, reader: DeliveryReadinessReadPort, cursor: DeliveryReadinessCursorPort):
         self.reader, self.cursor = reader, cursor
 
+    async def requeue_terminal(self, *, board_id: str, spec_id: str,
+                               actor: ReadinessActor) -> dict:
+        action = getattr(self.reader, "requeue_terminal", None)
+        if action is None:
+            raise ReadinessReadError('readiness_assessment_unavailable',
+                native_code='readiness_projection_adapter_unavailable')
+        return await action(board_id=board_id, spec_id=spec_id, actor=actor)
+
+    async def read_persisted(self, *, board_id: str, spec_id: str, actor: ReadinessActor,
+                             card_id: str | None = None, unit_limit: int = 0,
+                             cursor: str | None = None) -> dict:
+        """Cheap authorized read of the last complete derived generation.
+
+        The current source revision and actor authority are rechecked by the
+        edition adapter. This projection is informational and cannot authorize
+        a native Done transition or a new delivery report.
+        """
+        load = getattr(self.reader, "load_persisted", None)
+        if load is None:
+            raise ReadinessReadError('readiness_assessment_unavailable',
+                native_code='readiness_projection_adapter_unavailable')
+        value, spec_edition, spec_version, page = await load(board_id=board_id, spec_id=spec_id,
+            actor=actor, card_id=card_id, unit_limit=unit_limit, cursor=cursor)
+        return {
+            'contract_version': 'delivery-readiness-projection/v1',
+            'scope': {'board_id': board_id, 'spec_id': spec_id,
+                'spec_edition': spec_edition,
+                'spec_version': spec_version, 'card_id': card_id},
+            'projection': {
+                'projection_version': 1,
+                'generation_id': value.generation_id if value else None,
+                'source_revision': value.captured_revision if value else None,
+                'target_revision': value.source_revision if value else 0,
+                'evaluated_at': value.evaluated_at.isoformat() if value and value.evaluated_at else None,
+                'evaluator_version': 'delivery-readiness-evaluator/v1',
+                'freshness': value.freshness if value else 'pending_initial',
+                'error_code': value.error_code if value else None,
+            },
+            'summaries': list(value.summaries) if value else [],
+            'units': list(value.units) if value else [],
+            'page': page,
+            'mutation_reauthorization_required': True,
+        }
+
     async def read(self, query: ReadinessReadQuery, *, actor: ReadinessActor):
         batch = await self.reader.load(board_id=query.board_id, spec_id=query.spec_id,
             card_id=query.card_id, actor=actor)

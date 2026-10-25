@@ -58,6 +58,12 @@ class DeliveryEvidenceQuery(BaseModel):
     spec_id: Identity
 
 
+class PersistedReadinessQuery(DeliveryEvidenceQuery):
+    card_id: Identity | None = None
+    unit_limit: int = Field(default=0, ge=0, le=250)
+    cursor: str | None = Field(default=None, min_length=1, max_length=8192)
+
+
 class DeliveryEvidenceReadQuery(DeliveryEvidenceQuery):
     """Read controls are separate from inherited write contracts."""
 

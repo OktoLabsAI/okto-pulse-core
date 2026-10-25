@@ -4,6 +4,15 @@ version: "1.4"
 
 # Tool docs — Code Traceability
 
+## `okto_pulse_get_persisted_delivery_readiness`
+
+Read the current published readiness generation for a Spec or `card_id`.
+`unit_limit` (0–250) includes a bounded unit page. Follow `page.next_cursor`
+to read the same generation; a stale cursor is a conflict. The response states
+`current`, `updating`, `pending_initial`, or `unavailable`. Implementation and
+verification metrics are independent. Published values are informational:
+native delivery transitions still check source ledgers and their own gates.
+
 ## `okto_pulse_get_delivery_evidence`
 
 Use `view="readiness"` for the current Spec or an optional `card_id`. The
