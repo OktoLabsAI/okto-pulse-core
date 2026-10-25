@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from hashlib import sha256
 import json
+from time import monotonic
 
 from okto_pulse.core.domain.delivery_assessment import (
     AssessmentCompleteness,
@@ -131,7 +132,8 @@ def _summary(assessment: DeliveryAssessment, *, card_version: int | None) -> Pro
     )
 
 
-def build_readiness_generation(snapshot, *, captured_revision: int) -> ReadinessGeneration:
+def build_readiness_generation(snapshot, *, captured_revision: int,
+                               deadline: float | None = None) -> ReadinessGeneration:
     """Evaluate exactly one source revision with the existing canonical engine.
 
     The caller must close its DB snapshot before invoking this CPU-bound
@@ -140,6 +142,11 @@ def build_readiness_generation(snapshot, *, captured_revision: int) -> Readiness
     """
     if captured_revision < 0:
         raise ValueError("readiness_revision_invalid")
+    def checkpoint() -> None:
+        if deadline is not None and monotonic() >= deadline:
+            raise TimeoutError("readiness_calculation_budget_exceeded")
+
+    checkpoint()
     if snapshot.unavailable_reason_codes:
         reason = FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE,
             native_reason_codes=snapshot.unavailable_reason_codes)
@@ -151,24 +158,32 @@ def build_readiness_generation(snapshot, *, captured_revision: int) -> Readiness
         assessments = [(None, unknown())] + [(card, unknown(card)) for card in snapshot.cards]
     else:
         evaluation = EvaluatedDeliverySnapshot(snapshot.facts)
+        checkpoint()
         assessments = [(None, evaluation.obligations())]
         for card in snapshot.cards:
+            checkpoint()
             assessment = (evaluation.scenarios(card_id=card.id, scenario_ids=card.scenario_ids)
                 if card.card_type == CardType.TEST else
                 evaluation.obligations(card_id=card.id, card_type=card.card_type))
             assessments.append((card, assessment))
 
+    checkpoint()
     summaries = tuple(_summary(assessment, card_version=card.version if card else None)
         for card, assessment in assessments)
     unique_units = {}
+    processed_units = 0
     for _, assessment in assessments:
         for unit in _unit_rows(assessment):
+            processed_units += 1
+            if processed_units % 250 == 0:
+                checkpoint()
             key = (unit.card_id, unit.kind, unit.ref, unit.semantic_sha256)
             existing = unique_units.setdefault(key, unit)
             if existing != unit:
                 raise ValueError("readiness_unit_conflict")
     units = tuple(unique_units[key] for key in sorted(unique_units,
         key=lambda key: (key[0] or "", key[1], key[2], key[3])))
+    checkpoint()
     digest = readiness_manifest_digest(board_id=snapshot.facts.scope.board_id,
         spec_id=snapshot.facts.scope.spec_id, edition=snapshot.facts.scope.edition,
         captured_revision=captured_revision, source_snapshot_id=snapshot.snapshot_id,
