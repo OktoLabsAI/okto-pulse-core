@@ -241,6 +241,8 @@ class PersistedReadinessNativeScenarios(unittest.TestCase):
             "test_projection_pages_are_actor_bound_and_reauthorized",
             f"{tests / 'test_readiness_projection_access.py'}::"
             "test_projection_revocation_during_read_fails_closed",
+            f"{tests / 'test_readiness_projection_access.py'}::"
+            "test_projection_changing_scope_retries_once_then_fails_closed",
             f"{tests / 'test_delivery_readiness_surfaces.py'}::"
             "test_persisted_spec_projection_requires_current_card_read_permission",
             str(tests / 'test_readiness_requeue_route.py'),
