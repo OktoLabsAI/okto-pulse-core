@@ -216,3 +216,45 @@ class PersistedReadinessNativeScenarios(unittest.TestCase):
             f"{tests / 'test_readiness_projection_worker.py'}::"
             "test_sustained_queue_lag_is_warned_without_exposing_payload",
         )
+
+    def test_sc16_hot_read_and_transport_compatibility(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_persisted_rest_and_mcp_never_enter_source_evaluator_or_diagnostics",
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_P08_board_summary_matches_authorized_native_details_without_writes",
+        )
+        _run(f"{_CORE / 'tests' / 'test_delivery_readiness_contracts.py'}::"
+            "test_P01_response_roundtrip_keeps_nulls_and_rejects_schema_drift")
+
+    def test_sc17_current_access_and_cross_actor_cursor(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_projection_access.py'}::"
+            "test_projection_pages_are_actor_bound_and_reauthorized",
+            f"{tests / 'test_readiness_projection_access.py'}::"
+            "test_projection_revocation_during_read_fails_closed",
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_persisted_spec_projection_requires_current_card_read_permission",
+            str(tests / 'test_readiness_requeue_route.py'),
+        )
+
+    def test_sc18_readiness_never_authorizes_done(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            str(tests / 'test_delivery_readiness_closeout.py'),
+            f"{tests / 'test_delivery_report.py'}::"
+            "test_inline_execution_and_its_events_rollback_when_report_is_rejected",
+        )
+        _run(f"{_CORE / 'tests' / 'test_delivery_evidence_lifecycle.py'}::"
+            "test_done_checks_readiness_then_rechecks_under_write_fence")
