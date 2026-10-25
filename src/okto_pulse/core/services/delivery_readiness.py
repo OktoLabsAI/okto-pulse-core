@@ -74,6 +74,7 @@ class DeliveryReadinessService:
             'projection': {
                 'projection_version': 1,
                 'generation_id': value.generation_id if value else None,
+                'snapshot_id': value.source_snapshot_id if value else None,
                 'source_revision': value.captured_revision if value else None,
                 'target_revision': value.source_revision if value else 0,
                 'evaluated_at': value.evaluated_at.isoformat() if value and value.evaluated_at else None,
