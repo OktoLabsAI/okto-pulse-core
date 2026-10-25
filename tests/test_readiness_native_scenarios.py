@@ -226,6 +226,12 @@ class PersistedReadinessNativeScenarios(unittest.TestCase):
             f"{tests / 'test_delivery_readiness_surfaces.py'}::"
             "test_persisted_rest_and_mcp_never_enter_source_evaluator_or_diagnostics",
             f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_incompatible_persisted_generation_is_unavailable_without_actions",
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_S01_S02_S04_S11_composed_surfaces_share_metrics_details_and_significant_nulls",
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_S06_S07_S09_pages_and_detail_keep_metrics_and_refuse_changed_snapshot",
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
             "test_P08_board_summary_matches_authorized_native_details_without_writes",
         )
         _run(f"{_CORE / 'tests' / 'test_delivery_readiness_contracts.py'}::"
@@ -245,6 +251,8 @@ class PersistedReadinessNativeScenarios(unittest.TestCase):
             "test_projection_changing_scope_retries_once_then_fails_closed",
             f"{tests / 'test_delivery_readiness_surfaces.py'}::"
             "test_persisted_spec_projection_requires_current_card_read_permission",
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_persisted_diagnostics_restrict_detail_after_current_permission_change",
             str(tests / 'test_readiness_requeue_route.py'),
         )
 
