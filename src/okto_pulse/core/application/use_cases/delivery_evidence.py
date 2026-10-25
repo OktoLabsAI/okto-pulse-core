@@ -32,11 +32,9 @@ class GetDeliveryEvidenceUseCase:
         if isinstance(command, DeliveryEvidenceReadQuery) and command.view == 'readiness':
             from okto_pulse.core.ports.delivery_readiness import ReadinessActor
 
-            result = await uow.services.delivery_readiness.read(command.readiness_query(), actor=ReadinessActor(
-                actor.actor_id, actor.actor_kind, actor.realm_id, actor.board_id))
-            # Both transports receive this closed JSON projection. In particular,
-            # generic MCP model serialization must not discard meaningful nulls.
-            return result.model_dump(mode='json', exclude_none=False)
+            return await uow.services.delivery_readiness.read_persisted_detail(
+                command.readiness_query(), actor=ReadinessActor(
+                    actor.actor_id, actor.actor_kind, actor.realm_id, actor.board_id))
         if isinstance(command, DeliveryEvidenceReadQuery) and command.card_id is not None:
             if command.view == "resume":
                 result = await uow.services.delivery_evidence.card_resume(command, actor_id=actor.actor_id)

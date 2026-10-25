@@ -13,6 +13,7 @@ from datetime import datetime
 from hashlib import sha256
 import json
 from time import monotonic
+from pydantic import TypeAdapter
 
 from okto_pulse.core.domain.delivery_assessment import (
     AssessmentCompleteness,
@@ -28,15 +29,21 @@ from okto_pulse.core.domain.enums import CardType
 from okto_pulse.core.models.delivery_readiness import DeliveryMetric
 from okto_pulse.core.ports.delivery_readiness import READINESS_PERMISSION_OPERATIONS, ReadinessAccess
 from okto_pulse.core.services.delivery_readiness import EvaluatedDeliveryReadiness
+from okto_pulse.core.services.delivery_readiness_diagnostics import NativeDeliveryDiagnostics
 
 
-EVALUATOR_VERSION = "delivery-readiness-evaluator/v2"
+EVALUATOR_VERSION = "delivery-readiness-evaluator/v3"
+_DIAGNOSTICS = TypeAdapter(NativeDeliveryDiagnostics)
+
+
+def restore_projected_diagnostics(payload: dict) -> NativeDeliveryDiagnostics:
+    return _DIAGNOSTICS.validate_python(payload)
 
 
 def readiness_manifest_digest(*, board_id: str, spec_id: str, edition: int,
                               captured_revision: int, source_snapshot_id: str,
                               evaluator_version: str, summaries: list[dict],
-                              units: list[dict]) -> str:
+                              units: list[dict], diagnostics: list[dict]) -> str:
     """Canonical digest of exactly the rows a reader will receive."""
     manifest = {
         "scope": [board_id, spec_id, edition, captured_revision],
@@ -45,6 +52,7 @@ def readiness_manifest_digest(*, board_id: str, spec_id: str, edition: int,
         "summaries": sorted(summaries, key=lambda row: row["card_id"] or ""),
         "units": sorted(units, key=lambda row: (row["card_id"] or "", row["kind"],
             row["ref"], row["semantic_sha256"])),
+        "diagnostics": sorted(diagnostics, key=lambda row: row["card_id"] or ""),
     }
     return sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":"),
         ensure_ascii=False).encode("utf-8")).hexdigest()
@@ -89,6 +97,15 @@ class ProjectedSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class ProjectedDiagnostic:
+    card_id: str | None
+    payload: dict
+
+    def row(self) -> dict:
+        return {"card_id": self.card_id, "payload": self.payload}
+
+
+@dataclass(frozen=True, slots=True)
 class ReadinessGeneration:
     board_id: str
     spec_id: str
@@ -100,6 +117,7 @@ class ReadinessGeneration:
     evaluator_version: str
     summaries: tuple[ProjectedSummary, ...]
     units: tuple[ProjectedUnit, ...]
+    diagnostics: tuple[ProjectedDiagnostic, ...]
     manifest_sha256: str
 
 
@@ -185,13 +203,18 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
         actor_id=projection_actor, precomputed_assessments={
             card.id if card else None: assessment for card, assessment in assessments})
     summaries_list = []
+    diagnostics_list = []
     for index, (card, assessment) in enumerate(assessments):
         if index % 25 == 0:
             checkpoint()
+        card_id = card.id if card else None
         summaries_list.append(_summary(assessment,
             card_version=card.version if card else None,
-            context=contextual.context(card.id if card else None).model_dump(mode='json')))
+            context=contextual.context(card_id).model_dump(mode='json')))
+        diagnostics_list.append(ProjectedDiagnostic(card_id,
+            _DIAGNOSTICS.dump_python(contextual.diagnostics(card_id), mode='json')))
     summaries = tuple(summaries_list)
+    diagnostics = tuple(diagnostics_list)
     unique_units = {}
     processed_units = 0
     for _, assessment in assessments:
@@ -211,7 +234,9 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
         captured_revision=captured_revision, source_snapshot_id=snapshot.snapshot_id,
         evaluator_version=EVALUATOR_VERSION,
         summaries=[summary.payload() for summary in summaries],
-        units=[asdict(unit) for unit in units])
+        units=[asdict(unit) for unit in units],
+        diagnostics=[row.row() for row in diagnostics])
     return ReadinessGeneration(snapshot.facts.scope.board_id, snapshot.facts.scope.spec_id,
         snapshot.facts.scope.edition, snapshot.spec_version, captured_revision,
-        snapshot.snapshot_id, snapshot.evaluated_at, EVALUATOR_VERSION, summaries, units, digest)
+        snapshot.snapshot_id, snapshot.evaluated_at, EVALUATOR_VERSION,
+        summaries, units, diagnostics, digest)

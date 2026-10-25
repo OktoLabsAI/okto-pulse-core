@@ -121,6 +121,47 @@ class DeliveryReadinessService:
         return {**board.model_dump(mode='json', exclude_none=False),
             'projection': projection}
 
+    async def read_persisted_detail(self, query: ReadinessReadQuery, *, actor: ReadinessActor) -> dict:
+        """Page one persisted diagnostic scope under current read authority."""
+        from .persisted_delivery_readiness import EVALUATOR_VERSION, restore_projected_diagnostics
+
+        load = getattr(self.reader, 'load_persisted', None)
+        if load is None:
+            raise ReadinessReadError('readiness_assessment_unavailable',
+                native_code='readiness_projection_adapter_unavailable')
+        value, edition, _, _, access = await load(board_id=query.board_id,
+            spec_id=query.spec_id, card_id=query.card_id, actor=actor,
+            cursor=query.cursor, include_diagnostics=True)
+        if (value is None or value.generation_id is None or len(value.summaries) != 1
+                or value.diagnostics is None):
+            raise ReadinessReadError('readiness_assessment_unavailable',
+                native_code='readiness_projection_pending')
+        try:
+            context = DeliveryReadinessContext.model_validate(value.summaries[0]['context'])
+            diagnostics = restore_projected_diagnostics(value.diagnostics)
+        except (KeyError, TypeError, ValidationError) as exc:
+            raise ReadinessReadError('readiness_assessment_unavailable',
+                native_code='readiness_projection_incomplete') from exc
+        scope = context.scope
+        if ((scope.board_id, scope.spec_id, scope.spec_edition, scope.card_id,
+                context.snapshot_id) != (query.board_id, query.spec_id, edition,
+                query.card_id, value.source_snapshot_id)):
+            raise ReadinessReadError('readiness_assessment_unavailable',
+                native_code='readiness_projection_incomplete')
+        if query.snapshot_id is not None and query.snapshot_id != context.snapshot_id:
+            raise ReadinessReadError('readiness_cursor_stale', native_code='snapshot_conflict')
+        authorized = restrict_projected_delivery_diagnostics(diagnostics, access=access)
+        result = PreparedDeliveryReadiness(context, authorized, cursor=self.cursor,
+            generation_id=value.generation_id).page(query, actor_id=actor.actor_id)
+        return {**result.model_dump(mode='json', exclude_none=False),
+            'projection': {'projection_version': 1, 'generation_id': value.generation_id,
+                'snapshot_id': value.source_snapshot_id,
+                'source_revision': value.captured_revision,
+                'target_revision': value.source_revision,
+                'evaluated_at': value.evaluated_at.isoformat() if value.evaluated_at else None,
+                'evaluator_version': EVALUATOR_VERSION, 'freshness': value.freshness,
+                'error_code': value.error_code}}
+
     async def read(self, query: ReadinessReadQuery, *, actor: ReadinessActor):
         batch = await self.reader.load(board_id=query.board_id, spec_id=query.spec_id,
             card_id=query.card_id, actor=actor)
@@ -302,8 +343,6 @@ def compose_authorized_delivery_diagnostics(assessment, batch, *, actor_id, spec
             raise ReadinessReadError('readiness_scope_mismatch')
     can_cards = access.allows('card.entity.read')
     can_owners = can_cards and access.allows('agent.entity.read')
-    can_targets = access.allows('code_traceability.target.read')
-    can_receipts = access.allows('code_traceability.investigation.read')
     can_tests = access.allows('spec.tests.read')
     native = batch.native_lifecycle
     if native is not None and native.card_id != assessment.card_id:
@@ -313,6 +352,28 @@ def compose_authorized_delivery_diagnostics(assessment, batch, *, actor_id, spec
         owners=tuple(DiagnosticOwner('card', c.id, c.assignee_id if can_owners else None, can_owners) for c in batch.cards),
         card_versions={c.id: c.version for c in batch.cards}, procedures=batch.scenarios if can_tests else (),
         native_lifecycle=native, snapshot_index=snapshot_index)
+    return restrict_projected_delivery_diagnostics(projection, access=access)
+
+
+def restrict_projected_delivery_diagnostics(projection: NativeDeliveryDiagnostics, *, access):
+    """Apply current read authority to an immutable native diagnostic graph.
+
+    A persisted generation is calculated with complete projection authority.
+    This step runs after the caller has reauthorized the present actor; it does
+    not inspect source facts or grant a later mutation.
+    """
+    scope = projection.scope
+    if access is None or access.board_id != scope.board_id:
+        raise ReadinessReadError('readiness_scope_mismatch')
+    access.require('code_traceability.evidence.read')
+    access.require('spec.entity.read')
+    if projection.card_id is not None:
+        access.require('card.entity.read')
+    can_cards = access.allows('card.entity.read')
+    can_owners = can_cards and access.allows('agent.entity.read')
+    can_targets = access.allows('code_traceability.target.read')
+    can_receipts = access.allows('code_traceability.investigation.read')
+    can_tests = access.allows('spec.tests.read')
     causes = {c.id: c for c in projection.graph.causes}
     restricted, details = set(), []
     for detail in projection.details:
@@ -331,9 +392,13 @@ def compose_authorized_delivery_diagnostics(assessment, batch, *, actor_id, spec
                 implementation_card_ids=detail.implementation_card_ids if can_cards else (),
                 test_card_ids=detail.test_card_ids if can_cards else (), owner=None,
                 owner_state='restricted', detail_state='restricted')
+        elif not can_owners and detail.owner is not None:
+            detail = replace(detail, owner=None, owner_state='restricted')
         details.append(detail)
     actions = []
     for action in projection.graph.actions:
+        if action.permission and not access.allows(action.permission):
+            action = replace(action, state=ActionState.FORBIDDEN)
         # Native scenario execution/admission requires writable Spec membership;
         # associating an existing result uses its separate delivery-record path.
         # Do not make the latter inherit a gate that its native API does not have.
@@ -379,8 +444,9 @@ class PreparedDeliveryReadiness:
     an actor's permitted details or action availability change on the same facts.
     """
     def __init__(self, context: DeliveryReadinessContext, diagnostics: NativeDeliveryDiagnostics,
-                 *, cursor: DeliveryReadinessCursorPort):
+                 *, cursor: DeliveryReadinessCursorPort, generation_id: str | None = None):
         self.context, self.diagnostics, self.cursor = context, diagnostics, cursor
+        self.generation_id = generation_id
         scope = context.scope
         if (diagnostics.scope != DeliveryScope(scope.board_id, scope.spec_id, scope.spec_edition)
             or diagnostics.card_id != scope.card_id):
@@ -402,7 +468,8 @@ class PreparedDeliveryReadiness:
             raise DiagnosticIntegrityError('readiness_projection_incomplete')
         # Evaluated time is informational and must not invalidate every cursor.
         self.projection_id = delivery_digest({'context': context.model_dump(mode='json', exclude={'evaluated_at'}),
-            'graph': asdict(graph), 'details': [_detail_identity(self.details[key]) for key in sorted(self.details)]})
+            'graph': asdict(graph), 'details': [_detail_identity(self.details[key]) for key in sorted(self.details)],
+            'generation_id': generation_id})
         self._entries = {}
 
     def _binding(self, query, actor_id):
@@ -413,7 +480,8 @@ class PreparedDeliveryReadiness:
             raise ReadinessReadError('readiness_cursor_stale')
         return ReadinessCursorBinding(actor_id=actor_id, board_id=scope.board_id, spec_id=scope.spec_id,
             card_id=scope.card_id, spec_edition=scope.spec_edition, snapshot_id=self.context.snapshot_id,
-            projection_id=self.projection_id, phase=query.phase, issue_id=query.issue_id, limit=query.limit)
+            projection_id=self.projection_id, phase=query.phase, issue_id=query.issue_id,
+            limit=query.limit, generation_id=self.generation_id)
 
     def _page(self, binding, *, total, offset, returned, truncated=False):
         more = offset + returned < total
