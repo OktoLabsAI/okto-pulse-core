@@ -60,7 +60,7 @@ content-type = "text/markdown"
 
 [tool.uv.sources]
 # Paired local development only; published wheel dependencies remain versioned.
-okto-pulse = { path = "../okto_labs_pulse_community", editable = true }
+okto-pulse = { path = "../okto-pulse", editable = true }
 
 [build-system]
 requires = ["hatchling"]
