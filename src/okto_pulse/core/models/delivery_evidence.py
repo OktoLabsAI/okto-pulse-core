@@ -58,6 +58,13 @@ class DeliveryEvidenceQuery(BaseModel):
     spec_id: Identity
 
 
+class ReadinessRequeueCommand(DeliveryEvidenceQuery):
+    edition: int = Field(ge=1)
+    expected_target_revision: int = Field(ge=0)
+    idempotency_key: str = Field(min_length=1, max_length=128, pattern=r"\S")
+    reason: str = Field(min_length=1, max_length=500, pattern=r"\S")
+
+
 class PersistedReadinessQuery(DeliveryEvidenceQuery):
     card_id: Identity | None = None
     unit_limit: int = Field(default=0, ge=0, le=250)

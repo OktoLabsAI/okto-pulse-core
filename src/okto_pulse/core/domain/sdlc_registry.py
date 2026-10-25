@@ -654,13 +654,13 @@ def transition_permission_flags(entity_type: str | None = None) -> tuple[str, ..
         if entity_type is not None
         else tuple(SDLC_REGISTRY.values())
     )
-    return tuple(
+    return tuple(dict.fromkeys(
         f"{definition.entity_type}.move.{current_status}_to_{edge.to_status}"
         for definition in definitions
         for current_status, edges in definition.transitions.items()
         for edge in edges
         if edge.visibility == "public"
-    )
+    ))
 
 
 def transition_permission_registry(entity_type: str) -> dict[str, bool]:

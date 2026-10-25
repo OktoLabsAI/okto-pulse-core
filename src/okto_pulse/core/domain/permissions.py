@@ -1171,6 +1171,14 @@ CARD_STATUS_UNIFICATION_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManif
 )
 
 
+READINESS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
+    version="READINESS-OPERATIONS/v1",
+    leaves=("readiness.requeue",),
+    preset_grants=_explicit_preset_grants(("readiness.requeue",), {}),
+    historical_authorities=(("readiness.requeue", "board.admin.edit"),),
+)
+
+
 # Ordered oldest-to-newest.  Upgrade and normalization logic depends on this
 # order so that each introduction generation is classified independently.
 PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = (
@@ -1185,6 +1193,7 @@ PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = 
     SKM_PERMISSION_INTRODUCTION_V1,
     TASK_REJECTED_PERMISSION_INTRODUCTION_V1,
     CARD_STATUS_UNIFICATION_PERMISSION_INTRODUCTION_V1,
+    READINESS_PERMISSION_INTRODUCTION_V1,
 )
 
 # Preserve the original generations for documents that still carry retired data.
@@ -1223,6 +1232,7 @@ PERMISSION_INTRODUCTION_MANIFESTS = tuple(
     SKM_PERMISSION_INTRODUCTION_V1,
     TASK_REJECTED_PERMISSION_INTRODUCTION_V1,
     CARD_STATUS_UNIFICATION_PERMISSION_INTRODUCTION_V1,
+    READINESS_PERMISSION_INTRODUCTION_V1,
 ) = PERMISSION_INTRODUCTION_MANIFESTS
 
 
@@ -1447,6 +1457,7 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "edit": True,
         },
     },
+    "readiness": {"requeue": True},
     "amendment": {
         "revision": {
             "read": True,
@@ -3517,6 +3528,7 @@ __all__ = [
     "McpPermissionRegistryReport",
     "McpToolPermissionPolicy",
     "OPERATIONAL_PERMISSION_INTRODUCTION_V1",
+    "READINESS_PERMISSION_INTRODUCTION_V1",
     "PERMISSION_REGISTRY",
     "PermissionContext",
     "PermissionContractViolation",

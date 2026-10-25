@@ -133,3 +133,44 @@ class PersistedReadinessNativeScenarios(unittest.TestCase):
             f"{tests / 'test_readiness_gc.py'}::"
             "test_gc_keeps_active_and_three_recent_generations_in_bounded_batches",
         )
+
+    def test_sc13_crash_replay_and_staging_visibility(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        suite = Path(community) / "tests" / "test_readiness_projection_worker.py"
+        _run(
+            f"{suite}::test_crash_replay_keeps_source_and_hides_unpublished_staging",
+            f"{suite}::test_worker_publishes_one_complete_generation_after_source_commit",
+        )
+
+    def test_sc14_retry_fairness_and_governed_requeue(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_claim_round_robin_survives_restart_and_failing_scope",
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_eight_failures_terminal_then_fenced_admin_requeue",
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_reconcile_cursor_resumes_bounded_pages_after_restart",
+            f"{tests / 'test_readiness_projection_access.py'}::"
+            "test_projection_pages_are_actor_bound_and_reauthorized",
+            str(tests / "test_readiness_requeue_route.py"),
+        )
+
+    def test_sc15_storage_failure_and_reconciliation(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_stage_storage_failure_keeps_previous_generation_until_repair",
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_reconcile_audits_each_active_generation_in_a_page",
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_sustained_queue_lag_is_warned_without_exposing_payload",
+        )

@@ -88,11 +88,14 @@ class RequeuePersistedReadinessUseCase:
     async def execute(self, command, *, actor, uow: PulseUnitOfWork):
         from okto_pulse.core.ports.delivery_readiness import ReadinessActor
 
-        await require_authorization(actor, PermissionRequirement('board.admin.edit'),
+        await require_authorization(actor, PermissionRequirement('readiness.requeue'),
             uow=uow, board_id=command.board_id)
         return await uow.services.delivery_readiness.requeue_terminal(
             board_id=command.board_id, spec_id=command.spec_id,
-            actor=ReadinessActor(actor.actor_id, actor.actor_kind, actor.realm_id, actor.board_id))
+            actor=ReadinessActor(actor.actor_id, actor.actor_kind, actor.realm_id, actor.board_id),
+            edition=command.edition,
+            expected_revision=command.expected_target_revision,
+            idempotency_key=command.idempotency_key, reason=command.reason)
 
 
 class RecordDeliveryEvidenceUseCase:

@@ -39,12 +39,17 @@ class DeliveryReadinessService:
         self.reader, self.cursor = reader, cursor
 
     async def requeue_terminal(self, *, board_id: str, spec_id: str,
-                               actor: ReadinessActor) -> dict:
+                               actor: ReadinessActor, edition: int,
+                               expected_revision: int,
+                               idempotency_key: str, reason: str) -> dict:
         action = getattr(self.reader, "requeue_terminal", None)
         if action is None:
             raise ReadinessReadError('readiness_assessment_unavailable',
                 native_code='readiness_projection_adapter_unavailable')
-        return await action(board_id=board_id, spec_id=spec_id, actor=actor)
+        return await action(board_id=board_id, spec_id=spec_id, actor=actor,
+            edition=edition,
+            expected_revision=expected_revision, idempotency_key=idempotency_key,
+            reason=reason)
 
     async def read_persisted(self, *, board_id: str, spec_id: str, actor: ReadinessActor,
                              card_id: str | None = None, unit_limit: int = 0,

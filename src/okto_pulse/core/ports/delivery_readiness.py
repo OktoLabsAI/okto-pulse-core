@@ -35,7 +35,7 @@ READINESS_PERMISSION_OPERATIONS = frozenset({
     'code_traceability.evidence.read', 'code_traceability.target.read',
     'code_traceability.investigation.read', 'spec.entity.read', 'spec.tests.read',
     'card.entity.read', 'agent.entity.read', 'guidelines.assessments.read',
-    'board.admin.edit',
+    'readiness.requeue',
     *(a.permission for a in ACTION_REGISTRY.values() if a.permission),
 })
 
