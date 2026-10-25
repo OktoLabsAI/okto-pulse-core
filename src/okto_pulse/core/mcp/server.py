@@ -3293,7 +3293,7 @@ async def okto_pulse_create_card(
     spec_id: str,
     description: str = "",
     details: str = "",
-    status: Literal["not_started", "started"] = "not_started",
+    status: str = "not_started",
     priority: str = "none",
     assignee_id: str = "",
     labels: list[str] | None = None,
@@ -3329,12 +3329,12 @@ async def okto_pulse_create_card(
     )
     from okto_pulse.core.models.schemas import CardCreate
 
-    if status not in (CardStatus.NOT_STARTED.value, CardStatus.STARTED.value):
+    if status != CardStatus.NOT_STARTED.value:
         return json.dumps(
             {
                 "error": "card_initial_status_invalid",
-                "detail": "A card can only be created in not_started or started.",
-                "allowed_statuses": ["not_started", "started"],
+                "detail": "A card can only be created in not_started.",
+                "allowed_statuses": ["not_started"],
             }
         )
     card_status = CardStatus(status)
@@ -4627,7 +4627,6 @@ async def okto_pulse_move_card(
     status: Annotated[
         Literal[
             "not_started",
-            "started",
             "in_progress",
             "validation",
             "on_hold",
@@ -4675,7 +4674,7 @@ async def okto_pulse_move_card(
     (0-100), completeness_justification, drift (0-100), and
     drift_justification so the reviewer can validate the claim. Use -1 for
     completeness/drift when no execution report is required (e.g. moving to
-    on_hold or started). status='cancelled' requires cancellation_reason;
+    on_hold or returning to not_started). status='cancelled' requires cancellation_reason;
     reopening clears it. status='rejected' is valid only to reorder a card
     already in Rejected; every inbound transition to Rejected is refused.
     Errors: resource_gate_missing_resources;
@@ -4695,7 +4694,6 @@ async def okto_pulse_move_card(
 
     public_targets = (
         "not_started",
-        "started",
         "in_progress",
         "validation",
         "on_hold",
@@ -5423,13 +5421,15 @@ async def okto_pulse_list_cards_by_status(
 ) -> str:
     """List cards on the board with optional filters and pagination.
 
-    status: empty = all, or one of not_started/started/in_progress/validation/rejected/on_hold/done/cancelled/open.
+    status: empty = all, or one of not_started/in_progress/validation/rejected/on_hold/done/cancelled/open.
     Use 'open' for all cards NOT in done/cancelled. Archived cards are excluded
     unless include_archived=true. Max limit is 200.
     """
     from okto_pulse.core.domain.enums import CardPriority, CardStatus
 
-    allowed_statuses = {"", "open", *(item.value for item in CardStatus)}
+    allowed_statuses = {
+        "", "open", *(item.value for item in CardStatus if item is not CardStatus.STARTED)
+    }
     if status not in allowed_statuses:
         return _structured_error(
             "invalid_filter",
@@ -13861,7 +13861,7 @@ async def okto_pulse_list_blockers(
     classification. Each entry carries a `type` the agent can act on directly:
     dependency_blocked (active card with a not-DONE depends_on target),
     spec_dependency_blocked (Spec with prerequisite Specs not yet Done),
-    on_hold (explicitly paused card), stale (started/in_progress/validation
+    on_hold (explicitly paused card), stale (in_progress/validation
     card untouched beyond stale_hours), spec_pending_validation (approved spec
     with no 'approve' evaluation), spec_no_cards (validated/in_progress spec
     with zero linked cards), uncovered_scenario (test scenario with no linked

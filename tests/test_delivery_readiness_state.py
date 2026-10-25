@@ -97,11 +97,12 @@ def test_unknown_has_priority_over_advisory_and_failure_has_priority_over_implem
         lifecycle_check='allowed').state == 'verification_failed'
 
 
-def test_normal_card_can_finish_implementation_while_technical_delivery_is_pending():
+def test_historical_done_card_retains_status_while_current_verification_blocks_new_completion():
     value = with_facts(snapshot(), tests=())
     assessment = assess_obligation_delivery(value, card_id='ui', card_type='normal')
     gate = assess_delivery_gate(assessment)
-    assert gate.allowed
+    assert gate.status == 'blocked'
+    assert {blocker.phase for blocker in gate.blockers} == {'verification'}
     result = qualify_delivery(assessment, gate=gate, stored_status='done', lifecycle_check='allowed')
     assert result.state == 'verification_pending' and result.proof_complete is False
     assert result.qualification_is_current is False and result.historical_divergence

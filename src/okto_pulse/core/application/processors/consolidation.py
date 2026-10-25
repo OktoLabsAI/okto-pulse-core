@@ -1714,6 +1714,14 @@ async def _commit_consolidation_with_board_graph_lifecycle(
                 failure_timestamp=now,
             )
             raise
+        if isinstance(commit_resp, DeferredProjectionProgress) and commit_resp.graph_unchanged:
+            # The primitive rolled back a read-only removal scope. There is no
+            # native commit to make durable or acknowledge, and no prepared
+            # operation may have been persisted for this path.
+            if graph_after is not None or journaled_prepared or journaled_receipts:
+                raise RuntimeError("projection_noop_operation_prepared")
+            write_lease.complete_without_graph_change()
+            return commit_resp
         # The primitive may auto-commit before returning.  Prove durability
         # under this same live lease before the caller can acknowledge it.
         await _ensure_board_graph_durable(
@@ -5600,6 +5608,18 @@ class ConsolidationProcessor:
                             retry_after_s = graph_memory_pressure_retry_after_seconds(
                                 exc
                             )
+                            pre_acquire_contention = bool(
+                                isinstance(exc, GuardedWriteError)
+                                and exc.code == "lock_contention"
+                                and exc.retryable
+                                and not graph_write_entered
+                                and graph_write_lease is None
+                                and not relational_commit_confirmed
+                                and (
+                                    not deferred_session_ids
+                                    or precommit_compensation_confirmed
+                                )
+                            )
                             if exact_protocol:
                                 assert claim_scope is not None
                                 error_code = (
@@ -5615,18 +5635,6 @@ class ConsolidationProcessor:
                                     else type(exc).__name__
                                 )
                                 error_message = str(exc)[:480] or error_code
-                                pre_acquire_contention = bool(
-                                    isinstance(exc, GuardedWriteError)
-                                    and exc.code == "lock_contention"
-                                    and exc.retryable
-                                    and not graph_write_entered
-                                    and graph_write_lease is None
-                                    and not relational_commit_confirmed
-                                    and (
-                                        not deferred_session_ids
-                                        or precommit_compensation_confirmed
-                                    )
-                                )
                                 if pre_acquire_contention:
                                     disposition = (
                                         ExactConsolidationDisposition.RETRY_SCHEDULED
@@ -5696,6 +5704,12 @@ class ConsolidationProcessor:
                                             _exact_authority_valid
                                         ),
                                     )
+                                )
+                            elif pre_acquire_contention:
+                                await self._defer_guarded_write_contention(
+                                    db,
+                                    fresh,
+                                    error_text=error_text,
                                 )
                             elif (
                                 isinstance(exc, KGPrimitiveError)
@@ -5918,6 +5932,42 @@ class ConsolidationProcessor:
                 "artifact_id": entry.artifact_id,
                 "attempts": int(entry.attempts or 0),
                 "retry_after_s": retry_after_s,
+            },
+        )
+
+    async def _defer_guarded_write_contention(
+        self,
+        db: Any,
+        entry: ConsolidationQueueRecord,
+        *,
+        error_text: str,
+    ) -> None:
+        """Yield a pre-acquire writer conflict without spending retry budget."""
+
+        entry.last_error = error_text
+        entry.status = "pending"
+        entry.next_retry_at = self._now() + timedelta(seconds=1)
+        entry.claim_timeout_at = None
+        entry.worker_id = None
+        entry.claimed_at = None
+        entry.claimed_by_session_id = None
+        entry.claim_token = None
+        await get_consolidation_persistence_port().save_queue_entries(
+            db,
+            (entry,),
+        )
+        logger.info(
+            "consolidation.writer_contention_deferred "
+            "artifact=%s:%s attempts=%d",
+            entry.artifact_type,
+            entry.artifact_id,
+            int(entry.attempts or 0),
+            extra={
+                "event": "consolidation.writer_contention_deferred",
+                "board_id": entry.board_id,
+                "artifact_type": entry.artifact_type,
+                "artifact_id": entry.artifact_id,
+                "attempts": int(entry.attempts or 0),
             },
         )
 

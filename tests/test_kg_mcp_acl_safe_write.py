@@ -10,14 +10,17 @@ from types import SimpleNamespace
 
 import pytest
 
+from okto_pulse.core.application.processors import consolidation
 from okto_pulse.core.domain.permissions import PermissionSet
 from okto_pulse.core.kg.guarded_write import (
     GuardedWriteError,
     guarded_board_write,
+    revalidate_active_board_write_lease,
 )
 from okto_pulse.core.kg.interfaces.graph_lifecycle import (
     GraphLifecycleStepResult,
 )
+from okto_pulse.core.kg.projection_removals import DeferredProjectionProgress
 from okto_pulse.core.kg.safe_write_lifecycle import (
     KGSafeWriteLifecycle,
     LockOwnerProbe,
@@ -124,6 +127,75 @@ def test_guarded_write_requires_durability_on_normal_exit() -> None:
 
     assert caught.value.code == "durability_not_applied"
     assert events == ["lock_acquire", "mutation", "lock_release"]
+
+
+def test_guarded_write_accepts_rolled_back_noop_and_blocks_later_mutation() -> None:
+    events: list[str] = []
+    writer_lock = _WriterLock(events)
+
+    with guarded_board_write(
+        "board-guarded",
+        operation="test_noop",
+        owner_id="agent-1",
+        mutation_ref="mutation-noop",
+        writer_lock=writer_lock,
+        lifecycle=_lifecycle(writer_lock, events),
+    ) as lease:
+        lease.complete_without_graph_change()
+        with pytest.raises(GuardedWriteError) as caught:
+            revalidate_active_board_write_lease("board-guarded")
+        assert caught.value.code == "graph_write_after_noop_completion"
+
+    assert events == ["lock_acquire", "lock_release"]
+
+
+@pytest.mark.asyncio
+async def test_empty_projection_exits_real_writer_guard_without_durability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    writer_lock = _WriterLock(events)
+
+    def _guard(*args, **kwargs):
+        return guarded_board_write(
+            *args, **kwargs, writer_lock=writer_lock,
+            lifecycle=_lifecycle(writer_lock, events),
+        )
+
+    async def _commit(*_args, **_kwargs):
+        return DeferredProjectionProgress("session-noop", graph_unchanged=True)
+
+    async def _unexpected_durability(**_kwargs):
+        raise AssertionError("empty projection must not flush the graph")
+
+    monkeypatch.setattr(consolidation, "guarded_board_write", _guard)
+    monkeypatch.setattr(consolidation, "commit_consolidation", _commit)
+    monkeypatch.setattr(
+        consolidation, "_ensure_entry_admitted_by_reservation_under_writer",
+        lambda _entry: None,
+    )
+    monkeypatch.setattr(
+        consolidation, "_ensure_board_graph_durable", _unexpected_durability,
+    )
+    entry = SimpleNamespace(
+        id="entry-noop", board_id="board-guarded", artifact_type="card",
+        artifact_id="card-noop", source="state_transition", claim_token="claim-noop",
+    )
+
+    result = await consolidation._commit_consolidation_with_board_graph_lifecycle(
+        entry=entry,
+        session_id="session-noop",
+        summary_text="No changes to remove",
+        db=object(),
+        defer_session_finalization=True,
+        allow_known_removals=True,
+        journaled_prepared=[],
+        journaled_receipts=[],
+    )
+
+    assert isinstance(result, DeferredProjectionProgress)
+    assert result.graph_unchanged is True
+    assert events == ["lock_acquire", "lock_release"]
 
 
 def test_guarded_write_strict_mode_has_no_unguarded_sample() -> None:

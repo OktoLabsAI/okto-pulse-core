@@ -193,9 +193,31 @@ class RecordCardDeliveryEvidenceUseCase:
     async def submit_report(self, command, *, actor, uow: PulseUnitOfWork):
         from okto_pulse.core.application.use_cases.learning_capture import authorize_learning_submission
 
-        await authorize_learning_submission(command.report, actor=actor, uow=uow, board_id=command.board_id)
         batch = command.batch_command()
         options = await self.authorize_in_transaction(batch, actor=actor, uow=uow)
+        if command.expected_card_status == "started":
+            # A historical request can only read back its exact prior receipt.
+            # Do not require a retired transition permission or run a report
+            # submission gate: neither action belongs to an idempotent replay.
+            await require_authorization(
+                actor, PermissionRequirement("card.entity.read"),
+                uow=uow, board_id=command.board_id,
+            )
+
+            async def reject_new_report(_selection):
+                raise ValueError("delivery_legacy_started_replay_only")
+
+            try:
+                result = await uow.services.delivery_evidence.record_card_report(
+                    command, actor_id=actor.actor_id, actor_kind=actor.actor_kind,
+                    report_submitter=reject_new_report, **options,
+                )
+                await uow.rollback()
+                return result
+            except BaseException:
+                await uow.rollback()
+                raise
+        await authorize_learning_submission(command.report, actor=actor, uow=uow, board_id=command.board_id)
         await require_authorization(actor, transition_permission_requirement(
             "card", command.expected_card_status, command.report.status
         ), uow=uow, board_id=command.board_id)

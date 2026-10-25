@@ -34,6 +34,30 @@ def current_delivery_report(card: object) -> Mapping | None:
     return reports[-1] if reports else None
 
 
+def superseded_delivery_selection(card: object, scope: CardDeliveryScope) -> bool:
+    """Recognize an intact frozen report from an earlier Spec edition.
+
+    The old selection cannot contribute proof to the current edition. Checking
+    its own digest and identity distinguishes ordinary rework from a malformed
+    current report, which must keep the projection incomplete.
+    """
+    report = current_delivery_report(card)
+    if report is None:
+        return False
+    try:
+        manifest = DeliverySelectionManifest.model_validate(report["delivery_manifest"])
+        return (
+            (manifest.board_id, manifest.card_id, manifest.spec_id)
+            == (scope.board_id, scope.card_id, scope.spec_id)
+            and manifest.spec_edition < scope.spec_edition
+            and manifest.sha256
+            == delivery_digest(manifest.model_dump(mode="json", exclude={"sha256"}))
+            and manifest.impact_sha256 == delivery_digest(report.get("impact_evidence"))
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def report_reuses_impact(report: Mapping) -> bool:
     manifest = report.get("delivery_manifest")
     return isinstance(manifest, Mapping) and DeliverySelectionManifest.model_validate(manifest).impact_basis is not None

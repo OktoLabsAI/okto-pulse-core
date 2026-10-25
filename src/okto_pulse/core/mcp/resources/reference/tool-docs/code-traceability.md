@@ -138,7 +138,7 @@ does not wait for Done; its lifecycle assessment still reports open Cards/gates.
 
 To atomically save the last batch and submit the existing Card execution report,
 use `contract_version: "card-delivery-report/v1"` with `expected_card_status`
-(`started` or `in_progress`), `batch` (the unchanged card-delivery-batch/v1 body),
+(`in_progress`), `batch` (the unchanged card-delivery-batch/v1 body),
 and `report` (the existing Card move fields for `validation` or `done`, including
 conclusion/completeness/drift and their justifications). Do not put a
 `delivery_selection` inside `report`: the server selects every new batch record

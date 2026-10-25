@@ -49,7 +49,8 @@ class _TransitionServices:
     def __init__(self) -> None:
         self.calls: Counter[str] = Counter()
         self.card = SimpleNamespace(
-            id="card-1", board_id=BOARD_ID, status=CardStatus.NOT_STARTED
+            id="card-1", board_id=BOARD_ID, status=CardStatus.NOT_STARTED,
+            card_type="normal",
         )
         self.story = SimpleNamespace(
             id="story-1",
@@ -154,24 +155,24 @@ def _actor(permissions: Any = ("*",)) -> ActorContext:
 def _transition_case(name: str) -> tuple[Any, Any, Any, str, str, str, str]:
     data: Any
     if name == "rest_card":
-        data = SimpleNamespace(status=CardStatus.STARTED)
+        data = SimpleNamespace(status=CardStatus.CANCELLED)
         return (
             card_crud,
             card_crud.MoveCardUseCase(),
             card_crud.MoveCardCommand("card-1", data),
             "move_card",
-            "card.move.not_started_to_started",
+            "card.move.not_started_to_cancelled",
             "cards:move",
             "card",
         )
     if name == "mcp_card":
-        data = SimpleNamespace(status=CardStatus.STARTED)
+        data = SimpleNamespace(status=CardStatus.CANCELLED)
         return (
             mcp_card_crud,
             mcp_card_crud.McpMoveCardUseCase(),
             mcp_card_crud.McpMoveCardCommand("card-1", BOARD_ID, data),
             "move_card",
-            "card.move.not_started_to_started",
+            "card.move.not_started_to_cancelled",
             "cards:move",
             "card",
         )
@@ -347,6 +348,31 @@ async def test_card_same_status_reorder_uses_edit_fields_permission(
     assert not hasattr(captured[0], "legacy_operation")
     assert captured[0].entity == "card"
     assert captured[0].state == "not_started"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case_name", ["rest_card", "mcp_card"])
+async def test_direct_start_uses_composed_type_authority_before_writer(
+    monkeypatch: pytest.MonkeyPatch, case_name: str
+) -> None:
+    module, use_case, command, writer, *_rest = _transition_case(case_name)
+    command.data.status = CardStatus.IN_PROGRESS
+    uow = _Uow()
+    uow.services.card.card_type = "normal"
+    captured: list[dict[str, Any]] = []
+
+    async def deny(_actor: Any, **kwargs: Any) -> None:
+        captured.append(kwargs)
+        raise PermissionDeniedError("denied")
+
+    monkeypatch.setattr(module, "require_card_start_authorization", deny)
+    with pytest.raises(PermissionDeniedError, match="denied"):
+        await use_case.execute(command, actor=_actor(), uow=uow)
+
+    assert captured[0]["card_type"] == "normal"
+    assert captured[0]["board_id"] == BOARD_ID
+    assert uow.services.calls[writer] == 0
+    assert uow.commits == 0
 
 
 @pytest.mark.asyncio

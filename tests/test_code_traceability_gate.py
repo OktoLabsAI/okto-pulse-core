@@ -92,6 +92,18 @@ def test_done_card_can_reopen_to_repair_target_coverage() -> None:
     )
 
 
+def test_card_traceability_phase_rejects_started_destination_but_reads_legacy_source() -> None:
+    subject = CodeTraceabilitySubjectType.CARD
+    assert phases_for_transition(subject, "not_started", "in_progress") == (
+        CodeTraceabilityGatePhase.CARD_TARGET,
+    )
+    assert phases_for_transition(subject, "started", "in_progress") == (
+        CodeTraceabilityGatePhase.CARD_TARGET,
+    )
+    with pytest.raises(ValueError, match="card_started_target_removed"):
+        phases_for_transition(subject, "not_started", "started")
+
+
 def test_code_evidence_coverage_skip_resolves_board_then_spec() -> None:
     local_skip = SimpleNamespace(skip_code_evidence_coverage=True)
     no_local_skip = SimpleNamespace(skip_code_evidence_coverage=False)
@@ -1253,7 +1265,7 @@ def test_transition_projection_defaults_to_non_blocking_advisory() -> None:
         context,
         CodeTraceabilitySettings(),
         from_status="not_started",
-        to_status="started",
+        to_status="in_progress",
     )
     assert evaluation.mode == "advisory"
     assert evaluation.allowed is True

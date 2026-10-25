@@ -48,6 +48,7 @@ from okto_pulse.core.domain.enums import (
 from okto_pulse.core.domain.spec_dependency import (
     spec_dependency_blocked_guidance,
     spec_dependency_blocking_facts,
+    transition_rechecks_card_prerequisites,
     transition_starts_card_execution,
     transition_starts_spec_execution,
 )
@@ -319,10 +320,16 @@ def _authority_for(entity_type: str):
 
 def _parse_status(entity_type: str, status: str) -> Enum:
     authority = _authority_for(entity_type)
+    if entity_type == "card" and status == "started":
+        allowed = [item.value for item in authority.status_enum if item.value != "started"]
+        raise CommandValidationError(
+            f"Invalid status for card. Must be one of: {allowed}"
+        )
     try:
         return authority.status_enum(status)
     except ValueError as exc:
-        allowed = [item.value for item in authority.status_enum]
+        allowed = [item.value for item in authority.status_enum
+                   if entity_type != "card" or item.value != "started"]
         raise CommandValidationError(
             f"Invalid status for {entity_type}. Must be one of: {allowed}"
         ) from exc
@@ -1128,6 +1135,16 @@ class ListAllowedTransitionsUseCase:
             if isinstance(raw_type, CardType)
             else CardType(getattr(raw_type, "value", raw_type or "normal"))
         )
+        if (
+            old_status is CardStatus.IN_PROGRESS
+            and target is CardStatus.NOT_STARTED
+            and card_type in {CardType.TEST, CardType.BUG}
+            and not await services.cards.legacy_started_return_eligible(card)
+        ):
+            return (
+                "card_legacy_return_not_eligible: This Test/Bug was not converted "
+                "from Started, or has since entered execution through a governed transition."
+            )
         board = await services.boards.get_board(card.board_id)
         board_settings = (getattr(board, "settings", None) or {}) if board else {}
         if target == CardStatus.DONE:
@@ -1156,7 +1173,7 @@ class ListAllowedTransitionsUseCase:
         dependency_archived_blocking_count = 0
         dependency_unfinished_blocking_count = 0
         dependency_blockers_truncated = False
-        if spec is not None and transition_starts_card_execution(old_status, target):
+        if spec is not None and transition_rechecks_card_prerequisites(old_status, target):
             if dependency_readiness is None:
                 dependency_readiness = await services.spec_dependencies.get_readiness(
                     board_id=card.board_id,
@@ -1309,13 +1326,8 @@ class ListAllowedTransitionsUseCase:
                 return f"{decision.block.code}: {detail}."
             return f"{decision.block.code}: {decision.block.detail}"
 
-        old_level = services.cards._STATUS_ORDER.get(old_status, 0)
-        new_level = services.cards._STATUS_ORDER.get(target, 0)
-        if new_level > old_level and target != CardStatus.CANCELLED:
-            if (
-                card_type == CardType.NORMAL
-                and old_level < services.cards._STATUS_ORDER[CardStatus.IN_PROGRESS]
-            ):
+        if transition_rechecks_card_prerequisites(old_status, target):
+            if card_type == CardType.NORMAL:
                 try:
                     await services.cards.check_card_requirement_link_gate(
                         card, spec, board

@@ -5,6 +5,7 @@ import pytest
 from okto_pulse.core.domain.card_transition import (
     CardTransitionFacts,
     PendingScenario,
+    bug_regression_gate_applies,
     evaluate_card_transition,
 )
 from okto_pulse.core.domain.enums import CardStatus, CardType, SpecStatus
@@ -66,10 +67,34 @@ def test_f05_test_card_can_start_on_validated_spec() -> None:
     assert decision.allowed is True
 
 
+@pytest.mark.parametrize("target", [CardStatus.VALIDATION, CardStatus.DONE])
+def test_migrated_bug_rechecks_regression_before_advancing(target: CardStatus) -> None:
+    facts = _facts(
+        card_type=CardType.BUG,
+        old_status=CardStatus.IN_PROGRESS,
+        new_status=target,
+        has_regression_test_evidence=False,
+    )
+    assert bug_regression_gate_applies(facts)
+    assert evaluate_card_transition(facts).block.code == "missing_regression_test_task"
+
+
+@pytest.mark.parametrize("target", [
+    CardStatus.IN_PROGRESS, CardStatus.ON_HOLD, CardStatus.CANCELLED,
+])
+def test_migrated_bug_can_reorder_pause_or_cancel_without_regression_proof(
+    target: CardStatus,
+) -> None:
+    assert not bug_regression_gate_applies(_facts(
+        card_type=CardType.BUG,
+        old_status=CardStatus.IN_PROGRESS,
+        new_status=target,
+        has_regression_test_evidence=False,
+    ))
+
+
 @pytest.mark.parametrize("old,target", [
-    (CardStatus.NOT_STARTED, CardStatus.STARTED),
-    (CardStatus.STARTED, CardStatus.IN_PROGRESS),
-    (CardStatus.ON_HOLD, CardStatus.STARTED),
+    (CardStatus.NOT_STARTED, CardStatus.IN_PROGRESS),
     (CardStatus.ON_HOLD, CardStatus.IN_PROGRESS),
     (CardStatus.REJECTED, CardStatus.IN_PROGRESS),
     (CardStatus.DONE, CardStatus.IN_PROGRESS),

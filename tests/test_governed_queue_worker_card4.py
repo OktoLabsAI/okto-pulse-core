@@ -2025,6 +2025,42 @@ async def test_exact_pre_acquire_lock_contention_is_retryable_and_unchanged(
 
 
 @pytest.mark.asyncio
+async def test_ordinary_pre_acquire_lock_contention_preserves_retry_budget(
+    monkeypatch,
+) -> None:
+    entry = _entry(entry_id="card4-ordinary-pre-acquire-contention")
+    store = _MemoryConsolidationStore((entry,))
+
+    @contextmanager
+    def _contended(*_args, **_kwargs):
+        raise consolidation.GuardedWriteError(
+            "lock_contention",
+            "another writer currently owns the board graph",
+            retryable=True,
+        )
+        yield  # pragma: no cover
+
+    async def _attempt(_db, _entry, **kwargs):
+        kwargs["enter_graph_write"]("mutation-pre-acquire")
+
+    monkeypatch.setattr(consolidation, "guarded_board_write", _contended)
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _attempt,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        assert await processor.process_batch() == 0
+
+    assert entry.status == "pending"
+    assert entry.attempts == 0
+    assert entry.next_retry_at is not None
+    assert entry.id in store.entries
+
+
+@pytest.mark.asyncio
 async def test_exact_pre_acquire_retry_authority_loss_is_neutral_unchanged(
     monkeypatch,
 ) -> None:

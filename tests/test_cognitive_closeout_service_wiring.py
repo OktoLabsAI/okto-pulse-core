@@ -338,10 +338,9 @@ async def test_submit_task_validation_records_cognitive_rejection() -> None:
     [
         (CardType.NORMAL, "task"),
         (CardType.TEST, "test"),
-        (CardType.BUG, "bug"),
     ],
 )
-async def test_move_card_done_blocks_task_test_and_bug_before_status_mutation(
+async def test_move_card_done_blocks_task_and_test_before_status_mutation(
     card_type: CardType,
     expected_entity_type: str,
 ) -> None:
@@ -382,6 +381,32 @@ async def test_move_card_done_blocks_task_test_and_bug_before_status_mutation(
     assert card.conclusions in (None, [])
     assert gate.calls[0]["entity_type"] == expected_entity_type
     assert gate.calls[0]["target_status"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_bug_without_regression_cannot_reach_cognitive_closeout() -> None:
+    _, _, card_id = await _seed_card(
+        CardType.BUG, CardStatus.VALIDATION,
+        board_settings={"require_task_validation": False, "skip_test_coverage_global": True},
+    )
+    gate = _BlockingGate()
+    async with get_session_factory()() as db:
+        service = CardService(db)
+        service._cognitive_closeout_gate_factory = lambda: gate
+        with pytest.raises(ValueError, match="regression coverage"):
+            await service.move_card(
+                card_id=card_id, user_id=USER_ID,
+                data=CardMove(status=CardStatus.DONE,
+                    conclusion="implemented and validated", completeness=100,
+                    completeness_justification="complete", drift=0,
+                    drift_justification="none"),
+                actor_name=USER_ID,
+            )
+        await db.rollback()
+    card = await _card_row(card_id)
+    assert card.status == CardStatus.VALIDATION
+    assert card.conclusions in (None, [])
+    assert gate.calls == []
 
 
 @pytest.mark.asyncio
@@ -430,7 +455,7 @@ async def test_board_skip_allows_done_but_keeps_pending_item_visible_and_status_
 
     card = await _card_row(card_id)
     assert card.status == CardStatus.DONE
-    delivery.load_card_snapshot.assert_awaited()
+    delivery.load_snapshot.assert_awaited()
 
     store = CognitiveConsolidationItemStore(
         artifact_store=require_rebuild_audit_artifact_store()

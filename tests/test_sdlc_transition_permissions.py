@@ -57,16 +57,30 @@ def _set(document: dict[str, object], path: str, value: bool) -> None:
 def test_registry_move_flags_are_exact_sdlc_projection() -> None:
     expected = set(transition_permission_flags())
     actual = {flag for flag in ALL_FLAGS if ".move." in flag}
+    legacy_card_authority = {
+        "card.move.not_started_to_started",
+        "card.move.started_to_not_started",
+        "card.move.started_to_in_progress",
+        "card.move.started_to_validation",
+        "card.move.started_to_on_hold",
+        "card.move.started_to_cancelled",
+        "card.move.in_progress_to_started",
+        "card.move.on_hold_to_started",
+    }
 
-    assert len(expected) == 83
-    assert actual == expected
+    assert actual == expected | legacy_card_authority
+    assert all(
+        not flag.startswith("card.move.started_to_") and not flag.endswith("_to_started")
+        for flag in expected
+        if flag.startswith("card.move.")
+    )
     introduced_moves = {
         leaf
         for leaf in SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1.leaves
         if ".move." in leaf
     }
     assert len(introduced_moves) == 59
-    assert introduced_moves < expected
+    assert introduced_moves < actual
     assert set(SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1.leaves) - introduced_moves == {
         "ideation.interact_in.review",
         "ideation.interact_in.approved",
@@ -102,7 +116,7 @@ def test_transition_permission_flag_rejects_edges_absent_from_sdlc() -> None:
     ("current", "target"),
     [
         ("not_started", "in_progress"),
-        ("started", "validation"),
+        ("in_progress", "validation"),
     ],
 )
 def test_card_type_restricted_edges_still_have_authorizable_flags(

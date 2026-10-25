@@ -77,6 +77,7 @@ class GuardedWriteLease:
     _writer_lock: KGSingleWriterLock
     _ttl_seconds: int
     _durability_applied: bool = False
+    _graph_unchanged: bool = False
     _state_lock: Lock = field(
         default_factory=Lock,
         repr=False,
@@ -92,6 +93,27 @@ class GuardedWriteLease:
     @property
     def durability_applied(self) -> bool:
         return self._durability_applied
+
+    @property
+    def graph_unchanged(self) -> bool:
+        return self._graph_unchanged
+
+    def complete_without_graph_change(self) -> None:
+        """Close a guarded no-op after its graph scope has rolled back.
+
+        The caller must hold an explicit unchanged result from the graph
+        primitive. This does not attest a write or substitute for durability.
+        """
+
+        self.ensure_owned(failure_phase="before_noop_completion")
+        with self._state_lock:
+            if self._durability_applied:
+                raise GuardedWriteError(
+                    "noop_after_durability",
+                    "a durable graph write cannot be completed as unchanged",
+                    retryable=False,
+                )
+            self._graph_unchanged = True
 
     def _lost_error(self, *, failure_phase: str) -> GuardedWriteError:
         return GuardedWriteError(
@@ -178,6 +200,12 @@ class GuardedWriteLease:
     ) -> None:
         """Apply the required lifecycle or raise a typed fail-closed error."""
 
+        if self._graph_unchanged:
+            raise GuardedWriteError(
+                "durability_after_noop_completion",
+                "an unchanged graph scope cannot enter the write durability lifecycle",
+                retryable=False,
+            )
         self.ensure_owned(failure_phase="before_lifecycle")
         try:
             response = self._lifecycle.apply(
@@ -262,6 +290,13 @@ def revalidate_active_board_write_lease(
                 },
             )
         lease.ensure_owned(failure_phase=failure_phase)
+        if lease.graph_unchanged:
+            raise GuardedWriteError(
+                "graph_write_after_noop_completion",
+                "a graph write followed no-change completion of its writer lease",
+                retryable=False,
+                details={"board_id": board_id, "operation": lease.operation},
+            )
         return lease
 
     if leases:
@@ -517,7 +552,7 @@ def guarded_board_write(
                 yield lease
                 _stop_heartbeat_bounded(failure_phase="guard_exit")
                 lease.ensure_owned(failure_phase="guard_exit")
-                if not lease.durability_applied:
+                if not lease.durability_applied and not lease.graph_unchanged:
                     raise GuardedWriteError(
                         "durability_not_applied",
                         "guarded graph write exited without a successful "

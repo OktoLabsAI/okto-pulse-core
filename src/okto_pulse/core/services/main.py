@@ -105,6 +105,7 @@ from okto_pulse.core.domain.spec_validation import (
     SpecValidationVersionConflict,
 )
 from okto_pulse.core.domain.spec_dependency import (
+    transition_rechecks_card_prerequisites,
     transition_starts_card_execution,
     transition_starts_spec_execution,
 )
@@ -3438,12 +3439,12 @@ class CardService:
         # Every card type must enter through the beginning of the lifecycle.
         # Persisting an advanced state here bypasses move_card's transition,
         # resource, validation, audit, and KG event boundaries.
-        if data.status not in (CardStatus.NOT_STARTED, CardStatus.STARTED):
+        if data.status != CardStatus.NOT_STARTED:
             raise CardOperationError(
                 "card_initial_status_invalid",
                 (
-                    "Cards can only be created with status 'not_started' or "
-                    "'started'. Use move_card to advance the lifecycle."
+                    "Cards can only be created with status 'not_started'. "
+                    "Use move_card to advance the lifecycle."
                 ),
                 remediation=(
                     "Create the card in an initial status, then use move_card "
@@ -3451,10 +3452,7 @@ class CardService:
                 ),
                 facts={
                     "requested_status": data.status.value,
-                    "allowed_statuses": [
-                        CardStatus.NOT_STARTED.value,
-                        CardStatus.STARTED.value,
-                    ],
+                    "allowed_statuses": [CardStatus.NOT_STARTED.value],
                     "card_type": card_type_val,
                 },
             )
@@ -3491,36 +3489,28 @@ class CardService:
                     },
                 )
 
-            # Preserve the established fail-closed ordering for ordinary bug
-            # creation. Direct STARTED creation defers this physical write
-            # until after the precedence gate below, so the dependency graph
-            # fence remains the first mutation on that execution-start edge.
-            if not transition_starts_card_execution(
-                CardStatus.NOT_STARTED,
-                data.status,
-            ):
-                from okto_pulse.core.services.knowledge_propagation import (
-                    KnowledgePropagationServiceError,
-                )
+            from okto_pulse.core.services.knowledge_propagation import (
+                KnowledgePropagationServiceError,
+            )
 
-                expected_spec_id = data.spec_id
-                if not expected_spec_id or not await _application_fence(
-                    self.db,
-                    "card",
-                    origin_task_id,
-                    expected_values={
-                        "board_id": board_id,
-                        "spec_id": expected_spec_id,
+            expected_spec_id = data.spec_id
+            if not expected_spec_id or not await _application_fence(
+                self.db,
+                "card",
+                origin_task_id,
+                expected_values={
+                    "board_id": board_id,
+                    "spec_id": expected_spec_id,
+                },
+            ):
+                raise KnowledgePropagationServiceError(
+                    "knowledge_propagation_parent_changed",
+                    "the bug origin changed after propagation preflight",
+                    details={
+                        "origin_task_id": origin_task_id,
+                        "expected_spec_id": expected_spec_id,
                     },
-                ):
-                    raise KnowledgePropagationServiceError(
-                        "knowledge_propagation_parent_changed",
-                        ("the bug origin changed after propagation preflight"),
-                        details={
-                            "origin_task_id": origin_task_id,
-                            "expected_spec_id": expected_spec_id,
-                        },
-                    )
+                )
 
             # Auto-resolve spec_id from origin task
             data.spec_id = origin_task.spec_id
@@ -3614,68 +3604,6 @@ class CardService:
             self.db, board_id=board_id, card_type=card_type_val,
             spec_ids=(data.spec_id,), operation="create_card",
         )
-
-        # Direct creation in STARTED is the same execution-start edge as
-        # NOT_STARTED -> STARTED in move_card.  Acquire the dependency-graph
-        # fence, lock/revalidate the source Spec lifecycle identity, check the
-        # current readiness projection and mark this edition started before
-        # any card row, audit, propagation or domain event is staged.  The
-        # caller-owned transaction retains both the fence and marker through
-        # the eventual card write/commit; any later failure rolls them back
-        # together.
-        if transition_starts_card_execution(CardStatus.NOT_STARTED, data.status):
-            from okto_pulse.core.ports.relational_application import (
-                require_relational_application_adapter,
-            )
-            from okto_pulse.core.services.spec_dependency import (
-                SpecDependencyService,
-            )
-
-            await SpecDependencyService(
-                require_relational_application_adapter().spec_dependencies(self.db),
-                self.db,
-            ).require_ready_for_execution(
-                board_id=board_id,
-                spec_id=spec.id,
-                mark_started=True,
-                expected_edition=int(getattr(spec, "edition", 1) or 1),
-                expected_status=spec.status,
-                expected_archived=bool(getattr(spec, "archived", False)),
-            )
-
-        # The propagation parent CAS is intentionally after the precedence
-        # gate.  On STARTED creation this keeps the graph/source fence as the
-        # first physical write while preserving the existing fail-closed
-        # parent-change contract in the same transaction.
-        if (
-            card_type_val == "bug"
-            and transition_starts_card_execution(
-                CardStatus.NOT_STARTED,
-                data.status,
-            )
-        ):
-            from okto_pulse.core.services.knowledge_propagation import (
-                KnowledgePropagationServiceError,
-            )
-
-            expected_spec_id = data.spec_id
-            if not expected_spec_id or not await _application_fence(
-                self.db,
-                "card",
-                origin_task_id,
-                expected_values={
-                    "board_id": board_id,
-                    "spec_id": expected_spec_id,
-                },
-            ):
-                raise KnowledgePropagationServiceError(
-                    "knowledge_propagation_parent_changed",
-                    ("the bug origin changed after propagation preflight"),
-                    details={
-                        "origin_task_id": origin_task_id,
-                        "expected_spec_id": expected_spec_id,
-                    },
-                )
 
         await _authorize_critical_context_or_raise(
             self.db,
@@ -4318,8 +4246,7 @@ class CardService:
         self, card: ApplicationRecord, target: CardStatus,
     ) -> None:
         """Read the native forward-transition prerequisite without mutating."""
-        if (self._STATUS_ORDER.get(target, 0) <= self._STATUS_ORDER.get(card.status, 0)
-                or target == CardStatus.CANCELLED):
+        if not transition_rechecks_card_prerequisites(card.status, target):
             return
         deps_met, blocking = await self.check_dependencies_met(card.id)
         if not deps_met:
@@ -4744,6 +4671,45 @@ class CardService:
                         reason_codes=(maturity.code,),
                     )
                 )
+            if getattr(card, "card_type", CardType.NORMAL) == CardType.NORMAL:
+                try:
+                    await self.check_card_requirement_link_gate(card, spec, board)
+                except CardOperationError as exc:
+                    failures.append(CompletionGateFailure(
+                        code=exc.code,
+                        summary=str(exc),
+                        reason_codes=(exc.code,),
+                    ))
+
+            # A migrated Started card did not pass today's entry gate. Hold the
+            # dependency graph fence through validation's Done write, so an
+            # upstream edit cannot invalidate the facts after this check.
+            from okto_pulse.core.domain.spec_dependency import SpecDependencyOperationError
+            from okto_pulse.core.ports.relational_application import (
+                require_relational_application_adapter,
+            )
+            from okto_pulse.core.services.spec_dependency import SpecDependencyService
+
+            try:
+                await SpecDependencyService(
+                    require_relational_application_adapter().spec_dependencies(self.db),
+                    self.db,
+                ).require_ready_for_execution(
+                    board_id=card.board_id,
+                    spec_id=card.spec_id,
+                    mark_started=False,
+                    expected_edition=int(getattr(spec, "edition", 1) or 1),
+                    expected_status=spec.status,
+                    expected_archived=bool(getattr(spec, "archived", False)),
+                )
+            except SpecDependencyOperationError as exc:
+                if exc.code != "spec_dependencies_incomplete":
+                    raise
+                failures.append(CompletionGateFailure(
+                    code=exc.code,
+                    summary=str(exc),
+                    reason_codes=(exc.code,),
+                ))
 
         dependencies_met, blocking_dependencies = await self.check_dependencies_met(
             card.id
@@ -6392,6 +6358,16 @@ class CardService:
                     spec_id=card.spec_id,
                 )
 
+    async def legacy_started_return_eligible(self, card: ApplicationRecord) -> bool:
+        """Whether a migrated card still retains its former Started exit."""
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return await require_relational_application_adapter().card_status_migration(
+            self.db
+        ).return_to_planning_eligible(board_id=card.board_id, card_id=card.id)
+
     async def move_card(
         self, card_id: str, user_id: str, data: CardMove, actor_name: str | None = None
     ) -> ApplicationRecord | None:
@@ -6408,6 +6384,15 @@ class CardService:
             # boundary 422s first; this is service-level defense in depth.
             raise ValueError(
                 "position_out_of_range: position must be None, -1 (end of column) or >= 0"
+            )
+        # CardMove rejects Started at the public schema. Keep the same invariant
+        # at the service boundary for internal callers that bypass validation.
+        if data.status == CardStatus.STARTED:
+            raise CardOperationError(
+                "card_move_target_status_invalid",
+                "Started is a historical status and cannot be a move destination.",
+                remediation="choose_allowed_card_transition",
+                facts={"requested_status": CardStatus.STARTED.value},
             )
         card = await self.get_card(card_id)
         if not card:
@@ -6473,6 +6458,19 @@ class CardService:
 
         old_status = card.status
         card_type_value = getattr(card.card_type, "value", card.card_type or "normal")
+        if (
+            old_status is CardStatus.IN_PROGRESS
+            and data.status is CardStatus.NOT_STARTED
+            and str(card_type_value) in {"test", "bug"}
+            and not await self.legacy_started_return_eligible(card)
+        ):
+            raise CardOperationError(
+                "card_legacy_return_not_eligible",
+                "Only a Test/Bug converted from Started may use its former return "
+                "to Not Started before a new governed execution entry.",
+                remediation="choose_allowed_card_transition",
+                facts={"card_id": card.id, "card_type": str(card_type_value)},
+            )
         if old_status != data.status and not is_transition_allowed(
             "card",
             old_status.value,
@@ -6491,13 +6489,7 @@ class CardService:
                     f"Cannot move {card_type_value} card from '{old_status.value}' "
                     f"to '{data.status.value}'. Allowed: {allowed_values}."
                 ),
-                remediation=(
-                    "move_card_to_started_first"
-                    if old_status == CardStatus.NOT_STARTED
-                    and data.status == CardStatus.IN_PROGRESS
-                    and card_type_value == CardType.NORMAL.value
-                    else "choose_allowed_card_transition"
-                ),
+                remediation="choose_allowed_card_transition",
                 facts={
                     "card_id": card.id,
                     "card_type": str(card_type_value),
@@ -6545,7 +6537,7 @@ class CardService:
         precedence_expected_edition: int | None = None
         precedence_expected_status: SpecStatus | None = None
         precedence_expected_archived: bool | None = None
-        if transition_starts_card_execution(old_status, data.status) and card.spec_id:
+        if transition_rechecks_card_prerequisites(old_status, data.status) and card.spec_id:
             spec_for_precedence = await _application_get(self.db, "spec", card.spec_id)
             if spec_for_precedence is not None:
                 completed_spec_block = completed_spec_execution_block(CardTransitionFacts(
@@ -6570,7 +6562,7 @@ class CardService:
                 precedence_expected_archived = bool(
                     getattr(spec_for_precedence, "archived", False)
                 )
-        if new_level > old_level and card.spec_id:
+        if transition_rechecks_card_prerequisites(old_status, data.status) and card.spec_id:
             spec_for_status = await _application_get(self.db, "spec", card.spec_id)
             if spec_for_status:
                 card_type = getattr(card, "card_type", CardType.NORMAL)
@@ -6591,17 +6583,10 @@ class CardService:
         # Task requirement link gate: normal task cards must be traceable to at
         # least one FR/TR/BR/IR/OR before execution starts. Human-only skips are
         # stored on the board/card and are intentionally not exposed via MCP.
-        execution_start_level = self._STATUS_ORDER.get(CardStatus.IN_PROGRESS, 2)
         is_normal_task = getattr(card, "card_type", CardType.NORMAL) == CardType.NORMAL
-        starts_execution = (
-            old_status == CardStatus.NOT_STARTED
-            and data.status in (CardStatus.STARTED, CardStatus.IN_PROGRESS)
-        ) or (new_level >= execution_start_level and old_level < execution_start_level)
         if (
             is_normal_task
-            and data.status != CardStatus.CANCELLED
-            and new_level > old_level
-            and starts_execution
+            and transition_rechecks_card_prerequisites(old_status, data.status)
         ):
             spec_for_requirement_gate = (
                 await _application_get(self.db, "spec", card.spec_id)
@@ -6615,10 +6600,10 @@ class CardService:
         if data.status == CardStatus.DONE:
             await self.validate_completion_admission(card, board)
 
-        # --- Bug card: block execution-level moves without linked regression tests ---
-        # Gate triggers when the bug first crosses into execution level or beyond
-        # (in_progress, validation, on_hold, done) from a status before in_progress.
-        # Once in_progress is reached, the gate was already passed.
+        # --- Bug card: recheck regression evidence on execution advances ---
+        # Legacy Started rows become In Progress at startup without proof that
+        # their old entry gate passed. Later execution advances must verify it.
+        # Pause and cancellation remain available without that evidence.
         # NC-6 fix: gate is now conditional on board settings:
         #   - require_test_task_for_bug=False â†’ gate desligado (qualquer bug avanÃ§a)
         #   - bug_test_gate_min_severity controla qual severity entra no gate
@@ -7081,10 +7066,7 @@ class CardService:
             data.status == CardStatus.VALIDATION
             and old_status
             in (
-                CardStatus.NOT_STARTED,
-                CardStatus.STARTED,
                 CardStatus.IN_PROGRESS,
-                CardStatus.ON_HOLD,
             )
             and getattr(card, "card_type", CardType.NORMAL) != CardType.TEST
         ):

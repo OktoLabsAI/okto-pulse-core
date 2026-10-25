@@ -3,7 +3,7 @@
 Covers the full card state machine, CRUD, dependencies, and activity logging.
 
 State machine:
-    not_started → started → in_progress → validation → done
+    not_started → in_progress → validation → done
 
 Rules:
     - Moving execution work to 'validation' or 'done' requires: conclusion, completeness (0-100),
@@ -18,6 +18,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+from pydantic import ValidationError
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 from native_subject_testing import record_native_subject_authority
 from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
@@ -212,7 +213,7 @@ class TestCardCreation:
             spec.status = SpecStatus.DRAFT
             await db.flush()
             before = set((await db.execute(select(Card.id))).scalars())
-            with pytest.raises(CardOperationError) as exc:
+            with pytest.raises(ValidationError):
                 await CardService(db).create_card(
                     BOARD_ID, USER_ID, CardCreate(
                         title="Cannot execute a draft", spec_id=spec.id,
@@ -220,11 +221,10 @@ class TestCardCreation:
                         test_scenario_ids=["ts-001"] if card_type == "test" else None,
                     ),
                 )
-            assert exc.value.code == "spec_status_too_early"
             assert set((await db.execute(select(Card.id))).scalars()) == before
 
     @pytest.mark.parametrize("card_type,target", [
-        ("normal", CardStatus.STARTED), ("test", CardStatus.IN_PROGRESS),
+        ("normal", CardStatus.IN_PROGRESS), ("test", CardStatus.IN_PROGRESS),
     ])
     async def test_planned_card_cannot_start_until_spec_is_mature(self, db_factory, card_type, target):
         await _seed_board(db_factory)
@@ -418,17 +418,35 @@ class TestCardStatusTransitionMatrix:
             await db.commit()
             return card, actual_spec_id
 
-    async def test_transition_not_started_to_started(self, db_factory):
-        """not_started → started is a valid forward transition."""
+    async def test_transition_not_started_to_in_progress(self, db_factory):
+        """not_started → in_progress is the execution entry."""
         card, _ = await self._create_card_for_transition(db_factory, CardStatus.NOT_STARTED)
         async with db_factory() as db:
             svc = CardService(db)
             moved = await svc.move_card(
                 card.id, USER_ID,
-                CardMove(status=CardStatus.STARTED),
+                CardMove(status=CardStatus.IN_PROGRESS),
             )
             assert moved is not None
-            assert moved.status == CardStatus.STARTED
+            assert moved.status == CardStatus.IN_PROGRESS
+
+    async def test_internal_move_cannot_reintroduce_started(self, db_factory):
+        """An internal caller cannot bypass the public CardMove status schema."""
+        card, _ = await self._create_card_for_transition(db_factory, CardStatus.NOT_STARTED)
+        async with db_factory() as db:
+            before_events = len((await db.execute(
+                select(DomainEventRow).where(DomainEventRow.board_id == BOARD_ID)
+            )).scalars().all())
+            with pytest.raises(CardOperationError) as caught:
+                await CardService(db).move_card(
+                    card.id, USER_ID,
+                    CardMove.model_construct(status=CardStatus.STARTED),
+                )
+            assert caught.value.code == "card_move_target_status_invalid"
+            assert (await db.get(Card, card.id)).status == CardStatus.NOT_STARTED
+            assert len((await db.execute(
+                select(DomainEventRow).where(DomainEventRow.board_id == BOARD_ID)
+            )).scalars().all()) == before_events
 
     async def test_same_status_move_is_idempotent_reorder(self, db_factory):
         """A lateral move preserves status while accepting a new position."""
@@ -446,17 +464,17 @@ class TestCardStatusTransitionMatrix:
             assert moved.status == CardStatus.NOT_STARTED
             assert moved.position == 0
 
-    async def test_transition_started_to_in_progress(self, db_factory):
-        """started → in_progress is a valid forward transition."""
-        card, _ = await self._create_card_for_transition(db_factory, CardStatus.STARTED)
+    async def test_transition_in_progress_to_not_started(self, db_factory):
+        """in_progress → not_started returns work to planning."""
+        card, _ = await self._create_card_for_transition(db_factory, CardStatus.IN_PROGRESS)
         async with db_factory() as db:
             svc = CardService(db)
             moved = await svc.move_card(
                 card.id, USER_ID,
-                CardMove(status=CardStatus.IN_PROGRESS),
+                CardMove(status=CardStatus.NOT_STARTED),
             )
             assert moved is not None
-            assert moved.status == CardStatus.IN_PROGRESS
+            assert moved.status == CardStatus.NOT_STARTED
 
     async def test_transition_in_progress_to_validation(self, db_factory):
         """in_progress → validation persists the executor's completion report."""
@@ -534,7 +552,7 @@ class TestCardStatusTransitionMatrix:
                 __import__("sqlalchemy").select(Card).where(Card.id == card.id)
             )).scalar_one()
             assert result["outcome"] == "success"
-            assert persisted.status == CardStatus.DONE
+            assert persisted.status == CardStatus.DONE, result
             assert len(persisted.validations or []) == 1
             assert persisted.validations[0]["resolved_thresholds"] == {
                 "required": False,
@@ -815,10 +833,15 @@ class TestCardValidationReportGate:
                 USER_ID,
                 CardCreate(
                     title="Validation report gate card",
-                    status=CardStatus.STARTED,
+                    status=CardStatus.NOT_STARTED,
                     spec_id=specs[0].id,
                 ),
             )
+            specs[0].status = SpecStatus.IN_PROGRESS
+            specs[0].functional_requirements = [
+                {"id": "fr_lifecycle_report", "title": "Report fixture",
+                 "text": "Exercise the executor report", "linked_task_ids": [card.id]}
+            ]
             card.status = CardStatus.IN_PROGRESS
             await _record_card_fixture_state(db, card, CardStatus.IN_PROGRESS)
             await db.commit()
@@ -1139,7 +1162,7 @@ class TestCardDependencies:
                 board_id=BOARD_ID,
                 spec_id=spec.id,
                 title=f"Dependency B {uuid.uuid4().hex[:8]}",
-                status=CardStatus.STARTED,
+                status=CardStatus.NOT_STARTED,
                 card_type=CardType.NORMAL,
                 priority=CardPriority.NONE,
                 position=0,
@@ -1306,10 +1329,6 @@ class TestCardDependencies:
             await _mark_all_resources_na(db, "card", card_a.id)
 
             # Move card_a through the validation gate first.
-            await svc.move_card(
-                card_a.id, USER_ID,
-                CardMove(status=CardStatus.STARTED),
-            )
             await svc.move_card(
                 card_a.id, USER_ID,
                 CardMove(status=CardStatus.IN_PROGRESS),
@@ -1515,6 +1534,7 @@ class TestBugCardCreation:
             card = await svc.create_card(BOARD_ID, USER_ID, data)
             assert card is not None
             assert card.card_type == CardType.BUG
+            assert card.status == CardStatus.NOT_STARTED
             assert card.severity == "critical"
             assert card.origin_task_id == origin_card.id
             assert card.expected_behavior == data.expected_behavior
@@ -1843,7 +1863,7 @@ class TestBugCardCreation:
                 await svc.create_card(BOARD_ID, USER_ID, data)
 
     async def test_bug_card_limited_initial_status(self, db_factory):
-        """Bug cards can only be created with not_started or started status."""
+        """Bug cards can only be created with not_started status."""
         await _seed_board(db_factory)
         async with db_factory() as db:
             svc = CardService(db)
@@ -1876,7 +1896,7 @@ class TestBugCardCreation:
                 observed_behavior="Broken",
                 status=CardStatus.IN_PROGRESS,
             )
-            with pytest.raises(ValueError, match="not_started.*started"):
+            with pytest.raises(ValueError, match="not_started"):
                 await svc.create_card(BOARD_ID, USER_ID, data)
 
 
@@ -1967,7 +1987,7 @@ class TestMultipleStatusCards:
             )).scalars().all()
             spec_id = specs[0].id
 
-            statuses = [CardStatus.NOT_STARTED, CardStatus.STARTED]
+            statuses = [CardStatus.NOT_STARTED]
             created_cards = []
             for status in statuses:
                 data = CardCreate(
@@ -2010,8 +2030,8 @@ class TestMultipleStatusCards:
             c1 = await svc.create_card(BOARD_ID, USER_ID, data1)
             c2 = await svc.create_card(BOARD_ID, USER_ID, data2)
 
-            # Create one card in started
-            data3 = CardCreate(title="Started Card", status=CardStatus.STARTED, spec_id=spec_id)
+            # New cards enter the planning column.
+            data3 = CardCreate(title="Third Card", status=CardStatus.NOT_STARTED, spec_id=spec_id)
             c3 = await svc.create_card(BOARD_ID, USER_ID, data3)
 
             assert c1.position >= 0
@@ -2055,12 +2075,6 @@ class TestActivityLog:
                 "linked_task_ids": [card.id],
             }]
             await _record_card_fixture_state(db, card, CardStatus.NOT_STARTED)
-            if status != CardStatus.NOT_STARTED:
-                await svc.move_card(
-                    card.id,
-                    USER_ID,
-                    CardMove(status=CardStatus.STARTED),
-                )
             if status in (
                 CardStatus.IN_PROGRESS,
                 CardStatus.VALIDATION,
@@ -2163,7 +2177,7 @@ class TestActivityLog:
             svc = CardService(db)
             await svc.move_card(
                 card.id, USER_ID,
-                CardMove(status=CardStatus.STARTED),
+                CardMove(status=CardStatus.IN_PROGRESS),
             )
             await db.commit()
 
@@ -2176,7 +2190,7 @@ class TestActivityLog:
             assert len(logs) >= 1
             assert logs[0].details is not None
             assert logs[0].details.get("from_status") == "not_started"
-            assert logs[0].details.get("to_status") == "started"
+            assert logs[0].details.get("to_status") == "in_progress"
 
     async def test_activity_logged_on_card_update(self, db_factory):
         """Card updates preserve legacy details and add field-level diffs."""
@@ -2281,7 +2295,6 @@ class TestActivityLog:
         async with db_factory() as db:
             svc = CardService(db)
             # Move through the chain
-            await svc.move_card(card.id, USER_ID, CardMove(status=CardStatus.STARTED))
             await svc.move_card(card.id, USER_ID, CardMove(status=CardStatus.IN_PROGRESS))
             await svc.move_card(
                 card.id,
@@ -2303,7 +2316,7 @@ class TestActivityLog:
                 .where(ActivityLog.action == "card_moved")
                 .where(ActivityLog.card_id == card.id)
             )).scalars().all()
-            assert len(logs) == 3
+            assert len(logs) == 2
 
 
 # ============================================================================
