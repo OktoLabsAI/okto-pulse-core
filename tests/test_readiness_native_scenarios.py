@@ -9,18 +9,29 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import subprocess
+import sys
 import unittest
-
-import pytest
 
 
 _CORE = Path(__file__).resolve().parents[1]
 
 
 def _run(*selectors: str) -> None:
-    result = pytest.main(["-q", "-p", "no:cacheprovider", *selectors])
-    if int(result) != 0:
-        raise AssertionError(f"pytest returned {int(result)} for {selectors}")
+    # Core and Community use different pytest composition fixtures. A fresh
+    # interpreter for each suite prevents their global registries leaking
+    # across scenario methods in the runner's long-lived unittest process.
+    workspace = Path(selectors[0].split("::", 1)[0]).resolve().parents[1]
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *selectors],
+        cwd=workspace, capture_output=True, text=True, timeout=180, check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"pytest returned {result.returncode} for {selectors}\n"
+            f"{result.stdout[-6000:]}\n{result.stderr[-2000:]}"
+        )
+    print(result.stdout.strip())
 
 
 class PersistedReadinessNativeScenarios(unittest.TestCase):
@@ -53,4 +64,38 @@ class PersistedReadinessNativeScenarios(unittest.TestCase):
             "test_M20_test_card_counts_assigned_scenarios_with_structural_na_implementation",
             f"{_CORE / 'tests' / 'test_delivery_readiness_metrics.py'}::"
             "test_phase_unknown_does_not_erase_known_implementation",
+        )
+
+    def test_sc07_closed_snapshot_and_coalescing(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        suite = Path(community) / "tests" / "test_readiness_projection_worker.py"
+        _run(
+            f"{suite}::test_projection_cpu_runs_after_snapshot_checkout_is_released",
+            f"{suite}::test_many_source_revisions_coalesce_into_one_generation",
+        )
+
+    def test_sc08_external_churn_and_population_limit(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        suite = Path(community) / "tests" / "test_readiness_projection_worker.py"
+        _run(
+            f"{suite}::test_unrelated_board_commit_does_not_retry_projection_snapshot",
+            f"{suite}::test_over_cap_scope_is_unknown_while_healthy_scope_progresses",
+        )
+
+    def test_sc09_deadline_and_lost_lease(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(f"{_CORE / 'tests' / 'test_persisted_delivery_readiness.py'}::"
+            "test_generation_checks_deadline_before_and_during_evaluation")
+        _run(
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_worker_publishes_one_complete_generation_after_source_commit",
+            f"{tests / 'test_worker_runners.py'}::"
+            "test_tracked_blocking_failure_is_drained_before_parent_cancel_returns",
         )
