@@ -76,6 +76,8 @@ class PersistedReadinessNativeScenarios(unittest.TestCase):
             "test_authenticated_report_and_exact_replay_share_source_transaction",
             f"{tests / 'test_readiness_invalidation.py'}::"
             "test_intent_write_failure_rolls_back_source_update",
+            f"{tests / 'test_readiness_invalidation.py'}::"
+            "test_target_execution_receipt_and_revocation_invalidate_consumer",
             f"{tests / 'test_delivery_batch.py'}::"
             "test_failure_after_first_insert_rolls_back_even_if_caller_commits",
         )
