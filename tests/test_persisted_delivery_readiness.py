@@ -8,6 +8,7 @@ from okto_pulse.core.domain.delivery_assessment import aggregate_delivery_metric
 from okto_pulse.core.domain.delivery_evidence import DeliveryPhase, DeliveryWaiverFact
 from okto_pulse.core.domain.effective_delivery_coverage import EvaluatedDeliverySnapshot
 from okto_pulse.core.services.persisted_delivery_readiness import build_readiness_generation
+from okto_pulse.core.services.delivery_readiness import EvaluatedDeliveryReadiness
 from test_delivery_obligation_assessment import snapshot, with_facts
 from test_delivery_readiness_access import batch
 from test_delivery_evidence_domain import BINDING
@@ -24,6 +25,7 @@ def test_generation_matches_canonical_spec_and_each_card():
     source = _source()
     projected = build_readiness_generation(source, captured_revision=7)
     canonical = EvaluatedDeliverySnapshot(source.facts)
+    canonical_contexts = EvaluatedDeliveryReadiness(source, actor_id=source.access.actor_id)
     by_card = {summary.card_id: summary for summary in projected.summaries}
     for card in (None, *source.cards):
         assessment = (canonical.obligations() if card is None else
@@ -35,6 +37,7 @@ def test_generation_matches_canonical_spec_and_each_card():
         assert row.verification.percent == metrics.verification.percent
         assert row.implementation.total == metrics.implementation.total
         assert row.verification.total == metrics.verification.total
+        assert row.context == canonical_contexts.context(card.id if card else None).model_dump(mode='json')
     assert by_card['test-card-1'].implementation.percent is None
     assert projected.captured_revision == 7
     assert projected.manifest_sha256 == build_readiness_generation(source, captured_revision=7).manifest_sha256

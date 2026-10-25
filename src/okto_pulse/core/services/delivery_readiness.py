@@ -6,6 +6,7 @@ implemented by the edition. Use the same serialization at REST/MCP boundaries.
 """
 from dataclasses import asdict, replace
 import json
+from pydantic import ValidationError
 
 from okto_pulse.core.domain.delivery_diagnostics import ACTION_REGISTRY, ActionKind, ActionState, CauseOrigin, DiagnosticIntegrityError
 from okto_pulse.core.domain.delivery_evidence import DeliveryScope
@@ -25,7 +26,7 @@ from okto_pulse.core.ports.delivery_readiness import (
     ReadinessNativeLifecycle,
 )
 from okto_pulse.core.services.delivery_readiness_diagnostics import (
-    DiagnosticOwner, NativeDeliveryDiagnostics, compose_delivery_diagnostics,
+    DiagnosticOwner, NativeDeliveryDiagnostics, _SnapshotIndex, compose_delivery_diagnostics,
     render_diagnostic_action, render_diagnostic_issue, render_diagnostic_unit,
 )
 
@@ -60,6 +61,8 @@ class DeliveryReadinessService:
         edition adapter. This projection is informational and cannot authorize
         a native Done transition or a new delivery report.
         """
+        from .persisted_delivery_readiness import EVALUATOR_VERSION
+
         load = getattr(self.reader, "load_persisted", None)
         if load is None:
             raise ReadinessReadError('readiness_assessment_unavailable',
@@ -78,7 +81,7 @@ class DeliveryReadinessService:
                 'source_revision': value.captured_revision if value else None,
                 'target_revision': value.source_revision if value else 0,
                 'evaluated_at': value.evaluated_at.isoformat() if value and value.evaluated_at else None,
-                'evaluator_version': 'delivery-readiness-evaluator/v1',
+                'evaluator_version': EVALUATOR_VERSION,
                 'freshness': value.freshness if value else 'pending_initial',
                 'error_code': value.error_code if value else None,
             },
@@ -87,6 +90,36 @@ class DeliveryReadinessService:
             'page': page,
             'mutation_reauthorization_required': True,
         }
+
+    async def board_summary_persisted(self, *, board_id: str, spec_id: str,
+                                      actor: ReadinessActor) -> dict:
+        """Serve the existing v1 board shape from one authorized generation."""
+        persisted = await self.read_persisted(board_id=board_id, spec_id=spec_id,
+            actor=actor)
+        projection = persisted['projection']
+        summaries = persisted['summaries']
+        if not summaries:
+            # Initial backfill and incompatible evaluator generations have no
+            # complete snapshot to present. Never invent a zero-percent read.
+            return {'contract_version': 'delivery-readiness/v1',
+                'metrics_version': 2, 'delivery_readiness': None, 'cards': [],
+                'projection': projection, 'mutation_reauthorization_required': True}
+        spec_rows = [row for row in summaries if row.get('card_id') is None]
+        if len(spec_rows) != 1 or any(not isinstance(row.get('context'), dict)
+                for row in summaries):
+            raise ReadinessReadError('readiness_assessment_unavailable',
+                native_code='readiness_projection_incomplete')
+        try:
+            board = DeliveryReadinessBoardSummary.model_validate({
+                'delivery_readiness': spec_rows[0]['context'],
+                'cards': [{'card_id': row['card_id'], 'delivery_readiness': row['context']}
+                    for row in summaries if row.get('card_id') is not None],
+            })
+        except ValidationError as exc:
+            raise ReadinessReadError('readiness_assessment_unavailable',
+                native_code='readiness_projection_incomplete') from exc
+        return {**board.model_dump(mode='json', exclude_none=False),
+            'projection': projection}
 
     async def read(self, query: ReadinessReadQuery, *, actor: ReadinessActor):
         batch = await self.reader.load(board_id=query.board_id, spec_id=query.spec_id,
@@ -111,7 +144,7 @@ class EvaluatedDeliveryReadiness:
     this object nor its assessments authorize a transition or survive a new
     batch. Native gate/lifecycle context is composed separately.
     """
-    def __init__(self, batch, *, actor_id):
+    def __init__(self, batch, *, actor_id, precomputed_assessments=None):
         access, scope = batch.access, batch.facts.scope
         if access is None:
             raise ReadinessAccessDenied('code_traceability.evidence.read')
@@ -123,9 +156,16 @@ class EvaluatedDeliveryReadiness:
         if len(self._cards) != len(batch.cards):
             raise ReadinessReadError('readiness_assessment_unavailable', native_code='readiness_duplicate_card')
         self._batch, self._actor_id = batch, actor_id
-        self._evaluation = None if batch.unavailable_reason_codes else EvaluatedDeliverySnapshot(batch.facts)
-        self._assessments = {None: self._evaluation.obligations() if self._evaluation else self._unavailable()}
+        self._evaluation = (None if precomputed_assessments is not None or batch.unavailable_reason_codes
+            else EvaluatedDeliverySnapshot(batch.facts))
+        self._assessments = (dict(precomputed_assessments) if precomputed_assessments is not None
+            else {None: self._evaluation.obligations() if self._evaluation else self._unavailable()})
+        self._precomputed = precomputed_assessments is not None
+        if None not in self._assessments or (self._precomputed
+                and set(self._assessments) != {None} | {card.id for card in batch.cards}):
+            raise ReadinessReadError('readiness_projection_incomplete')
         self._diagnostics = {}
+        self._diagnostic_index = None
 
     def _unavailable(self, card=None):
         return DeliveryAssessment(self._batch.facts.scope, AssessmentCompleteness(False, False, False, True), (),
@@ -140,6 +180,8 @@ class EvaluatedDeliveryReadiness:
             if card is None or card.card_type not in {CardType.NORMAL, CardType.BUG, CardType.TEST}:
                 raise ReadinessReadError('readiness_scope_mismatch')
             if card_id not in self._assessments:
+                if self._precomputed:
+                    raise ReadinessReadError('readiness_projection_incomplete')
                 self._assessments[card_id] = (self._unavailable(card) if self._evaluation is None else
                     self._evaluation.scenarios(card_id=card_id, scenario_ids=card.scenario_ids)
                     if card.card_type == CardType.TEST else
@@ -149,8 +191,11 @@ class EvaluatedDeliveryReadiness:
     def diagnostics(self, card_id=None):
         assessment = self.assessment(card_id)
         if card_id not in self._diagnostics:
+            if self._diagnostic_index is None:
+                self._diagnostic_index = _SnapshotIndex(self._batch.facts)
             self._diagnostics[card_id] = compose_authorized_delivery_diagnostics(assessment, self._batch,
-                actor_id=self._actor_id, spec_assessment=self._assessments[None])
+                actor_id=self._actor_id, spec_assessment=self._assessments[None],
+                snapshot_index=self._diagnostic_index)
         return self._diagnostics[card_id]
 
     def _native_lifecycle(self, card_id):
@@ -234,7 +279,8 @@ class EvaluatedDeliveryReadiness:
                 exceptions=len(gate.exception_refs)))
 
 
-def compose_authorized_delivery_diagnostics(assessment, batch, *, actor_id, spec_assessment=None):
+def compose_authorized_delivery_diagnostics(assessment, batch, *, actor_id, spec_assessment=None,
+                                            snapshot_index=None):
     """Enrich only through current, same-snapshot native authority.
 
     Aggregate facts/units remain intact. Restricted detail is explicit, never a
@@ -266,7 +312,7 @@ def compose_authorized_delivery_diagnostics(assessment, batch, *, actor_id, spec
         permissions={a.permission: access.allows(a.permission) for a in ACTION_REGISTRY.values() if a.permission},
         owners=tuple(DiagnosticOwner('card', c.id, c.assignee_id if can_owners else None, can_owners) for c in batch.cards),
         card_versions={c.id: c.version for c in batch.cards}, procedures=batch.scenarios if can_tests else (),
-        native_lifecycle=native)
+        native_lifecycle=native, snapshot_index=snapshot_index)
     causes = {c.id: c for c in projection.graph.causes}
     restricted, details = set(), []
     for detail in projection.details:

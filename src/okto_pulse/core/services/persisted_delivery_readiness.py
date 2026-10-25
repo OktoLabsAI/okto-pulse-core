@@ -8,7 +8,7 @@ proof from a Card's workflow status.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from hashlib import sha256
 import json
@@ -26,9 +26,11 @@ from okto_pulse.core.domain.delivery_assessment import (
 from okto_pulse.core.domain.effective_delivery_coverage import EvaluatedDeliverySnapshot
 from okto_pulse.core.domain.enums import CardType
 from okto_pulse.core.models.delivery_readiness import DeliveryMetric
+from okto_pulse.core.ports.delivery_readiness import READINESS_PERMISSION_OPERATIONS, ReadinessAccess
+from okto_pulse.core.services.delivery_readiness import EvaluatedDeliveryReadiness
 
 
-EVALUATOR_VERSION = "delivery-readiness-evaluator/v1"
+EVALUATOR_VERSION = "delivery-readiness-evaluator/v2"
 
 
 def readiness_manifest_digest(*, board_id: str, spec_id: str, edition: int,
@@ -71,6 +73,7 @@ class ProjectedSummary:
     verification: DeliveryMetric
     population_known: bool
     evaluation_complete: bool
+    context: dict
 
     def payload(self) -> dict:
         return {
@@ -81,6 +84,7 @@ class ProjectedSummary:
             "verification": self.verification.model_dump(mode="json"),
             "population_known": self.population_known,
             "evaluation_complete": self.evaluation_complete,
+            "context": self.context,
         }
 
 
@@ -118,7 +122,8 @@ def _unit_rows(assessment: DeliveryAssessment) -> tuple[ProjectedUnit, ...]:
     ) for row in assessment.obligations)
 
 
-def _summary(assessment: DeliveryAssessment, *, card_version: int | None) -> ProjectedSummary:
+def _summary(assessment: DeliveryAssessment, *, card_version: int | None,
+             context: dict) -> ProjectedSummary:
     metrics = aggregate_delivery_metrics(assessment)
     return ProjectedSummary(
         assessment.card_id,
@@ -129,6 +134,7 @@ def _summary(assessment: DeliveryAssessment, *, card_version: int | None) -> Pro
         DeliveryMetric.model_validate(asdict(metrics.verification)),
         assessment.completeness.population_known and assessment.completeness.scope_resolved,
         assessment.completeness.evaluation_complete,
+        context,
     )
 
 
@@ -168,8 +174,24 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
             assessments.append((card, assessment))
 
     checkpoint()
-    summaries = tuple(_summary(assessment, card_version=card.version if card else None)
-        for card, assessment in assessments)
+    # This temporary read authority exists only inside the pure projector. It
+    # lets the canonical context composer calculate actor-neutral counts and
+    # lifecycle wording; no access token or permission grant is persisted.
+    projection_actor = 'readiness-projection-builder'
+    projection_batch = replace(snapshot, access=ReadinessAccess(
+        projection_actor, snapshot.facts.scope.board_id, 'local',
+        READINESS_PERMISSION_OPERATIONS))
+    contextual = EvaluatedDeliveryReadiness(projection_batch,
+        actor_id=projection_actor, precomputed_assessments={
+            card.id if card else None: assessment for card, assessment in assessments})
+    summaries_list = []
+    for index, (card, assessment) in enumerate(assessments):
+        if index % 25 == 0:
+            checkpoint()
+        summaries_list.append(_summary(assessment,
+            card_version=card.version if card else None,
+            context=contextual.context(card.id if card else None).model_dump(mode='json')))
+    summaries = tuple(summaries_list)
     unique_units = {}
     processed_units = 0
     for _, assessment in assessments:

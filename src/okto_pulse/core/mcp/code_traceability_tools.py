@@ -18,7 +18,7 @@ import json
 from typing import Annotated, Any, Callable, Literal, Mapping
 
 from pydantic import Field, SecretStr, ValidationError
-from okto_pulse.core.models.delivery_evidence import card_delivery_command, DeliveryBatchEntryError, DeliveryEvidenceReadQuery, PersistedReadinessQuery, ReadinessRequeueCommand
+from okto_pulse.core.models.delivery_evidence import card_delivery_command, DeliveryBatchEntryError, DeliveryEvidenceQuery, DeliveryEvidenceReadQuery, PersistedReadinessQuery, ReadinessRequeueCommand
 from okto_pulse.core.models.delivery_report import CardDeliveryRecordInput
 from okto_pulse.core.models.decision_review import DecisionReviewInput, DecisionReviewCommand, DecisionReviewQuery
 from okto_pulse.core.inbound.delivery_readiness_error import READINESS_ERRORS, project_readiness_error
@@ -918,6 +918,19 @@ def register_code_traceability_tools(
             raise
         return await _execute(board_id, command, GetDeliveryEvidenceUseCase())
 
+    async def okto_pulse_get_delivery_readiness_summary(
+        board_id: BoundedId, spec_id: BoundedId,
+    ) -> McpToolOutcome:
+        """Read the authorized v1 Spec/Card summary from one published generation.
+
+        The response includes freshness. A pending initial generation has no
+        metrics; this read never authorizes a delivery report or Done transition.
+        """
+        from okto_pulse.core.application.use_cases.delivery_evidence import GetDeliveryReadinessBoardSummaryUseCase
+
+        return await _execute(board_id, DeliveryEvidenceQuery(
+            board_id=board_id, spec_id=spec_id), GetDeliveryReadinessBoardSummaryUseCase())
+
     async def okto_pulse_get_persisted_delivery_readiness(
         board_id: BoundedId, spec_id: BoundedId, card_id: BoundedId | None = None,
         unit_limit: Annotated[int, Field(ge=0, le=250)] = 0,
@@ -1004,6 +1017,7 @@ def register_code_traceability_tools(
         okto_pulse_get_decision_reviews,
         okto_pulse_record_decision_reviews,
         okto_pulse_get_delivery_evidence,
+        okto_pulse_get_delivery_readiness_summary,
         okto_pulse_get_persisted_delivery_readiness,
         okto_pulse_requeue_persisted_delivery_readiness,
         okto_pulse_record_delivery_evidence,

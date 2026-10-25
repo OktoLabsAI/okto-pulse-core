@@ -391,7 +391,8 @@ def _actions(index, assessment, unit, phase, reason, detail, origin, bindings, p
 
 
 def compose_delivery_diagnostics(assessment, snapshot, *, spec_assessment=None, permissions=None, owners=(),
-                                 card_versions=None, procedures=(), native_lifecycle=None):
+                                 card_versions=None, procedures=(), native_lifecycle=None,
+                                 snapshot_index=None):
     """Compose already evaluated native facts, without per-unit queries/evaluation.
 
     Test views can receive the shared Spec assessment to explain implementation
@@ -400,7 +401,10 @@ def compose_delivery_diagnostics(assessment, snapshot, *, spec_assessment=None, 
     """
     if assessment.scope != snapshot.scope or spec_assessment is not None and spec_assessment.scope != snapshot.scope:
         raise DiagnosticIntegrityError('readiness_diagnostic_scope_invalid')
-    index = _SnapshotIndex(snapshot)
+    if snapshot_index is not None and (snapshot_index.scope != snapshot.scope
+            or snapshot_index.context is not snapshot.effective_context):
+        raise DiagnosticIntegrityError('readiness_diagnostic_snapshot_mismatch')
+    index = snapshot_index if snapshot_index is not None else _SnapshotIndex(snapshot)
     owner_index = _index(owners, lambda o: (o.entity_type, o.entity_id))
     procedure_index = _index(procedures, lambda p: p.id)
     permissions, card_versions = permissions or {}, card_versions or {}
