@@ -66,6 +66,46 @@ class PersistedReadinessNativeScenarios(unittest.TestCase):
             "test_phase_unknown_does_not_erase_known_implementation",
         )
 
+    def test_sc04_atomic_source_and_intent(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_invalidation.py'}::"
+            "test_authenticated_report_and_exact_replay_share_source_transaction",
+            f"{tests / 'test_readiness_invalidation.py'}::"
+            "test_intent_write_failure_rolls_back_source_update",
+            f"{tests / 'test_delivery_batch.py'}::"
+            "test_failure_after_first_insert_rolls_back_even_if_caller_commits",
+        )
+
+    def test_sc05_fanout_revision_and_tombstone(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        suite = Path(community) / "tests" / "test_readiness_invalidation.py"
+        _run(
+            f"{suite}::test_reparenting_invalidates_both_scopes",
+            f"{suite}::test_new_edition_tombstones_old_generation_scope",
+            f"{suite}::test_archive_terminates_debt_and_restore_requeues_current_scope",
+            f"{suite}::test_failed_scenario_result_invalidates_before_evidence_binding",
+        )
+
+    def test_sc06_report_replay_and_compound_rollback(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_invalidation.py'}::"
+            "test_authenticated_report_and_exact_replay_share_source_transaction",
+            f"{tests / 'test_readiness_invalidation.py'}::"
+            "test_intent_write_failure_rolls_back_source_update",
+            f"{tests / 'test_delivery_report.py'}::"
+            "test_report_rejection_cannot_leave_batch_or_outbox_after_outer_commit",
+        )
+
     def test_sc07_closed_snapshot_and_coalescing(self) -> None:
         community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
         if not community:
