@@ -99,3 +99,37 @@ class PersistedReadinessNativeScenarios(unittest.TestCase):
             f"{tests / 'test_worker_runners.py'}::"
             "test_tracked_blocking_failure_is_drained_before_parent_cancel_returns",
         )
+
+    def test_sc10_cas_and_monotonic_publication(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        suite = Path(community) / "tests" / "test_readiness_projection_worker.py"
+        _run(
+            f"{suite}::test_worker_publishes_one_complete_generation_after_source_commit",
+            f"{suite}::test_older_snapshot_publishes_as_updating_without_losing_newer_debt",
+        )
+
+    def test_sc11_pinned_generation_cursor(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        suite = Path(community) / "tests" / "test_readiness_projection_access.py"
+        _run(
+            f"{suite}::test_projection_pages_are_actor_bound_and_reauthorized",
+            f"{suite}::test_projection_cursor_keeps_original_generation_until_retention",
+        )
+
+    def test_sc12_staging_retention_and_evaluator_version(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_invalid_staging_manifest_never_becomes_active",
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_incompatible_evaluator_generation_cannot_publish",
+            f"{tests / 'test_readiness_gc.py'}::"
+            "test_gc_keeps_active_and_three_recent_generations_in_bounded_batches",
+        )
