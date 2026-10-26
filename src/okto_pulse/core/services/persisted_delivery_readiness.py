@@ -121,6 +121,58 @@ def readiness_manifest_digest(*, board_id: str, spec_id: str, edition: int,
     return sha256(orjson.dumps(manifest, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
 
+def readiness_manifest_digest_stored(*, board_id: str, spec_id: str, edition: int,
+                                     captured_revision: int, source_snapshot_id: str,
+                                     evaluator_version: str,
+                                     rows: list[tuple[int, str, str, str, str, str]]) -> str:
+    """Hash canonical JSON rows read back from storage without decoding bodies.
+
+    ``rows`` must be ordered by category, card key, kind, ref and semantic hash.
+    The storage adapter checks the typed keys against JSON before calling this.
+    This byte stream is exactly the object encoded by ``readiness_manifest_digest``.
+    """
+    digest = sha256()
+    digest.update(b'{"diagnostics":[')
+    first = True
+    for category, card_key, _kind, _ref, _semantic, payload in rows:
+        if category != 1:
+            continue
+        if not first:
+            digest.update(b',')
+        first = False
+        digest.update(b'{"card_id":')
+        digest.update(orjson.dumps(card_key or None))
+        digest.update(b',"payload":')
+        digest.update(payload.encode('utf-8'))
+        digest.update(b'}')
+    digest.update(b'],"evaluator_version":')
+    digest.update(orjson.dumps(evaluator_version))
+    digest.update(b',"scope":')
+    digest.update(orjson.dumps([board_id, spec_id, edition, captured_revision]))
+    digest.update(b',"source_snapshot_id":')
+    digest.update(orjson.dumps(source_snapshot_id))
+    digest.update(b',"summaries":[')
+    first = True
+    for category, _card_key, _kind, _ref, _semantic, payload in rows:
+        if category != 0:
+            continue
+        if not first:
+            digest.update(b',')
+        first = False
+        digest.update(payload.encode('utf-8'))
+    digest.update(b'],"units":[')
+    first = True
+    for category, _card_key, _kind, _ref, _semantic, payload in rows:
+        if category != 2:
+            continue
+        if not first:
+            digest.update(b',')
+        first = False
+        digest.update(payload.encode('utf-8'))
+    digest.update(b']}')
+    return digest.hexdigest()
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectedUnit:
     card_id: str | None

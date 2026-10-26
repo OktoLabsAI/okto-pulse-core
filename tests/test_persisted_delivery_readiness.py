@@ -1,7 +1,8 @@
 """The durable read model must preserve native evaluation semantics."""
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import timedelta
+import orjson
 import pytest
 
 from okto_pulse.core.services import persisted_delivery_readiness as projection
@@ -43,6 +44,28 @@ def test_generation_matches_canonical_spec_and_each_card():
     assert projected.captured_revision == 7
     assert projected.manifest_sha256 == build_readiness_generation(source, captured_revision=7).manifest_sha256
     assert projected.manifest_sha256 != build_readiness_generation(source, captured_revision=8).manifest_sha256
+
+
+def test_stored_canonical_rows_have_the_generation_manifest():
+    generation = build_readiness_generation(_source(), captured_revision=7)
+    def encoded(payload):
+        return orjson.dumps(payload, option=orjson.OPT_SORT_KEYS).decode()
+    rows = ([(0, row.card_id or '', '', '', '', encoded(row.payload()))
+        for row in generation.summaries]
+        + [(1, row.card_id or '', '', '', '', encoded(row.payload))
+            for row in generation.diagnostics]
+        + [(2, row.card_id or '', row.kind, row.ref, row.semantic_sha256,
+            encoded(asdict(row))) for row in generation.units])
+    rows.sort(key=lambda row: row[:5])
+    args = dict(board_id=generation.board_id, spec_id=generation.spec_id,
+        edition=generation.spec_edition, captured_revision=generation.captured_revision,
+        source_snapshot_id=generation.source_snapshot_id,
+        evaluator_version=generation.evaluator_version)
+    assert projection.readiness_manifest_digest_stored(**args, rows=rows) == generation.manifest_sha256
+    changed = [*rows]
+    head = next(index for index, row in enumerate(changed) if row[0] == 0)
+    changed[head] = (*changed[head][:5], changed[head][5].replace('"card_id":', '"other_id":', 1))
+    assert projection.readiness_manifest_digest_stored(**args, rows=changed) != generation.manifest_sha256
 
 
 def test_generation_preserves_independent_local_progress_and_unknowns():
