@@ -80,6 +80,38 @@ def _run_frontend_scenario(scenario: str, *component_suites: str) -> None:
     print(result.stdout.strip())
 
 
+def _run_frontend_components(*component_suites: str) -> None:
+    community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+    if not community:
+        raise AssertionError("paired Community checkout is required")
+    frontend = Path(community) / "frontend"
+    if not (frontend / "package-lock.json").is_file():
+        raise AssertionError("paired Community checkout lacks locked frontend dependencies")
+    npm = shutil.which("npm")
+    if not npm:
+        raise AssertionError("npm is required for frontend component contracts")
+    if not (frontend / "node_modules" / "vitest").is_dir():
+        install = subprocess.run(
+            [npm, "ci", "--ignore-scripts", "--prefer-offline", "--no-audit", "--no-fund"],
+            cwd=frontend, capture_output=True, text=True, timeout=180, check=False,
+        )
+        if install.returncode != 0:
+            raise AssertionError(
+                f"locked frontend install returned {install.returncode}\n"
+                f"{install.stdout[-2000:]}\n{install.stderr[-2000:]}"
+            )
+    result = subprocess.run(
+        [npm, "test", "--", *component_suites],
+        cwd=frontend, capture_output=True, text=True, timeout=180, check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"Vitest returned {result.returncode}\n"
+            f"{result.stdout[-6000:]}\n{result.stderr[-2000:]}"
+        )
+    print(result.stdout.strip())
+
+
 class PersistedReadinessNativeScenarios(unittest.TestCase):
     def test_sc01_canonical_parity(self) -> None:
         suite = _CORE / "tests" / "test_persisted_delivery_readiness.py"
@@ -332,4 +364,45 @@ class PersistedReadinessNativeScenarios(unittest.TestCase):
     def test_sc21_accessible_phase_and_freshness_in_ui(self) -> None:
         _run_frontend_scenario(
             "SC21", "src/components/code-traceability/__tests__/readinessPolling.test.tsx",
+        )
+
+    def test_sc22_safe_upgrade_and_partial_ddl_failure(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        _run(str(Path(community) / "tests" / "test_readiness_schema_upgrade.py"))
+
+    def test_sc23_resumable_backfill_and_compatible_read_modes(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_backfill_completes_all_scopes_with_reports_and_three_worker_restarts",
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_reconcile_cursor_resumes_bounded_pages_after_restart",
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_P08_board_summary_reports_pending_initial_without_false_zero",
+        )
+        _run_frontend_components(
+            "src/components/code-traceability/__tests__/DeliveryEvidencePanel.test.tsx",
+        )
+
+    def test_sc24_read_rollback_and_previous_binary_refusal(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_schema_upgrade.py'}::"
+            "test_rollback_assessment_refuses_source_writes_and_revision_advance",
+            f"{tests / 'test_readiness_schema_upgrade.py'}::"
+            "test_rollback_assessment_refuses_revision_advance_with_identical_source",
+            f"{tests / 'test_readiness_schema_upgrade.py'}::"
+            "test_rollback_assessment_preserves_new_operation_audit",
+            str(tests / "local_readiness_previous_binary.py"),
+        )
+        _run_frontend_components(
+            "src/components/code-traceability/__tests__/DeliveryEvidencePanel.test.tsx",
         )
