@@ -379,7 +379,7 @@ class PersistedReadinessNativeScenarios(unittest.TestCase):
         tests = Path(community) / "tests"
         _run(
             f"{tests / 'test_readiness_projection_worker.py'}::"
-            "test_backfill_completes_all_scopes_with_reports_and_three_worker_restarts",
+            "test_backfill_after_v401_upgrade_completes_all_scopes_and_three_restarts",
             f"{tests / 'test_readiness_projection_worker.py'}::"
             "test_reconcile_cursor_resumes_bounded_pages_after_restart",
             f"{tests / 'test_delivery_readiness_surfaces.py'}::"
