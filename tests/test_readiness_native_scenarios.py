@@ -35,7 +35,7 @@ def _run(*selectors: str) -> None:
     print(result.stdout.strip())
 
 
-def _run_frontend_scenario(scenario: str) -> None:
+def _run_frontend_scenario(scenario: str, *component_suites: str) -> None:
     community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
     if not community:
         raise AssertionError("paired Community checkout is required")
@@ -56,6 +56,17 @@ def _run_frontend_scenario(scenario: str) -> None:
                 f"locked frontend install returned {install.returncode}\n"
                 f"{install.stdout[-2000:]}\n{install.stderr[-2000:]}"
             )
+    if component_suites:
+        component = subprocess.run(
+            [npm, "test", "--", *component_suites],
+            cwd=frontend, capture_output=True, text=True, timeout=180, check=False,
+        )
+        if component.returncode != 0:
+            raise AssertionError(
+                f"Vitest returned {component.returncode} for {scenario}\n"
+                f"{component.stdout[-6000:]}\n{component.stderr[-2000:]}"
+            )
+        print(component.stdout.strip())
     result = subprocess.run(
         [npx, "playwright", "test", "--config", "playwright.readiness.config.ts",
          "--grep", f"^{scenario}:"],
@@ -305,10 +316,20 @@ class PersistedReadinessNativeScenarios(unittest.TestCase):
             "test_done_checks_readiness_then_rechecks_under_write_fence")
 
     def test_sc19_atomic_generation_switch_in_ui(self) -> None:
-        _run_frontend_scenario("SC19")
+        _run_frontend_scenario(
+            "SC19", "src/components/code-traceability/__tests__/DeliveryEvidencePanel.test.tsx",
+            "src/components/code-traceability/__tests__/useDeliveryReadiness.test.tsx",
+            "src/components/specs/__tests__/SpecCoveragePanel.persisted.test.tsx",
+        )
 
     def test_sc20_pending_unknown_na_and_scope_isolation_in_ui(self) -> None:
-        _run_frontend_scenario("SC20")
+        _run_frontend_scenario(
+            "SC20", "src/components/code-traceability/__tests__/DeliveryEvidencePanel.test.tsx",
+            "src/components/code-traceability/__tests__/useDeliveryReadiness.test.tsx",
+            "src/contexts/__tests__/ApiContext.identity.test.tsx",
+        )
 
     def test_sc21_accessible_phase_and_freshness_in_ui(self) -> None:
-        _run_frontend_scenario("SC21")
+        _run_frontend_scenario(
+            "SC21", "src/components/code-traceability/__tests__/readinessPolling.test.tsx",
+        )
