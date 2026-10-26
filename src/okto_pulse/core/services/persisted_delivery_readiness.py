@@ -381,9 +381,14 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
         assessments = [(None, evaluation.obligations())]
         for card in snapshot.cards:
             checkpoint()
-            assessment = (evaluation.scenarios(card_id=card.id, scenario_ids=card.scenario_ids)
-                if card.card_type == CardType.TEST else
-                evaluation.obligations(card_id=card.id, card_type=card.card_type))
+            if predecessor is not None and card.id not in affected_card_ids:
+                assessment = None  # Its complete rows come from the verified predecessor.
+            elif card.card_type == CardType.TEST:
+                assessment = evaluation.scenarios(card_id=card.id,
+                    scenario_ids=card.scenario_ids)
+            else:
+                assessment = evaluation.obligations(card_id=card.id,
+                    card_type=card.card_type)
             assessments.append((card, assessment))
 
     checkpoint()
