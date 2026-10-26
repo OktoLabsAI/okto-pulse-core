@@ -23,7 +23,9 @@ from okto_pulse.core.domain.delivery_assessment import (
     UnitPhaseAssessment,
     UnitState,
 )
-from okto_pulse.core.domain.effective_delivery_coverage import EvaluatedDeliverySnapshot
+from okto_pulse.core.domain.effective_delivery_coverage import (
+    EffectiveDeliveryContext, EvaluatedDeliverySnapshot,
+)
 from okto_pulse.core.domain.enums import CardType
 from okto_pulse.core.models.delivery_readiness import DeliveryReadinessContext, DeliveryMetric
 from okto_pulse.core.ports.delivery_readiness import READINESS_PERMISSION_OPERATIONS, ReadinessAccess
@@ -155,21 +157,93 @@ def _summary(assessment: DeliveryAssessment, *, card_version: int | None,
     )
 
 
+def _verified_predecessor(snapshot, *, captured_revision: int,
+                          predecessor: ReadinessGeneration,
+                          affected_card_ids: frozenset[str | None]) -> tuple[
+                              dict[str | None, ProjectedSummary],
+                              dict[str | None, ProjectedDiagnostic],
+                              dict[str | None, tuple[ProjectedUnit, ...]],
+                          ]:
+    """Refuse reuse unless the predecessor is complete and adjacent to this source."""
+    scope = snapshot.facts.scope
+    cards = {card.id: card for card in snapshot.cards}
+    expected_ids = {None, *cards}
+    if (snapshot.unavailable_reason_codes
+            or not isinstance(snapshot.facts.effective_context, EffectiveDeliveryContext)
+            or not snapshot.facts.effective_context.inventory.complete
+            or affected_card_ids is None or None not in affected_card_ids
+            or not affected_card_ids <= expected_ids
+            or predecessor.board_id != scope.board_id
+            or predecessor.spec_id != scope.spec_id
+            or predecessor.spec_edition != scope.edition
+            or predecessor.spec_version != snapshot.spec_version
+            or predecessor.evaluator_version != EVALUATOR_VERSION
+            or predecessor.captured_revision + 1 != captured_revision
+            or predecessor.source_snapshot_id == snapshot.snapshot_id):
+        raise ValueError("readiness_incremental_predecessor_ineligible")
+    summaries = {row.card_id: row for row in predecessor.summaries}
+    diagnostics = {row.card_id: row for row in predecessor.diagnostics}
+    if (len(summaries) != len(predecessor.summaries)
+            or len(diagnostics) != len(predecessor.diagnostics)
+            or set(summaries) != expected_ids or set(diagnostics) != expected_ids):
+        raise ValueError("readiness_incremental_predecessor_incomplete")
+    for card_id, summary in summaries.items():
+        card = cards.get(card_id)
+        status = card.status if card is not None else snapshot.spec_status
+        status = status.value if hasattr(status, "value") else status
+        if (summary.card_version != (card.version if card else None)
+                or summary.card_type != ((card.card_type.value
+                    if isinstance(card.card_type, CardType) else str(card.card_type)) if card else None)
+                or summary.context.get("snapshot_id") != predecessor.source_snapshot_id
+                or summary.context.get("lifecycle", {}).get("stored_status") != status):
+            raise ValueError("readiness_incremental_predecessor_scope_changed")
+    units: dict[str | None, list[ProjectedUnit]] = {}
+    for row in predecessor.units:
+        if row.card_id not in expected_ids:
+            raise ValueError("readiness_incremental_predecessor_incomplete")
+        units.setdefault(row.card_id, []).append(row)
+    digest = readiness_manifest_digest(board_id=predecessor.board_id,
+        spec_id=predecessor.spec_id, edition=predecessor.spec_edition,
+        captured_revision=predecessor.captured_revision,
+        source_snapshot_id=predecessor.source_snapshot_id,
+        evaluator_version=predecessor.evaluator_version,
+        summaries=[row.payload() for row in predecessor.summaries],
+        units=[asdict(row) for row in predecessor.units],
+        diagnostics=[row.row() for row in predecessor.diagnostics])
+    if digest != predecessor.manifest_sha256:
+        raise ValueError("readiness_incremental_predecessor_manifest_mismatch")
+    return summaries, diagnostics, {key: tuple(rows) for key, rows in units.items()}
+
+
 def build_readiness_generation(snapshot, *, captured_revision: int,
-                               deadline: float | None = None) -> ReadinessGeneration:
+                               deadline: float | None = None,
+                               predecessor: ReadinessGeneration | None = None,
+                               affected_card_ids: frozenset[str | None] | None = None,
+                               ) -> ReadinessGeneration:
     """Evaluate exactly one source revision with the existing canonical engine.
 
     The caller must close its DB snapshot before invoking this CPU-bound
     function.  A storage adapter must stage all returned rows and CAS-publish
     the manifest; this object by itself has no authority to publish.
+    Reuse requires a verified adjacent predecessor and an affected Card set
+    proven from the same transactional source mutation. If that proof is absent,
+    callers must use the full calculation.
     """
     if captured_revision < 0:
         raise ValueError("readiness_revision_invalid")
+    if (predecessor is None) != (affected_card_ids is None):
+        raise ValueError("readiness_incremental_arguments_incomplete")
     def checkpoint() -> None:
         if deadline is not None and monotonic() >= deadline:
             raise TimeoutError("readiness_calculation_budget_exceeded")
 
     checkpoint()
+    prior_summaries = prior_diagnostics = prior_units = None
+    if predecessor is not None:
+        prior_summaries, prior_diagnostics, prior_units = _verified_predecessor(snapshot,
+            captured_revision=captured_revision, predecessor=predecessor,
+            affected_card_ids=affected_card_ids)
+        checkpoint()
     if snapshot.unavailable_reason_codes:
         reason = FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE,
             native_reason_codes=snapshot.unavailable_reason_codes)
@@ -201,23 +275,35 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
     contextual = EvaluatedDeliveryReadiness(projection_batch,
         actor_id=projection_actor, precomputed_assessments={
             card.id if card else None: assessment for card, assessment in assessments})
+    spec_context = contextual.context(None) if predecessor is not None else None
+    provenance_time = spec_context.model_dump(mode='json')["evaluated_at"] if spec_context else None
     summaries_list = []
     diagnostics_list = []
     for index, (card, assessment) in enumerate(assessments):
         if index % 25 == 0:
             checkpoint()
         card_id = card.id if card else None
-        summaries_list.append(_summary(assessment,
-            card_version=card.version if card else None,
-            context=contextual.context(card_id)))
-        diagnostics_list.append(ProjectedDiagnostic(card_id,
-            _DIAGNOSTICS.dump_python(contextual.diagnostics(card_id), mode='json')))
+        if predecessor is not None and card_id not in affected_card_ids:
+            previous = prior_summaries[card_id]
+            summaries_list.append(replace(previous, context={**previous.context,
+                "snapshot_id": snapshot.snapshot_id, "evaluated_at": provenance_time}))
+            diagnostics_list.append(prior_diagnostics[card_id])
+        else:
+            summaries_list.append(_summary(assessment,
+                card_version=card.version if card else None,
+                context=spec_context if spec_context is not None and card_id is None
+                    else contextual.context(card_id)))
+            diagnostics_list.append(ProjectedDiagnostic(card_id,
+                _DIAGNOSTICS.dump_python(contextual.diagnostics(card_id), mode='json')))
     summaries = tuple(summaries_list)
     diagnostics = tuple(diagnostics_list)
     unique_units = {}
     processed_units = 0
-    for _, assessment in assessments:
-        for unit in _unit_rows(assessment):
+    for card, assessment in assessments:
+        card_id = card.id if card else None
+        rows = (prior_units.get(card_id, ()) if predecessor is not None
+            and card_id not in affected_card_ids else _unit_rows(assessment))
+        for unit in rows:
             processed_units += 1
             if processed_units % 250 == 0:
                 checkpoint()

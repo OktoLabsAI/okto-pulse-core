@@ -1,6 +1,7 @@
 """The durable read model must preserve native evaluation semantics."""
 
 from dataclasses import replace
+from datetime import timedelta
 import pytest
 
 from okto_pulse.core.services import persisted_delivery_readiness as projection
@@ -59,6 +60,39 @@ def test_generation_preserves_independent_local_progress_and_unknowns():
         assert row.verification.percent is None
         assert row.verification.status == 'unknown'
     assert result.units == ()
+
+
+def test_incremental_generation_reuses_unchanged_card_with_exact_manifest():
+    previous_source = _source()
+    predecessor = build_readiness_generation(previous_source, captured_revision=7)
+    changed_facts = with_facts(previous_source.facts,
+        implementations=previous_source.facts.effective_context.implementations[:1])
+    source = replace(previous_source, facts=changed_facts,
+        snapshot_id='1' * 64,
+        evaluated_at=previous_source.evaluated_at + timedelta(seconds=1))
+    full = build_readiness_generation(source, captured_revision=8)
+    incremental = build_readiness_generation(source, captured_revision=8,
+        predecessor=predecessor,
+        affected_card_ids=frozenset({None, 'authorization', 'test-card-1'}))
+    assert incremental.summaries == full.summaries
+    assert incremental.diagnostics == full.diagnostics
+    assert incremental.units == full.units
+    assert incremental.manifest_sha256 == full.manifest_sha256
+
+
+def test_incremental_generation_refuses_unverified_or_nonadjacent_predecessor():
+    source = _source()
+    predecessor = build_readiness_generation(source, captured_revision=7)
+    next_source = replace(source, snapshot_id='1' * 64,
+        evaluated_at=source.evaluated_at + timedelta(seconds=1))
+    affected = frozenset({None, *(card.id for card in source.cards)})
+    with pytest.raises(ValueError, match="readiness_incremental_predecessor_ineligible"):
+        build_readiness_generation(next_source, captured_revision=9,
+            predecessor=predecessor, affected_card_ids=affected)
+    with pytest.raises(ValueError, match="readiness_incremental_predecessor_manifest_mismatch"):
+        build_readiness_generation(next_source, captured_revision=8,
+            predecessor=replace(predecessor, manifest_sha256='0' * 64),
+            affected_card_ids=affected)
 
 
 def test_generation_checks_deadline_before_and_during_evaluation(monkeypatch):
