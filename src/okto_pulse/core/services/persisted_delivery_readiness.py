@@ -11,8 +11,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from hashlib import sha256
-import json
 from time import monotonic
+import orjson
 from pydantic import TypeAdapter
 
 from okto_pulse.core.domain.delivery_assessment import (
@@ -31,7 +31,7 @@ from okto_pulse.core.services.delivery_readiness import EvaluatedDeliveryReadine
 from okto_pulse.core.services.delivery_readiness_diagnostics import NativeDeliveryDiagnostics
 
 
-EVALUATOR_VERSION = "delivery-readiness-evaluator/v3"
+EVALUATOR_VERSION = "delivery-readiness-evaluator/v4"
 _DIAGNOSTICS = TypeAdapter(NativeDeliveryDiagnostics)
 
 
@@ -53,8 +53,9 @@ def readiness_manifest_digest(*, board_id: str, spec_id: str, edition: int,
             row["ref"], row["semantic_sha256"])),
         "diagnostics": sorted(diagnostics, key=lambda row: row["card_id"] or ""),
     }
-    return sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":"),
-        ensure_ascii=False).encode("utf-8")).hexdigest()
+    # The version above fences generations written by the previous encoder.
+    # Both creation and read-back verification hash these exact JSON bytes.
+    return sha256(orjson.dumps(manifest, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)

@@ -20,6 +20,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
+    "orjson>=3.11.0,<4.0.0",
     "pydantic>=2.12.0,<2.14",
     # Imported directly for transport-safe custom validation errors. Pydantic
     # itself pins the exact compatible engine release within this range.
