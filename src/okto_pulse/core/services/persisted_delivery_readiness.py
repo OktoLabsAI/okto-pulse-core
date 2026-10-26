@@ -22,11 +22,10 @@ from okto_pulse.core.domain.delivery_assessment import (
     ReadinessReason,
     UnitPhaseAssessment,
     UnitState,
-    aggregate_delivery_metrics,
 )
 from okto_pulse.core.domain.effective_delivery_coverage import EvaluatedDeliverySnapshot
 from okto_pulse.core.domain.enums import CardType
-from okto_pulse.core.models.delivery_readiness import DeliveryMetric
+from okto_pulse.core.models.delivery_readiness import DeliveryReadinessContext, DeliveryMetric
 from okto_pulse.core.ports.delivery_readiness import READINESS_PERMISSION_OPERATIONS, ReadinessAccess
 from okto_pulse.core.services.delivery_readiness import EvaluatedDeliveryReadiness
 from okto_pulse.core.services.delivery_readiness_diagnostics import NativeDeliveryDiagnostics
@@ -141,18 +140,17 @@ def _unit_rows(assessment: DeliveryAssessment) -> tuple[ProjectedUnit, ...]:
 
 
 def _summary(assessment: DeliveryAssessment, *, card_version: int | None,
-             context: dict) -> ProjectedSummary:
-    metrics = aggregate_delivery_metrics(assessment)
+             context: DeliveryReadinessContext) -> ProjectedSummary:
     return ProjectedSummary(
         assessment.card_id,
         (assessment.card_type.value if isinstance(assessment.card_type, CardType)
             else str(assessment.card_type)) if assessment.card_type is not None else None,
         card_version,
-        DeliveryMetric.model_validate(asdict(metrics.implementation)),
-        DeliveryMetric.model_validate(asdict(metrics.verification)),
+        context.implementation,
+        context.verification,
         assessment.completeness.population_known and assessment.completeness.scope_resolved,
         assessment.completeness.evaluation_complete,
-        context,
+        context.model_dump(mode='json'),
     )
 
 
@@ -210,7 +208,7 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
         card_id = card.id if card else None
         summaries_list.append(_summary(assessment,
             card_version=card.version if card else None,
-            context=contextual.context(card_id).model_dump(mode='json')))
+            context=contextual.context(card_id)))
         diagnostics_list.append(ProjectedDiagnostic(card_id,
             _DIAGNOSTICS.dump_python(contextual.diagnostics(card_id), mode='json')))
     summaries = tuple(summaries_list)
