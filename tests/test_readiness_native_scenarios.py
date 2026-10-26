@@ -40,11 +40,22 @@ def _run_frontend_scenario(scenario: str) -> None:
     if not community:
         raise AssertionError("paired Community checkout is required")
     frontend = Path(community) / "frontend"
-    if not (frontend / "node_modules" / "@playwright" / "test").is_dir():
-        raise AssertionError("paired Community checkout lacks Playwright dependencies")
+    if not (frontend / "package-lock.json").is_file():
+        raise AssertionError("paired Community checkout lacks locked frontend dependencies")
     npx = shutil.which("npx")
-    if not npx:
-        raise AssertionError("npx is required for browser scenario execution")
+    npm = shutil.which("npm")
+    if not npx or not npm:
+        raise AssertionError("npm and npx are required for browser scenario execution")
+    if not (frontend / "node_modules" / "@playwright" / "test").is_dir():
+        install = subprocess.run(
+            [npm, "ci", "--ignore-scripts", "--prefer-offline", "--no-audit", "--no-fund"],
+            cwd=frontend, capture_output=True, text=True, timeout=180, check=False,
+        )
+        if install.returncode != 0:
+            raise AssertionError(
+                f"locked frontend install returned {install.returncode}\n"
+                f"{install.stdout[-2000:]}\n{install.stderr[-2000:]}"
+            )
     result = subprocess.run(
         [npx, "playwright", "test", "--config", "playwright.readiness.config.ts",
          "--grep", f"^{scenario}:"],
