@@ -385,6 +385,10 @@ class PersistedReadinessNativeScenarios(unittest.TestCase):
             f"{tests / 'test_delivery_readiness_surfaces.py'}::"
             "test_P08_board_summary_reports_pending_initial_without_false_zero",
         )
+        _run(
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_real_community_lifespan_serves_pending_then_current_on_upgraded_copy",
+        )
         _run_frontend_components(
             "src/components/code-traceability/__tests__/DeliveryEvidencePanel.test.tsx",
         )
