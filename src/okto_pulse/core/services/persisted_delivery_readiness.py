@@ -376,6 +376,7 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
                                affected_card_ids: frozenset[str | None] | None = None,
                                progress_card_id: str | None = None,
                                progress_deltas: tuple[ReadinessSourceDelta, ...] | None = None,
+                                phase_metrics: dict[str, float] | None = None,
                                ) -> ReadinessGeneration:
     """Evaluate exactly one source revision with the existing canonical engine.
 
@@ -397,6 +398,8 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
             raise TimeoutError("readiness_calculation_budget_exceeded")
 
     checkpoint()
+    phase_now = monotonic if phase_metrics is not None else lambda: 0.0
+    phase_started = phase_now()
     prior_summaries = prior_diagnostics = prior_units = None
     changed_progress_cards = (_verified_progress_span(predecessor,
         captured_revision, progress_deltas) if progress_deltas is not None else ())
@@ -407,6 +410,9 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
                 else frozenset({None}),
             allow_revision_span=progress_deltas is not None)
         checkpoint()
+    if phase_metrics is not None:
+        phase_metrics['readiness_compute_predecessor_ms'] = (monotonic() - phase_started) * 1000
+    phase_started = phase_now()
     if snapshot.unavailable_reason_codes:
         reason = FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE,
             native_reason_codes=snapshot.unavailable_reason_codes)
@@ -418,6 +424,9 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
         assessments = [(None, unknown())] + [(card, unknown(card)) for card in snapshot.cards]
     else:
         evaluation = EvaluatedDeliverySnapshot(snapshot.facts)
+        if phase_metrics is not None:
+            phase_metrics['readiness_compute_evaluation_ms'] = (monotonic() - phase_started) * 1000
+        phase_started = phase_now()
         checkpoint()
         if progress_card_id is not None:
             affected_card_ids = _progress_affected_card_ids(snapshot, evaluation,
@@ -432,6 +441,9 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
                     raise IncrementalReadinessUnavailable("readiness_progress_impact_unavailable")
                 affected.update(impact)
             affected_card_ids = frozenset(affected)
+        if phase_metrics is not None:
+            phase_metrics['readiness_compute_impact_ms'] = (monotonic() - phase_started) * 1000
+        phase_started = phase_now()
         assessments = [(None, evaluation.obligations())]
         for card in snapshot.cards:
             checkpoint()
@@ -444,8 +456,11 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
                 assessment = evaluation.obligations(card_id=card.id,
                     card_type=card.card_type)
             assessments.append((card, assessment))
+    if phase_metrics is not None:
+        phase_metrics['readiness_compute_assessments_ms'] = (monotonic() - phase_started) * 1000
 
     checkpoint()
+    phase_started = phase_now()
     # This temporary read authority exists only inside the pure projector. It
     # lets the canonical context composer calculate actor-neutral counts and
     # lifecycle wording; no access token or permission grant is persisted.
@@ -457,6 +472,9 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
         actor_id=projection_actor, precomputed_assessments={
             card.id if card else None: assessment for card, assessment in assessments})
     spec_context = contextual.context(None) if predecessor is not None else None
+    if phase_metrics is not None:
+        phase_metrics['readiness_compute_context_ms'] = (monotonic() - phase_started) * 1000
+    phase_started = phase_now()
     provenance_time = spec_context.model_dump(mode='json')["evaluated_at"] if spec_context else None
     summaries_list = []
     diagnostics_list = []
@@ -478,6 +496,9 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
                 _DIAGNOSTICS.dump_python(contextual.diagnostics(card_id), mode='json')))
     summaries = tuple(summaries_list)
     diagnostics = tuple(diagnostics_list)
+    if phase_metrics is not None:
+        phase_metrics['readiness_compute_rows_ms'] = (monotonic() - phase_started) * 1000
+    phase_started = phase_now()
     unique_units = {}
     processed_units = 0
     for card, assessment in assessments:
@@ -494,6 +515,9 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
                 raise ValueError("readiness_unit_conflict")
     units = tuple(unique_units[key] for key in sorted(unique_units,
         key=lambda key: (key[0] or "", key[1], key[2], key[3])))
+    if phase_metrics is not None:
+        phase_metrics['readiness_compute_units_ms'] = (monotonic() - phase_started) * 1000
+    phase_started = phase_now()
     checkpoint()
     digest = readiness_manifest_digest(board_id=snapshot.facts.scope.board_id,
         spec_id=snapshot.facts.scope.spec_id, edition=snapshot.facts.scope.edition,
@@ -502,6 +526,8 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
         summaries=[summary.payload() for summary in summaries],
         units=[unit.row() for unit in units],
         diagnostics=[row.row() for row in diagnostics])
+    if phase_metrics is not None:
+        phase_metrics['readiness_compute_digest_ms'] = (monotonic() - phase_started) * 1000
     return ReadinessGeneration(snapshot.facts.scope.board_id, snapshot.facts.scope.spec_id,
         snapshot.facts.scope.edition, snapshot.spec_version, captured_revision,
         snapshot.snapshot_id, snapshot.evaluated_at, EVALUATOR_VERSION,
