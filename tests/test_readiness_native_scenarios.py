@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import unittest
@@ -29,6 +30,29 @@ def _run(*selectors: str) -> None:
     if result.returncode != 0:
         raise AssertionError(
             f"pytest returned {result.returncode} for {selectors}\n"
+            f"{result.stdout[-6000:]}\n{result.stderr[-2000:]}"
+        )
+    print(result.stdout.strip())
+
+
+def _run_frontend_scenario(scenario: str) -> None:
+    community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+    if not community:
+        raise AssertionError("paired Community checkout is required")
+    frontend = Path(community) / "frontend"
+    if not (frontend / "node_modules" / "@playwright" / "test").is_dir():
+        raise AssertionError("paired Community checkout lacks Playwright dependencies")
+    npx = shutil.which("npx")
+    if not npx:
+        raise AssertionError("npx is required for browser scenario execution")
+    result = subprocess.run(
+        [npx, "playwright", "test", "--config", "playwright.readiness.config.ts",
+         "--grep", f"^{scenario}:"],
+        cwd=frontend, capture_output=True, text=True, timeout=180, check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"Playwright returned {result.returncode} for {scenario}\n"
             f"{result.stdout[-6000:]}\n{result.stderr[-2000:]}"
         )
     print(result.stdout.strip())
@@ -268,3 +292,12 @@ class PersistedReadinessNativeScenarios(unittest.TestCase):
         )
         _run(f"{_CORE / 'tests' / 'test_delivery_evidence_lifecycle.py'}::"
             "test_done_checks_readiness_then_rechecks_under_write_fence")
+
+    def test_sc19_atomic_generation_switch_in_ui(self) -> None:
+        _run_frontend_scenario("SC19")
+
+    def test_sc20_pending_unknown_na_and_scope_isolation_in_ui(self) -> None:
+        _run_frontend_scenario("SC20")
+
+    def test_sc21_accessible_phase_and_freshness_in_ui(self) -> None:
+        _run_frontend_scenario("SC21")
