@@ -35,6 +35,67 @@ from okto_pulse.core.services.delivery_readiness_diagnostics import NativeDelive
 
 EVALUATOR_VERSION = "delivery-readiness-evaluator/v4"
 _DIAGNOSTICS = TypeAdapter(NativeDeliveryDiagnostics)
+_PROGRESS_LOCAL_BLOCKERS = frozenset({
+    "delivery_implementation_missing", "delivery_test_result_missing",
+    "decision_verification_incomplete", "delivery_verification_run_conflict",
+})
+
+
+class IncrementalReadinessUnavailable(ValueError):
+    """A source delta cannot safely reuse the previous generation."""
+
+
+def _progress_affected_card_ids(snapshot, evaluation: EvaluatedDeliverySnapshot,
+                                changed_card_id: str) -> frozenset[str | None] | None:
+    """Conservatively close one Card progress delta over its proof dependants.
+
+    The caller must separately prove that this insert is the sole source
+    mutation since the predecessor. A changed Spec, Card declaration, test run,
+    receipt or exception needs a full generation.
+    """
+    context = snapshot.facts.effective_context
+    if (not isinstance(context, EffectiveDeliveryContext)
+            or not context.inventory.complete
+            or set(evaluation.proof.blockers) - _PROGRESS_LOCAL_BLOCKERS
+            or set(evaluation.lifecycle.blockers) - _PROGRESS_LOCAL_BLOCKERS):
+        return None
+    cards = {card.id: card for card in snapshot.cards}
+    changed = cards.get(changed_card_id)
+    if changed is None or changed.card_type not in {CardType.NORMAL, CardType.BUG}:
+        return None
+    allocated = context.inventory.card_obligations(changed_card_id)
+    if not allocated:
+        return None
+    bindings = {row.binding for row in allocated}
+    bindings.update(binding for fact in snapshot.facts.implementations
+        if fact.card_id == changed_card_id for binding in fact.bindings)
+    bindings.update(binding for fact in snapshot.facts.rejected_records
+        if fact.card_id == changed_card_id and fact.kind == "implementation"
+        for binding in fact.bindings)
+    by_binding = {row.binding: row for row in context.inventory.rows}
+    if (len(by_binding) != len(context.inventory.rows)
+            or any(binding not in by_binding or by_binding[binding].family == "decision"
+                for binding in bindings)):
+        return None
+    affected: set[str | None] = {None, changed_card_id}
+    for binding in bindings:
+        row = by_binding[binding]
+        affected.update(row.declared_card_ids)
+        affected.update(contribution.card_id for contribution in row.contributions)
+    scenarios = {check.scenario_id for check in evaluation.proof.scenario_checks
+        if check.binding in bindings}
+    scenarios.update(fact.scenario_id for fact in snapshot.facts.tests
+        if set(fact.bindings) & bindings)
+    affected.update(fact.card_id for fact in snapshot.facts.tests
+        if set(fact.bindings) & bindings)
+    for plan in context.required_scenarios or ():
+        if plan.scenario_id in scenarios:
+            affected.update(plan.test_card_ids)
+    affected.update(card.id for card in snapshot.cards
+        if card.card_type == CardType.TEST and set(card.scenario_ids or ()) & scenarios)
+    if affected - {None} - cards.keys():
+        return None
+    return frozenset(affected)
 
 
 def restore_projected_diagnostics(payload: dict) -> NativeDeliveryDiagnostics:
@@ -180,13 +241,13 @@ def _verified_predecessor(snapshot, *, captured_revision: int,
             or predecessor.evaluator_version != EVALUATOR_VERSION
             or predecessor.captured_revision + 1 != captured_revision
             or predecessor.source_snapshot_id == snapshot.snapshot_id):
-        raise ValueError("readiness_incremental_predecessor_ineligible")
+        raise IncrementalReadinessUnavailable("readiness_incremental_predecessor_ineligible")
     summaries = {row.card_id: row for row in predecessor.summaries}
     diagnostics = {row.card_id: row for row in predecessor.diagnostics}
     if (len(summaries) != len(predecessor.summaries)
             or len(diagnostics) != len(predecessor.diagnostics)
             or set(summaries) != expected_ids or set(diagnostics) != expected_ids):
-        raise ValueError("readiness_incremental_predecessor_incomplete")
+        raise IncrementalReadinessUnavailable("readiness_incremental_predecessor_incomplete")
     for card_id, summary in summaries.items():
         card = cards.get(card_id)
         status = card.status if card is not None else snapshot.spec_status
@@ -196,11 +257,11 @@ def _verified_predecessor(snapshot, *, captured_revision: int,
                     if isinstance(card.card_type, CardType) else str(card.card_type)) if card else None)
                 or summary.context.get("snapshot_id") != predecessor.source_snapshot_id
                 or summary.context.get("lifecycle", {}).get("stored_status") != status):
-            raise ValueError("readiness_incremental_predecessor_scope_changed")
+            raise IncrementalReadinessUnavailable("readiness_incremental_predecessor_scope_changed")
     units: dict[str | None, list[ProjectedUnit]] = {}
     for row in predecessor.units:
         if row.card_id not in expected_ids:
-            raise ValueError("readiness_incremental_predecessor_incomplete")
+            raise IncrementalReadinessUnavailable("readiness_incremental_predecessor_incomplete")
         units.setdefault(row.card_id, []).append(row)
     digest = readiness_manifest_digest(board_id=predecessor.board_id,
         spec_id=predecessor.spec_id, edition=predecessor.spec_edition,
@@ -211,7 +272,7 @@ def _verified_predecessor(snapshot, *, captured_revision: int,
         units=[asdict(row) for row in predecessor.units],
         diagnostics=[row.row() for row in predecessor.diagnostics])
     if digest != predecessor.manifest_sha256:
-        raise ValueError("readiness_incremental_predecessor_manifest_mismatch")
+        raise IncrementalReadinessUnavailable("readiness_incremental_predecessor_manifest_mismatch")
     return summaries, diagnostics, {key: tuple(rows) for key, rows in units.items()}
 
 
@@ -219,6 +280,7 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
                                deadline: float | None = None,
                                predecessor: ReadinessGeneration | None = None,
                                affected_card_ids: frozenset[str | None] | None = None,
+                               progress_card_id: str | None = None,
                                ) -> ReadinessGeneration:
     """Evaluate exactly one source revision with the existing canonical engine.
 
@@ -231,7 +293,9 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
     """
     if captured_revision < 0:
         raise ValueError("readiness_revision_invalid")
-    if (predecessor is None) != (affected_card_ids is None):
+    if ((predecessor is None and (affected_card_ids is not None or progress_card_id is not None))
+            or (predecessor is not None
+                and (affected_card_ids is None) == (progress_card_id is None))):
         raise ValueError("readiness_incremental_arguments_incomplete")
     def checkpoint() -> None:
         if deadline is not None and monotonic() >= deadline:
@@ -242,7 +306,8 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
     if predecessor is not None:
         prior_summaries, prior_diagnostics, prior_units = _verified_predecessor(snapshot,
             captured_revision=captured_revision, predecessor=predecessor,
-            affected_card_ids=affected_card_ids)
+            affected_card_ids=affected_card_ids if affected_card_ids is not None
+                else frozenset({None}))
         checkpoint()
     if snapshot.unavailable_reason_codes:
         reason = FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE,
@@ -256,6 +321,11 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
     else:
         evaluation = EvaluatedDeliverySnapshot(snapshot.facts)
         checkpoint()
+        if progress_card_id is not None:
+            affected_card_ids = _progress_affected_card_ids(snapshot, evaluation,
+                progress_card_id)
+            if affected_card_ids is None:
+                raise IncrementalReadinessUnavailable("readiness_progress_impact_unavailable")
         assessments = [(None, evaluation.obligations())]
         for card in snapshot.cards:
             checkpoint()
