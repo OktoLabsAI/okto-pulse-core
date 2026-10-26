@@ -9,7 +9,9 @@ from okto_pulse.core.services import persisted_delivery_readiness as projection
 from okto_pulse.core.domain.delivery_assessment import aggregate_delivery_metrics
 from okto_pulse.core.domain.delivery_evidence import DeliveryPhase, DeliveryWaiverFact
 from okto_pulse.core.domain.effective_delivery_coverage import EvaluatedDeliverySnapshot
-from okto_pulse.core.services.persisted_delivery_readiness import build_readiness_generation
+from okto_pulse.core.services.persisted_delivery_readiness import (
+    ReadinessSourceDelta, build_readiness_generation,
+)
 from okto_pulse.core.services.delivery_readiness import EvaluatedDeliveryReadiness
 from test_delivery_obligation_assessment import snapshot, with_facts
 from test_delivery_readiness_access import batch
@@ -116,6 +118,33 @@ def test_incremental_generation_refuses_unverified_or_nonadjacent_predecessor():
         build_readiness_generation(next_source, captured_revision=8,
             predecessor=replace(predecessor, manifest_sha256='0' * 64),
             affected_card_ids=affected)
+
+
+def test_incremental_generation_accepts_complete_progress_span_only():
+    previous_source = _source()
+    predecessor = build_readiness_generation(previous_source, captured_revision=7)
+    source = replace(previous_source, snapshot_id='1' * 64,
+        evaluated_at=previous_source.evaluated_at + timedelta(seconds=1))
+    deltas = (
+        ReadinessSourceDelta(8, 'card_progress_insert', 'authorization'),
+        ReadinessSourceDelta(9, 'card_progress_insert', 'ui'),
+        ReadinessSourceDelta(10, 'card_progress_insert', 'authorization'),
+    )
+    full = build_readiness_generation(source, captured_revision=10)
+    incremental = build_readiness_generation(source, captured_revision=10,
+        predecessor=predecessor, progress_deltas=deltas)
+    assert incremental.summaries == full.summaries
+    assert incremental.diagnostics == full.diagnostics
+    assert incremental.units == full.units
+    assert incremental.manifest_sha256 == full.manifest_sha256
+    for invalid in (
+        deltas[::2],
+        (deltas[0], replace(deltas[1], kind='full'), deltas[2]),
+        (deltas[0], replace(deltas[1], card_id=None), deltas[2]),
+    ):
+        with pytest.raises(ValueError, match='readiness_progress_delta_span_invalid'):
+            build_readiness_generation(source, captured_revision=10,
+                predecessor=predecessor, progress_deltas=invalid)
 
 
 def test_generation_checks_deadline_before_and_during_evaluation(monkeypatch):

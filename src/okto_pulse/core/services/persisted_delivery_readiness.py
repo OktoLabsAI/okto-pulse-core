@@ -45,6 +45,31 @@ class IncrementalReadinessUnavailable(ValueError):
     """A source delta cannot safely reuse the previous generation."""
 
 
+@dataclass(frozen=True, slots=True)
+class ReadinessSourceDelta:
+    """One source revision persisted in the writer's transaction."""
+
+    revision: int
+    kind: str
+    card_id: str | None
+
+
+def _verified_progress_span(predecessor: ReadinessGeneration, captured_revision: int,
+                            deltas: tuple[ReadinessSourceDelta, ...]) -> tuple[str, ...]:
+    """Require a complete, ordered chain of progress inserts since the predecessor."""
+    expected = predecessor.captured_revision + 1
+    cards = []
+    for delta in deltas:
+        if (delta.revision != expected or delta.kind != "card_progress_insert"
+                or not delta.card_id):
+            raise IncrementalReadinessUnavailable("readiness_progress_delta_span_invalid")
+        cards.append(delta.card_id)
+        expected += 1
+    if not cards or expected != captured_revision + 1:
+        raise IncrementalReadinessUnavailable("readiness_progress_delta_span_invalid")
+    return tuple(dict.fromkeys(cards))
+
+
 def _progress_affected_card_ids(snapshot, evaluation: EvaluatedDeliverySnapshot,
                                 changed_card_id: str) -> frozenset[str | None] | None:
     """Conservatively close one Card progress delta over its proof dependants.
@@ -272,7 +297,8 @@ def _summary(assessment: DeliveryAssessment, *, card_version: int | None,
 
 def _verified_predecessor(snapshot, *, captured_revision: int,
                           predecessor: ReadinessGeneration,
-                          affected_card_ids: frozenset[str | None]) -> tuple[
+                          affected_card_ids: frozenset[str | None],
+                          allow_revision_span: bool = False) -> tuple[
                               dict[str | None, ProjectedSummary],
                               dict[str | None, ProjectedDiagnostic],
                               dict[str | None, tuple[ProjectedUnit, ...]],
@@ -291,7 +317,8 @@ def _verified_predecessor(snapshot, *, captured_revision: int,
             or predecessor.spec_edition != scope.edition
             or predecessor.spec_version != snapshot.spec_version
             or predecessor.evaluator_version != EVALUATOR_VERSION
-            or predecessor.captured_revision + 1 != captured_revision
+            or (not allow_revision_span and predecessor.captured_revision + 1 != captured_revision)
+            or (allow_revision_span and predecessor.captured_revision >= captured_revision)
             or predecessor.source_snapshot_id == snapshot.snapshot_id):
         raise IncrementalReadinessUnavailable("readiness_incremental_predecessor_ineligible")
     summaries = {row.card_id: row for row in predecessor.summaries}
@@ -333,6 +360,7 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
                                predecessor: ReadinessGeneration | None = None,
                                affected_card_ids: frozenset[str | None] | None = None,
                                progress_card_id: str | None = None,
+                               progress_deltas: tuple[ReadinessSourceDelta, ...] | None = None,
                                ) -> ReadinessGeneration:
     """Evaluate exactly one source revision with the existing canonical engine.
 
@@ -345,9 +373,9 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
     """
     if captured_revision < 0:
         raise ValueError("readiness_revision_invalid")
-    if ((predecessor is None and (affected_card_ids is not None or progress_card_id is not None))
-            or (predecessor is not None
-                and (affected_card_ids is None) == (progress_card_id is None))):
+    supplied = sum(value is not None for value in (
+        affected_card_ids, progress_card_id, progress_deltas))
+    if (predecessor is None and supplied or predecessor is not None and supplied != 1):
         raise ValueError("readiness_incremental_arguments_incomplete")
     def checkpoint() -> None:
         if deadline is not None and monotonic() >= deadline:
@@ -355,11 +383,14 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
 
     checkpoint()
     prior_summaries = prior_diagnostics = prior_units = None
+    changed_progress_cards = (_verified_progress_span(predecessor,
+        captured_revision, progress_deltas) if progress_deltas is not None else ())
     if predecessor is not None:
         prior_summaries, prior_diagnostics, prior_units = _verified_predecessor(snapshot,
             captured_revision=captured_revision, predecessor=predecessor,
             affected_card_ids=affected_card_ids if affected_card_ids is not None
-                else frozenset({None}))
+                else frozenset({None}),
+            allow_revision_span=progress_deltas is not None)
         checkpoint()
     if snapshot.unavailable_reason_codes:
         reason = FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE,
@@ -378,6 +409,14 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
                 progress_card_id)
             if affected_card_ids is None:
                 raise IncrementalReadinessUnavailable("readiness_progress_impact_unavailable")
+        elif progress_deltas is not None:
+            affected = set()
+            for changed_card_id in changed_progress_cards:
+                impact = _progress_affected_card_ids(snapshot, evaluation, changed_card_id)
+                if impact is None:
+                    raise IncrementalReadinessUnavailable("readiness_progress_impact_unavailable")
+                affected.update(impact)
+            affected_card_ids = frozenset(affected)
         assessments = [(None, evaluation.obligations())]
         for card in snapshot.cards:
             checkpoint()
