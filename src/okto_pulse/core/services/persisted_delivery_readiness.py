@@ -8,7 +8,7 @@ proof from a Card's workflow status.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 from hashlib import sha256
 from time import monotonic
@@ -211,6 +211,21 @@ class ProjectedUnit:
     implementation_reason_codes: tuple[str, ...]
     verification_reason_codes: tuple[str, ...]
 
+    def row(self) -> dict:
+        """Canonical storage row without recursively copying immutable fields."""
+        return {
+            'card_id': self.card_id,
+            'kind': self.kind,
+            'ref': self.ref,
+            'semantic_sha256': self.semantic_sha256,
+            'spec_edition': self.spec_edition,
+            'contribution_card_ids': self.contribution_card_ids,
+            'implementation_state': self.implementation_state,
+            'verification_state': self.verification_state,
+            'implementation_reason_codes': self.implementation_reason_codes,
+            'verification_reason_codes': self.verification_reason_codes,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class ProjectedSummary:
@@ -348,7 +363,7 @@ def _verified_predecessor(snapshot, *, captured_revision: int,
         source_snapshot_id=predecessor.source_snapshot_id,
         evaluator_version=predecessor.evaluator_version,
         summaries=[row.payload() for row in predecessor.summaries],
-        units=[asdict(row) for row in predecessor.units],
+        units=[row.row() for row in predecessor.units],
         diagnostics=[row.row() for row in predecessor.diagnostics])
     if digest != predecessor.manifest_sha256:
         raise IncrementalReadinessUnavailable("readiness_incremental_predecessor_manifest_mismatch")
@@ -485,7 +500,7 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
         captured_revision=captured_revision, source_snapshot_id=snapshot.snapshot_id,
         evaluator_version=EVALUATOR_VERSION,
         summaries=[summary.payload() for summary in summaries],
-        units=[asdict(unit) for unit in units],
+        units=[unit.row() for unit in units],
         diagnostics=[row.row() for row in diagnostics])
     return ReadinessGeneration(snapshot.facts.scope.board_id, snapshot.facts.scope.spec_id,
         snapshot.facts.scope.edition, snapshot.spec_version, captured_revision,
