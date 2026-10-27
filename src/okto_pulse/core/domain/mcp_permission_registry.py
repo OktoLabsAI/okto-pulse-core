@@ -410,6 +410,7 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     ),
     _policy("okto_pulse_get_decision_reviews", "code_traceability.evidence.read"),
     _policy("okto_pulse_get_delivery_evidence", "code_traceability.evidence.read"),
+    _policy("okto_pulse_get_delivery_readiness_summary", "code_traceability.evidence.read"),
     _policy("okto_pulse_get_design_system", "design_system.entity.read"),
     _policy("okto_pulse_get_guideline_impact", "guidelines.impact.preview"),
     _policy("okto_pulse_get_guideline_revision", "guidelines.revisions.read"),

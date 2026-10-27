@@ -168,6 +168,12 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
             removal_criterion="Compile the taxonomy into a stdlib-readable packaged format.",
         ),
         _entry(
+            "orjson", core, "core", ("orjson",), "direct",
+            ("src/okto_pulse/core/services/persisted_delivery_readiness.py",),
+            rationale="Core hashes canonical persisted-readiness manifests with stable JSON bytes.",
+            removal_criterion="Replace the canonical encoder while preserving digest compatibility.",
+        ),
+        _entry(
             CORE_DISTRIBUTION, community, "community", ("okto_pulse",), "distribution",
             ("src/okto_pulse/community/adapters/composition.py",),
             rationale="Community composes public Core ports and application services.",
@@ -208,6 +214,12 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
             ("src/okto_pulse/community/adapters/coordination.py",), extras=("asyncio",),
             rationale="Community owns the local relational UoW and repository adapters.",
             removal_criterion="Replace all Community relational adapters with another stack.",
+        ),
+        _entry(
+            "orjson", community, "community", ("orjson",), "direct",
+            ("src/okto_pulse/community/adapters/sqlalchemy_persisted_readiness.py",),
+            rationale="Community encodes and decodes persisted-readiness rows in the SQLite adapter.",
+            removal_criterion="Replace the adapter encoder while preserving stored row compatibility.",
         ),
         _entry(
             "aiosqlite", community, "community", ("aiosqlite",), "dynamic",
