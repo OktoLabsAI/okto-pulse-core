@@ -471,13 +471,19 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
     contextual = EvaluatedDeliveryReadiness(projection_batch,
         actor_id=projection_actor, precomputed_assessments={
             card.id if card else None: assessment for card, assessment in assessments})
+    if phase_metrics is not None:
+        phase_metrics['readiness_compute_context_setup_ms'] = (monotonic() - phase_started) * 1000
+    spec_context_started = phase_now()
     spec_context = contextual.context(None) if predecessor is not None else None
     if phase_metrics is not None:
+        phase_metrics['readiness_compute_context_spec_ms'] = (monotonic() - spec_context_started) * 1000
         phase_metrics['readiness_compute_context_ms'] = (monotonic() - phase_started) * 1000
     phase_started = phase_now()
     provenance_time = spec_context.model_dump(mode='json')["evaluated_at"] if spec_context else None
     summaries_list = []
     diagnostics_list = []
+    changed_context_ms = changed_diagnostic_ms = 0.0
+    reused_rows = 0
     for index, (card, assessment) in enumerate(assessments):
         if index % 25 == 0:
             checkpoint()
@@ -487,17 +493,25 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
             summaries_list.append(replace(previous, context={**previous.context,
                 "snapshot_id": snapshot.snapshot_id, "evaluated_at": provenance_time}))
             diagnostics_list.append(prior_diagnostics[card_id])
+            reused_rows += 1
         else:
+            context_started = phase_now()
+            context = spec_context if spec_context is not None and card_id is None else contextual.context(card_id)
+            changed_context_ms += (phase_now() - context_started) * 1000
             summaries_list.append(_summary(assessment,
                 card_version=card.version if card else None,
-                context=spec_context if spec_context is not None and card_id is None
-                    else contextual.context(card_id)))
+                context=context))
+            diagnostic_started = phase_now()
             diagnostics_list.append(ProjectedDiagnostic(card_id,
                 _DIAGNOSTICS.dump_python(contextual.diagnostics(card_id), mode='json')))
+            changed_diagnostic_ms += (phase_now() - diagnostic_started) * 1000
     summaries = tuple(summaries_list)
     diagnostics = tuple(diagnostics_list)
     if phase_metrics is not None:
         phase_metrics['readiness_compute_rows_ms'] = (monotonic() - phase_started) * 1000
+        phase_metrics['readiness_compute_rows_changed_context_ms'] = changed_context_ms
+        phase_metrics['readiness_compute_rows_changed_diagnostic_ms'] = changed_diagnostic_ms
+        phase_metrics['readiness_compute_rows_reused_count'] = float(reused_rows)
     phase_started = phase_now()
     unique_units = {}
     processed_units = 0
