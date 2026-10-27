@@ -144,7 +144,7 @@ def test_code_traceability_permission_generation_is_fail_closed() -> None:
     assert manifest.version == "CODE-TRACEABILITY/v1"
     assert not hasattr(manifest, "legacy_compatible")
     assert len(manifest.leaves) == 22
-    assert len(ALL_FLAGS) == 536  # Classification and telemetry migration notice removed.
+    assert len(ALL_FLAGS) == 538  # Includes the readiness requeue capability.
     assert "metrics.settings.migration_notice_seen" not in ALL_FLAGS
     assert set(manifest.leaves) <= set(ALL_FLAGS)
     assert set(dict(manifest.historical_authorities)) == set(manifest.leaves)

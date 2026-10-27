@@ -16,7 +16,8 @@ from test_delivery_scenario_assessment import outcome
 
 
 @pytest.mark.parametrize('failure', ['missing', 'failed', 'inconclusive', 'unknown', 'new_code'])
-def test_G01_G02_verification_cannot_acquire_implementation_authority(failure):
+@pytest.mark.parametrize('card_type', ['normal', 'bug'])
+def test_G01_G02_task_done_requires_verification_without_changing_implementation_credit(failure, card_type):
     value = snapshot()
     if failure == 'missing':
         value = with_facts(value, tests=())
@@ -24,7 +25,7 @@ def test_G01_G02_verification_cannot_acquire_implementation_authority(failure):
         value = outcome(value, 'scenario-ui', failure)
     elif failure == 'unknown':
         value = replace(value, effective_context=replace(value.effective_context, admitted_methods=None))
-    result = assess_obligation_delivery(value, card_id='ui', card_type='normal')
+    result = assess_obligation_delivery(value, card_id='ui', card_type=card_type)
     if failure == 'new_code':
         row = result.obligations[0]
         verification = replace(row.verification, state=UnitState.FAILED, intrinsic_state=UnitState.FAILED,
@@ -33,7 +34,9 @@ def test_G01_G02_verification_cannot_acquire_implementation_authority(failure):
         result = replace(result, obligations=(replace(row, verification=verification),))
     before = aggregate_delivery_metrics(result)
     gate = assess_delivery_gate(result)
-    assert gate.allowed and not gate.blockers and not gate.exception_refs
+    assert gate.status == ('unknown' if failure == 'unknown' else 'blocked')
+    assert {blocker.phase for blocker in gate.blockers} == {'verification'}
+    assert not gate.exception_refs
     assert before == aggregate_delivery_metrics(result)
     assert before.implementation.percent == 100
 
@@ -65,12 +68,49 @@ def test_G05_G06_effective_override_does_not_change_metrics_or_fabricate_excepti
     assert aggregate_delivery_metrics(pending) == metrics and metrics.verification.percent == 0
 
 
-def test_spec_override_does_not_extend_to_card_and_test_seam_does_not_require_pass():
+def test_spec_override_does_not_extend_to_card_or_test():
     missing = assess_obligation_delivery(with_facts(snapshot(), implementations=()), card_id='ui', card_type='normal')
     assert not assess_delivery_gate(missing, spec_override=True).allowed
     tests = assess_test_delivery(outcome(snapshot(), 'scenario-ui', 'failed'), card_id='test-card-1', scenario_ids=('scenario-ui',))
-    assert assess_delivery_gate(tests).allowed
+    assert not assess_delivery_gate(tests, spec_override=True).allowed
     assert aggregate_delivery_metrics(tests).verification.percent == 0
+
+
+def test_test_completion_requires_current_delivery_verification_not_just_passed_scenarios():
+    value = with_facts(snapshot(), tests=())
+    assessment = assess_test_delivery(value, card_id='test-card-1',
+        scenario_ids=('scenario-ui', 'scenario-authorization'))
+    gate = assess_delivery_gate(assessment)
+    assert gate.status == 'blocked'
+    assert {blocker.phase for blocker in gate.blockers} == {'verification'}
+    assert aggregate_delivery_metrics(assessment).verification.percent == 0
+
+
+def test_test_completion_accepts_current_delivery_proof_before_done_lifecycle():
+    value = snapshot()
+    value = with_facts(value, tests=tuple(replace(test, fact=replace(test.fact,
+        card_status='in_progress')) for test in value.effective_context.tests))
+    assessment = assess_test_delivery(value, card_id='test-card-1',
+        scenario_ids=('scenario-ui', 'scenario-authorization'))
+    assert all(row.verification.proof_satisfied is True and row.verification.lifecycle_satisfied is False
+        for row in assessment.scenarios)
+    assert assess_delivery_gate(assessment).allowed
+
+
+@pytest.mark.asyncio
+async def test_test_card_done_gate_reads_cross_card_rollup_and_rejects_missing_association(monkeypatch):
+    load = AsyncMock(return_value=with_facts(snapshot(), tests=()))
+    monkeypatch.setattr(service, 'delivery_store', lambda _: SimpleNamespace(load_snapshot=load))
+    card = SimpleNamespace(id='test-card-1', board_id='board', spec_id='spec', card_type='test',
+        test_scenario_ids=['scenario-ui', 'scenario-authorization'])
+    spec = SimpleNamespace(id='spec', edition=2)
+    with pytest.raises(service.DeliveryGateBlocked) as error:
+        await service.require_card_delivery(None, card, spec)
+    assert error.value.gate.status == 'blocked'
+    assert load.await_count == 1
+    await service.require_card_delivery(None, card, spec, board=SimpleNamespace(settings={
+        'delivery_evidence_gate': 'advisory'}))
+    assert load.await_count == 1
 
 
 @pytest.mark.parametrize('disposition', ['risk_accepted', 'not_applicable'])
@@ -119,8 +159,9 @@ async def test_G10_spec_write_fence_precedes_loading_and_no_readiness_cache_is_a
 async def test_prospective_report_is_passed_to_native_loader_without_persistence(monkeypatch):
     value = snapshot()
     load = AsyncMock(return_value=value)
-    monkeypatch.setattr(service, 'card_delivery_store', lambda _: SimpleNamespace(load_card_snapshot=load))
+    monkeypatch.setattr(service, 'delivery_store', lambda _: SimpleNamespace(load_snapshot=load))
     report = {'delivery_manifest': {'selection': 'already-validated-by-native-path'}}
     await service.require_card_delivery(None, SimpleNamespace(id='ui', board_id='board', spec_id='spec', card_type='normal'),
         SimpleNamespace(id='spec', edition=2), prospective_report=report)
+    assert load.call_args.kwargs['prospective_card_id'] == 'ui'
     assert load.call_args.kwargs['prospective_report'] is report

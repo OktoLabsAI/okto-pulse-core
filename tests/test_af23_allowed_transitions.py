@@ -24,7 +24,7 @@ from okto_pulse.core.application.use_cases.allowed_transitions import (
     allowed_transitions_for_status,
     calculate_allowed_transition_drift,
 )
-from okto_pulse.core.application.use_cases.base import ActorContext
+from okto_pulse.core.application.use_cases.base import ActorContext, CommandValidationError
 from okto_pulse.core.domain.enums import (
     CardStatus,
     IdeationStatus,
@@ -92,6 +92,13 @@ def _status_values(entity_type: str, status: str) -> list[str]:
     ]
 
 
+def test_legacy_started_is_not_an_active_card_preview_status() -> None:
+    with pytest.raises(CommandValidationError, match="Invalid status for card") as exc:
+        allowed_transitions_for_status("card", "started")
+    assert "'started'" not in str(exc.value)
+    assert "in_progress" in str(exc.value)
+
+
 @pytest.mark.parametrize(
     ("entity_type", "authority"),
     [
@@ -128,6 +135,8 @@ def test_card_read_model_and_mutation_admission_share_every_typed_edge(
     card_type: str,
 ) -> None:
     for current in CardStatus:
+        if current is CardStatus.STARTED:  # historical storage only
+            continue
         projected = {
             item.to_status
             for item in allowed_transitions_for_status(
@@ -156,7 +165,7 @@ def test_card_read_model_and_mutation_admission_share_every_typed_edge(
             card_type=card_type,
         )
     }
-    assert (CardStatus.IN_PROGRESS.value in direct) is (card_type in {"test", "bug"})
+    assert CardStatus.IN_PROGRESS.value in direct
 
 
 def test_refinement_scope_metadata_is_not_projected_on_ideation() -> None:

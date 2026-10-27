@@ -32,11 +32,9 @@ class GetDeliveryEvidenceUseCase:
         if isinstance(command, DeliveryEvidenceReadQuery) and command.view == 'readiness':
             from okto_pulse.core.ports.delivery_readiness import ReadinessActor
 
-            result = await uow.services.delivery_readiness.read(command.readiness_query(), actor=ReadinessActor(
-                actor.actor_id, actor.actor_kind, actor.realm_id, actor.board_id))
-            # Both transports receive this closed JSON projection. In particular,
-            # generic MCP model serialization must not discard meaningful nulls.
-            return result.model_dump(mode='json', exclude_none=False)
+            return await uow.services.delivery_readiness.read_persisted_detail(
+                command.readiness_query(), actor=ReadinessActor(
+                    actor.actor_id, actor.actor_kind, actor.realm_id, actor.board_id))
         if isinstance(command, DeliveryEvidenceReadQuery) and command.card_id is not None:
             if command.view == "resume":
                 result = await uow.services.delivery_evidence.card_resume(command, actor_id=actor.actor_id)
@@ -56,15 +54,46 @@ class GetDeliveryEvidenceUseCase:
 
 
 class GetDeliveryReadinessBoardSummaryUseCase:
-    """Compact board projection; one authorized evaluation per Spec."""
+    """Current-authority read of one published board generation."""
     async def execute(self, command: DeliveryEvidenceQuery, *, actor, uow: PulseUnitOfWork):
         from okto_pulse.core.ports.delivery_readiness import ReadinessActor
         await require_authorization(actor, PermissionRequirement('code_traceability.evidence.read'),
             uow=uow, board_id=command.board_id)
-        result = await uow.services.delivery_readiness.board_summary(board_id=command.board_id,
+        result = await uow.services.delivery_readiness.board_summary_persisted(board_id=command.board_id,
             spec_id=command.spec_id, actor=ReadinessActor(
                 actor.actor_id, actor.actor_kind, actor.realm_id, actor.board_id))
-        return result.model_dump(mode='json', exclude_none=False)
+        return result
+
+
+class GetPersistedDeliveryReadinessUseCase:
+    """Read metrics without running the proof evaluator on GET."""
+
+    async def execute(self, command, *, actor, uow: PulseUnitOfWork):
+        from okto_pulse.core.ports.delivery_readiness import ReadinessActor
+
+        await require_authorization(actor, PermissionRequirement('code_traceability.evidence.read'),
+            uow=uow, board_id=command.board_id)
+        return await uow.services.delivery_readiness.read_persisted(
+            board_id=command.board_id, spec_id=command.spec_id,
+            actor=ReadinessActor(actor.actor_id, actor.actor_kind, actor.realm_id, actor.board_id),
+            card_id=command.card_id, unit_limit=command.unit_limit,
+            cursor=command.cursor)
+
+
+class RequeuePersistedReadinessUseCase:
+    """Authorized, audited retry of a terminal derived job."""
+
+    async def execute(self, command, *, actor, uow: PulseUnitOfWork):
+        from okto_pulse.core.ports.delivery_readiness import ReadinessActor
+
+        await require_authorization(actor, PermissionRequirement('readiness.requeue'),
+            uow=uow, board_id=command.board_id)
+        return await uow.services.delivery_readiness.requeue_terminal(
+            board_id=command.board_id, spec_id=command.spec_id,
+            actor=ReadinessActor(actor.actor_id, actor.actor_kind, actor.realm_id, actor.board_id),
+            edition=command.edition,
+            expected_revision=command.expected_target_revision,
+            idempotency_key=command.idempotency_key, reason=command.reason)
 
 
 class RecordDeliveryEvidenceUseCase:
@@ -165,9 +194,31 @@ class RecordCardDeliveryEvidenceUseCase:
     async def submit_report(self, command, *, actor, uow: PulseUnitOfWork):
         from okto_pulse.core.application.use_cases.learning_capture import authorize_learning_submission
 
-        await authorize_learning_submission(command.report, actor=actor, uow=uow, board_id=command.board_id)
         batch = command.batch_command()
         options = await self.authorize_in_transaction(batch, actor=actor, uow=uow)
+        if command.expected_card_status == "started":
+            # A historical request can only read back its exact prior receipt.
+            # Do not require a retired transition permission or run a report
+            # submission gate: neither action belongs to an idempotent replay.
+            await require_authorization(
+                actor, PermissionRequirement("card.entity.read"),
+                uow=uow, board_id=command.board_id,
+            )
+
+            async def reject_new_report(_selection):
+                raise ValueError("delivery_legacy_started_replay_only")
+
+            try:
+                result = await uow.services.delivery_evidence.record_card_report(
+                    command, actor_id=actor.actor_id, actor_kind=actor.actor_kind,
+                    report_submitter=reject_new_report, **options,
+                )
+                await uow.rollback()
+                return result
+            except BaseException:
+                await uow.rollback()
+                raise
+        await authorize_learning_submission(command.report, actor=actor, uow=uow, board_id=command.board_id)
         await require_authorization(actor, transition_permission_requirement(
             "card", command.expected_card_status, command.report.status
         ), uow=uow, board_id=command.board_id)

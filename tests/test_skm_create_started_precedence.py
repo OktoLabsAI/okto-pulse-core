@@ -120,11 +120,11 @@ async def _effect_counts(
         return int(cards or 0), int(activities or 0), int(events or 0)
 
 
-def _started_card(title: str, *, spec_id: str) -> CardCreate:
+def _planned_card(title: str, *, spec_id: str) -> CardCreate:
     return CardCreate(
         title=title,
         spec_id=spec_id,
-        status=CardStatus.STARTED,
+        status=CardStatus.NOT_STARTED,
     )
 
 
@@ -154,9 +154,8 @@ async def _seed_validation_test_card(
 
 
 @pytest.mark.asyncio
-async def test_create_started_blocks_before_card_audit_or_event(
+async def test_start_move_blocks_before_card_audit_or_event(
     db_factory,  # noqa: ANN001
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     board_id, source_id, target_id = await _seed_specs(
         db_factory,
@@ -164,28 +163,31 @@ async def test_create_started_blocks_before_card_audit_or_event(
         blocked=True,
     )
 
-    async def unexpected_effect(*_args, **_kwargs):  # noqa: ANN002, ANN003, ANN202
-        raise AssertionError("precedence gate must run before critical-context audit")
-
-    monkeypatch.setattr(
-        main_service,
-        "_authorize_critical_context_or_raise",
-        unexpected_effect,
-    )
+    async with db_factory() as db:
+        source = await db.get(Spec, source_id)
+        source.status = SpecStatus.IN_PROGRESS
+        card = await CardService(db).create_card(
+            board_id, USER_ID,
+            _planned_card("Must remain blocked", spec_id=source_id),
+        )
+        source.functional_requirements = [{
+            "id": "fr-start-block", "text": "Required behavior",
+            "linked_task_ids": [card.id],
+        }]
+        await db.commit()
+    baseline = await _effect_counts(db_factory, board_id=board_id)
 
     async with db_factory() as db:
         with pytest.raises(SpecDependencyOperationError) as caught:
-            await CardService(db).create_card(
-                board_id,
-                USER_ID,
-                _started_card("Must remain blocked", spec_id=source_id),
+            await CardService(db).move_card(
+                card.id, USER_ID, CardMove(status=CardStatus.IN_PROGRESS),
             )
 
     assert caught.value.code == "spec_dependencies_incomplete"
     assert caught.value.facts["spec_id"] == source_id
     assert caught.value.facts["blocking_count"] == 1
     assert caught.value.facts["blocking_dependencies"][0]["target_spec_id"] == target_id
-    assert await _effect_counts(db_factory, board_id=board_id) == (0, 0, 0)
+    assert await _effect_counts(db_factory, board_id=board_id) == baseline
     async with db_factory() as db:
         marker = await db.scalar(
             select(Spec.last_started_edition).where(Spec.id == source_id)
@@ -194,7 +196,7 @@ async def test_create_started_blocks_before_card_audit_or_event(
 
 
 @pytest.mark.asyncio
-async def test_create_started_marks_current_edition_and_persists_card(
+async def test_start_move_marks_current_edition_and_persists_card(
     db_factory,  # noqa: ANN001
 ) -> None:
     board_id, source_id, _target_id = await _seed_specs(
@@ -204,13 +206,22 @@ async def test_create_started_marks_current_edition_and_persists_card(
     )
 
     async with db_factory() as db:
+        source = await db.get(Spec, source_id)
+        source.status = SpecStatus.IN_PROGRESS
         created = await CardService(db).create_card(
             board_id,
             USER_ID,
-            _started_card("Ready to start", spec_id=source_id),
+            _planned_card("Ready to start", spec_id=source_id),
         )
         assert created is not None
-        assert created.status is CardStatus.STARTED
+        assert created.status is CardStatus.NOT_STARTED
+        source.functional_requirements = [{
+            "id": "fr-start-success", "text": "Required behavior",
+            "linked_task_ids": [created.id],
+        }]
+        await CardService(db).move_card(
+            created.id, USER_ID, CardMove(status=CardStatus.IN_PROGRESS),
+        )
         await db.commit()
 
     async with db_factory() as db:
@@ -225,11 +236,11 @@ async def test_create_started_marks_current_edition_and_persists_card(
         )
     assert marker == 3
     assert persisted is not None
-    assert persisted.status is CardStatus.STARTED
+    assert persisted.status is CardStatus.IN_PROGRESS
 
 
 @pytest.mark.asyncio
-async def test_create_started_later_failure_rolls_back_marker_and_all_effects(
+async def test_start_move_later_failure_rolls_back_marker_and_all_effects(
     db_factory,  # noqa: ANN001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -249,26 +260,37 @@ async def test_create_started_later_failure_rolls_back_marker_and_all_effects(
         add_attempts.append(type(record).__name__)
         raise RuntimeError("injected_after_precedence_gate")
 
+    async with db_factory() as db:
+        source = await db.get(Spec, source_id)
+        source.status = SpecStatus.IN_PROGRESS
+        card = await CardService(db).create_card(
+            board_id, USER_ID,
+            _planned_card("Must roll back", spec_id=source_id),
+        )
+        source.functional_requirements = [{
+            "id": "fr-start-rollback", "text": "Required behavior",
+            "linked_task_ids": [card.id],
+        }]
+        await db.commit()
+    baseline = await _effect_counts(db_factory, board_id=board_id)
     monkeypatch.setattr(main_service, "_application_add", fail_first_effect)
 
     async with db_factory() as db:
         with pytest.raises(RuntimeError, match="injected_after_precedence_gate"):
-            await CardService(db).create_card(
-                board_id,
-                USER_ID,
-                _started_card("Must roll back", spec_id=source_id),
+            await CardService(db).move_card(
+                card.id, USER_ID, CardMove(status=CardStatus.IN_PROGRESS),
             )
-        # The gate ran before the injected first application effect and staged
-        # the lifecycle marker in this transaction.
+        # The first application effect failed before the lifecycle marker was
+        # staged; no execution marker may become durable.
         staged_marker = await db.scalar(
             select(Spec.last_started_edition)
             .where(Spec.id == source_id)
             .execution_options(populate_existing=True)
         )
-        assert staged_marker == 3
+        assert staged_marker is None
 
     assert add_attempts == ["ApplicationRecord"]
-    assert await _effect_counts(db_factory, board_id=board_id) == (0, 0, 0)
+    assert await _effect_counts(db_factory, board_id=board_id) == baseline
     async with db_factory() as db:
         durable_marker = await db.scalar(
             select(Spec.last_started_edition).where(Spec.id == source_id)
@@ -285,6 +307,10 @@ async def test_test_card_validation_rework_still_enforces_spec_precedence(
         case="test-rework-block",
         blocked=True,
     )
+    async with db_factory() as db:
+        source = await db.get(Spec, source_id)
+        source.status = SpecStatus.VALIDATED
+        await db.commit()
     card_id = await _seed_validation_test_card(
         db_factory,
         board_id=board_id,
@@ -323,6 +349,10 @@ async def test_test_card_validation_rework_fences_concurrent_spec_edition_change
         case="test-rework-fence",
         blocked=False,
     )
+    async with db_factory() as db:
+        source = await db.get(Spec, source_id)
+        source.status = SpecStatus.VALIDATED
+        await db.commit()
     card_id = await _seed_validation_test_card(
         db_factory,
         board_id=board_id,
@@ -372,3 +402,59 @@ async def test_test_card_validation_rework_fences_concurrent_spec_edition_change
     assert card is not None
     assert card.status is CardStatus.VALIDATION
     assert edition == 3
+
+
+@pytest.mark.asyncio
+async def test_migrated_test_validation_rechecks_prerequisite_and_edition_fence(
+    db_factory,  # noqa: ANN001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    board_id, source_id, target_id = await _seed_specs(
+        db_factory, case="migrated-qualification", blocked=True,
+    )
+    card_id = "skm-cs-migrated-qualification-test-card"
+    async with db_factory() as db:
+        source = await db.get(Spec, source_id)
+        source.status = SpecStatus.IN_PROGRESS
+        db.add(Card(
+            id=card_id, board_id=board_id, spec_id=source_id,
+            title="Converted Started test", status=CardStatus.IN_PROGRESS,
+            card_type=CardType.TEST, position=0, created_by=USER_ID,
+        ))
+        await db.commit()
+
+    async with db_factory() as db:
+        with pytest.raises(SpecDependencyOperationError) as caught:
+            await CardService(db).move_card(
+                card_id, USER_ID, CardMove(status=CardStatus.VALIDATION),
+            )
+    assert caught.value.code == "spec_dependencies_incomplete"
+
+    async with db_factory() as db:
+        prerequisite = await db.get(Spec, target_id)
+        prerequisite.status = SpecStatus.DONE
+        await db.commit()
+
+    from okto_pulse.core.services.spec_dependency import SpecDependencyService
+    original = SpecDependencyService.require_ready_for_execution
+
+    async def change_edition_before_locked_recheck(service, **kwargs):
+        await service.persistence._session.execute(  # noqa: SLF001
+            update(Spec).where(Spec.id == source_id).values(edition=4)
+        )
+        return await original(service, **kwargs)
+
+    monkeypatch.setattr(
+        SpecDependencyService, "require_ready_for_execution",
+        change_edition_before_locked_recheck,
+    )
+    async with db_factory() as db:
+        with pytest.raises(SpecDependencyOperationError) as caught:
+            await CardService(db).move_card(
+                card_id, USER_ID, CardMove(status=CardStatus.VALIDATION),
+            )
+    assert caught.value.code == "spec_dependency_state_conflict"
+    async with db_factory() as db:
+        card = await db.get(Card, card_id)
+        assert card.status is CardStatus.IN_PROGRESS
+        assert not card.conclusions

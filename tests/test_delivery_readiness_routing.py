@@ -8,10 +8,6 @@ from pydantic import ValidationError
 from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.core.application.use_cases.delivery_evidence import GetDeliveryEvidenceUseCase
 from okto_pulse.core.models.delivery_evidence import DeliveryEvidenceReadQuery
-from okto_pulse.core.services.delivery_readiness import DeliveryReadinessService
-from test_delivery_obligation_assessment import snapshot
-from test_delivery_readiness_shared_evaluation import prepared
-from test_delivery_readiness_paging import Cursor
 
 
 @pytest.mark.parametrize('patch', [
@@ -33,9 +29,15 @@ def test_readiness_controls_are_exclusive_to_readiness(view, patch):
 @pytest.mark.asyncio
 @pytest.mark.parametrize('card_id', [None, 'ui', 'test-card-1'])
 async def test_S01_S02_use_case_dispatches_readiness_before_history_and_keeps_nulls(card_id):
-    loader = SimpleNamespace(load=AsyncMock(return_value=prepared(snapshot())))
+    readiness = SimpleNamespace(read_persisted_detail=AsyncMock(return_value={
+        'contract_version': 'delivery-readiness/v1',
+        'scope': {'card_id': card_id},
+        'lifecycle': {'qualification_is_current': None},
+        'page': {'next_cursor': None},
+        'implementation': {'percent': None if card_id == 'test-card-1' else 100},
+    }))
     history = SimpleNamespace(progress_history=AsyncMock(), projection=AsyncMock(), card_resume=AsyncMock())
-    uow = SimpleNamespace(services=SimpleNamespace(delivery_readiness=DeliveryReadinessService(loader, Cursor()),
+    uow = SimpleNamespace(services=SimpleNamespace(delivery_readiness=readiness,
         delivery_evidence=history), commit=AsyncMock())
     actor = ActorContext(actor_id='reader', actor_kind='agent', source='mcp', board_id='board',
         realm_id='local', permissions=['code_traceability.evidence.read'])
@@ -46,7 +48,8 @@ async def test_S01_S02_use_case_dispatches_readiness_before_history_and_keeps_nu
     assert result['lifecycle']['qualification_is_current'] is None
     assert result['page']['next_cursor'] is None
     assert result['implementation']['percent'] == (None if card_id == 'test-card-1' else 100)
-    passed_actor = loader.load.await_args.kwargs['actor']
+    readiness.read_persisted_detail.assert_awaited_once()
+    passed_actor = readiness.read_persisted_detail.await_args.kwargs['actor']
     assert passed_actor.realm_id == 'local' and passed_actor.board_id == 'board'
     history.progress_history.assert_not_awaited()
     history.projection.assert_not_awaited()

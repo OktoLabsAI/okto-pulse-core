@@ -376,6 +376,22 @@ async def test_move_card_returns_committed_subject_version(_seed) -> None:
     assert payload["card"]["subject_version"] == before + 1
 
 
+@pytest.mark.asyncio
+async def test_move_tool_rejects_started_without_mutating_card(_seed) -> None:
+    spec_id, _ = _seed
+    card_id = (await _create_card(spec_id))["card"]["id"]
+    payload = await _call(
+        "okto_pulse_move_card", board_id=BOARD_A, card_id=card_id,
+        status="started",
+    )
+    assert payload["error"] == "card_move_target_status_invalid"
+    assert "started" not in payload["allowed_statuses"]
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        assert (await db.get(Card, card_id)).status is CardStatus.NOT_STARTED
+
+
 # --- atomic activity log ----------------------------------------------------
 
 
@@ -469,7 +485,7 @@ async def test_delete_card_writes_atomic_card_deleted_activity(_seed):
 
 
 @pytest.mark.asyncio
-async def test_invalid_card_edge_is_not_misreported_as_dependency_block(_seed):
+async def test_direct_start_is_subject_to_spec_maturity_gate(_seed):
     spec_id, _ = _seed
     card_id = (await _create_card(spec_id))["card"]["id"]
 
@@ -480,9 +496,8 @@ async def test_invalid_card_edge_is_not_misreported_as_dependency_block(_seed):
         status="in_progress",
     )
 
-    assert payload["error"] == "card_transition_not_allowed"
+    assert "Cannot move card forward" in payload["error"]
     assert payload["blocked_by_dependencies"] is False
-    assert payload["remediation"] == "move_card_to_started_first"
 
 
 # --- dependency MCP envelopes -----------------------------------------------

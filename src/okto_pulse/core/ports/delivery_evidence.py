@@ -51,7 +51,9 @@ class DeliveryEvidenceReadPort(Protocol):
         """
         ...
 
-    async def load_snapshot(self, scope: DeliveryScope) -> DeliveryEvidenceSnapshot:
+    async def load_snapshot(self, scope: DeliveryScope, *,
+                            prospective_card_id: str | None = None,
+                            prospective_report: Mapping | None = None) -> DeliveryEvidenceSnapshot:
         """Load under the caller's authorized, transaction-scoped unit of work.
 
         Resolve active obligations and canonical semantic hashes on the server;
@@ -65,6 +67,9 @@ class DeliveryEvidenceReadPort(Protocol):
         Waivers require active authorization receipts bound to the exact scope,
         phase and obligation digest. Loading must neither execute tests nor
         mutate existing artifacts, graph content or lifecycle state.
+
+        A Card completion check may supply its prospective report and Card ID;
+        only that Card's selection is evaluated with the proposed report.
         """
         ...
 

@@ -6,7 +6,10 @@ from okto_pulse.core.domain.delivery_evidence import (
     CardDeliveryScope,
     DeliveryScope,
 )
-from okto_pulse.core.domain.delivery_assessment import assess_delivery_gate, assess_obligation_delivery, resolve_delivery_gate_policy
+from okto_pulse.core.domain.delivery_assessment import (
+    assess_delivery_gate, assess_obligation_delivery, assess_test_delivery,
+    resolve_delivery_gate_policy,
+)
 from okto_pulse.core.application.delivery_errors import DeliveryGateBlocked
 from okto_pulse.core.ports.relational_application import (
     require_relational_application_adapter,
@@ -81,34 +84,35 @@ async def require_card_delivery(
 ) -> None:
     """Card→done delivery gate (FR-3).
 
-    In ``blocking`` mode, a normal/bug card cannot complete while any
-    obligation derived from its links lacks accepted implementation proof.
-    The task DoD covers the implementation phase only — the test-phase join
-    (cross-card ``verified_implementation_ids``) lives at the spec rollup
-    (BR-5), and test cards are never gated by this seam. ``advisory`` mode
-    never raises: the verdict stays visible through the card snapshot.
+    In ``blocking`` mode, normal/bug cards require accepted implementation
+    and current cross-card verification proof. Test cards require current
+    verification proof for every assigned scenario. The ``advisory`` mode
+    leaves the verdict visible without blocking.
 
-    The shared factual assessment accepts current complete implementation
-    before DONE. Verification and lifecycle retain their own typed phases;
-    neither is reclassified through a list of exception strings here.
+    The shared factual assessment accepts current proof before DONE; Card
+    lifecycle remains separate from the proposed transition.
     """
     if resolve_delivery_gate_mode(board) != "blocking":
         return
     raw_type = getattr(card, "card_type", None)
     card_type = str(getattr(raw_type, "value", raw_type or "normal"))
-    if card_type not in {"normal", "bug"}:
+    if card_type not in {"normal", "bug", "test"}:
         return
     spec_id = getattr(card, "spec_id", None)
     if not spec_id or spec_id != getattr(spec, "id", None):
         return
-    store = card_delivery_store(session)
-    scope = CardDeliveryScope(
-        card.board_id, card.id, spec_id, int(spec.edition)
+    # The Spec rollup includes implementation and test records on sibling
+    # Cards. Apply a proposed report selection only to the transitioning Card.
+    snapshot = await delivery_store(session).load_snapshot(
+        DeliveryScope(getattr(card, "board_id"), spec_id, int(getattr(spec, "edition"))),
+        **({"prospective_card_id": getattr(card, "id"), "prospective_report": prospective_report}
+            if prospective_report is not None else {}),
     )
-    snapshot = await store.load_card_snapshot(scope, **(
-        {"prospective_report": prospective_report} if prospective_report is not None else {}
-    ))
-    assessment = assess_obligation_delivery(snapshot, card_id=card.id, card_type=card_type)
+    if card_type == "test":
+        assessment = assess_test_delivery(snapshot, card_id=getattr(card, "id"),
+            scenario_ids=tuple(getattr(card, "test_scenario_ids", None) or ()))
+    else:
+        assessment = assess_obligation_delivery(snapshot, card_id=getattr(card, "id"), card_type=card_type)
     result = assess_delivery_gate(assessment)
     if not result.allowed:
         raise DeliveryGateBlocked(assessment, result)

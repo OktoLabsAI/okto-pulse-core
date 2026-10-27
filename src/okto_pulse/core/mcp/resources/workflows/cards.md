@@ -27,7 +27,7 @@ Semantic guideline assessment follows
 
 ## 2.7b Architecture Design — Structural Artifacts (Summary)
 
-Architecture Design is the first-class place for system structure. See the full reference in `okto-pulse://reference/tool-docs/architecture`. Use `okto_pulse_copy_architecture_to_card` before starting execution (`started`, then `in_progress` for normal cards).
+Architecture Design is the first-class place for system structure. See the full reference in `okto-pulse://reference/tool-docs/architecture`. Use `okto_pulse_copy_architecture_to_card` before starting execution (`in_progress`).
 
 ## 2.8 Cards (Tasks)
 
@@ -115,7 +115,7 @@ same request with the same `idempotency_key` returns the original receipt;
 changing the request under that key is an idempotency conflict.
 
 **Mandatory before moving the card to `in_progress`:** Complete these steps
-before entering either execution state (`started`/`in_progress`); then follow
+before entering the execution state (`in_progress`); then follow
 the exact transition edge advertised for the concrete card.
 
 1. Run `okto_pulse_get_task_context(board_id, card_id, profile="full", context_scope="gate", include_knowledge=true, include_mockups=true, include_architecture=true, include_qa=true, include_comments=true)` and inspect Resource Gate state, validation/reviewer blockers, and the content manifest. Fetch `profile="detail"` plus its drilldowns when you need the attached bodies.
@@ -136,9 +136,9 @@ the exact transition edge advertised for the concrete card.
 2. **Spec status rules for card creation** — depend on `card_type`; the per-type matrix is in `okto-pulse://reference/card_types`.
 3. **A spec cannot move to `done` without full test coverage** — every acceptance criterion must have at least one test scenario linked.
 4. **A spec cannot move to `done` if it has pending tasks** — all linked non-bug, non-archived cards must be `done` or `cancelled` first.
-5. **No card can advance to `started`/`in_progress` unless ALL test scenarios have linked task cards**.
+5. **No card can advance to `in_progress` unless ALL test scenarios have linked task cards**.
 6. **No card can advance unless ALL functional requirements have linked business rules**.
-7. **Mandatory card execution pre-flight sequence** — `okto_pulse_get_task_context` → attach applicable artifacts → call `okto_pulse_get_allowed_transitions` → follow the advertised edge(s) → begin work. A normal card follows `not_started → started → in_progress`. A test/bug card may use direct `not_started → in_progress` only when the transition tool advertises that edge for the concrete card.
+7. **Mandatory card execution pre-flight sequence** — `okto_pulse_get_task_context` → attach applicable artifacts → call `okto_pulse_get_allowed_transitions` → follow the advertised edge → begin work. Cards start with `not_started → in_progress` only when the transition tool advertises that edge for the concrete card.
 
 ### There Are Three Types of Cards
 
@@ -190,7 +190,7 @@ Example: `[TEST] E2E — Valid OAuth2 token grants access`
 | One big test card for all scenarios | No granular traceability | Create one test card per scenario or per small group of closely related scenarios |
 | Test card missing a scenario association | Missing traceability prevents scenario coverage | Creation with `test_scenario_ids` links atomically: verify the result without repeating the write. Use `okto_pulse_link_task(target_type="scenario", ...)` only for an additional association. |
 | Starting work without `okto_pulse_get_task_context` | Implementing blind = guaranteed drift | ALWAYS call `okto_pulse_get_task_context` with `profile="full", context_scope="gate"` and all include flags BEFORE any work; use bounded detail/drilldowns for bodies |
-| Card still `not_started` while writing code | Board is inaccurate | Query `okto_pulse_get_allowed_transitions`; move normal cards to `started` and then `in_progress` (or use a directly advertised test/bug edge) BEFORE first line of code |
+| Card still `not_started` while writing code | Board is inaccurate | Query `okto_pulse_get_allowed_transitions`; move the card to `in_progress` BEFORE first line of code |
 | Expecting an omitted selection to copy every KB | Omission selects no inherited Knowledge | Send the stable Knowledge IDs and intended mode explicitly |
 | Refreshing by assignment ID | Assignment rows are temporal and may be superseded | Pass stable root Knowledge IDs to `okto_pulse_refresh_card_knowledge_assignments` |
 | Reusing an idempotency key after changing payload or selection | Replay identity no longer represents the same semantic request | Reuse a key only for an exact retry; generate a new key for new intent |
@@ -217,7 +217,7 @@ okto_pulse_create_card(
 **Bug card workflow (enforced by the system):**
 
 1. Create bug card (status: not_started)
-2. Triage the regression path (status: started):
+2. Triage the regression path while the bug remains `not_started`:
 
    - **Path A — reuse eligible existing scenario:** use `okto_pulse_resolve_bug_regression_scenarios` or the REST candidate preview to find scenarios on the bug spec that are linked to the bug `origin_task_id` or explicitly supplied `affected_task_ids`. Reuse only those eligible scenarios. Linking an existing eligible scenario is a traceability-only update: leave validated spec content unchanged and create a fresh post-bug test card that references the eligible scenario.
    - **Path B — amendment lineage (the semantic gap remediation for cross-spec regression evidence):** if no eligible same-spec scenario exists, the candidate is unrelated/cross-spec, or expected behavior changed, remediate through a formal `AmendmentHotfixRevision`. NEVER satisfy the gate by linking a same-spec scenario that is not linked to the origin/affected tasks, and there is **no skip/override** — the gate is only remediated, never bypassed. Executable sequence:
@@ -226,7 +226,7 @@ okto_pulse_create_card(
      3. **Register re-executable evidence** — the regression test card's scenario is `passed`/`automated` with a direct test pointer (`test_file_path`+`test_function`) or an explicit replayable `evidence_class` such as `mcp_replay_manifest` plus `expected_output_snapshot`.
      4. **Validator confirms coverage** — the validator calls `okto_pulse_confirm_amendment_coverage`, the ONLY writer of the non-forgeable `coverage_confirmed` signal (re-executable evidence is necessary but NOT sufficient — a real validator attestation bound to this amendment + artifact is required). BEFORE persisting, the tool runs a gate-consumability preflight: it applies the SAME eligibility predicate the bug regression gate uses, so a successful confirmation implies the attestation is consumable for this `(amendment_id, regression_test_task_id, regression_scenario_id)`. **Anti-pattern (fails closed):** reusing a same-spec happy-path/AC scenario that is NOT linked to the bug's origin/affected task and then calling confirm — the scenario routes through Path A and is `unrelated_scenario`, so the writer rejects it with `coverage_not_gate_consumable` and persists nothing. An amendment declaration does NOT convert an `unrelated_scenario` into valid Path B coverage; use a same-spec scenario tied to the bug lineage (Path A) or a genuinely cross-spec Path B artifact.
      5. **Gate allows the bug** — only after step 4. Until then the bug is `coverage_pending`: lineage may be eligible but the bug is NOT closure-ready. Inspect at any time with `okto_pulse_list_amendment_revisions` / `okto_pulse_get_amendment_revision`.
-3. Create test task & link to bug (still started) — create a new post-bug `card_type="test"` card with the eligible `test_scenario_ids`, then link: `okto_pulse_update_card(card_id=bug_id, linked_test_task_ids=["<test_task_id>"])`.
+3. Create test task & link to bug (still `not_started`) — create a new post-bug `card_type="test"` card with the eligible `test_scenario_ids`, then link: `okto_pulse_update_card(card_id=bug_id, linked_test_task_ids=["<test_task_id>"])`.
 4. Move to in_progress (BLOCKED until step 3 is done) — system validates linked test tasks, scenario existence, same-spec ownership, eligibility by origin/affected-task lineage, and that the test TASK (card) was created after the bug. The "after the bug" temporal applies to the test TASK, not the scenario — a pre-existing eligible scenario is valid regression coverage.
 5. Fix the bug (in_progress) — implement the fix, run tests, update scenario statuses. On a `validated`/`done` spec, `okto_pulse_update_test_scenario_status` is still allowed for a scenario already linked to an executable test card, because this records operational evidence instead of editing semantic spec content.
 6. Complete (done) — provide conclusion with what was fixed
@@ -313,7 +313,7 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 
 1. Retrieve context — `okto_pulse_get_task_context(board_id, card_id, profile="full", context_scope="gate")`. Check `validation_config.required`.
 2. **MANDATORY for rework** — a failed admitted completion is status `rejected`. Read `current_rejection_summary` plus the referenced validation's `threshold_violations`, `confidence_justification`, `completeness_justification`, `drift_justification`, and `general_justification`. Editing implementation while Rejected is forbidden because it would erase the human handoff boundary. In blocking Code Traceability mode, the rejection's version bump can make an existing Target resolution outdated: investigation preflight and Target resolution renewal are the only allowed technical writes while Rejected; Target create/update, execution receipts, evidence dispositions, and implementation content remain frozen.
-3. Start execution — query `okto_pulse_get_allowed_transitions`; from `not_started`, a normal card moves to `started` and then `in_progress`. A Rejected card has exactly one exit: move it to `in_progress` before changing implementation. That clears only the Current pointer; causal history remains append-only.
+3. Start execution — query `okto_pulse_get_allowed_transitions`; from `not_started`, move to `in_progress` after all gates pass. A Rejected card has exactly one exit: move it to `in_progress` before changing implementation. That clears only the Current pointer; causal history remains append-only.
 4. Implement the task.
 5. Link artifacts — attach knowledge bases, mockups, or comments as work progresses.
 6. Move to validation — `okto_pulse_move_card(status="validation", conclusion=..., completeness=..., completeness_justification=..., drift=..., drift_justification=...)`.

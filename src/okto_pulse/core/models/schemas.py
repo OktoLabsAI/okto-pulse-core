@@ -57,6 +57,16 @@ from okto_pulse.core.domain.enums import (
     StoryStatus,
     TestScenarioStatus,
 )
+
+OperationalCardStatus: TypeAlias = Literal[
+    CardStatus.NOT_STARTED,
+    CardStatus.IN_PROGRESS,
+    CardStatus.VALIDATION,
+    CardStatus.REJECTED,
+    CardStatus.ON_HOLD,
+    CardStatus.DONE,
+    CardStatus.CANCELLED,
+]
 from okto_pulse.core.domain.knowledge_governance import (
     project_knowledge_governance,
 )
@@ -389,6 +399,15 @@ class TestEvidenceProvenanceV2(BaseModel):
     environment: str = Field(..., min_length=1)
 
 
+class TestCompanionSourceRevision(BaseModel):
+    """A second immutable checkout exercised by a locally authorized runner."""
+
+    model_config = ConfigDict(extra="forbid")
+    role: Literal["core", "community"]
+    source_ref: str = Field(..., min_length=1)
+    revision: str = Field(..., pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+
+
 class TestExecutionBasis(BaseModel):
     """Observed immutable source used by an authenticated external test run."""
 
@@ -397,6 +416,7 @@ class TestExecutionBasis(BaseModel):
     revision: str = Field(..., pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
     runner_ref: str = Field(..., min_length=1)
     test_ids: list[str] = Field(..., min_length=1, max_length=100)
+    companion_sources: list[TestCompanionSourceRevision] | None = Field(default=None, min_length=1, max_length=1)
 
 
 class TestExecutionAttestationV2(BaseModel):
@@ -2837,7 +2857,7 @@ class CardSummaryForSpec(BaseSchema):
 
     id: str
     title: str
-    status: CardStatus
+    status: OperationalCardStatus
     priority: CardPriority
     assignee_id: str | None
     card_type: str = "normal"
@@ -2972,7 +2992,6 @@ DeriveSpecResponse: TypeAlias = DeriveSpecKnowledgeMutationResponse
 
 CardInitialStatus: TypeAlias = Literal[
     CardStatus.NOT_STARTED,
-    CardStatus.STARTED,
 ]
 
 
@@ -3004,7 +3023,7 @@ class CardCreate(BaseModel):
     status: CardInitialStatus = Field(
         CardStatus.NOT_STARTED,
         description=(
-            "Status inicial do card no board: somente not_started ou started. "
+            "Status inicial do card no board: somente not_started. "
             "Use move_card para avancar o ciclo de vida."
         ),
     )
@@ -3373,16 +3392,7 @@ class ConclusionEntry(ConclusionEntrySummary):
         return data
 
 
-CardMoveTargetStatus: TypeAlias = Literal[
-    CardStatus.NOT_STARTED,
-    CardStatus.STARTED,
-    CardStatus.IN_PROGRESS,
-    CardStatus.VALIDATION,
-    CardStatus.ON_HOLD,
-    CardStatus.DONE,
-    CardStatus.CANCELLED,
-    CardStatus.REJECTED,
-]
+CardMoveTargetStatus: TypeAlias = OperationalCardStatus
 
 
 class CardMove(BaseModel):
@@ -3471,7 +3481,7 @@ class CardMove(BaseModel):
 
     status: CardMoveTargetStatus = Field(
         ...,
-        description="Novo status público do card: not_started, started, in_progress, validation, on_hold, done ou cancelled. rejected é aceito somente quando o card já está rejected, para reordenar dentro da mesma coluna; nenhuma transição pode ter rejected como destino manual.",
+        description="Novo status público do card: not_started, in_progress, validation, on_hold, done ou cancelled. rejected é aceito somente quando o card já está rejected, para reordenar dentro da mesma coluna; nenhuma transição pode ter rejected como destino manual.",
     )
     position: int | None = Field(
         None,
@@ -3618,7 +3628,7 @@ class CardResponse(BaseSchema):
     title: str
     description: str | None
     details: str | None
-    status: CardStatus
+    status: OperationalCardStatus
     subject_version: int = Field(
         ...,
         ge=1,
@@ -3721,7 +3731,7 @@ class CardSummary(BaseSchema):
     spec_id: str | None
     title: str
     description: str | None
-    status: CardStatus
+    status: OperationalCardStatus
     priority: CardPriority
     position: int
     assignee_id: str | None
@@ -3770,7 +3780,7 @@ class CardPageItem(BaseSchema):
     spec_id: str | None
     title: str
     description: str | None
-    status: CardStatus
+    status: OperationalCardStatus
     priority: CardPriority
     card_type: CardType
     position: int
@@ -4774,7 +4784,7 @@ class ColumnPageResponse(BaseSchema):
     )
 
     board_id: str
-    column: CardStatus
+    column: OperationalCardStatus
     items: list[CardSummary]
     meta: ColumnMeta
     offset: int = Field(..., ge=0)

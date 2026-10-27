@@ -18,7 +18,7 @@ import json
 from typing import Annotated, Any, Callable, Literal, Mapping
 
 from pydantic import Field, SecretStr, ValidationError
-from okto_pulse.core.models.delivery_evidence import card_delivery_command, DeliveryBatchEntryError, DeliveryEvidenceReadQuery
+from okto_pulse.core.models.delivery_evidence import card_delivery_command, DeliveryBatchEntryError, DeliveryEvidenceQuery, DeliveryEvidenceReadQuery, PersistedReadinessQuery, ReadinessRequeueCommand
 from okto_pulse.core.models.delivery_report import CardDeliveryRecordInput
 from okto_pulse.core.models.decision_review import DecisionReviewInput, DecisionReviewCommand, DecisionReviewQuery
 from okto_pulse.core.inbound.delivery_readiness_error import READINESS_ERRORS, project_readiness_error
@@ -918,6 +918,56 @@ def register_code_traceability_tools(
             raise
         return await _execute(board_id, command, GetDeliveryEvidenceUseCase())
 
+    async def okto_pulse_get_delivery_readiness_summary(
+        board_id: BoundedId, spec_id: BoundedId,
+    ) -> McpToolOutcome:
+        """Read the authorized v1 Spec/Card summary from one published generation.
+
+        The response includes freshness. A pending initial generation has no
+        metrics; this read never authorizes a delivery report or Done transition.
+        """
+        from okto_pulse.core.application.use_cases.delivery_evidence import GetDeliveryReadinessBoardSummaryUseCase
+
+        return await _execute(board_id, DeliveryEvidenceQuery(
+            board_id=board_id, spec_id=spec_id), GetDeliveryReadinessBoardSummaryUseCase())
+
+    async def okto_pulse_get_persisted_delivery_readiness(
+        board_id: BoundedId, spec_id: BoundedId, card_id: BoundedId | None = None,
+        unit_limit: Annotated[int, Field(ge=0, le=250)] = 0,
+        cursor: Annotated[str, Field(min_length=1, max_length=8192)] | None = None,
+    ) -> McpToolOutcome:
+        """Read one published readiness generation with its freshness and unit page.
+
+        Implementation and verification are independent metrics. A cursor pins
+        subsequent pages to the same generation and actor; native completion
+        gates still consult the source ledgers.
+        """
+        from okto_pulse.core.application.use_cases.delivery_evidence import GetPersistedDeliveryReadinessUseCase
+
+        command = PersistedReadinessQuery(board_id=board_id, spec_id=spec_id,
+            card_id=card_id, unit_limit=unit_limit, cursor=cursor)
+        return await _execute(board_id, command, GetPersistedDeliveryReadinessUseCase())
+
+    async def okto_pulse_requeue_persisted_delivery_readiness(
+        board_id: BoundedId, spec_id: BoundedId,
+        edition: Annotated[int, Field(ge=1)],
+        expected_target_revision: Annotated[int, Field(ge=0)],
+        idempotency_key: Annotated[str, Field(min_length=1, max_length=128, pattern=r"\S")],
+        reason: Annotated[str, Field(min_length=1, max_length=500, pattern=r"\S")],
+    ) -> McpToolOutcome:
+        """Admin retry for a terminal readiness job, fenced by source revision.
+
+        The same idempotency key replays one audited result. Read the current
+        projection target_revision first; a conflicting revision returns 409.
+        """
+        from okto_pulse.core.application.use_cases.delivery_evidence import RequeuePersistedReadinessUseCase
+
+        command = ReadinessRequeueCommand(board_id=board_id, spec_id=spec_id,
+            edition=edition, expected_target_revision=expected_target_revision,
+            idempotency_key=idempotency_key,
+            reason=reason)
+        return await _execute(board_id, command, RequeuePersistedReadinessUseCase())
+
     async def okto_pulse_record_delivery_evidence(board_id: BoundedId, card_id: BoundedId, spec_id: BoundedId, evidence: CardDeliveryRecordInput) -> McpToolOutcome:
         """Record Card progress or bind accepted implementation/authenticated test proof.
         Read get_delivery_evidence first for obligations and CAS/edition/revision fences.
@@ -967,6 +1017,9 @@ def register_code_traceability_tools(
         okto_pulse_get_decision_reviews,
         okto_pulse_record_decision_reviews,
         okto_pulse_get_delivery_evidence,
+        okto_pulse_get_delivery_readiness_summary,
+        okto_pulse_get_persisted_delivery_readiness,
+        okto_pulse_requeue_persisted_delivery_readiness,
         okto_pulse_record_delivery_evidence,
         okto_pulse_start_code_investigation,
         okto_pulse_submit_code_investigation_receipt,

@@ -423,6 +423,7 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "code_traceability.overlap.read",
     ),
     _policy("okto_pulse_get_my_profile", "agent.entity.read"),
+    _policy("okto_pulse_get_persisted_delivery_readiness", "code_traceability.evidence.read"),
     _policy("okto_pulse_get_publish_health", "metrics.publish_health.read"),
     _policy(
         "okto_pulse_get_quality_assessment_receipt",
@@ -756,6 +757,7 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy(
         "okto_pulse_request_semantic_guideline_waiver", "guidelines.waiver.request"
     ),
+    _policy("okto_pulse_requeue_persisted_delivery_readiness", "readiness.requeue"),
     _policy("okto_pulse_resolve_bug_regression_scenarios", "board.read"),
     _policy("okto_pulse_respond_to_choice", "card.comments.respond_choice"),
     _policy("okto_pulse_restore_story", "story.entity.restore"),

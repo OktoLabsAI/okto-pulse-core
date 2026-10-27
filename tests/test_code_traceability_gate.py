@@ -62,6 +62,7 @@ from okto_pulse.core.services.code_investigation import (
 from okto_pulse.core.services.code_traceability_gate import (
     CodeTraceabilityGateEvaluator,
     CodeTraceabilityGatePhase,
+    phases_for_transition,
     resolve_code_evidence_coverage_skip,
 )
 from okto_pulse.core.services.traceability import project_code_traceability_report
@@ -78,6 +79,29 @@ from test_code_traceability_application import (
 
 
 UTC = timezone.utc
+
+
+def test_done_card_can_reopen_to_repair_target_coverage() -> None:
+    subject = CodeTraceabilitySubjectType.CARD
+    assert phases_for_transition(subject, "done", "in_progress") == ()
+    assert phases_for_transition(subject, "not_started", "in_progress") == (
+        CodeTraceabilityGatePhase.CARD_TARGET,
+    )
+    assert phases_for_transition(subject, "in_progress", "done") == (
+        CodeTraceabilityGatePhase.CARD_EXECUTION,
+    )
+
+
+def test_card_traceability_phase_rejects_started_destination_but_reads_legacy_source() -> None:
+    subject = CodeTraceabilitySubjectType.CARD
+    assert phases_for_transition(subject, "not_started", "in_progress") == (
+        CodeTraceabilityGatePhase.CARD_TARGET,
+    )
+    assert phases_for_transition(subject, "started", "in_progress") == (
+        CodeTraceabilityGatePhase.CARD_TARGET,
+    )
+    with pytest.raises(ValueError, match="card_started_target_removed"):
+        phases_for_transition(subject, "not_started", "started")
 
 
 def test_code_evidence_coverage_skip_resolves_board_then_spec() -> None:
@@ -1241,7 +1265,7 @@ def test_transition_projection_defaults_to_non_blocking_advisory() -> None:
         context,
         CodeTraceabilitySettings(),
         from_status="not_started",
-        to_status="started",
+        to_status="in_progress",
     )
     assert evaluation.mode == "advisory"
     assert evaluation.allowed is True

@@ -351,6 +351,119 @@ async def require_authorization(
     )
 
 
+async def require_card_start_authorization(
+    actor: ActorContext,
+    *,
+    card_type: str,
+    uow: PulseUnitOfWork | None = None,
+    board_id: str | None = None,
+    permissions: PermissionOverride = _UNSET,
+    policy: PermissionPolicyPort | None = None,
+) -> PermissionDecision:
+    """Preserve the authority of the routes replaced by Not Started -> In Progress.
+
+    A normal task previously needed both preparation and execution rights.
+    Test/Bug cards already had a direct execution route; either that route or
+    the two-step legacy route is sufficient. Each route is evaluated using the
+    effective permission document, so an explicit deny blocks that route only.
+    """
+
+    _precheck_board_scope(actor, board_id)
+    effective_permissions = permissions
+    if effective_permissions is _UNSET:
+        effective_permissions = await resolve_actor_permissions(actor, uow, board_id)
+
+    preparation = PermissionRequirement(
+        "card.move.not_started_to_started", entity="card", state="not_started"
+    )
+    execution = PermissionRequirement(
+        "card.move.started_to_in_progress", entity="card", state="started"
+    )
+    direct = PermissionRequirement(
+        "card.move.not_started_to_in_progress", entity="card", state="not_started"
+    )
+    legacy_route = (preparation, execution)
+    if card_type == "normal":
+        routes = (legacy_route,)
+    elif card_type in {"test", "bug"}:
+        routes = ((direct,), legacy_route)
+    else:
+        raise PermissionDeniedError("unknown_card_type")
+    first_denial: PermissionDecision | None = None
+    for route in routes:
+        decisions = tuple(
+            decide_authorization(actor, requirement, effective_permissions, policy)
+            for requirement in route
+        )
+        if all(decision.allowed for decision in decisions):
+            return decisions[-1]
+        if first_denial is None:
+            first_denial = next(decision for decision in decisions if not decision.allowed)
+    assert first_denial is not None
+    return _raise_if_denied(first_denial)
+
+
+async def require_card_return_to_planning_authorization(
+    actor: ActorContext,
+    *,
+    card_type: str = "normal",
+    legacy_started_eligible: bool = False,
+    uow: PulseUnitOfWork | None = None,
+    board_id: str | None = None,
+    permissions: PermissionOverride = _UNSET,
+    policy: PermissionPolicyPort | None = None,
+) -> PermissionDecision:
+    """Preserve the old return route for each type without widening it."""
+
+    _precheck_board_scope(actor, board_id)
+    effective_permissions = permissions
+    if effective_permissions is _UNSET:
+        effective_permissions = await resolve_actor_permissions(actor, uow, board_id)
+    if legacy_started_eligible:
+        return _raise_if_denied(decide_authorization(
+            actor,
+            PermissionRequirement(
+                "card.move.started_to_not_started", entity="card", state="started"
+            ),
+            effective_permissions,
+            policy,
+        ))
+    if card_type in {"test", "bug"}:
+        raise PermissionDeniedError("card_legacy_return_not_eligible")
+    if card_type != "normal":
+        raise PermissionDeniedError("unknown_card_type")
+    introduced = decide_authorization(
+        actor,
+        PermissionRequirement(
+            "card.move.in_progress_to_not_started", entity="card", state="in_progress"
+        ),
+        effective_permissions,
+        policy,
+    )
+    _raise_if_denied(introduced)
+    decisions = (
+        decide_authorization(
+            actor,
+            PermissionRequirement(
+                "card.move.in_progress_to_started", entity="card", state="in_progress"
+            ),
+            effective_permissions,
+            policy,
+        ),
+        decide_authorization(
+            actor,
+            PermissionRequirement(
+                "card.move.started_to_not_started", entity="card", state="started"
+            ),
+            effective_permissions,
+            policy,
+        ),
+    )
+    for decision in decisions:
+        _raise_if_denied(decision)
+    return decisions[-1]
+
+
 async def require_all(
     actor: ActorContext,
     *requirements: PermissionRequirement,

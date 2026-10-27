@@ -5,6 +5,7 @@ receipts, executes an action, reads a repository or changes a score/authority.
 """
 
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from enum import StrEnum
 import heapq
 import json
@@ -410,6 +411,15 @@ def _action_key(candidate):
         tuple(sorted(set(candidate.responsible_card_ids))), definition.permission)
 
 
+@lru_cache(maxsize=8192)
+def _cause_identity_digest(board_id, spec_id, edition, code, origin_kind,
+                           origin_identity, expected_bases, observed_bases,
+                           action_keys):
+    """Cache only the canonical identity, never a diagnostic or its authority."""
+    return delivery_digest((board_id, spec_id, edition, code, origin_kind,
+        origin_identity, expected_bases, observed_bases, action_keys))
+
+
 def cause_identity(scope, occurrence):
     definition = reason_definition(occurrence.code)
     if occurrence.phase not in definition.phases:
@@ -417,9 +427,11 @@ def cause_identity(scope, occurrence):
     if any(candidate.kind not in definition.actions for candidate in occurrence.actions):
         raise DiagnosticIntegrityError('readiness_reason_action_invalid')
     origin = occurrence.origin
-    return 'cause_' + delivery_digest((scope.board_id, scope.spec_id, scope.edition, occurrence.code,
-        origin.kind, origin.identity, sorted(set(origin.expected_bases)), sorted(set(origin.observed_bases)),
-        sorted({_action_key(candidate) for candidate in occurrence.actions})))
+    return 'cause_' + _cause_identity_digest(scope.board_id, scope.spec_id, scope.edition,
+        occurrence.code, origin.kind, origin.identity,
+        tuple(sorted(set(origin.expected_bases))),
+        tuple(sorted(set(origin.observed_bases))),
+        tuple(sorted({_action_key(candidate) for candidate in occurrence.actions})))
 
 
 def _topology(nodes, edges, priorities):
@@ -496,6 +508,7 @@ def build_diagnostic_graph(scope: DeliveryScope, occurrences: tuple[CauseOccurre
     if set(required_units) - covered:
         raise DiagnosticIntegrityError('readiness_unit_cause_missing')
     causes, candidates, action_issues, action_units = {}, {}, {}, {}
+    action_identity_cache = {}
     preconditions_missing = {}
     precedence = (UnitState.CONFLICT, UnitState.FAILED, UnitState.UNKNOWN, UnitState.STALE,
         UnitState.PARTIAL, UnitState.MISSING, UnitState.SATISFIED, UnitState.NOT_APPLICABLE)
@@ -505,7 +518,12 @@ def build_diagnostic_graph(scope: DeliveryScope, occurrences: tuple[CauseOccurre
         action_ids = set()
         for row in rows:
             for candidate in row.actions:
-                action_id = 'action_' + delivery_digest((scope.board_id, scope.spec_id, scope.edition, _action_key(candidate)))
+                action_key = _action_key(candidate)
+                action_id = action_identity_cache.get(action_key)
+                if action_id is None:
+                    action_id = 'action_' + delivery_digest((scope.board_id,
+                        scope.spec_id, scope.edition, action_key))
+                    action_identity_cache[action_key] = action_id
                 candidates.setdefault(action_id, []).append(candidate)
                 action_issues.setdefault(action_id, set()).add(identity)
                 action_units.setdefault(action_id, set()).update(row.units)
