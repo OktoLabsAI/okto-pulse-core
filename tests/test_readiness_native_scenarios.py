@@ -8,10 +8,14 @@ profile; they do not turn a self-reported test result into evidence.
 from __future__ import annotations
 
 import os
+import json
+from math import ceil
 from pathlib import Path
 import shutil
+from statistics import median
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 import unittest
 
 
@@ -409,4 +413,86 @@ class PersistedReadinessNativeScenarios(unittest.TestCase):
         )
         _run_frontend_components(
             "src/components/code-traceability/__tests__/DeliveryEvidencePanel.test.tsx",
+        )
+
+    def test_sc25_instrumentation_samples_and_parity(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        script = Path(community) / "scripts" / "stress_readiness_fixture.py"
+        with TemporaryDirectory(prefix="readiness-sc25-") as folder:
+            output = Path(folder) / "observation.json"
+            env = os.environ.copy()
+            env["PYTHONPATH"] = os.pathsep.join((
+                str(_CORE / "src"), str(Path(community) / "src"),
+                env.get("PYTHONPATH", "")))
+            result = subprocess.run([
+                sys.executable, str(script), "--mode", "persisted",
+                "--duration-seconds", "10", "--warmup-seconds", "1",
+                "--reads-per-second", "2", "--writes-per-second", "1",
+                "--specs", "2", "--cards", "4", "--obligations", "4",
+                "--scenarios", "4", "--facts", "20", "--history", "1",
+                "--fixture-profile", "simple", "--read-surface", "rest",
+                "--output", str(output),
+            ], cwd=community, env=env, capture_output=True, text=True,
+                timeout=180, check=False)
+            if result.returncode != 0:
+                raise AssertionError(
+                    f"isolated fixture returned {result.returncode}\n"
+                    f"{result.stdout[-3000:]}\n{result.stderr[-3000:]}")
+            observation = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(observation["error_count"], 0)
+        self.assertEqual(observation["warmup_error_count"], 0)
+        self.assertEqual(observation["post_load_parity"]["status"], "pass")
+        self.assertEqual(observation["post_load_parity"]["scopes"], 2)
+        for field in ("seed_sha256", "harness_sha256", "build", "host", "command"):
+            self.assertTrue(observation[field], field)
+        samples = observation["samples_ms"]["read"]
+        self.assertTrue(samples)
+        summary = observation["read_distribution_ms"]
+        self.assertAlmostEqual(summary["p50"], median(samples), delta=.002)
+        self.assertAlmostEqual(summary["max"], max(samples), delta=.002)
+        for percentile, proportion in (("p95", .95), ("p99", .99)):
+            expected = sorted(samples)[ceil(len(samples) * proportion) - 1]
+            self.assertAlmostEqual(summary[percentile], expected, delta=.002)
+        self.assertTrue(observation["samples_ms"]["publish"])
+        self.assertTrue(observation["samples_ms"]["publish_phases"]["source_to_publish"])
+        self.assertTrue(observation["samples_ms"]["read_phases"]["auth_before"])
+        self.assertTrue(observation["samples_ms"]["read_phases"]["store_db"])
+        for phase, values in observation["samples_ms"]["read_phases"].items():
+            if values:
+                self.assertAlmostEqual(
+                    observation["read_phases_distribution_ms"][phase]["p50"],
+                    median(values), delta=.002)
+        publish_samples = observation["samples_ms"]["publish"]
+        self.assertAlmostEqual(observation["publish_distribution_ms"]["p50"],
+                               median(publish_samples), delta=.002)
+        _run(f"{Path(community) / 'tests' / 'test_readiness_projection_worker.py'}::"
+             "test_worker_publishes_one_complete_generation_after_source_commit")
+
+    def test_sc26_overload_and_resource_isolation(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        worker = Path(community) / "tests" / "test_readiness_projection_worker.py"
+        _run(
+            f"{worker}::test_pipeline_keeps_one_calculation_after_process_pool_breaks",
+            f"{worker}::test_failed_scope_does_not_block_another_scope",
+            f"{worker}::test_over_cap_scope_is_unknown_while_healthy_scope_progresses",
+            f"{worker}::test_sustained_queue_lag_is_warned_without_exposing_payload",
+            f"{worker}::test_eight_failures_terminal_then_fenced_admin_requeue",
+        )
+
+    def test_sc27_safe_diagnostics(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        worker = tests / "test_readiness_projection_worker.py"
+        _run(
+            f"{worker}::test_terminal_projection_error_is_correlated_without_leaking_exception_payload",
+            f"{worker}::test_requeue_log_correlates_generation_without_leaking_reason",
+            str(tests / "test_readiness_stress_fixture_cache.py"),
+            f"{tests / 'test_readiness_schema_upgrade.py'}::"
+            "test_rollback_assessment_preserves_new_operation_audit",
         )
