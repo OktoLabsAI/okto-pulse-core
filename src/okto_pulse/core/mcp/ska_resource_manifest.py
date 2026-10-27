@@ -106,6 +106,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
         required_headings=(
             "# Tool docs — Code Traceability",
             "## `okto_pulse_get_delivery_evidence`",
+            "## `okto_pulse_get_persisted_delivery_readiness`",
             "## `okto_pulse_get_decision_reviews`",
             "## `okto_pulse_record_decision_reviews`",
             "## `okto_pulse_record_delivery_evidence`",

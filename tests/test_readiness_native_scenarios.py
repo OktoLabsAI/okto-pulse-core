@@ -1,0 +1,498 @@
+"""Unittest entry points for Pulse's authenticated scenario runner.
+
+The local runner admits only unittest methods. These methods execute the
+existing pytest suites from the two immutable Git checkouts in a paired
+profile; they do not turn a self-reported test result into evidence.
+"""
+
+from __future__ import annotations
+
+import os
+import json
+from math import ceil
+from pathlib import Path
+import shutil
+from statistics import median
+import subprocess
+import sys
+from tempfile import TemporaryDirectory
+import unittest
+
+
+_CORE = Path(__file__).resolve().parents[1]
+
+
+def _run(*selectors: str) -> None:
+    # Core and Community use different pytest composition fixtures. A fresh
+    # interpreter for each suite prevents their global registries leaking
+    # across scenario methods in the runner's long-lived unittest process.
+    workspace = Path(selectors[0].split("::", 1)[0]).resolve().parents[1]
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *selectors],
+        cwd=workspace, capture_output=True, text=True, timeout=180, check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"pytest returned {result.returncode} for {selectors}\n"
+            f"{result.stdout[-6000:]}\n{result.stderr[-2000:]}"
+        )
+    print(result.stdout.strip())
+
+
+def _run_frontend_scenario(scenario: str, *component_suites: str) -> None:
+    community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+    if not community:
+        raise AssertionError("paired Community checkout is required")
+    frontend = Path(community) / "frontend"
+    if not (frontend / "package-lock.json").is_file():
+        raise AssertionError("paired Community checkout lacks locked frontend dependencies")
+    npx = shutil.which("npx")
+    npm = shutil.which("npm")
+    if not npx or not npm:
+        raise AssertionError("npm and npx are required for browser scenario execution")
+    if not (frontend / "node_modules" / "@playwright" / "test").is_dir():
+        install = subprocess.run(
+            [npm, "ci", "--ignore-scripts", "--prefer-offline", "--no-audit", "--no-fund"],
+            cwd=frontend, capture_output=True, text=True, timeout=180, check=False,
+        )
+        if install.returncode != 0:
+            raise AssertionError(
+                f"locked frontend install returned {install.returncode}\n"
+                f"{install.stdout[-2000:]}\n{install.stderr[-2000:]}"
+            )
+    if component_suites:
+        component = subprocess.run(
+            [npm, "test", "--", *component_suites],
+            cwd=frontend, capture_output=True, text=True, timeout=180, check=False,
+        )
+        if component.returncode != 0:
+            raise AssertionError(
+                f"Vitest returned {component.returncode} for {scenario}\n"
+                f"{component.stdout[-6000:]}\n{component.stderr[-2000:]}"
+            )
+        print(component.stdout.strip())
+    result = subprocess.run(
+        [npx, "playwright", "test", "--config", "playwright.readiness.config.ts",
+         "--grep", f"^{scenario}:"],
+        cwd=frontend, capture_output=True, text=True, timeout=180, check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"Playwright returned {result.returncode} for {scenario}\n"
+            f"{result.stdout[-6000:]}\n{result.stderr[-2000:]}"
+        )
+    print(result.stdout.strip())
+
+
+def _run_frontend_components(*component_suites: str) -> None:
+    community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+    if not community:
+        raise AssertionError("paired Community checkout is required")
+    frontend = Path(community) / "frontend"
+    if not (frontend / "package-lock.json").is_file():
+        raise AssertionError("paired Community checkout lacks locked frontend dependencies")
+    npm = shutil.which("npm")
+    if not npm:
+        raise AssertionError("npm is required for frontend component contracts")
+    if not (frontend / "node_modules" / "vitest").is_dir():
+        install = subprocess.run(
+            [npm, "ci", "--ignore-scripts", "--prefer-offline", "--no-audit", "--no-fund"],
+            cwd=frontend, capture_output=True, text=True, timeout=180, check=False,
+        )
+        if install.returncode != 0:
+            raise AssertionError(
+                f"locked frontend install returned {install.returncode}\n"
+                f"{install.stdout[-2000:]}\n{install.stderr[-2000:]}"
+            )
+    result = subprocess.run(
+        [npm, "test", "--", *component_suites],
+        cwd=frontend, capture_output=True, text=True, timeout=180, check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"Vitest returned {result.returncode}\n"
+            f"{result.stdout[-6000:]}\n{result.stderr[-2000:]}"
+        )
+    print(result.stdout.strip())
+
+
+class PersistedReadinessNativeScenarios(unittest.TestCase):
+    def test_sc01_canonical_parity(self) -> None:
+        suite = _CORE / "tests" / "test_persisted_delivery_readiness.py"
+        _run(
+            f"{suite}::test_generation_matches_canonical_spec_and_each_card",
+            f"{suite}::test_generation_units_and_percentages_follow_canonical_cases",
+            str(_CORE / "tests" / "test_delivery_readiness_metrics.py"),
+        )
+
+    def test_sc02_persisted_generation_integrity(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            str(tests / "test_readiness_invalidation.py"),
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_worker_publishes_one_complete_generation_after_source_commit",
+        )
+
+    def test_sc03_phase_and_history_semantics(self) -> None:
+        suite = _CORE / "tests" / "test_persisted_delivery_readiness.py"
+        _run(
+            f"{suite}::test_generation_preserves_independent_local_progress_and_unknowns",
+            f"{_CORE / 'tests' / 'test_delivery_readiness_metrics.py'}::"
+            "test_M10_historical_waiver_is_risk_not_na_and_is_not_rewritten",
+            f"{_CORE / 'tests' / 'test_delivery_readiness_metrics.py'}::"
+            "test_M20_test_card_counts_assigned_scenarios_with_structural_na_implementation",
+            f"{_CORE / 'tests' / 'test_delivery_readiness_metrics.py'}::"
+            "test_phase_unknown_does_not_erase_known_implementation",
+        )
+
+    def test_sc04_atomic_source_and_intent(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_invalidation.py'}::"
+            "test_authenticated_report_and_exact_replay_share_source_transaction",
+            f"{tests / 'test_readiness_invalidation.py'}::"
+            "test_intent_write_failure_rolls_back_source_update",
+            f"{tests / 'test_readiness_invalidation.py'}::"
+            "test_target_execution_receipt_and_revocation_invalidate_consumer",
+            f"{tests / 'test_delivery_batch.py'}::"
+            "test_failure_after_first_insert_rolls_back_even_if_caller_commits",
+        )
+
+    def test_sc05_fanout_revision_and_tombstone(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        suite = Path(community) / "tests" / "test_readiness_invalidation.py"
+        _run(
+            f"{suite}::test_reparenting_invalidates_both_scopes",
+            f"{suite}::test_new_edition_tombstones_old_generation_scope",
+            f"{suite}::test_archive_terminates_debt_and_restore_requeues_current_scope",
+            f"{suite}::test_failed_scenario_result_invalidates_before_evidence_binding",
+        )
+
+    def test_sc06_report_replay_and_compound_rollback(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_invalidation.py'}::"
+            "test_authenticated_report_and_exact_replay_share_source_transaction",
+            f"{tests / 'test_readiness_invalidation.py'}::"
+            "test_intent_write_failure_rolls_back_source_update",
+            f"{tests / 'test_delivery_report.py'}::"
+            "test_report_rejection_cannot_leave_batch_or_outbox_after_outer_commit",
+        )
+
+    def test_sc07_closed_snapshot_and_coalescing(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        suite = Path(community) / "tests" / "test_readiness_projection_worker.py"
+        _run(
+            f"{suite}::test_projection_cpu_runs_after_snapshot_checkout_is_released",
+            f"{suite}::test_many_source_revisions_coalesce_into_one_generation",
+        )
+
+    def test_sc08_external_churn_and_population_limit(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        suite = Path(community) / "tests" / "test_readiness_projection_worker.py"
+        _run(
+            f"{suite}::test_unrelated_board_commit_does_not_retry_projection_snapshot",
+            f"{suite}::test_over_cap_scope_is_unknown_while_healthy_scope_progresses",
+        )
+
+    def test_sc09_deadline_and_lost_lease(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(f"{_CORE / 'tests' / 'test_persisted_delivery_readiness.py'}::"
+            "test_generation_checks_deadline_before_and_during_evaluation")
+        _run(
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_worker_publishes_one_complete_generation_after_source_commit",
+            f"{tests / 'test_worker_runners.py'}::"
+            "test_tracked_blocking_failure_is_drained_before_parent_cancel_returns",
+        )
+
+    def test_sc10_cas_and_monotonic_publication(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        suite = Path(community) / "tests" / "test_readiness_projection_worker.py"
+        _run(
+            f"{suite}::test_worker_publishes_one_complete_generation_after_source_commit",
+            f"{suite}::test_older_snapshot_publishes_as_updating_without_losing_newer_debt",
+        )
+
+    def test_sc11_pinned_generation_cursor(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        suite = Path(community) / "tests" / "test_readiness_projection_access.py"
+        _run(
+            f"{suite}::test_projection_pages_are_actor_bound_and_reauthorized",
+            f"{suite}::test_projection_cursor_keeps_original_generation_until_retention",
+        )
+
+    def test_sc12_staging_retention_and_evaluator_version(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_invalid_staging_manifest_never_becomes_active",
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_incompatible_evaluator_generation_cannot_publish",
+            f"{tests / 'test_readiness_gc.py'}::"
+            "test_gc_keeps_active_and_three_recent_generations_in_bounded_batches",
+        )
+
+    def test_sc13_crash_replay_and_staging_visibility(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        suite = Path(community) / "tests" / "test_readiness_projection_worker.py"
+        _run(
+            f"{suite}::test_crash_replay_keeps_source_and_hides_unpublished_staging",
+            f"{suite}::test_worker_publishes_one_complete_generation_after_source_commit",
+        )
+
+    def test_sc14_retry_fairness_and_governed_requeue(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_claim_round_robin_survives_restart_and_failing_scope",
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_eight_failures_terminal_then_fenced_admin_requeue",
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_reconcile_cursor_resumes_bounded_pages_after_restart",
+            f"{tests / 'test_readiness_projection_access.py'}::"
+            "test_projection_pages_are_actor_bound_and_reauthorized",
+            str(tests / "test_readiness_requeue_route.py"),
+        )
+
+    def test_sc15_storage_failure_and_reconciliation(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_stage_storage_failure_keeps_previous_generation_until_repair",
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_reconcile_audits_each_active_generation_in_a_page",
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_sustained_queue_lag_is_warned_without_exposing_payload",
+        )
+
+    def test_sc16_hot_read_and_transport_compatibility(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_persisted_rest_and_mcp_never_enter_source_evaluator_or_diagnostics",
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_incompatible_persisted_generation_is_unavailable_without_actions",
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_S01_S02_S04_S11_composed_surfaces_share_metrics_details_and_significant_nulls",
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_S06_S07_S09_pages_and_detail_keep_metrics_and_refuse_changed_snapshot",
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_P08_board_summary_matches_authorized_native_details_without_writes",
+        )
+        _run(f"{_CORE / 'tests' / 'test_delivery_readiness_contracts.py'}::"
+            "test_P01_response_roundtrip_keeps_nulls_and_rejects_schema_drift")
+
+    def test_sc17_current_access_and_cross_actor_cursor(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_projection_access.py'}::"
+            "test_projection_pages_are_actor_bound_and_reauthorized",
+            f"{tests / 'test_readiness_projection_access.py'}::"
+            "test_projection_revocation_during_read_fails_closed",
+            f"{tests / 'test_readiness_projection_access.py'}::"
+            "test_projection_changing_scope_retries_once_then_fails_closed",
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_persisted_spec_projection_requires_current_card_read_permission",
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_persisted_diagnostics_restrict_detail_after_current_permission_change",
+            str(tests / 'test_readiness_requeue_route.py'),
+        )
+
+    def test_sc18_readiness_never_authorizes_done(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            str(tests / 'test_delivery_readiness_closeout.py'),
+            f"{tests / 'test_delivery_report.py'}::"
+            "test_inline_execution_and_its_events_rollback_when_report_is_rejected",
+        )
+        _run(f"{_CORE / 'tests' / 'test_delivery_evidence_lifecycle.py'}::"
+            "test_done_checks_readiness_then_rechecks_under_write_fence")
+
+    def test_sc19_atomic_generation_switch_in_ui(self) -> None:
+        _run_frontend_scenario(
+            "SC19", "src/components/code-traceability/__tests__/DeliveryEvidencePanel.test.tsx",
+            "src/components/code-traceability/__tests__/useDeliveryReadiness.test.tsx",
+            "src/components/specs/__tests__/SpecCoveragePanel.persisted.test.tsx",
+        )
+
+    def test_sc20_pending_unknown_na_and_scope_isolation_in_ui(self) -> None:
+        _run_frontend_scenario(
+            "SC20", "src/components/code-traceability/__tests__/DeliveryEvidencePanel.test.tsx",
+            "src/components/code-traceability/__tests__/useDeliveryReadiness.test.tsx",
+            "src/contexts/__tests__/ApiContext.identity.test.tsx",
+        )
+
+    def test_sc21_accessible_phase_and_freshness_in_ui(self) -> None:
+        _run_frontend_scenario(
+            "SC21", "src/components/code-traceability/__tests__/readinessPolling.test.tsx",
+        )
+
+    def test_sc22_safe_upgrade_and_partial_ddl_failure(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        _run(str(Path(community) / "tests" / "test_readiness_schema_upgrade.py"))
+
+    def test_sc23_resumable_backfill_and_compatible_read_modes(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_backfill_after_v401_upgrade_completes_all_scopes_and_three_restarts",
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_reconcile_cursor_resumes_bounded_pages_after_restart",
+            f"{tests / 'test_delivery_readiness_surfaces.py'}::"
+            "test_P08_board_summary_reports_pending_initial_without_false_zero",
+        )
+        _run(
+            f"{tests / 'test_readiness_projection_worker.py'}::"
+            "test_real_community_lifespan_serves_pending_then_current_on_upgraded_copy",
+        )
+        _run_frontend_components(
+            "src/components/code-traceability/__tests__/DeliveryEvidencePanel.test.tsx",
+        )
+
+    def test_sc24_read_rollback_and_previous_binary_refusal(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        _run(
+            f"{tests / 'test_readiness_schema_upgrade.py'}::"
+            "test_rollback_assessment_refuses_source_writes_and_revision_advance",
+            f"{tests / 'test_readiness_schema_upgrade.py'}::"
+            "test_rollback_assessment_refuses_revision_advance_with_identical_source",
+            f"{tests / 'test_readiness_schema_upgrade.py'}::"
+            "test_rollback_assessment_preserves_new_operation_audit",
+            str(tests / "local_readiness_previous_binary.py"),
+        )
+        _run_frontend_components(
+            "src/components/code-traceability/__tests__/DeliveryEvidencePanel.test.tsx",
+        )
+
+    def test_sc25_instrumentation_samples_and_parity(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        script = Path(community) / "scripts" / "stress_readiness_fixture.py"
+        with TemporaryDirectory(prefix="readiness-sc25-") as folder:
+            output = Path(folder) / "observation.json"
+            env = os.environ.copy()
+            env["PYTHONPATH"] = os.pathsep.join((
+                str(_CORE / "src"), str(Path(community) / "src"),
+                env.get("PYTHONPATH", "")))
+            result = subprocess.run([
+                sys.executable, str(script), "--mode", "persisted",
+                "--duration-seconds", "10", "--warmup-seconds", "1",
+                "--reads-per-second", "2", "--writes-per-second", "1",
+                "--specs", "2", "--cards", "4", "--obligations", "4",
+                "--scenarios", "4", "--facts", "20", "--history", "1",
+                "--fixture-profile", "simple", "--read-surface", "rest",
+                "--output", str(output),
+            ], cwd=community, env=env, capture_output=True, text=True,
+                timeout=180, check=False)
+            if result.returncode != 0:
+                raise AssertionError(
+                    f"isolated fixture returned {result.returncode}\n"
+                    f"{result.stdout[-3000:]}\n{result.stderr[-3000:]}")
+            observation = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(observation["error_count"], 0)
+        self.assertEqual(observation["warmup_error_count"], 0)
+        self.assertEqual(observation["post_load_parity"]["status"], "pass")
+        self.assertEqual(observation["post_load_parity"]["scopes"], 2)
+        for field in ("seed_sha256", "harness_sha256", "build", "host", "command"):
+            self.assertTrue(observation[field], field)
+        samples = observation["samples_ms"]["read"]
+        self.assertTrue(samples)
+        summary = observation["read_distribution_ms"]
+        self.assertAlmostEqual(summary["p50"], median(samples), delta=.002)
+        self.assertAlmostEqual(summary["max"], max(samples), delta=.002)
+        for percentile, proportion in (("p95", .95), ("p99", .99)):
+            expected = sorted(samples)[ceil(len(samples) * proportion) - 1]
+            self.assertAlmostEqual(summary[percentile], expected, delta=.002)
+        self.assertTrue(observation["samples_ms"]["publish"])
+        self.assertTrue(observation["samples_ms"]["publish_phases"]["source_to_publish"])
+        self.assertTrue(observation["samples_ms"]["read_phases"]["auth_before"])
+        self.assertTrue(observation["samples_ms"]["read_phases"]["store_db"])
+        for phase, values in observation["samples_ms"]["read_phases"].items():
+            if values:
+                self.assertAlmostEqual(
+                    observation["read_phases_distribution_ms"][phase]["p50"],
+                    median(values), delta=.002)
+        publish_samples = observation["samples_ms"]["publish"]
+        self.assertAlmostEqual(observation["publish_distribution_ms"]["p50"],
+                               median(publish_samples), delta=.002)
+        _run(f"{Path(community) / 'tests' / 'test_readiness_projection_worker.py'}::"
+             "test_worker_publishes_one_complete_generation_after_source_commit")
+
+    def test_sc26_overload_and_resource_isolation(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        worker = Path(community) / "tests" / "test_readiness_projection_worker.py"
+        _run(
+            f"{worker}::test_pipeline_keeps_one_calculation_after_process_pool_breaks",
+            f"{worker}::test_failed_scope_does_not_block_another_scope",
+            f"{worker}::test_over_cap_scope_is_unknown_while_healthy_scope_progresses",
+            f"{worker}::test_sustained_queue_lag_is_warned_without_exposing_payload",
+            f"{worker}::test_eight_failures_terminal_then_fenced_admin_requeue",
+        )
+
+    def test_sc27_safe_diagnostics(self) -> None:
+        community = os.environ.get("OKTO_PULSE_COMMUNITY_REPO")
+        if not community:
+            raise AssertionError("paired Community checkout is required")
+        tests = Path(community) / "tests"
+        worker = tests / "test_readiness_projection_worker.py"
+        _run(
+            f"{worker}::test_terminal_projection_error_is_correlated_without_leaking_exception_payload",
+            f"{worker}::test_requeue_log_correlates_generation_without_leaking_reason",
+            str(tests / "test_readiness_stress_fixture_cache.py"),
+            f"{tests / 'test_readiness_schema_upgrade.py'}::"
+            "test_rollback_assessment_preserves_new_operation_audit",
+        )

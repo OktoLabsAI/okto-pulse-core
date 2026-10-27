@@ -2,6 +2,7 @@
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from okto_pulse.core.models.delivery_evidence import (
     CardDeliveryEvidenceBatchInput, CardDeliveryEvidenceBatchCommand,
@@ -14,10 +15,9 @@ class DeliveryReportMove(CardMove):
     model_config = ConfigDict(extra="forbid")
 
 
-class CardDeliveryReportInput(BaseModel):
+class _CardDeliveryReportFields(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     contract_version: Literal["card-delivery-report/v1"]
-    expected_card_status: Literal["started", "in_progress"]
     batch: CardDeliveryEvidenceBatchInput
     report: DeliveryReportMove
     existing_record_ids: list[Identity] = Field(default_factory=list, max_length=200)
@@ -38,15 +38,30 @@ class CardDeliveryReportInput(BaseModel):
         return self
 
 
-class CardDeliveryReportCommand(DeliveryEvidenceQuery, CardDeliveryReportInput):
+class CardDeliveryReportInput(_CardDeliveryReportFields):
+    expected_card_status: Literal["in_progress"]
+
+
+class LegacyCardDeliveryReportReplayInput(_CardDeliveryReportFields):
+    """Parse old wire bytes for exact replay, never for a new report."""
+
+    expected_card_status: Literal["started"]
+
+
+class CardDeliveryReportCommand(DeliveryEvidenceQuery, _CardDeliveryReportFields):
     card_id: Identity
+    expected_card_status: Literal["in_progress", "started"]
 
     def batch_command(self):
         return CardDeliveryEvidenceBatchCommand(board_id=self.board_id, card_id=self.card_id,
             spec_id=self.spec_id, **self.batch.model_dump())
 
 
-CardDeliveryRecordInput = CardDeliveryEvidenceWriteInput | CardDeliveryReportInput
+CardDeliveryRecordInput = (
+    CardDeliveryEvidenceWriteInput
+    | CardDeliveryReportInput
+    | SkipJsonSchema[LegacyCardDeliveryReportReplayInput]
+)
 
 
 class DeliveryReportRejected(ValueError):

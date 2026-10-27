@@ -9,6 +9,7 @@ _MESSAGES = {
     'readiness_scope_mismatch': 'The requested readiness scope is unavailable to this actor.',
     'readiness_cursor_stale': 'Readiness changed. Restart the query without a cursor or snapshot.',
     'readiness_snapshot_changed': 'Readiness changed during the read. Retry the query.',
+    'readiness_requeue_conflict': 'Readiness changed. Inspect the current revision before requeueing.',
     'readiness_limit_exceeded': 'Readiness exceeds the supported query capacity.',
     'readiness_assessment_unavailable': 'The current readiness assessment is unavailable.',
     'readiness_permission_denied': 'Readiness read permission is required.',

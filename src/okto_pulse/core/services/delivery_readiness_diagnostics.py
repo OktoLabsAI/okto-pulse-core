@@ -22,6 +22,13 @@ from okto_pulse.core.models.delivery_readiness import (
     ReadinessIssue, ReadinessPinpoint, ReadinessUnitRef,
 )
 
+_SOURCE_PREFIX_BY_REQUIREMENT_TYPE = {
+    kind: prefix
+    for kind, field in VERIFICATION_REQUIREMENT_FIELDS.items()
+    for prefix, collection in COLLECTIONS
+    if collection == field
+}
+
 
 @dataclass(frozen=True, slots=True)
 class DiagnosticOwner:
@@ -108,6 +115,34 @@ class _SnapshotIndex:
         self.source_ids.update(identity for row in self.inspections.values() for identity in row.record_ids)
         self.source_ids.update(identity for fact in snapshot.tests if fact.scope == self.scope
             for identity in (fact.id, fact.receipt_id))
+        # The same binding is often explained in both the Spec and its Cards,
+        # with several reasons per phase. These immutable facts depend only on
+        # the snapshot, binding, phase and selected Card.
+        self._expected_binding_facts = {}
+
+    def expected_binding_facts(self, binding, phase, card_id):
+        key = (binding, phase, card_id)
+        cached = self._expected_binding_facts.get(key)
+        if cached is not None:
+            return cached
+        values = [ReadinessFact(obligation_ref=binding.obligation_ref,
+            semantic_sha256=binding.semantic_sha256,
+            outcome='complete' if phase == ReadinessPhase.IMPLEMENTATION else 'passed')]
+        for contribution in self.obligations[binding].contributions:
+            if card_id and contribution.card_id != card_id:
+                continue
+            for source in contribution.sources:
+                prefix = _SOURCE_PREFIX_BY_REQUIREMENT_TYPE.get(source.requirement_type)
+                if prefix is None:
+                    raise DiagnosticIntegrityError('readiness_contribution_source_unresolved')
+                values.append(ReadinessFact(obligation_ref=binding.obligation_ref,
+                    semantic_sha256=binding.semantic_sha256, card_id=contribution.card_id,
+                    scope_sha256=contribution.scope_sha256,
+                    source_obligation_ref=f'{prefix}:{source.requirement_id}',
+                    source_scope_sha256=source.scope_sha256))
+        result = tuple(values)
+        self._expected_binding_facts[key] = result
+        return result
 
     def details(self, unit, phase, reason):
         if set(reason.source_ids) - self.source_ids:
@@ -136,21 +171,8 @@ class _SnapshotIndex:
         else:
             pinpoints.append(_pinpoint('spec', self.scope.spec_id))
         for binding in bindings:
-            expected.append(ReadinessFact(obligation_ref=binding.obligation_ref, semantic_sha256=binding.semantic_sha256,
-                outcome='complete' if phase == ReadinessPhase.IMPLEMENTATION else 'passed'))
-            prefixes = {kind: prefix for kind, field in VERIFICATION_REQUIREMENT_FIELDS.items()
-                for prefix, collection in COLLECTIONS if collection == field}
-            for contribution in self.obligations[binding].contributions:
-                if unit and unit.card_id and contribution.card_id != unit.card_id:
-                    continue
-                for source in contribution.sources:
-                    if source.requirement_type not in prefixes:
-                        raise DiagnosticIntegrityError('readiness_contribution_source_unresolved')
-                    expected.append(ReadinessFact(obligation_ref=binding.obligation_ref,
-                        semantic_sha256=binding.semantic_sha256, card_id=contribution.card_id,
-                        scope_sha256=contribution.scope_sha256,
-                        source_obligation_ref=f'{prefixes[source.requirement_type]}:{source.requirement_id}',
-                        source_scope_sha256=source.scope_sha256))
+            expected.extend(self.expected_binding_facts(binding, phase,
+                unit.card_id if unit else None))
         proofs = []
         for fact in facts:
             evidence.append(ReadinessEvidenceRef(kind='record', id=fact.id, source_ref=None, revision=None))
@@ -391,7 +413,8 @@ def _actions(index, assessment, unit, phase, reason, detail, origin, bindings, p
 
 
 def compose_delivery_diagnostics(assessment, snapshot, *, spec_assessment=None, permissions=None, owners=(),
-                                 card_versions=None, procedures=(), native_lifecycle=None):
+                                 card_versions=None, procedures=(), native_lifecycle=None,
+                                 snapshot_index=None):
     """Compose already evaluated native facts, without per-unit queries/evaluation.
 
     Test views can receive the shared Spec assessment to explain implementation
@@ -400,7 +423,10 @@ def compose_delivery_diagnostics(assessment, snapshot, *, spec_assessment=None, 
     """
     if assessment.scope != snapshot.scope or spec_assessment is not None and spec_assessment.scope != snapshot.scope:
         raise DiagnosticIntegrityError('readiness_diagnostic_scope_invalid')
-    index = _SnapshotIndex(snapshot)
+    if snapshot_index is not None and (snapshot_index.scope != snapshot.scope
+            or snapshot_index.context is not snapshot.effective_context):
+        raise DiagnosticIntegrityError('readiness_diagnostic_snapshot_mismatch')
+    index = snapshot_index if snapshot_index is not None else _SnapshotIndex(snapshot)
     owner_index = _index(owners, lambda o: (o.entity_type, o.entity_id))
     procedure_index = _index(procedures, lambda p: p.id)
     permissions, card_versions = permissions or {}, card_versions or {}

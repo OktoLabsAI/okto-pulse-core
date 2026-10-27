@@ -265,6 +265,7 @@ class ReadinessCursorBinding(ReadinessDTO):
     phase: PhaseFilter
     issue_id: Identity | None
     limit: Annotated[int, Field(strict=True, ge=1, le=20)]
+    generation_id: Identity | None = None
 
 
 class ReadinessAction(ReadinessDTO):

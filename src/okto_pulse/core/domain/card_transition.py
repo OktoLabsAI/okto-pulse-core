@@ -8,6 +8,7 @@ from okto_pulse.core.domain.enums import CardStatus, CardType, SpecStatus
 from okto_pulse.core.domain.spec_dependency import (
     spec_dependency_blocked_guidance,
     spec_dependency_blocking_facts,
+    transition_rechecks_card_prerequisites,
     transition_starts_card_execution,
 )
 
@@ -104,9 +105,9 @@ def archived_card_block(facts: CardTransitionFacts) -> CardTransitionBlock | Non
 
 
 def spec_dependency_block(facts: CardTransitionFacts) -> CardTransitionBlock | None:
-    """Block every exact Card execution-start/resume edge on prerequisites."""
+    """Block qualification as well as execution entry on current prerequisites."""
 
-    if not facts.spec_id or not transition_starts_card_execution(
+    if not facts.spec_id or not transition_rechecks_card_prerequisites(
         facts.old_status,
         facts.new_status,
     ):
@@ -172,12 +173,8 @@ def completed_spec_normal_work_block(
 
 
 def spec_maturity_block(facts: CardTransitionFacts) -> CardTransitionBlock | None:
-    if facts.new_status is CardStatus.CANCELLED:
-        return None
-    old_level = CARD_STATUS_ORDER.get(facts.old_status, 0)
-    new_level = CARD_STATUS_ORDER.get(facts.new_status, 0)
-    moves_forward = new_level > old_level
-    if not (moves_forward and facts.spec_id and facts.spec_status is not None):
+    if not (facts.spec_id and facts.spec_status is not None
+            and transition_rechecks_card_prerequisites(facts.old_status, facts.new_status)):
         return None
     minimum = (
         SpecStatus.VALIDATED
@@ -262,20 +259,22 @@ def bug_regression_evidence_block(
 
 
 def bug_regression_gate_applies(facts: CardTransitionFacts) -> bool:
-    old_level = CARD_STATUS_ORDER.get(facts.old_status, 0)
-    new_level = CARD_STATUS_ORDER.get(facts.new_status, 0)
     bug_gate_applies = (
         facts.card_type is CardType.BUG
         and facts.require_test_task_for_bug
         and _SEVERITY_ORDER.get(facts.severity, 1)
         >= _SEVERITY_ORDER.get(facts.bug_test_gate_min_severity, 1)
     )
-    starts_execution = (
-        facts.new_status is not CardStatus.CANCELLED
-        and new_level >= CARD_STATUS_ORDER[CardStatus.IN_PROGRESS]
-        and old_level < CARD_STATUS_ORDER[CardStatus.IN_PROGRESS]
+    # A legacy Started Bug is migrated to In Progress without granting proof
+    # that its old entry gate passed. Recheck regression evidence on every later
+    # execution advance; pause, cancellation and same-column reorder stay usable.
+    advances_execution = (
+        facts.new_status in {
+            CardStatus.IN_PROGRESS, CardStatus.VALIDATION, CardStatus.DONE,
+        }
+        and facts.new_status is not facts.old_status
     )
-    return bug_gate_applies and starts_execution
+    return bug_gate_applies and advances_execution
 
 
 def evaluate_card_transition(facts: CardTransitionFacts) -> CardTransitionDecision:

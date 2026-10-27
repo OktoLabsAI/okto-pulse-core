@@ -1038,9 +1038,12 @@ def assess_effective_obligations(snapshot, *, card_id=None, card_type=None, _eva
         or row.implementation.proof_satisfied is not None for row in values)
     verification_complete = all(row.verification.state == UnitState.NOT_APPLICABLE
         or row.verification.proof_satisfied is not None for row in values)
+    empty_scope_reasons = () if rows else (FactualReason(
+        ReadinessReason.SCOPE_UNAVAILABLE if not full_rows
+        else ReadinessReason.SCOPE_ALLOCATION_UNRESOLVED),)
     return DeliveryAssessment(snapshot.scope, AssessmentCompleteness(population_known, scope_resolved,
         implementation_complete and verification_complete, True, implementation_complete, verification_complete),
-        tuple(values), card_id=card_id, card_type=card_type)
+        tuple(values), reasons=empty_scope_reasons, card_id=card_id, card_type=card_type)
 
 
 def _combine_scenario_checks(phases):

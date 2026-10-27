@@ -58,6 +58,19 @@ class DeliveryEvidenceQuery(BaseModel):
     spec_id: Identity
 
 
+class ReadinessRequeueCommand(DeliveryEvidenceQuery):
+    edition: int = Field(ge=1)
+    expected_target_revision: int = Field(ge=0)
+    idempotency_key: str = Field(min_length=1, max_length=128, pattern=r"\S")
+    reason: str = Field(min_length=1, max_length=500, pattern=r"\S")
+
+
+class PersistedReadinessQuery(DeliveryEvidenceQuery):
+    card_id: Identity | None = None
+    unit_limit: int = Field(default=0, ge=0, le=250)
+    cursor: str | None = Field(default=None, min_length=1, max_length=8192)
+
+
 class DeliveryEvidenceReadQuery(DeliveryEvidenceQuery):
     """Read controls are separate from inherited write contracts."""
 
@@ -349,8 +362,19 @@ def card_delivery_command(
     if getattr(evidence, "contract_version", None) == "card-delivery-report/v1" or (
         isinstance(evidence, dict) and evidence.get("contract_version") == "card-delivery-report/v1"
     ):
-        from okto_pulse.core.models.delivery_report import CardDeliveryReportInput, CardDeliveryReportCommand
-        body = CardDeliveryReportInput.model_validate(evidence)
+        from okto_pulse.core.models.delivery_report import (
+            CardDeliveryReportInput, CardDeliveryReportCommand,
+            LegacyCardDeliveryReportReplayInput,
+        )
+        historical_status = (
+            evidence.get("expected_card_status") if isinstance(evidence, dict)
+            else getattr(evidence, "expected_card_status", None)
+        )
+        input_model = (
+            LegacyCardDeliveryReportReplayInput
+            if historical_status == "started" else CardDeliveryReportInput
+        )
+        body = input_model.model_validate(evidence)
         return CardDeliveryReportCommand(board_id=board_id, card_id=card_id, spec_id=spec_id, **body.model_dump())
     batch = isinstance(evidence, CardDeliveryEvidenceBatchInput) or (
         isinstance(evidence, dict) and "entries" in evidence

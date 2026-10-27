@@ -154,6 +154,7 @@ PUBLIC_CORE_CONTRACT_SURFACES: tuple[str, ...] = tuple(
             "okto_pulse.core.services.quality_assessment",
             "okto_pulse.core.services.quality_assessment_lifecycle",
             "okto_pulse.core.services.quality_projection_currentness",
+            "okto_pulse.core.services.persisted_delivery_readiness",
             "okto_pulse.core.services.reference_resolution",
             "okto_pulse.core.services.research_decision_ledger",
             "okto_pulse.core.services.resource_gate",

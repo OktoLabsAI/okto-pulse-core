@@ -4,6 +4,15 @@ version: "1.4"
 
 # Tool docs — Code Traceability
 
+## `okto_pulse_get_persisted_delivery_readiness`
+
+Read the current published readiness generation for a Spec or `card_id`.
+`unit_limit` (0–250) includes a bounded unit page. Follow `page.next_cursor`
+to read the same generation; a stale cursor is a conflict. The response states
+`current`, `updating`, `pending_initial`, or `unavailable`. Implementation and
+verification metrics are independent. Published values are informational:
+native delivery transitions still check source ledgers and their own gates.
+
 ## `okto_pulse_get_delivery_evidence`
 
 Use `view="readiness"` for the current Spec or an optional `card_id`. The
@@ -129,7 +138,7 @@ does not wait for Done; its lifecycle assessment still reports open Cards/gates.
 
 To atomically save the last batch and submit the existing Card execution report,
 use `contract_version: "card-delivery-report/v1"` with `expected_card_status`
-(`started` or `in_progress`), `batch` (the unchanged card-delivery-batch/v1 body),
+(`in_progress`), `batch` (the unchanged card-delivery-batch/v1 body),
 and `report` (the existing Card move fields for `validation` or `done`, including
 conclusion/completeness/drift and their justifications). Do not put a
 `delivery_selection` inside `report`: the server selects every new batch record

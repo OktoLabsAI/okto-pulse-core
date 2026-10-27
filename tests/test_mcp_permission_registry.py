@@ -50,15 +50,9 @@ def test_learning_capture_manifest_preserves_complete_use_case_authority():
 # leaf cannot pass CI merely because that leaf exists in ALL_FLAGS.
 EXPECTED_TRANSITION_SUFFIXES = {
     "card": (
-        "not_started_to_started",
         "not_started_to_in_progress",
         "not_started_to_cancelled",
-        "started_to_not_started",
-        "started_to_in_progress",
-        "started_to_validation",
-        "started_to_on_hold",
-        "started_to_cancelled",
-        "in_progress_to_started",
+        "in_progress_to_not_started",
         "in_progress_to_validation",
         "in_progress_to_done",
         "in_progress_to_on_hold",
@@ -67,7 +61,6 @@ EXPECTED_TRANSITION_SUFFIXES = {
         "validation_to_done",
         "validation_to_on_hold",
         "validation_to_cancelled",
-        "on_hold_to_started",
         "on_hold_to_in_progress",
         "on_hold_to_cancelled",
         "done_to_in_progress",
@@ -259,11 +252,13 @@ def test_live_catalog_has_one_exact_policy_or_audited_human_only_exemption() -> 
     report = registry_vs_tools_report(list(LIVE_TOOL_NAMES))
 
     assert report.is_valid
-    assert len(report.live_tools) == 285
+    assert len(report.live_tools) == 288
     assert {'okto_pulse_get_decision_reviews', 'okto_pulse_record_decision_reviews'} <= set(report.live_tools)
     assert "okto_pulse_get_historical_context" not in report.live_tools
     assert "okto_pulse_record_semantic_guideline_assessment" not in report.live_tools
-    assert len(MCP_TOOL_PERMISSION_POLICIES) == 282
+    assert len(MCP_TOOL_PERMISSION_POLICIES) == 285
+    assert "okto_pulse_get_delivery_readiness_summary" in report.live_tools
+    assert "okto_pulse_requeue_persisted_delivery_readiness" in report.live_tools
     assert len(HUMAN_ONLY_MCP_TOOL_EXEMPTIONS) == 3
     assert tuple(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES) == tuple(
         sorted(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES)

@@ -49,7 +49,8 @@ def test_new_namespace_manifests_are_ordered_and_registered() -> None:
     assert not any(leaf.startswith("sprint.") for leaf in leaves)
     assert set(leaves) <= set(ALL_FLAGS)
     assert "code_traceability.evidence.classify_legacy" not in ALL_FLAGS
-    assert len(ALL_FLAGS) == 536
+    assert len(ALL_FLAGS) == 538
+    assert "readiness.requeue" in ALL_FLAGS
 
 
 def test_every_new_leaf_has_one_authority_and_explicit_builtin_grants() -> None:

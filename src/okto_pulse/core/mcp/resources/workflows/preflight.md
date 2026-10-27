@@ -62,7 +62,7 @@ status-changing work (see
 ```
 1. okto_pulse_get_task_context(board_id, card_id, profile="full", context_scope="gate", include_knowledge=true, include_mockups=true, include_architecture=true, include_qa=true, include_comments=true)
 2. Review applicable artifacts — follow the Card-Level Artifact Review path in §2.8 of okto-pulse://workflows/cards. Resolve blocking Architecture/Mockup coverage through official copies or a justified N/A. Select useful Knowledge explicitly; advisory KB omission needs neither filler nor a per-item skip comment. Supplied Knowledge-selection envelopes retain their required justification and replay fields.
-3. Read okto_pulse_get_allowed_transitions; enter in_progress only through an allowed edge for the current type, status, permissions and gates (use started first when required). If already in_progress, do not repeat a move merely to satisfy this checklist.
+3. Read okto_pulse_get_allowed_transitions; enter in_progress only through an allowed edge for the current type, status, permissions and gates. If already in_progress, do not repeat a move merely to satisfy this checklist.
 4. Verify the move succeeded and re-read the card state, then BEGIN WORK. A refusal is a blocker, not permission to start anyway.
 ```
 

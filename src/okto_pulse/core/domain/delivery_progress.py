@@ -99,7 +99,7 @@ def require_delivery_progress_mutable(card: object) -> None:
     card_type = getattr(card, "card_type", None)
     if (
         getattr(card, "archived", None) is not False
-        or getattr(status, "value", status) not in {"started", "in_progress"}
+        or getattr(status, "value", status) != "in_progress"
         or getattr(card_type, "value", card_type) not in {"normal", "bug", "test"}
     ):
         raise ValueError("delivery_progress_execution_state_required")

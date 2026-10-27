@@ -2935,6 +2935,9 @@ async def _resolve_commit_kg_health_state(board_id: str, db) -> str:
       ilegível) → mantém o bloqueio/deferral (contrato Zero-Orphan); e
       corrupção real continua fail-closed na própria abertura
       (``throw_on_wal_replay_failure=True``), sem mutação.
+    - Recuperação apenas da descoberta global não bloqueia a escrita do
+      grafo do board. A descoberta consome o outbox durável separadamente;
+      o estado do grafo continua sujeito aos gates acima.
     """
     if db is None:
         return "healthy"
@@ -3012,25 +3015,47 @@ async def _resolve_commit_kg_health_state(board_id: str, db) -> str:
     else:
         # The health contract is worst-case-wins. Never trust a contradictory
         # ``overall_state`` that hides a more severe board/discovery state.
-        state = max(
+        aggregate_state = max(
             resolved_states.values(),
             key=state_severity.__getitem__,
         )
-        if resolved_states["overall_state"] != state:
+        state = aggregate_state
+        if resolved_states["overall_state"] != aggregate_state:
             logger.warning(
                 "kg.connectivity.health_payload_inconsistent board=%s "
                 "overall=%s effective=%s",
                 board_id,
                 resolved_states["overall_state"],
-                state,
+                aggregate_state,
                 extra={
                     "event": "kg.connectivity.health_payload_inconsistent",
                     "board_id": board_id,
                     "overall_state": resolved_states["overall_state"],
-                    "effective_state": state,
+                    "effective_state": aggregate_state,
                 },
             )
-
+        if (
+            resolved_states["overall_state"] == "recovery_needed"
+            and resolved_states["discovery_state"] == "recovery_needed"
+            and resolved_states["graph_state"]
+            in {"healthy", "at_risk", "backpressure"}
+        ):
+            # A global discovery WAL/outbox failure cannot establish that the
+            # board graph is corrupt. Board commits stage a durable outbox
+            # event; discovery recovery can replay it independently. Preserve
+            # the graph's own health gate, including backpressure.
+            state = resolved_states["graph_state"]
+            logger.info(
+                "kg.connectivity.discovery_recovery_board_write_allowed "
+                "board=%s graph_state=%s",
+                board_id,
+                state,
+                extra={
+                    "event": "kg.connectivity.discovery_recovery_board_write_allowed",
+                    "board_id": board_id,
+                    "graph_state": state,
+                },
+            )
     raw_total_nodes = health.get("total_nodes") if isinstance(health, dict) else None
     if (
         state == "recovery_needed"

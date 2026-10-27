@@ -140,6 +140,7 @@ def test_f14_contract_and_all_distribution_surfaces_are_conformant(current_wheel
 
     assert report.ok, report.as_dict()
     assert report.observed[CORE_DISTRIBUTION]["manifest"] == (
+        "orjson",
         "pydantic",
         "pydantic-core",
         "pyyaml",
