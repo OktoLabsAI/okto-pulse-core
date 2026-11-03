@@ -140,6 +140,7 @@ def test_f14_contract_and_all_distribution_surfaces_are_conformant(current_wheel
 
     assert report.ok, report.as_dict()
     assert report.observed[CORE_DISTRIBUTION]["manifest"] == (
+        "orjson",
         "pydantic",
         "pydantic-core",
         "pyyaml",
@@ -159,13 +160,18 @@ def test_f14_contract_and_all_distribution_surfaces_are_conformant(current_wheel
     ]["wheel"]
 
 
-def test_f14_gate_fails_closed_when_a_runtime_dependency_loses_ownership() -> None:
+@pytest.mark.parametrize('owner, dependency', [
+    (COMMUNITY_DISTRIBUTION, 'fastapi'),
+    (CORE_DISTRIBUTION, 'orjson'),
+    (COMMUNITY_DISTRIBUTION, 'orjson'),
+])
+def test_f14_gate_fails_closed_when_a_runtime_dependency_loses_ownership(owner, dependency) -> None:
     ledger = tuple(
         entry
         for entry in build_distribution_dependency_ledger()
         if not (
-            entry.declared_by == COMMUNITY_DISTRIBUTION
-            and entry.normalized_distribution == "fastapi"
+            entry.declared_by == owner
+            and entry.normalized_distribution == dependency
         )
     )
 
@@ -176,8 +182,8 @@ def test_f14_gate_fails_closed_when_a_runtime_dependency_loses_ownership() -> No
     )
 
     codes = {(finding.code, finding.dependency) for finding in report.findings}
-    assert ("dependency_unowned", "fastapi") in codes
-    assert ("source_import_unowned", "fastapi") in codes
+    assert ("dependency_unowned", dependency) in codes
+    assert ("source_import_unowned", dependency) in codes
 
 
 def test_f14_source_scan_detects_community_imports_without_literal_false_positives(

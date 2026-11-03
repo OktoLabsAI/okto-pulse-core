@@ -19,7 +19,7 @@ from typing import Literal
 
 CORE_DISTRIBUTION = "okto-pulse-core"
 COMMUNITY_DISTRIBUTION = "okto-pulse"
-LEDGER_VERSION = "F14.1"
+LEDGER_VERSION = "F14.2"
 CORE_FORBIDDEN_DISTRIBUTION_IMPORT_PREFIXES: tuple[str, ...] = (
     "okto_pulse.community",
 )
@@ -114,7 +114,7 @@ def _entry(
 
 
 def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]:
-    """Return the terminal F14 direct-dependency ownership ledger."""
+    """Return the versioned F14 direct-dependency ownership ledger."""
 
     core = CORE_DISTRIBUTION
     community = COMMUNITY_DISTRIBUTION
@@ -166,6 +166,18 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
             ("src/okto_pulse/core/application/processors/deterministic_kg.py",),
             rationale="The deterministic processor reads the packaged taxonomy resource.",
             removal_criterion="Compile the taxonomy into a stdlib-readable packaged format.",
+        ),
+        _entry(
+            "orjson", core, "core", ("orjson",), "direct",
+            ("src/okto_pulse/core/services/delivery_summary.py",),
+            rationale="The pure delivery summary fingerprints its authorized population with deterministic sorted JSON.",
+            removal_criterion="Replace population serialization while preserving the versioned digest and cursor binding contract.",
+        ),
+        _entry(
+            "orjson", community, "community", ("orjson",), "direct",
+            ("src/okto_pulse/community/adapters/sqlalchemy_persisted_readiness.py",),
+            rationale="The persisted readiness adapter encodes bounded snapshot rows and restores their exact serialized facts.",
+            removal_criterion="Replace snapshot serialization with an equivalent measured implementation and preserve exact generation manifests.",
         ),
         _entry(
             CORE_DISTRIBUTION, community, "community", ("okto_pulse",), "distribution",
