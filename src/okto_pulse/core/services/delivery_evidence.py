@@ -35,6 +35,16 @@ def card_delivery_store(session: object):
     return store
 
 
+async def task_requirements_for_spec(session, spec):
+    """Current per-task choices, with older editions retaining all-required behavior."""
+    adapter = require_relational_application_adapter()
+    factory = getattr(adapter, 'delivery_evidence', None)
+    if factory is None:
+        return {}
+    reader = getattr(factory(session), 'task_requirement_states', None)
+    return await reader(spec.board_id, spec.id) if callable(reader) else {}
+
+
 async def require_spec_delivery(
     session: object,
     spec: object,

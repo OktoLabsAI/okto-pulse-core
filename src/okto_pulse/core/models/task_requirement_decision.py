@@ -48,3 +48,11 @@ class TaskRequirementDecisionInput(BaseModel):
 class TaskRequirementDecisionCommand(TaskRequirementDecisionInput):
     board_id: str = Field(min_length=1, max_length=512, pattern=r'\S')
     spec_id: str = Field(min_length=1, max_length=512, pattern=r'\S')
+
+
+class TaskRequirementHistoryQuery(TaskRequirementOptionsQuery):
+    card_ids: list[str] = Field(min_length=1, max_length=1)
+    edition: int | None = Field(default=None, ge=1)
+    before_revision: int | None = Field(default=None, ge=1)
+    limit: int = Field(default=10, ge=1, le=20)
+    record_id: str | None = Field(default=None, min_length=1, max_length=512)

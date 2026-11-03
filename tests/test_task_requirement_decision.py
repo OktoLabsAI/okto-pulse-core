@@ -77,6 +77,30 @@ def test_changed_contributions_restore_required_applicability_without_reusing_ol
     assert not value.not_required and value.decision_ids == ()
 
 
+def test_canonical_gate_keeps_a_shared_required_contribution_pending():
+    from okto_pulse.core.domain.delivery_evidence import DeliveryEvidenceSnapshot, DeliveryObligation, DeliveryScope
+    from okto_pulse.core.domain.effective_delivery_coverage import EffectiveDeliveryContext
+    from okto_pulse.core.domain.delivery_verification import NativeVerificationPopulation
+    from okto_pulse.core.domain.delivery_assessment import assess_obligation_delivery, assess_delivery_gate, UnitState
+    from okto_pulse.core.domain.enums import CardType
+    native = inventory()
+    decision = allocation({'a': [record()]})
+    native = replace(native, rows=(replace(native.rows[0], requirement_allocation=decision),))
+    context = EffectiveDeliveryContext(native, (), (), frozenset({'automated_test'}),
+        required_scenarios=(), native_verification=NativeVerificationPopulation((), True))
+    snapshot = DeliveryEvidenceSnapshot(DeliveryScope('board', 'spec', 1),
+        (DeliveryObligation(native.rows[0].binding, 'Shared requirement'),), (), (), complete=True,
+        effective_context=context)
+    waived = assess_obligation_delivery(snapshot, card_id='a', card_type=CardType.NORMAL)
+    required = assess_obligation_delivery(snapshot, card_id='b', card_type=CardType.NORMAL)
+    global_result = assess_obligation_delivery(snapshot)
+    assert all(row.implementation.state == row.verification.state == UnitState.NOT_APPLICABLE for row in waived.obligations)
+    assert assess_delivery_gate(waived).allowed
+    assert not assess_delivery_gate(required).allowed
+    assert not assess_delivery_gate(global_result).allowed
+    assert global_result.obligations[0].contribution_card_ids == ('a', 'b')
+
+
 def test_new_edition_cannot_inherit_a_previous_decision():
     with pytest.raises(ValueError, match='history_invalid'):
         resolve_task_requirement(scope(edition=2), [record()])

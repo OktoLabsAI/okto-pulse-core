@@ -115,6 +115,7 @@ class EffectiveDeliveryCoverageRow:
     missing_scenarios: tuple[tuple[str, str, str], ...] = ()
     conflicting_scenario_receipts: tuple[tuple[str, tuple[str, ...]], ...] = ()
     scenario_findings: tuple[ScenarioVerificationFinding, ...] = ()
+    not_required: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +147,7 @@ class EffectiveDeliveryContext:
     decision_inspections: tuple[DecisionInspectionState, ...] = ()
     required_scenarios: tuple[RequiredVerificationScenario, ...] | None = None
     native_verification: NativeVerificationPopulation | None = None
+    task_requirements: tuple = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +162,7 @@ class ScopedDeliveryCoverageRow(DeliveryCoverageRow):
     missing_scenarios: tuple[tuple[str, str, str], ...] = ()
     conflicting_scenario_receipts: tuple[tuple[str, tuple[str, ...]], ...] = ()
     scenario_findings: tuple[ScenarioVerificationFinding, ...] = ()
+    not_required: bool = False
 
     @property
     def implementation_satisfied(self):
@@ -241,6 +244,7 @@ def _project_effective_snapshot(snapshot, result):
         row.decision_verification_status, row.decision_review_ids, row.missing_scenarios,
         row.conflicting_scenario_receipts,
         row.scenario_findings,
+        row.not_required,
     ) for row in result.rows if row.binding in obligations), result.blockers, result.rejected_record_ids,
         tuple(item for item in snapshot.rejected_records if item.scope == snapshot.scope))
 
@@ -466,10 +470,15 @@ def evaluate_effective_delivery_coverage(
         if obligation.family == "decision":
             continue
         base = baseline_rows.get(binding)
-        required = {item.card_id: item for item in obligation.contributions}
-        if len(required) != len(obligation.contributions) or not required:
+        if obligation.not_required:
+            excluded = EffectiveDeliveryCoverageRow(binding, (), (), (), (), (), (), (), False, False, not_required=True)
+            result.append(excluded)
+            contribution_rows.extend(ContributionDeliveryCoverage(fact.card_id, excluded) for fact in obligation.contributions)
+            continue
+        required = {item.card_id: item for item in obligation.required_contributions}
+        if len(required) != len(obligation.required_contributions) or not required:
             blockers.add("delivery_contribution_allocation_invalid")
-        by_card = accepted.get(binding, {})
+        by_card = {card: values for card, values in accepted.get(binding, {}).items() if card in required}
         ids = {identity for values in by_card.values() for identity in values}
         # Distinct associations can name rigorously the same admitted proof.
         # Keep every ID/author; observe the equivalence class only after the
@@ -659,6 +668,9 @@ def evaluate_effective_delivery_coverage(
                 missing_criteria, missing_scenarios, conflicts, findings, implementation_waivers, test_waivers)
         result.append(evaluated(required))
         contribution_rows.extend(ContributionDeliveryCoverage(card, evaluated((card,))) for card in sorted(required))
+        contribution_rows.extend(ContributionDeliveryCoverage(fact.card_id,
+            EffectiveDeliveryCoverageRow(binding, (), (), (), (), (), (), (), False, False, not_required=True))
+            for fact in obligation.contributions if fact.card_id not in required)
     # Decisions reuse delivery proof; they never manufacture implementation
     # ownership or accept arbitrary Test Card bindings to a contextual choice.
     by_ref = {row.binding.obligation_ref: row for row in result}
@@ -690,9 +702,9 @@ def evaluate_effective_delivery_coverage(
         result.append(EffectiveDeliveryCoverageRow(binding, (), (),
             tuple(sorted({identity for row in dependencies if row for identity in row.test_ids})),
             (), (), (), (), True, satisfied, status, review_ids))
-    if any(not row.implementation_satisfied for row in result):
+    if any(not row.implementation_satisfied and not row.not_required for row in result):
         blockers.add("delivery_implementation_missing")
-    if any(not row.test_satisfied and row.decision_verification_status is None for row in result):
+    if any(not row.test_satisfied and not row.not_required and row.decision_verification_status is None for row in result):
         blockers.add("delivery_test_result_missing")
     rejected.difference_update(relevant_tests)
     rejected.update(set(actual_tests) - relevant_tests)
@@ -1026,6 +1038,10 @@ def assess_effective_obligations(snapshot, *, card_id=None, card_type=None, _eva
                         native_reason_codes=verification_unavailable)), evidence_ids=verification.evidence_ids)
         if obligation.family == 'decision':
             implementation = _assessed_phase(state=UnitState.NOT_APPLICABLE)
+        if obligation.not_required and population_known and facts_complete:
+            ids = obligation.requirement_allocation.decision_ids
+            implementation = replace(implementation, state=UnitState.NOT_APPLICABLE, exception_ids=ids)
+            verification = replace(verification, state=UnitState.NOT_APPLICABLE, exception_ids=ids)
         implementation = apply_delivery_exceptions(implementation, scope=snapshot.scope,
             binding=obligation.binding, phase=DeliveryPhase.IMPLEMENTATION, waivers=snapshot.waivers)
         verification = apply_delivery_exceptions(verification, scope=snapshot.scope,
@@ -1130,6 +1146,12 @@ def assess_effective_scenarios(snapshot, *, card_id, scenario_ids, _evaluation=N
         if not phases:
             phases.append(_assessed_phase(reasons=(FactualReason(ReadinessReason.ASSESSMENT_UNAVAILABLE),)))
         verification = _combine_scenario_checks(phases)
+        choices = [resolved for scope, resolved in context.task_requirements
+                   if scope.card_id == card_id and scope.card_type == 'test'
+                   and scope.edition == snapshot.scope.edition and resolved.record is not None and not resolved.required]
+        if len(choices) == 1 and population_known and facts_complete:
+            verification = replace(verification, state=UnitState.NOT_APPLICABLE,
+                exception_ids=(choices[0].record.id,))
         values.append(ScenarioAssessment(identity, next(iter(digests)), snapshot.scope.edition, card_id, verification))
     evaluation_complete = all(row.verification.state == UnitState.NOT_APPLICABLE
         or row.verification.proof_satisfied is not None for row in values)

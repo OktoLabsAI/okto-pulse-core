@@ -319,6 +319,27 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 6. Submit the final evidence batch and execution report atomically with `okto_pulse_record_delivery_evidence` and `card-delivery-report/v1` when both are ready. The existing `move_card` route remains available when there is no new evidence batch.
 7. The card is ready for validation only after the move succeeds. `okto_pulse_submit_task_validation` requires status `validation` and fails closed otherwise — never request or hand off validation while the card is still `in_progress`.
 
+### Human task requirement decisions
+
+The application offers **Change task requirement** in a task's Delivery view:
+select task(s), choose **Required**, **Optional** or **Waived**, and optionally
+add a note. Only an authorized authenticated human can save. Agents may inspect
+the decision and prepare a request; never impersonate a human or use a legacy
+proof/waiver writer to change task responsibility.
+
+When the existing Delivery projection is already needed, reuse its `per_card`
+`requirement` facts (`decision`, `current`, `edition`, `decision_id`) rather than
+adding a confirmation call. Unknown or absent facts do not imply an exception.
+Optional/waived choices excuse only current contributions of the selected tasks
+in that Spec edition. They do not mean delivered, change lifecycle or dependencies,
+create proof, clear policy findings, or remove other tasks' required scenarios.
+Changed contributions or a new edition need a new human decision. Restoring
+Required appends a successor; history is immutable. A stale human draft must be
+reviewed against current facts before another command.
+
+Central Help **Task requirements** and the contextual **Task requirement rules**
+link explain these rules to the user. Agent resources complement that Help.
+
 ### Compact progress and delivery route
 
 Use the Card ledger as the work record. Record a checkpoint when implementation

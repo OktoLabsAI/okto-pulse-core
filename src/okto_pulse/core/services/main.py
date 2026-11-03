@@ -11636,6 +11636,11 @@ class SpecService:
             ),
         )
         if pending_tasks:
+            from okto_pulse.core.services.delivery_evidence import task_requirements_for_spec
+            requirements = await task_requirements_for_spec(self.db, spec)
+            pending_tasks = [task for task in pending_tasks
+                if requirements.get(task.id, {}).get('decision', 'required') == 'required']
+        if pending_tasks:
             task_list = "; ".join(
                 f"'{t.title}' ({t.status.value})" for t in pending_tasks[:5]
             )

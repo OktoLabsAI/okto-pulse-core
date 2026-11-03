@@ -37,6 +37,19 @@ class EffectiveDeliveryObligation:
     blockers: tuple[str, ...]
     declared_card_ids: tuple[str, ...] = ()
     decision_plan: DecisionVerificationPlan | None = None
+    requirement_allocation: object | None = None
+
+    @property
+    def required_contributions(self):
+        if self.requirement_allocation is None:
+            return self.contributions
+        return tuple(fact for fact in self.contributions
+                     if fact.card_id in self.requirement_allocation.required_card_ids)
+
+    @property
+    def not_required(self):
+        return (self.requirement_allocation is not None and bool(self.contributions)
+                and not self.blockers and not self.required_contributions)
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +83,12 @@ class EffectiveDeliveryInventory:
                         ),
                         "blockers": row.blockers,
                         "declared_card_ids": row.declared_card_ids,
+                        **({'requirement_allocation': {
+                            'required': row.requirement_allocation.required_card_ids,
+                            'optional': row.requirement_allocation.optional_card_ids,
+                            'waived': row.requirement_allocation.waived_card_ids,
+                            'decisions': row.requirement_allocation.decision_ids,
+                        }} if row.requirement_allocation is not None else {}),
                     }
                     for row in self.rows
                 ],

@@ -34,6 +34,12 @@ You MUST `resources/read` the matching URI below before operating on that entity
 
 **Single sources of truth:** Session/card pre-flight sequence → `okto-pulse://workflows/preflight`; `get_*_context` before every move → `okto-pulse://workflows/preflight` § "Entity context pre-flight"; KG query/consolidation timing + cognitive closeout → `okto-pulse://workflows/kg`; error messages → `okto-pulse://reference/errors`.
 
+Task requirement choices (Required/Optional/Waived) are authenticated human
+decisions in the application; agents may inspect and prepare, never sign them.
+Use the existing Delivery projection when already available; a human decision
+does not create proof or change lifecycle. Exact scope, restoration and the
+central/contextual Help contract are documented in `okto-pulse://workflows/cards`.
+
 ## Resource Fetching Protocol — MANDATORY
 
 Before a Spec leaves Draft, author Project Structure or justify `Project Structure: not applicable` in its `context` for the reviewed edition/scope. This mandatory agent protocol is not a server gate; see the reference above.

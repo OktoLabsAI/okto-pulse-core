@@ -8,6 +8,9 @@ from okto_pulse.core.models.delivery_selection import DeliverySelectionInput
 from okto_pulse.core.models.delivery_report import CardDeliveryReportCommand
 from okto_pulse.core.models.decision_review import DecisionReviewCommand, DecisionReviewQuery
 from okto_pulse.core.models.code_traceability import ImplementationTargetExecutionSubmission
+from okto_pulse.core.models.task_requirement_decision import (
+    TaskRequirementOptionsQuery, TaskRequirementDecisionCommand, TaskRequirementHistoryQuery,
+)
 
 
 from okto_pulse.core.models.delivery_evidence import (
@@ -75,6 +78,28 @@ class DeliveryEvidenceReadPort(Protocol):
 
 
 class DeliveryEvidenceStore(DeliveryEvidenceReadPort, Protocol):
+    async def task_requirement_history(self, query: TaskRequirementHistoryQuery, *, actor_id: str) -> dict:
+        """Read one authorized task's bounded historical page or full note."""
+        ...
+
+    async def task_requirement_options(self, query: TaskRequirementOptionsQuery, *,
+                                       actor_id: str, allowed_decisions: tuple[str, ...]) -> dict:
+        """Read exact current task scopes and a human review basis; never write."""
+        ...
+
+    async def record_task_requirement_decision(self, command: TaskRequirementDecisionCommand, *,
+                                              actor_id: str, actor_kind: str) -> dict:
+        """Append human decisions, activity and invalidation atomically.
+
+        Recheck scope under the completion fence, bind replay to actor and full
+        payload, and preserve lifecycle and proof. The application owns commit.
+        """
+        ...
+
+    async def task_requirement_states(self, board_id: str, spec_id: str) -> dict:
+        """Resolve exact current scopes for completion; stale history is required."""
+        ...
+
     async def decision_reviews(self, query: DecisionReviewQuery, *, actor_id: str) -> dict:
         """Read bounded current bases/history; never authenticate arbitrary sources."""
         ...
