@@ -48,6 +48,18 @@ def test_generation_matches_canonical_spec_and_each_card():
     assert projected.manifest_sha256 != build_readiness_generation(source, captured_revision=8).manifest_sha256
 
 
+def test_generation_captures_default_task_requirement_without_changing_canonical_assessment():
+    generation = build_readiness_generation(_source(), captured_revision=7)
+    by_card = {row.card_id: row for row in generation.summaries}
+    assert generation.evaluator_version == 'delivery-readiness-evaluator/v5'
+    assert by_card[None].requirement is None
+    for identity in ('ui', 'authorization'):
+        requirement = by_card[identity].requirement
+        assert requirement.decision == 'required' and requirement.current
+        assert requirement.decision_id is None
+        assert by_card[identity].payload()['requirement'] == requirement.model_dump(mode='json')
+
+
 def test_stored_canonical_rows_have_the_generation_manifest():
     generation = build_readiness_generation(_source(), captured_revision=7)
     def encoded(payload):

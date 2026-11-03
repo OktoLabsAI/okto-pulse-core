@@ -28,12 +28,13 @@ from okto_pulse.core.domain.effective_delivery_coverage import (
 )
 from okto_pulse.core.domain.enums import CardType
 from okto_pulse.core.models.delivery_readiness import DeliveryReadinessContext, DeliveryMetric
+from okto_pulse.core.models.delivery_summary import TaskRequirementSummary
 from okto_pulse.core.ports.delivery_readiness import READINESS_PERMISSION_OPERATIONS, ReadinessAccess
 from okto_pulse.core.services.delivery_readiness import EvaluatedDeliveryReadiness
 from okto_pulse.core.services.delivery_readiness_diagnostics import NativeDeliveryDiagnostics
 
 
-EVALUATOR_VERSION = "delivery-readiness-evaluator/v4"
+EVALUATOR_VERSION = "delivery-readiness-evaluator/v5"
 _DIAGNOSTICS = TypeAdapter(NativeDeliveryDiagnostics)
 _PROGRESS_LOCAL_BLOCKERS = frozenset({
     "delivery_implementation_missing", "delivery_test_result_missing",
@@ -237,6 +238,7 @@ class ProjectedSummary:
     population_known: bool
     evaluation_complete: bool
     context: dict
+    requirement: TaskRequirementSummary | None = None
 
     def payload(self) -> dict:
         return {
@@ -248,6 +250,8 @@ class ProjectedSummary:
             "population_known": self.population_known,
             "evaluation_complete": self.evaluation_complete,
             "context": self.context,
+            **({'requirement': self.requirement.model_dump(mode='json')}
+                if self.requirement is not None else {}),
         }
 
 
@@ -296,7 +300,8 @@ def _unit_rows(assessment: DeliveryAssessment) -> tuple[ProjectedUnit, ...]:
 
 
 def _summary(assessment: DeliveryAssessment, *, card_version: int | None,
-             context: DeliveryReadinessContext) -> ProjectedSummary:
+             context: DeliveryReadinessContext,
+             requirement: TaskRequirementSummary | None = None) -> ProjectedSummary:
     return ProjectedSummary(
         assessment.card_id,
         (assessment.card_type.value if isinstance(assessment.card_type, CardType)
@@ -307,7 +312,27 @@ def _summary(assessment: DeliveryAssessment, *, card_version: int | None,
         assessment.completeness.population_known and assessment.completeness.scope_resolved,
         assessment.completeness.evaluation_complete,
         context.model_dump(mode='json'),
+        requirement,
     )
+
+
+def _captured_requirements(snapshot):
+    """Index decisions once; list reads must not rebuild the execution plan."""
+    source = snapshot.facts.effective_context
+    if (snapshot.unavailable_reason_codes or not isinstance(source, EffectiveDeliveryContext)
+            or not source.inventory.complete):
+        return None
+    scope = snapshot.facts.scope
+    result = {}
+    for responsibility, resolved in source.task_requirements:
+        if (responsibility.board_id, responsibility.spec_id, responsibility.edition) != (
+                scope.board_id, scope.spec_id, scope.edition):
+            raise ValueError('readiness_requirement_scope_mismatch')
+        if responsibility.card_id in result:
+            raise ValueError('readiness_requirement_scope_ambiguous')
+        result[responsibility.card_id] = TaskRequirementSummary(decision=resolved.decision,
+            current=True, decision_id=resolved.record.id if resolved.record else None)
+    return result
 
 
 def _verified_predecessor(snapshot, *, captured_revision: int,
@@ -482,6 +507,8 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
     provenance_time = spec_context.model_dump(mode='json')["evaluated_at"] if spec_context else None
     summaries_list = []
     diagnostics_list = []
+    requirements = _captured_requirements(snapshot)
+    default_requirement = TaskRequirementSummary(decision='required', current=True)
     changed_context_ms = changed_diagnostic_ms = 0.0
     reused_rows = 0
     for index, (card, assessment) in enumerate(assessments):
@@ -500,7 +527,9 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
             changed_context_ms += (phase_now() - context_started) * 1000
             summaries_list.append(_summary(assessment,
                 card_version=card.version if card else None,
-                context=context))
+                context=context,
+                requirement=(requirements.get(card_id, default_requirement)
+                    if card is not None and requirements is not None and context.scope_complete else None)))
             diagnostic_started = phase_now()
             diagnostics_list.append(ProjectedDiagnostic(card_id,
                 _DIAGNOSTICS.dump_python(contextual.diagnostics(card_id), mode='json')))
