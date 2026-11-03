@@ -80,6 +80,18 @@ class GetPersistedDeliveryReadinessUseCase:
             cursor=command.cursor)
 
 
+class GetDeliverySummaryUseCase:
+    """Human presentation; each page reauthorizes and performs no mutation."""
+
+    async def execute(self, command, *, actor, uow: PulseUnitOfWork):
+        from okto_pulse.core.ports.delivery_readiness import ReadinessActor
+
+        await require_authorization(actor, PermissionRequirement('code_traceability.evidence.read'),
+            uow=uow, board_id=command.board_id)
+        return await uow.services.delivery_readiness.delivery_summary(command,
+            actor=ReadinessActor(actor.actor_id, actor.actor_kind, actor.realm_id, actor.board_id))
+
+
 class RequeuePersistedReadinessUseCase:
     """Authorized, audited retry of a terminal derived job."""
 

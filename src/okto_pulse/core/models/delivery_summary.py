@@ -17,6 +17,32 @@ DeliveryReason = Literal['delivered', 'in_progress', 'not_started', 'awaiting_va
     'updating', 'unavailable', 'optional', 'waived']
 
 
+class DeliverySummaryQuery(ReadinessDTO):
+    board_id: Identity
+    spec_id: Identity
+    group: DeliveryGroup | None = None
+    limit: Annotated[int, Field(strict=True, ge=1, le=20)] = 10
+    cursor: Annotated[str, Field(strict=True, min_length=1, max_length=8192)] | None = None
+
+    @model_validator(mode='after')
+    def continuation_has_one_group(self):
+        if self.cursor is not None and self.group is None:
+            raise ValueError('delivery_summary_cursor_group_required')
+        return self
+
+
+class DeliverySummaryCursorBinding(ReadinessDTO):
+    actor_id: Identity
+    actor_kind: Identity
+    realm_id: Identity | None
+    board_id: Identity
+    spec_id: Identity
+    spec_edition: Version
+    population_id: Digest
+    group: DeliveryGroup
+    limit: Annotated[int, Field(strict=True, ge=1, le=20)]
+
+
 class DeliverySummaryScope(ReadinessDTO):
     board_id: Identity
     spec_id: Identity

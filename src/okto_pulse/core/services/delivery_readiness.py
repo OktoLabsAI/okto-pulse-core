@@ -21,6 +21,7 @@ from okto_pulse.core.models.delivery_readiness import (
     DeliveryReadiness, DeliveryReadinessContext, DeliveryReadinessBoardSummary, DeliveryReadinessDetail, ReadinessCursorBinding,
     ReadinessDetailCounts, ReadinessDetailEntry, ReadinessPage, ReadinessReadQuery, ReadinessRelation,
 )
+from okto_pulse.core.models.delivery_summary import DeliverySummaryQuery
 from okto_pulse.core.ports.delivery_readiness import (
     DeliveryReadinessCursorPort, DeliveryReadinessReadPort, ReadinessActor, ReadinessAccessDenied, ReadinessReadError,
     ReadinessNativeLifecycle,
@@ -38,6 +39,31 @@ class DeliveryReadinessService:
     """Compose a fresh authorized read; never reuse it as mutation authority."""
     def __init__(self, reader: DeliveryReadinessReadPort, cursor: DeliveryReadinessCursorPort):
         self.reader, self.cursor = reader, cursor
+
+    async def delivery_summary(self, query: DeliverySummaryQuery, *, actor: ReadinessActor) -> dict:
+        """Bounded human view over one freshly authorized population."""
+        from okto_pulse.core.models.delivery_summary import DeliverySummaryCursorBinding
+        from .delivery_summary import page_delivery_summary
+
+        load = getattr(self.reader, 'load_delivery_summary', None)
+        if load is None:
+            raise ReadinessReadError('readiness_assessment_unavailable',
+                native_code='readiness_projection_adapter_unavailable')
+        # Never use IDs from a cursor to select a scope or bypass authorization.
+        population = await load(board_id=query.board_id, spec_id=query.spec_id, actor=actor)
+        if (population.scope.board_id, population.scope.spec_id) != (query.board_id, query.spec_id):
+            raise ReadinessReadError('readiness_scope_mismatch')
+
+        def binding(group):
+            return DeliverySummaryCursorBinding(actor_id=actor.actor_id, actor_kind=actor.actor_kind,
+                realm_id=actor.realm_id, board_id=query.board_id, spec_id=query.spec_id,
+                spec_edition=population.scope.spec_edition, population_id=population.population_id,
+                group=group, limit=query.limit)
+
+        offset = self.cursor.decode_summary(query.cursor, binding(query.group)) if query.cursor else 0
+        result = page_delivery_summary(population, group=query.group, offset=offset, limit=query.limit,
+            encode_cursor=lambda group, start: self.cursor.encode_summary(binding(group), start))
+        return result.model_dump(mode='json', exclude_none=False)
 
     async def requeue_terminal(self, *, board_id: str, spec_id: str,
                                actor: ReadinessActor, edition: int,

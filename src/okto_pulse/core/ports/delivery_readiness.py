@@ -13,6 +13,7 @@ from okto_pulse.core.domain.delivery_evidence import DeliveryEvidenceSnapshot
 from okto_pulse.core.domain.enums import CardStatus, CardType
 from okto_pulse.core.domain.sdlc_registry import lifecycle_definition, transition_contracts, transition_permission_flag
 from okto_pulse.core.models.delivery_readiness import ReadinessCursorBinding
+from okto_pulse.core.models.delivery_summary import DeliverySummaryCursorBinding
 from okto_pulse.core.ports.authentication import AuthorizationDenied
 from okto_pulse.core.ports.permission_policy import DefaultPermissionPolicy, PermissionContext, PermissionSet
 
@@ -95,6 +96,16 @@ class ReadinessClock(Protocol):
 
 
 class DeliveryReadinessCursorPort(Protocol):
+    def encode_summary(self, binding: DeliverySummaryCursorBinding, offset: int) -> str: ...
+
+    def decode_summary(self, token: str, binding: DeliverySummaryCursorBinding) -> int:
+        """Authenticate actor/scope/group/limit and fence the entire population.
+
+        Call only after a fresh authorized population read. A generation alone
+        cannot identify live titles or statuses used for sorting and grouping.
+        """
+        ...
+
     def encode(self, binding: ReadinessCursorBinding, offset: int) -> str: ...
 
     def decode(self, token: str, binding: ReadinessCursorBinding) -> int:
