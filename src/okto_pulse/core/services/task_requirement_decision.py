@@ -98,5 +98,8 @@ def prepare_task_requirement_decision(state, command, *, actor_id, actor_kind,
             user_note=command.note))
     response = dict(contract_version='task-requirement-operation/v1', operation_id=operation_id,
         status='applied', edition=state.edition, decision_ids=[record.id for record in records],
-        affected_cards=list(command.card_ids), decision=command.decision, replayed=False)
+        affected_cards=list(command.card_ids), decision=command.decision, replayed=False,
+        # This receipt confirms the atomic decision. Independent delivery gates
+        # are deliberately not evaluated again on the human save path.
+        remaining_blockers=dict(evaluated=False, count=None))
     return tuple(records), response

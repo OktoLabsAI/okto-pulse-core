@@ -193,3 +193,27 @@ def test_tampered_scope_digest_is_not_accepted_as_a_record():
     value['scope_sha256'] = 'f' * 64
     with pytest.raises(ValueError, match='record_invalid'):
         TaskRequirementDecisionRecord.from_dict(value)
+
+
+def test_decision_receipt_distinguishes_accepted_choice_from_unknown_delivery_blockers():
+    from okto_pulse.core.services.task_requirement_decision import (
+        TaskRequirementDecisionState, task_requirement_preview, prepare_task_requirement_decision,
+    )
+    from okto_pulse.core.models.task_requirement_decision import TaskRequirementDecisionCommand
+
+    state = TaskRequirementDecisionState(board_id='board', spec_id='spec', edition=1,
+        spec_version=1, spec_status='in_progress', inventory=inventory(),
+        cards=tuple(dict(id=identity, board_id='board', spec_id='spec', card_type='normal',
+            title=identity, status='in_progress', archived=False) for identity in ('a', 'b')),
+        histories={}, scenario_digests={}, dependencies=(), authority_sha256='f' * 64)
+    preview, _ = task_requirement_preview(state, card_ids=['a'], actor_id='human',
+        allowed_decisions=('waived',))
+    command = TaskRequirementDecisionCommand(board_id='board', spec_id='spec',
+        contract_version='task-requirement-decision/v1', card_ids=['a'], decision='waived',
+        basis=preview['basis'], idempotency_key='accept-one-choice')
+    records, receipt = prepare_task_requirement_decision(state, command,
+        actor_id='human', actor_kind='human', now=NOW)
+    assert receipt['status'] == 'applied' and receipt['affected_cards'] == ['a']
+    assert receipt['decision_ids'] == [records[0].id]
+    assert receipt['remaining_blockers'] == {'evaluated': False, 'count': None}
+    assert records[0].scope.card_id == 'a' and len(records) == 1
