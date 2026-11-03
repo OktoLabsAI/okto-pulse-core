@@ -83,7 +83,30 @@ def submitted_report_receipt(card: object, scope: CardDeliveryScope, record_ids:
             or delivery_digest(manifest.model_dump(mode="json", exclude={"sha256"})) != manifest.sha256
             or delivery_digest(report.get("impact_evidence")) != manifest.impact_sha256):
             raise ValueError("delivery_report_receipt_invalid")
-        return dict(status=target_status, manifest_sha256=manifest.sha256, delivery_revision=manifest.delivery_revision)
+        return dict(
+            status=target_status, manifest_sha256=manifest.sha256,
+            delivery_revision=manifest.delivery_revision,
+            accepted_state={
+                "contract_version": "delivery-operation-state/v1",
+                "scope": "operation_acceptance",
+                "board_id": manifest.board_id,
+                "card_id": manifest.card_id,
+                "card_version": manifest.card_version,
+                "card_status": target_status,
+                "spec_id": manifest.spec_id,
+                "spec_edition": manifest.spec_edition,
+                "selected_record_count": len(manifest.records),
+                "transition_effect": "submitted_to_" + target_status,
+                # This immutable receipt proves what was accepted, not a fresh
+                # readiness evaluation or the Card's state after later rework.
+                "readiness_evaluated": False,
+                "next_query": {
+                    "tool": "okto_pulse_get_allowed_transitions",
+                    "board_id": manifest.board_id,
+                    "entity_type": "card", "entity_id": manifest.card_id,
+                },
+            },
+        )
     raise ValueError("delivery_report_receipt_unavailable")
 
 

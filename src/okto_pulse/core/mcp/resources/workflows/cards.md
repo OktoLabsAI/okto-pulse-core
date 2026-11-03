@@ -349,6 +349,12 @@ Keep a distinct architectural decision or question in its native artifact.
    not confirm current Card status, current readiness or permission to conclude;
    perform the prescribed targeted read when those facts are needed. Historical
    replay describes the original operation, not a new lifecycle transition.
+   A composed report's `report.accepted_state` with
+   `contract_version="delivery-operation-state/v1"` and `replayed=false` confirms
+   the scoped version/status/edition accepted at handoff without a duplicate
+   confirmation read. Its `readiness_evaluated=false` never replaces the next
+   action's full gate context. Replay remains an original-operation receipt;
+   use the supplied targeted `next_query` when current lifecycle facts are needed.
 
 Limits remain **1–50 entries**, **128 KiB** per composed request and **200
 reference uses**. A failure rolls back the batch, inline execution receipts,

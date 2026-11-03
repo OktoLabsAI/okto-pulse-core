@@ -156,6 +156,19 @@ after rework. This receipt describes the historical submission, not the current
 Card status. Do not retry with changed fields under the same key. Ordinary
 checkpoints remain independent and never move the Card.
 
+v0.4.3 adds `report.accepted_state` (`delivery-operation-state/v1`) to the
+successful composed report. It contains the scoped Card/version/status and Spec
+edition accepted by that operation, selected-record count and transition effect.
+On a new acceptance (`replayed=false`), this is sufficient confirmation of the
+submitted handoff: do not reread a full Card/Spec/ledger just to copy those same
+facts into a comment. Exact replay returns the same original acceptance state,
+even after rework; inspect current state before claiming that it still holds.
+`readiness_evaluated=false` explicitly preserves the distinction: this is not
+approval, current readiness or permission for the next transition. Follow the
+bounded `next_query` when evaluating the next lifecycle action. The mandatory
+full gate read before that action remains required. A legacy response lacking
+this contract still requires the prescribed targeted confirmation read.
+
 Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
 
 ```json
@@ -320,7 +333,7 @@ An implementation entry may replace `execution_id` with `execution_submission`:
 {
   "client_ref": "parser-proof",
   "kind": "implementation",
-  "obligation_refs": ["fr:parser"],
+  "bindings": [{"obligation_ref": "fr:parser", "contribution": "complete"}],
   "justification": "Implemented the parser and observed the committed result.",
   "execution_submission": {
     "target_id": "target-parser",
