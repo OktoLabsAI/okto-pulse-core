@@ -96,6 +96,12 @@ class EffectiveDeliveryInventory:
                 result.setdefault(card_id, []).append(row)
         return {card_id: tuple(rows) for card_id, rows in result.items()}
 
+    def task_requirement_scope(self, *, board_id, spec_id, edition, card, scenario_digests=None):
+        """Bind a human task decision to this complete native allocation."""
+        from okto_pulse.core.domain.task_requirement_decision import task_requirement_scope
+        return task_requirement_scope(inventory=self, board_id=board_id, spec_id=spec_id,
+            edition=edition, card=card, scenario_digests=scenario_digests)
+
 
 def resolve_effective_delivery_inventory(*, spec, cards, qualification):
     collections = {field: getattr(spec, field, None) for _, field in COLLECTIONS}
