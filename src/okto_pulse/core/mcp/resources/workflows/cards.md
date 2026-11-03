@@ -315,9 +315,50 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 2. **MANDATORY for rework** — a failed admitted completion is status `rejected`. Read `current_rejection_summary` plus the referenced validation's `threshold_violations`, `confidence_justification`, `completeness_justification`, `drift_justification`, and `general_justification`. Editing implementation while Rejected is forbidden because it would erase the human handoff boundary. In blocking Code Traceability mode, the rejection's version bump can make an existing Target resolution outdated: investigation preflight and Target resolution renewal are the only allowed technical writes while Rejected; Target create/update, execution receipts, evidence dispositions, and implementation content remain frozen.
 3. Start execution — query `okto_pulse_get_allowed_transitions`; from `not_started`, move to `in_progress` after all gates pass. A Rejected card has exactly one exit: move it to `in_progress` before changing implementation. That clears only the Current pointer; causal history remains append-only.
 4. Implement the task.
-5. Link artifacts — attach knowledge bases, mockups, or comments as work progresses.
-6. Move to validation — `okto_pulse_move_card(status="validation", conclusion=..., completeness=..., completeness_justification=..., drift=..., drift_justification=...)`.
+5. Record material work events using Delivery progress; link relevant artifacts once. Follow the compact route below rather than repeating accepted evidence in comments.
+6. Submit the final evidence batch and execution report atomically with `okto_pulse_record_delivery_evidence` and `card-delivery-report/v1` when both are ready. The existing `move_card` route remains available when there is no new evidence batch.
 7. The card is ready for validation only after the move succeeds. `okto_pulse_submit_task_validation` requires status `validation` and fails closed otherwise — never request or hand off validation while the card is still `in_progress`.
+
+### Compact progress and delivery route
+
+Use the Card ledger as the work record. Record a checkpoint when implementation
+or targets materially change, when a blocker is introduced/resolved, or when new
+remaining work must be preserved for a handoff or closeout. A status change already
+records its lifecycle event; it does not require a duplicate "started" comment.
+There is no fixed heartbeat and no checkpoint for every tool, read or commit.
+Do not send a comment that repeats an accepted checkpoint, proof or report.
+Keep a distinct architectural decision or question in its native artifact.
+
+1. Reuse unchanged instructions and already inspected artifact bodies. Get the
+   required current gate slice before a gated action; follow bounded detail only
+   for the implementation/review facts still needed. Do not reload full Spec,
+   Card, ledger and readiness merely to narrate progress.
+2. Save one `delivery-progress/v2` checkpoint for the meaningful event. State the
+   work done and what remains; declare `material_change` truthfully. Source or
+   Target changes still invalidate affected proof. A progress record proves
+   neither completion nor tests, and never establishes recovery by another actor.
+3. At handoff, prefer one `card-delivery-report/v1` request: existing
+   `card-delivery-batch/v1` entries plus the normal execution report and transition
+   to Validation/Done. Use `execution_submission`, local `client_ref` references
+   and selected current records to avoid separate receipt/association/report
+   calls. This retains every source, actor, scope and lifecycle admission gate.
+4. Reuse an accepted proof when only association is missing. Observe a new
+   committed result when actual source/currentness requires it. Do not rerun a
+   test or re-register a receipt solely to replace its text with a shorter one.
+5. Retain accepted record IDs and revisions. A bare `{id,replayed}` response does
+   not confirm current Card status, current readiness or permission to conclude;
+   perform the prescribed targeted read when those facts are needed. Historical
+   replay describes the original operation, not a new lifecycle transition.
+
+Limits remain **1–50 entries**, **128 KiB** per composed request and **200
+reference uses**. A failure rolls back the batch, inline execution receipts,
+report and transition together. After a timeout, inspect the operation by its
+original key/receipt before repeating the exact envelope. After a CAS conflict,
+read the changed base and review it before using a new key. Missing or conflicting
+facts require a targeted read; never assume success to save a call. Mandatory gate
+reads and independent-review rules remain in force.
+
+See `okto-pulse://reference/tool-docs/code-traceability` for the closed schemas.
 
 ### Validator Workflow
 

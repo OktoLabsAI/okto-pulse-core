@@ -972,6 +972,7 @@ def register_code_traceability_tools(
         """Record Card progress or bind accepted implementation/authenticated test proof.
         Read get_delivery_evidence first for obligations and CAS/edition/revision fences.
         Progress/impact are claims: no proof, completion or verified workspace recovery.
+        Record material events, not heartbeat or per-tool updates; no duplicate comment.
         Use the closed evidence schema for single, atomic batch or report composition;
         each entry retains its own permission, admission, currentness and lifecycle gates.
         Partial proofs never sum to complete. Never fabricate receipts or claim a task

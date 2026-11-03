@@ -20347,9 +20347,9 @@ _LAZY_COMPACT_DESCRIPTION_OVERRIDES.update(
  'okto_pulse_move_refinement': 'Move Refinement through allowed states. Cancellation needs a '
                                'reason; reopening creates a new version and clears cancellation. '
                                'Read `okto-pulse://reference/tool-docs/refinement` before use.',
- 'okto_pulse_record_delivery_evidence': 'Record progress or accepted proof; claims never prove '
-                                        'completion/recovery. Atomic batch/report retains every '
-                                        'admission and lifecycle gate. Retry the exact '
+ 'okto_pulse_record_delivery_evidence': 'Record material progress events or accepted proof; no heartbeat '
+                                        'or duplicate comment. Prefer atomic batch/report; every '
+                                        'admission and lifecycle gate remains. Retry the exact '
                                         'envelope/key. Read '
                                         '`okto-pulse://reference/tool-docs/code-traceability` '
                                         'before use.',

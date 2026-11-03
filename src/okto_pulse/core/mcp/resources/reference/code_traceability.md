@@ -20,6 +20,10 @@ Draft or relax receipt/subject version matching.
 
 ## Delivery evidence
 
+For the default low-call execution route, follow **Compact progress and delivery
+route** in `okto-pulse://workflows/cards`: event-based progress and composed
+batch/report, with current native proof and no duplicate narrative writes.
+
 ### Current delivery readiness
 
 Use `okto_pulse_get_delivery_evidence(board_id, spec_id, view="readiness")`;

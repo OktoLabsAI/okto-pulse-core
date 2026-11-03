@@ -123,7 +123,7 @@ Do not stop processes, replace storage or bypass a fence without authority.
 3. **Card execution pre-flight before implementation or rework**. For exploration and planning use the matching route in `okto-pulse://workflows/preflight`.
 4. **Never move an entity without its full `get_*_context`** before the status change.
 5. **Query the KG at every planning stage** (ideation/refinement/spec) and **consolidate on every mandatory trigger** — `okto-pulse://workflows/kg`.
-6. **Comment as you work** — communicate start, key decisions, obstacles and completion. Reference recorded Delivery evidence rather than duplicating every receipt in prose. Use `@Name` to direct items (they become unseen mentions).
+6. **Record meaningful work events** — save Delivery progress when the work materially changes, a blocker changes, or a handoff/closeout needs new information. No timed heartbeat, per-tool/per-commit checkpoint, or comment duplicating an accepted record. Use a comment only for a decision/question not represented in the native record or an explicitly requested message. Follow `okto-pulse://workflows/cards` for the compact progress and delivery route.
 7. **Respect dependencies** — resolve blockers before moving blocked cards.
 8. **One card does one thing** — create sub-tasks instead of over-scoping.
 9. **Keep `objective` current** via `okto_pulse_update_my_profile`.

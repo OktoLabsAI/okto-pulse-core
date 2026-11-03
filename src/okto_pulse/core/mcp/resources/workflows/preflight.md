@@ -24,12 +24,17 @@ for an unrelated operation. Fetch artifact bodies only when needed for actual
 implementation/review, using the manifest/drilldowns. Refresh mutable context
 before a gated move and after a write that changes its version/head.
 
+For execution updates, use the **Compact progress and delivery route** in
+`okto-pulse://workflows/cards`: material events only, native records without
+duplicate comments, and one composed final batch/report when applicable.
+This does not waive gate reads, source freshness or authenticated test evidence.
+
 ## Rule categories — authority and proof
 
 | Category | Meaning | Where to verify |
 |---|---|---|
 | Server gate | Deterministically enforced when enabled for this actor/board/state | Full gate context, effective settings, allowed transitions, mutation response |
-| Agent protocol | Required agent behavior, not certified by a successful server move | Audit trail and actual work: context reads, prescribed KG queries, Project Structure decision, meaningful progress comments |
+| Agent protocol | Required agent behavior, not certified by a successful server move | Audit trail and actual work: context reads, prescribed KG queries, Project Structure decision, material Delivery progress events |
 | Advisory | Review for usefulness; absence alone does not block | Advisory fields in the current summary; KB context must not become filler |
 | Human/independent authority | Only the authorized actor can take the action | Effective permissions and typed remediation; no automatic skip or self-approval |
 
