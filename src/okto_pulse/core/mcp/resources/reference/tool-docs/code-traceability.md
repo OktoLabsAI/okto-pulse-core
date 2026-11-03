@@ -1,5 +1,5 @@
 ---
-version: "1.4"
+version: "1.5"
 ---
 
 # Tool docs — Code Traceability
@@ -135,6 +135,98 @@ Those stages describe only the deprecated contract. Independent readiness proof
 does not wait for Done; its lifecycle assessment still reports open Cards/gates.
 
 ## `okto_pulse_record_delivery_evidence`
+
+### Minimal composed handoff
+
+At session start or resumption, read this Card with
+`okto_pulse_get_delivery_evidence(board_id, spec_id, card_id, view="resume")`.
+Use the returned edition, Card version, delivery revision, obligations and
+accepted proof references. Fetch ledger/progress pages only for omitted facts
+that the next action needs. The resume's truncation flags and totals are part of
+the contract; a bounded page is not the entire audit history. Read current native
+transition gates before a lifecycle action, as required by the Card workflow.
+
+After work, prefer one supported composed request for the facts available at
+that moment. An accepted investigation receipt can be admitted as a Target
+execution, associated with obligations and included in the existing execution
+report by the same transaction. No separate execution-submit call or duplicate
+comment is required for that path. This **template** has symbolic values that
+must be replaced with current native IDs, fences and the actual work:
+
+```json
+{
+  "board_id": "<board-id>",
+  "card_id": "<card-id>",
+  "spec_id": "<spec-id>",
+  "evidence": {
+    "contract_version": "card-delivery-report/v1",
+    "expected_card_status": "in_progress",
+    "batch": {
+      "contract_version": "card-delivery-batch/v1",
+      "expected_card_version": 7,
+      "expected_spec_edition": 2,
+      "expected_delivery_revision": 3,
+      "idempotency_key": "<stable-key-for-this-exact-handoff>",
+      "entries": [{
+        "client_ref": "implemented",
+        "kind": "implementation",
+        "justification": "<what this committed execution implements>",
+        "bindings": [{"obligation_ref": "<native-obligation-ref>", "contribution": "complete"}],
+        "execution_submission": {
+          "target_id": "<native-target-id>",
+          "result_investigation_receipt_id": "<accepted-current-committed-receipt-id>",
+          "disposition": "touched",
+          "actual_relative_path": "src/parser.py"
+        }
+      }]
+    },
+    "existing_record_ids": [],
+    "report": {
+      "status": "validation",
+      "conclusion": "<implemented result submitted for review>",
+      "completeness": 100,
+      "completeness_justification": "<actual assigned implementation coverage>",
+      "drift": 0,
+      "drift_justification": "<actual scope comparison>"
+    }
+  }
+}
+```
+
+The example's percentages are executor claims, never test verification or gate
+approval. `touched` requires an existing Target/file; use the truthful native
+disposition for creation/deletion/replacement. Existing records are optional
+explicit selections, not an instruction to select every historical record.
+The report selects all newly accepted batch entries automatically. For a
+checkpoint without a lifecycle action, send `card-delivery-batch/v1` directly;
+do not fabricate a report or a final progress note to fill an envelope.
+
+For multiple Targets, put each execution admission in an earlier implementation
+entry, then use their `client_ref` values in the integrated binding's
+`execution_refs`. Declare partial versus complete honestly. Each binding's
+execution set must share one observed source and immutable revision. Split
+repository ownership into separate tasks during planning when required; a
+paired test run can observe both repositories without merging their execution
+bases. The existing single-execution and granular paths remain supported.
+
+On success, retain the returned IDs and report acceptance receipt. New
+acceptance confirms the submitted operation; no immediate full Spec/Card/ledger
+readback or duplicate comment is needed just to repeat it. On an uncertain
+timeout, retry the identical envelope/key. A replay confirms the original
+operation, not the current state. On a CAS/edition/revision conflict, preserve
+the draft, read one current Card resume, reconcile the actual difference and
+submit a new intent with current fences and a new key. Do not blind-retry stale
+fences. Investigate a bounded error or omitted page only when it affects that
+reconciliation. A rejected report leaves no partial batch, execution or outbox
+commit; independent earlier checkpoints remain history.
+
+Progress is event-driven: record a meaningful result, changed scope, blocker,
+handoff or deliberate pause when it helps another actor resume. Do not issue
+heartbeats per command, commit, time interval or tool response. Work may be
+dirty or not yet committed; a progress note needs no execution receipt and
+grants no delivery credit. `material_change="none"` means no source/Target
+change, not "unimportant work". A genuine source/Target change must declare the
+affected scope and receive fresh proof; batching never relaxes traceability.
 
 To atomically save the last batch and submit the existing Card execution report,
 use `contract_version: "card-delivery-report/v1"` with `expected_card_status`
@@ -275,7 +367,8 @@ Every card write requires Spec edition/card version and a nonempty explanation. 
 1,000 refs/implementation IDs, 20,000 explanation characters; unknown fields and
 duplicate refs fail validation. Same actor/key/payload replays `{id,replayed:true}`;
 changing that payload yields `delivery_idempotency_conflict`. Normal acceptance
-returns `{id,replayed:false}`. Refresh after acceptance; read `allowed` separately.
+returns `{id,replayed:false}`. Retain that acceptance; read current `allowed`
+separately when the next action requires it. Acceptance is not gate approval.
 Progress has a 128 KiB aggregate request limit, at most 200 obligation refs,
 100 Target IDs and 8,000 remaining-work characters. Reuse the same key/content
 after uncertain failure; do not create another key simply because of a timeout.

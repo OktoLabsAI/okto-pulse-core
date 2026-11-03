@@ -122,7 +122,7 @@ def test_resource_file_has_frontmatter(rel_path: str) -> None:
 def test_cards_workflow_defers_to_typed_transition_read_model() -> None:
     content = (RESOURCES_DIR / "workflows" / "cards.md").read_text(encoding="utf-8")
 
-    assert "A normal card follows `not_started → started → in_progress`" in content
+    assert "Cards start with `not_started → in_progress`" in content
     assert "only when the transition tool advertises that edge" in content
     assert '`okto_pulse_move_card(status="in_progress")` → begin work' not in content
 
