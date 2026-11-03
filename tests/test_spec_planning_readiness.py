@@ -7,9 +7,11 @@ import pytest
 from okto_pulse.core.domain.spec_evaluation import evaluate_spec_decomposition
 from okto_pulse.core.domain.spec_planning_readiness import (
     PLANNING_COMPONENTS, SpecPlanningComponent, SpecPlanningReadiness,
+    build_spec_validation_summary,
 )
 from okto_pulse.core.services.spec_planning_readiness import (
     PLANNING_COVERAGE_CHECKS, read_spec_planning_readiness, require_planning_coverage,
+    count_effective_planning_exceptions,
 )
 
 
@@ -303,3 +305,131 @@ async def test_code_evidence_skip_does_not_disclose_projection_without_read_perm
     inputs["cards"].check_code_evidence_coverage.assert_not_awaited()
     assert component.state == "unavailable"
     assert component.native_result is None and component.message is None
+
+
+def summary_for(planning, **overrides):
+    args = dict(planning=planning, edition=1, subject_status="validated",
+                current_validation_edition=1, current_validation_outcome="success",
+                exception_count=0)
+    return build_spec_validation_summary(**(args | overrides))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["validated", "in_progress", "done"])
+async def test_validation_summary_requires_complete_current_planning(status):
+    planning = await read_spec_planning_readiness(**rig())
+    summary = summary_for(planning, subject_status=status).to_dict()
+    assert summary == dict(contract_version="validation-summary/v1", edition=1,
+                           verdict="validated", planning_state="ready",
+                           reason_code="validation_completed", blockers_count=0,
+                           exception_count=0, next_action=None)
+
+
+@pytest.mark.asyncio
+async def test_quality_success_never_hides_failed_decomposition():
+    inputs = rig()
+    inputs["spec"].evaluations[0]["recommendation"] = "reject"
+    summary = summary_for(await read_spec_planning_readiness(**inputs))
+    assert summary.verdict == "not_validated"
+    assert summary.blockers_count == 1
+    assert summary.next_action == "submit_spec_evaluation"
+
+
+@pytest.mark.asyncio
+async def test_unreadable_component_does_not_invent_failure_counts_or_disclose_ids():
+    inputs = rig()
+    inputs["can_read"] = lambda p: p != "spec.checklist.read"
+    summary = summary_for(await read_spec_planning_readiness(**inputs)).to_dict()
+    assert summary["verdict"] == "unavailable"
+    assert summary["blockers_count"] is None
+    assert summary["next_action"] is None
+    assert "receipt" not in str(summary) and "checklist" not in str(summary)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome,edition", [("success", 2), ("failed", 1), (None, None)])
+async def test_previous_missing_or_failed_result_cannot_validate(outcome, edition):
+    summary = summary_for(await read_spec_planning_readiness(**rig()),
+                          current_validation_edition=edition,
+                          current_validation_outcome=outcome)
+    assert summary.verdict == "not_validated"
+    assert summary.reason_code == "current_validation_required"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["draft", "review", "cancelled"])
+async def test_prevalidation_status_never_becomes_validated_from_green_components(status):
+    summary = summary_for(await read_spec_planning_readiness(**rig()), subject_status=status)
+    assert summary.verdict == "not_validated" and summary.next_action is None
+
+
+@pytest.mark.asyncio
+async def test_ready_to_conclude_does_not_grant_action_permission():
+    planning = await read_spec_planning_readiness(**rig())
+    denied = summary_for(planning, subject_status="approved")
+    allowed = summary_for(planning, subject_status="approved", can_conclude=True)
+    assert denied.verdict == allowed.verdict == "ready_to_conclude"
+    assert denied.next_action is None
+    assert allowed.next_action == "submit_spec_validation"
+
+
+@pytest.mark.asyncio
+async def test_effective_exceptions_are_explicit_and_unknown_is_not_zero():
+    planning = await read_spec_planning_readiness(**rig())
+    assert summary_for(planning, exception_count=2).verdict == "validated_with_exception"
+    unknown = summary_for(planning, exception_count=None)
+    assert unknown.verdict == "unavailable" and unknown.exception_count is None
+
+
+@pytest.mark.asyncio
+async def test_disabled_quality_never_disables_other_planning_gates():
+    inputs = rig()
+    inputs["board"].settings = {"require_spec_validation": False, "auto_validate": True}
+    assert summary_for(await read_spec_planning_readiness(**inputs)).verdict == "not_required"
+    inputs["cards"].check_task_requirement_links_for_spec.side_effect = ValueError("missing links")
+    assert summary_for(await read_spec_planning_readiness(**inputs)).verdict == "not_validated"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid", [dict(edition=0), dict(edition=True),
+    dict(exception_count=-1), dict(exception_count=True), dict(can_conclude=1),
+    dict(subject_status="started"), dict(current_validation_edition=0),
+    dict(current_validation_outcome="pending")])
+async def test_validation_summary_rejects_invalid_authority_inputs(invalid):
+    with pytest.raises(ValueError, match="validation_summary_"):
+        summary_for(await read_spec_planning_readiness(**rig()), **invalid)
+
+
+@pytest.mark.asyncio
+async def test_exception_count_counts_shared_skip_once_and_not_board_configuration():
+    inputs = rig()
+    inputs['spec'].skip_test_coverage = True
+    inputs['board'].settings['skip_rules_coverage_global'] = True
+    planning = await read_spec_planning_readiness(**inputs)
+    assert count_effective_planning_exceptions(
+        spec=inputs['spec'], board=inputs['board'], planning=planning,
+        policy_counts=None, can_read_waivers=False,
+    ) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('counts,readable,expected', [
+    ({'skipped': 1, 'waived_metrics': 2}, True, 3),
+    ({'skipped': 1, 'waived_metrics': 2}, False, None),
+    ({'skipped': 0, 'waived_metrics': 0}, True, 0),
+    ({'skipped': 0, 'waived_metrics': 2, 'inconsistent': 1}, True, None),
+    ({'skipped': 0, 'waived_metrics': True}, True, None),
+    (None, True, None),
+])
+async def test_exception_count_requires_current_readable_native_policy_counts(counts, readable, expected):
+    from dataclasses import replace
+    inputs = rig()
+    planning = await read_spec_planning_readiness(**inputs)
+    planning = SpecPlanningReadiness(tuple(
+        replace(item, applicable=True, mode='blocking') if item.key == 'policy_compliance' else item
+        for item in planning.components
+    ))
+    assert count_effective_planning_exceptions(
+        spec=inputs['spec'], board=inputs['board'], planning=planning,
+        policy_counts=counts, can_read_waivers=readable,
+    ) == expected
