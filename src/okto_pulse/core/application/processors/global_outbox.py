@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import re
 import time
@@ -128,10 +129,11 @@ def _event_observation(event: GlobalOutboxEventRecord) -> dict[str, Any]:
 
 
 def _emit_observation(fields: Mapping[str, Any]) -> None:
+    observation = {**(_observation_context.get() or {}), **fields}
     logger.info(
-        "outbox.operation stage=%s outcome=%s",
-        fields["stage"], fields["outcome"],
-        extra={"event": "outbox.operation", **(_observation_context.get() or {}), **fields},
+        "outbox.operation %s",
+        json.dumps(observation, sort_keys=True, separators=(",", ":")),
+        extra={"event": "outbox.operation", **observation},
     )
 
 

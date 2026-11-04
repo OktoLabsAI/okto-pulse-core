@@ -94,7 +94,12 @@ Profiles are host authority and are not automatically restored with evidence.
 This runner supports explicit Python `unittest.TestCase` methods using the
 Pulse Python environment; it is not a general CI report importer or arbitrary
 shell runner. Repeat `--test` for multiple methods; default timeout is 60s,
-configurable locally up to 120s. Only register trusted code: the temporary
+configurable locally up to 120s. A host operator can explicitly authorize a
+larger bounded suite with `--allow-long-running --timeout N` (maximum
+3600s). This registration-only option does not change application deadlines or
+let an MCP request extend a profile's timeout. Retain individual test deadlines
+and reject skipped/incomplete results inside aggregate test entry points.
+Only register trusted code: the temporary
 workspace is a reproducibility boundary, not an OS security sandbox.
 
 Call `okto_pulse_execute_test_scenario_evidence` with the usual identifiers,
