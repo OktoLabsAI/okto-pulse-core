@@ -3564,6 +3564,7 @@ async def okto_pulse_resolve_bug_regression_scenarios(
     Provide ``affected_task_ids`` when the incident spans additional tasks.
     Provide ``candidate_scenario_ids`` to classify a proposed set, including
     unrelated or cross-spec candidates. Both inputs require a native array of strings.
+    Omit candidate_scenario_ids for eligible discovery; [] explicitly selects none.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -3575,7 +3576,10 @@ async def okto_pulse_resolve_bug_regression_scenarios(
 
     try:
         affected_ids = validate_string_list(affected_task_ids)
-        candidate_ids = validate_string_list(candidate_scenario_ids)
+        candidate_ids = (
+            None if candidate_scenario_ids is None
+            else validate_string_list(candidate_scenario_ids)
+        )
     except ValueError as exc:
         return json.dumps(
             {

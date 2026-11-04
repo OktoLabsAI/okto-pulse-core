@@ -124,6 +124,9 @@ Bug regression decision rule:
     spec_mutation_required, and next_action. Only eligible scenarios may satisfy
     require_test_task_for_bug.
 
+    Omit candidate_scenario_ids to discover eligible scenarios. Send [] only to
+    classify an explicitly empty selection; it never means automatic discovery.
+
     Path B is amendment-revision lineage remediation. Same-spec membership by
     itself, title similarity, cross-spec scenarios, scenario_not_found, or an
     unrelated scenario do not satisfy the bug gate. Escalate with

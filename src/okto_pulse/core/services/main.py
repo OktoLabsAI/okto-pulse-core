@@ -5253,32 +5253,10 @@ class CardService:
                 setattr(card, field_name, None)
                 card.mark_dirty(field_name)
 
-        response = project_task_validation_public(
-            {
-                **validation,
-                "card_status": target_status.value,
-                "resolved_thresholds": config,
-                "validation_outcome": decision.validation_outcome.value,
-                "completion_outcome": decision.completion_outcome.value,
-                "completion_gate_failures": validation["completion_gate_failures"],
-                "rejection_cause": (
-                    rejection_cause.as_dict() if rejection_cause is not None else None
-                ),
-                "subject_version": expected_subject_version + 1,
-                "replayed": False,
-            }
-        )
-        # Persist the exact business response as part of the same append-only
-        # ledger value before the resequencer's single flush.  Adding it after
-        # that flush would leave only an in-memory nested JSON mutation and
-        # break replay after Done/Rejected in a new transaction.
-        validation["response"] = dict(response)
-        card.validations = validations
-        card.mark_dirty("validations")
-
-        # The Core resequencer owns both status mutation and dense target/source
-        # positioning.  Keeping this in the same UoW prevents a visible card
-        # from occupying two lifecycle lanes after a rejection.
+        # The Core resequencer stages status and dense lane positions in this
+        # same transaction. Read back the adapter-owned policy version before
+        # sealing the response: operational status/receipt writes need not bump
+        # that version, so predicting expected + 1 creates a false CAS token.
         await self.resequence_columns(
             card.board_id,
             [
@@ -5292,6 +5270,31 @@ class CardService:
             extra_columns=(old_status, target_status),
             records={card.id: card},
         )
+        card = await _application_refresh(self.db, card)
+
+        response = project_task_validation_public(
+            {
+                **validation,
+                "card_status": card.status.value,
+                "resolved_thresholds": config,
+                "validation_outcome": decision.validation_outcome.value,
+                "completion_outcome": decision.completion_outcome.value,
+                "completion_gate_failures": validation["completion_gate_failures"],
+                "rejection_cause": (
+                    rejection_cause.as_dict() if rejection_cause is not None else None
+                ),
+                "subject_version": self._card_subject_version(card),
+                "replayed": False,
+            }
+        )
+        # Reassign and mark the JSON ledger explicitly after the readback. The
+        # second flush remains inside the caller-owned transaction, preserving
+        # atomic decision/response/resequence rollback and exact future replay.
+        validation["response"] = dict(response)
+        card.validations = validations
+        card.mark_dirty("validations")
+
+        await _application_flush(self.db)
 
         if learning_record is not None and target_status == CardStatus.DONE:
             from okto_pulse.core.domain.learning_closeout import (
