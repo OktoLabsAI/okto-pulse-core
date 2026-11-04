@@ -17,7 +17,7 @@ import unittest
 import xml.etree.ElementTree as ET
 
 
-class R3Acceptance(unittest.TestCase):
+class _AcceptanceCase(unittest.TestCase):
     def _run(self, selections: dict[str, tuple[str, ...]]) -> None:
         # Aggregate runner budget for several sequential native graph fixtures;
         # individual tests keep their own stricter timeout markers and all
@@ -30,7 +30,7 @@ class R3Acceptance(unittest.TestCase):
         self.assertEqual(roots["core"], Path(__file__).resolve().parents[1])
         self.assertNotEqual(roots["core"], roots["community"])
         for role, selectors in selections.items():
-            with self.subTest(edition=role), tempfile.TemporaryDirectory(prefix="pulse-r3-test-") as tmp:
+            with self.subTest(edition=role), tempfile.TemporaryDirectory(prefix="pulse-e2e043-test-") as tmp:
                 output = Path(tmp)
                 report = output / "results.xml"
                 env = os.environ.copy()
@@ -58,6 +58,60 @@ class R3Acceptance(unittest.TestCase):
                     for counter in ("failures", "errors", "skipped"):
                         self.assertEqual(int(suite.attrib[counter]), 0, f"Incomplete regression: {counter}")
 
+
+class R1Acceptance(_AcceptanceCase):
+    def test_bug_lineage_and_provenance_repair(self):
+        self._run({
+            "core": ("tests/test_e2e043_bug_allocations.py",),
+            "community": ("tests/test_e2e043_spec_version_fences.py",),
+        })
+
+    def test_pending_qa_and_historical_freeze(self):
+        self._run({"core": ("tests/test_e2e043_pending_qa.py",)})
+
+    def test_persisted_validation_and_regression_preview(self):
+        self._run({
+            "core": (
+                "tests/test_e2e043_task_versions.py",
+                "tests/test_bug_regression_preview.py",
+                "tests/test_task_validation_public_contract.py",
+            ),
+            "community": ("tests/test_e2e043_spec_version_fences.py",),
+        })
+
+
+class R2Acceptance(_AcceptanceCase):
+    def test_source_context_and_native_scenario_targets(self):
+        self._run({
+            "core": (
+                "tests/test_e2e043_source_context.py",
+                "tests/test_e2e043_contracts.py",
+            ),
+            "community": ("tests/test_delivery_readiness_source_context.py",),
+        })
+
+    def test_concurrent_receipts_and_integrity(self):
+        self._run({
+            "core": ("tests/test_evidence_v2_mcp_boundary.py",),
+            "community": (
+                "tests/test_e2e043_evidence_ledger.py",
+                "tests/test_evidence_v2_adapter.py",
+                "tests/test_evidence_recovery.py",
+            ),
+        })
+
+    def test_transport_resource_contracts_and_human_receipts(self):
+        self._run({
+            "core": ("tests/test_e2e043_contracts.py",),
+            "community": (
+                "tests/test_e2e043_evidence.py",
+                "tests/test_mcp_host_adapter.py",
+                "tests/test_human_task_delivery_report.py",
+            ),
+        })
+
+
+class R3Acceptance(_AcceptanceCase):
     def test_identity_population_and_partial_failure(self):
         self._run({
             "core": ("tests/test_e2e043_kg_boundaries.py",),
@@ -92,6 +146,7 @@ class R3Acceptance(unittest.TestCase):
                 "tests/test_queue_health_global_outbox_adapter.py",
                 "tests/test_e2e043_shutdown_budgets.py",
                 "tests/test_runtime.py",
+                "tests/test_e2e043_kg_transactions.py::test_cancelled_test_card_replay_keeps_native_ack_truthful",
             ),
         })
 
