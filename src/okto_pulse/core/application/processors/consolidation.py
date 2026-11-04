@@ -4705,10 +4705,11 @@ class ConsolidationProcessor:
                 self._durable_projection_protocol
                 and not exact_protocol
                 and _work_kind(entry) == "consolidate"
-                # Intake workers' legacy claim UPDATE held SQLite's writer
-                # across native graph IO. Keep their claim + deletion CAS at
-                # prepare/settle, using the same durable journal as Spec/Card.
-                and entry.artifact_type in {"spec", "card", "refinement", "ideation", "story"}
+                # Every normal deterministic projection shares this owner,
+                # including technical evidence. Retaining a legacy branch by
+                # artifact type keeps SQLite's writer open across graph IO.
+                # Source support is checked by preparation; exact rebuild and
+                # deletion reconciliation retain their separate protocols.
                 and not _queue_source(entry).startswith("rebuild:")
             )
             journaled_prepared: list[str] | None = [] if journaled_live else None
