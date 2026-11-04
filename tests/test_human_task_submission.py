@@ -162,3 +162,37 @@ async def test_commit_failure_is_not_a_success_response(monkeypatch):
     with pytest.raises(RuntimeError, match="commit_failed"):
         await use_cases.SubmitHumanTaskUseCase().execute(command(), actor=actor, uow=uow)
     uow.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["accepted", "replayed", "rejected", "failed"])
+async def test_operational_telemetry_is_after_commit_and_excludes_human_content(monkeypatch, caplog, outcome):
+    actor, uow, _ = setup(monkeypatch)
+    secret = "private-human-text-and-secret"
+    cmd = command(content=secret, remaining=secret, idempotency_key="private-idempotency-key")
+    result = {"submission_id": "s", "receipt_id": "r", "replayed": outcome == "replayed"}
+    uow.services.delivery_evidence.record_human_submission = AsyncMock(return_value=result)
+    committed = []
+
+    async def commit_write():
+        assert not [r for r in caplog.records if getattr(r, "submission_outcome", None) in {"accepted", "replayed"}]
+        if outcome == "failed":
+            raise RuntimeError(secret)
+        committed.append(True)
+
+    uow.commit.side_effect = commit_write
+    if outcome == "rejected":
+        uow.services.delivery_evidence.record_human_submission.side_effect = PermissionDeniedError(secret)
+    with caplog.at_level("INFO", logger=use_cases.__name__):
+        if outcome in {"rejected", "failed"}:
+            with pytest.raises((PermissionDeniedError, RuntimeError)):
+                await use_cases.SubmitHumanTaskUseCase().execute(cmd, actor=actor, uow=uow)
+        else:
+            await use_cases.SubmitHumanTaskUseCase().execute(cmd, actor=actor, uow=uow)
+    records = [r for r in caplog.records if hasattr(r, "submission_outcome")]
+    assert len(records) == 1
+    assert records[0].submission_outcome == outcome
+    assert records[0].submission_action == "progress"
+    assert committed == ([True] if outcome in {"accepted", "replayed"} else [])
+    assert secret not in str(records[0].__dict__)
+    assert cmd.idempotency_key not in str(records[0].__dict__)

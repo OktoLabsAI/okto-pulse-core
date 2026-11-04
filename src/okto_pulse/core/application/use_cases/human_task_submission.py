@@ -1,17 +1,31 @@
 """One authorized human intent, one atomic application-owned commit."""
 
+import logging
+
 from okto_pulse.core.application.use_cases.authorization import PermissionRequirement, require_authorization
 from okto_pulse.core.application.use_cases.base import EntityNotFoundError, PermissionDeniedError, commit
 from okto_pulse.core.application.use_cases.mutation_permissions import transition_permission_requirement
 from okto_pulse.core.models.delivery_report import DeliveryReportRejected
-from okto_pulse.core.models.human_task_submission import HumanTaskSubmissionCommand, HumanTaskSubmissionRequest
+from okto_pulse.core.models.human_task_submission import HumanTaskSubmissionCommand, HumanTaskSubmissionRequest, HumanSubmissionConflict
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
+logger = logging.getLogger(__name__)
+
+
+def _record_outcome(command, outcome):
+    # Neither command text, key, actor claims nor exception messages belong in
+    # operational logs. The transactional ledger retains authorized detail.
+    logger.info("task.human_submission %s", outcome, extra={
+        "submission_outcome": outcome, "submission_action": command.action,
+        "board_id": command.board_id, "card_id": command.card_id,
+    })
 
 
 class SubmitHumanTaskUseCase:
     async def execute(self, command: HumanTaskSubmissionRequest, *, actor, uow: PulseUnitOfWork):
         # Source (REST/MCP) is not identity. An agent using REST is still an agent.
         if actor.actor_kind not in {"human", "user"}:
+            _record_outcome(command, "rejected")
             raise PermissionDeniedError("human_submission_human_authorization_required")
         try:
             await uow.begin_write()
@@ -46,7 +60,11 @@ class SubmitHumanTaskUseCase:
                 command, actor_id=actor.actor_id, actor_kind=actor.actor_kind,
                 report_submitter=submit_report if command.action == "delivery_report" else None)
             await commit(uow)
+            _record_outcome(command, "replayed" if result.get("replayed") else "accepted")
             return result
-        except BaseException:
+        except BaseException as exc:
             await uow.rollback()
+            _record_outcome(command, "rejected" if isinstance(exc, (
+                PermissionDeniedError, EntityNotFoundError, HumanSubmissionConflict, DeliveryReportRejected
+            )) else "failed")
             raise

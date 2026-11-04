@@ -19,7 +19,7 @@ _REASONS = {
     "not_started": "Esta tarefa ainda não foi iniciada.",
     "paused": "Esta tarefa está pausada e ainda possui trabalho pendente.",
     "cancelled": "Esta tarefa foi cancelada. O histórico foi preservado, sem confirmar entrega.",
-    "verification_pending": "A implementação está registrada; falta concluir a verificação.",
+    "verification_pending": "Há verificações pendentes para esta entrega.",
     "completion_pending": "A entrega ainda depende de condições para ser concluída.",
     "completion_not_evaluated": "As provas estão registradas; falta confirmar as condições de conclusão.",
     "delivered": "Entrega concluída e confirmada com as informações atuais.",
