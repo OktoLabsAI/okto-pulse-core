@@ -1202,6 +1202,7 @@ class ExecuteTestScenarioEvidenceUseCase:
     ) -> ExecuteTestScenarioEvidenceResult:
         from okto_pulse.core.ports.test_evidence import (
             TestEvidenceExecutionRequest,
+            TestEvidenceLedgerBusyError,
             resolve_test_evidence_execution_issuer,
             resolve_test_evidence_write_verifier,
         )
@@ -1290,6 +1291,8 @@ class ExecuteTestScenarioEvidenceUseCase:
             evidence=evidence,
         )
         if not verification.verified:
+            if verification.reason_codes == (TestEvidenceLedgerBusyError.code,):
+                raise TestEvidenceLedgerBusyError()
             raise ValueError(
                 "evidence_unverified: " + ", ".join(verification.reason_codes)
             )

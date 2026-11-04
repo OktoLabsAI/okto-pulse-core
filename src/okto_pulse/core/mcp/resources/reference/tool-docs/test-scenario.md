@@ -311,6 +311,16 @@ Edit the BODY of a test scenario (title/given/when/then/scenario_type/
 
 ## `okto_pulse_execute_test_scenario_evidence`
 
+`evidence_v2.receipt_ledger_busy` means the bounded ledger observation could not
+confirm publication/integrity. The response distinguishes
+`ledger_observation_retryable=true` from the enclosing execution's
+`retryable=false`: the test may already have run. Inspect existing run/receipt
+evidence before deciding on a new execution. Never automatically replay the
+test to retry a ledger read. `execution_state=unknown` and
+`receipt_state=unconfirmed` do not mean success, a failed test, or an absent
+receipt; scenario state is unchanged. REST returns the same diagnosis with 503,
+without a retry-after instruction. No publication-resume API is implied.
+
 Execute an installation-owned replay without mutating the scenario. Exactly
 one replay source is required:
 

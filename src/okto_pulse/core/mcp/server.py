@@ -11551,6 +11551,7 @@ async def okto_pulse_execute_test_scenario_evidence(
         ExecuteTestScenarioEvidenceUseCase,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.test_evidence import TestEvidenceLedgerBusyError
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
@@ -11570,6 +11571,8 @@ async def okto_pulse_execute_test_scenario_evidence(
         return json.dumps(
             {"error": "not_found", "entity": exc.entity_type, "message": str(exc)}
         )
+    except TestEvidenceLedgerBusyError as exc:
+        return json.dumps(exc.execution_failure())
     except ValueError as exc:
         return json.dumps({"error": "evidence_execution_failed", "message": str(exc)})
     return json.dumps(

@@ -64,6 +64,36 @@ class TestEvidenceExecutionResult:
     evidence: Mapping[str, Any]
 
 
+class TestEvidenceLedgerBusyError(ValueError):
+    """A bounded ledger observation could not establish receipt integrity.
+
+    Only the read observation is retryable. The enclosing execution might
+    already have run, so repeating it is never an automatic recovery action.
+    """
+
+    code = "evidence_v2.receipt_ledger_busy"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+    def execution_failure(self) -> dict[str, Any]:
+        return {
+            "error": self.code,
+            "error_code": self.code,
+            "message": "Evidence publication could not be confirmed. The test may already have executed.",
+            "retryable": False,
+            "ledger_observation_retryable": True,
+            "execution_state": "unknown",
+            "receipt_state": "unconfirmed",
+            "scenario_persisted": False,
+            "next_action": {
+                "action": "inspect_existing_evidence",
+                "automatic_retry": False,
+                "instruction": "Inspect the existing run and receipt before deciding whether a new test execution is needed. Do not automatically replay this execution request.",
+            },
+        }
+
+
 class TestEvidenceExecutionIssuer(Protocol):
     async def execute(
         self, request: TestEvidenceExecutionRequest
