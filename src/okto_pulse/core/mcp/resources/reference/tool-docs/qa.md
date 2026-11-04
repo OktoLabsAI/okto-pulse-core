@@ -25,6 +25,18 @@ See `okto-pulse://reference/tool-families/qa_ask`.
 
 ## Choice questions and recommendations
 
+For Ideation and Refinement, `answered_at` is the authoritative completion
+predicate. A selected choice with no text is answered when that timestamp is
+present; a suggested answer without it is still pending. Answers are accepted
+in Draft and Review. Entering Review is allowed with pending questions;
+approval, finalization and derivation require every question to be answered.
+`planning_pending_questions` reports the exact count, at most 50 pending IDs,
+`truncated`, and the next action. Read `qa_readiness` from existing context to
+avoid extra per-question calls. A historical incomplete source must be reopened
+as a new edition before derivation; do not auto-answer questions, synthesize
+timestamps, or edit its old snapshots. Propagation retains unanswered questions
+and the original answer timestamps, including a missing timestamp.
+
 Use the subject's `ask_*_choice_question` tool for structured alternatives;
 `okto_pulse_ask` creates a text question. Send a native `options` array with
 mutually exclusive labels, a boolean `recommended`, and a concrete `tradeoff`.

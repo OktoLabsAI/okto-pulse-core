@@ -24,11 +24,17 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 - **Context compilation**: When creating a refinement without a description, context is automatically compiled from the ideation (problem statement, approach, scope assessment, Q&A decisions).
 - **Status flow**: draft → review → approved → done
   - **Draft**: Editable — write and iterate freely
-  - **Review**: Read-only — awaits approval from reviewer (human or agent)
+  - **Review**: Content is read-only; existing Q&A can be answered before approval by a human or agent.
   - **Approved**: Read-only — handoff signal; the responsible can proceed to finalize (move to done)
   - **Done**: Frozen — immutable snapshot created, can only go back to draft (new lifecycle edition)
   - **Cancelled**: Terminal — accessible from any status except done
 - **Editing only in "draft"**: `okto_pulse_update_refinement` only works when status is `draft`
+
+Pending Q&A may enter Review but blocks approval, completion and derivation.
+Use the existing context's `qa_readiness` and `answered_at` fields; selected
+choices do not require answer text. Historical incompleteness requires a new
+edition, preserving the old snapshot. Bounded diagnostics and propagation rules:
+`okto-pulse://reference/tool-docs/qa`.
 - **Use Q&A** to clarify scope and decisions with the user. If investigation reveals two or more valid interpretations, ask before inferring; refinement assumptions become expensive rework in specs, tasks, mockups, Architecture Designs, tests, and validations.
 - **Spec creation from refinement**: Only from **"done"** status — a spec draft can be created from a done refinement
 - **Triage pending derivations**: the canonical surface to find done refinements that still lack a derived spec is `okto_pulse_list_by_board(entity_type="refinement", filters={"ideation_id": "...", "derivation_pending": true})` — see `okto-pulse://reference/list_tools`. `entity_type="refinement"` **REQUIRES** `filters.ideation_id` (omitting it fails with `missing_required_filter`).

@@ -55,13 +55,19 @@ Ideations are the starting point for solution definition. Stories may exist befo
 2. **Q&A to clarify**: Use `okto_pulse_ask` (`target_type="ideation"`) or `okto_pulse_ask_ideation_choice_question` to get clarification before proceeding
 3. **Status flow**: draft → review → approved → evaluating → done
    - **Draft**: Editable — write and iterate freely
-   - **Review**: Read-only — awaits approval from reviewer (human or agent)
+   - **Review**: Content is read-only; existing Q&A can be answered before approval by a human or agent.
    - **Approved**: Read-only — handoff signal; the evaluator can now proceed to evaluate
    - **Evaluating**: Read-only — scope assessment and complexity evaluation must happen here
    - **Done**: Frozen — immutable snapshot created, can only go back to draft (new lifecycle edition)
    - **Cancelled**: Terminal — accessible from any status except done
 4. **Evaluation only in "evaluating"**: `okto_pulse_evaluate_ideation` only works when status is `evaluating`
 5. **Editing only in "draft"**: `okto_pulse_update_ideation` only works when status is `draft`
+
+Pending Q&A may enter Review but blocks approval, evaluation, completion and
+derivation. Use the existing context's `qa_readiness` and `answered_at` fields;
+selected choices do not require answer text. Historical incompleteness requires
+a new edition, preserving the old snapshot. Bounded diagnostics and propagation
+rules: `okto-pulse://reference/tool-docs/qa`.
 6. **Derivations only from "done"**: Specs and refinements can only be created from a `done` ideation (immutable snapshot)
 7. **Triage pending derivations**: the canonical surface to find done ideations that still lack a derived child is `okto_pulse_list_by_board(entity_type="ideation", filters={"derivation_pending": true})` — see `okto-pulse://reference/list_tools`
 

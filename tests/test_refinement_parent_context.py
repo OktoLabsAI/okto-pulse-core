@@ -4,6 +4,7 @@ from mcp_runtime_testing import register_mcp_test_runtime
 
 import json
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -96,6 +97,7 @@ async def _seed_ideation() -> tuple[str, str, str]:
                 selected=["mcp_only"],
                 asked_by=USER_ID,
                 answered_by=USER_ID,
+                answered_at=datetime.now(timezone.utc),
             )
         )
         db.add(

@@ -2628,6 +2628,7 @@ class IdeationResponse(BaseSchema):
     knowledge_bases: list[IdeationKnowledgeSummary] = []
     architecture_designs: list[ArchitectureDesignSummary] = []
     qa_items: list[IdeationQAResponse] = []
+    qa_readiness: dict | None = None
 
 
 class RefinementResponse(BaseSchema):
@@ -2664,6 +2665,7 @@ class RefinementResponse(BaseSchema):
     knowledge_bases: list[RefinementKnowledgeSummary] = []
     architecture_designs: list[ArchitectureDesignSummary] = []
     qa_items: list[RefinementQAResponse] = []
+    qa_readiness: dict | None = None
 
 
 # ============================================================================

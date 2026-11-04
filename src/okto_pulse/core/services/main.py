@@ -98,6 +98,7 @@ from okto_pulse.core.domain.human_validation_cycle import (
     next_lifecycle_edition,
     require_draft_mutation,
 )
+from okto_pulse.core.domain.pending_qa import planning_qa_transition_requires_answers
 from okto_pulse.core.domain.spec_validation import (
     RequirementLintRequired,
     SpecValidationEditionConflict,
@@ -1348,6 +1349,24 @@ async def resolve_user_permissions(db, user_id: str, board_id: str):
         presets=presets,
         board_overrides=board_overrides,
     )
+
+
+async def _require_planning_qa_resolved(db: Any, subject: Any, *, subject_type: str) -> None:
+    """Read the native timestamp predicate without loading unbounded Q&A bodies."""
+    from okto_pulse.core.domain.pending_qa import (
+        PENDING_QA_LIMIT, PendingQuestionsError, pending_qa_projection,
+    )
+    entity = f"{subject_type}_qa_item"
+    filters = (_apf(f"{subject_type}_id", "eq", subject.id), _apf("answered_at", "is_none"))
+    total = await _application_count(db, entity, filters=filters)
+    if not total:
+        return
+    rows = await _application_list(db, entity, filters=filters, order_by=(("id", False),),
+                                   limit=PENDING_QA_LIMIT, select_fields=("id",))
+    raise PendingQuestionsError(pending_qa_projection(
+        subject_type=subject_type, subject_id=subject.id, status=subject.status,
+        pending_ids=[row.id for row in rows], total=total,
+    ))
 
 
 async def _attach_open_qa_counts(
@@ -9068,6 +9087,10 @@ class SpecService:
                 },
             )
 
+        for subject_type, parent in (("ideation", ideation), ("refinement", refinement)):
+            if parent is not None:
+                await _require_planning_qa_resolved(self.db, parent, subject_type=subject_type)
+
         complexity = (
             getattr(ideation.complexity, "value", ideation.complexity)
             if ideation is not None
@@ -14682,6 +14705,8 @@ class IdeationService:
             ),
         )
         if ideation:
+            from okto_pulse.core.domain.pending_qa import planning_qa_readiness
+            ideation.attach("qa_readiness", planning_qa_readiness(ideation, subject_type="ideation"))
             stories: list[ApplicationRecord] = []
             for link in ideation.story_links or []:
                 story = getattr(link, "story", None)
@@ -15000,6 +15025,9 @@ class IdeationService:
                 f"Allowed transitions: {allowed_str}."
             )
 
+        if planning_qa_transition_requires_answers("ideation", data.status):
+            await _require_planning_qa_resolved(self.db, ideation, subject_type="ideation")
+
         resolved_name = actor_name or await resolve_actor_name(
             self.db, user_id, ideation.board_id
         )
@@ -15050,6 +15078,8 @@ class IdeationService:
         ):
             raise LifecycleTransitionConflictError("ideation", ideation.id)
 
+        if planning_qa_transition_requires_answers("ideation", data.status):
+            await _require_planning_qa_resolved(self.db, ideation, subject_type="ideation")
         if data.status == IdeationStatus.DONE:
             if old_status == IdeationStatus.EVALUATING:
                 await self._enforce_ambiguity_gate(ideation)
@@ -15207,6 +15237,7 @@ class IdeationService:
                     "selected": qa.selected,
                     "asked_by": qa.asked_by,
                     "answered_by": qa.answered_by,
+                    "answered_at": qa.answered_at.isoformat() if qa.answered_at else None,
                 }
             )
 
@@ -15651,7 +15682,8 @@ class IdeationQAService:
         ideation = await _application_get(self.db, "ideation", qa.ideation_id)
         if ideation is None:
             raise RuntimeError("quality_clarification_subject_missing")
-        require_draft_mutation(ideation, subject_type="ideation")
+        from okto_pulse.core.domain.pending_qa import require_planning_qa_answer
+        require_planning_qa_answer(ideation, subject_type="ideation")
         board = await _application_get(self.db, "board", ideation.board_id)
         await _authorize_qa_answer_or_raise(
             self.db,
@@ -15925,6 +15957,7 @@ class RefinementService:
             if not await _application_run(self.db, board_query):
                 return None
 
+        await _require_planning_qa_resolved(self.db, ideation, subject_type="ideation")
         description = data.description.strip() if data.description else None
         parent_context = compile_ideation_parent_context(ideation)
         if parent_context:
@@ -16100,6 +16133,8 @@ class RefinementService:
             ),
         )
         if refinement:
+            from okto_pulse.core.domain.pending_qa import planning_qa_readiness
+            refinement.attach("qa_readiness", planning_qa_readiness(refinement, subject_type="refinement"))
             await _attach_active_spec_counts(self.db, [refinement])
         return refinement
 
@@ -16388,6 +16423,9 @@ class RefinementService:
                 f"Allowed transitions: {allowed_str}."
             )
 
+        if planning_qa_transition_requires_answers("refinement", data.status):
+            await _require_planning_qa_resolved(self.db, refinement, subject_type="refinement")
+
         advancing = (
             data.status is not RefinementStatus.CANCELLED
             and self._STATUS_ORDER[data.status] > self._STATUS_ORDER[old_status]
@@ -16478,6 +16516,8 @@ class RefinementService:
         ):
             raise LifecycleTransitionConflictError("refinement", refinement.id)
 
+        if planning_qa_transition_requires_answers("refinement", data.status):
+            await _require_planning_qa_resolved(self.db, refinement, subject_type="refinement")
         if data.status == RefinementStatus.DONE:
             # The scalar CAS above acquires the relational write fence. Re-run
             # Code Traceability inside that fenced transaction immediately
@@ -16670,6 +16710,7 @@ class RefinementService:
                     "selected": qa.selected,
                     "asked_by": qa.asked_by,
                     "answered_by": qa.answered_by,
+                    "answered_at": qa.answered_at.isoformat() if qa.answered_at else None,
                 }
             )
 
@@ -17245,7 +17286,8 @@ class RefinementQAService:
         refinement = await _application_get(self.db, "refinement", qa.refinement_id)
         if refinement is None:
             raise RuntimeError("quality_clarification_subject_missing")
-        require_draft_mutation(refinement, subject_type="refinement")
+        from okto_pulse.core.domain.pending_qa import require_planning_qa_answer
+        require_planning_qa_answer(refinement, subject_type="refinement")
         board = await _application_get(self.db, "board", refinement.board_id)
         await _authorize_qa_answer_or_raise(
             self.db,

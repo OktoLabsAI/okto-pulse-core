@@ -3267,7 +3267,7 @@ async def _mcp_derive_spec_with_knowledge(
         except ArchitectureDesignSelectionError as error:
             return json.dumps(error.to_error_dict())
         except ValueError as error:
-            return json.dumps({"error": str(error)})
+            return MCPAdapterContract.error(error)
     else:  # pragma: no cover
         raise RuntimeError("knowledge_creation_retry_exhausted")
 
@@ -6989,9 +6989,11 @@ async def okto_pulse_get_ideation(board_id: str, ideation_id: str) -> str:
                         "selected": q.selected,
                         "asked_by": q.asked_by,
                         "answered_by": q.answered_by,
+                        "answered_at": q.answered_at,
                     }
                     for q in ideation.qa_items
                 ],
+                "qa_readiness": getattr(ideation, "qa_readiness", None),
             },
             default=str,
         )
@@ -7109,9 +7111,11 @@ async def okto_pulse_get_ideation_context(
                     "selected": q.selected,
                     "asked_by": q.asked_by,
                     "answered_by": q.answered_by,
+                    "answered_at": q.answered_at,
                 }
                 for q in ideation.qa_items
             ]
+            result["qa_readiness"] = getattr(ideation, "qa_readiness", None)
 
         if (
             _inc_mockups
@@ -8145,7 +8149,7 @@ async def okto_pulse_create_refinement(
     except ArchitectureDesignSelectionError as e:
         return json.dumps(e.to_error_dict())
     except ValueError as e:
-        return json.dumps({"error": str(e)})
+        return MCPAdapterContract.error(e)
 
 
 @mcp.tool()
@@ -8225,9 +8229,11 @@ async def okto_pulse_get_refinement(board_id: str, refinement_id: str) -> str:
                         "selected": q.selected,
                         "asked_by": q.asked_by,
                         "answered_by": q.answered_by,
+                        "answered_at": q.answered_at,
                     }
                     for q in refinement.qa_items
                 ],
+                "qa_readiness": getattr(refinement, "qa_readiness", None),
             },
             default=str,
         )
@@ -8339,9 +8345,11 @@ async def okto_pulse_get_refinement_context(
                     "selected": q.selected,
                     "asked_by": q.asked_by,
                     "answered_by": q.answered_by,
+                    "answered_at": q.answered_at,
                 }
                 for q in refinement.qa_items
             ]
+            result["qa_readiness"] = getattr(refinement, "qa_readiness", None)
 
         if (
             _inc_mockups

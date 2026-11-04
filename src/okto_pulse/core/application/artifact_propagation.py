@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from okto_pulse.core.ports.application_persistence import (
@@ -16,6 +16,20 @@ from okto_pulse.core.domain.knowledge_fingerprint import (
 )
 
 _PROPAGATED_KB_PREFIX = "[propagated from parent]"
+
+
+def _qa_timestamp(value: Any) -> datetime | None:
+    """Preserve recorded timestamps across JSON snapshots; never invent one."""
+    if value is None or isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    raise ValueError("qa_timestamp_invalid")
+
+
 _KB_ENTITY_BY_TYPE_NAME = {
     "IdeationKnowledgeBase": "ideation_knowledge_base",
     "RefinementKnowledgeBase": "refinement_knowledge_base",
@@ -316,8 +330,6 @@ async def propagate_artifacts(
                 )
                 answer = get_value("answer")
                 selected = get_value("selected")
-                if not answer and not selected:
-                    continue
                 payload: dict[str, Any] = {
                     target_fk_field: target_entity.id,
                     "question": get_value("question") or "",
@@ -328,14 +340,10 @@ async def propagate_artifacts(
                     "selected": selected,
                     "asked_by": get_value("asked_by") or user_id,
                     "answered_by": get_value("answered_by"),
-                    "answered_at": (
-                        get_value("answered_at")
-                        or get_value("created_at")
-                        or datetime.now(timezone.utc)
-                    ),
+                    "answered_at": _qa_timestamp(get_value("answered_at")),
                 }
                 if get_value("created_at") is not None:
-                    payload["created_at"] = get_value("created_at")
+                    payload["created_at"] = _qa_timestamp(get_value("created_at"))
                 await persistence.add(
                     db,
                     ApplicationRecord(entity=target_qa_entity, values=payload),
