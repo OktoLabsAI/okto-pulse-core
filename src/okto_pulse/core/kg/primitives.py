@@ -4706,6 +4706,17 @@ def _do_graph_commit(
             orch.counters.projection_property_effects = capture_projection_property_effects(
                 graph_scope, orch.records, board_id=board_id, session_id=session_id)
         committed_at = datetime.now(timezone.utc)
+        # A cancelled/archived source may declare a complete empty projection
+        # that is already absent. Grafx correctly emits no commit receipt for
+        # an empty transaction. Explicitly roll it back instead of preparing
+        # a durable graph operation that can never obtain such a receipt.
+        # Restrict this path to empty deterministic candidate sets; ordinary
+        # reconciliation and cognitive writes retain the native commit proof.
+        graph_unchanged = bool(
+            projection_precommit is not None
+            and not node_candidates and not edge_candidates
+            and not orch.records and not cognitive_source_records
+        )
         if projection_precommit is not None:
             start_commit_token = getattr(graph_scope, "start_commit_token", None)
             if not start_commit_token:
@@ -4714,12 +4725,16 @@ def _do_graph_commit(
                     "The graph scope has no durable commit-history baseline.",
                     session_id=session_id,
                 )
+            if graph_unchanged:
+                run_async_blocking(graph_scope.rollback())
             projection_precommit(
                 start_commit_token, list(orch.records), orch.counters,
                 committed_at, list(cognitive_source_records),
+                **({"graph_unchanged": True} if graph_unchanged else {}),
             )
-            projection_journal_prepared = True
-        run_async_blocking(graph_scope.commit())
+            projection_journal_prepared = not graph_unchanged
+        if not graph_unchanged:
+            run_async_blocking(graph_scope.commit())
         return (
             candidate_to_graph_id,
             orch.counters,
@@ -5097,7 +5112,7 @@ async def commit_consolidation(
             loop = asyncio.get_running_loop()
 
             def stage_precommit(graph_after, records, counters, committed_at, cognitive_records,
-                                *, progress_kind="complete"):
+                                *, progress_kind="complete", graph_unchanged=False):
                 effects = getattr(counters, "projection_property_effects", None)
                 output: dict[str, object] = {
                     "session_id": req.session_id,
@@ -5130,7 +5145,8 @@ async def commit_consolidation(
                     "progress_kind": progress_kind,
                 }
                 future = asyncio.run_coroutine_threadsafe(
-                    projection_precommit({"graph_after": graph_after, "output": output}),
+                    projection_precommit({"graph_after": graph_after, "output": output,
+                                          **({"graph_unchanged": True} if graph_unchanged else {})}),
                     loop,
                 )
                 future.result()

@@ -1616,15 +1616,29 @@ async def _commit_consolidation_with_board_graph_lifecycle(
         if journaled_prepared is not None else None
     )
     graph_after: str | None = None
+    unchanged_output: dict[str, object] | None = None
 
     async def _stage_projection_precommit(payload: dict[str, object]) -> None:
-        nonlocal graph_after
+        nonlocal graph_after, unchanged_output
         if journaled_operation_id is None:
             raise RuntimeError("projection_operation_id_missing")
         baseline = payload.get("graph_after")
         output = payload.get("output")
         if type(baseline) is not str or type(output) is not dict:
             raise RuntimeError("projection_precommit_payload_invalid")
+        if payload.get("graph_unchanged") is True:
+            if (graph_after is not None or unchanged_output is not None
+                    or journaled_prepared or journaled_receipts
+                    or output.get("progress_kind") != "complete"
+                    or any(output.get(key) for key in (
+                        "graph_write_records", "node_refs", "cognitive_source_records",
+                        "nodes_added", "nodes_updated", "nodes_superseded", "edges_added",
+                    ))):
+                raise RuntimeError("projection_noop_output_invalid")
+            # The native scope has already rolled back. Keep only a volatile
+            # output until the caller can atomically fence, audit and ACK it.
+            unchanged_output = output
+            return
         store = get_consolidation_persistence_port()
         # Source preparation and health checks have finished. End their WAL
         # read snapshot before acquiring the brief prepared-operation writer.
@@ -1714,6 +1728,24 @@ async def _commit_consolidation_with_board_graph_lifecycle(
                 failure_timestamp=now,
             )
             raise
+        if unchanged_output is not None:
+            if (graph_after is not None or journaled_prepared or journaled_receipts
+                    or journaled_operation_id is None
+                    or isinstance(commit_resp, DeferredProjectionProgress)):
+                raise RuntimeError("projection_noop_operation_prepared")
+            write_lease.complete_without_graph_change()
+            store = get_consolidation_persistence_port()
+            await store.rollback(db)
+            if not await _queue_claim_is_current_and_unfenced(db, entry):
+                raise _QueueClaimLostOrFenced(
+                    f"projection_noop_claim_lost entry_id={entry.id}"
+                )
+            # No graph mutation needs a recovery journal. This audit/outbox and
+            # the queue ACK commit together in the caller's fenced SQL UOW.
+            await stage_recovered_projection_output(
+                db, operation_id=journaled_operation_id, output=unchanged_output,
+            )
+            return commit_resp
         if isinstance(commit_resp, DeferredProjectionProgress) and commit_resp.graph_unchanged:
             # The primitive rolled back a read-only removal scope. There is no
             # native commit to make durable or acknowledge, and no prepared
