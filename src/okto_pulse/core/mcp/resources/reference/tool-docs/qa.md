@@ -23,6 +23,41 @@ Returns:
 Each target retains its own authorization and activity log.
 See `okto-pulse://reference/tool-families/qa_ask`.
 
+## Choice questions and recommendations
+
+Use the subject's `ask_*_choice_question` tool for structured alternatives;
+`okto_pulse_ask` creates a text question. Send a native `options` array with
+mutually exclusive labels, a boolean `recommended`, and a concrete `tradeoff`.
+When recommending one option, mark exactly that option `recommended: true`.
+Persist the answer separately using the returned option ID and the subject's
+answer tool. Neither recommendation nor a label containing “Recommended” is
+an answer; never assume generated option IDs or silently select an option.
+
+Example for `okto_pulse_ask_spec_choice_question` (substitute current IDs):
+
+<!-- contract-example: okto_pulse_ask_spec_choice_question -->
+```json
+{
+  "board_id": "board-example",
+  "spec_id": "spec-example",
+  "question": "When should the agent record progress?",
+  "question_type": "choice",
+  "allow_free_text": false,
+  "options": [
+    {"label": "At meaningful milestones", "recommended": true, "tradeoff": "Preserves resumable context without repeated heartbeats."},
+    {"label": "After every tool call", "recommended": false, "tradeoff": "Adds repeated records and token cost without new delivery proof."}
+  ]
+}
+```
+
+Ambiguity `proposed_questions` are a different schema: `choices` contains
+strings, not these option objects. The assessment creates pending native Q&A
+in the same transaction (duplicate text may reuse existing Q&A). Those strings
+cannot carry recommendation metadata. When recommendations are required,
+create the native choice question above and omit the duplicate proposed
+question from the assessment. Answer pending questions before closeout;
+do not delete them merely to satisfy a gate.
+
 ## `okto_pulse_answer_question`
 
 Answer a question on a card's Q&A board.

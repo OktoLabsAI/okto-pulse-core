@@ -263,6 +263,7 @@ this contract still requires the prescribed targeted confirmation read.
 
 Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
 
+<!-- model-example: CardDeliveryEvidenceInput -->
 ```json
 {
   "expected_spec_edition": 1,
@@ -275,6 +276,45 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   ],
   "execution_id": "accepted-target-execution-id",
   "justification": "The committed parser implements these input/output obligations."
+}
+```
+
+Copy obligation references from the current Delivery read, including their
+type prefix (for example `fr:fr_42`). An implementation uses `bindings`;
+`obligation_refs` alone cannot declare an implementation contribution.
+Human submissions use the application's submission flow: the application
+creates the receipt and audit association. A human never needs to author,
+copy or sign an agent receipt in the UI. Agent source/execution and test
+proof remain required under their own contracts.
+
+A meaningful source change can be recorded without creating an execution
+receipt. Replace every example ID and fence; reuse this key only for the
+same exact request. Keep the returned acceptance instead of adding a duplicate
+comment or reading the same record back solely to confirm acceptance.
+
+<!-- contract-example: okto_pulse_record_delivery_evidence -->
+```json
+{
+  "board_id": "board-example",
+  "card_id": "card-example",
+  "spec_id": "spec-example",
+  "evidence": {
+    "expected_spec_edition": 1,
+    "expected_card_version": 7,
+    "idempotency_key": "parser-milestone-1",
+    "kind": "progress",
+    "justification": "The parser now reports requirement-specific failures.",
+    "progress": {
+      "contract_version": "delivery-progress/v2",
+      "material_change": "source",
+      "source_state": {
+        "source_ref": "source_example",
+        "workspace_state": "dirty",
+        "recoverability": "external_workspace"
+      },
+      "remaining": "Run the failure-path and installed UI scenarios."
+    }
+  }
 }
 ```
 
@@ -313,7 +353,9 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   `source_state: {"workspace_state":"dirty","recoverability":"external_workspace"}`
   (or both values `unknown`). No execution/test receipt or commit is required;
   omit their fields. Optional `target_ids` must belong to this Card; a supplied
-  opaque `source_ref` must be known to this board. `impact_delta` uses the existing
+  opaque `progress.source_state.source_ref` must be known to this board.
+  Never put `source_ref` beside `progress` or directly inside it.
+  `impact_delta` uses the existing
   closed ImpactEvidence contract and is a claim. Progress never counts as
   implementation/test proof, approval or completion. It does not start rework.
   When a delta has a known base, also provide `impact_base_revision` (full
@@ -333,7 +375,7 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   Validation/rejected/done/on_hold/not_started cards cannot accept a new checkpoint.
   Record significant results or a deliberate pause; no fixed time/command cadence.
   `none` is a context note without a material delta. `targets` requires exact
-  affected `target_ids`; `source` requires `source_ref` and no Target list.
+  affected `target_ids`; `source` requires `source_state.source_ref` and no Target list.
   `unknown` narrows by declared Targets/source when available, otherwise this
   Card's work is uncertain. Target/source combinations must agree. An affected
   execution stops proving the current result until its accepted receipt observes
@@ -552,6 +594,35 @@ Args:
     idempotency_key: Caller-stable key for an exact retry.
     source_ref: Optional opaque identity only when already known. Never pass a
         path, URL, checkout directory, or credential.
+
+Omitting `source_ref` allocates a new opaque source; it does not find or reuse
+the previous source for that repository. Retain the returned identity and
+supply it for subsequent investigations of the same source. Use separate
+source identities for separate Git repositories so each immutable execution
+revision names a real commit. A string combining two repository hashes is
+not a committed Delivery revision.
+
+| Change | Required next step |
+|---|---|
+| Target created or revised | New Card preflight, accepted receipt, then Target resolution against the new selector scope. |
+| Source head/workspace or subject version changed | Read current context and renew the observation; an older receipt does not become current by rebinding it. |
+| Receipt expired or revoked | Obtain new authorized evidence; do not reuse it for execution. |
+| Accepted request timed out at the client | Retry the exact payload/key to recover acceptance; use a new key only for a reconciled new intent. |
+
+Historical source context remains history. It is not a current execution
+observation and must not be relabeled to satisfy a delivery gate.
+
+<!-- contract-example: okto_pulse_start_code_investigation -->
+```json
+{
+  "board_id": "board-example",
+  "subject_type": "card",
+  "subject_id": "card-example",
+  "expected_subject_version": 7,
+  "source_ref": "source_example",
+  "idempotency_key": "parser-result-preflight-1"
+}
+```
 
 ## `okto_pulse_submit_code_investigation_receipt`
 
@@ -806,6 +877,28 @@ tooling identity, agent observation time, and a new idempotency key. Do not
 inflate confidence to force an executable state. The receipt must come from a
 preflight started after the current Target ID/revision entered the Card
 selector scope; never reuse the initial pre-Target receipt.
+
+Example shape for a file resolved by actual investigation. The example
+confidence is justified only when the current selector identifies that file
+unambiguously. Replace the receipt, Target, observation time and tooling with
+the actual values; publishing this example grants no execution authority.
+
+<!-- contract-example: okto_pulse_submit_implementation_target_resolution -->
+```json
+{
+  "board_id": "board-example",
+  "card_id": "card-example",
+  "target_id": "implementation_target_example",
+  "investigation_receipt_id": "code_receipt_example",
+  "state": "resolved",
+  "resolved_relative_path": "src/parser.py",
+  "resolved_language": "python",
+  "confidence": 0.99,
+  "tooling": {"tool_id": "source-inspector", "tool_version": "1", "method_id": "file-and-symbol-inspection-v1"},
+  "agent_observed_at": "2026-11-04T12:00:00Z",
+  "idempotency_key": "parser-target-resolution-1"
+}
+```
 
 ## `okto_pulse_get_implementation_overlaps`
 

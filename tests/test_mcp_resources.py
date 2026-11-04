@@ -618,8 +618,11 @@ def test_initial_footprint_under_budget() -> None:
     )
 
     # The reviewed 282-tool baseline gains the decision-review read/write pair
-    # and the unified Spec validation-cycle read.
-    assert len(_srv.mcp.iter_tools()) == 285, "MCP tool-count ratchet changed"
+    # and the unified Spec validation-cycle read, followed by three Delivery
+    # Readiness operations. These already shipped in the 0.4.3 catalog.
+    assert len(_srv.mcp.iter_tools()) == 288, "MCP tool-count ratchet changed"
+    assert {"okto_pulse_get_delivery_readiness_summary", "okto_pulse_get_persisted_delivery_readiness",
+            "okto_pulse_requeue_persisted_delivery_readiness"} <= {tool.name for tool in _srv.mcp.iter_tools()}
 
 
 # ---------------------------------------------------------------------------

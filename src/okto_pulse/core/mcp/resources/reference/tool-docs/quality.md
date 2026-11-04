@@ -88,7 +88,7 @@ Args:
     expected_subject_version: Version from the latest full subject context
     expected_subject_edition: Lifecycle edition from that same context
     expected_head_revision: Current ambiguity-head revision, or 0 when absent
-    score: Ambiguity score from 1 through 5; lower is better
+    score: Ambiguity score from 0 through 5, inclusive; lower is better
     summary: Concise human-readable explanation of the result
     findings: Native array of pinpoint finding objects. Each object supplies
         `finding_key`, `category_code`, `severity`, `confidence`,
@@ -101,6 +101,41 @@ Args:
         `client_key`, `question`, `question_type`, optional `choices`,
         `allow_free_text`, optional `category_code`, and optional
         `finding_keys`
+
+Finding `confidence` is a fraction from 0 through 1, not a percentage.
+`category_code` is an exact `ambiguity_taxonomy/v1` code, for example
+`functional_scope_behavior`; labels such as `scope` are not category IDs.
+Use the taxonomy returned by quality preflight and a stable field/child ID.
+The following payload illustrates the shape; the score and finding must be
+supported by the actual investigation. Replace IDs, edition/version and head
+revision from the current preflight. Omit `proposed_questions` if native Q&A
+already represents the unresolved decision, to avoid duplicating pending work.
+
+<!-- contract-example: okto_pulse_record_ambiguity_assessment -->
+```json
+{
+  "board_id": "board-example",
+  "subject_type": "refinement",
+  "subject_id": "refinement-example",
+  "idempotency_key": "review-scope-1",
+  "expected_subject_version": 3,
+  "expected_subject_edition": 1,
+  "expected_head_revision": 0,
+  "score": 2,
+  "summary": "One observable scope boundary still needs an answer.",
+  "findings": [{
+    "finding_key": "scope-boundary",
+    "category_code": "functional_scope_behavior",
+    "severity": "medium",
+    "confidence": 0.95,
+    "deterministic": false,
+    "title": "The affected requirement set is not explicit",
+    "detail": "The analysis does not identify whether the exception affects one task or all tasks.",
+    "remediation": "Answer the existing choice question and record the selected scope.",
+    "anchor": {"anchor_type": "field", "anchor_ref": "analysis"}
+  }]
+}
+```
 
 Returns:
     Success envelope with technical `result_id`, `subject_edition`, and

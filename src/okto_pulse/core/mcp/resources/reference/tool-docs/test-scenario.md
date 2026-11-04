@@ -186,6 +186,8 @@ Args:
         defense-in-depth application envelope for a direct handler/use-case
         invocation that bypasses FastMCP validation; it is not the normal
         FastMCP transport response.
+    verification_method: automated_test | static_analysis | inspection | demonstration.
+        Omission leaves the method unspecified; scenario_type does not infer it.
     linked_criteria: Multi-value (formats: okto-pulse://reference/multivalue)
         references to the acceptance criteria this scenario validates. Each
         token may be a 0-based index, a structured ``ac_id`` (e.g. ``ac_1a2b``),
@@ -202,6 +204,21 @@ Returns:
     JSON with the created scenario; ``linked_criteria`` is always a list of
     canonical ac_id strings (never a dict). Invalid FastMCP arguments do not
     enter this return contract; the host returns ``validation_failed``.
+
+<!-- contract-example: okto_pulse_add_test_scenario -->
+```json
+{
+  "board_id": "board-example",
+  "spec_id": "spec-example",
+  "title": "Invalid input identifies the affected requirement",
+  "given": "A task has one unmet required validation condition",
+  "when": "The user opens Delivery",
+  "then": "The matrix names the requirement, failed check and next action",
+  "scenario_type": "e2e",
+  "verification_method": "demonstration",
+  "linked_criteria": ["ac_example"]
+}
+```
 
 ## `okto_pulse_delete_test_scenario`
 
@@ -241,7 +258,7 @@ Returns:
 ## `okto_pulse_update_test_scenario`
 
 Edit the BODY of a test scenario (title/given/when/then/scenario_type/
-    linked_criteria/notes). Does NOT accept status — status stays exclusive to
+    linked_criteria/verification_method/notes). Does NOT accept status — status stays exclusive to
     okto_pulse_update_test_scenario_status so no second NC-9 bypass is created.
 
     Omitted params mean "leave unchanged". In particular, omit
@@ -249,11 +266,11 @@ Edit the BODY of a test scenario (title/given/when/then/scenario_type/
     of the closed enum and is rejected by FastMCP as ``validation_failed``
     before agent context, permissions, or UoW resolution. To
     intentionally CLEAR a field, list it in `clear` (native string array); only
-    `notes` and `linked_criteria` are clearable. `linked_criteria` is a
+    `notes`, `linked_criteria`, and `verification_method` are clearable. `linked_criteria` is a
     native string array of AC references, resolved to AC ids (fail-closed on
     unresolved tokens).
 
-    Editing a SEMANTIC field (given/when/then/scenario_type/linked_criteria) of a
+    Editing a SEMANTIC field (given/when/then/scenario_type/linked_criteria/verification_method) of a
     scenario that holds evidence invalidates it: status resets to `ready` and the
     evidence is dropped. Cosmetic edits (title/notes) preserve status + evidence.
     Respects the spec content-lock.
@@ -269,7 +286,21 @@ Edit the BODY of a test scenario (title/given/when/then/scenario_type/
             the closed FastMCP schema as ``validation_failed`` before context or
             UoW resolution, never normalized.
         linked_criteria: Native string array of AC index/id/text (resolved to AC ids).
-        clear: Native string array of field names to empty (notes, linked_criteria).
+        verification_method: Optional replacement from the method enum above.
+        expected_spec_version: Optional optimistic fence from the current Spec context.
+            Supply it for a version-fenced edit; it does not bypass content locks.
+        clear: Native string array of field names to empty (notes, linked_criteria, verification_method).
+
+<!-- contract-example: okto_pulse_update_test_scenario -->
+```json
+{
+  "board_id": "board-example",
+  "spec_id": "spec-example",
+  "scenario_id": "ts_example",
+  "expected_spec_version": 3,
+  "verification_method": "automated_test"
+}
+```
 
     Returns:
         JSON {success, scenario_id, updated_fields, evidence_invalidated} or

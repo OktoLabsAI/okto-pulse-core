@@ -89,6 +89,13 @@ Use `okto_pulse_list_by_board`, `okto_pulse_list_qa`, `okto_pulse_list_knowledge
 
 Schemas: MCP `tools/list`. Catalog and exact args/results/examples: `okto-pulse://reference/tools_catalog`.
 
+Use the matching tool-docs' schema-checked JSON examples before constructing a
+new payload. Replace example IDs and concurrency fences with current values;
+an example is never proof or permission. Keep score scales distinct: ambiguity
+is 0–5, finding confidence is 0–1, and Task Validation confidence is 0–100.
+For choice Q&A, persist `recommended: true` and a tradeoff on the selected
+recommendation; a recommendation never answers the question automatically.
+
 Before Spec Done, inspect `okto_pulse_get_delivery_evidence` and record applicable proof through `okto_pulse_record_delivery_evidence`. Follow each obligation's implementation/verification plan; Decisions use selected obligations and/or inspection. Do not invent a Task or Test Card solely to cover a Decision. No implicit exemption. Protocol: `okto-pulse://reference/code-traceability`.
 Use `view="readiness"` for independent implementation/verification metrics and minimal next actions. Proof is separate from lifecycle: 100/100 does not authorize Done. N/A, unknown and human exceptions are distinct; never translate deprecated `delivery_completeness` stages into the new metrics. Follow paginated detail before claiming a complete diagnosis, and reuse valid existing proof when only association is missing.
 
