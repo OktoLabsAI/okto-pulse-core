@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import re
 from typing import get_type_hints
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ConfigDict, ValidationError, create_model
@@ -17,6 +18,10 @@ from okto_pulse.core.models.quality_assessment import QualityFindingInput
 from okto_pulse.core.domain.quality_assessment import QualityAssessmentContractError
 from okto_pulse.core.domain.quality_taxonomy import require_ambiguity_category
 from okto_pulse.core.services.ambiguity_assessment import AMBIGUITY_SCALE
+from okto_pulse.core.application.use_cases.code_traceability import _require_spec_entity
+from okto_pulse.core.domain.code_traceability import CodeEvidenceLinkInvalid, SpecEntityType
+from okto_pulse.core.domain.enums import TestScenarioStatus as ScenarioStatus
+from okto_pulse.core.models.schemas import TestScenario as Scenario
 
 
 DOCS = Path(__file__).parents[1] / "src/okto_pulse/core/mcp/resources/reference/tool-docs"
@@ -77,3 +82,32 @@ def test_quality_examples_use_distinct_native_score_scales():
     finding["confidence"] = 95
     with pytest.raises(ValidationError):
         QualityFindingInput.model_validate(finding)
+
+
+@pytest.mark.parametrize("status", list(ScenarioStatus))
+@pytest.mark.parametrize("representation", ["native", "json"])
+def test_same_spec_scenario_links_accept_every_native_operational_state(status, representation):
+    scenario = Scenario(id="ts-native", title="Native scenario", status=status)
+    if representation == "json":
+        scenario = scenario.model_dump(mode="json")
+    spec = SimpleNamespace(id="spec-owned", test_scenarios=[scenario])
+    _require_spec_entity(spec, SpecEntityType.TEST_SCENARIO, "ts-native")
+
+
+@pytest.mark.parametrize("scenarios", [
+    [], ["ts-native"], [{"id": "ts-foreign", "status": "passed"}],
+    [{"id": "ts-native"}], [{"id": "ts-native", "status": None}],
+    [{"id": "ts-native", "status": "active"}],
+    [{"id": "ts-native", "status": "unknown"}],
+    [{"id": "ts-native", "status": "PASSED"}],
+])
+def test_scenario_links_reject_missing_foreign_or_malformed_native_state(scenarios):
+    spec = SimpleNamespace(id="spec-owned", test_scenarios=scenarios, test_scenario_ids=["ts-native"])
+    with pytest.raises(CodeEvidenceLinkInvalid):
+        _require_spec_entity(spec, SpecEntityType.TEST_SCENARIO, "ts-native")
+
+
+def test_scenario_lifecycle_does_not_relax_other_normative_entity_statuses():
+    spec = SimpleNamespace(functional_requirements=[{"id": "fr-1", "status": "failed"}])
+    with pytest.raises(CodeEvidenceLinkInvalid):
+        _require_spec_entity(spec, SpecEntityType.FUNCTIONAL_REQUIREMENT, "fr-1")
