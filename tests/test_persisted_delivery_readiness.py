@@ -51,7 +51,7 @@ def test_generation_matches_canonical_spec_and_each_card():
 def test_generation_captures_default_task_requirement_without_changing_canonical_assessment():
     generation = build_readiness_generation(_source(), captured_revision=7)
     by_card = {row.card_id: row for row in generation.summaries}
-    assert generation.evaluator_version == 'delivery-readiness-evaluator/v7'
+    assert generation.evaluator_version == 'delivery-readiness-evaluator/v8'
     assert by_card[None].requirement is None
     for identity in ('ui', 'authorization'):
         requirement = by_card[identity].requirement

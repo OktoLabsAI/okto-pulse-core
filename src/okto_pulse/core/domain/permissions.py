@@ -3203,7 +3203,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         },
         {
             "name": "Reporter",
-            "description": "Observador — lê tudo, abre bug card, pergunta e vota em choice. Zero submit de gate, zero edit, zero consolidação KG. Ideal para PO/stakeholder/onboarding.",
+            "description": "Observer — reads everything, opens bug cards, asks questions and votes on choices. Cannot submit gate assessments, edit content or consolidate the KG. Suitable for product owners, stakeholders and onboarding.",
             "flags": reporter,
         },
         {

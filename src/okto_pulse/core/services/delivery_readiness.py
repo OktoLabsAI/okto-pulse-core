@@ -313,16 +313,16 @@ class EvaluatedDeliveryReadiness:
         if qualification.proof_complete is True and check == 'blocked' and not qualification.historical_divergence:
             message_code = 'lifecycle_gate_pending'
         messages = {
-            'unknown': 'Não foi possível avaliar a entrega com os fatos atuais.',
-            'implementation_pending': 'Há contribuições de implementação pendentes.',
-            'verification_pending': 'A implementação está comprovada; falta verificação aplicável.',
-            'verification_failed': 'Há falha ou conflito na verificação atual.',
-            'ready': 'Provas completas; confira os gates na transição nativa para concluir.',
-            'delivered': 'Entrega concluída com qualificação atual.',
-            'ready_with_exceptions': 'O gate de entrega admite ressalvas; confira os demais gates na transição nativa.',
-            'delivered_with_exceptions': 'Entrega concluída com ressalvas efetivas.',
-            'not_applicable': 'O escopo conhecido não possui fase de entrega aplicável.',
-            'historical_completion_diverged': 'O status Done foi preservado, mas a qualificação atual da entrega diverge.',
+            'unknown': 'Delivery could not be assessed using the current facts.',
+            'implementation_pending': 'Implementation contributions are still pending.',
+            'verification_pending': 'Implementation is supported by evidence. Applicable verification is still pending.',
+            'verification_failed': 'Current verification has a failure or conflict.',
+            'ready': 'Evidence is complete. Check the remaining completion conditions before closing.',
+            'delivered': 'Delivery is complete with current supporting evidence.',
+            'ready_with_exceptions': 'The delivery check allows exceptions. Check the remaining completion conditions.',
+            'delivered_with_exceptions': 'Delivery is complete with effective exceptions.',
+            'not_applicable': 'The known scope has no applicable delivery phase.',
+            'historical_completion_diverged': 'Done status is preserved, but current delivery evidence no longer supports it.',
             'lifecycle_gate_pending': 'Provas completas; um gate nativo ainda impede o encerramento.',
         }
         scope = assessment.scope

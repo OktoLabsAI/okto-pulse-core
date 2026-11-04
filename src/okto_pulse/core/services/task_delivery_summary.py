@@ -8,22 +8,22 @@ from okto_pulse.core.models.task_delivery_summary import TaskDeliveryAction, Tas
 
 
 _REASONS = {
-    "updating": "Atualizando a situação da entrega. Aguarde a confirmação atual.",
-    "unavailable": "Não foi possível consultar a entrega. Tente novamente.",
-    "assessment_incomplete": "Ainda não há informação suficiente para confirmar a entrega.",
-    "optional": "Esta tarefa é opcional. Isso não significa que foi entregue.",
-    "waived": "Esta tarefa foi dispensada. Isso não significa que foi entregue.",
-    "verification_failed": "A verificação encontrou um problema que precisa ser corrigido.",
-    "historical_done": "A conclusão anterior está no histórico; a entrega atual precisa de confirmação.",
-    "implementation_pending": "Ainda há trabalho ou comprovação de implementação pendente.",
-    "not_started": "Esta tarefa ainda não foi iniciada.",
-    "paused": "Esta tarefa está pausada e ainda possui trabalho pendente.",
-    "cancelled": "Esta tarefa foi cancelada. O histórico foi preservado, sem confirmar entrega.",
-    "verification_pending": "Há verificações pendentes para esta entrega.",
-    "completion_pending": "A entrega ainda depende de condições para ser concluída.",
-    "completion_not_evaluated": "As provas estão registradas; falta confirmar as condições de conclusão.",
-    "delivered": "Entrega concluída e confirmada com as informações atuais.",
-    "ready": "Tudo está pronto para concluir. A entrega ainda não foi encerrada.",
+    "updating": "Updating delivery status. Please wait for confirmation.",
+    "unavailable": "Delivery status could not be loaded. Try again.",
+    "assessment_incomplete": "There is not enough information to confirm delivery yet.",
+    "optional": "This task is optional. Delivery has not been confirmed.",
+    "waived": "This task has been waived. Delivery has not been confirmed.",
+    "verification_failed": "Verification found a problem that needs to be fixed.",
+    "historical_done": "The previous completion is in the history. Current delivery needs confirmation.",
+    "implementation_pending": "Work or implementation evidence is still pending.",
+    "not_started": "This task has not started yet.",
+    "paused": "This task is on hold with work still pending.",
+    "cancelled": "This task was cancelled. Its history is preserved, but delivery is not confirmed.",
+    "verification_pending": "Verification is still pending for this delivery.",
+    "completion_pending": "Some conditions must still be met to complete this delivery.",
+    "completion_not_evaluated": "Evidence is recorded. Completion conditions still need confirmation.",
+    "delivered": "Delivery is complete and confirmed by current information.",
+    "ready": "Everything is ready to complete. Delivery has not been closed yet.",
 }
 
 
@@ -111,15 +111,15 @@ def present_task_delivery_summary(payload: dict | None, *, board_id: str, spec_i
     action = None
     if readable:
         if summary.state == "updating_or_unknown":
-            action = TaskDeliveryAction(kind="retry", label="Tentar novamente", owner="system")
+            action = TaskDeliveryAction(kind="retry", label="Try again", owner="system")
         elif summary.state != "delivered":
-            action = TaskDeliveryAction(kind="open_details", label="Ver detalhes", owner="technical_owner")
+            action = TaskDeliveryAction(kind="open_details", label="View details", owner="technical_owner")
             if actor_kind in {"human", "user"} and status == "in_progress" and "card.conclusion.write" in allowed_operations:
                 if summary.state == "ready" and "card.move.in_progress_to_done" in allowed_operations:
-                    action = TaskDeliveryAction(kind="conclude", label="Concluir entrega", owner="user")
+                    action = TaskDeliveryAction(kind="conclude", label="Complete delivery", owner="user")
                 elif summary.state == "completion_pending" and "card.move.in_progress_to_validation" in allowed_operations:
-                    action = TaskDeliveryAction(kind="submit_report", label="Enviar entrega", owner="user")
+                    action = TaskDeliveryAction(kind="submit_report", label="Submit delivery", owner="user")
                 elif summary.state == "implementation_pending":
-                    action = TaskDeliveryAction(kind="record_progress", label="Registrar progresso", owner="user")
+                    action = TaskDeliveryAction(kind="record_progress", label="Record progress", owner="user")
     note = TaskDeliveryUpdate.model_validate(last_update) if last_update and readable else None
     return summary.model_copy(update={"next_action": action, "last_update": note})
