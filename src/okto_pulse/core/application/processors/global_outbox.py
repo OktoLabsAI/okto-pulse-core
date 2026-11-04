@@ -7,10 +7,16 @@ lifecycle are owned by an edition runner.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import re
+import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from okto_pulse.core.application.async_task_scope import AsyncTaskScope
 from okto_pulse.core.kg.global_discovery.metrics import (
@@ -82,6 +88,70 @@ DIGEST_VISIBILITY_BATCH_SIZE = IDENTITY_QUERY_BATCH_SIZE
 GLOBAL_OUTBOX_WRITER_TTL_SECONDS = 60
 GLOBAL_OUTBOX_WRITER_MAX_TTL_SECONDS = 60
 GLOBAL_OUTBOX_WRITER_RENEW_INTERVAL_SECONDS = 15.0
+
+# Context follows the existing batch/renewal tasks without putting diagnostic
+# state on a reusable processor. Tokens and authored payloads never enter logs.
+_observation_context: ContextVar[dict[str, Any] | None] = ContextVar(
+    "global_outbox_observation", default=None,
+)
+_SAFE_GRAPH_CODES = frozenset({
+    "graph_error", "graph_unavailable", "graph_invalid_query",
+    "graph_query_timeout", "graph_query_resource_limit", "graph_corruption",
+    "graph_lock_contention", "graph_capability_unavailable",
+    "graph_index_unavailable", GRAPH_MEMORY_PRESSURE_CODE,
+})
+
+
+def _safe_error_code(exc: BaseException) -> str:
+    if isinstance(exc, asyncio.CancelledError):
+        return "operation_cancelled"
+    if isinstance(exc, GraphError) and exc.code in _SAFE_GRAPH_CODES:
+        return exc.code
+    if _is_source_inventory_churn(exc):
+        return "source_inventory_changed"
+    return "operation_failed"
+
+
+def _identity_ref(value: str) -> str:
+    if re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", value):
+        return value
+    return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
+
+
+def _event_observation(event: GlobalOutboxEventRecord) -> dict[str, Any]:
+    return {
+        "board_id": _identity_ref(event.board_id),
+        "event_id": _identity_ref(event.event_id),
+        "claim_row_id": _identity_ref(event.id),
+        "retry_count": event.retry_count,
+    }
+
+
+def _emit_observation(fields: Mapping[str, Any]) -> None:
+    logger.info(
+        "outbox.operation stage=%s outcome=%s",
+        fields["stage"], fields["outcome"],
+        extra={"event": "outbox.operation", **(_observation_context.get() or {}), **fields},
+    )
+
+
+@contextmanager
+def _observe_stage(stage: str, **fields: Any):
+    started = time.perf_counter()
+    observation = {"stage": stage, "outcome": "completed", "error_code": None, **fields}
+    try:
+        yield observation
+    except BaseException as exc:
+        observation.update(
+            outcome="cancelled" if isinstance(exc, asyncio.CancelledError) else "error",
+            error_code=_safe_error_code(exc),
+        )
+        if stage == "sql_ack":
+            observation["ack_state"] = "unconfirmed"
+        raise
+    finally:
+        observation["elapsed_ms"] = round(max(0.0, time.perf_counter() - started) * 1000, 3)
+        _emit_observation(observation)
 
 
 class _SourceInventoryPaginationError(RuntimeError):
@@ -207,6 +277,9 @@ class GlobalOutboxProcessor:
                 )
             except asyncio.TimeoutError:
                 try:
+                    observation = _observation_context.get()
+                    if observation is not None:
+                        observation["lease_renew_attempts"] += 1
                     await self._run_graph_io(lease.renew)
                     lease.assert_fenced()
                 except GlobalDiscoveryWriterFenceLost:
@@ -376,6 +449,18 @@ class GlobalOutboxProcessor:
     async def process_once(self) -> int:
         """Process pending outbox events. Returns count processed."""
 
+        token = _observation_context.set({
+            "batch_id": uuid4().hex, "lease_acquire_attempts": 1,
+            "lease_renew_attempts": 0, "lease_ref": None,
+        })
+        try:
+            with _observe_stage("batch"):
+                return await self._process_once_observed()
+        finally:
+            _observation_context.reset(token)
+
+    async def _process_once_observed(self) -> int:
+
         from okto_pulse.core.kg.global_discovery_writer import (
             GlobalDiscoveryWriterContention,
             GlobalDiscoveryWriterLease,
@@ -396,21 +481,27 @@ class GlobalOutboxProcessor:
             return lease
 
         try:
-            lease = await self._run_graph_io(_acquire_writer_lease)
+            with _observe_stage("lease_acquire") as observation:
+                try:
+                    lease = await self._run_graph_io(_acquire_writer_lease)
+                except GlobalDiscoveryWriterContention:
+                    observation.update(outcome="contended", error_code="writer_lease_contended")
+                    return 0
+                context = _observation_context.get()
+                owner_token = getattr(lease, "owner_token", None)
+                if context is not None and isinstance(owner_token, str):
+                    context["lease_ref"] = hashlib.sha256(owner_token.encode()).hexdigest()
         except asyncio.CancelledError:
             lease = acquired_lease.get("lease")
             if lease is not None:
                 await self._run_graph_io(lease.release)
             raise
-        except GlobalDiscoveryWriterContention:
-            # Recovery (or another process' outbox batch) owns the durable
-            # fence.  Leave rows untouched and retry on the next worker tick.
-            return 0
         try:
             with lease.guard():
                 return await self._process_once_with_lease_renewal(lease)
         finally:
-            await self._run_graph_io(lease.release)
+            with _observe_stage("lease_release"):
+                await self._run_graph_io(lease.release)
 
     async def _process_once_under_writer(self) -> int:
         processed = 0
@@ -421,23 +512,22 @@ class GlobalOutboxProcessor:
             # Inferring recovery from ``last_error`` here used to requeue DLQ
             # rows on startup, which bypassed the audit reason/selection CAS
             # and could race a fail-closed Global Discovery cutover.
-            claim_repository = self._claim_repository or get_claim_repository()
-            claimed = await claim_repository.claim_global_outbox(
-                db,
-                limit=50,
-            )
-            events = list(
-                await get_global_outbox_store().materialize_claimed(db, claimed)
-            )
-            # Refuse an invalid record before applying any graph effects.
-            for event in events:
-                event.validate_retry_count()
-            # The claim is a read-only selection. Release its SQLite checkout
-            # before any native graph work; the global writer lease protects
-            # this batch, and final ACK is persisted only after verification.
-            rollback = getattr(db, "rollback", None)
-            if rollback is not None:
-                await rollback()
+            with _observe_stage("sql_claim") as observation:
+                claim_repository = self._claim_repository or get_claim_repository()
+                claimed = await claim_repository.claim_global_outbox(db, limit=50)
+                events = list(
+                    await get_global_outbox_store().materialize_claimed(db, claimed)
+                )
+                if len(events) > 50:
+                    raise ValueError("global_outbox_claim_bound_exceeded")
+                observation["claimed_count"] = len(events)
+                # Refuse invalid records before graph effects; release the SQL
+                # read checkout before native work. ACK still follows proof.
+                for event in events:
+                    event.validate_retry_count()
+                rollback = getattr(db, "rollback", None)
+                if rollback is not None:
+                    await rollback()
             processed_events: list[
                 tuple[GlobalOutboxEventRecord, dict[str, tuple[str, str]]]
             ] = []
@@ -447,7 +537,11 @@ class GlobalOutboxProcessor:
                     delivery_attempt = parse_delivery_attempt_event(event)
                     if delivery_attempt is not None:
                         delivery_attempts[event.id] = delivery_attempt
-                    expected_state = await self._apply_event(event, db)
+                    with _observe_stage(
+                        "graph_apply", **_event_observation(event),
+                        delivery_attempt=delivery_attempt.attempt if delivery_attempt else None,
+                    ):
+                        expected_state = await self._apply_event(event, db)
                     processed_events.append((event, expected_state))
                     processed += 1
                 except Exception as exc:
@@ -480,7 +574,7 @@ class GlobalOutboxProcessor:
                                 "outbox.dead_letter event=%s board=%s err=%s",
                                 event.event_id,
                                 event.board_id,
-                                exc,
+                                _safe_error_code(exc),
                                 extra={
                                     "event": "outbox.dead_letter",
                                     "event_id": event.event_id,
@@ -488,9 +582,13 @@ class GlobalOutboxProcessor:
                                 },
                             )
             if processed_events:
-                verification_errors, batch_flush_error = await self._run_graph_io(
-                    lambda: self._verify_processed_batch(processed_events)
-                )
+                with _observe_stage("graph_verify", event_count=len(processed_events)) as observation:
+                    verification_errors, batch_flush_error = await self._run_graph_io(
+                        lambda: self._verify_processed_batch(processed_events)
+                    )
+                    if batch_flush_error is not None or verification_errors:
+                        failure = batch_flush_error or next(iter(verification_errors.values()))
+                        observation.update(outcome="error", error_code=_safe_error_code(failure))
 
                 if batch_flush_error is not None:
                     retry_after_s = graph_memory_pressure_retry_after_seconds(
@@ -499,7 +597,7 @@ class GlobalOutboxProcessor:
                     logger.warning(
                         "outbox.global_discovery_post_flush_failed count=%d err=%s",
                         len(processed_events),
-                        batch_flush_error,
+                        _safe_error_code(batch_flush_error),
                         extra={
                             "event": "outbox.global_discovery_post_flush_failed",
                             "count": len(processed_events),
@@ -557,44 +655,20 @@ class GlobalOutboxProcessor:
                                 event.retry_count
                             ).terminal:
                                 event.retry_count = DEAD_LETTER_SENTINEL
-            outbox_store = get_global_outbox_store()
-            await outbox_store.save_events(db, events)
-            delivery_outcomes: list[DeliveryAttemptResult] = []
+            with _observe_stage("sql_ack", event_count=len(events), ack_state="pending") as observation:
+                await self._persist_batch_outcomes(db, events, delivery_attempts)
+                observation["ack_state"] = "committed"
             for event in events:
                 envelope = delivery_attempts.get(event.id)
-                if envelope is None:
-                    continue
-                if event.processed_at is not None:
-                    delivery_outcomes.append(
-                        DeliveryAttemptResult(
-                            envelope=envelope,
-                            outcome=DeliveryAttemptOutcome.DELIVERED,
-                            occurred_at=event.processed_at,
-                        )
-                    )
-                    continue
-                if event.retry_count == DEAD_LETTER_SENTINEL or (
-                    event.retry_count >= MAX_RETRIES
-                ):
-                    delivery_outcomes.append(
-                        DeliveryAttemptResult(
-                            envelope=envelope,
-                            outcome=DeliveryAttemptOutcome.DELIVERY_DEBT,
-                            occurred_at=self._now(),
-                            error=(
-                                event.last_error or "governed_delivery_attempt_terminal"
-                            ),
-                        )
-                    )
-            if delivery_outcomes:
-                delivery_ledger = self._delivery_ledger
-                if delivery_ledger is None:
-                    delivery_ledger = get_delivery_ledger_port()
-                await delivery_ledger.apply_attempt_outcomes(
-                    db,
-                    tuple(delivery_outcomes),
-                )
-            await outbox_store.commit(db)
+                _emit_observation({
+                    "stage": "ack_result", "outcome": "committed",
+                    **_event_observation(event),
+                    "delivery_attempt": envelope.attempt if envelope else None,
+                    "ack_state": "delivered" if event.processed_at is not None else (
+                        "terminal" if event.retry_count == DEAD_LETTER_SENTINEL
+                        or event.retry_count >= MAX_RETRIES else "retry_pending"
+                    ),
+                })
         if processed:
             logger.info(
                 "outbox.processed count=%d",
@@ -602,6 +676,46 @@ class GlobalOutboxProcessor:
                 extra={"event": "outbox.processed", "count": processed},
             )
         return processed
+
+    async def _persist_batch_outcomes(self, db, events, delivery_attempts) -> None:
+        outbox_store = get_global_outbox_store()
+        await outbox_store.save_events(db, events)
+        delivery_outcomes: list[DeliveryAttemptResult] = []
+        for event in events:
+            envelope = delivery_attempts.get(event.id)
+            if envelope is None:
+                continue
+            if event.processed_at is not None:
+                delivery_outcomes.append(
+                    DeliveryAttemptResult(
+                        envelope=envelope,
+                        outcome=DeliveryAttemptOutcome.DELIVERED,
+                        occurred_at=event.processed_at,
+                    )
+                )
+                continue
+            if event.retry_count == DEAD_LETTER_SENTINEL or (
+                event.retry_count >= MAX_RETRIES
+            ):
+                delivery_outcomes.append(
+                    DeliveryAttemptResult(
+                        envelope=envelope,
+                        outcome=DeliveryAttemptOutcome.DELIVERY_DEBT,
+                        occurred_at=self._now(),
+                        error=(
+                            event.last_error or "governed_delivery_attempt_terminal"
+                        ),
+                    )
+                )
+        if delivery_outcomes:
+            delivery_ledger = self._delivery_ledger
+            if delivery_ledger is None:
+                delivery_ledger = get_delivery_ledger_port()
+            await delivery_ledger.apply_attempt_outcomes(
+                db,
+                tuple(delivery_outcomes),
+            )
+        await outbox_store.commit(db)
 
     def _verify_processed_batch(
         self,
