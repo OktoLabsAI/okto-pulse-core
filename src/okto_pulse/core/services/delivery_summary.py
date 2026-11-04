@@ -117,7 +117,11 @@ def build_delivery_summary_population(*, scope: DeliverySummaryScope,
     aligned = all(row.context.scope.card_type == by_card[identity].card_type
         and row.context.scope.card_version == by_card[identity].card_version
         and row.context.lifecycle.stored_status == by_card[identity].status
-        and row.requirement is not None and row.requirement.current and _known(row.context)
+        and row.requirement is not None and row.requirement.current
+        # A current human decision is sufficient to classify an exception.
+        # Technical proof is still required to classify required work and to
+        # grant delivery credit; it is not evidence that this decision is stale.
+        and (row.requirement.decision in {'optional', 'waived'} or _known(row.context))
         for identity, row in by_fact.items() if identity in by_card)
     complete = bool(current and population_complete and set(by_card) == set(by_fact)
         and aligned and spec_context is not None and _known(spec_context))

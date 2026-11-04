@@ -72,9 +72,10 @@ Minimal action flow:
 4. Re-read affected Card/Spec readiness. Every mutation reauthorizes and rechecks
    native gates; a read action or 100/100 does not grant transition authority.
 
-The UI shows separate implementation and verification bars, both on the Card and
-in Delivery. "What is missing?" opens scoped causes, expected/observed facts and
-native links. Receipt links require the exact current scenario evidence pointer;
+The Task Delivery UI shows the canonical state, reason, latest update and next
+action. Its closed-by-default Details opens scoped causes, implementation and
+verification facts, and native links. Spec rollups retain their phase metrics.
+Receipt links require the exact current scenario evidence pointer;
 an unavailable old receipt never opens a replacement result. Inspection links
 retain the full review batch. Exceptions open the Spec's Coverage > Implementation.
 
@@ -805,6 +806,20 @@ current executable schemas. The sections above define the workflow and proof
 semantics, not a second parameter reference.
 
 ### Reading older progress checkpoints
+
+Human submissions appear in Card history as `kind="human_submission"`, with
+authority `human_declaration`. Their application-generated receipt records
+identity, UTC time, scope, content hash and immutable correction links. It does
+not qualify a Target, prove implementation, verify a run or infer no material
+change. In Community storage this is an additive typed payload in the existing
+progress ledger; historical technical rows are not rewritten. Readers must
+branch on the payload kind before interpreting a technical progress declaration.
+
+The human UI uses one scoped `task-delivery-summary/v1` from the persisted
+readiness projection and loads diagnostic/history pages only from Details.
+Its automatic receipt endpoint rejects agents: continue using the composed
+technical operations in `okto-pulse://workflows/cards`. Do not generate a
+second receipt call for a human save, nor ask a human for technical selectors.
 
 `okto_pulse_get_delivery_evidence(board_id, spec_id, card_id=...)` reads the
 current edition's progress history without loading the entire Spec rollup.

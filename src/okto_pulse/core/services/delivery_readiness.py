@@ -112,6 +112,7 @@ class DeliveryReadinessService:
                 'error_code': value.error_code if value else None,
             },
             'summaries': list(value.summaries) if value else [],
+            'task_delivery': getattr(value, 'task_delivery', None),
             'units': list(value.units) if value else [],
             'page': page,
             'mutation_reauthorization_required': True,

@@ -34,7 +34,7 @@ from okto_pulse.core.services.delivery_readiness import EvaluatedDeliveryReadine
 from okto_pulse.core.services.delivery_readiness_diagnostics import NativeDeliveryDiagnostics
 
 
-EVALUATOR_VERSION = "delivery-readiness-evaluator/v5"
+EVALUATOR_VERSION = "delivery-readiness-evaluator/v7"
 _DIAGNOSTICS = TypeAdapter(NativeDeliveryDiagnostics)
 _PROGRESS_LOCAL_BLOCKERS = frozenset({
     "delivery_implementation_missing", "delivery_test_result_missing",
@@ -241,7 +241,7 @@ class ProjectedSummary:
     requirement: TaskRequirementSummary | None = None
 
     def payload(self) -> dict:
-        return {
+        result = {
             "card_id": self.card_id,
             "card_type": self.card_type,
             "card_version": self.card_version,
@@ -253,6 +253,13 @@ class ProjectedSummary:
             **({'requirement': self.requirement.model_dump(mode='json')}
                 if self.requirement is not None else {}),
         }
+        if self.card_id is not None:
+            from .task_delivery_summary import build_task_delivery_summary
+            result["task_delivery"] = build_task_delivery_summary(
+                DeliveryReadinessContext.model_validate(self.context), requirement=self.requirement,
+                population_known=self.population_known,
+                evaluation_complete=self.evaluation_complete).model_dump(mode="json")
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -528,8 +535,9 @@ def build_readiness_generation(snapshot, *, captured_revision: int,
             summaries_list.append(_summary(assessment,
                 card_version=card.version if card else None,
                 context=context,
-                requirement=(requirements.get(card_id, default_requirement)
-                    if card is not None and requirements is not None and context.scope_complete else None)))
+                requirement=(requirements.get(card_id,
+                    default_requirement if context.scope_complete else None)
+                    if card is not None and requirements is not None else None)))
             diagnostic_started = phase_now()
             diagnostics_list.append(ProjectedDiagnostic(card_id,
                 _DIAGNOSTICS.dump_python(contextual.diagnostics(card_id), mode='json')))

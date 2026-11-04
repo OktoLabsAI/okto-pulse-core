@@ -10932,6 +10932,11 @@ class SpecService:
                             "create it as draft/ready, then use "
                             "set_test_scenario_status."
                         )
+                    elif "status" not in scenario:
+                        # Nested exclude_unset omits the transport default.
+                        # A new scenario still needs an authoritative initial
+                        # state; response-only defaults cannot admit its plan.
+                        scenario["status"] = "draft"
             await self._validate_test_scenario_subject_identities(
                 board_id=spec.board_id,
                 scenarios=update_data["test_scenarios"],

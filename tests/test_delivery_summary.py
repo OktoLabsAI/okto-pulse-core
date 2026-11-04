@@ -125,6 +125,29 @@ def test_stale_task_exception_does_not_excuse_a_changed_scope():
     assert not result.complete and all(group.count is None for group in result.groups)
 
 
+@pytest.mark.parametrize('decision', ['optional', 'waived'])
+@pytest.mark.parametrize('damage', ['unknown_proof', 'stale_decision', 'card_version'])
+def test_exception_counts_need_current_decision_and_metadata_but_not_delivery_proof(decision, damage):
+    row = facts(decision=decision)
+    row = row.model_copy(update={'context': row.context.model_copy(update={
+        'scope_complete': False, 'proof_complete': False,
+        'delivery_gate': row.context.delivery_gate.model_copy(update={'status': 'blocked'}),
+    })})
+    if damage == 'stale_decision':
+        row = row.model_copy(update={'requirement': row.requirement.model_copy(update={'current': False})})
+    live_card = card(card_version=2) if damage == 'card_version' else card()
+    before = row.model_dump(mode='json')
+    result = page_delivery_summary(population([live_card], [row]))
+    if damage == 'unknown_proof':
+        assert result.complete and result.task_count == 1 and result.required_task_count == 0
+        assert result.groups[0].count == 0 and result.groups[3].count == 1
+    else:
+        assert not result.complete and result.task_count is None
+        assert result.groups[2].items[0].requirement == 'unknown'
+    assert not result.groups[0].items
+    assert row.model_dump(mode='json') == before
+
+
 def test_shared_obligation_denominator_is_never_a_sum_of_card_metrics():
     result = page_delivery_summary(population([card('a'), card('b')], [facts('a'), facts('b')]))
     assert result.groups[0].count == result.task_count == 2

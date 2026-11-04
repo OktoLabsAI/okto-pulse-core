@@ -51,13 +51,47 @@ def test_generation_matches_canonical_spec_and_each_card():
 def test_generation_captures_default_task_requirement_without_changing_canonical_assessment():
     generation = build_readiness_generation(_source(), captured_revision=7)
     by_card = {row.card_id: row for row in generation.summaries}
-    assert generation.evaluator_version == 'delivery-readiness-evaluator/v5'
+    assert generation.evaluator_version == 'delivery-readiness-evaluator/v7'
     assert by_card[None].requirement is None
     for identity in ('ui', 'authorization'):
         requirement = by_card[identity].requirement
         assert requirement.decision == 'required' and requirement.current
         assert requirement.decision_id is None
         assert by_card[identity].payload()['requirement'] == requirement.model_dump(mode='json')
+
+
+@pytest.mark.parametrize('decision', ['optional', 'waived'])
+def test_captured_test_requirement_survives_inconclusive_proof_without_granting_credit(decision, monkeypatch):
+    from okto_pulse.core.domain.task_requirement_decision import (
+        TaskRequirementScope, TaskRequirementDecisionRecord, resolve_task_requirement,
+    )
+    source = _source()
+    canonical_context = EvaluatedDeliveryReadiness.context
+    def inconclusive_test_proof(self, card_id=None):
+        context = canonical_context(self, card_id)
+        return (context.model_copy(update={'scope_complete': False, 'proof_complete': None})
+            if card_id == 'test-card-1' else context)
+    monkeypatch.setattr(EvaluatedDeliveryReadiness, 'context', inconclusive_test_proof)
+    original = build_readiness_generation(source, captured_revision=7)
+    previous = next(row for row in original.summaries if row.card_id == 'test-card-1')
+    assert previous.context['scope_complete'] is False
+    scope = source.facts.scope
+    responsibility = TaskRequirementScope(scope.board_id, scope.spec_id, scope.edition,
+        'test-card-1', 'test', (('scenario:scenario-ui', 'a' * 64, 'b' * 64),))
+    record = TaskRequirementDecisionRecord('decision-test', 'operation-test', responsibility,
+        1, decision, 'required', None, 'human-reviewer', source.evaluated_at)
+    resolution = resolve_task_requirement(responsibility, (record,))
+    facts = replace(source.facts, effective_context=replace(source.facts.effective_context,
+        task_requirements=((responsibility, resolution),)))
+    updated = replace(source, facts=facts)
+    generation = build_readiness_generation(updated, captured_revision=8)
+    row = next(item for item in generation.summaries if item.card_id == 'test-card-1')
+    assert row.requirement.decision == decision and row.requirement.current
+    assert row.requirement.decision_id == record.id
+    assert row.context == EvaluatedDeliveryReadiness(updated,
+        actor_id=source.access.actor_id).context('test-card-1').model_dump(mode='json')
+    assert row.context['scope_complete'] is False
+    assert row.context['proof_complete'] is not True
 
 
 def test_stored_canonical_rows_have_the_generation_manifest():

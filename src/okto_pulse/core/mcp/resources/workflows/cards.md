@@ -342,6 +342,41 @@ link explain these rules to the user. Agent resources complement that Help.
 
 ### Compact progress and delivery route
 
+### Human submission and agent proof are separate
+
+The Task **Delivery** UI consumes the Core `task-delivery-summary/v1` verdict:
+one state, reason, latest update and next permitted action. Details is lazy and
+Card-scoped. A stale/unknown assessment is never delivered; historical Done and
+optional/waived are not current proof. This read does not authorize a transition.
+
+For authenticated humans, the application accepts `human-task-submission/v1`
+through its single REST command and generates a typed, immutable
+`human-submission-receipt/v1` atomically with content, audit and any admitted
+report/transition. Humans provide content and optional remaining work, not
+receipt IDs, execution selectors, impact claims or quality percentages. Exact
+authorized retries reuse the original key; corrections append a linked record.
+Do not ask a person to orchestrate receipt creation or select technical proof.
+
+This receipt has authority `human_declaration` only. It is never an agent
+execution receipt, implementation binding, verified run, passing test, or an
+implicit `material_change=none`. The human endpoint rejects agent principals,
+including agents using REST. Agents must use the technical batch/report route
+below and retain real source observations, target resolutions and execution
+proof. Human report submission reuses only eligible existing assessments and
+proof; missing or ambiguous facts require the technical owner to supply them.
+
+Keep calls economical: one material-event checkpoint, reuse accepted IDs and
+full operation confirmations, and compose related evidence/report writes when
+their facts are ready. Do not add heartbeat calls, per-tool checkpoints,
+duplicate comments, broad Spec-ledger reads per UI section, or a confirmation
+read after an authoritative accepted state. Required preflight, reauthorization,
+freshness checks and independent review remain mandatory. Lost responses use
+the original intent; a changed basis requires review and a new key.
+
+User-facing rules must remain in central Help and the exact contextual Help
+destination beside Delivery and its forms, including Test Cards, failures,
+historical status, immutable correction and uncertain retry.
+
 Use the Card ledger as the work record. Record a checkpoint when implementation
 or targets materially change, when a blocker is introduced/resolved, or when new
 remaining work must be preserved for a handoff or closeout. A status change already
