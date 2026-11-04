@@ -3490,7 +3490,7 @@ async def _process_queue_entry(
         **({'allow_known_removals': True} if allow_known_removals else {}),
         **({"journaled_prepared": journaled_prepared,
             "journaled_receipts": journaled_receipts}
-           if allow_known_removals and journaled_prepared is not None else {}),
+           if journaled_prepared is not None else {}),
     )
 
     if isinstance(commit_resp, DeferredProjectionProgress):
@@ -4705,7 +4705,10 @@ class ConsolidationProcessor:
                 self._durable_projection_protocol
                 and not exact_protocol
                 and _work_kind(entry) == "consolidate"
-                and entry.artifact_type in {"spec", "card"}
+                # Intake workers' legacy claim UPDATE held SQLite's writer
+                # across native graph IO. Keep their claim + deletion CAS at
+                # prepare/settle, using the same durable journal as Spec/Card.
+                and entry.artifact_type in {"spec", "card", "refinement", "ideation", "story"}
                 and not _queue_source(entry).startswith("rebuild:")
             )
             journaled_prepared: list[str] | None = [] if journaled_live else None

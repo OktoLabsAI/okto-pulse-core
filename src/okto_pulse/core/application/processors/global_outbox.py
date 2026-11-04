@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from datetime import datetime, timezone
 from typing import Any
 
@@ -71,7 +71,8 @@ LEARNING_RELATION_GROUP_PAGE_SIZE = 5000
 # Bound application-side identity payloads independently of graph size or
 # backend. Each visibility assignment is idempotent; a failed batch aborts
 # delivery and the next attempt safely converges already-applied batches.
-DIGEST_VISIBILITY_BATCH_SIZE = 512
+IDENTITY_QUERY_BATCH_SIZE = 500
+DIGEST_VISIBILITY_BATCH_SIZE = IDENTITY_QUERY_BATCH_SIZE
 
 # The normal outbox lane must not leave a one-hour writer tombstone when the
 # embedded graph process dies.  Sixty seconds is long enough for the renewal
@@ -93,6 +94,37 @@ class _SourceIdentityIntegrityError(RuntimeError):
 
 def _global_discovery_runtime():
     return get_kg_registry().require_global_discovery_runtime()
+
+
+def _identity_batches(identities: Iterable[str]) -> Iterator[list[str]]:
+    """Bound graph list parameters independently of the source population."""
+    ordered = sorted(set(identities))
+    for offset in range(0, len(ordered), IDENTITY_QUERY_BATCH_SIZE):
+        yield ordered[offset:offset + IDENTITY_QUERY_BATCH_SIZE]
+
+
+def _read_identity_rows(board_id: str, cypher: str, identities: Iterable[str]):
+    """Read at most one row per identity, refusing partial or ambiguous reads.
+
+    Missing identities remain absent for the caller's existing reconciliation
+    rules. A failed later batch raises, so callers cannot return an earlier
+    successful prefix as a complete observation.
+    """
+    executor = get_kg_registry().cypher_executor
+    for batch in _identity_batches(identities):
+        result = executor.execute_read_only(
+            board_id, cypher, {"ids": batch}, max_rows=len(batch),
+        )
+        if result.get("truncated"):
+            raise _SourceIdentityIntegrityError("outbox.identity_read_truncated")
+        expected = set(batch)
+        seen: set[str] = set()
+        for row in result.get("rows", []):
+            identity = str(row[0])
+            if identity not in expected or identity in seen:
+                raise _SourceIdentityIntegrityError("outbox.identity_read_ambiguous")
+            seen.add(identity)
+            yield row
 
 
 class GlobalOutboxProcessor:
@@ -1276,7 +1308,7 @@ class GlobalOutboxProcessor:
         refs: list[GlobalOutboxNodeRefFact],
     ) -> list[dict] | None:
         """Read (id, title, embedding) from the per-board graph backend for the given
-        node refs, bucketed by type so we issue one MATCH per type."""
+        node refs, bucketed by type and bounded identity batch."""
 
         by_type: dict[str, list[str]] = {}
         for r in refs:
@@ -1284,7 +1316,6 @@ class GlobalOutboxProcessor:
 
         out: list[dict] = []
         try:
-            cypher_executor = get_kg_registry().cypher_executor
             for ntype, ids in by_type.items():
                 # FR3/TR2 (spec 849d6292): do NOT silently drop NULL-embedding
                 # nodes with a WHERE filter. Read every requested node and
@@ -1298,10 +1329,7 @@ class GlobalOutboxProcessor:
                     f"RETURN n.id, n.title, n.embedding, "
                     f"{layer_label_projection('n')}"
                 )
-                result = cypher_executor.execute_read_only(
-                    board_id, cypher, {"ids": ids}, max_rows=len(ids) or 1
-                )
-                for row in result.get("rows", []):
+                for row in _read_identity_rows(board_id, cypher, ids):
                     embedding = row[2]
                     if embedding is None:
                         emit_missing_embedding_skipped(
@@ -1360,6 +1388,15 @@ class GlobalOutboxProcessor:
         """
 
         ids = sorted(set(learning_ids))
+        if len(ids) > IDENTITY_QUERY_BATCH_SIZE:
+            combined: dict[str, dict] = {}
+            for batch in _identity_batches(ids):
+                combined.update(
+                    GlobalOutboxProcessor._read_learning_completeness_evidence(
+                        board_id, batch,
+                    )
+                )
+            return combined
         evidence = {
             learning_id: {
                 "canonical_bug_count": 0,
@@ -1372,16 +1409,15 @@ class GlobalOutboxProcessor:
             return evidence
 
         cypher_executor = get_kg_registry().cypher_executor
-        result = cypher_executor.execute_read_only(
+        rows = _read_identity_rows(
             board_id,
             "MATCH (l:Learning)-[:validates]->(b:Bug) "
             "WHERE l.id IN $ids RETURN l.id, "
             "sum(CASE WHEN b.graph_layer = 'canonical' THEN 1 ELSE 0 END), "
             "count(b)",
-            {"ids": ids},
-            max_rows=len(ids),
+            ids,
         )
-        for row in result.get("rows", []):
+        for row in rows:
             learning_id = str(row[0] or "")
             entry = evidence.get(learning_id)
             if entry is None:
@@ -1424,6 +1460,8 @@ class GlobalOutboxProcessor:
                 },
                 max_rows=LEARNING_RELATION_GROUP_PAGE_SIZE,
             )
+            if result.get("truncated"):
+                raise _SourceIdentityIntegrityError("outbox.learning_relation_read_truncated")
             rows = list(result.get("rows", []))
             page_last_key = after_key
             for row in rows:
@@ -1475,14 +1513,12 @@ class GlobalOutboxProcessor:
         ``_apply_event`` feeds these into the rule; no decision is made here.
         """
         meta: dict[str, dict] = {}
-        cypher_executor = get_kg_registry().cypher_executor
-        result = cypher_executor.execute_read_only(
+        rows = _read_identity_rows(
             board_id,
             "MATCH (l:Learning) WHERE l.id IN $ids RETURN l.id, l.source_artifact_ref",
-            {"ids": learning_ids},
-            max_rows=len(learning_ids) or 1,
+            learning_ids,
         )
-        for row in result.get("rows", []):
+        for row in rows:
             meta[str(row[0])] = {
                 "source_artifact_ref": str(row[1] or ""),
                 "canonical_bug_count": 0,
@@ -2048,16 +2084,14 @@ class GlobalOutboxProcessor:
 
         out: dict[str, dict] = {}
         try:
-            cypher_executor = get_kg_registry().cypher_executor
             for ntype, ids in by_type.items():
-                result = cypher_executor.execute_read_only(
+                rows = _read_identity_rows(
                     board_id,
                     f"MATCH (n:{ntype}) WHERE n.id IN $ids "
                     f"RETURN n.id, {layer_label_projection('n')}",
-                    {"ids": ids},
-                    max_rows=len(ids) or 1,
+                    ids,
                 )
-                for row in result.get("rows", []):
+                for row in rows:
                     out[str(row[0])] = {
                         "node_type": ntype,
                         "graph_layer": str(row[1] or "legacy_unknown"),
@@ -2067,14 +2101,13 @@ class GlobalOutboxProcessor:
                     }
             learning_ids = by_type.get("Learning") or []
             if learning_ids:
-                result = cypher_executor.execute_read_only(
+                rows = _read_identity_rows(
                     board_id,
                     "MATCH (l:Learning) WHERE l.id IN $ids "
                     "RETURN l.id, l.source_artifact_ref",
-                    {"ids": learning_ids},
-                    max_rows=len(learning_ids) or 1,
+                    learning_ids,
                 )
-                for row in result.get("rows", []):
+                for row in rows:
                     m = out.get(str(row[0]))
                     if m is not None:
                         m["source_artifact_ref"] = str(row[1] or "")

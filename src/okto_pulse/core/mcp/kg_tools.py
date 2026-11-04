@@ -13,8 +13,11 @@ Each tool:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import random
+from contextlib import ExitStack, asynccontextmanager
 from functools import partial
 from typing import Any
 
@@ -83,6 +86,53 @@ from okto_pulse.core.kg.schemas import (
     ProposeReconciliationRequest,
     PublicAddEdgeCandidateRequest,
 )
+
+@asynccontextmanager
+async def _acquire_consolidation_writer(
+    board_id: str, *, owner_id: str, mutation_ref: str, deadline: float | None = None,
+):
+    """Retry acquisition only; never replay graph mutation or settlement.
+
+    The retry budget is absolute and local to acquisition. Parent request
+    cancellation remains authoritative, including during backoff. Once entered,
+    the existing guarded boundary owns durability, rollback and release.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = min(deadline if deadline is not None else float("inf"), loop.time() + 0.775)
+    for attempt in range(4):
+        if loop.time() >= deadline:
+            raise GuardedWriteError(
+                "lock_contention",
+                "The writer acquisition deadline expired. Retry after the current writer finishes.",
+                retryable=True,
+                details={"board_id": board_id, "attempts": attempt},
+            )
+        stack = ExitStack()
+        try:
+            lease = stack.enter_context(guarded_board_write(
+                board_id, operation="mcp_commit_consolidation",
+                owner_id=owner_id, mutation_ref=mutation_ref,
+            ))
+        except GuardedWriteError as exc:
+            stack.close()
+            if exc.code != "lock_contention" or not exc.retryable:
+                raise
+            delay = (0.1 * 2**attempt) + random.uniform(0, 0.025)
+            if attempt == 3 or loop.time() + delay >= deadline:
+                raise GuardedWriteError(
+                    "lock_contention",
+                    "The board graph is busy. Retry after the current writer finishes.",
+                    retryable=True,
+                    details={**exc.details, "attempts": attempt + 1},
+                ) from exc
+            await asyncio.sleep(delay)
+        else:
+            # This yield is intentionally outside the acquisition error handler:
+            # a matching error from mutation, ACK or release must not retry.
+            with stack:
+                yield lease
+            return
+
 
 _VALID_OUTCOME_TYPES: frozenset[str] = frozenset(
     o.value for o in CognitivePendingOutcomeType
@@ -587,9 +637,8 @@ def register_kg_tools(
         try:
             release_after_rollback = False
             relational_commit_confirmed = False
-            with guarded_board_write(
+            async with _acquire_consolidation_writer(
                 session.board_id,
-                operation="mcp_commit_consolidation",
                 owner_id=str(agent.id),
                 mutation_ref=f"consolidation:{req.session_id}",
             ) as write_lease:
