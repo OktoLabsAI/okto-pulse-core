@@ -41,8 +41,13 @@ def _install_pipeline_doubles(
 
     async def _commit(*_args, **kwargs):
         assert kwargs["defer_session_finalization"] is True
-        events.append("graph_and_relational_staged")
+        assert kwargs["defer_relational_staging"] is True
+        events.append("graph_applied")
         return SimpleNamespace()
+
+    async def _stage(*_args, **_kwargs):
+        assert events[-1] == "durability"
+        events.append("relational_staged")
 
     async def _finalize(session_id: str, *, agent_id: str) -> None:
         assert session_id == "session-closeout-deferred"
@@ -59,6 +64,7 @@ def _install_pipeline_doubles(
     monkeypatch.setattr(primitives, "add_edge_candidate", _no_op)
     monkeypatch.setattr(primitives, "propose_reconciliation", _no_op)
     monkeypatch.setattr(primitives, "commit_consolidation", _commit)
+    monkeypatch.setattr(primitives, "stage_deferred_consolidation", _stage)
     monkeypatch.setattr(primitives, "finalize_deferred_consolidation", _finalize)
     monkeypatch.setattr(primitives, "abort_deferred_consolidation", _abort)
 
@@ -107,8 +113,9 @@ async def test_closeout_commits_relational_uow_before_finalizing(
 
     assert persisted is True
     assert events == [
-        "graph_and_relational_staged",
+        "graph_applied",
         "durability",
+        "relational_staged",
         "db_commit",
         "finalize",
         "queryable_probe",
@@ -146,8 +153,9 @@ async def test_closeout_commit_failure_aborts_graph_and_never_reports_persisted(
     assert "finalize" not in events
     assert "unexpected_probe" not in events
     assert events == [
-        "graph_and_relational_staged",
+        "graph_applied",
         "durability",
+        "relational_staged",
         "db_commit",
         "scope_rollback",
         "abort",
@@ -241,7 +249,7 @@ async def test_closeout_lifecycle_failure_compensates_before_fence_release(
     assert persisted is False
     assert events == [
         "lock_acquire",
-        "graph_and_relational_staged",
+        "graph_applied",
         "durability",
         "scope_rollback",
         "abort",

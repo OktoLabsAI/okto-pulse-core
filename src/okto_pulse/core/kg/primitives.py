@@ -139,6 +139,9 @@ class _PendingConsolidationCommit:
     cognitive_source_records: tuple[dict, ...]
     response: CommitConsolidationResponse | DeferredProjectionProgress
     in_flight: bool = False
+    relational_staging_deferred: bool = False
+    relational_staged: bool = False
+    learning_projection: object | None = None
 
 
 def _allowed_edge_pairs(edge_type: str) -> tuple[tuple[str, str], ...]:
@@ -4878,6 +4881,7 @@ async def commit_consolidation(
     db=None,
     blocking_execution: BlockingExecutionPort | None = None,
     defer_session_finalization: bool = False,
+    defer_relational_staging: bool = False,
     learning_capture: LearningCaptureSelection | None = None,
     allow_known_removals: bool = False,
     rebuild_cognitive: bool = False,
@@ -4906,6 +4910,9 @@ async def commit_consolidation(
     registry = get_kg_registry()
     if (projection_operation_id is None) != (projection_precommit is None):
         raise ValueError("projection_operation_requires_precommit_callback")
+    if defer_relational_staging and (not defer_session_finalization or db is None
+                                    or projection_operation_id is not None):
+        raise ValueError("deferred_staging_requires_owned_cognitive_transaction")
     session = await _require_open_session(
         req.session_id,
         agent_id,
@@ -5010,6 +5017,8 @@ async def commit_consolidation(
     ) -> CommitConsolidationResponse:
         nonlocal owns_deferred_claim
         request_payload = req.model_dump(mode="json")
+        if defer_relational_staging:
+            request_payload["defer_relational_staging"] = True
         if rebuild_cognitive:
             request_payload["rebuild_cognitive"] = True
         if projection_operation_id is not None:
@@ -5060,6 +5069,12 @@ async def commit_consolidation(
 
             if isinstance(pending.response, DeferredProjectionProgress):
                 # There is no complete projection audit/outbox to restage.
+                pending.in_flight = True
+                session.touch(registry.require_session_store().default_ttl_seconds)
+                return pending.response
+
+            if defer_relational_staging:
+                pending.relational_staged = False
                 pending.in_flight = True
                 session.touch(registry.require_session_store().default_ttl_seconds)
                 return pending.response
@@ -5224,7 +5239,7 @@ async def commit_consolidation(
         # graph state acknowledged as committed. In-place UPDATE/NC-8,
         # attestation, supersedence and relational projection mutations all
         # carry exact before-images in GraphWriteRecord.
-        if projection_operation_id is None:
+        if projection_operation_id is None and not defer_relational_staging:
             # Journaled workers stage this output only after the graph
             # durability lifecycle. Staging here would acquire SQLite's sole
             # writer slot and retain it while the graph closes/reopens.
@@ -5326,6 +5341,8 @@ async def commit_consolidation(
                 cognitive_source_records=tuple(cognitive_source_records),
                 response=response,
                 in_flight=True,
+                relational_staging_deferred=defer_relational_staging,
+                learning_projection=learning_projection,
             )
             owns_deferred_claim = True
             session.touch(registry.require_session_store().default_ttl_seconds)
@@ -5445,6 +5462,61 @@ async def _finalize_consolidation_session_unlocked(
     _COMMIT_HEALTH_CACHE.pop(session.board_id, None)
 
 
+async def stage_deferred_consolidation(
+    session_id: str, *, agent_id: str, db: object,
+) -> None:
+    """Stage a caller-owned cognitive snapshot after its graph durability barrier.
+
+    The owner keeps the same writer lease through this SQL stage, commit and
+    finalization. Failure rolls back that UOW before graph compensation.
+    This function neither commits SQL nor performs graph IO.
+    """
+    if db is None:
+        raise ValueError("relational_context_required")
+    registry = get_kg_registry()
+    # An ordinary open-session read rejects in-flight commits. This is the
+    # owning commit's settlement operation, so validate that exact state under
+    # its lock, as finalization does, instead of opening a competing commit.
+    session = await registry.require_session_store().get(session_id)
+    if session is None:
+        raise KGPrimitiveError("session_not_found", "Consolidation session not found.", session_id=session_id)
+    if not session.check_ownership(agent_id):
+        raise _ownership(session_id, agent_id)
+    async with session.lock:
+        pending = getattr(session, "pending_commit", None)
+        if (not isinstance(pending, _PendingConsolidationCommit)
+                or not pending.in_flight or not pending.relational_staging_deferred
+                or isinstance(pending.response, DeferredProjectionProgress)):
+            raise KGPrimitiveError("session_commit_not_pending",
+                "No owned cognitive snapshot is awaiting relational staging.", session_id=session_id)
+        if pending.relational_staged:
+            raise KGPrimitiveError("session_commit_already_staged",
+                "This snapshot is already staged in its owning transaction.", session_id=session_id)
+        from okto_pulse.core.ports.consolidation import get_consolidation_persistence_port
+
+        # Discard the source/health read snapshot before upgrading to a short
+        # SQL writer. Other writers are deliberately allowed during graph IO.
+        await get_consolidation_persistence_port().rollback(db)
+        source_store = None
+        if pending.cognitive_source_records:
+            from okto_pulse.core.ports.kg_cognitive_source import require_cognitive_source_store
+
+            source_store = require_cognitive_source_store()
+        request = CommitConsolidationRequest.model_validate({
+            key: value for key, value in pending.request_payload.items()
+            if key in CommitConsolidationRequest.model_fields
+        })
+        await observe_consolidation_phase("cognitive_source_append", session_id,
+            _append_cognitive_source_records(session.board_id, session_id,
+                list(pending.cognitive_source_records), context=db, store=source_store,
+                **({"learning_projection": pending.learning_projection}
+                   if pending.learning_projection is not None else {})))
+        await observe_consolidation_phase("audit_outbox_stage", session_id,
+            _commit_audit_records(registry, db, list(pending.records), pending.counters,
+                request, session, agent_id, pending.response.committed_at))
+        pending.relational_staged = True
+
+
 async def finalize_deferred_consolidation(
     session_id: str,
     *,
@@ -5488,6 +5560,9 @@ async def finalize_deferred_consolidation(
                 f"Session {session_id} has no deferred commit to finalize",
                 session_id=session_id,
             )
+        if pending.relational_staging_deferred and not pending.relational_staged:
+            raise KGPrimitiveError("session_commit_not_staged",
+                "The cognitive snapshot has no staged relational audit.", session_id=session_id)
         # The successful caller-owned relational commit is the authority for
         # terminal cleanup.  Do not require ``in_flight`` here: an earlier
         # error handler from an older caller may have released that volatile
@@ -5525,6 +5600,7 @@ async def release_deferred_consolidation(
         pending = getattr(session, "pending_commit", None)
         if isinstance(pending, _PendingConsolidationCommit):
             pending.in_flight = False
+            pending.relational_staged = False
             session.touch(registry.require_session_store().default_ttl_seconds)
 
 

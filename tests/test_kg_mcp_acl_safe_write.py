@@ -558,6 +558,13 @@ class _Uow:
     def __init__(self, events: list[str]) -> None:
         self.events = events
         self.commits = 0
+        self.services = SimpleNamespace(kg=SimpleNamespace(stage_deferred_consolidation=self._stage))
+
+    async def _stage(self, session_id: str, *, agent_id: str) -> None:
+        assert session_id == "session-guarded" and agent_id == "agent-guarded"
+        require_write_token("board-guarded")
+        assert self.events[-1] == "fsync"
+        self.events.append("relational_stage")
 
     async def commit(self) -> None:
         self.events.append("relational_commit")
@@ -682,6 +689,7 @@ async def test_mcp_commit_lifecycle_precedes_relational_ack_in_strict_mode(
         "checkpoint",
         "flush",
         "fsync",
+        "relational_stage",
         "relational_commit",
         "finalize",
         "uow_exit",

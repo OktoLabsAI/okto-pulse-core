@@ -649,6 +649,7 @@ def register_kg_tools(
                                 CommitConsolidationCommand(
                                     req,
                                     board_id=session.board_id,
+                                    defer_relational_staging=True,
                                 ),
                                 actor=actor,
                                 uow=uow,
@@ -673,6 +674,9 @@ def register_kg_tools(
                             nonlocal relational_commit_confirmed
                             write_lease.ensure_owned(
                                 failure_phase="before_relational_ack",
+                            )
+                            await uow.services.kg.stage_deferred_consolidation(
+                                req.session_id, agent_id=agent.id,
                             )
                             await uow.commit()
                             relational_commit_confirmed = True

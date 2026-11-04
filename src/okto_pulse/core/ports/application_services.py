@@ -649,7 +649,10 @@ class KnowledgeGraphOperations(Protocol):
         board_id: str,
         agent_id: str,
         defer_session_finalization: bool = False,
+        defer_relational_staging: bool = False,
     ) -> object: ...
+
+    async def stage_deferred_consolidation(self, session_id: str, *, agent_id: str) -> None: ...
 
     async def health(
         self, board_id: str, *, scheduler_control: object | None = None
