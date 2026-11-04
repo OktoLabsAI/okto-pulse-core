@@ -11,6 +11,7 @@ _REASONS = {
     "updating": "Updating delivery status. Please wait for confirmation.",
     "unavailable": "Delivery status could not be loaded. Try again.",
     "assessment_incomplete": "There is not enough information to confirm delivery yet.",
+    "scope_allocation_unresolved": "Responsibility for one or more requirements needs review. Open Details to see the affected items and next steps.",
     "optional": "This task is optional. Delivery has not been confirmed.",
     "waived": "This task has been waived. Delivery has not been confirmed.",
     "verification_failed": "Verification found a problem that needs to be fixed.",
@@ -43,7 +44,13 @@ def build_task_delivery_summary(context: DeliveryReadinessContext, *,
     evaluated = evaluation_complete and context.evaluation_complete
     state, reason = "updating_or_unknown", "assessment_incomplete"
     pending = None
-    if known and evaluated and requirement is not None and requirement.current:
+    scope_conflict = "scope_allocation_unresolved" in (
+        *context.implementation.reason_codes, *context.verification.reason_codes)
+    if evaluated and scope_conflict:
+        # A completed assessment can identify a scope defect without knowing
+        # the full population. Keep its unknown counts; never imply loading.
+        state, reason = "needs_attention", "scope_allocation_unresolved"
+    elif known and evaluated and requirement is not None and requirement.current:
         pending = context.summary.unresolved_units
         if requirement.decision in {"optional", "waived"}:
             state, reason, pending = "optional_or_waived", requirement.decision, 0
@@ -86,7 +93,8 @@ def build_task_delivery_summary(context: DeliveryReadinessContext, *,
 
 def present_task_delivery_summary(payload: dict | None, *, board_id: str, spec_id: str,
         card_id: str, spec_edition: int, card_version: int, status: str, freshness: str,
-        actor_kind: str, allowed_operations: frozenset[str], last_update: dict | None = None) -> TaskDeliverySummary:
+        actor_kind: str, allowed_operations: frozenset[str], last_update: dict | None = None,
+        assessment: dict | None = None) -> TaskDeliverySummary:
     """Apply current read authority without evaluating proof or writing state.
 
     A stale, missing or old-provider payload is explicitly unknown. Even an
@@ -96,8 +104,20 @@ def present_task_delivery_summary(payload: dict | None, *, board_id: str, spec_i
     if payload is not None:
         try:
             summary = TaskDeliverySummary.model_validate(payload)
-        except ValidationError:
-            pass
+            if assessment is not None:
+                # Re-present existing immutable facts after a policy/copy update.
+                # This neither re-evaluates proof nor mutates the stored generation.
+                context = DeliveryReadinessContext.model_validate(assessment.get("context"))
+                requirement = (TaskRequirementSummary.model_validate(assessment["requirement"])
+                    if assessment.get("requirement") is not None else None)
+                refreshed = build_task_delivery_summary(context, requirement=requirement,
+                    population_known=assessment.get("population_known") is True,
+                    evaluation_complete=assessment.get("evaluation_complete") is True)
+                identity = ("board_id", "spec_id", "card_id", "spec_edition", "card_version", "snapshot_id", "historical_status")
+                summary = (refreshed if all(getattr(refreshed, field) == getattr(summary, field)
+                    for field in identity) else None)
+        except (ValidationError, ValueError):
+            summary = None
     aligned = bool(summary and (summary.board_id, summary.spec_id, summary.card_id,
         summary.spec_edition, summary.card_version, summary.historical_status) == (
             board_id, spec_id, card_id, spec_edition, card_version, status))

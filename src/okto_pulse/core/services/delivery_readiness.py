@@ -323,7 +323,7 @@ class EvaluatedDeliveryReadiness:
             'delivered_with_exceptions': 'Delivery is complete with effective exceptions.',
             'not_applicable': 'The known scope has no applicable delivery phase.',
             'historical_completion_diverged': 'Done status is preserved, but current delivery evidence no longer supports it.',
-            'lifecycle_gate_pending': 'Provas completas; um gate nativo ainda impede o encerramento.',
+            'lifecycle_gate_pending': 'Evidence is complete; a required completion check is still pending.',
         }
         scope = assessment.scope
         return DeliveryReadinessContext(

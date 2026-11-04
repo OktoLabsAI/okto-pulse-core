@@ -9,13 +9,13 @@ from .delivery_readiness import Count, Digest, Identity, ReadinessDTO, Version
 
 TaskDeliveryState = Literal[
     "updating_or_unknown", "optional_or_waived", "verification_failed", "historical_done",
-    "implementation_pending", "verification_pending", "completion_pending", "delivered", "ready",
+    "implementation_pending", "verification_pending", "completion_pending", "delivered", "ready", "needs_attention",
 ]
 TaskDeliveryReason = Literal[
     "updating", "unavailable", "assessment_incomplete", "optional", "waived",
     "verification_failed", "historical_done", "implementation_pending", "not_started",
     "paused", "cancelled", "verification_pending", "completion_pending",
-    "completion_not_evaluated", "delivered", "ready",
+    "completion_not_evaluated", "delivered", "ready", "scope_allocation_unresolved",
 ]
 
 

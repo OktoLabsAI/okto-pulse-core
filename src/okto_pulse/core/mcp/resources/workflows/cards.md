@@ -349,6 +349,16 @@ one state, reason, latest update and next permitted action. Details is lazy and
 Card-scoped. A stale/unknown assessment is never delivered; historical Done and
 optional/waived are not current proof. This read does not authorize a transition.
 
+`needs_attention` identifies a settled responsibility conflict; use its
+requirement-specific diagnosis to resolve allocation. It is not an in-flight
+assessment and must not trigger a polling loop. `updating_or_unknown` with
+`assessment_incomplete` means information is insufficient; only projection
+freshness `pending_initial`/`updating` or an active read represents Checking.
+The UI keeps implementation and verification percentages independent and
+labels the last recorded update as historical. Use current assessment and
+matrix facts for remaining work, never an older narrative alone. Refresh is
+owned by the task modal; Details reveals diagnostics and history on demand.
+
 For authenticated humans, the application accepts `human-task-submission/v1`
 through its single REST command and generates a typed, immutable
 `human-submission-receipt/v1` atomically with content, audit and any admitted

@@ -106,6 +106,43 @@ def test_unknown_metrics_and_unevaluated_completion_cannot_be_ready():
     assert result.pending_count is None
 
 
+def test_settled_allocation_conflict_is_attention_with_unknown_population():
+    source = snapshot()
+    inventory = source.effective_context.inventory
+    unassigned = replace(inventory.rows[0], contributions=(), blockers=('delivery_inventory_work_unassigned',))
+    source = replace(source, complete=False, facts_complete=True,
+        effective_context=replace(source.effective_context, inventory=replace(inventory, rows=(unassigned,))))
+    evaluated = EvaluatedDeliveryReadiness(batch(source), actor_id='reader').context('ui')
+    result = summary(evaluated)
+    assert result.state == 'needs_attention'
+    assert result.reason_code == 'scope_allocation_unresolved'
+    assert result.pending_count is None
+    assert result.population_known is False
+    assert present(result).next_action.kind == 'open_details'
+    assert present(result, freshness='updating').reason_code == 'updating'
+    assert present(result, freshness='unavailable').reason_code == 'unavailable'
+    legacy = result.model_copy(update={'state': 'updating_or_unknown', 'reason_code': 'assessment_incomplete'})
+    stored = {'context': evaluated.model_dump(mode='json'), 'requirement': REQUIRED.model_dump(mode='json'),
+        'population_known': False, 'evaluation_complete': True}
+    before = deepcopy(stored)
+    assert present(legacy, assessment=stored).state == 'needs_attention'
+    assert stored == before
+    assert present(legacy, assessment=stored, freshness='updating').state == 'updating_or_unknown'
+    foreign = deepcopy(stored)
+    foreign['context']['scope']['card_id'] = 'other-card'
+    assert present(legacy, assessment=foreign).reason_code == 'unavailable'
+    assert present(legacy, assessment={'context': {}}).reason_code == 'unavailable'
+
+
+def test_incomplete_evaluation_does_not_promote_a_scope_hint_to_settled_attention():
+    value = context()
+    value = value.model_copy(update={'scope_complete': False, 'evaluation_complete': False,
+        'implementation': value.implementation.model_copy(update={'reason_codes': ('scope_allocation_unresolved',)})})
+    result = summary(value)
+    assert result.state == 'updating_or_unknown'
+    assert result.reason_code == 'assessment_incomplete'
+
+
 @pytest.mark.parametrize("status,reason", [("not_started", "not_started"), ("on_hold", "paused"), ("cancelled", "cancelled")])
 def test_lifecycle_wording_never_claims_unstarted_work_is_in_progress(status, reason):
     value = context()
