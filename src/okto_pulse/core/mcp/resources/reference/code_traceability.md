@@ -18,6 +18,19 @@ retains normal version invalidation. Adding explanations or headings is a prose
 change, not a citation-only edit. This exemption does not unlock editing outside
 Draft or relax receipt/subject version matching.
 
+Forward lifecycle moves have a separate server-owned compatibility proof.
+`refinement_source_compatibility` admits only the listed adjacent versions with
+equal canonical source-context digests and an unambiguous status history. Reuse
+that native decision for Refinement source assessment; source-head, expiry,
+revocation and trust checks still apply. No agent rewrites or rebinds a receipt.
+
+For a completed Refinement, `source_context_snapshot` labels `source_context`
+as historical and identifies its immutable snapshot/version. Read
+`current_source_context` and `gate_readiness` for current conditions. Historical
+context never authorizes new Card execution. Missing or ambiguous legacy history
+cannot establish compatibility. Exact rules are in the Code Traceability tool
+reference under **Refinement status compatibility and completed history**.
+
 ## Delivery evidence
 
 For the default low-call execution route, follow **Compact progress and delivery

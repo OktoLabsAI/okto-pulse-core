@@ -16376,6 +16376,10 @@ class RefinementService:
         old_status = refinement.status
         old_version = int(refinement.version)
         old_edition = int(getattr(refinement, "edition", 1) or 1)
+        from okto_pulse.core.domain.refinement_source_compatibility import (
+            compatibility_change, refinement_source_digest, resolve_source_compatibility,
+        )
+        before_source_digest = refinement_source_digest(refinement)
         allowed = self._REFINEMENT_TRANSITIONS.get(old_status, [])
         if data.status not in allowed:
             allowed_str = ", ".join(s.value for s in allowed) if allowed else "none"
@@ -16496,6 +16500,13 @@ class RefinementService:
             actor_type="user",
         )
 
+        prior_source_versions = (old_version,)
+        if data.status == RefinementStatus.DONE:
+            history = await self.list_history(refinement.id, limit=51)
+            prior_source = resolve_source_compatibility(refinement, history)
+            if prior_source is not None:
+                prior_source_versions = prior_source.compatible_versions
+
         # Reopening a terminal refinement starts a fresh editable iteration.
         if data.status == RefinementStatus.DRAFT and old_status in (
             RefinementStatus.DONE,
@@ -16525,10 +16536,6 @@ class RefinementService:
         )
 
         refinement.status = data.status
-        if data.status == RefinementStatus.DONE or opened_new_edition:
-            await _application_flush(self.db)
-        if data.status == RefinementStatus.DONE:
-            await self._create_snapshot(refinement, user_id)
         lifecycle_action = (
             "cancel"
             if data.status == RefinementStatus.CANCELLED
@@ -16561,6 +16568,18 @@ class RefinementService:
                 before_edition=old_edition,
                 after_edition=int(refinement.edition),
             )
+        # Assessment admission above refers to the assessed content version.
+        # Now persist the operational status and read its actual SQL version
+        # before recording compatibility or freezing a completed snapshot.
+        await _application_flush(self.db)
+        refinement = await self.get_refinement(refinement.id)
+        source_compatibility = compatibility_change(
+            subject=refinement, before_version=old_version,
+            before_status=old_status, before_digest=before_source_digest,
+        )
+        if data.status == RefinementStatus.DONE:
+            await self._create_snapshot(refinement, user_id,
+                compatible_receipt_versions=prior_source_versions if source_compatibility else ())
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import (
             RefinementMoved,
@@ -16617,6 +16636,7 @@ class RefinementService:
             actor_name=resolved_name,
             changes=[
                 {"field": "status", "old": old_status.value, "new": data.status.value},
+                *([source_compatibility] if source_compatibility else []),
                 *(
                     [
                         {
@@ -16635,7 +16655,8 @@ class RefinementService:
         return refinement
 
     async def _create_snapshot(
-        self, refinement: "Refinement", user_id: str
+        self, refinement: "Refinement", user_id: str,
+        *, compatible_receipt_versions: tuple[int, ...] = (),
     ) -> "RefinementSnapshot":
         """Create an immutable snapshot of the refinement's current state."""
         qa_snapshot = []
@@ -16724,7 +16745,7 @@ class RefinementService:
                     )
                 )
                 for receipt in receipt_page.items:
-                    if receipt.subject_version != refinement.version:
+                    if receipt.subject_version not in (refinement.version, *compatible_receipt_versions):
                         continue
                     head = await investigation_store.get_current_head(
                         board_id=refinement.board_id,
@@ -16917,16 +16938,8 @@ class RefinementService:
                 # history proof without loading unbounded history.
                 limit=2,
             )
-            change_set = list(getattr(rows[0], "changes", None) or ()) if rows else []
-            status_only_done = (
-                len(rows) == 1
-                and len(change_set) == 1
-                and isinstance(change_set[0], dict)
-                and change_set[0].get("field") == "status"
-                and str(change_set[0].get("old")) == RefinementStatus.APPROVED.value
-                and str(change_set[0].get("new")) == RefinementStatus.DONE.value
-            )
-            if status_only_done:
+            from okto_pulse.core.domain.refinement_source_compatibility import is_legacy_approved_to_done_history
+            if is_legacy_approved_to_done_history(rows):
                 return previous
         raise SpecLineagePreflightError(
             "spec_refinement_snapshot_required",

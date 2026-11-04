@@ -580,6 +580,25 @@ Use an `idempotency_key` again only for an exact retry of the same payload.
 Entity version, source head/workspace identity, selector, Target revision, or
 dependency drift can invalidate reuse and require a new preflight.
 
+### Refinement status compatibility and completed history
+
+Forward Draft → Review → Approved → Done moves record a server-owned
+`refinement-source-compatibility/v1` proof only when canonical source-context
+digests match across adjacent persisted versions. `refinement_source_compatibility`
+lists the admitted versions and their history IDs. Reuse this native decision;
+do not manufacture a new receipt merely because the status changed. Missing,
+ambiguous or changed-content history has no compatibility. Receipt expiry,
+revocation, source-head identity, trust and all other admission checks still apply.
+This exception applies to Refinement source context, never Card execution proof.
+
+A completed Refinement exposes its sealed `source_context` with
+`source_context_snapshot.kind="historical_snapshot"`, snapshot identity/version
+and manifest digest. `current_source_context` and `gate_readiness` remain separate
+current evaluations. The historical assessment survives receipt expiry and later
+source changes without becoming current execution authority. Legacy N/N+1
+completion is read only when the exact Approved → Done history proves it; no
+snapshot or old receipt is rewritten. Derived Specs keep their pinned manifest.
+
 ## `okto_pulse_start_code_investigation`
 
 Start a bounded request for the exact current subject/version. It returns the
