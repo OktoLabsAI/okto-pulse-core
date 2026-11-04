@@ -4,6 +4,25 @@ version: "1.5"
 
 # Tool docs — Code Traceability
 
+## `okto_pulse_get_delivery_readiness_summary`
+
+Supply `board_id` and `spec_id` to read the authorized Spec/Card summary from one
+published generation. Requires `code_traceability.evidence.read`; current
+subject/board access is rechecked. The response includes freshness. An initial
+pending generation has no metrics; stale, pending or unavailable data cannot
+authorize a delivery report or Done transition. Use the persisted detail read
+below when individual units are needed.
+
+## `okto_pulse_requeue_persisted_delivery_readiness`
+
+Administrative retry of a terminal derived readiness job. Requires
+`readiness.requeue`, `board_id`, `spec_id`, `edition` (positive integer), the
+observed `expected_target_revision` (nonnegative), an `idempotency_key` (1–128
+characters) and a meaningful `reason` (1–500 characters). Read the current
+projection first. The same key replays one audited result; a conflicting target
+revision returns a conflict. This requeues computation only: it does not alter
+proof, grant completion, clear unrelated queues or rebuild a graph.
+
 ## `okto_pulse_get_persisted_delivery_readiness`
 
 Read the current published readiness generation for a Spec or `card_id`.

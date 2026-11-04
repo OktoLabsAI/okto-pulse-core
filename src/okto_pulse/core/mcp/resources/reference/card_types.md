@@ -10,6 +10,16 @@ version: "1.0"
 2. **Test cards** (`card_type="test"`, with `test_scenario_ids`) — implement, execute, or validate test scenarios defined in the spec.
 3. **Bug cards** (`card_type="bug"`) — track and fix bugs discovered during or after implementation.
 
+Bug origin is lineage, not inherited responsibility. Creating or cancelling a
+Bug leaves the origin Spec's requirements, contribution plans and adopted scope
+unchanged. `origin_task_id` and derived origin-proxy context support regression
+selection without copying normative task links or granting delivery credit.
+Assign corrective scope and regression coverage through their governed owners.
+For proven legacy automatic links, use the read-only allocation repair preview
+and selected, version/digest-fenced apply documented in `reference/tool-docs/spec`.
+Explicit or ambiguous allocations require scope review; never repair them by
+direct storage edits or fabricated receipts.
+
 ## Normal Card Rules
 
 - `card_type="normal"` → create in Spec `draft` (only `not_started`), `approved`, or `in_progress`. Creation in Draft is planning, not execution. Spec `done` blocks normal-card creation/content changes and start/reopen; use the governed revision path for new normal work.

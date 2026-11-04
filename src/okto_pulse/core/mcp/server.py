@@ -953,6 +953,7 @@ _TOOL_DOCS_FAMILY_RULES = [
 _CODE_TRACEABILITY_TOOL_NAMES = frozenset(
     {
         "okto_pulse_get_delivery_evidence",
+        "okto_pulse_get_delivery_readiness_summary",
         "okto_pulse_get_persisted_delivery_readiness",
         "okto_pulse_requeue_persisted_delivery_readiness",
         "okto_pulse_get_decision_reviews",
@@ -983,6 +984,8 @@ _CODE_TRACEABILITY_TOOL_NAMES = frozenset(
 
 def tool_docs_family(tool_name: str) -> str:
     """Deterministic tool-docs family for a tool name (R1.1 / api_fd7c5878)."""
+    if tool_name in {"okto_pulse_preview_bug_allocation_repair", "okto_pulse_apply_bug_allocation_repair"}:
+        return "spec"
     if tool_name == "okto_pulse_get_requirement_verification":
         return "spec"
     if tool_name == "okto_pulse_admit_test_verification_report":
@@ -18512,6 +18515,52 @@ async def okto_pulse_get_board_design_system(board_id: str) -> str:
         return json.dumps(e.to_dict())
     except PermissionDeniedError as exc:
         return _perm_error(str(exc))
+
+
+async def _bug_allocation_repair_command(board_id, spec_id, bug_id, **kwargs):
+    from okto_pulse.core.application.use_cases.bug_allocation_repair import (
+        BugAllocationRepairCommand, BugAllocationRepairUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError, PermissionDeniedError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.services.bug_allocation_repair import BugAllocationRepairError
+
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await BugAllocationRepairUseCase().execute(
+                BugAllocationRepairCommand(board_id, spec_id, bug_id, **kwargs),
+                actor=actor, uow=uow, apply=bool(kwargs),
+            )
+        return json.dumps(result, default=str)
+    except BugAllocationRepairError as exc:
+        return json.dumps(exc.to_dict())
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
+    except EntityNotFoundError:
+        return json.dumps({"error": "repair_subject_not_found"})
+
+
+@mcp.tool()
+async def okto_pulse_preview_bug_allocation_repair(board_id: str, spec_id: str, bug_id: str) -> str:
+    """Read-only exact preview of proven legacy automatic Bug allocations. Read `okto-pulse://reference/tool-docs/spec` before use."""
+    return await _bug_allocation_repair_command(board_id, spec_id, bug_id)
+
+
+@mcp.tool()
+async def okto_pulse_apply_bug_allocation_repair(
+    board_id: str, spec_id: str, bug_id: str, expected_spec_version: int,
+    expected_scope_digest: str, selected_link_ids: list[str], idempotency_key: str,
+) -> str:
+    """Apply selected eligible links from an unchanged repair preview; preserve explicit scope and frozen evidence. Read `okto-pulse://reference/tool-docs/spec` before use."""
+    return await _bug_allocation_repair_command(
+        board_id, spec_id, bug_id, expected_spec_version=expected_spec_version,
+        expected_scope_digest=expected_scope_digest, selected_link_ids=tuple(selected_link_ids),
+        idempotency_key=idempotency_key,
+    )
 
 
 @mcp.tool()

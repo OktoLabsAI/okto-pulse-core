@@ -4,6 +4,35 @@ version: "1.3"
 
 # Tool docs — `spec`
 
+## `okto_pulse_preview_bug_allocation_repair`
+
+`okto_pulse_preview_bug_allocation_repair(board_id, spec_id, bug_id)` is read-only.
+It reports each linked requirement/scenario, original contribution, proposed
+before/after links, native creation/history proof and current Spec edition,
+version and scope digest. `eligible` requires an exact pre-creation image and
+native creation intent proving the retired automatic append. Origin lineage or
+absence from an implementation plan alone never authorizes a repair. Explicit,
+ambiguous, incomplete or oversized provenance is `requires_scope_review` or an
+explicit unavailable error, with no mutation.
+
+## `okto_pulse_apply_bug_allocation_repair`
+
+`okto_pulse_apply_bug_allocation_repair(board_id, spec_id, bug_id,
+expected_spec_version, expected_scope_digest, selected_link_ids, idempotency_key)`
+removes only the selected eligible links from that unchanged preview. Supply
+the preview's exact values and a stable key. It requires board write access and
+`spec.entity.edit_fields`, atomically fences current scope, records an append-only
+Spec history receipt and publishes the semantic change. An exact retry replays
+the persisted result; a changed request with the same key conflicts. Refresh the
+preview after a version/digest conflict. Do not patch storage, reopen a historical
+Spec, rewrite evidence, or invent a human waiver to repair an allocation. After
+repair, read Delivery readiness again: repair does not itself create proof.
+
+Bug creation now keeps `origin_task_id` and derived origin-proxy context separate
+from normative responsibility. Corrective scope and regression coverage remain
+explicit governed work; origin lineage grants no implementation/verification
+credit. Human application submissions still generate their own system receipt.
+
 Before `move_spec` to `done`, read `okto_pulse_get_delivery_evidence` and resolve
 every missing implementation/test row with `okto_pulse_record_delivery_evidence`.
 Test Cards verify executable obligations. Decisions reuse selected obligation

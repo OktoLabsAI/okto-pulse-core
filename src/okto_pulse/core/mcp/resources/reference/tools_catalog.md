@@ -137,13 +137,16 @@ Semantic guideline protocol:
 - `okto_pulse_get_code_investigation_receipt` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_get_decision_reviews` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_get_delivery_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_get_delivery_readiness_summary` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_get_implementation_overlaps` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_get_persisted_delivery_readiness` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_link_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_list_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_list_implementation_targets` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_mark_code_traceability_not_applicable` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_record_decision_reviews` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_record_delivery_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_requeue_persisted_delivery_readiness` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_set_code_evidence_disposition` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_start_code_investigation` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_submit_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
@@ -224,6 +227,7 @@ Semantic guideline protocol:
 
 ## Specs — lifecycle & gates
 - `okto_pulse_add_spec_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
+- `okto_pulse_apply_bug_allocation_repair` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_create_spec` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_delete_spec` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_delete_spec_evaluation` — docs: `okto-pulse://reference/tool-docs/spec`
@@ -239,6 +243,7 @@ Semantic guideline protocol:
 - `okto_pulse_list_spec_evaluations` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_list_spec_validations` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_move_spec` — docs: `okto-pulse://reference/tool-docs/spec`
+- `okto_pulse_preview_bug_allocation_repair` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_remove_spec_entity` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_start_checklist_execution` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_submit_checklist_execution` — docs: `okto-pulse://reference/tool-docs/spec`

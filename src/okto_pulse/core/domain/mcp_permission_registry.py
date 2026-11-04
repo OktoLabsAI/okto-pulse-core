@@ -122,6 +122,7 @@ MCP_READER_TOOL_NAMES = frozenset(
         "okto_pulse_list_task_validations",
         "okto_pulse_list_test_scenarios",
         "okto_pulse_resolve_bug_regression_scenarios",
+        "okto_pulse_preview_bug_allocation_repair",
     }
 )
 
@@ -235,6 +236,7 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "okto_pulse_append_research_decision",
         "refinement.research_decisions.append",
     ),
+    _policy("okto_pulse_apply_bug_allocation_repair", "spec.entity.edit_fields"),
     _policy("okto_pulse_archive_story", "story.entity.archive"),
     _policy("okto_pulse_archive_topic", "topic.entity.archive"),
     _policy(
@@ -410,6 +412,7 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     ),
     _policy("okto_pulse_get_decision_reviews", "code_traceability.evidence.read"),
     _policy("okto_pulse_get_delivery_evidence", "code_traceability.evidence.read"),
+    _policy("okto_pulse_get_delivery_readiness_summary", "code_traceability.evidence.read"),
     _policy("okto_pulse_get_design_system", "design_system.entity.read"),
     _policy("okto_pulse_get_guideline_impact", "guidelines.impact.preview"),
     _policy("okto_pulse_get_guideline_revision", "guidelines.revisions.read"),
@@ -717,6 +720,7 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_move_refinement", *transition_permission_flags("refinement")),
     _policy("okto_pulse_move_spec", *transition_permission_flags("spec")),
     _policy("okto_pulse_move_story", *transition_permission_flags("story")),
+    _policy("okto_pulse_preview_bug_allocation_repair", "spec.entity.read"),
     _policy("okto_pulse_preview_guideline_impact", "guidelines.impact.preview"),
     _policy(
         "okto_pulse_record_ambiguity_assessment",

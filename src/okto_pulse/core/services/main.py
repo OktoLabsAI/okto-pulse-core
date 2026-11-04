@@ -3695,13 +3695,6 @@ class CardService:
             targets=traceability_targets,
         )
 
-        if card_type_val == "bug":
-            await self._inherit_bug_origin_traceability(
-                bug_card=card,
-                origin_task_id=origin_task_id,
-                spec=spec,
-            )
-
         await SpecResourcePropagationService(self.db).propagate_for_card(
             board_id=board_id,
             spec_id=card.spec_id,
@@ -3749,67 +3742,10 @@ class CardService:
                 "status": data.status.value,
                 "priority": data.priority.value,
                 "traceability": traceability.to_dict(),
+                "lineage_policy": "explicit_scope_v1",
             },
         )
         return card
-
-    async def _inherit_bug_origin_traceability(
-        self,
-        *,
-        bug_card: ApplicationRecord,
-        origin_task_id: str | None,
-        spec: ApplicationRecord | None = None,
-    ) -> None:
-        """Attach a new bug to the same spec traceability items as its origin task."""
-        if not origin_task_id or not bug_card.spec_id:
-            return
-
-        if spec is None:
-            spec = await _application_get(self.db, "spec", bug_card.spec_id)
-        if spec is None:
-            return
-
-        inherited_scenario_ids: list[str] = []
-
-        def inherit_linked_task_ids(
-            field_name: str, *, collect_scenarios: bool = False
-        ) -> None:
-            items = getattr(spec, field_name, None) or []
-            changed = False
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                linked_task_ids = list(item.get("linked_task_ids") or [])
-                origin_is_linked = origin_task_id in linked_task_ids
-                if origin_is_linked and bug_card.id not in linked_task_ids:
-                    linked_task_ids.append(bug_card.id)
-                    item["linked_task_ids"] = linked_task_ids
-                    changed = True
-                if collect_scenarios and origin_is_linked:
-                    scenario_id = item.get("id")
-                    if scenario_id and scenario_id not in inherited_scenario_ids:
-                        inherited_scenario_ids.append(scenario_id)
-            if changed:
-                spec.mark_dirty(field_name)
-
-        inherit_linked_task_ids("test_scenarios", collect_scenarios=True)
-        inherit_linked_task_ids("business_rules")
-        inherit_linked_task_ids("api_contracts")
-        inherit_linked_task_ids("integration_requirements")
-        inherit_linked_task_ids("observability_requirements")
-        inherit_linked_task_ids("technical_requirements")
-        inherit_linked_task_ids("decisions")
-
-        if inherited_scenario_ids:
-            current_scenarios = list(bug_card.test_scenario_ids or [])
-            merged = current_scenarios + [
-                scenario_id
-                for scenario_id in inherited_scenario_ids
-                if scenario_id not in current_scenarios
-            ]
-            if merged != current_scenarios:
-                bug_card.test_scenario_ids = merged
-                bug_card.mark_dirty("test_scenario_ids")
 
     async def get_card(self, card_id: str) -> ApplicationRecord | None:
         """Get a card by ID with all relationships."""
@@ -8835,6 +8771,16 @@ def _spec_source_context_manifest_matches(
 
 class SpecService:
     """Service for spec operations."""
+
+    async def preview_bug_allocation_repair(self, **kwargs):
+        from okto_pulse.core.services.bug_allocation_repair import BugAllocationRepairService
+
+        return await BugAllocationRepairService(self.db).preview(**kwargs)
+
+    async def apply_bug_allocation_repair(self, **kwargs):
+        from okto_pulse.core.services.bug_allocation_repair import BugAllocationRepairService
+
+        return await BugAllocationRepairService(self.db).apply(**kwargs)
 
     def __init__(
         self,
