@@ -34,8 +34,9 @@ from okto_pulse.core.services.delivery_readiness import EvaluatedDeliveryReadine
 from okto_pulse.core.services.delivery_readiness_diagnostics import NativeDeliveryDiagnostics
 
 
-# Refresh stored presentation text when upgrading from the Portuguese summaries.
-EVALUATOR_VERSION = "delivery-readiness-evaluator/v8"
+# Exact accepted-basis verification changes qualification and source snapshots.
+# Recompute older generations; they must not seed incremental/progress reuse.
+EVALUATOR_VERSION = "delivery-readiness-evaluator/v9"
 _DIAGNOSTICS = TypeAdapter(NativeDeliveryDiagnostics)
 _PROGRESS_LOCAL_BLOCKERS = frozenset({
     "delivery_implementation_missing", "delivery_test_result_missing",

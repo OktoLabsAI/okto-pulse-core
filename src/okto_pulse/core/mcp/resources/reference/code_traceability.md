@@ -1,5 +1,5 @@
 ---
-version: "1.3"
+version: "1.4"
 ---
 
 # Agent-mediated Code Traceability
@@ -88,8 +88,9 @@ Minimal action flow:
 The Task Delivery UI shows the canonical state, reason, latest update and next
 action. Its closed-by-default Details opens scoped causes, implementation and
 verification facts, and native links. Spec rollups retain their phase metrics.
-Receipt links require the exact current scenario evidence pointer;
-an unavailable old receipt never opens a replacement result. Inspection links
+Receipt links must identify the exact referenced authenticated result;
+an unavailable old receipt never opens a replacement result. Link availability
+does not establish current delivery credit. Inspection links
 retain the full review batch. Exceptions open the Spec's Coverage > Implementation.
 
 The older `delivery_completeness` field is deprecated and retained unchanged for
@@ -136,6 +137,32 @@ retrospectively without editing locked requirements. Association is an authentic
 claim about what was tested, not independent source-code verification by Pulse.
 
 See `okto-pulse://reference/tool-docs/code-traceability` for exact inputs and errors.
+
+### Verification belongs to an exact delivered basis
+
+The current authority is the accepted result for a scenario's full source basis,
+not its global latest-result summary. A basis includes every verified source and
+exact revision, including companion sources. Distinct bases remain independent:
+failed B does not invalidate passed A. A newer failed result for the same basis
+invalidates its earlier success before any new Delivery association. Reset or a
+semantic scenario change invalidates the affected current results; restoring old
+evidence does not revive them. Frozen report/Done records remain history.
+
+A `test` association can supply native `accepted_result_id` or omit it to resolve
+one uniquely applicable current result. Exact required implementation sources,
+chronology, criterion observations, method, authorization and same Board/Spec/
+edition still apply. Companion-source ambiguity is not permission to merge
+results, infer Git ancestry or select the newest passing history. The responsible
+agent resolves it from native accepted facts; humans never enter these IDs.
+
+When only association is missing, reuse current proof and batch ready entries
+for that Test Card; do not execute again solely because a different basis ran.
+After a real implementation/semantic change or reset, verify the changed scope
+and associate its applicable current result. Read one scoped readiness page for
+diagnosis, then only the requested evidence/history page; partial or unavailable
+facts are not zero or passing proof. Preserve the 5000-scenario/20000-expanded-
+fact limits and follow bounded pagination rather than scanning full history.
+See **Exact-result Test associations** in `okto-pulse://reference/tool-docs/card`.
 
 Code Traceability records bounded observations made by an authenticated
 external agent. Pulse Core validates policy and immutable contracts; an

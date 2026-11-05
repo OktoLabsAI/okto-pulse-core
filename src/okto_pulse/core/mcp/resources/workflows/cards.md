@@ -1,5 +1,5 @@
 ---
-version: "1.3"
+version: "1.4"
 ---
 
 # Cards Workflow — Implementation, Bug & Test Execution
@@ -411,6 +411,12 @@ Keep a distinct architectural decision or question in its native artifact.
 4. Reuse an accepted proof when only association is missing. Observe a new
    committed result when actual source/currentness requires it. Do not rerun a
    test or re-register a receipt solely to replace its text with a shorter one.
+   A scenario can have independent accepted results for different exact source
+   bases. Another base's execution does not require rerunning this base. Test
+   entries may name the native `accepted_result_id`; omitting it resolves one
+   uniquely applicable current result. Ambiguity requires selection, never a
+   newest-passing fallback. Batch ready associations for the same Test Card
+   once; do not toggle the scenario's global status to close tasks sequentially.
 5. Retain accepted record IDs and revisions. A bare `{id,replayed}` response does
    not confirm current Card status, current readiness or permission to conclude;
    perform the prescribed targeted read when those facts are needed. Historical
@@ -431,6 +437,16 @@ facts require a targeted read; never assume success to save a call. Mandatory ga
 reads and independent-review rules remain in force.
 
 See `okto-pulse://reference/tool-docs/code-traceability` for the closed schemas.
+See **Exact-result Test associations** in `okto-pulse://reference/tool-docs/card`
+for the bounded batch example and targeted error recovery. Reuse returned fences
+only for the scope and state they actually confirm; a result containing only
+`id` and `replayed` supplies no new revision. Refresh the affected scope after
+a relevant conflict, and keep mandatory full gate reads before gated moves.
+Do not poll each Delivery subtab or reload all resource bodies between entries.
+Same-base failure removes old success immediately; reset or semantic changes
+invalidate affected results. Neither a progress note nor a successful refresh
+restores their credit. Keep Technical IDs in Details and let the application
+generate human submission receipts; the human UI is not the agent evidence path.
 
 ### Validator Workflow
 

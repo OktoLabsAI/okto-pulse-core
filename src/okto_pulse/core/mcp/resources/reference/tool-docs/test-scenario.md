@@ -1,5 +1,5 @@
 ---
-version: "2.0"
+version: "2.1"
 ---
 
 # Tool docs — `test-scenario`
@@ -54,7 +54,35 @@ have a current authenticated `passed` receipt, and be explicitly associated with
 the implementation it tested via `okto_pulse_record_delivery_evidence` with
 `evidence.kind="test"`.
 `automated`, task completion and self-reported result text do not qualify. A new
-failed run invalidates old coverage. See `okto-pulse://reference/code-traceability`.
+failed run invalidates old coverage for the same full source basis. A run for
+another independently delivered basis does not replace that basis's valid
+result. See `okto-pulse://reference/code-traceability`.
+
+### Reuse current verification without repeating execution
+
+The scenario status/evidence shown in its ordinary summary is the latest
+operational result. Delivery uses current accepted results per exact full source
+basis; do not toggle that summary between old evidence to close tasks in turn.
+The native authority reserves and authenticates execution context before a run
+and accepts its result under the current semantic/reset scope. A receipt's
+existence alone does not establish acceptance or current delivery credit.
+
+If the exact implementation already has an applicable current accepted result,
+associate it instead of rerunning it. Test Delivery accepts optional native
+`accepted_result_id`; omission selects a uniquely applicable current result.
+Resolve competing full bases explicitly, including companion sources. Never
+select the newest passing history. The batch example and error recovery are in
+**Exact-result Test associations**, `okto-pulse://reference/tool-docs/card`.
+
+A later failure on the same basis removes its earlier passing credit immediately.
+An explicit reset or semantic change invalidates affected current results across
+their bases; restoring previous evidence does not undo invalidation. Obtain new
+verification for the changed scope, then associate the accepted result. Historical
+Done/reports stay immutable; progress notes, approval of an amendment and another
+Spec's successful run do not transfer proof. Failed, unknown and unavailable stay
+distinct. Reuse returned IDs/fences only within their confirmed scope, refresh
+on relevant conflicts and retain mandatory gate reads; no per-subtab polling or
+duplicate runner call is needed merely because another basis executed.
 
 Card-type and test-governance rules:
 `okto-pulse://reference/card_types`.
@@ -416,7 +444,7 @@ structured evidence:
     (evidence.output_snippet OR evidence.test_run_id) AND
     evidence.expected_output_snapshot AND
     evidence.non_replayable_justification
-  - `draft`/`ready`: evidence opcional (intent declarado)
+  - `draft`/`ready`: optional evidence (declared intent)
 
 When `skip_test_evidence_global=True`, the gate is bypassed — every
 status update is accepted without evidence, but a structured audit log
