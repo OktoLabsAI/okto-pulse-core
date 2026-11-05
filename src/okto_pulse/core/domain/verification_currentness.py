@@ -23,6 +23,7 @@ MAX_VERIFICATION_SOURCES = 20
 MAX_RUNNER_SOURCES = 2
 MAX_VERIFICATION_SCENARIOS = 5000
 MAX_VERIFICATION_FACTS = 20000
+MAX_VERIFICATION_HISTORY_PAGE = 100
 
 Reference = Annotated[
     str, StringConstraints(strict=True, min_length=1, max_length=2048, pattern=r"\S")
@@ -49,6 +50,41 @@ class VerificationScope(_ImmutableValue):
     spec_id: Reference
     spec_edition: Counter
     scenario_id: Reference
+
+
+class VerificationHistoryCursor(_ImmutableValue):
+    """Internal keyset, never authorization or an unsigned transport token.
+
+    A public adapter must reauthorize the explicit requested scope on every
+    page and authenticate an opaque token bound to actor, realm and this value.
+    The store also fences actual edition/revision and verifies the exact anchor.
+    """
+
+    scope: VerificationScope
+    spec_edition_at_read: Counter
+    source_revision: Counter
+    page_size: Annotated[int, Field(strict=True, ge=1, le=MAX_VERIFICATION_HISTORY_PAGE)]
+    before_generation: Counter
+    before_ordinal: Counter
+    before_acceptance_id: Reference
+
+    @model_validator(mode="after")
+    def observed_edition_contains_scope(self):
+        if self.spec_edition_at_read < self.scope.spec_edition:
+            raise VerificationCurrentnessError("verification_history_cursor_invalid")
+        return self
+
+
+class VerificationHistoryQuery(_ImmutableValue):
+    scope: VerificationScope
+    limit: Annotated[int, Field(strict=True, ge=1, le=MAX_VERIFICATION_HISTORY_PAGE)] = 50
+    cursor: VerificationHistoryCursor | None = None
+
+    @model_validator(mode="after")
+    def cursor_belongs_to_query(self):
+        if self.cursor is not None and (self.cursor.scope != self.scope or self.cursor.page_size != self.limit):
+            raise VerificationCurrentnessError("verification_history_cursor_invalid")
+        return self
 
 
 class VerificationContext(VerificationScope):

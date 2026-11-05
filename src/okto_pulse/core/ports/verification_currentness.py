@@ -8,6 +8,8 @@ from typing import Any, Protocol
 
 from okto_pulse.core.domain.verification_currentness import (
     AuthenticatedVerificationResult,
+    VerificationHistoryCursor,
+    VerificationHistoryQuery,
     VerificationReservation,
     VerificationScope,
 )
@@ -65,7 +67,37 @@ class VerificationCurrentnessRead:
     reason_codes: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class VerificationHistoryPage:
+    """A complete page is not a claim that all history or Delivery is proven."""
+
+    results: tuple[AcceptedVerificationResult, ...]
+    complete: bool
+    source_revision: int
+    spec_edition_at_read: int
+    next_cursor: VerificationHistoryCursor | None = None
+    reason_codes: tuple[str, ...] = ()
+
+    @property
+    def has_more(self) -> bool | None:
+        return self.next_cursor is not None if self.complete else None
+
+
 class VerificationCurrentnessStore(Protocol):
+    async def read_history(self, query: VerificationHistoryQuery) -> VerificationHistoryPage:
+        """Page one authorized scenario/edition, newest reservation order first.
+
+        Reauthorize the current parent Spec before this internal call, including
+        when reading a retained edition or tombstone. Never select scope from a
+        cursor. Read one coherent snapshot with an indexed keyset and bounded
+        authentication. No OFFSET, all-history scan, count, repair or commit.
+        A changed source revision/Spec edition rejects continuation. Retained
+        results are authenticated but only actual current heads have current=True;
+        historical success never creates current or Delivery credit. Capacity,
+        missing state and invalid authentication remain explicitly incomplete.
+        """
+        ...
+
     async def replay_legacy(
         self, *, scope: VerificationScope, evidence: Mapping[str, object], evidence_status: str,
         actor_id: str, expected_spec_version: int,
