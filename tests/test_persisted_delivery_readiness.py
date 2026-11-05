@@ -51,7 +51,7 @@ def test_generation_matches_canonical_spec_and_each_card():
 def test_generation_captures_default_task_requirement_without_changing_canonical_assessment():
     generation = build_readiness_generation(_source(), captured_revision=7)
     by_card = {row.card_id: row for row in generation.summaries}
-    assert generation.evaluator_version == 'delivery-readiness-evaluator/v9'
+    assert generation.evaluator_version == 'delivery-readiness-evaluator/v10'
     assert by_card[None].requirement is None
     for identity in ('ui', 'authorization'):
         requirement = by_card[identity].requirement
@@ -167,10 +167,11 @@ def test_incremental_generation_refuses_unverified_or_nonadjacent_predecessor():
 
 
 @pytest.mark.parametrize('reuse', ['affected_cards', 'progress_span'])
-def test_exact_basis_upgrade_recomputes_instead_of_reusing_v8_generations(monkeypatch, reuse):
+@pytest.mark.parametrize('legacy_version', ['v8', 'v9'])
+def test_authority_upgrade_recomputes_instead_of_reusing_legacy_generations(monkeypatch, reuse, legacy_version):
     source = _source()
     with monkeypatch.context() as legacy:
-        legacy.setattr(projection, 'EVALUATOR_VERSION', 'delivery-readiness-evaluator/v8')
+        legacy.setattr(projection, 'EVALUATOR_VERSION', 'delivery-readiness-evaluator/' + legacy_version)
         predecessor = build_readiness_generation(source, captured_revision=7)
     prior_manifest = predecessor.manifest_sha256
     next_source = replace(source, snapshot_id='1' * 64,
@@ -184,9 +185,9 @@ def test_exact_basis_upgrade_recomputes_instead_of_reusing_v8_generations(monkey
         build_readiness_generation(next_source, captured_revision=captured_revision,
             predecessor=predecessor, **reuse_args)
     current = build_readiness_generation(next_source, captured_revision=captured_revision)
-    assert current.evaluator_version == 'delivery-readiness-evaluator/v9'
+    assert current.evaluator_version == 'delivery-readiness-evaluator/v10'
     assert current.manifest_sha256 != prior_manifest
-    assert predecessor.evaluator_version == 'delivery-readiness-evaluator/v8'
+    assert predecessor.evaluator_version == 'delivery-readiness-evaluator/' + legacy_version
     assert predecessor.manifest_sha256 == prior_manifest
     # The new full evaluation still follows the authoritative current facts.
     for old, new in zip(predecessor.summaries, current.summaries, strict=True):

@@ -34,9 +34,10 @@ from okto_pulse.core.services.delivery_readiness import EvaluatedDeliveryReadine
 from okto_pulse.core.services.delivery_readiness_diagnostics import NativeDeliveryDiagnostics
 
 
-# Exact accepted-basis verification changes qualification and source snapshots.
-# Recompute older generations; they must not seed incremental/progress reuse.
-EVALUATOR_VERSION = "delivery-readiness-evaluator/v9"
+# Spawned projections now bind native verification authority as well as the
+# installation verifier. Recompute v9's unavailable results through normal
+# startup reconciliation; they must not seed incremental/progress reuse.
+EVALUATOR_VERSION = "delivery-readiness-evaluator/v10"
 _DIAGNOSTICS = TypeAdapter(NativeDeliveryDiagnostics)
 _PROGRESS_LOCAL_BLOCKERS = frozenset({
     "delivery_implementation_missing", "delivery_test_result_missing",
