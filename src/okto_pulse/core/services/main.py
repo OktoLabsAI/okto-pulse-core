@@ -10031,7 +10031,7 @@ class SpecService:
         # code basis before a newer failure could be accepted. Ordinary manual
         # transitions still use the canonical registry; result publication must
         # additionally pass native reservation/receipt/version checks below.
-        if not has_context:
+        if evidence is None:
             require_test_scenario_status_transition(existing_status, status)
 
         # Guard by STATUS (NOT the content-lock): blocks validated/done, allows
@@ -10073,12 +10073,7 @@ class SpecService:
         operational_replay = existing_status == status and (
             evidence is None or existing_evidence == evidence
         )
-        if evidence is not None and not has_context:
-            # Format-407 conversion owns the only permitted legacy seed/replay
-            # path. An old signature alone cannot mint new per-basis authority.
-            from okto_pulse.core.domain.verification_currentness import VerificationCurrentnessError
-            raise VerificationCurrentnessError("verification_legacy_replay_unavailable")
-        if operational_replay and not has_context:
+        if operational_replay and evidence is None:
             return {
                 "scenario_id": scenario_id,
                 "old_status": existing_status,
@@ -10092,17 +10087,25 @@ class SpecService:
         old_status = existing_status
         operational_summary_updated = False
         try:
-            if not operational_replay:
+            if not operational_replay and (has_context or evidence is None):
                 await GuidelineService(self.db).enforce_policy_transition(
                     board_id=spec.board_id, entity_type="test_scenario", subject_id=scenario_id,
                     from_status=existing_status, to_status=status)
-            if has_context:
-                from okto_pulse.core.domain.verification_currentness import result_from_authenticated_evidence
+            if evidence is not None:
+                from okto_pulse.core.domain.verification_currentness import (
+                    VerificationScope, result_from_authenticated_evidence,
+                )
                 from okto_pulse.core.ports.verification_currentness import require_verification_currentness_store
 
-                authenticated = result_from_authenticated_evidence(evidence, actor_id=user_id, actor_kind=actor_kind)
-                publication = await require_verification_currentness_store(self.db).publish(
-                    authenticated, evidence=evidence, evidence_status=status, expected_spec_version=spec.version)
+                store = require_verification_currentness_store(self.db)
+                if has_context:
+                    authenticated = result_from_authenticated_evidence(evidence, actor_id=user_id, actor_kind=actor_kind)
+                    publication = await store.publish(authenticated, evidence=evidence,
+                        evidence_status=status, expected_spec_version=spec.version)
+                else:
+                    publication = await store.replay_legacy(scope=VerificationScope(board_id=spec.board_id,
+                        spec_id=spec.id, spec_edition=spec.edition, scenario_id=scenario_id),
+                        evidence=evidence, evidence_status=status, actor_id=user_id, expected_spec_version=spec.version)
                 if publication.replayed:
                     # Release the fence and incidental policy bookkeeping.
                     # An exact replay changes no authority or audit.

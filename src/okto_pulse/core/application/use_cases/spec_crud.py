@@ -1125,8 +1125,7 @@ class SetTestScenarioStatusUseCase:
         if scenario is None:
             raise ValueError(f"scenario_not_found: {command.scenario_id}")
         current_status = str(scenario.get("status") or "draft")
-        result_publication = (isinstance(command.evidence, dict)
-                              and command.evidence.get("verification_context") is not None)
+        result_publication = command.evidence is not None
         if result_publication:
             # Publication remains bound to the actual scenario state, while
             # execute/update authority belongs to the Spec permission family.

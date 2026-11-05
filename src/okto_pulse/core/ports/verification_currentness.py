@@ -47,6 +47,7 @@ class AcceptedVerificationResult:
     current: bool
     evidence: Mapping[str, object] | None = None
     evidence_status: str | None = None
+    origin: str = "native"
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +66,18 @@ class VerificationCurrentnessRead:
 
 
 class VerificationCurrentnessStore(Protocol):
+    async def replay_legacy(
+        self, *, scope: VerificationScope, evidence: Mapping[str, object], evidence_status: str,
+        actor_id: str, expected_spec_version: int,
+    ) -> VerificationPublicationResult:
+        """Return only an exact, authenticated, still-current migrated seed.
+
+        Never append authority or revive a stale seed. The caller releases the
+        transaction fence without changing summary or audit. Historical actor
+        kind remains unknown; the actual caller must match the signed actor ID.
+        """
+        ...
+
     async def publish(
         self, result: AuthenticatedVerificationResult, *, evidence: Mapping[str, object],
         evidence_status: str, expected_spec_version: int,

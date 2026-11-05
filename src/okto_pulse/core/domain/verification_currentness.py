@@ -138,6 +138,29 @@ def result_from_authenticated_evidence(evidence, *, actor_id: str, actor_kind: s
     """
     try:
         context = VerificationContext.model_validate(evidence["verification_context"])
+    except (TypeError, ValueError, KeyError) as exc:
+        raise VerificationCurrentnessError("verification_result_invalid") from exc
+    return _normalize_authenticated_evidence(evidence, context=context, actor_id=actor_id, actor_kind=actor_kind)
+
+
+def result_from_authenticated_legacy_evidence(evidence, *, context: VerificationContext, actor_id: str):
+    """Normalize an authenticated current-only migration seed, not fresh issuance.
+
+    The converter supplies a snapshot-bound context. It never inserts that
+    unsigned context into the original receipt payload. Historical receipts do
+    not authenticate actor kind, so preserve that absence explicitly as unknown.
+    Parsing here grants neither migration provenance nor replay authority.
+    """
+    if not isinstance(evidence, dict) or evidence.get("verification_context") is not None:
+        raise VerificationCurrentnessError("verification_legacy_seed_invalid")
+    result = _normalize_authenticated_evidence(evidence, context=context, actor_id=actor_id, actor_kind="unknown")
+    if result.outcome not in {"passed", "failed"}:
+        raise VerificationCurrentnessError("verification_legacy_seed_invalid")
+    return result
+
+
+def _normalize_authenticated_evidence(evidence, *, context, actor_id, actor_kind):
+    try:
         if evidence.get("evidence_class") == "verification_report":
             from okto_pulse.core.domain.verification_report import parse_verification_report
 

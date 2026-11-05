@@ -32,6 +32,42 @@ def context(**changes):
     return VerificationContext.model_validate(fields | changes)
 
 
+@pytest.mark.parametrize("outcome", ["passed", "failed"])
+def test_legacy_seed_normalization_preserves_unsigned_payload_and_unknown_actor_kind(outcome):
+    from copy import deepcopy
+    import hashlib
+    import json
+    from okto_pulse.core.domain.verification_currentness import (
+        result_from_authenticated_evidence, result_from_authenticated_legacy_evidence,
+    )
+    evidence = {"execution_receipt": "original-receipt", "execution_attestation": {
+        "outcome": outcome, "execution_basis": {"source_ref": "core", "revision": "old-revision"}}}
+    original = deepcopy(evidence)
+    seeded = result_from_authenticated_legacy_evidence(evidence, context=context(), actor_id="actual-signed-actor")
+    expected = hashlib.sha256(json.dumps({k: v for k, v in original.items() if k != "execution_receipt"},
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+    assert seeded.evidence_sha256 == expected and evidence == original
+    assert seeded.actor_id == "actual-signed-actor" and seeded.actor_kind == "unknown"
+    assert seeded.outcome == outcome
+    with pytest.raises(VerificationCurrentnessError):
+        result_from_authenticated_evidence(evidence, actor_id="actual-signed-actor", actor_kind="human")
+
+
+@pytest.mark.parametrize("change", ["context", "inconclusive", "missing_basis"])
+def test_legacy_seed_normalizer_never_relabels_fresh_or_incomplete_evidence(change):
+    from okto_pulse.core.domain.verification_currentness import result_from_authenticated_legacy_evidence
+    evidence = {"execution_receipt": "original", "execution_attestation": {
+        "outcome": "passed", "execution_basis": {"source_ref": "core", "revision": "rev"}}}
+    if change == "context":
+        evidence["verification_context"] = context().model_dump(mode="json")
+    elif change == "inconclusive":
+        evidence["execution_attestation"]["outcome"] = "inconclusive"
+    else:
+        evidence["execution_attestation"].pop("execution_basis")
+    with pytest.raises(VerificationCurrentnessError):
+        result_from_authenticated_legacy_evidence(evidence, context=context(), actor_id="actor")
+
+
 def basis(*sources):
     return VerificationBasis(sources=tuple(
         VerificationSourceVersion(source_ref=source, revision=revision)
