@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from okto_pulse.core.models.delivery_evidence import (
     CardDeliveryEvidenceCommand,
+    CardDeliveryEvidenceBatchCommand,
     DeliveryEvidenceCommand,
     DeliveryEvidenceInput,
 )
@@ -118,3 +119,48 @@ def test_inventory_does_not_convert_invalid_collection_to_empty(value):
     spec = SimpleNamespace(id="spec", title="Delivery", functional_requirements=value)
     with pytest.raises(ValueError, match="delivery_obligation_inventory_invalid"):
         delivery_inventory(spec)
+
+
+@pytest.mark.parametrize('batch', [False, True])
+@pytest.mark.parametrize('accepted_id', [None, 'accepted-result'])
+def test_test_association_accepts_optional_exact_result_in_single_and_batch(batch, accepted_id):
+    fields = dict(kind='test', obligation_refs=['fr:1'], scenario_id='scenario',
+        implementation_ids=['implementation'], justification='Observe the delivered revision')
+    if accepted_id is not None:
+        fields['accepted_result_id'] = accepted_id
+    scope = dict(board_id='board', spec_id='spec', card_id='test', expected_card_version=1,
+        expected_spec_edition=1, idempotency_key='association')
+    if batch:
+        command = CardDeliveryEvidenceBatchCommand(**scope, contract_version='card-delivery-batch/v1',
+            expected_delivery_revision=0, entries=[dict(client_ref='test', **fields)])
+        actual = command.entries[0]
+    else:
+        actual = CardDeliveryEvidenceCommand(**scope, **fields)
+    assert actual.accepted_result_id == accepted_id
+
+
+@pytest.mark.parametrize('kind,fields', [
+    ('implementation', dict(bindings=[dict(obligation_ref='fr:1', contribution='complete')], execution_id='execution')),
+    ('revoke', dict(record_id='record')),
+    ('progress', {}),
+])
+def test_accepted_result_identity_cannot_be_used_for_other_delivery_kinds(kind, fields):
+    with pytest.raises(ValidationError, match='delivery_command_fields_invalid'):
+        CardDeliveryEvidenceCommand(board_id='board', spec_id='spec', card_id='task',
+            expected_card_version=1, expected_spec_edition=1, idempotency_key='invalid',
+            kind=kind, accepted_result_id='accepted-result', justification='No foreign proof kind', **fields)
+
+
+@pytest.mark.parametrize('batch', [False, True])
+def test_exact_result_reference_counts_against_existing_bounded_command_budget(batch):
+    fields = dict(kind='test', obligation_refs=['fr:1'], scenario_id='scenario',
+        implementation_ids=[f'implementation-{i}' for i in range(199)], justification='Bounded references')
+    scope = dict(board_id='board', spec_id='spec', card_id='test', expected_card_version=1,
+        expected_spec_edition=1, idempotency_key='bounded')
+    def parse(value):
+        return (CardDeliveryEvidenceBatchCommand(**scope, contract_version='card-delivery-batch/v1',
+            expected_delivery_revision=0, entries=[dict(client_ref='test', **value)]) if batch
+            else CardDeliveryEvidenceCommand(**scope, **value))
+    parse(fields)
+    with pytest.raises(ValidationError, match='delivery_payload_limit'):
+        parse(dict(fields, accepted_result_id='one-more-reference'))

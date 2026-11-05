@@ -7,6 +7,7 @@ from okto_pulse.core.domain.delivery_assessment import ReadinessReason as Reason
 from okto_pulse.core.domain.delivery_verification import (
     NativeVerificationPopulation, NativeVerificationRun, VerificationObservationFact,
     VerificationSourceFact, missing_scenario_reason, verification_sources_issue,
+    verification_run_for_receipt, verification_runs_for_sources,
 )
 from test_delivery_evidence_domain import BINDING, IMPLEMENTATION, SCOPE
 
@@ -89,3 +90,39 @@ def test_missing_expected_source_and_conflicting_source_revisions_fail_closed():
     assert verification_sources_issue((('repo:a', 'a'), ('repo:a', 'b')), (('repo:a', 'a'),)) == 'verification_base_unresolved'
     assert verification_sources_issue((('repo:a', 'a'),), (('repo:a', 'a'), ('repo:b', 'b'))) == 'verification_base_mismatch'
     assert verification_sources_issue((('repo:a', 'a'), ('repo:b', 'b')), (('repo:a', 'a'), ('repo:b', 'b'))) is None
+
+
+def test_independent_current_versions_are_selected_before_conflict_classification():
+    failed_other = replace(RUN, accepted_result_id='accepted-b', receipt_id='receipt-b',
+        sources=(replace(SOURCE, revision='other-commit'),), outcome='failed',
+        observations=(replace(OBSERVATION, outcome='failed'),))
+    reason = classify(RUN, failed_other)
+    assert reason.code == Reason.VERIFICATION_ASSOCIATION_MISSING
+    assert reason.source_ids == ('receipt',)
+    other_impl = replace(PROOF, executions=tuple(replace(p, result_revision='other-commit') for p in PROOF.executions))
+    other = classify(RUN, failed_other, implementation=other_impl)
+    assert other.code == Reason.VERIFICATION_FAILED and other.source_ids == ('receipt-b',)
+
+
+def test_new_same_basis_failure_cannot_borrow_stale_passing_result():
+    old = replace(RUN, accepted_result_id='old', current=False)
+    failed = replace(RUN, accepted_result_id='new', receipt_id='failure', outcome='failed',
+        observations=(replace(OBSERVATION, outcome='failed'),))
+    assert classify(old, failed).code == Reason.VERIFICATION_FAILED
+    assert classify(old).code == Reason.VERIFICATION_NOT_RUN
+    assert verification_run_for_receipt((old, failed), receipt_id=old.receipt_id) is None
+    assert verification_run_for_receipt((old, failed), receipt_id=failed.receipt_id, accepted_result_id='new') == failed
+    assert verification_run_for_receipt((old, failed), receipt_id=failed.receipt_id, accepted_result_id='old') is None
+
+
+def test_companion_versions_preserve_ambiguity_until_exact_result_is_selected():
+    a = replace(RUN, accepted_result_id='a', sources=(SOURCE, replace(SOURCE, source_ref='companion', revision='a')))
+    b = replace(a, accepted_result_id='b', receipt_id='b-receipt',
+        sources=(SOURCE, replace(SOURCE, source_ref='companion', revision='b')))
+    assert classify(a, b).code == Reason.VERIFICATION_CONFLICT
+    assert verification_run_for_receipt((a, b), receipt_id=a.receipt_id, accepted_result_id='a') == a
+    assert verification_runs_for_sources((a, b), ((SOURCE.source_ref, SOURCE.revision), ('companion', 'b'))) == (b,)
+
+
+def test_incomplete_population_cannot_be_rescued_by_an_apparently_valid_result():
+    assert classify(RUN, complete=False).code == Reason.ASSESSMENT_UNAVAILABLE

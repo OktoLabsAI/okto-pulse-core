@@ -46,6 +46,11 @@ class NativeVerificationRun:
     rejection_reason: ReadinessReason | None = None
     native_reason_codes: tuple[str, ...] = ()
     contract_version: Literal['delivery-verification-run/v1'] = 'delivery-verification-run/v1'
+    accepted_result_id: str | None = None
+    current: bool = True
+    basis_sha256: str | None = None
+    generation: int | None = None
+    ordinal: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +58,7 @@ class NativeVerificationPopulation:
     runs: tuple[NativeVerificationRun, ...]
     complete: bool
     native_reason_codes: tuple[str, ...] = ()
+    source_revision: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,7 +89,12 @@ class ScenarioDeliveryCheck:
 def verification_sources_issue(observed: tuple[tuple[str, str], ...],
                                expected: tuple[tuple[str, str], ...]) -> Literal[
                                    'verification_base_unresolved', 'verification_base_mismatch'] | None:
-    """Exact canonical equality, shared by reports and execution attestations."""
+    """Require every implementation source; preserve additional companion sources.
+
+    Matching a required subset does not merge distinct complete test bases. The
+    selector must reject multiple applicable results unless an exact accepted
+    identity was supplied by the caller.
+    """
     if not observed or not expected or any(
         not isinstance(source, str) or not source.strip()
         or not isinstance(revision, str) or not revision.strip()
@@ -98,6 +109,22 @@ def verification_sources_issue(observed: tuple[tuple[str, str], ...],
     if any(observed_index.get(source) != revision for source, revision in expected):
         return 'verification_base_mismatch'
     return None
+
+
+def verification_runs_for_sources(runs: tuple[NativeVerificationRun, ...],
+                                  expected: tuple[tuple[str, str], ...]) -> tuple[NativeVerificationRun, ...]:
+    """Select applicable current bases without ordering by outcome or time."""
+    return tuple(dict.fromkeys(run for run in runs if run.current and
+        verification_sources_issue(tuple((s.source_ref, s.revision) for s in run.sources), expected) is None))
+
+
+def verification_run_for_receipt(runs: tuple[NativeVerificationRun, ...], *,
+                                 receipt_id: str | None, accepted_result_id: str | None = None) -> NativeVerificationRun | None:
+    """A legacy association may name its exact receipt, never the scenario pointer."""
+    matches = tuple(dict.fromkeys(run for run in runs if run.current and receipt_id
+        and run.receipt_id == receipt_id
+        and (accepted_result_id is None or run.accepted_result_id == accepted_result_id)))
+    return matches[0] if len(matches) == 1 else None
 
 
 def missing_scenario_reason(*, scope: DeliveryScope, binding: DeliveryBinding,
@@ -120,19 +147,11 @@ def missing_scenario_reason(*, scope: DeliveryScope, binding: DeliveryBinding,
             native=population.native_reason_codes if population else ('native_verification_population_unavailable',))
     runs = (tuple(run for run in population.runs if run.scenario_id == scenario_id)
             if current_runs is None else current_runs)
-    if not runs:
-        return reason(ReadinessReason.VERIFICATION_NOT_RUN)
     if any(run.scope != scope for run in runs):
         return reason(ReadinessReason.VERIFICATION_RECEIPT_INVALID, native=('verification_scope_mismatch',))
-    if len(set(runs)) != 1:
-        return reason(ReadinessReason.VERIFICATION_CONFLICT, runs)
-    run = runs[0]
-    if run.rejection_reason is not None:
-        return reason(run.rejection_reason, runs, run.native_reason_codes)
-    if run.outcome is None and not run.receipt_id:
-        return reason(ReadinessReason.VERIFICATION_NOT_RUN, runs)
-    if not run.authenticated or not run.receipt_id:
-        return reason(ReadinessReason.VERIFICATION_RECEIPT_INVALID, runs, run.native_reason_codes)
+    runs = tuple(dict.fromkeys(run for run in runs if run.current))
+    if not runs:
+        return reason(ReadinessReason.VERIFICATION_NOT_RUN)
     selected = [contribution for contribution in implementation.contributions or () if contribution.binding == binding]
     proofs = {proof.execution_id: proof for proof in implementation.executions}
     if len(selected) != 1 or not selected[0].execution_ids or any(
@@ -141,6 +160,28 @@ def missing_scenario_reason(*, scope: DeliveryScope, binding: DeliveryBinding,
     ):
         return reason(ReadinessReason.VERIFICATION_DEPENDENCY_PENDING, runs)
     expected = tuple(proofs[identity] for identity in selected[0].execution_ids)
+    applicable = verification_runs_for_sources(runs,
+        tuple((proof.source_ref, proof.result_revision) for proof in expected))
+    if applicable:
+        runs = applicable
+    elif len(runs) > 1:
+        invalid = tuple(run for run in runs if run.rejection_reason is not None or not run.authenticated)
+        if invalid:
+            return reason(ReadinessReason.VERIFICATION_RECEIPT_INVALID, invalid,
+                tuple(sorted({code for run in invalid for code in run.native_reason_codes})))
+        unresolved = any(verification_sources_issue(tuple((s.source_ref, s.revision) for s in run.sources),
+            tuple((p.source_ref, p.result_revision) for p in expected)) == 'verification_base_unresolved' for run in runs)
+        return reason(ReadinessReason.VERIFICATION_BASE_UNRESOLVED if unresolved
+            else ReadinessReason.VERIFICATION_BASE_MISMATCH, runs)
+    if len(runs) != 1:
+        return reason(ReadinessReason.VERIFICATION_CONFLICT, runs)
+    run = runs[0]
+    if run.rejection_reason is not None:
+        return reason(run.rejection_reason, runs, run.native_reason_codes)
+    if run.outcome is None and not run.receipt_id:
+        return reason(ReadinessReason.VERIFICATION_NOT_RUN, runs)
+    if not run.authenticated or not run.receipt_id:
+        return reason(ReadinessReason.VERIFICATION_RECEIPT_INVALID, runs, run.native_reason_codes)
     base_issue = verification_sources_issue(
         tuple((source.source_ref, source.revision) for source in run.sources),
         tuple((proof.source_ref, proof.result_revision) for proof in expected))
