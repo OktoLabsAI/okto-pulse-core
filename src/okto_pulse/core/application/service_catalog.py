@@ -44,8 +44,10 @@ class CoreAnalyticsOperations:
 
     async def spec_coverage(self, query, *, timeout_ms: int):
         from dataclasses import replace
+        import logging
         import time
         from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout
+        from okto_pulse.core.ports.spec_coverage_query import SpecCoverageGraphFacts
         from okto_pulse.core.ports.relational_application import require_relational_application_adapter
         from okto_pulse.core.services.spec_coverage_query import project_spec_coverage
         from okto_pulse.core.services.spec_coverage_graph import build_spec_coverage_graph_scope
@@ -57,7 +59,17 @@ class CoreAnalyticsOperations:
             remaining = int((deadline - time.monotonic()) * 1000)
             if remaining <= 0:
                 raise GraphQueryTimeout('Spec coverage read deadline exceeded.')
-            observed = await reader.read_graph(query, scope, snapshot.source_revision, timeout_ms=remaining)
+            try:
+                observed = await reader.read_graph(query, scope, snapshot.source_revision, timeout_ms=remaining)
+            except GraphQueryTimeout:
+                # Graph comparison is informational. Its unavailability cannot
+                # erase the authorized, coherent relational snapshot or imply
+                # that expected graph nodes/relations are absent.
+                logging.getLogger(__name__).warning(
+                    "spec_coverage.graph_observation_timeout board=%s spec=%s",
+                    query.board_id, query.spec_id,
+                )
+                observed = SpecCoverageGraphFacts(state='unavailable')
             snapshot = replace(snapshot, graph=observed, graph_scope=scope)
         return project_spec_coverage(query, snapshot)
 

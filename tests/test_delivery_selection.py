@@ -1,4 +1,5 @@
 from copy import deepcopy
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -86,6 +87,43 @@ def test_record_or_impact_change_is_not_the_sealed_submission():
     data["impact_evidence"] = {"files": []}
     with pytest.raises(ValueError, match="manifest_invalid"):
         selected(data)
+
+
+@pytest.mark.parametrize("change", ["added", "changed", "removed"])
+def test_intact_selection_with_changed_scope_is_stale_without_current_credit(change):
+    card = SimpleNamespace(status="done", conclusions=[report()])
+    before = deepcopy(card.__dict__)
+    row = SNAPSHOT.obligations[0]
+    changed = replace(row, binding=replace(row.binding, semantic_sha256="c" * 64))
+    obligations = {"added": (*SNAPSHOT.obligations, replace(changed,
+        binding=replace(changed.binding, obligation_ref="card:new-bug"))),
+        "changed": (changed,), "removed": ()}[change]
+    with pytest.raises(ValueError, match="^delivery_selection_scope_changed$"):
+        current_delivery_selection(card, SCOPE, obligations=obligations,
+            record_hashes={"record": "a" * 64})
+    # A transition cannot reuse this report as its proposed current selection.
+    with pytest.raises(ValueError, match="^delivery_selection_manifest_invalid$"):
+        current_delivery_selection(card, SCOPE, obligations=obligations,
+            record_hashes={"record": "a" * 64}, prospective_report=report())
+    assert card.__dict__ == before
+
+
+@pytest.mark.parametrize("corruption", ["manifest", "record", "impact", "identity"])
+def test_scope_change_never_masks_integrity_failures(corruption):
+    value = report()
+    hashes = {"record": "a" * 64}
+    scope = SCOPE
+    if corruption == "manifest":
+        value["delivery_manifest"]["sha256"] = "0" * 64
+    elif corruption == "record":
+        hashes = {}
+    elif corruption == "impact":
+        value["impact_evidence"] = {"files": []}
+    else:
+        scope = CardDeliveryScope("b", "foreign", "s", 1)
+    with pytest.raises(ValueError, match="^delivery_selection_manifest_invalid$"):
+        current_delivery_selection(SimpleNamespace(status="done", conclusions=[value]),
+            scope, obligations=(), record_hashes=hashes)
 
 
 @pytest.mark.parametrize("mutation", ["old_version", "missing_version", "missing_basis", "empty_basis"])

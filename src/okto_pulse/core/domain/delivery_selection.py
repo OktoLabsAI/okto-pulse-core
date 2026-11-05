@@ -7,6 +7,13 @@ from okto_pulse.core.domain.delivery_inventory import delivery_digest
 from okto_pulse.core.models.delivery_selection import DeliverySelectionManifest
 
 
+class DeliverySelectionScopeChanged(ValueError):
+    """An intact historical selection has no authority over the current scope."""
+
+    def __init__(self) -> None:
+        super().__init__("delivery_selection_scope_changed")
+
+
 def delivery_scope_digest(obligations) -> str:
     return delivery_digest(sorted(
         (row.binding.obligation_ref, row.binding.semantic_sha256) for row in obligations
@@ -134,7 +141,6 @@ def current_delivery_selection(card: object, scope: CardDeliveryScope, *, obliga
             manifest.sha256 == delivery_digest(data)
             and (manifest.board_id, manifest.card_id, manifest.spec_id, manifest.spec_edition)
             == (scope.board_id, scope.card_id, scope.spec_id, scope.spec_edition)
-            and manifest.scope_sha256 == delivery_scope_digest(obligations)
             and manifest.impact_sha256 == delivery_digest(report.get("impact_evidence"))
             and all(record_hashes.get(row.id) == row.sha256 for row in manifest.records)
         )
@@ -142,4 +148,11 @@ def current_delivery_selection(card: object, scope: CardDeliveryScope, *, obliga
         valid = False
     if not valid:
         raise ValueError("delivery_selection_manifest_invalid")
+    if manifest.scope_sha256 != delivery_scope_digest(obligations):
+        # Validate every identity, record and impact hash first. A known change
+        # is readable history, never permission to select records for new work.
+        # Proposed transitions still require a freshly sealed current scope.
+        if prospective_report is not None:
+            raise ValueError("delivery_selection_manifest_invalid")
+        raise DeliverySelectionScopeChanged()
     return {row.id for row in manifest.records}
