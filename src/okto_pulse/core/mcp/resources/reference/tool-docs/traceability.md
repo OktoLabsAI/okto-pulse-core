@@ -30,10 +30,27 @@ related-context grant for proxy and learning-from-bugs grant for Learning.
 For contextual Spec coverage pass
 `query={"view":"coverage","subject_ref":"spec:<id>"}`. Optional `limit`
 (default 200, maximum 1000), `cursor` and `timeout_ms` share the same bounded
-read contract. Keep subject and limit on subsequent pages. Source changes,
+read contract. `graph_mode` accepts `summary` (default) or `detail`. Optional
+graph observation is capped at 500ms for summary and 5000ms for detail, clipped
+by the remaining caller/Board deadline. The same absolute monotonic deadline
+covers source reads, reader admission and the mandatory final source fence;
+nested work cannot extend it. Coverage only borrows ready readers and never
+opens cold graph storage, checkpoints, repairs or enqueues recovery work.
+
+Keep subject, limit and graph mode on subsequent pages. Switching mode resets
+to the first page. Source changes,
 proof visibility changes or graph generation changes invalidate the cursor;
 restart the observation after `spec_coverage_cursor_stale` or
 `spec_coverage_source_changed`. Do not combine this variant with SDLC filters.
+
+Optional graph unavailability preserves otherwise coherent authorized planning
+and Delivery facts; missing graph counts remain unknown. A changed relational
+source or failed mandatory final fence still fails the request. Reuse a current
+accepted observation when its scope is unchanged. Request detail only when it
+is needed for the current action; do not poll or repeat graph calls to create
+the appearance of progress. The UI uses Show details / Hide details and the
+Spec modal Refresh for the active mode. Neither an available graph nor a
+planning percentage grants delivery proof or approval.
 
 `structure.summary` comes from the existing authoritative structural resolver;
 `delivery` comes from the existing admitted-proof rollup. Neither substitutes

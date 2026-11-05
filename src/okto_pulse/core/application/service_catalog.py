@@ -42,7 +42,7 @@ class CoreAnalyticsOperations:
         graph = await reader.read_graph(source_query, scope, snapshot.source_revision, timeout_ms=remaining)
         return project_decision_impact(query, snapshot, scope, graph)
 
-    async def spec_coverage(self, query, *, timeout_ms: int):
+    async def spec_coverage(self, query, *, timeout_ms: int, deadline: float | None = None):
         from dataclasses import replace
         import logging
         import time
@@ -51,16 +51,24 @@ class CoreAnalyticsOperations:
         from okto_pulse.core.ports.relational_application import require_relational_application_adapter
         from okto_pulse.core.services.spec_coverage_query import project_spec_coverage
         from okto_pulse.core.services.spec_coverage_graph import build_spec_coverage_graph_scope
-        deadline = time.monotonic() + timeout_ms / 1000
+        local_deadline = time.monotonic() + timeout_ms / 1000
+        deadline = min(local_deadline, deadline) if deadline is not None else local_deadline
+
+        def remaining():
+            value = int((deadline - time.monotonic()) * 1000)
+            if value <= 0:
+                raise GraphQueryTimeout('Spec coverage read deadline exceeded.')
+            return value
+
         reader = require_relational_application_adapter().spec_coverage_read(self.__relational_context)
-        snapshot = await reader.read(query, timeout_ms=timeout_ms)
+        snapshot = await reader.read(query, timeout_ms=remaining(), deadline=deadline)
         if query.read_graph:
             scope = build_spec_coverage_graph_scope(snapshot)
-            remaining = int((deadline - time.monotonic()) * 1000)
-            if remaining <= 0:
-                raise GraphQueryTimeout('Spec coverage read deadline exceeded.')
+            phase_ms = min(remaining(), 500 if query.graph_mode == 'summary' else 5000)
+            phase_deadline = min(deadline, time.monotonic() + phase_ms / 1000)
             try:
-                observed = await reader.read_graph(query, scope, snapshot.source_revision, timeout_ms=remaining)
+                observed = await reader.read_graph(query, scope, snapshot.source_revision,
+                    timeout_ms=phase_ms, deadline=phase_deadline)
             except GraphQueryTimeout:
                 # Graph comparison is informational. Its unavailability cannot
                 # erase the authorized, coherent relational snapshot or imply
@@ -71,7 +79,13 @@ class CoreAnalyticsOperations:
                 )
                 observed = SpecCoverageGraphFacts(state='unavailable')
             snapshot = replace(snapshot, graph=observed, graph_scope=scope)
-        return project_spec_coverage(query, snapshot)
+        # This required authority check is deliberately outside the optional
+        # graph timeout handler, including when graph access is restricted.
+        await reader.verify_source(query, snapshot.source_revision,
+            timeout_ms=remaining(), deadline=deadline)
+        result = project_spec_coverage(query, snapshot)
+        remaining()
+        return result
 
     async def bug_clusters(self, query, *, timeout_ms: int):
         from okto_pulse.core.ports.relational_application import require_relational_application_adapter

@@ -39,7 +39,34 @@ async def test_code_proof_is_explicitly_scoped_without_borrowing_other_grants(pr
     assert query.read_delivery is proof
     assert query.read_graph is (not proof)
     assert query.actor_scope_ref == 'local:agent:mcp:agent'
-    assert operation.call_args.kwargs == {'timeout_ms': 700}
+    assert operation.call_args.kwargs['timeout_ms'] == 700
+    assert isinstance(operation.call_args.kwargs['deadline'], float)
+    assert query.graph_mode == 'summary'
+
+
+@pytest.mark.asyncio
+async def test_explicit_detail_mode_preserves_authorized_scope():
+    actor, uow, operation, _ = context(FLAGS)
+    await SpecCoverageUseCase().execute(replace(COMMAND, graph_mode='detail'), actor=actor, uow=uow)
+    query = operation.call_args.args[0]
+    assert query.graph_mode == 'detail'
+    assert not query.read_graph and not query.read_delivery
+
+
+@pytest.mark.asyncio
+async def test_authorization_time_does_not_restart_the_board_deadline(monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr('time.monotonic', lambda: now[0])
+    actor, uow, operation, board = context(FLAGS)
+
+    async def load_board(*args, **kwargs):
+        now[0] = 101.0
+        return board
+
+    uow.boards.get.side_effect = load_board
+    await SpecCoverageUseCase().execute(COMMAND, actor=actor, uow=uow)
+    # The catalog receives the expired original deadline, not a new700ms.
+    assert operation.call_args.kwargs == {'timeout_ms': 700, 'deadline': 100.7}
 
 
 @pytest.mark.asyncio
