@@ -1,5 +1,5 @@
 ---
-version: "1.0"
+version: "1.1"
 ---
 
 # Quality Assessments
@@ -43,10 +43,15 @@ Parent listings without the PageEnvelope projection return the documented array 
 ## `okto_pulse_record_ambiguity_assessment`
 
 Record one immutable ambiguity assessment for an Ideation or Refinement. The
-server owns `assessment_kind`, the 1–5 lower-is-better scale, the semantic
+server owns `assessment_kind`, the 0–5 lower-is-better scale, the semantic
 input digests, subject/anchor identity, versions, origin, and technical result
 IDs. It also authors the result justification and fixes
 `blocking_eligible=false`; clients must not provide or derive those fields.
+
+When no residual ambiguity is identified, use score `0` with no findings.
+Scores `1` through `5` require supporting findings. This assessment is separate
+from the Ideation scope evaluation, whose domains, ambiguity and dependencies
+dimensions use `1` through `5`; its minimum score is not the assessment minimum.
 
 An Ideation accepts this write only in `evaluating`; a Refinement accepts it
 only in `approved`. Perform clarification and semantic edits earlier, then use

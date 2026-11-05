@@ -1,5 +1,5 @@
 ---
-version: "1.0"
+version: "1.1"
 ---
 
 Knowledge Base placement and promotion are governed by
@@ -96,10 +96,12 @@ Use this sequence:
    the scope evaluation's 1–5 ambiguity dimension.
    Pinpoint each issue with a stable field, structured-child, Q&A, or
    whole-artifact anchor; never use an array position.
-4. Proposed questions are immutable evidence in the result; they never create
-   or update Q&A. If a question requires clarification or semantic edits,
-   return the Ideation to `draft`, resolve it there, and begin the new edition's
-   validation cycle.
+4. Proposed questions remain immutable evidence in the result and are also
+   materialized as Q&A items by the same write. Unanswered items block
+   completion and derivation; resolve them through the native Q&A workflow.
+   Omit `proposed_questions` when existing Q&A already represents the decision.
+   If clarification requires semantic edits, use the registered transitions
+   to return the Ideation to `draft` and begin the new edition's validation cycle.
 5. Multiple attempts in one edition remain auditable; the latest accepted one
    is Current and earlier attempts are Previous. Immediately before `done`,
    read Current again and compare its score with the board's configured
