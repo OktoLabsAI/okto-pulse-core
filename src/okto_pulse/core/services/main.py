@@ -16382,7 +16382,7 @@ class RefinementService:
         old_version = int(refinement.version)
         old_edition = int(getattr(refinement, "edition", 1) or 1)
         from okto_pulse.core.domain.refinement_source_compatibility import (
-            compatibility_change, refinement_source_digest, resolve_source_compatibility,
+            compatibility_change, refinement_source_digest,
         )
         before_source_digest = refinement_source_digest(refinement)
         allowed = self._REFINEMENT_TRANSITIONS.get(old_status, [])
@@ -16512,8 +16512,15 @@ class RefinementService:
 
         prior_source_versions = (old_version,)
         if data.status == RefinementStatus.DONE:
-            history = await self.list_history(refinement.id, limit=51)
-            prior_source = resolve_source_compatibility(refinement, history)
+            from okto_pulse.core.ports.relational_application import (
+                require_relational_application_adapter,
+            )
+            prior_source = await (
+                require_relational_application_adapter().code_traceability_read(self.db)
+                .refinement_source_compatibility(
+                    board_id=refinement.board_id, refinement_id=refinement.id,
+                )
+            )
             if prior_source is not None:
                 prior_source_versions = prior_source.compatible_versions
 

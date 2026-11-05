@@ -11,6 +11,8 @@ from sqlalchemy import select
 
 from okto_pulse.core.domain.refinement_source_compatibility import (
     FIELD,
+    MAX_HISTORY_ROWS,
+    MAX_NEUTRAL_AUDITS,
     compatibility_change,
     refinement_source_digest,
     resolve_source_compatibility,
@@ -131,6 +133,174 @@ def test_source_compatibility_fails_closed_at_an_unproven_edge(mutation):
     assert resolve_source_compatibility(subject, history) is None
 
 
+def _quality_audits(subject, count):
+    rows, receipts = [], []
+    for index in range(count):
+        identity, previous = (
+            f"quality-{index}",
+            f"quality-{index - 1}" if index else None,
+        )
+        row = {
+            "id": f"audit-{index}",
+            "refinement_id": subject.id,
+            "version": subject.version,
+            "action": "quality_assessment_recorded",
+            "changes": [
+                {"field": "quality_assessment_head", "old": previous, "new": identity}
+            ],
+        }
+        receipts.append(
+            {
+                "id": identity,
+                "board_id": subject.board_id,
+                "subject_type": "refinement",
+                "subject_id": subject.id,
+                "subject_version": subject.version,
+                "subject_edition": subject.edition,
+                "assessment_kind": "ambiguity",
+                "source": "native",
+                "history_id": row["id"],
+                "predecessor_receipt_id": previous,
+            }
+        )
+        rows.append(row)
+    return rows, receipts
+
+
+@pytest.mark.parametrize(
+    "audit_count", [1, 2, 61, MAX_NEUTRAL_AUDITS, MAX_NEUTRAL_AUDITS + 1]
+)
+def test_native_quality_audits_preserve_source_chain_with_finite_budget(audit_count):
+    subject = _subject()
+    history = [_move(subject, "review"), _move(subject, "approved")]
+    audits, receipts = _quality_audits(subject, audit_count)
+    original = deepcopy((history, audits, receipts))
+    proof = resolve_source_compatibility(
+        subject, history + audits, quality_receipts=receipts
+    )
+    if audit_count <= MAX_NEUTRAL_AUDITS:
+        assert proof.compatible_versions == (3, 2, 1)
+        assert proof.history_ids == ("history-3", "history-2")
+    else:
+        assert proof is None
+    assert (history, audits, receipts) == original
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_receipt",
+        "extra_change",
+        "extra_field",
+        "foreign_row",
+        "foreign_board",
+        "foreign_subject",
+        "wrong_version",
+        "wrong_edition",
+        "wrong_kind",
+        "wrong_source",
+        "wrong_history",
+        "wrong_predecessor",
+        "duplicate_audit",
+        "duplicate_receipt",
+        "invalid_previous",
+        "forged_lifecycle",
+        "foreign_lifecycle",
+    ],
+)
+def test_quality_audit_neutrality_requires_exact_native_identity(mutation):
+    subject = _subject()
+    history = [_move(subject, "review"), _move(subject, "approved")]
+    audits, receipts = _quality_audits(subject, 2)
+    row, receipt = audits[-1], receipts[-1]
+    fields = {
+        "foreign_board": ("board_id", "elsewhere"),
+        "foreign_subject": ("subject_id", "elsewhere"),
+        "wrong_version": ("subject_version", 2),
+        "wrong_edition": ("subject_edition", 2),
+        "wrong_kind": ("assessment_kind", "requirement_lint"),
+        "wrong_source": ("source", "forged"),
+        "wrong_history": ("history_id", "elsewhere"),
+        "wrong_predecessor": ("predecessor_receipt_id", None),
+    }
+    if mutation in fields:
+        field, value = fields[mutation]
+        receipt[field] = value
+    elif mutation == "missing_receipt":
+        receipts.pop()
+    elif mutation == "extra_change":
+        row["changes"].append({"field": "analysis"})
+    elif mutation == "extra_field":
+        row["changes"][0]["content"] = "changed"
+    elif mutation == "foreign_row":
+        row["refinement_id"] = "elsewhere"
+    elif mutation == "duplicate_audit":
+        audits.append(deepcopy(row))
+    elif mutation == "duplicate_receipt":
+        receipts.append(deepcopy(receipt))
+    elif mutation == "invalid_previous":
+        row["changes"][0]["old"] = []
+    elif mutation in ("forged_lifecycle", "foreign_lifecycle"):
+        row["action"] = "quality_assessment_lifecycle"
+        row["changes"] = [
+            {
+                "field": "quality_assessment_projection",
+                "old": "review",
+                "new": "approved",
+            }
+        ]
+        if mutation == "forged_lifecycle":
+            row["changes"][0]["extra"] = True
+        else:
+            row["refinement_id"] = "elsewhere"
+    assert (
+        resolve_source_compatibility(
+            subject, history + audits, quality_receipts=receipts
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("row_count", [MAX_HISTORY_ROWS, MAX_HISTORY_ROWS + 1])
+def test_history_scan_exhaustion_cannot_grant_a_compatible_prefix(row_count):
+    subject = _subject()
+    history = [_move(subject, "review"), _move(subject, "approved")]
+    # Old non-compatible history remains outside the proven 3 -> 2 -> 1 edges.
+    history.extend(
+        {
+            "id": f"old-{i}",
+            "refinement_id": subject.id,
+            "version": 1,
+            "action": "created",
+            "changes": [],
+        }
+        for i in range(row_count - len(history))
+    )
+    proof = resolve_source_compatibility(subject, history)
+    assert (proof is not None) is (row_count == MAX_HISTORY_ROWS)
+
+
+def test_previous_edition_audits_cannot_invalidate_a_new_source_baseline():
+    subject = _subject()
+    history = [_move(subject, "review"), _move(subject, "approved")]
+    audits, receipts = _quality_audits(subject, 1)
+    history.extend(audits)
+    subject.edition, subject.version, subject.status = 2, 4, "draft"
+    history.append(
+        {
+            "id": "reopened",
+            "refinement_id": subject.id,
+            "version": 4,
+            "action": "status_changed",
+            "changes": [{"field": "status", "old": "approved", "new": "draft"}],
+        }
+    )
+    history.extend([_move(subject, "review"), _move(subject, "approved")])
+    proof = resolve_source_compatibility(subject, history, quality_receipts=receipts)
+    assert proof.compatible_versions == (6, 5, 4)
+    assert 3 not in proof.compatible_versions  # old edition remains historical
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "case", ["current", "no_proof", "expired", "revoked", "head_changed"]
@@ -243,8 +413,10 @@ async def native_source_factory(tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("audit_count", [0, 2, 61])
 async def test_native_lifecycle_records_actual_version_and_freezes_compatible_context(
     native_source_factory,
+    audit_count,
 ):
     from okto_pulse.community.adapters.sqlalchemy_models import (
         Board,
@@ -253,6 +425,7 @@ async def test_native_lifecycle_records_actual_version_and_freezes_compatible_co
         RefinementHistory,
         RefinementSnapshot,
         ResourceNotApplicable,
+        QualityAssessmentReceiptRow,
     )
     from okto_pulse.community.adapters.sqlalchemy_policy_subject_versioning import (
         bind_semantic_subject_actor,
@@ -266,6 +439,7 @@ async def test_native_lifecycle_records_actual_version_and_freezes_compatible_co
     board_id = "board-1"
     idea_id, refinement_id = (str(uuid.uuid4()) for _ in range(2))
     actor = "source-context-owner"
+    evidence_id = "code_evidence_r2h_fixture"
     async with db_factory() as db:
         bind_semantic_subject_actor(
             db, ActorContext(actor, "test", actor_kind="user", board_id=board_id)
@@ -295,13 +469,14 @@ async def test_native_lifecycle_records_actual_version_and_freezes_compatible_co
                 ideation_id=idea_id,
                 title="Source review",
                 in_scope=["Receipt provenance"],
+                analysis=f"Inspected baseline evidence:{evidence_id}",
                 status=RefinementStatus.DRAFT,
                 edition=1,
                 version=1,
                 delivery_context="brownfield",
                 created_by=actor,
-                skip_ambiguity_gate=True,
-                skip_ambiguity_gate_edition=1,
+                skip_ambiguity_gate=not audit_count,
+                skip_ambiguity_gate_edition=1 if not audit_count else None,
             )
         )
         # Fixture-only resource declarations keep this test focused on the
@@ -320,6 +495,7 @@ async def test_native_lifecycle_records_actual_version_and_freezes_compatible_co
         await get_application_persistence_port().commit(db)
     from test_code_traceability_application import (
         accepted_receipt,
+        evidence_submission,
         MutableClock,
         StableIds,
         challenge_policy,
@@ -335,11 +511,12 @@ async def test_native_lifecycle_records_actual_version_and_freezes_compatible_co
     )
 
     clock = MutableClock(datetime.now(timezone.utc))
+    investigation_service = CodeInvestigationService(
+        challenge_policy=challenge_policy(), clock=clock, id_factory=StableIds()
+    )
     async with db_factory() as db:
         accepted = await accepted_receipt(
-            service=CodeInvestigationService(
-                challenge_policy=challenge_policy(), clock=clock, id_factory=StableIds()
-            ),
+            service=investigation_service,
             store=CommunityRelationalApplicationAdapter().code_investigations(db),
             clock=clock,
             actor_id="fixture-agent",
@@ -359,10 +536,140 @@ async def test_native_lifecycle_records_actual_version_and_freezes_compatible_co
             request_key="fixture-request",
             receipt_key="fixture-receipt",
         )
+        from okto_pulse.core.services.code_evidence import CodeEvidenceService
+        from okto_pulse.core.models.code_traceability import CodeEvidenceSelectorInput
+
+        submission = evidence_submission(
+            receipt_id=accepted.receipt.id, idempotency_key="native-source-evidence"
+        ).model_copy(
+            update={
+                "parent_id": refinement_id,
+                "selector": CodeEvidenceSelectorInput(
+                    kind=domain.CodeEvidenceSelectorKind.FILE,
+                    relative_path="src/service.py",
+                    language="python",
+                ),
+                "excerpt": None,
+                "excerpt_sha256": None,
+            }
+        )
+        evidence = await CodeEvidenceService(
+            clock=clock, id_factory=lambda _: evidence_id
+        ).submit(
+            submission,
+            actor_id="fixture-agent",
+            actor_kind="agent",
+            current_parent_version=1,
+            minimum_trust=domain.CodeInvestigationTrustLevel.SINGLE_ATTESTATION,
+            require_committed_state=True,
+            investigation_service=investigation_service,
+            investigation_store=CommunityRelationalApplicationAdapter().code_investigations(
+                db
+            ),
+            store=CommunityRelationalApplicationAdapter().code_traceability(db),
+            receipt_content="metadata_only",
+        )
+        assert evidence.evidence.parent_version == 1
         await db.commit()
+    from okto_pulse.core.application.use_cases.quality_assessment import (
+        RecordAmbiguityAssessmentCommand,
+        RecordAmbiguityAssessmentUseCase,
+    )
+    from okto_pulse.core.domain.quality_assessment import AssessmentSubjectType
+    from okto_pulse.core.domain.realm import RealmScope
+    from okto_pulse.community.adapters.sqlalchemy_quality_assessment import (
+        CommunitySqlAlchemyQualityAssessmentPreflightReader,
+    )
+    from okto_pulse.community.adapters.sqlalchemy_unit_of_work import (
+        CommunityUnitOfWorkFactory,
+    )
+
+    assessment = RecordAmbiguityAssessmentUseCase(
+        preflight_reader=CommunitySqlAlchemyQualityAssessmentPreflightReader(
+            db_factory
+        ),
+        uow_factory=CommunityUnitOfWorkFactory(db_factory),
+    )
+    quality_actor = ActorContext(
+        actor,
+        "rest",
+        actor_kind="user",
+        board_id=board_id,
+        realm_scope=RealmScope.local(),
+    )
+    head_revision = 0
+
+    async def record_quality(version):
+        nonlocal head_revision
+        result = await assessment.execute(
+            RecordAmbiguityAssessmentCommand(
+                board_id=board_id,
+                subject_type=AssessmentSubjectType.REFINEMENT,
+                subject_id=refinement_id,
+                idempotency_key=f"source-quality-{head_revision}",
+                expected_subject_version=version,
+                expected_subject_edition=1,
+                expected_head_revision=head_revision,
+                score=0,
+                summary="Exact source identity and bounded behavior are defined.",
+            ),
+            actor=quality_actor,
+        )
+        head_revision += 1
+        return result
+
     for expected, status in enumerate(
         (RefinementStatus.REVIEW, RefinementStatus.APPROVED, RefinementStatus.DONE), 2
     ):
+        if audit_count and status == RefinementStatus.DONE:
+            for index in range(audit_count):
+                await record_quality(3)
+                if index not in (0, 1, audit_count - 1):
+                    continue
+                async with db_factory() as db:
+                    from okto_pulse.core.ports.code_traceability import (
+                        CodeTraceabilityProjectionQuery,
+                    )
+                    from okto_pulse.core.services.code_traceability_gate import (
+                        CodeTraceabilityGateEvaluator,
+                        CodeTraceabilityGatePhase,
+                        CodeTraceabilitySettings,
+                    )
+
+                    port = (
+                        CommunityRelationalApplicationAdapter().code_traceability_read(
+                            db
+                        )
+                    )
+                    source = await port.refinement_source_compatibility(
+                        board_id=board_id, refinement_id=refinement_id
+                    )
+                    context = await port.refinement_context(
+                        CodeTraceabilityProjectionQuery(
+                            board_id=board_id,
+                            subject_type=domain.CodeTraceabilitySubjectType.REFINEMENT,
+                            subject_id=refinement_id,
+                            subject_version=3,
+                            profile=domain.CodeTraceabilityProjectionProfile.FULL,
+                        )
+                    )
+                    assert source == context.refinement_source_compatibility
+                    assert source.compatible_versions == (3, 2, 1)
+                    assert [item.id for item in context.evidence] == [evidence_id]
+                    assert [item.id for item in context.receipts] == [
+                        accepted.receipt.id
+                    ]
+                    gate = CodeTraceabilityGateEvaluator(clock=clock).evaluate(
+                        context,
+                        CodeTraceabilitySettings(
+                            mode="blocking",
+                            receipt_content="metadata_only",
+                            evidence_attestation="required",
+                        ),
+                        phases=(CodeTraceabilityGatePhase.REFINEMENT_EVIDENCE,),
+                        referenced_evidence_ids=(evidence_id,),
+                    )
+                    assert gate.allowed, gate.blockers
         async with db_factory() as db:
             bind_semantic_subject_actor(
                 db, ActorContext(actor, "test", actor_kind="user", board_id=board_id)
@@ -392,7 +699,13 @@ async def test_native_lifecycle_records_actual_version_and_freezes_compatible_co
             .scalars()
             .all()
         )
-        proof = resolve_source_compatibility(refinement, history)
+        quality_receipts = (
+            (await db.execute(select(QualityAssessmentReceiptRow))).scalars().all()
+        )
+        assert len(quality_receipts) == audit_count
+        proof = resolve_source_compatibility(
+            refinement, history, quality_receipts=quality_receipts
+        )
         assert proof.compatible_versions == (4, 3, 2, 1), [
             (
                 row.action,
@@ -402,7 +715,12 @@ async def test_native_lifecycle_records_actual_version_and_freezes_compatible_co
             for row in history
         ]
         native_refinement = await db.get(Refinement, refinement_id)
-        assert resolve_source_compatibility(native_refinement, history) == proof
+        assert (
+            resolve_source_compatibility(
+                native_refinement, history, quality_receipts=quality_receipts
+            )
+            == proof
+        )
         assert all(
             any(change.get("field") == FIELD for change in row.changes)
             for row in history
@@ -417,6 +735,9 @@ async def test_native_lifecycle_records_actual_version_and_freezes_compatible_co
         ).scalar_one()
         assert snapshot.version == refinement.version == 4
         assert snapshot.source_context_manifest["subject_version"] == 4
+        assert [item["evidence_id"] for item in snapshot.code_evidence_manifest] == [
+            evidence_id
+        ]
         assert [
             item["receipt_id"]
             for item in snapshot.source_context_manifest["current_receipts"]
@@ -430,6 +751,16 @@ async def test_native_lifecycle_records_actual_version_and_freezes_compatible_co
         )
         assert stored.subject_version == 1
         frozen_digest = snapshot.source_context_sha256
+        frozen_snapshot_id = snapshot.id
+    async with db_factory() as db:
+        bind_semantic_subject_actor(
+            db, ActorContext(actor, "test", actor_kind="user", board_id=board_id)
+        )
+        derived = await RefinementService(db).derive_spec(refinement_id, actor)
+        assert derived.source_refinement_snapshot_id == frozen_snapshot_id
+        assert derived.source_context_sha256 == frozen_digest
+        assert derived.source_refinement_version == 4
+        await get_application_persistence_port().commit(db)
     async with db_factory() as db:
         bind_semantic_subject_actor(
             db, ActorContext(actor, "test", actor_kind="user", board_id=board_id)

@@ -81,6 +81,12 @@ class R1Acceptance(_AcceptanceCase):
 
 
 class R2Acceptance(_AcceptanceCase):
+    def test_quality_audit_source_compatibility(self):
+        self._run({
+            "core": ("tests/test_e2e043_source_context.py",),
+            "community": ("tests/test_delivery_readiness_source_context.py",),
+        })
+
     def test_source_context_and_native_scenario_targets(self):
         self._run({
             "core": (

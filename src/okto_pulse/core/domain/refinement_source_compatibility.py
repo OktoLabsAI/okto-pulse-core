@@ -12,6 +12,9 @@ from dataclasses import dataclass
 CONTRACT = "refinement-source-compatibility/v1"
 FIELD = "source_context_compatibility"
 MAX_TRANSITIONS = 50
+MAX_NEUTRAL_AUDITS = 256
+MAX_HISTORY_ROWS = MAX_TRANSITIONS + MAX_NEUTRAL_AUDITS
+_MISSING = object()
 FORWARD_MOVES = frozenset(
     {("draft", "review"), ("review", "approved"), ("approved", "done")}
 )
@@ -153,8 +156,65 @@ class RefinementSourceSnapshotBasis:
             raise ValueError("refinement_source_snapshot_basis_invalid")
 
 
+def quality_audit_receipt_id(row: object) -> str | None:
+    """Extract only the exact native head-change shape, never an action alone."""
+    changes = _field(row, "changes")
+    if (
+        _field(row, "action") != "quality_assessment_recorded"
+        or not isinstance(changes, list)
+        or len(changes) != 1
+        or not isinstance(changes[0], dict)
+        or set(changes[0]) != {"field", "old", "new"}
+    ):
+        return None
+    change = changes[0]
+    old, new = change["old"], change["new"]
+    if (
+        change["field"] != "quality_assessment_head"
+        or not isinstance(new, str)
+        or not new
+        or (old is not None and (not isinstance(old, str) or not old))
+        or old == new
+    ):
+        return None
+    return new
+
+
+def _neutral_audit(subject: object, row: object, receipts: Mapping) -> bool:
+    if _field(row, "action") == "quality_assessment_lifecycle":
+        return _field(row, "changes") == [
+            {
+                "field": "quality_assessment_projection",
+                "old": "review",
+                "new": "approved",
+            }
+        ]
+    receipt_id = quality_audit_receipt_id(row)
+    receipt = receipts.get(receipt_id)
+    return bool(
+        receipt is not None
+        and (
+            _field(receipt, "board_id") == _field(subject, "board_id")
+            and _field(receipt, "subject_type") == "refinement"
+            and _field(receipt, "subject_id") == _field(subject, "id")
+            and type(_field(receipt, "subject_version")) is int
+            and _field(receipt, "subject_version") == _field(row, "version")
+            and type(_field(receipt, "subject_edition")) is int
+            and _field(receipt, "subject_edition") == _field(subject, "edition")
+            and _field(receipt, "assessment_kind") == "ambiguity"
+            and _field(receipt, "source") == "native"
+            and _field(receipt, "history_id") == _field(row, "id")
+            and _field(receipt, "predecessor_receipt_id", _MISSING)
+            == _field(row, "changes")[0]["old"]
+        )
+    )
+
+
 def resolve_source_compatibility(
-    subject: object, history: Sequence[object]
+    subject: object,
+    history: Sequence[object],
+    *,
+    quality_receipts: Sequence[object] = (),
 ) -> RefinementSourceCompatibility | None:
     """Resolve only a contiguous, unambiguous chain of recorded equal digests.
 
@@ -162,28 +222,58 @@ def resolve_source_compatibility(
     extra content change, duplicate edge or changed digest terminates the chain.
     """
     current = _field(subject, "version")
+    # The persistence reader supplies one extra row as an exhaustion sentinel.
+    # Never turn a truncated or ambiguous population into a compatible prefix.
+    if (
+        type(current) is not int
+        or current < 1
+        or len(history) > MAX_HISTORY_ROWS
+        or len(quality_receipts) > MAX_NEUTRAL_AUDITS
+    ):
+        return None
+    receipts = {}
+    for receipt in quality_receipts:
+        identity = _field(receipt, "id")
+        if not isinstance(identity, str) or not identity or identity in receipts:
+            return None
+        receipts[identity] = receipt
+    by_version: dict[int, list[object]] = {}
+    seen_ids: set[str] = set()
+    audits = 0
+    for row in history:
+        identity, row_version = _field(row, "id"), _field(row, "version")
+        if (
+            not isinstance(identity, str)
+            or not identity
+            or identity in seen_ids
+            or _field(row, "refinement_id") != _field(subject, "id")
+            or type(row_version) is not int
+            or not 1 <= row_version <= current
+        ):
+            return None
+        seen_ids.add(identity)
+        if _field(row, "action") in (
+            "quality_assessment_recorded",
+            "quality_assessment_lifecycle",
+        ):
+            audits += 1
+            if audits > MAX_NEUTRAL_AUDITS:
+                return None
+        by_version.setdefault(row_version, []).append(row)
     digest = refinement_source_digest(subject)
     version, status = current, _status(_field(subject, "status"))
     versions, ids = [current], []
     for _ in range(MAX_TRANSITIONS):
         rows = []
-        for row in history:
-            if _field(row, "version") != version:
-                continue
-            # Native assessment admission writes a projection-only audit at
-            # the assessed version before the operational Approved bump. It
-            # neither edits source content nor represents another status edge.
-            if _field(row, "action") == "quality_assessment_lifecycle" and _field(
-                row, "changes"
-            ) == [
-                {
-                    "field": "quality_assessment_projection",
-                    "old": "review",
-                    "new": "approved",
-                }
-            ]:
-                continue
-            rows.append(row)
+        for row in by_version.get(version, []):
+            if _field(row, "action") in (
+                "quality_assessment_recorded",
+                "quality_assessment_lifecycle",
+            ):
+                if not _neutral_audit(subject, row, receipts):
+                    return None
+            else:
+                rows.append(row)
         if len(rows) != 1:
             break
         row = rows[0]
