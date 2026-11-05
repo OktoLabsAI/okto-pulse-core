@@ -256,3 +256,155 @@ def test_native_semantic_digest_has_a_lossless_context_representation():
 def test_semantic_digest_translation_rejects_ambiguous_input(digest):
     with pytest.raises(VerificationCurrentnessError, match="verification_context_invalid"):
         canonical_scenario_sha256(digest)
+
+
+@pytest.fixture
+def issuance_boundary(monkeypatch):
+    """Isolated ports test orchestration, not receipt authentication or persistence."""
+    from types import SimpleNamespace
+
+    from okto_pulse.core.application.use_cases.base import ActorContext
+    from okto_pulse.core.application.use_cases.spec_crud import (
+        AdmitTestVerificationReportCommand,
+        AdmitTestVerificationReportUseCase,
+        ExecuteTestScenarioEvidenceCommand,
+        ExecuteTestScenarioEvidenceUseCase,
+    )
+    from okto_pulse.core.domain.permissions import PermissionSet
+    from okto_pulse.core.ports import test_evidence as evidence_ports
+    from okto_pulse.core.ports import verification_currentness as currentness_ports
+
+    state = SimpleNamespace(events=[], reservation_change={}, issued_change={},
+                            fail_issuer=False, verified=True, omit_context=False)
+    scenario = {"id": "scenario-a", "given": "A", "when": "B", "then": "C",
+                "linked_criteria": ["ac-1"], "verification_method": "automated_test"}
+    spec = SimpleNamespace(id="spec-a", board_id="board-a", edition=2, version=7,
+                           test_scenarios=[scenario], acceptance_criteria=[{"id": "ac-1", "text": "A"}])
+
+    async def get_spec(spec_id):
+        state.events.append("scope")
+        return spec if spec_id == spec.id else None
+
+    class ReservationPort:
+        async def reserve(self, request):
+            state.events.append("reserve")
+            state.request = request
+            reserved_context = context(**request.scope.model_dump(),
+                scenario_sha256=request.scenario_sha256, verification_method=request.verification_method)
+            state.reservation = VerificationReservation.model_validate({
+                "context": reserved_context, "actor_id": request.actor_id,
+                "actor_kind": request.actor_kind, **state.reservation_change})
+            return state.reservation
+
+    class Issuer:
+        async def execute(self, request):
+            state.events.append("issue")
+            state.issue_request = request
+            if state.fail_issuer:
+                raise RuntimeError("execution_failed_once")
+            payload = {} if state.omit_context else {
+                "verification_context": request.verification_context.model_dump(mode="json") | state.issued_change}
+            return evidence_ports.TestEvidenceExecutionResult(payload)
+
+        admit = execute
+
+    class Verifier:
+        verification_methods = frozenset({"automated_test", "inspection"})
+
+        def verify(self, **request):
+            state.events.append("verify")
+            return evidence_ports.TestEvidenceWriteVerification(state.verified, () if state.verified else ("invalid_signature",))
+
+    issuer = Issuer()
+    monkeypatch.setattr(evidence_ports, "resolve_test_evidence_execution_issuer", lambda: issuer)
+    monkeypatch.setattr(evidence_ports, "resolve_test_verification_report_issuer", lambda: issuer)
+    monkeypatch.setattr(evidence_ports, "resolve_test_evidence_write_verifier", lambda: Verifier())
+    state.port = ReservationPort()
+    monkeypatch.setattr(currentness_ports, "resolve_verification_reservation_port", lambda: state.port)
+
+    async def invoke(method="automated_test", *, actor_kind="agent", permitted=True, board="board-a"):
+        scenario["verification_method"] = method
+        actor = ActorContext("actor-a", "mcp", actor_kind=actor_kind, board_id=board,
+            permissions=PermissionSet({"spec": {"tests": {"execute": permitted, "update_status": permitted}}}))
+        uow = SimpleNamespace(services=SimpleNamespace(specs=SimpleNamespace(get_spec=get_spec)))
+        if method == "automated_test":
+            command = ExecuteTestScenarioEvidenceCommand("spec-a", "scenario-a", "passed", "registered.json")
+            use_case = ExecuteTestScenarioEvidenceUseCase()
+        else:
+            source = {"reference": "repo:component", "revision": "commit-a", "sha256": "a" * 64}
+            report = {"schema_version": "verification-report/v1", "method": "inspection",
+                "report_id": "report-a", "observed_at": "2026-11-05T00:00:00Z", "sources": [source],
+                "inspection_procedure": source, "result": "passed", "conclusion": "Observed",
+                "observations": [{"observation_id": "o1", "criterion_id": "ac-1",
+                    "observation_ref": "repo:component#A", "expected": "A", "observed": "A", "outcome": "passed"}]}
+            command = AdmitTestVerificationReportCommand("spec-a", "scenario-a", report)
+            use_case = AdmitTestVerificationReportUseCase()
+        return await use_case.execute(command, actor=actor, uow=uow)
+
+    state.invoke = invoke
+    return state
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["automated_test", "inspection"])
+@pytest.mark.parametrize("actor_kind", ["human", "agent"])
+async def test_native_issuance_reserves_before_execution_and_preserves_identity(issuance_boundary, method, actor_kind):
+    state = issuance_boundary
+    issued = await state.invoke(method, actor_kind=actor_kind)
+    assert state.events == ["scope", "reserve", "issue", "verify"]
+    assert state.request.actor_id == "actor-a" and state.request.actor_kind == actor_kind
+    assert state.request.expected_spec_version == 7
+    assert state.request.scope.spec_edition == 2
+    assert state.issue_request.verification_context == state.reservation.context
+    assert issued.evidence["verification_context"] == state.reservation.context.model_dump(mode="json")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["automated_test", "inspection"])
+@pytest.mark.parametrize("failure", ["denied", "foreign", "missing_port", "wrong_actor", "wrong_kind"])
+async def test_scope_authorization_and_reservation_fail_before_any_execution(issuance_boundary, method, failure):
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError, PermissionDeniedError
+
+    state = issuance_boundary
+    args = {}
+    if failure == "denied":
+        args["permitted"] = False
+    elif failure == "foreign":
+        args["board"] = "another-board"
+    elif failure == "missing_port":
+        state.port = None
+    else:
+        state.reservation_change = {"actor_id": "another"} if failure == "wrong_actor" else {"actor_kind": "human"}
+    error = EntityNotFoundError if failure == "foreign" else (
+        PermissionDeniedError if failure == "denied" else VerificationCurrentnessError)
+    with pytest.raises(error):
+        await state.invoke(method, **args)
+    assert "issue" not in state.events and "verify" not in state.events
+    if failure in {"denied", "foreign", "missing_port"}:
+        assert "reserve" not in state.events
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["automated_test", "inspection"])
+@pytest.mark.parametrize("change", [{"ordinal": 2}, {"generation": 2}, {"spec_edition": 3},
+                                    {"reservation_id": "another"}, {"scenario_sha256": "f" * 64},
+                                    {"scenario_id": "another"}, None])
+async def test_compatible_issuer_must_return_exact_reserved_context(issuance_boundary, method, change):
+    state = issuance_boundary
+    state.omit_context = change is None
+    state.issued_change = change or {}
+    with pytest.raises(VerificationCurrentnessError, match="verification_reservation_invalid"):
+        await state.invoke(method)
+    assert state.events == ["scope", "reserve", "issue", "verify"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["automated_test", "inspection"])
+@pytest.mark.parametrize("failure", ["issuer", "authentication"])
+async def test_issuance_failure_never_retries_execution(issuance_boundary, method, failure):
+    state = issuance_boundary
+    state.fail_issuer = failure == "issuer"
+    state.verified = failure != "authentication"
+    with pytest.raises((RuntimeError, ValueError), match="execution_failed_once|evidence_unverified"):
+        await state.invoke(method)
+    assert state.events.count("issue") == 1 and state.events.count("reserve") == 1

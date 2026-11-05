@@ -32,6 +32,7 @@ from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
 from okto_pulse.core.domain.learning_submission import LearningSubmission
 from okto_pulse.core.domain.execution_contract import SpecExecutionContract
 from okto_pulse.core.domain.task_validation_policy import ResolvedTaskValidationConfig
+from okto_pulse.core.domain.verification_currentness import VerificationContext
 from okto_pulse.core.models.delivery_selection import DeliverySelectionInput, DeliverySelectionManifest
 from okto_pulse.core.models.reference_context import CardScenarioReferenceContext, MissingLinkContext
 from okto_pulse.core.domain.card_completion import (
@@ -450,6 +451,9 @@ class TestScenarioEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     verification_report: VerificationReport | None = None
+    # Preserve the authenticated envelope across REST/MCP and whole-Spec writes.
+    # Parsing this field never authenticates a reservation or confers authority.
+    verification_context: VerificationContext | None = None
 
     @field_serializer("verification_report")
     def serialize_verification_report(self, value):

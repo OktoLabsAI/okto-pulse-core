@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from collections.abc import Callable, Mapping
+from typing import Any, Protocol
 
 from okto_pulse.core.domain.verification_currentness import (
     AuthenticatedVerificationResult,
@@ -44,6 +45,8 @@ class AcceptedVerificationResult:
     accepted_result_id: str
     result: AuthenticatedVerificationResult
     current: bool
+    evidence: Mapping[str, object] | None = None
+    evidence_status: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,7 +66,8 @@ class VerificationCurrentnessRead:
 
 class VerificationCurrentnessStore(Protocol):
     async def publish(
-        self, result: AuthenticatedVerificationResult, *, expected_spec_version: int,
+        self, result: AuthenticatedVerificationResult, *, evidence: Mapping[str, object],
+        evidence_status: str, expected_spec_version: int,
     ) -> VerificationPublicationResult:
         """Stage acceptance and its scoped basis head in the owner's current UoW.
 
@@ -91,6 +95,22 @@ class VerificationCurrentnessStore(Protocol):
 
 
 _RESERVATION_KEY = "ports.verification_currentness.reservation"
+_STORE_FACTORY_KEY = "ports.verification_currentness.store_factory"
+
+
+def register_verification_currentness_store_factory(
+    factory: Callable[[Any], VerificationCurrentnessStore],
+) -> None:
+    register_runtime_value(_STORE_FACTORY_KEY, factory)
+
+
+def require_verification_currentness_store(session: Any) -> VerificationCurrentnessStore:
+    from okto_pulse.core.domain.verification_currentness import VerificationCurrentnessError
+
+    factory = resolve_runtime_value(_STORE_FACTORY_KEY)
+    if factory is None:
+        raise VerificationCurrentnessError("verification_currentness_unavailable")
+    return factory(session)
 
 
 def register_verification_reservation_port(port: VerificationReservationPort) -> None:
@@ -103,3 +123,7 @@ def resolve_verification_reservation_port() -> VerificationReservationPort | Non
 
 def reset_verification_reservation_port_for_tests() -> None:
     reset_runtime_values(_RESERVATION_KEY)
+
+
+def reset_verification_currentness_store_factory_for_tests() -> None:
+    reset_runtime_values(_STORE_FACTORY_KEY)

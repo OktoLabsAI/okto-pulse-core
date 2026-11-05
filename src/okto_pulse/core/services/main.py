@@ -9960,6 +9960,8 @@ class SpecService:
         scenario_id: str,
         status: str,
         evidence: dict | None = None,
+        *,
+        actor_kind: str = "unknown",
     ) -> dict:
         """Scoped operational status mutation for ONE test scenario (spec
         6f1e75bf, FR4/FR6) â€” the single helper shared by the MCP status tool and
@@ -9973,9 +9975,9 @@ class SpecService:
           linked to an executable test card.
         - Applies the NC-9 evidence gate (validate_test_scenario_evidence) unless
           ``skip_test_evidence_global`` is set (then allows + emits a forensic log).
-        - Mutates ONLY the target scenario (status + inline evidence) and persists
-          narrow â€” it does NOT go through update_spec, does NOT bump version and
-          does NOT replace the full list, so every other scenario is preserved.
+        - Atomically publishes authenticated per-basis authority, the operational
+          summary and actual actor audit. Community owns version/invalidation
+          fences; every other scenario is preserved.
 
         Returns ``{scenario_id, old_status, new_status, evidence_provided,
         evidence_gate_skipped}``. Raises :class:`StatusNotMutableError` and
@@ -10001,7 +10003,7 @@ class SpecService:
         if target_scenario is None:
             raise ValueError(f"scenario_not_found: {scenario_id}")
         existing_status = str(target_scenario.get("status") or "draft")
-        require_test_scenario_status_transition(existing_status, status)
+        has_context = isinstance(evidence, dict) and evidence.get("verification_context") is not None
         scenario_sha256 = compute_test_scenario_semantic_sha256(
             board_id=spec.board_id,
             spec_id=spec_id,
@@ -10023,6 +10025,14 @@ class SpecService:
                 evidence=evidence,
                 verification_method=target_scenario.get("verification_method"),
             )
+
+        # A verified outcome is an execution publication, not a manual lifecycle
+        # move. Requiring Passed -> Ready here would invalidate every other
+        # code basis before a newer failure could be accepted. Ordinary manual
+        # transitions still use the canonical registry; result publication must
+        # additionally pass native reservation/receipt/version checks below.
+        if not has_context:
+            require_test_scenario_status_transition(existing_status, status)
 
         # Guard by STATUS (NOT the content-lock): blocks validated/done, allows
         # in_progress â€” the execution phase where scenarios become passed.
@@ -10059,13 +10069,16 @@ class SpecService:
             if status in GATED_STATUSES:
                 evidence_verification_status = "verified"
 
-        # Exact operational replay is a semantic no-op.  Avoid marking the
-        # JSON column dirty so the internal test-scenario policy epoch remains
-        # stable and existing evidence is not needlessly rewritten.
         existing_evidence = target_scenario.get("evidence")
-        if existing_status == status and (
+        operational_replay = existing_status == status and (
             evidence is None or existing_evidence == evidence
-        ):
+        )
+        if evidence is not None and not has_context:
+            # Format-407 conversion owns the only permitted legacy seed/replay
+            # path. An old signature alone cannot mint new per-basis authority.
+            from okto_pulse.core.domain.verification_currentness import VerificationCurrentnessError
+            raise VerificationCurrentnessError("verification_legacy_replay_unavailable")
+        if operational_replay and not has_context:
             return {
                 "scenario_id": scenario_id,
                 "old_status": existing_status,
@@ -10075,52 +10088,54 @@ class SpecService:
                 "evidence_verification_status": (evidence_verification_status),
             }
 
-        await GuidelineService(self.db).enforce_policy_transition(
-            board_id=spec.board_id,
-            entity_type="test_scenario",
-            subject_id=scenario_id,
-            from_status=existing_status,
-            to_status=status,
-        )
+        publication = None
+        old_status = existing_status
+        operational_summary_updated = False
+        try:
+            if not operational_replay:
+                await GuidelineService(self.db).enforce_policy_transition(
+                    board_id=spec.board_id, entity_type="test_scenario", subject_id=scenario_id,
+                    from_status=existing_status, to_status=status)
+            if has_context:
+                from okto_pulse.core.domain.verification_currentness import result_from_authenticated_evidence
+                from okto_pulse.core.ports.verification_currentness import require_verification_currentness_store
 
-        old_status = None
-        found = False
-        for s in scenarios:
-            if s.get("id") == scenario_id:
-                old_status = s.get("status")
-                s["status"] = status
+                authenticated = result_from_authenticated_evidence(evidence, actor_id=user_id, actor_kind=actor_kind)
+                publication = await require_verification_currentness_store(self.db).publish(
+                    authenticated, evidence=evidence, evidence_status=status, expected_spec_version=spec.version)
+                if publication.replayed:
+                    # Release the fence and incidental policy bookkeeping.
+                    # An exact replay changes no authority or audit.
+                    await get_application_persistence_port().rollback(self.db)
+                    return {"scenario_id": scenario_id, "old_status": existing_status, "new_status": existing_status,
+                        "evidence_provided": True, "evidence_gate_skipped": skip,
+                        "evidence_verification_status": evidence_verification_status,
+                        "accepted_result_id": publication.acceptance.accepted_result_id,
+                        "verification_current": publication.acceptance.current, "replayed": True,
+                        "operational_summary_updated": False}
+            operational_summary_updated = publication is None or publication.replace_operational_summary
+            if operational_summary_updated:
+                target_scenario["status"] = status
                 if evidence is not None:
-                    s["evidence"] = evidence
-                found = True
-                break
-        if not found:  # defensive: target_scenario was resolved above
-            raise ValueError(f"scenario_not_found: {scenario_id}")
-
-        # Narrow persist: write only the test_scenarios column, no version bump,
-        # no content-lock. The other scenarios in the list are untouched.
-        spec.test_scenarios = scenarios
-        spec.mark_dirty("test_scenarios")
-        await _application_add(
-            self.db,
-            _new_application_record(
-                "activity_log",
-                board_id=spec.board_id,
-                action="test_scenario_status_changed",
-                actor_type="agent",
-                actor_id=user_id,
-                actor_name=user_id,
-                details={
-                    "spec_id": spec_id,
-                    "scenario_id": scenario_id,
-                    "from_status": old_status,
-                    "to_status": status,
-                    "evidence_provided": evidence is not None,
-                    "evidence_gate_skipped": skip,
-                    "evidence_verification_status": evidence_verification_status,
-                },
-            ),
-        )
-        await _application_commit(self.db)
+                    target_scenario["evidence"] = evidence
+                spec.test_scenarios = scenarios
+                spec.mark_dirty("test_scenarios")
+            details = {"spec_id": spec_id, "scenario_id": scenario_id,
+                "from_status": old_status, "to_status": status if operational_summary_updated else old_status,
+                "observed_status": status, "actor_kind": actor_kind,
+                "evidence_provided": evidence is not None, "evidence_gate_skipped": skip,
+                "evidence_verification_status": evidence_verification_status}
+            if publication:
+                details.update(accepted_result_id=publication.acceptance.accepted_result_id,
+                    basis_digest=publication.acceptance.result.basis.digest,
+                    operational_summary_updated=operational_summary_updated)
+            await _application_add(self.db, _new_application_record("activity_log", board_id=spec.board_id,
+                action="test_scenario_result_accepted" if publication else "test_scenario_status_changed",
+                actor_type=actor_kind, actor_id=user_id, actor_name=user_id, details=details))
+            await _application_commit(self.db)
+        except BaseException:
+            await get_application_persistence_port().rollback(self.db)
+            raise
 
         logger = logging.getLogger("okto_pulse.spec.test_scenario")
         logger.info(
@@ -10165,10 +10180,13 @@ class SpecService:
         return {
             "scenario_id": scenario_id,
             "old_status": old_status,
-            "new_status": status,
+            "new_status": status if operational_summary_updated else old_status,
             "evidence_provided": evidence is not None,
             "evidence_gate_skipped": skip,
             "evidence_verification_status": evidence_verification_status,
+            **({"accepted_result_id": publication.acceptance.accepted_result_id,
+                "verification_current": publication.acceptance.current, "replayed": False,
+                "operational_summary_updated": operational_summary_updated} if publication else {}),
         }
 
     async def _has_executable_test_card_for_scenario(

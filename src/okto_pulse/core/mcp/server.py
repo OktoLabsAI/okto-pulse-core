@@ -11745,6 +11745,9 @@ async def okto_pulse_update_test_scenario_status(
             "evidence_provided": result["evidence_provided"],
             "evidence_gate_skipped": result["evidence_gate_skipped"],
             "evidence_verification_status": result["evidence_verification_status"],
+            **{key: result[key] for key in (
+                "accepted_result_id", "verification_current", "replayed", "operational_summary_updated"
+            ) if key in result},
         }
     )
 

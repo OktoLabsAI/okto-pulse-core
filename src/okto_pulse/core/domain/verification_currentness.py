@@ -129,6 +129,47 @@ class AuthenticatedVerificationResult(_ImmutableValue):
     outcome: VerificationOutcome
 
 
+def result_from_authenticated_evidence(evidence, *, actor_id: str, actor_kind: str):
+    """Normalize an already authenticated envelope; this does not verify a receipt.
+
+    Native publication must authenticate the original envelope first. Preserve
+    every source and hash the exact unsigned payload, rather than a model dump
+    which could introduce unsigned defaults.
+    """
+    try:
+        context = VerificationContext.model_validate(evidence["verification_context"])
+        if evidence.get("evidence_class") == "verification_report":
+            from okto_pulse.core.domain.verification_report import parse_verification_report
+
+            report = parse_verification_report(evidence["verification_report"])
+            if report.method != context.verification_method:
+                raise ValueError("method mismatch")
+            sources = tuple(VerificationSourceVersion(source_ref=s.reference, revision=s.revision)
+                            for s in report.sources)
+            outcome = report.result
+        else:
+            if context.verification_method != "automated_test":
+                raise ValueError("method mismatch")
+            attestation = evidence["execution_attestation"]
+            execution_basis = attestation["execution_basis"]
+            companions = execution_basis.get("companion_sources", [])
+            if not isinstance(companions, list) or len(companions) > 1:
+                raise ValueError("companion sources invalid")
+            sources = tuple(VerificationSourceVersion(source_ref=s["source_ref"], revision=s["revision"])
+                            for s in [execution_basis, *companions])
+            outcome = attestation["outcome"]
+        basis = VerificationBasis(sources=sources)
+        if context.verification_method == "automated_test":
+            basis.require_runner_shape()
+        unsigned = {key: value for key, value in evidence.items() if key != "execution_receipt"}
+        digest = hashlib.sha256(json.dumps(unsigned, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
+        return AuthenticatedVerificationResult(context=context, actor_id=actor_id, actor_kind=actor_kind,
+            receipt_id=evidence["execution_receipt"], evidence_sha256=digest, basis=basis, outcome=outcome)
+    except (TypeError, ValueError, KeyError, AttributeError) as exc:
+        raise VerificationCurrentnessError("verification_result_invalid") from exc
+
+
 @dataclass(frozen=True, slots=True)
 class VerificationPublicationPlan:
     append_acceptance: bool
