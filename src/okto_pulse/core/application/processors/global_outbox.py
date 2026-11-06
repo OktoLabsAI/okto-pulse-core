@@ -1721,7 +1721,9 @@ class GlobalOutboxProcessor:
         )
         correct_edge_counts = self._correct_board_digest_edge_counts(edge_rows, board_id=board_id)
         inbound_edge_counts = await self._run_graph_io(
-            lambda: self._read_digest_inbound_edge_counts(gconn, board_id)
+            lambda: self._read_digest_inbound_edge_counts(
+                gconn, board_id, tuple(row["digest_id"] for row in targets)
+            )
         )
         targets_by_identity: dict[str, list[dict[str, str]]] = {}
         for target in targets:
@@ -2053,17 +2055,47 @@ class GlobalOutboxProcessor:
     def _read_digest_inbound_edge_counts(
         gconn,
         board_id: str,
+        target_digest_ids: tuple[str, ...],
     ) -> dict[str, int]:
+        """Count all owners from the complete target population, without collections.
+
+        Flat scalar rows avoid the native collection-size boundary at 1024.
+        OPTIONAL MATCH retains zero-edge and revoked digests so the population
+        can be compared with this event's freshly read full inventory. No owner
+        filter or DISTINCT may hide foreign or duplicate incoming edges.
+        """
+        if any(type(identity) is not str or not identity for identity in target_digest_ids):
+            raise RuntimeError("outbox.digest_inbound_inventory_invalid: invalid_identity")
+        expected = set(target_digest_ids)
+        if len(expected) != len(target_digest_ids):
+            raise RuntimeError("outbox.digest_inbound_inventory_invalid: duplicate_identity")
         result = gconn.execute(
-            "MATCH (:Board)-[r:CONTAINS_DECISION]->(d:DecisionDigest) "
-            "WHERE d.board_id = $bid RETURN d.id, count(r)",
+            "MATCH (d:DecisionDigest) WHERE d.board_id = $bid "
+            "OPTIONAL MATCH (d)<-[r:CONTAINS_DECISION]-(:Board) "
+            "RETURN d.id, count(r)",
             {"bid": board_id},
         )
         counts: dict[str, int] = {}
         for row in result.rows:
-            digest_id = str(row[0] or "")
-            counts[digest_id] = counts.get(digest_id, 0) + int(row[1] or 0)
-        return counts
+            if (
+                len(row) != 2
+                or type(row[0]) is not str
+                or not row[0]
+                or type(row[1]) is not int
+                or row[1] < 0
+            ):
+                raise RuntimeError("outbox.digest_inbound_inventory_invalid: malformed_row")
+            digest_id, count = row
+            if digest_id in counts:
+                raise RuntimeError("outbox.digest_inbound_inventory_invalid: duplicate_row")
+            counts[digest_id] = count
+        if counts.keys() != expected:
+            # Refuse truncation or a changed population, even if aggregate totals
+            # happen to agree. Do not publish any partial counts to reconciliation.
+            raise RuntimeError("outbox.digest_inbound_inventory_invalid: population_changed")
+        # Existing reconciliation interprets keys as digests with inbound edges.
+        # Zero-edge revoked digests remain in the comparison, not in that key set.
+        return {identity: count for identity, count in counts.items() if count}
 
     @staticmethod
     def _correct_board_digest_edge_counts(
@@ -2145,6 +2177,7 @@ class GlobalOutboxProcessor:
         inbound_edge_counts = self._read_digest_inbound_edge_counts(
             gconn,
             board_id,
+            tuple(row["digest_id"] for row in rows),
         )
         expected_digest_ids = {
             f"dd_{board_id[:8]}_{oid}" for oid in expected_by_identity
