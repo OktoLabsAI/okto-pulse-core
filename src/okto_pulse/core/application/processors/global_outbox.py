@@ -680,6 +680,28 @@ class GlobalOutboxProcessor:
         return processed
 
     async def _persist_batch_outcomes(self, db, events, delivery_attempts) -> None:
+        from okto_pulse.core.kg.global_discovery_writer import (
+            assert_global_discovery_writer_fence,
+        )
+
+        # The enclosing lease guard checks again only after this transaction
+        # has returned. That is too late to refuse an already-committed ACK.
+        # Revalidate on both sides of the awaited outcome writes, while the
+        # outbox and governed ledger can still be rolled back together.
+        try:
+            await self._run_graph_io(assert_global_discovery_writer_fence)
+            await self._stage_batch_outcomes(db, events, delivery_attempts)
+            await self._run_graph_io(assert_global_discovery_writer_fence)
+            await get_global_outbox_store().commit(db)
+        except BaseException:
+            rollback = getattr(db, "rollback", None)
+            if rollback is not None:
+                cleanup = AsyncTaskScope()
+                pending = cleanup.start(rollback(), name="core.global_outbox.ack_rollback")
+                await cleanup.drain(pending, cancel=False)
+            raise
+
+    async def _stage_batch_outcomes(self, db, events, delivery_attempts) -> None:
         outbox_store = get_global_outbox_store()
         await outbox_store.save_events(db, events)
         delivery_outcomes: list[DeliveryAttemptResult] = []
@@ -717,8 +739,6 @@ class GlobalOutboxProcessor:
                 db,
                 tuple(delivery_outcomes),
             )
-        await outbox_store.commit(db)
-
     def _verify_processed_batch(
         self,
         processed_events: list[
