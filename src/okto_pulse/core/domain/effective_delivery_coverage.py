@@ -23,6 +23,7 @@ from okto_pulse.core.domain.decision_review import DecisionInspectionState
 from okto_pulse.core.domain.verification_plan import RequiredVerificationScenario
 from okto_pulse.core.domain.delivery_verification import (
     NativeVerificationPopulation, ScenarioVerificationFinding, ScenarioDeliveryCheck, missing_scenario_reason,
+    verification_run_for_receipt, verification_sources_issue,
 )
 from okto_pulse.core.domain.delivery_assessment import (
     FactualReason, ReadinessReason, ReadinessIntegrityError, AssessmentCompleteness, DeliveryAssessment,
@@ -249,8 +250,27 @@ def _project_effective_snapshot(snapshot, result):
         tuple(item for item in snapshot.rejected_records if item.scope == snapshot.scope))
 
 
+def _native_conflicting_runs(runs):
+    """Keep conflicting heads local to their complete authenticated code basis."""
+    current = tuple(dict.fromkeys(run for run in runs if run.current))
+    groups = {}
+    contexts = {(run.scope, run.scenario_sha256, run.method, run.generation) for run in current}
+    unresolved = False
+    for run in current:
+        sources = tuple(sorted({(source.source_ref, source.revision) for source in run.sources}))
+        if verification_sources_issue(sources, sources) is not None:
+            unresolved = True
+        groups.setdefault(sources, []).append(run)
+    # An incomplete basis or incompatible current context cannot establish
+    # independence. Receipt IDs and ordinals identify attempts, not code bases.
+    if unresolved or len(contexts) > 1:
+        groups = {None: current}
+    return {run: tuple(sorted({peer.receipt_id for peer in group if peer.receipt_id}))
+            for group in groups.values() if len(group) > 1 for run in group}
+
+
 def _evaluated_obligation_row(binding, required, by_card, tested, tests_by_implementation,
-                             missing_criteria, missing_scenarios, conflicts, findings,
+                             missing_criteria, missing_scenarios, findings,
                              implementation_waivers=(), test_waivers=()):
     """Aggregate admitted joins only, for a full obligation or one contribution.
 
@@ -261,14 +281,19 @@ def _evaluated_obligation_row(binding, required, by_card, tested, tests_by_imple
     missing_cards = set(required) - {card for card in required if by_card.get(card)}
     missing_criteria = tuple(sorted(item for item in missing_criteria if item[0] in ids))
     missing_scenarios = tuple(sorted(item for item in missing_scenarios if item[0] in ids))
-    conflicting = tuple(sorted((key, conflicts[key]) for key in {s for _, _, s in missing_scenarios} if key in conflicts))
+    selected_findings = tuple(f for f in findings if f.implementation_id in ids)
+    conflicts = {}
+    for finding in selected_findings:
+        if finding.reason.code == ReadinessReason.VERIFICATION_CONFLICT:
+            conflicts.setdefault(finding.scenario_id, set()).update(finding.reason.source_ids)
+    conflicting = tuple(sorted((key, tuple(sorted(receipts))) for key, receipts in conflicts.items()))
     return EffectiveDeliveryCoverageRow(binding, tuple(sorted(required)), tuple(sorted(ids)),
         tuple(sorted({test for identity in ids for test in tests_by_implementation.get(identity, ())})),
         tuple(sorted(missing_cards)), missing_criteria, implementation_waivers, test_waivers,
         bool(implementation_waivers or (required and not missing_cards)),
         bool(test_waivers or (required and not missing_cards and ids and ids <= tested and not missing_criteria)),
         missing_scenarios=missing_scenarios, conflicting_scenario_receipts=conflicting,
-        scenario_findings=tuple(f for f in findings if f.implementation_id in ids))
+        scenario_findings=selected_findings)
 
 
 def evaluate_effective_delivery_coverage(
@@ -456,16 +481,32 @@ def evaluate_effective_delivery_coverage(
     relevant_tests = set()
     by_test_binding = {}
     current_receipts = {}
+    implementation_receipts = {}
+    unresolved_associations = set()
+    checks = 0
     for test in tests:
         for binding in set(test.fact.bindings):
             by_test_binding.setdefault(binding, []).append(test)
         if test.fact.current_verified_run is True and test.fact.scope == snapshot.scope:
             current_receipts.setdefault(test.fact.scenario_id, set()).add(test.fact.receipt_id)
-    # Currentness is resolved by the edition's native pointer, never by time or
-    # whichever result passed. Multiple bindings to one receipt are not retries.
+            unresolved = native_verification is not None and verification_run_for_receipt(
+                tuple(native_runs.get(test.fact.scenario_id, ())), receipt_id=test.fact.receipt_id
+            ) is None
+            for binding in set(test.fact.bindings):
+                for identity in test.fact.verified_implementation_ids:
+                    checks += 1
+                    if checks > 20000:
+                        return EffectiveDeliveryCoverage((), ('delivery_effective_resolution_limit',), ())
+                    key = (binding, identity, test.fact.scenario_id)
+                    implementation_receipts.setdefault(key, set()).add(test.fact.receipt_id)
+                    if unresolved:
+                        unresolved_associations.add(key)
+    # Without native basis facts, multiple current receipts remain ambiguous.
+    # With them, each association must name its exact current native result.
     conflicts = {key: tuple(sorted(receipts)) for key, receipts in current_receipts.items()
-                 if len(receipts) > 1}
-    checks = 0
+                 if native_verification is None and len(receipts) > 1}
+    native_conflicts = {scenario_id: _native_conflicting_runs(runs)
+                        for scenario_id, runs in native_runs.items()}
     for binding, obligation in expected.items():
         if obligation.family == "decision":
             continue
@@ -500,19 +541,34 @@ def evaluate_effective_delivery_coverage(
         observed_by = {}
         tested = set()
         tests_by_implementation = {}
+        scoped_conflicts = {(key[1], key[2]): tuple(sorted(implementation_receipts[key]))
+                            for key in unresolved_associations
+                            if key[0] == binding and key[1] in ids and len(implementation_receipts[key]) > 1}
         for test in by_test_binding.get(binding, ()):
             fact = test.fact
+            named = ids.intersection(fact.verified_implementation_ids)
             if native_verification is not None:
                 runs = native_runs.get(fact.scenario_id, ())
-                if (not native_verification.complete or len(runs) != 1
-                    or not runs[0].authenticated or runs[0].scope != snapshot.scope
-                    or runs[0].receipt_id != fact.receipt_id):
+                run = verification_run_for_receipt(tuple(runs), receipt_id=fact.receipt_id)
+                run_conflicts = native_conflicts.get(fact.scenario_id, {}).get(run)
+                if run_conflicts and all(peer.scope == snapshot.scope for peer in runs):
+                    for identity in named:
+                        scoped_conflicts[(identity, fact.scenario_id)] = run_conflicts
+                if (not native_verification.complete or run is None
+                    or not run.authenticated or run.scope != snapshot.scope
+                    or run.rejection_reason is not None
+                    or any(peer.scope != snapshot.scope for peer in runs)
+                    or verification_sources_issue(
+                        tuple((source.source_ref, source.revision) for source in run.sources),
+                        tuple((source.source_ref, source.revision) for source in run.sources),
+                    ) is not None
+                    or run in native_conflicts.get(fact.scenario_id, {})):
                     continue
             # The fact checks prove authentication, current passing result,
             # exact implementation IDs and Done. It may withhold its aggregate
             # test_ids if another implementation lacks tests, so evaluate each
             # admitted run against only the IDs that it explicitly names.
-            named = ids.intersection(fact.verified_implementation_ids)
+            named = {identity for identity in named if (identity, fact.scenario_id) not in scoped_conflicts}
             equivalent_named = set().union(*(equivalent[identity] for identity in named))
             checks += len(equivalent_named) * max(1, len(test.criterion_ids))
             if checks > 20000:
@@ -610,14 +666,19 @@ def evaluate_effective_delivery_coverage(
             for scenario_id in by_criterion.get(criterion, ())
             if (criterion, scenario_id) not in observed[identity]
         }
-        conflicting_receipts = tuple(sorted((key, conflicts[key])
-            for key in {scenario_id for _, _, scenario_id in missing_scenarios}
-            if key in conflicts))
         findings = []
         for identity, criterion, scenario_id in sorted(missing_scenarios):
-            if scenario_id in conflicts:
+            conflict_receipts = scoped_conflicts.get((identity, scenario_id), conflicts.get(scenario_id))
+            if native_verification is not None and (not native_verification.complete or any(
+                run.scope != snapshot.scope for run in native_runs.get(scenario_id, ())
+            )):
+                reason = missing_scenario_reason(scope=snapshot.scope, binding=binding,
+                    implementation=actual_implementations[identity], scenario_id=scenario_id,
+                    criterion_id=criterion, population=native_verification,
+                    current_runs=tuple(native_runs.get(scenario_id, ())))
+            elif conflict_receipts:
                 reason = FactualReason(ReadinessReason.VERIFICATION_CONFLICT,
-                    source_ids=conflicts[scenario_id], criterion_ids=(criterion,), scenario_ids=(scenario_id,))
+                    source_ids=conflict_receipts, criterion_ids=(criterion,), scenario_ids=(scenario_id,))
             elif not scenarios[scenario_id].complete:
                 reason = FactualReason(
                     ReadinessReason.VERIFICATION_METHOD_UNSUPPORTED
@@ -661,11 +722,11 @@ def evaluate_effective_delivery_coverage(
                     return EffectiveDeliveryCoverage((), ('delivery_effective_resolution_limit',), ())
         implementation_waivers = base.implementation_waiver_ids if base else ()
         test_waivers = base.test_waiver_ids if base else ()
-        if conflicting_receipts and not test_waivers:
+        if any(f.reason.code == ReadinessReason.VERIFICATION_CONFLICT for f in findings) and not test_waivers:
             blockers.add('delivery_verification_run_conflict')
         def evaluated(cards):
             return _evaluated_obligation_row(binding, cards, by_card, tested, tests_by_implementation,
-                missing_criteria, missing_scenarios, conflicts, findings, implementation_waivers, test_waivers)
+                missing_criteria, missing_scenarios, findings, implementation_waivers, test_waivers)
         result.append(evaluated(required))
         contribution_rows.extend(ContributionDeliveryCoverage(card, evaluated((card,))) for card in sorted(required))
         contribution_rows.extend(ContributionDeliveryCoverage(fact.card_id,

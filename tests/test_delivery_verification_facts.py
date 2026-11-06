@@ -126,3 +126,132 @@ def test_companion_versions_preserve_ambiguity_until_exact_result_is_selected():
 
 def test_incomplete_population_cannot_be_rescued_by_an_apparently_valid_result():
     assert classify(RUN, complete=False).code == Reason.ASSESSMENT_UNAVAILABLE
+
+
+def _effective_two_bases(*, companions=False):
+    from test_delivery_obligation_assessment import snapshot, with_facts
+    from test_effective_delivery_coverage import planned_scenarios
+
+    value = snapshot()
+    context = value.effective_context
+    implementations = context.implementations
+    if not companions:
+        second = implementations[1]
+        second = replace(second, fact=replace(second.fact, executions=tuple(
+            replace(proof, source_ref='independent-source', result_revision='b' * 40)
+            for proof in second.fact.executions)))
+        implementations = (implementations[0], second)
+    tests = tuple(replace(test, fact=replace(test.fact, scenario_id='shared-scenario',
+        receipt_id='receipt-' + str(index))) for index, test in enumerate(context.tests))
+    runs = tuple(replace(run, scenario_id='shared-scenario', receipt_id=tests[index].fact.receipt_id,
+        sources=((SOURCE, replace(SOURCE, source_ref='companion', revision=str(index)))
+                 if companions else tuple(replace(SOURCE, source_ref=proof.source_ref,
+                     revision=proof.result_revision) for proof in implementations[index].fact.executions)))
+        for index, run in enumerate(context.native_verification.runs))
+    value = with_facts(value, implementations=implementations, tests=tests)
+    return replace(value, effective_context=replace(value.effective_context,
+        required_scenarios=planned_scenarios(tests),
+        native_verification=replace(context.native_verification, runs=runs)))
+
+
+@pytest.mark.parametrize('companions', [False, True])
+def test_effective_coverage_admits_exact_independent_bases_and_ignores_previous_heads(companions):
+    from okto_pulse.core.domain.effective_delivery_coverage import evaluate_effective_facts
+
+    value = _effective_two_bases(companions=companions)
+    native = value.effective_context.native_verification
+    # Duplicate reads do not create a new head, and historical failures do not
+    # invalidate either current, explicitly associated full basis.
+    native = replace(native, runs=(*native.runs, native.runs[0],
+        replace(native.runs[0], receipt_id='previous', outcome='failed', current=False)))
+    value = replace(value, effective_context=replace(value.effective_context, native_verification=native))
+    result = evaluate_effective_facts(value)
+    assert result.allowed
+    assert all(row.row.test_satisfied and not row.row.conflicting_scenario_receipts
+               for row in result.contribution_rows)
+    assert all(check.satisfied for check in result.scenario_checks)
+
+
+@pytest.mark.parametrize('companions', [False, True])
+def test_effective_conflict_is_limited_to_its_full_basis_and_card(companions):
+    from okto_pulse.core.domain.effective_delivery_coverage import evaluate_effective_facts
+
+    value = _effective_two_bases(companions=companions)
+    native = value.effective_context.native_verification
+    # The conflicting native head deliberately has no Delivery association.
+    native = replace(native, runs=(*native.runs,
+        replace(native.runs[0], receipt_id='conflicting-head', outcome='failed')))
+    value = replace(value, effective_context=replace(value.effective_context, native_verification=native))
+    result = evaluate_effective_facts(value)
+    rows = {item.card_id: item.row for item in result.contribution_rows}
+    assert not rows['ui'].test_satisfied
+    assert rows['authorization'].test_satisfied
+    assert not rows['authorization'].conflicting_scenario_receipts
+    assert rows['ui'].conflicting_scenario_receipts == (
+        ('shared-scenario', ('conflicting-head', 'receipt-0')),)
+    assert 'delivery_verification_run_conflict' in result.blockers
+
+
+@pytest.mark.parametrize('damage', ['generation', 'semantics', 'method', 'sources', 'scope', 'incomplete'])
+def test_effective_incompatible_authority_explains_why_existing_bindings_cannot_count(damage):
+    from okto_pulse.core.domain.effective_delivery_coverage import evaluate_effective_facts
+
+    value = _effective_two_bases()
+    native = value.effective_context.native_verification
+    first, second = native.runs
+    changes = {
+        'generation': {'generation': 2},
+        'semantics': {'scenario_sha256': 'sha256:' + 'b' * 64},
+        'method': {'method': 'inspection'},
+        'sources': {'sources': ()},
+        'scope': {'scope': replace(second.scope, board_id='foreign-board')},
+        'incomplete': {},
+    }
+    native = replace(native, runs=(first, replace(second, **changes[damage])), complete=damage != 'incomplete')
+    value = replace(value, effective_context=replace(value.effective_context, native_verification=native))
+    result = evaluate_effective_facts(value)
+    expected = {'scope': Reason.VERIFICATION_RECEIPT_INVALID,
+                'incomplete': Reason.ASSESSMENT_UNAVAILABLE}.get(damage, Reason.VERIFICATION_CONFLICT)
+    assert not any(item.row.test_satisfied for item in result.contribution_rows)
+    assert result.scenario_checks
+    assert {reason.code for check in result.scenario_checks for reason in check.reasons} == {expected}
+    if damage == 'scope':
+        assert not any(reason.source_ids for check in result.scenario_checks for reason in check.reasons)
+
+
+def test_unresolved_association_cannot_contaminate_another_binding_of_the_same_implementation():
+    from okto_pulse.core.domain.delivery_evidence import DeliveryObligation
+    from okto_pulse.core.domain.effective_delivery_coverage import evaluate_effective_facts
+    from test_delivery_obligation_assessment import snapshot, with_facts
+    from test_effective_delivery_coverage import planned_scenarios
+
+    value = snapshot()
+    context = value.effective_context
+    first = context.inventory.rows[0]
+    second_binding = replace(first.binding, obligation_ref='fr:second')
+    owner = first.contributions[0]
+    rows = (replace(first, contributions=(owner,)),
+            replace(first, binding=second_binding, contributions=(owner,)))
+    implementation = context.implementations[0]
+    implementation = replace(implementation, fact=replace(implementation.fact,
+        bindings=(first.binding, second_binding),
+        contributions=(*implementation.fact.contributions,
+            replace(implementation.fact.contributions[0], binding=second_binding))),
+        scopes=(*implementation.scopes, replace(implementation.scopes[0], binding=second_binding)))
+    original = context.tests[0]
+    uncorroborated = replace(original, fact=replace(original.fact, id='other-binding',
+        bindings=(second_binding,), receipt_id='unresolved-receipt'))
+    value = with_facts(value, implementations=(implementation,), tests=(original, uncorroborated))
+    value = replace(value, obligations=(value.obligations[0],
+        DeliveryObligation(second_binding, second_binding.obligation_ref)),
+        effective_context=replace(value.effective_context,
+            inventory=replace(context.inventory, rows=rows),
+            required_scenarios=planned_scenarios((original, uncorroborated)),
+            native_verification=replace(context.native_verification, runs=(context.native_verification.runs[0],))))
+    result = evaluate_effective_facts(value)
+    assessed = {row.binding: row for row in result.rows}
+    assert assessed[first.binding].test_satisfied
+    assert not assessed[first.binding].scenario_findings
+    assert not assessed[second_binding].test_satisfied
+    assert not assessed[first.binding].conflicting_scenario_receipts
+    assert 'unresolved-receipt' not in repr(assessed[first.binding])
