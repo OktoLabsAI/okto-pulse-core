@@ -243,7 +243,7 @@ async def test_outbox_apply_pressure_stops_batch_without_spending_retry(
     monkeypatch.setattr(processor, "_apply_event", fail_with_pressure)
 
     for _ in range(6):
-        assert await processor._process_once_under_writer() == 0
+        assert await processor.process_once() == 0
 
     assert applied == ["event-1"] * 6
     assert first.retry_count == 0
@@ -284,7 +284,7 @@ async def test_outbox_post_write_pressure_does_not_spend_retry(
         )
 
     for _ in range(6):
-        assert await processor._process_once_under_writer() == 0
+        assert await processor.process_once() == 0
 
     assert event.processed_at is None
     assert event.retry_count == 0

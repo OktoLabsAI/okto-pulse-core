@@ -160,7 +160,7 @@ async def _run(
         claim_repository=_ClaimRepository([event]),
         delivery_ledger=ledger,
     )
-    processed = await processor._process_once_under_writer()
+    processed = await processor.process_once()
     return processed, store, ledger
 
 
@@ -252,7 +252,7 @@ async def test_outbox_commit_is_not_called_when_ledger_outcome_fails(
     )
 
     with pytest.raises(RuntimeError, match="ledger outcome write failed"):
-        await processor._process_once_under_writer()
+        await processor.process_once()
 
     assert store.saved is True
     assert store.commit_calls == 0
