@@ -7,6 +7,7 @@ The runner authenticates the two source revisions and this exact selector.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import os
 from pathlib import Path
 import subprocess
@@ -18,7 +19,7 @@ import xml.etree.ElementTree as ET
 
 
 class _AcceptanceCase(unittest.TestCase):
-    def _run(self, selections: dict[str, tuple[str, ...]]) -> None:
+    def _run(self, selections: dict[str, tuple[str, ...]], *, concurrent_groups: bool = False) -> None:
         # Aggregate runner budget for several sequential native graph fixtures;
         # individual tests keep their own stricter timeout markers and all
         # application lease/SQL/graph deadlines remain unchanged.
@@ -29,6 +30,9 @@ class _AcceptanceCase(unittest.TestCase):
         }
         self.assertEqual(roots["core"], Path(__file__).resolve().parents[1])
         self.assertNotEqual(roots["core"], roots["community"])
+        if concurrent_groups:
+            self._run_concurrent_groups(selections, roots, deadline)
+            return
         for role, selectors in selections.items():
             with self.subTest(edition=role), tempfile.TemporaryDirectory(prefix="pulse-e2e043-test-") as tmp:
                 output = Path(tmp)
@@ -52,6 +56,92 @@ class _AcceptanceCase(unittest.TestCase):
                 )
                 self.assertEqual(process.returncode, 0, (process.stdout + process.stderr)[-12000:])
                 suites = ET.parse(report).getroot().findall(".//testsuite")
+                self.assertTrue(suites, "No native test results were produced")
+                self.assertGreater(sum(int(s.attrib["tests"]) for s in suites), 0)
+                for suite in suites:
+                    for counter in ("failures", "errors", "skipped"):
+                        self.assertEqual(int(suite.attrib[counter]), 0, f"Incomplete regression: {counter}")
+
+    def _run_concurrent_groups(self, selections, roots, deadline) -> None:
+        def text(value):
+            return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else (value or "")
+
+        def diagnostic(role, phase, stdout="", stderr=""):
+            return (
+                f"edition={role} phase={phase} aggregate_budget_seconds=600\n"
+                f"cwd={roots[role]} selectors={selections[role]!r}\n"
+                f"--- stdout ---\n{text(stdout)}\n--- stderr ---\n{text(stderr)}"
+            )
+
+        def run_group(role, selectors):
+            with tempfile.TemporaryDirectory(prefix=f"pulse-e2e043-{role}-") as tmp:
+                output = Path(tmp)
+                report = output / "results.xml"
+                env = os.environ.copy()
+                env.update(
+                    DATA_DIR=str(output / "data"),
+                    KG_BASE_DIR=str(output / "graphs"),
+                    DATABASE_URL=f"sqlite+aiosqlite:///{output / 'isolated.db'}",
+                    KG_EMBEDDING_MODE="stub",
+                    PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
+                )
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise AssertionError(diagnostic(role, "deadline_before_spawn"))
+                try:
+                    process = subprocess.run(
+                        [sys.executable, "-m", "pytest", "-q", "-p", "pytest_asyncio.plugin",
+                         "-p", "pytest_timeout", "--timeout=180",
+                         *selectors, f"--junitxml={report}", "-o", "addopts="],
+                        cwd=roots[role], env=env, capture_output=True, text=True,
+                        timeout=remaining,
+                    )
+                except subprocess.TimeoutExpired as error:
+                    # subprocess.run kills and drains its direct child before raising.
+                    # Preserve captured output after the isolated directory is removed.
+                    raise AssertionError(diagnostic(
+                        role, "pytest_aggregate_deadline", error.stdout, error.stderr,
+                    )) from error
+                except Exception as error:
+                    raise AssertionError(diagnostic(
+                        role, f"pytest_launch:{type(error).__name__}", stderr=str(error),
+                    )) from error
+                if process.returncode:
+                    return process, None
+                try:
+                    suites = ET.parse(report).getroot().findall(".//testsuite")
+                except Exception as error:
+                    raise AssertionError(diagnostic(
+                        role, f"junit:{type(error).__name__}", process.stdout,
+                        process.stderr + "\n" + str(error),
+                    )) from error
+                return process, suites
+
+        # Collect every result before assertions: a failed group must not skip
+        # observation/cleanup of its peer. Exiting the executor joins both workers.
+        outcomes = []
+        with ThreadPoolExecutor(max_workers=len(selections)) as executor:
+            futures = [(role, executor.submit(run_group, role, selectors))
+                       for role, selectors in selections.items()]
+            for role, future in futures:
+                try:
+                    outcomes.append((role, future.result(), None))
+                except Exception as error:
+                    outcomes.append((role, None, error))
+
+        # Emit both failure diagnostics before subTest/failfast can stop reporting.
+        for role, result, error in outcomes:
+            if error is not None:
+                print(str(error), file=sys.stderr, flush=True)
+            elif result[0].returncode:
+                print(diagnostic(role, "pytest_exit", result[0].stdout, result[0].stderr),
+                      file=sys.stderr, flush=True)
+        for role, result, error in outcomes:
+            with self.subTest(edition=role):
+                if error is not None:
+                    raise error
+                process, suites = result
+                self.assertEqual(process.returncode, 0, (process.stdout + process.stderr)[-12000:])
                 self.assertTrue(suites, "No native test results were produced")
                 self.assertGreater(sum(int(s.attrib["tests"]) for s in suites), 0)
                 for suite in suites:
@@ -130,12 +220,29 @@ class R3Acceptance(_AcceptanceCase):
                 "tests/test_e2e043_kg_boundaries.py",
                 "tests/test_e2e043_cognitive_transactions.py",
                 "tests/test_e2e043_outbox_observability.py",
+                "tests/test_relational_runtime_cancel_safe_contract.py",
             ),
             "community": (
                 "tests/test_e2e043_kg_transactions.py",
                 "tests/test_worker_runners.py",
+                "tests/test_retained_cleanup_shutdown.py",
+                "tests/test_routed_graph_shutdown.py",
+                "tests/test_worker_shutdown_fail_closed.py",
+                "tests/test_shutdown_signal_ownership.py",
+                "tests/test_board_runtime_activation_api.py",
+                "tests/test_uow_begin_write_by_http_method.py",
+                "tests/test_api_deps_error_translation.py",
+                "tests/test_sqlite_stop_ownership.py",
+                "tests/test_outbox_stop_admission.py",
+                "tests/test_sqlalchemy_session_transaction_recovery.py::test_community_runtime_satisfies_cancel_safe_relational_port",
+                "tests/test_sqlalchemy_session_transaction_recovery.py::test_scope_rolls_back_transaction_after_internally_caught_error",
+                "tests/test_sqlalchemy_session_transaction_recovery.py::test_scope_does_not_rollback_after_explicit_commit",
+                "tests/test_sqlalchemy_session_transaction_recovery.py::test_scope_cancellation_cannot_interrupt_rollback_then_close",
+                "tests/test_sqlalchemy_session_transaction_recovery.py::test_background_cleanup_failure_is_logged_and_consumed",
+                "tests/test_sqlalchemy_session_transaction_recovery.py::test_runtime_close_drains_pending_session_teardown_before_dispose",
+                "tests/test_sqlalchemy_session_transaction_recovery.py::test_runtime_close_bounds_stuck_session_cleanup_drain",
             ),
-        })
+        }, concurrent_groups=True)
 
     def test_owned_recovery_restart_and_truthful_health(self):
         self._run({
