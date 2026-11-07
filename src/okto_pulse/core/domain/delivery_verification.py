@@ -54,11 +54,24 @@ class NativeVerificationRun:
 
 
 @dataclass(frozen=True, slots=True)
+class NativeVerificationScenario:
+    """Current native subject identity, independent of execution/result history."""
+
+    scope: DeliveryScope
+    scenario_id: str
+    scenario_sha256: str
+    method: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class NativeVerificationPopulation:
     runs: tuple[NativeVerificationRun, ...]
     complete: bool
     native_reason_codes: tuple[str, ...] = ()
     source_revision: int = 0
+    # None preserves readers that supplied only runs; () is an explicit empty
+    # subject population. A reset removes current runs, never the subject.
+    scenarios: tuple[NativeVerificationScenario, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -34,10 +34,10 @@ from okto_pulse.core.services.delivery_readiness import EvaluatedDeliveryReadine
 from okto_pulse.core.services.delivery_readiness_diagnostics import NativeDeliveryDiagnostics
 
 
-# Recompute v10's scenario-wide conflicts through normal startup reconciliation.
-# Previous summaries must not seed incremental/progress reuse after exact-basis
-# and per-binding qualification changed.
-EVALUATOR_VERSION = "delivery-readiness-evaluator/v11"
+# Recompute v11's unknown Test summaries for readable, unexecuted scenarios.
+# Previous summaries must not seed incremental/progress reuse after subject
+# identity was separated from execution history.
+EVALUATOR_VERSION = "delivery-readiness-evaluator/v12"
 _DIAGNOSTICS = TypeAdapter(NativeDeliveryDiagnostics)
 _PROGRESS_LOCAL_BLOCKERS = frozenset({
     "delivery_implementation_missing", "delivery_test_result_missing",

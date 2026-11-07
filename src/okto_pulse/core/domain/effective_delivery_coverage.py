@@ -22,7 +22,8 @@ from okto_pulse.core.domain.enums import CardType, TestScenarioStatus
 from okto_pulse.core.domain.decision_review import DecisionInspectionState
 from okto_pulse.core.domain.verification_plan import RequiredVerificationScenario
 from okto_pulse.core.domain.delivery_verification import (
-    NativeVerificationPopulation, ScenarioVerificationFinding, ScenarioDeliveryCheck, missing_scenario_reason,
+    NativeVerificationPopulation, NativeVerificationScenario, ScenarioVerificationFinding,
+    ScenarioDeliveryCheck, missing_scenario_reason,
     verification_run_for_receipt, verification_sources_issue,
 )
 from okto_pulse.core.domain.delivery_assessment import (
@@ -1030,6 +1031,24 @@ class EvaluatedDeliverySnapshot:
         native = context.native_verification if self.context else None
         self.runs = _group_by((run for run in native.runs if run.scope == snapshot.scope) if native else (), lambda run: run.scenario_id)
         self.foreign_runs = any(run.scope != snapshot.scope for run in native.runs) if native else False
+        self.scenario_subjects = None
+        self.scenario_subjects_valid = True
+        if native is not None and native.scenarios is not None:
+            self.scenario_subjects = {}
+            if not isinstance(native.scenarios, tuple) or len(native.scenarios) > 5000:
+                self.scenario_subjects_valid = False
+            else:
+                for subject in native.scenarios:
+                    if (not isinstance(subject, NativeVerificationScenario) or subject.scope != snapshot.scope
+                        or not isinstance(subject.scenario_id, str) or not subject.scenario_id.strip()
+                        or subject.scenario_id in self.scenario_subjects
+                        or not isinstance(subject.scenario_sha256, str)
+                        or not subject.scenario_sha256.startswith('sha256:')
+                        or len(subject.scenario_sha256) != 71
+                        or any(c not in '0123456789abcdef' for c in subject.scenario_sha256[7:])):
+                        self.scenario_subjects_valid = False
+                        break
+                    self.scenario_subjects[subject.scenario_id] = subject
         self.plans = _group_by((p for p in (context.required_scenarios or ()) if isinstance(p, RequiredVerificationScenario))
             if self.context else (), lambda p: p.scenario_id)
 
@@ -1175,9 +1194,17 @@ def assess_effective_scenarios(snapshot, *, card_id, scenario_ids, _evaluation=N
     scope_resolved = True
     values, top_reasons = [], []
     for identity in sorted(set(scenario_ids)):
-        current = runs.get(identity, ())
-        digests = {run.scenario_sha256 for run in current if run.scenario_sha256}
-        if len(digests) != 1 or any(not run.scenario_sha256 for run in current):
+        current = tuple(run for run in runs.get(identity, ()) if run.current)
+        subjects = evaluation.scenario_subjects
+        subject = subjects.get(identity) if subjects is not None else None
+        if subjects is None:
+            digests = {run.scenario_sha256 for run in current if run.scenario_sha256}
+        else:
+            digests = {subject.scenario_sha256} if subject is not None else set()
+        if (not evaluation.scenario_subjects_valid or len(digests) != 1
+            or any(not run.scenario_sha256 for run in current)
+            or subject is not None and any((run.scenario_sha256, run.method) !=
+                (subject.scenario_sha256, subject.method) for run in current)):
             # Never invent a semantic identity for an absent/malformed subject.
             population_known = scope_resolved = False
             top_reasons.append(FactualReason(ReadinessReason.SCOPE_UNAVAILABLE, scenario_ids=(identity,)))
