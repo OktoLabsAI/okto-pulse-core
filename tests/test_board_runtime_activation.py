@@ -71,6 +71,55 @@ async def test_activation_authorizes_before_lifecycle_and_preserves_durability(a
 
 
 @pytest.mark.asyncio
+async def test_existing_reader_does_not_acquire_busy_writer_or_repeat_durability(activation):
+    def observe(board):
+        activation.authorize.assert_awaited_once()
+        assert board == 'board'
+        return handle()
+    activation.lifecycle.observe_prepared_reader = observe
+    def refused(*args, **kwargs):
+        raise AssertionError('prepared reader must not acquire writer')
+    from okto_pulse.core.kg import guarded_write as guards
+    original = guards.guarded_board_write
+    guards.guarded_board_write = refused
+    try:
+        assert await execute(activation) == {'board_id': 'board', 'state': 'ready'}
+    finally:
+        guards.guarded_board_write = original
+    activation.lifecycle.open.assert_not_awaited()
+    assert activation.events == []
+
+
+@pytest.mark.asyncio
+async def test_missing_prepared_reader_preserves_full_cold_activation(activation):
+    activation.lifecycle.observe_prepared_reader = lambda board: None
+    assert await execute(activation) == {'board_id': 'board', 'state': 'ready'}
+    assert 'durable' in activation.events
+    assert activation.lifecycle.open.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('state', [{'opened': False}, {'locked': True}, {'quarantined': True},
+                                  {'board_id': 'other'}, {'readers_prepared': False}])
+async def test_invalid_prepared_handle_never_reports_ready_or_mutates(activation, state):
+    activation.lifecycle.observe_prepared_reader = lambda board: handle(**state)
+    with pytest.raises(GraphUnavailable):
+        await execute(activation)
+    assert activation.events == []
+    activation.lifecycle.open.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_prepared_reader_refusal_is_not_cold_recovery(activation):
+    def observe(board):
+        raise GraphUnavailable('closing')
+    activation.lifecycle.observe_prepared_reader = observe
+    with pytest.raises(GraphUnavailable):
+        await execute(activation)
+    assert activation.events == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('state', [{'opened': False}, {'locked': True}, {'quarantined': True}, {'board_id': 'other'}])
 async def test_closed_or_refused_storage_never_enters_durability(activation, state):
     activation.lifecycle.open.side_effect = lambda board: handle(**state)

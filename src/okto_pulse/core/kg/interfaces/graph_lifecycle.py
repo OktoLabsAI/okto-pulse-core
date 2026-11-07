@@ -33,6 +33,19 @@ class RebuildReport:
     reason: str | None = None
 
 
+@runtime_checkable
+class PreparedGraphReaderObservation(Protocol):
+    """Optional non-mutating observation of an already prepared Board reader.
+
+    The provider pins one existing participant and revalidates its exact route.
+    It must never cold-open, initialize, checkpoint or repair storage. None
+    means no prepared participant exists; refusal/route failure raises. The
+    returned availability is an observation, not a reservation or write proof.
+    """
+
+    def observe_prepared_reader(self, board_id: str) -> GraphHandle | None: ...
+
+
 @dataclass(frozen=True)
 class PurgeReport:
     """Structured outcome of a quarantine-then-clear purge."""

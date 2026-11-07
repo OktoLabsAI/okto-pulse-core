@@ -319,6 +319,7 @@ class ActivateBoardRuntimeUseCase:
         from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
         from okto_pulse.core.kg.guarded_write import guarded_board_write
         from okto_pulse.core.kg.interfaces.graph_errors import GraphCapabilityUnavailable, GraphUnavailable
+        from okto_pulse.core.kg.interfaces.graph_lifecycle import PreparedGraphReaderObservation
 
         board_id = command.board_id
         board = await load_accessible_board(uow, board_id, actor)
@@ -331,6 +332,13 @@ class ActivateBoardRuntimeUseCase:
             lifecycle = resolve_graph_lifecycle()
             if lifecycle is None:
                 raise GraphCapabilityUnavailable("Board graph lifecycle is not configured.")
+            if isinstance(lifecycle, PreparedGraphReaderObservation):
+                prepared = lifecycle.observe_prepared_reader(board_id)
+                if prepared is not None:
+                    if (prepared.board_id != board_id or not prepared.opened
+                            or prepared.locked or prepared.quarantined or not prepared.readers_prepared):
+                        raise GraphUnavailable("Prepared board reader is unavailable.")
+                    return {"board_id": board_id, "state": "ready"}
             with guarded_board_write(board_id, operation="activate_board_runtime",
                     owner_id=actor.actor_id, mutation_ref=f"board-runtime:{board_id}") as lease:
                 handle = asyncio.run(lifecycle.open(board_id))
