@@ -224,6 +224,7 @@ class R3Acceptance(_AcceptanceCase):
             ),
             "community": (
                 "tests/test_e2e043_kg_transactions.py",
+                "tests/test_code_traceability_persistence.py::test_receipt_submission_admits_writer_before_policy_read",
                 "tests/test_worker_runners.py",
                 "tests/test_retained_cleanup_shutdown.py",
                 "tests/test_routed_graph_shutdown.py",

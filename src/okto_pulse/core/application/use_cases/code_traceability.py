@@ -944,6 +944,9 @@ class SubmitCodeInvestigationReceiptUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> SubmittedCodeInvestigationReceiptResult:
+        # Admit this write before policy/request reads so a concurrent writer
+        # cannot take ownership between validation and the receipt/head CAS.
+        await uow.begin_write()
         policy = await _load_policy(board_id=command.board_id, uow=uow)
         await _authorize(
             actor,

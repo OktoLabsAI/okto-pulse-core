@@ -2728,6 +2728,9 @@ class FakeUnitOfWork:
         )
         self.commit_count = 0
 
+    async def begin_write(self) -> None:
+        pass
+
     async def _publish_domain_event(self, event: object) -> None:
         if self.fail_event_publish:
             raise RuntimeError("event staging failed")
