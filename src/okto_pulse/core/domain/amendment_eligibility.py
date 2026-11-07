@@ -31,6 +31,30 @@ from enum import Enum as PyEnum
 #: strip it so a generic/non-validator route can never inject a signal the bug
 #: gate honors.
 COVERAGE_CONFIRMATION_KEY = "coverage_confirmation"
+COVERAGE_CONFIRMATIONS_KEY = "coverage_confirmations"
+
+
+def coverage_confirmation_records(metadata: object) -> tuple[dict, ...]:
+    """Read artifact-bound confirmations, including the legacy latest record.
+
+    The latest record wins for its task/scenario binding. This also preserves
+    single-record metadata written before collection support was introduced.
+    Validation of each attestation and its current basis remains with the gate.
+    """
+    if not isinstance(metadata, dict):
+        return ()
+    collection = metadata.get(COVERAGE_CONFIRMATIONS_KEY)
+    records = list(collection) if isinstance(collection, list) else []
+    records.append(metadata.get(COVERAGE_CONFIRMATION_KEY))
+    by_artifact = {}
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        task = record.get("regression_test_task_id")
+        scenario = record.get("regression_scenario_id")
+        if isinstance(task, str) and task and isinstance(scenario, str) and scenario:
+            by_artifact[(task, scenario)] = record
+    return tuple(by_artifact.values())
 
 
 class AmendmentRevisionStatus(str, PyEnum):

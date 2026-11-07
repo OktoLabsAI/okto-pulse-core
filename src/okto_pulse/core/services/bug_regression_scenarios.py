@@ -447,7 +447,7 @@ def _evaluate_single_amendment(
     # 5. Fully lineage-eligible. Coverage (G2/ADJ-B) is derived from the
     #    persisted, artifact-bound validator attestation — NEVER a passed bool.
     if _coverage_confirmed_for(fact, scenario_id):
-        return 5, PathBScenarioEvaluation(
+        return 6, PathBScenarioEvaluation(
             outcome=_PathBOutcome.READY,
             coverage_state=BugRegressionCoverageState.PATH_B_READY,
             source_task_id=compatible[0],
@@ -939,7 +939,7 @@ def evaluate_coverage_confirmation_consumability(
       to a same-spec candidate. A naive Path-B-only preflight would wrongly accept
       that tuple; reusing the resolver routes it correctly.
     * A cross-spec candidate is routed through Path B with the candidate
-      attestation injected in memory, so rank-5 ``_coverage_confirmed_for`` can
+      attestation injected in memory, so ``_coverage_confirmed_for`` can
       flip ``coverage_pending -> path_b_ready``. It is consumable ONLY when that
       drives ``PATH_B_READY``.
 
@@ -948,7 +948,7 @@ def evaluate_coverage_confirmation_consumability(
     """
     resolver = resolver or BugRegressionScenarioEligibilityResolver()
 
-    # Apply the attestation that WOULD be persisted so Path B rank-5 can evaluate
+    # Apply the attestation that WOULD be persisted so Path B can evaluate
     # the candidate in memory. For a same-spec candidate the resolver ignores the
     # amendment entirely (Path A), so this injection is a no-op on that route.
     fact_with_candidate = replace(

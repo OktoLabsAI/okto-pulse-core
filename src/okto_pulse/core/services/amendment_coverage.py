@@ -10,9 +10,11 @@ import hashlib
 import json
 
 from okto_pulse.core.ports.application_persistence import get_application_persistence_port
+from okto_pulse.core.domain.amendment_eligibility import coverage_confirmation_records
 from okto_pulse.core.services.bug_regression_scenarios import (
     AmendmentLineageFact,
     CoverageBasis,
+    CoverageConfirmationFact,
 )
 from okto_pulse.core.services.test_scenario_lifecycle import (
     compute_test_scenario_semantic_sha256,
@@ -81,12 +83,17 @@ async def current_amendment_facts(context, rows) -> list[AmendmentLineageFact]:
     facts = []
     for row in rows:
         fact = AmendmentLineageFact.from_row(row)
-        confirmation = fact.coverage_confirmation
-        basis = None
-        if confirmation is not None and confirmation.basis is not None:
-            basis = await current_coverage_basis(
-                context, amendment=row, task_id=confirmation.regression_test_task_id,
-                scenario_id=confirmation.regression_scenario_id,
-                scenario_spec_id=confirmation.basis.scenario_spec_id)
-        facts.append(replace(fact, current_coverage_basis=basis))
+        confirmations = coverage_confirmation_records(row.validation_metadata)
+        if not confirmations:
+            facts.append(fact)
+        for raw in confirmations:
+            confirmation = CoverageConfirmationFact.from_metadata(raw)
+            basis = None
+            if confirmation is not None and confirmation.basis is not None:
+                basis = await current_coverage_basis(
+                    context, amendment=row, task_id=confirmation.regression_test_task_id,
+                    scenario_id=confirmation.regression_scenario_id,
+                    scenario_spec_id=confirmation.basis.scenario_spec_id)
+            facts.append(replace(fact, coverage_confirmation=confirmation,
+                                 current_coverage_basis=basis))
     return facts

@@ -97,6 +97,8 @@ class McpMoveSpecUseCase:
     async def execute(
         self, command: McpMoveSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpMoveSpecResult:
+        # Delivery gates pin caller-owned snapshots; reserve write intent first.
+        await uow.begin_write()
         service = uow.services.specs
         existing = await _require_actor_board_spec(
             service,
