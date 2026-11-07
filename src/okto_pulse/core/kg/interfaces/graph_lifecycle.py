@@ -18,6 +18,9 @@ class GraphHandle:
     status: str
     locked: bool
     quarantined: bool
+    # Opening a writer does not establish availability of independent readers.
+    # Older providers must explicitly opt in before activation can report ready.
+    readers_prepared: bool = False
 
 
 @dataclass(frozen=True)

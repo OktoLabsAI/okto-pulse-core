@@ -296,6 +296,63 @@ class GetBoardUseCase:
 # --- update -----------------------------------------------------------------
 
 
+class ActivateBoardRuntimeCommand:
+    __slots__ = ("board_id",)
+
+    def __init__(self, board_id: str) -> None:
+        self.board_id = board_id
+
+
+class ActivateBoardRuntimeUseCase:
+    """Explicit activation of an existing Board graph, separate from reads.
+
+    Editions invoke this command when opening a Board. It neither initializes
+    absent storage nor changes application records. The existing writer fence
+    and full durability policy own physical reader preparation; Coverage keeps
+    its existing-only read contract.
+    """
+
+    async def execute(self, command: ActivateBoardRuntimeCommand, *,
+                      actor: ActorContext, uow: PulseUnitOfWork) -> dict[str, str]:
+        from okto_pulse.core.application.use_cases.authorization import require_all
+        from okto_pulse.core.application.kg_runtime_access import resolve_graph_lifecycle
+        from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
+        from okto_pulse.core.kg.guarded_write import guarded_board_write
+        from okto_pulse.core.kg.interfaces.graph_errors import GraphCapabilityUnavailable, GraphUnavailable
+
+        board_id = command.board_id
+        board = await load_accessible_board(uow, board_id, actor)
+        if board is None:
+            raise EntityNotFoundError("board", board_id)
+        await require_all(actor, PermissionRequirement("board.read"),
+            PermissionRequirement("kg.query.related_context"), uow=uow, board_id=board_id)
+
+        def activate() -> dict[str, str]:
+            lifecycle = resolve_graph_lifecycle()
+            if lifecycle is None:
+                raise GraphCapabilityUnavailable("Board graph lifecycle is not configured.")
+            with guarded_board_write(board_id, operation="activate_board_runtime",
+                    owner_id=actor.actor_id, mutation_ref=f"board-runtime:{board_id}") as lease:
+                handle = asyncio.run(lifecycle.open(board_id))
+                if (handle.board_id != board_id or not handle.opened
+                        or handle.locked or handle.quarantined):
+                    raise GraphUnavailable("Board graph could not be opened.")
+                # A cold reader may require a durable image before it can join.
+                # Keep every normal durability step and the owning fence.
+                lease.ensure_durable()
+                handle = asyncio.run(lifecycle.open(board_id))
+                if (handle.board_id != board_id or not handle.opened or handle.locked or handle.quarantined
+                        or not handle.readers_prepared):
+                    raise GraphCapabilityUnavailable("Board graph readers are unavailable.",
+                        details={"reason": "prepared_reader_unavailable"})
+                lease.ensure_owned(failure_phase="before_runtime_activation_response")
+                return {"board_id": board_id, "state": "ready"}
+
+        # Never block the host loop or release ownership while native work is
+        # still running after a request cancellation.
+        return await run_blocking_graph_io(activate, task_name="core.board_runtime.activate")
+
+
 class UpdateBoardCommand:
     __slots__ = ("board_id", "data")
 
