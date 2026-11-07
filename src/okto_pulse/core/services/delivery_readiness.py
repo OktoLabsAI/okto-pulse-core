@@ -550,11 +550,35 @@ class PreparedDeliveryReadiness:
             if related.intersection(self.actions[key].issue_ids))[:3]
         def construct(size):
             issues = tuple(rendered[:size])
+            if preview_limit < 10:
+                # Evidence is a preview here, not the paged source of truth.
+                # An otherwise valid single cause can exceed the summary byte
+                # budget even with each array limited to ten entries. Keep its
+                # identity, impacts and counts; the unchanged detail query
+                # still pages every complete fact from self.diagnostics.
+                compacted = []
+                for issue in issues:
+                    changes = {}
+                    for field, count in (('expected', 'expected_count'),
+                            ('observed', 'observed_count'), ('evidence_refs', 'evidence_count'),
+                            ('pinpoints', 'pinpoint_count')):
+                        values = getattr(issue, field)[:preview_limit]
+                        changes[field] = values
+                        changes[field + '_truncated'] = len(values) < getattr(issue, count)
+                    compacted.append(issue.model_copy(update=changes))
+                issues = tuple(compacted)
             truncated = any(value for issue in issues for key, value in issue.model_dump().items() if key.endswith('_truncated'))
             return DeliveryReadiness(**self.context.model_dump(), issues=issues, next_actions=actions,
                 page=self._page(binding, total=len(causes), offset=offset, returned=size, truncated=truncated))
-        return self._fit(total=len(causes), offset=offset, limit=query.limit, maximum=SUMMARY_MAX_BYTES,
-            construct=construct, identity=causes[offset].id if offset < len(causes) else self.context.scope.spec_id)
+        # Preserve normal previews whenever ordinary issue paging fits. Only
+        # reduce embedded evidence after even the minimum page is too large.
+        for preview_limit in (10, 5, 2, 1, 0):
+            try:
+                return self._fit(total=len(causes), offset=offset, limit=query.limit, maximum=SUMMARY_MAX_BYTES,
+                    construct=construct, identity=causes[offset].id if offset < len(causes) else self.context.scope.spec_id)
+            except ReadinessReadError as exc:
+                if exc.native_code != 'readiness_response_limit' or not rendered or preview_limit == 0:
+                    raise
 
     def _detail_entries(self, issue_id):
         if issue_id in self._entries:

@@ -131,17 +131,73 @@ def test_summary_and_detail_obey_real_utf8_byte_budgets():
     assert sum(e.section == 'observed' for r in result for e in r.entries) == 8
 
 
-@pytest.mark.parametrize('detail', [False, True])
-def test_single_unrepresentable_item_is_explicit_limit_error_with_authorized_identity(detail):
+@pytest.mark.parametrize('phase', ['all', 'verification'])
+def test_single_large_issue_keeps_summary_available_and_full_detail_recoverable(phase):
+    graph = build_diagnostic_graph(SCOPE, (scenario('scenario'),))
+    cause = graph.causes[0]
+    detail = DiagnosticDetail(cause.id,
+        tuple(ReadinessFact(criterion_id=f'ac-{i}', text='expected \U0001f9ea ' * 600) for i in range(10)),
+        tuple(ReadinessFact(observation_id=f'obs-{i}', text='observed \U0001f9ea ' * 600) for i in range(10)),
+        (), (), (), ())
+    data = NativeDeliveryDiagnostics(graph, (detail,), SCOPE)
+    prepared = PreparedDeliveryReadiness(context(graph), data, cursor=Cursor())
+    query = ReadinessReadQuery(board_id='board', spec_id='spec', phase=phase, limit=1)
+    response = prepared.page(query, actor_id='actor')
+    assert response.page.returned == response.page.total == 1
+    assert not response.page.has_more and response.page.response_truncated
+    assert len(serialize_readiness_response(response)) <= 32768
+    issue = response.issues[0]
+    assert issue.id == cause.id and issue.code == cause.code
+    assert issue.expected_count == issue.observed_count == 10
+    assert issue.expected_truncated and issue.observed_truncated
+    assert response.implementation == prepared.context.implementation
+    assert response.verification == prepared.context.verification
+    assert response.delivery_gate == prepared.context.delivery_gate
+    assert response.proof_complete is False
+    result = pages(prepared, ReadinessReadQuery.model_validate(issue.detail_query.model_dump()))
+    entries = [entry for page in result for entry in page.entries]
+    for section in ('expected', 'observed'):
+        assert {entry.value.model_dump_json() for entry in entries if entry.section == section} == {
+            value.model_dump_json() for value in getattr(detail, section)}
+    assert all(len(serialize_readiness_response(page)) <= 131072 for page in result)
+
+
+def test_single_unrepresentable_detail_item_is_explicit_limit_error_with_authorized_identity():
     data = diagnostics(text='🧪' * 40000)
     prepared = PreparedDeliveryReadiness(context(data.graph), data, cursor=Cursor())
+    summary = prepared.page(ReadinessReadQuery(board_id='board', spec_id='spec'), actor_id='actor')
+    assert summary.page.returned == 1 and summary.page.response_truncated
+    assert summary.issues[0].observed == ()
+    assert summary.issues[0].observed_count == 1 and summary.issues[0].observed_truncated
     query = ReadinessReadQuery(board_id='board', spec_id='spec',
-        **({'issue_id': data.graph.causes[0].id, 'snapshot_id': 'a' * 64} if detail else {}))
+        issue_id=data.graph.causes[0].id, snapshot_id='a' * 64)
     with pytest.raises(ReadinessReadError) as error:
         # Earlier small detail entries may fit. Continue until the huge fact.
         pages(prepared, query)
     assert error.value.code == 'readiness_limit_exceeded'
     assert error.value.identity == data.graph.causes[0].id
+
+
+def test_unrepresentable_summary_identity_is_not_dropped_to_make_page_fit():
+    data = diagnostics()
+    base = context(data.graph)
+    base = base.model_copy(update={'summary': base.summary.model_copy(update={'message': '🧪' * 40000})})
+    prepared = PreparedDeliveryReadiness(base, data, cursor=Cursor())
+    with pytest.raises(ReadinessReadError) as error:
+        prepared.page(ReadinessReadQuery(board_id='board', spec_id='spec'), actor_id='actor')
+    assert error.value.code == 'readiness_limit_exceeded'
+    assert error.value.identity == data.graph.causes[0].id
+
+
+def test_compacting_previews_does_not_skip_causes_or_break_continuation():
+    data = diagnostics(3, text='fact 🧪 ' * 4000)
+    prepared = PreparedDeliveryReadiness(context(data.graph), data, cursor=Cursor())
+    result = pages(prepared, ReadinessReadQuery(board_id='board', spec_id='spec', limit=1))
+    assert [issue.id for page in result for issue in page.issues] == [cause.id for cause in data.graph.causes]
+    assert len(result) == 3
+    assert all(page.page.returned == 1 and page.page.total == 3 for page in result)
+    assert all(page.page.response_truncated and page.issues[0].observed_truncated for page in result)
+    assert all(len(serialize_readiness_response(page)) <= 32768 for page in result)
 
 
 def test_final_page_can_fit_when_one_item_plus_cursor_does_not(monkeypatch):
