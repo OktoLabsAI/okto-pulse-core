@@ -51,7 +51,7 @@ def test_generation_matches_canonical_spec_and_each_card():
 def test_generation_captures_default_task_requirement_without_changing_canonical_assessment():
     generation = build_readiness_generation(_source(), captured_revision=7)
     by_card = {row.card_id: row for row in generation.summaries}
-    assert generation.evaluator_version == 'delivery-readiness-evaluator/v12'
+    assert generation.evaluator_version == 'delivery-readiness-evaluator/v13'
     assert by_card[None].requirement is None
     for identity in ('ui', 'authorization'):
         requirement = by_card[identity].requirement
@@ -167,7 +167,7 @@ def test_incremental_generation_refuses_unverified_or_nonadjacent_predecessor():
 
 
 @pytest.mark.parametrize('reuse', ['affected_cards', 'progress_span'])
-@pytest.mark.parametrize('legacy_version', ['v8', 'v9', 'v10', 'v11'])
+@pytest.mark.parametrize('legacy_version', ['v8', 'v9', 'v10', 'v11', 'v12'])
 def test_authority_upgrade_recomputes_instead_of_reusing_legacy_generations(monkeypatch, reuse, legacy_version):
     source = _source()
     with monkeypatch.context() as legacy:
@@ -185,7 +185,7 @@ def test_authority_upgrade_recomputes_instead_of_reusing_legacy_generations(monk
         build_readiness_generation(next_source, captured_revision=captured_revision,
             predecessor=predecessor, **reuse_args)
     current = build_readiness_generation(next_source, captured_revision=captured_revision)
-    assert current.evaluator_version == 'delivery-readiness-evaluator/v12'
+    assert current.evaluator_version == 'delivery-readiness-evaluator/v13'
     assert current.manifest_sha256 != prior_manifest
     assert predecessor.evaluator_version == 'delivery-readiness-evaluator/' + legacy_version
     assert predecessor.manifest_sha256 == prior_manifest

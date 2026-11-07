@@ -4,6 +4,7 @@ from dataclasses import dataclass, replace
 
 from okto_pulse.core.domain.delivery_evidence import (
     DeliveryBinding,
+    AmendmentDeliveryAttribution,
     DeliveryEvidenceSnapshot,
     DeliveryCoverageEvaluation,
     DeliveryCoverageRow,
@@ -295,6 +296,73 @@ def _evaluated_obligation_row(binding, required, by_card, tested, tests_by_imple
         bool(test_waivers or (required and not missing_cards and ids and ids <= tested and not missing_criteria)),
         missing_scenarios=missing_scenarios, conflicting_scenario_receipts=conflicting,
         scenario_findings=selected_findings)
+
+
+def amendment_source_proof(snapshot):
+    """Evaluate native source proof once, with no recursive attribution/waiver.
+
+    A complete revision inventory is required, including every contribution.
+    Missing allocation, optional work and exceptions cannot silently become a
+    complete Bug fix. Source proof remains scoped to the revision Spec.
+    """
+    context = snapshot.effective_context
+    if (snapshot.amendment_attributions or snapshot.complete is not True
+        or snapshot.facts_complete is False
+        or not isinstance(context, EffectiveDeliveryContext)
+        or not context.inventory.complete or snapshot.waivers
+        or any(row.not_required or (row.requirement_allocation is not None and
+            set(row.requirement_allocation.required_card_ids) != {c.card_id for c in row.contributions})
+            for row in context.inventory.rows)):
+        return None
+    proof = evaluate_effective_facts(snapshot, require_lifecycle=True)
+    if not proof.rows or any(row.not_required for row in proof.rows):
+        return None
+    implementations = tuple(sorted({identity for row in proof.rows for identity in row.implementation_ids}))
+    tests = tuple(sorted({identity for row in proof.rows for identity in row.test_ids}))
+    implemented = bool(implementations) and all(row.implementation_satisfied for row in proof.rows)
+    verified = implemented and bool(tests) and proof.allowed and all(row.test_satisfied for row in proof.rows)
+    return context.inventory.snapshot_sha256, implementations, tests, implemented, verified
+
+
+def _attributed_row(snapshot, obligation, direct, *, require_lifecycle):
+    if direct.implementation_satisfied and direct.test_satisfied:
+        return direct
+    # A second proof route cannot erase a current local failure or conflict.
+    # Its existing findings/checks remain the canonical diagnostic authority.
+    if direct.conflicting_scenario_receipts or direct.scenario_findings:
+        return direct
+    candidates = tuple(a for a in snapshot.amendment_attributions
+        if isinstance(a, AmendmentDeliveryAttribution) and a.binding == obligation.binding)
+    if len(candidates) != 1 or obligation.family != 'card' or obligation.blockers:
+        return direct
+    fact = candidates[0]
+    if (fact.origin_scope != snapshot.scope or fact.origin_current is not True
+        or fact.binding.obligation_ref != 'card:' + fact.bug_id
+        or len(obligation.required_contributions) != 1
+        or obligation.required_contributions[0].card_id != fact.bug_id
+        or fact.revision_scope.board_id != snapshot.scope.board_id
+        or fact.revision_scope.spec_id == snapshot.scope.spec_id
+        or fact.source_snapshot.scope != fact.revision_scope
+        or not fact.amendment_id
+        or not delivery_proof_lifecycle_eligible(fact.bug_status, require_done=require_lifecycle)):
+        return direct
+    proof = amendment_source_proof(fact.source_snapshot)
+    if proof is None or proof[0] != fact.inventory_sha256:
+        return direct
+    implemented = proof[3] and proof[1] == fact.implementation_ids
+    verified = implemented and proof[4] and proof[2] == fact.test_ids and fact.coverage_current is True
+    if not implemented:
+        return direct
+    # No proof fact is moved into the original ledger. IDs retain their native
+    # provenance; both local Card and Spec projections consume this exact row.
+    return replace(direct, implementation_satisfied=True,
+        implementation_ids=tuple(sorted(set(direct.implementation_ids) | set(proof[1]))),
+        missing_card_ids=(), test_satisfied=direct.test_satisfied or verified,
+        test_ids=tuple(sorted(set(direct.test_ids) | (set(proof[2]) if verified else set()))),
+        missing_criteria=() if verified else direct.missing_criteria,
+        missing_scenarios=() if verified else direct.missing_scenarios,
+        scenario_findings=() if verified else direct.scenario_findings,
+        conflicting_scenario_receipts=() if verified else direct.conflicting_scenario_receipts)
 
 
 def evaluate_effective_delivery_coverage(
@@ -726,8 +794,9 @@ def evaluate_effective_delivery_coverage(
         if any(f.reason.code == ReadinessReason.VERIFICATION_CONFLICT for f in findings) and not test_waivers:
             blockers.add('delivery_verification_run_conflict')
         def evaluated(cards):
-            return _evaluated_obligation_row(binding, cards, by_card, tested, tests_by_implementation,
+            direct = _evaluated_obligation_row(binding, cards, by_card, tested, tests_by_implementation,
                 missing_criteria, missing_scenarios, findings, implementation_waivers, test_waivers)
+            return _attributed_row(snapshot, obligation, direct, require_lifecycle=require_lifecycle)
         result.append(evaluated(required))
         contribution_rows.extend(ContributionDeliveryCoverage(card, evaluated((card,))) for card in sorted(required))
         contribution_rows.extend(ContributionDeliveryCoverage(fact.card_id,

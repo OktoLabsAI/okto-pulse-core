@@ -37,7 +37,7 @@ from okto_pulse.core.services.delivery_readiness_diagnostics import NativeDelive
 # Recompute v11's unknown Test summaries for readable, unexecuted scenarios.
 # Previous summaries must not seed incremental/progress reuse after subject
 # identity was separated from execution history.
-EVALUATOR_VERSION = "delivery-readiness-evaluator/v12"
+EVALUATOR_VERSION = "delivery-readiness-evaluator/v13"
 _DIAGNOSTICS = TypeAdapter(NativeDeliveryDiagnostics)
 _PROGRESS_LOCAL_BLOCKERS = frozenset({
     "delivery_implementation_missing", "delivery_test_result_missing",

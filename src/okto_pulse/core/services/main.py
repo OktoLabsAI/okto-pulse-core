@@ -5510,6 +5510,13 @@ class CardService:
             "evidence_ref": evidence_ref,
             "confirmed_at": datetime.now(timezone.utc).isoformat(),
         }
+        from okto_pulse.core.services.delivery_evidence import delivery_store
+
+        attribution_writer = getattr(delivery_store(self.db), 'amendment_delivery_attribution', None)
+        if callable(attribution_writer):
+            attribution = await attribution_writer(amendment, confirmation)
+            if attribution is not None:
+                confirmation['delivery_attribution'] = attribution
         await svc.set_coverage_confirmation(
             amendment_id, confirmation=confirmation, actor=reviewer_id
         )

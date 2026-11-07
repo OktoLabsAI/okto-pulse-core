@@ -51,6 +51,15 @@ class HumanDeliveryReportSubmitter(Protocol):
 
 
 class DeliveryEvidenceReadPort(Protocol):
+    async def amendment_delivery_attribution(self, amendment: object, confirmation: dict) -> dict | None:
+        """Freeze exact native proof under an authorized coverage confirmation.
+
+        Return no attribution for partial/ambiguous/unallocated revision proof.
+        Never transfer ledger scope or infer a link from similar requirements.
+        Caller persists the result only through the reserved confirmation writer.
+        """
+        ...
+
     async def record_card_report(self, command: CardDeliveryReportCommand, *, actor_id: str, actor_kind: str,
                                  report_submitter: DeliveryReportSubmitter,
                                  execution_submitter: DeliveryExecutionSubmitter | None = None) -> dict:
