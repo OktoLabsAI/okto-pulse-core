@@ -3,7 +3,7 @@
 import asyncio
 import hashlib
 import logging
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -47,11 +47,12 @@ def harness(monkeypatch, caplog):
 
     class Lease:
         owner_token = "PRIVATE-LEASE-TOKEN"
+        operation = "test_outbox_observability"
         released = False
 
-        @contextmanager
-        def guard(self):
-            yield
+        # Keep the unit lease, but use the production context propagation so
+        # acknowledgement-boundary checks observe the same active owner.
+        guard = GlobalDiscoveryWriterLease.guard
 
         def assert_fenced(self):
             pass
