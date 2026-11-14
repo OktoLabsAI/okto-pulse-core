@@ -64,20 +64,23 @@ class CoreAnalyticsOperations:
         snapshot = await reader.read(query, timeout_ms=remaining(), deadline=deadline)
         if query.read_graph:
             scope = build_spec_coverage_graph_scope(snapshot)
-            phase_ms = min(remaining(), 500 if query.graph_mode == 'summary' else 5000)
-            phase_deadline = min(deadline, time.monotonic() + phase_ms / 1000)
-            try:
-                observed = await reader.read_graph(query, scope, snapshot.source_revision,
-                    timeout_ms=phase_ms, deadline=phase_deadline)
-            except GraphQueryTimeout:
-                # Graph comparison is informational. Its unavailability cannot
-                # erase the authorized, coherent relational snapshot or imply
-                # that expected graph nodes/relations are absent.
-                logging.getLogger(__name__).warning(
-                    "spec_coverage.graph_observation_timeout board=%s spec=%s",
-                    query.board_id, query.spec_id,
-                )
-                observed = SpecCoverageGraphFacts(state='unavailable')
+            # Reserve at least half the remaining budget for the required
+            # source fence and projection, even after a slow source read.
+            phase_ms = min(remaining() // 2, 500 if query.graph_mode == 'summary' else 5000)
+            observed = SpecCoverageGraphFacts(state='unavailable')
+            if phase_ms > 0:
+                phase_deadline = min(deadline, time.monotonic() + phase_ms / 1000)
+                try:
+                    observed = await reader.read_graph(query, scope, snapshot.source_revision,
+                        timeout_ms=phase_ms, deadline=phase_deadline)
+                except GraphQueryTimeout:
+                    # Graph comparison is informational. Its unavailability cannot
+                    # erase the authorized, coherent relational snapshot or imply
+                    # that expected graph nodes/relations are absent.
+                    logging.getLogger(__name__).warning(
+                        "spec_coverage.graph_observation_timeout board=%s spec=%s",
+                        query.board_id, query.spec_id,
+                    )
             snapshot = replace(snapshot, graph=observed, graph_scope=scope)
         # This required authority check is deliberately outside the optional
         # graph timeout handler, including when graph access is restricted.

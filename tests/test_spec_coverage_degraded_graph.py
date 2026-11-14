@@ -120,8 +120,55 @@ async def test_caller_deadline_clips_all_phases_and_never_resets(monkeypatch):
         read_graph=AsyncMock(return_value=SpecCoverageGraphFacts()), verify_source=AsyncMock())
     await catalog(monkeypatch, reader).spec_coverage(
         replace(QUERY, read_graph=True, graph_mode='detail'), timeout_ms=15000, deadline=100.125)
-    for operation in (reader.read, reader.read_graph, reader.verify_source):
+    for operation in (reader.read, reader.verify_source):
         assert operation.call_args.kwargs == {'timeout_ms': 125, 'deadline': 100.125}
+    assert reader.read_graph.call_args.kwargs == {'timeout_ms': 62, 'deadline': 100.062}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('mode,source_seconds', [('summary', 14.5), ('detail', 10.0)])
+async def test_slow_source_cannot_let_optional_graph_starve_final_fence(monkeypatch, mode, source_seconds):
+    now = [100.0]
+    monkeypatch.setattr('time.monotonic', lambda: now[0])
+    snapshot = source()
+
+    async def read(*args, **kwargs):
+        now[0] += source_seconds
+        return snapshot
+
+    async def graph(*args, **kwargs):
+        now[0] = kwargs['deadline']
+        raise GraphQueryTimeout('optional phase expired')
+
+    async def fence(*args, **kwargs):
+        assert kwargs['deadline'] == 115.0
+        assert kwargs['timeout_ms'] > 100
+        now[0] += 0.1
+
+    reader = SimpleNamespace(read=AsyncMock(side_effect=read),
+        read_graph=AsyncMock(side_effect=graph), verify_source=AsyncMock(side_effect=fence))
+    query = replace(QUERY, read_graph=True, graph_mode=mode)
+    result = await catalog(monkeypatch, reader).spec_coverage(query, timeout_ms=15000)
+    reader.verify_source.assert_awaited_once()
+    assert result['structure']['graph']['state'] == 'unavailable'
+    assert result['structure']['graph']['observed_nodes'] is None
+    assert result['delivery'] == project_spec_coverage(query, snapshot)['delivery']
+    assert result['items'] == project_spec_coverage(query, snapshot)['items']
+
+
+@pytest.mark.asyncio
+async def test_last_millisecond_is_reserved_for_required_fence(monkeypatch):
+    monkeypatch.setattr('time.monotonic', lambda: 100.0)
+    reader = SimpleNamespace(read=AsyncMock(return_value=source()),
+        read_graph=AsyncMock(return_value=SpecCoverageGraphFacts()), verify_source=AsyncMock())
+    result = await catalog(monkeypatch, reader).spec_coverage(
+        replace(QUERY, read_graph=True, graph_mode='detail'), timeout_ms=15000, deadline=100.0015)
+    reader.read_graph.assert_not_awaited()
+    reader.verify_source.assert_awaited_once()
+    assert reader.verify_source.call_args.kwargs == {'timeout_ms': 1, 'deadline': 100.0015}
+    assert result['structure']['graph']['state'] == 'unavailable'
+    assert result['structure']['graph']['expected_nodes'] is None
+    assert result['structure']['graph']['observed_nodes'] is None
 
 
 @pytest.mark.asyncio
