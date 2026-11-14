@@ -202,6 +202,7 @@ class R2Acceptance(_AcceptanceCase):
             "community": (
                 "tests/test_e2e043_evidence.py",
                 "tests/test_mcp_host_adapter.py",
+                "tests/test_mcp_sqlite_contention_outcome.py",
                 "tests/test_human_task_delivery_report.py",
             ),
         })
