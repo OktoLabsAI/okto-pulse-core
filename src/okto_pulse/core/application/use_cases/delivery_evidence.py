@@ -153,6 +153,9 @@ class RecordCardDeliveryEvidenceUseCase:
     async def execute(
         self, command: CardDeliveryEvidenceWriteCommand | CardDeliveryReportCommand, *, actor, uow: PulseUnitOfWork
     ):
+        # Establish the edition's write transaction before permission/scope
+        # reads. Semantic versions and delivery CAS are still checked below.
+        await uow.begin_write()
         if isinstance(command, CardDeliveryReportCommand):
             return await self.submit_report(command, actor=actor, uow=uow)
         options = await self.authorize_in_transaction(command, actor=actor, uow=uow)

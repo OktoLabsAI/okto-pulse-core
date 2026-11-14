@@ -297,7 +297,14 @@ def _closed_tool(mcp: object, fn: Callable[..., Any]) -> None:
         try:
             return await fn(*args, **kwargs)
         except Exception as error:
-            return _error_outcome(error)
+            try:
+                return _error_outcome(error)
+            except TypeError:
+                # Edition transports own infrastructure errors such as database
+                # contention. Re-raise outside this handler to avoid creating a
+                # cyclic exception context with the failed error projection.
+                pass
+            raise
 
     setattr(guarded, "__mcp_closed_schema__", True)
     getattr(mcp, "tool")()(guarded)
@@ -479,7 +486,8 @@ def register_code_traceability_tools(
             try:
                 return _error_outcome(exc)
             except TypeError:
-                raise exc
+                pass
+            raise
 
     def _services() -> tuple[CodeInvestigationService, CodeEvidenceService, ImplementationTargetService]:
         return (

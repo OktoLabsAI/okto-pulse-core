@@ -198,7 +198,9 @@ class R2Acceptance(_AcceptanceCase):
 
     def test_transport_resource_contracts_and_human_receipts(self):
         self._run({
-            "core": ("tests/test_e2e043_contracts.py",),
+            "core": ("tests/test_e2e043_contracts.py",
+                     "tests/test_code_traceability_mcp_surface.py",
+                     "tests/test_delivery_report_contract.py"),
             "community": (
                 "tests/test_e2e043_evidence.py",
                 "tests/test_mcp_host_adapter.py",

@@ -74,10 +74,33 @@ async def test_every_constituent_permission_is_checked_before_atomic_store(monke
 
     monkeypatch.setattr(module, "require_authorization", authorize)
     store = SimpleNamespace(record_card=AsyncMock(), record_card_report=AsyncMock())
-    uow = SimpleNamespace(services=SimpleNamespace(delivery_evidence=store), commit=AsyncMock(), rollback=AsyncMock())
+    uow = SimpleNamespace(services=SimpleNamespace(delivery_evidence=store),
+        begin_write=AsyncMock(), commit=AsyncMock(), rollback=AsyncMock())
     with pytest.raises(PermissionDeniedError):
         await RecordCardDeliveryEvidenceUseCase().execute(command,
             actor=SimpleNamespace(actor_id="agent", actor_kind="agent"), uow=uow)
     assert calls[0] == "card.conclusion.write" and len(calls) == 2
     store.record_card_report.assert_not_called()
     uow.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('report', [False, True])
+async def test_write_admission_failure_prevents_authorization_and_delivery_side_effects(monkeypatch, report):
+    from okto_pulse.core.application.use_cases import delivery_evidence as module
+    payload = body() if report else body()['batch']
+    command = card_delivery_command(board_id='b', card_id='c', spec_id='s', evidence=payload)
+    authorize = AsyncMock()
+    monkeypatch.setattr(module, 'require_authorization', authorize)
+    failure = RuntimeError('edition write admission refused')
+    store = SimpleNamespace(record_card=AsyncMock(), record_card_report=AsyncMock())
+    uow = SimpleNamespace(services=SimpleNamespace(delivery_evidence=store),
+        begin_write=AsyncMock(side_effect=failure), commit=AsyncMock(), rollback=AsyncMock())
+    with pytest.raises(RuntimeError) as raised:
+        await RecordCardDeliveryEvidenceUseCase().execute(command,
+            actor=SimpleNamespace(actor_id='agent', actor_kind='agent'), uow=uow)
+    assert raised.value is failure
+    authorize.assert_not_awaited()
+    store.record_card.assert_not_awaited()
+    store.record_card_report.assert_not_awaited()
+    uow.commit.assert_not_awaited()

@@ -23,6 +23,34 @@ def catalog(monkeypatch, reader):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('phase', ['before_source', 'final_source_fence', 'projection'])
+async def test_required_deadline_phase_is_sanitized_without_changing_failure(monkeypatch, caplog, phase):
+    now = [100.0]
+    monkeypatch.setattr('time.monotonic', lambda: now[0])
+    failure = GraphQueryTimeout('SELECT private_secret /private/path')
+
+    async def fence(*args, **kwargs):
+        if phase == 'final_source_fence':
+            raise failure
+        if phase == 'projection':
+            now[0] = 116.0
+
+    reader = SimpleNamespace(read=AsyncMock(return_value=source()),
+                             verify_source=AsyncMock(side_effect=fence))
+    with pytest.raises(GraphQueryTimeout) as caught:
+        await catalog(monkeypatch, reader).spec_coverage(
+            replace(QUERY, read_graph=False), timeout_ms=15000,
+            deadline=99.0 if phase == 'before_source' else None)
+    if phase == 'before_source':
+        reader.read.assert_not_awaited()
+    elif phase == 'final_source_fence':
+        assert caught.value is failure
+    messages = [r.getMessage() for r in caplog.records if 'spec_coverage.required_timeout' in r.getMessage()]
+    assert len(messages) == 1 and f'stage={phase}' in messages[0]
+    assert 'private' not in caplog.text and 'SELECT' not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_graph_timeout_keeps_source_and_exact_proof_without_false_graph_success(monkeypatch):
     query = replace(QUERY, read_graph=True)
     snapshot = source()

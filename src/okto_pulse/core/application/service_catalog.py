@@ -54,9 +54,12 @@ class CoreAnalyticsOperations:
         local_deadline = time.monotonic() + timeout_ms / 1000
         deadline = min(local_deadline, deadline) if deadline is not None else local_deadline
 
-        def remaining():
+        def remaining(stage='before_source'):
             value = int((deadline - time.monotonic()) * 1000)
             if value <= 0:
+                logging.getLogger(__name__).warning(
+                    'spec_coverage.required_timeout board=%s spec=%s stage=%s',
+                    query.board_id, query.spec_id, stage)
                 raise GraphQueryTimeout('Spec coverage read deadline exceeded.')
             return value
 
@@ -66,7 +69,7 @@ class CoreAnalyticsOperations:
             scope = build_spec_coverage_graph_scope(snapshot)
             # Reserve at least half the remaining budget for the required
             # source fence and projection, even after a slow source read.
-            phase_ms = min(remaining() // 2, 500 if query.graph_mode == 'summary' else 5000)
+            phase_ms = min(remaining('before_graph') // 2, 500 if query.graph_mode == 'summary' else 5000)
             observed = SpecCoverageGraphFacts(state='unavailable')
             if phase_ms > 0:
                 phase_deadline = min(deadline, time.monotonic() + phase_ms / 1000)
@@ -84,10 +87,17 @@ class CoreAnalyticsOperations:
             snapshot = replace(snapshot, graph=observed, graph_scope=scope)
         # This required authority check is deliberately outside the optional
         # graph timeout handler, including when graph access is restricted.
-        await reader.verify_source(query, snapshot.source_revision,
-            timeout_ms=remaining(), deadline=deadline)
+        fence_ms = remaining('final_source_fence')
+        try:
+            await reader.verify_source(query, snapshot.source_revision,
+                timeout_ms=fence_ms, deadline=deadline)
+        except GraphQueryTimeout:
+            logging.getLogger(__name__).warning(
+                'spec_coverage.required_timeout board=%s spec=%s stage=final_source_fence',
+                query.board_id, query.spec_id)
+            raise
         result = project_spec_coverage(query, snapshot)
-        remaining()
+        remaining('projection')
         return result
 
     async def bug_clusters(self, query, *, timeout_ms: int):
