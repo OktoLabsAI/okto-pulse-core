@@ -318,7 +318,10 @@ class ActivateBoardRuntimeUseCase:
         from okto_pulse.core.application.kg_runtime_access import resolve_graph_lifecycle
         from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
         from okto_pulse.core.kg.guarded_write import guarded_board_write
-        from okto_pulse.core.kg.interfaces.graph_errors import GraphCapabilityUnavailable, GraphUnavailable
+        from okto_pulse.core.kg.interfaces.graph_errors import (
+            GraphActivationBusy, GraphCapabilityUnavailable, GraphLockContention,
+            GraphQueryTimeout, GraphUnavailable,
+        )
         from okto_pulse.core.kg.interfaces.graph_lifecycle import PreparedGraphReaderObservation
 
         board_id = command.board_id
@@ -333,7 +336,16 @@ class ActivateBoardRuntimeUseCase:
             if lifecycle is None:
                 raise GraphCapabilityUnavailable("Board graph lifecycle is not configured.")
             if isinstance(lifecycle, PreparedGraphReaderObservation):
-                prepared = lifecycle.observe_prepared_reader(board_id)
+                try:
+                    prepared = lifecycle.observe_prepared_reader(board_id)
+                except (GraphQueryTimeout, GraphLockContention) as exc:
+                    # This probe has not opened or mutated storage. A busy
+                    # reader is neither absent nor unhealthy. Do not enter
+                    # cold activation or replay a durability operation here.
+                    raise GraphActivationBusy(
+                        "Board graph activation is waiting for reader access.",
+                        details={"phase": "observe_prepared_reader", "cause_code": exc.code},
+                    ) from exc
                 if prepared is not None:
                     if (prepared.board_id != board_id or not prepared.opened
                             or prepared.locked or prepared.quarantined or not prepared.readers_prepared):

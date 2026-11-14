@@ -120,6 +120,42 @@ async def test_prepared_reader_refusal_is_not_cold_recovery(activation):
 
 
 @pytest.mark.asyncio
+async def test_busy_observation_can_recover_without_replaying_durability(activation):
+    from okto_pulse.core.kg.interfaces.graph_errors import GraphActivationBusy, GraphQueryTimeout
+    observations = iter([GraphQueryTimeout('reader admission expired'), handle()])
+    def observe(board):
+        result = next(observations)
+        if isinstance(result, Exception):
+            raise result
+        return result
+    activation.lifecycle.observe_prepared_reader = observe
+    with pytest.raises(GraphActivationBusy) as failure:
+        await execute(activation)
+    assert failure.value.retryable
+    assert failure.value.details == {
+        'phase': 'observe_prepared_reader', 'cause_code': 'graph_query_timeout'}
+    assert activation.events == []
+    assert await execute(activation) == {'board_id': 'board', 'state': 'ready'}
+    assert activation.events == []
+    activation.lifecycle.open.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cold_lifecycle_timeout_is_not_replayable_activation_busy(activation):
+    from okto_pulse.core.kg.interfaces.graph_errors import GraphActivationBusy, GraphQueryTimeout
+    activation.lifecycle.observe_prepared_reader = lambda board: None
+    failure = GraphQueryTimeout('durability failed')
+    def timeout():
+        raise failure
+    activation.lease.ensure_durable = timeout
+    with pytest.raises(GraphQueryTimeout) as raised:
+        await execute(activation)
+    assert raised.value is failure
+    assert not isinstance(raised.value, GraphActivationBusy)
+    assert activation.events[-1] == 'release'
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('state', [{'opened': False}, {'locked': True}, {'quarantined': True}, {'board_id': 'other'}])
 async def test_closed_or_refused_storage_never_enters_durability(activation, state):
     activation.lifecycle.open.side_effect = lambda board: handle(**state)

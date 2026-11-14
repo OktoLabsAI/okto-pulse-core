@@ -52,6 +52,15 @@ class GraphLockContention(GraphUnavailable):
     code = "graph_lock_contention"
 
 
+class GraphActivationBusy(GraphLockContention):
+    """Read-only activation observation could not enter; safe to retry.
+
+    Never use this for a failed lifecycle mutation: its outcome may be unknown.
+    """
+
+    code = "graph_activation_busy"
+
+
 class GraphCapabilityUnavailable(GraphError):
     code = "graph_capability_unavailable"
 
@@ -116,6 +125,7 @@ __all__ = [
     "GRAPH_MEMORY_PRESSURE_DEFAULT_RETRY_AFTER_SECONDS",
     "GRAPH_MEMORY_PRESSURE_MAX_RETRY_AFTER_SECONDS",
     "GraphCapabilityUnavailable",
+    "GraphActivationBusy",
     "GraphCorruption",
     "GraphError",
     "GraphIndexUnavailable",

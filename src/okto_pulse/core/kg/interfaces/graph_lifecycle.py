@@ -39,7 +39,9 @@ class PreparedGraphReaderObservation(Protocol):
 
     The provider pins one existing participant and revalidates its exact route.
     It must never cold-open, initialize, checkpoint or repair storage. None
-    means no prepared participant exists; refusal/route failure raises. The
+    means no prepared participant exists; temporary admission contention raises
+    GraphLockContention or GraphQueryTimeout, never None. Other refusal/route
+    failures remain distinct and must not trigger an automatic retry. The
     returned availability is an observation, not a reservation or write proof.
     """
 
