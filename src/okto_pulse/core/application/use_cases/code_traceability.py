@@ -851,6 +851,8 @@ class StartCodeInvestigationUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> StartCodeInvestigationResult:
+        # Acquire writer admission before policy/subject reads and request CAS.
+        await uow.begin_write()
         policy = await _load_policy(board_id=command.board_id, uow=uow)
         await _authorize(
             actor,
