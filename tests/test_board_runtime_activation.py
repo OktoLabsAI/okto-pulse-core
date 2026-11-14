@@ -99,6 +99,59 @@ async def test_missing_prepared_reader_preserves_full_cold_activation(activation
 
 
 @pytest.mark.asyncio
+async def test_cold_guard_admission_contention_is_busy_before_any_lifecycle(activation, monkeypatch):
+    from okto_pulse.core.kg.interfaces.graph_errors import GraphActivationBusy
+    activation.lifecycle.observe_prepared_reader = lambda board: None
+    failure = guarded_write.GuardedWriteError('lock_contention', 'private owner details', retryable=True)
+
+    @contextmanager
+    def refused(*args, **kwargs):
+        activation.authorize.assert_awaited_once()
+        raise failure
+        yield  # Make the failure occur at __enter__, as in the real guard.
+
+    monkeypatch.setattr(guarded_write, 'guarded_board_write', refused)
+    with pytest.raises(GraphActivationBusy) as caught:
+        await execute(activation)
+    assert caught.value.__cause__ is failure
+    assert caught.value.details == {'phase': 'acquire_writer', 'cause_code': 'lock_contention'}
+    assert 'private' not in str(caught.value)
+    activation.lifecycle.open.assert_not_awaited()
+    assert activation.events == []
+    activation.uow.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('phase', ['open', 'durable', 'owned', 'exit'])
+async def test_cold_contention_after_guard_entry_is_never_replayable_busy(activation, monkeypatch, phase):
+    from okto_pulse.core.kg.interfaces.graph_errors import GraphActivationBusy
+    activation.lifecycle.observe_prepared_reader = lambda board: None
+    failure = guarded_write.GuardedWriteError('lock_contention', 'private owner details', retryable=True)
+
+    def fail(*args, **kwargs):
+        raise failure
+
+    if phase == 'open':
+        activation.lifecycle.open.side_effect = failure
+    elif phase == 'durable':
+        activation.lease.ensure_durable = fail
+    elif phase == 'owned':
+        activation.lease.ensure_owned = fail
+    else:
+        @contextmanager
+        def failing_exit(*args, **kwargs):
+            yield activation.lease
+            raise failure
+        monkeypatch.setattr(guarded_write, 'guarded_board_write', failing_exit)
+    with pytest.raises(guarded_write.GuardedWriteError) as caught:
+        await execute(activation)
+    assert caught.value is failure
+    assert not isinstance(caught.value, GraphActivationBusy)
+    assert activation.lifecycle.open.await_count == (1 if phase in ('open', 'durable') else 2)
+    activation.uow.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('state', [{'opened': False}, {'locked': True}, {'quarantined': True},
                                   {'board_id': 'other'}, {'readers_prepared': False}])
 async def test_invalid_prepared_handle_never_reports_ready_or_mutates(activation, state):

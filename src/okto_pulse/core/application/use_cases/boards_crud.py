@@ -317,7 +317,7 @@ class ActivateBoardRuntimeUseCase:
         from okto_pulse.core.application.use_cases.authorization import require_all
         from okto_pulse.core.application.kg_runtime_access import resolve_graph_lifecycle
         from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
-        from okto_pulse.core.kg.guarded_write import guarded_board_write
+        from okto_pulse.core.kg.guarded_write import GuardedWriteError, guarded_board_write
         from okto_pulse.core.kg.interfaces.graph_errors import (
             GraphActivationBusy, GraphCapabilityUnavailable, GraphLockContention,
             GraphQueryTimeout, GraphUnavailable,
@@ -351,22 +351,35 @@ class ActivateBoardRuntimeUseCase:
                             or prepared.locked or prepared.quarantined or not prepared.readers_prepared):
                         raise GraphUnavailable("Prepared board reader is unavailable.")
                     return {"board_id": board_id, "state": "ready"}
-            with guarded_board_write(board_id, operation="activate_board_runtime",
-                    owner_id=actor.actor_id, mutation_ref=f"board-runtime:{board_id}") as lease:
-                handle = asyncio.run(lifecycle.open(board_id))
-                if (handle.board_id != board_id or not handle.opened
-                        or handle.locked or handle.quarantined):
-                    raise GraphUnavailable("Board graph could not be opened.")
-                # A cold reader may require a durable image before it can join.
-                # Keep every normal durability step and the owning fence.
-                lease.ensure_durable()
-                handle = asyncio.run(lifecycle.open(board_id))
-                if (handle.board_id != board_id or not handle.opened or handle.locked or handle.quarantined
-                        or not handle.readers_prepared):
-                    raise GraphCapabilityUnavailable("Board graph readers are unavailable.",
-                        details={"reason": "prepared_reader_unavailable"})
-                lease.ensure_owned(failure_phase="before_runtime_activation_response")
-                return {"board_id": board_id, "state": "ready"}
+            entered = False
+            try:
+                with guarded_board_write(board_id, operation="activate_board_runtime",
+                        owner_id=actor.actor_id, mutation_ref=f"board-runtime:{board_id}") as lease:
+                    entered = True
+                    handle = asyncio.run(lifecycle.open(board_id))
+                    if (handle.board_id != board_id or not handle.opened
+                            or handle.locked or handle.quarantined):
+                        raise GraphUnavailable("Board graph could not be opened.")
+                    # A cold reader may require a durable image before it can join.
+                    # Keep every normal durability step and the owning fence.
+                    lease.ensure_durable()
+                    handle = asyncio.run(lifecycle.open(board_id))
+                    if (handle.board_id != board_id or not handle.opened or handle.locked or handle.quarantined
+                            or not handle.readers_prepared):
+                        raise GraphCapabilityUnavailable("Board graph readers are unavailable.",
+                            details={"reason": "prepared_reader_unavailable"})
+                    lease.ensure_owned(failure_phase="before_runtime_activation_response")
+                    return {"board_id": board_id, "state": "ready"}
+            except GuardedWriteError as exc:
+                # Only writer admission refused before entering the body is
+                # replayable. The same code after open/durability or during
+                # guard exit must retain its original conservative semantics.
+                if not entered and exc.code == "lock_contention":
+                    raise GraphActivationBusy(
+                        "Board graph activation is waiting for writer access.",
+                        details={"phase": "acquire_writer", "cause_code": exc.code},
+                    ) from exc
+                raise
 
         # Never block the host loop or release ownership while native work is
         # still running after a request cancellation.
