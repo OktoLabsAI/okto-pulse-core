@@ -11,6 +11,7 @@ from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout
 from okto_pulse.core.models.spec_coverage_query import SpecCoverageResponse
 from okto_pulse.core.ports.spec_coverage_query import SpecCoverageGraphFacts
 from okto_pulse.core.services.spec_coverage_query import project_spec_coverage
+from okto_pulse.core.services import spec_coverage_query as projection
 from test_spec_coverage_query import QUERY, source
 
 
@@ -182,6 +183,68 @@ async def test_slow_source_cannot_let_optional_graph_starve_final_fence(monkeypa
     assert result['structure']['graph']['observed_nodes'] is None
     assert result['delivery'] == project_spec_coverage(query, snapshot)['delivery']
     assert result['items'] == project_spec_coverage(query, snapshot)['items']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('mode', ['summary', 'detail'])
+async def test_required_proof_is_evaluated_once_before_budgeting_optional_graph(monkeypatch, mode):
+    now = [100.0]
+    monkeypatch.setattr('time.monotonic', lambda: now[0])
+    snapshot = source()
+    query = replace(QUERY, read_graph=True, graph_mode=mode)
+    expected_delivery = project_spec_coverage(query, snapshot)['delivery']
+    events = []
+    evaluate = projection.evaluate_delivery_coverage
+
+    def proof(*args, **kwargs):
+        events.append('proof')
+        now[0] += 0.5
+        return evaluate(*args, **kwargs)
+
+    async def graph(*args, **kwargs):
+        assert events == ['proof']
+        events.append('graph')
+        assert kwargs == {'timeout_ms': 250, 'deadline': 100.75}
+        now[0] = kwargs['deadline']
+        raise GraphQueryTimeout('optional graph expired')
+
+    async def fence(*args, **kwargs):
+        events.append('fence')
+        assert kwargs == {'timeout_ms': 250, 'deadline': 101.0}
+        now[0] += 0.125
+
+    monkeypatch.setattr(projection, 'evaluate_delivery_coverage', proof)
+    reader = SimpleNamespace(read=AsyncMock(return_value=snapshot),
+        read_graph=AsyncMock(side_effect=graph), verify_source=AsyncMock(side_effect=fence))
+    result = await catalog(monkeypatch, reader).spec_coverage(query, timeout_ms=1000)
+    assert events == ['proof', 'graph', 'fence']
+    assert result['delivery'] == expected_delivery
+    assert result['structure']['graph']['state'] == 'unavailable'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('changed_graph', [False, True])
+async def test_prepared_projection_validates_cursor_only_against_final_graph(monkeypatch, changed_graph):
+    from test_spec_coverage_graph import observed
+
+    monkeypatch.setattr('time.monotonic', lambda: 100.0)
+    snapshot = observed()
+    first_query = replace(QUERY, read_graph=True, limit=1)
+    cursor = project_spec_coverage(first_query, snapshot)['next_cursor']
+    query = replace(first_query, cursor=cursor)
+    graph = replace(snapshot.graph, generation='changed') if changed_graph else snapshot.graph
+    reader = SimpleNamespace(
+        read=AsyncMock(return_value=replace(snapshot, graph=None, graph_scope=None)),
+        read_graph=AsyncMock(return_value=graph), verify_source=AsyncMock())
+    operation = catalog(monkeypatch, reader)
+    if changed_graph:
+        with pytest.raises(ValueError, match='spec_coverage_cursor_stale'):
+            await operation.spec_coverage(query, timeout_ms=15000)
+    else:
+        result = await operation.spec_coverage(query, timeout_ms=15000)
+        assert result == project_spec_coverage(query, snapshot)
+    reader.read_graph.assert_awaited_once()
+    reader.verify_source.assert_awaited_once()
 
 
 @pytest.mark.asyncio

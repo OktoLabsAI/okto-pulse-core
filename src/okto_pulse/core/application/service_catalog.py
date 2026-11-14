@@ -49,7 +49,7 @@ class CoreAnalyticsOperations:
         from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout
         from okto_pulse.core.ports.spec_coverage_query import SpecCoverageGraphFacts
         from okto_pulse.core.ports.relational_application import require_relational_application_adapter
-        from okto_pulse.core.services.spec_coverage_query import project_spec_coverage
+        from okto_pulse.core.services.spec_coverage_query import _prepare_spec_coverage, _compose_spec_coverage
         from okto_pulse.core.services.spec_coverage_graph import build_spec_coverage_graph_scope
         local_deadline = time.monotonic() + timeout_ms / 1000
         deadline = min(local_deadline, deadline) if deadline is not None else local_deadline
@@ -65,10 +65,12 @@ class CoreAnalyticsOperations:
 
         reader = require_relational_application_adapter().spec_coverage_read(self.__relational_context)
         snapshot = await reader.read(query, timeout_ms=remaining(), deadline=deadline)
+        prepared = _prepare_spec_coverage(query, snapshot)
+        remaining('projection')
         if query.read_graph:
             scope = build_spec_coverage_graph_scope(snapshot)
-            # Reserve at least half the remaining budget for the required
-            # source fence and projection, even after a slow source read.
+            # Mandatory planning/proof is already evaluated. Reserve at least
+            # half the remaining budget for the final source fence/composition.
             phase_ms = min(remaining('before_graph') // 2, 500 if query.graph_mode == 'summary' else 5000)
             observed = SpecCoverageGraphFacts(state='unavailable')
             if phase_ms > 0:
@@ -96,7 +98,7 @@ class CoreAnalyticsOperations:
                 'spec_coverage.required_timeout board=%s spec=%s stage=final_source_fence',
                 query.board_id, query.spec_id)
             raise
-        result = project_spec_coverage(query, snapshot)
+        result = _compose_spec_coverage(prepared, graph=snapshot.graph, graph_scope=snapshot.graph_scope)
         remaining('projection')
         return result
 
