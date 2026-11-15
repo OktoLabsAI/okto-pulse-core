@@ -72,6 +72,25 @@ def test_anti_singleton_new_global_singleton_blocks(tmp_path) -> None:
     assert report.remediation_hint
 
 
+def test_outbox_observation_registration_does_not_allow_other_contextvars(tmp_path) -> None:
+    mod = tmp_path / "okto_pulse/core/application/processors/global_outbox.py"
+    mod.parent.mkdir(parents=True)
+    mod.write_text(
+        "from contextvars import ContextVar\n"
+        "_observation_context = ContextVar('observation', default=None)\n"
+        "_unregistered_context = ContextVar('unregistered', default=None)\n",
+        encoding="utf-8",
+    )
+    report = AntiSingletonGate().run(AntiSingletonGateInput(source_root=tmp_path))
+    assert report.status == "blocking"
+    assert report.evidence["baseline_count"] == 0
+    assert report.evidence["new_singletons"] == [{
+        "name": "_unregistered_context",
+        "file": "okto_pulse/core/application/processors/global_outbox.py",
+        "kind": "contextvar",
+    }]
+
+
 def test_anti_singleton_module_constants_are_not_flagged(tmp_path) -> None:
     # lookup tables / __all__ / sample buffers are NOT singletons.
     mod = tmp_path / "okto_pulse" / "core" / "constmod.py"
