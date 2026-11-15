@@ -1,5 +1,6 @@
 """Authorize source coverage and proof visibility before reading any facts."""
 from dataclasses import dataclass
+import time
 
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from okto_pulse.core.application.use_cases.authorization import (
@@ -19,10 +20,12 @@ class SpecCoverageCommand:
     limit: int = 200
     cursor: str | None = None
     timeout_ms: int | None = None
+    graph_mode: str = 'summary'
 
 
 class SpecCoverageUseCase:
     async def execute(self, command, *, actor, uow: PulseUnitOfWork):
+        started = time.monotonic()
         board = await load_accessible_board(uow, command.board_id, actor)
         if board is None:
             raise EntityNotFoundError('board', command.board_id)
@@ -37,7 +40,8 @@ class SpecCoverageUseCase:
             permissions=permissions).allowed
         query = SpecCoverageQuery(command.board_id, command.spec_id,
             f'{actor.realm_id or LOCAL_REALM_ID}:{actor.actor_kind}:{actor.source}:{actor.actor_id}',
-            command.limit, command.cursor, read_delivery, read_graph)
+            command.limit, command.cursor, read_delivery, read_graph, command.graph_mode)
         policy = KGQueryPolicy.from_settings(getattr(board, 'settings', None))
+        timeout_ms = policy.effective_timeout(command.timeout_ms)
         return await uow.services.analytics.spec_coverage(query,
-            timeout_ms=policy.effective_timeout(command.timeout_ms))
+            timeout_ms=timeout_ms, deadline=started + timeout_ms / 1000)

@@ -193,6 +193,7 @@ async def test_move_spec_refreshes_inside_transaction_before_commit() -> None:
 
     class Specs:
         async def get_spec(self, _spec_id: str):
+            calls.append("get_spec")
             return spec
 
         async def move_spec(self, *_args, **_kwargs):
@@ -205,6 +206,9 @@ async def test_move_spec_refreshes_inside_transaction_before_commit() -> None:
         def __init__(self, *, fail_reload: bool = False) -> None:
             self.events: list[str] = []
             self.fail_reload = fail_reload
+
+        async def begin_write(self) -> None:
+            calls.append("begin_write")
 
         async def synchronize(self) -> None:
             self.events.append("synchronize")
@@ -225,6 +229,7 @@ async def test_move_spec_refreshes_inside_transaction_before_commit() -> None:
         board_id=BOARD_ID,
         permissions=["spec.move.draft_to_review"],
     )
+    calls: list[str] = []
     successful = UnitOfWork()
     result = await McpMoveSpecUseCase().execute(
         McpMoveSpecCommand(
@@ -236,9 +241,11 @@ async def test_move_spec_refreshes_inside_transaction_before_commit() -> None:
         uow=successful,
     )
     assert successful.events == ["synchronize", "reload", "commit"]
+    assert calls == ["begin_write", "get_spec"]
     assert result.spec.version == 6
 
     spec.status = SpecStatus.DRAFT
+    calls.clear()
     failing = UnitOfWork(fail_reload=True)
     with pytest.raises(RuntimeError, match="refresh failed"):
         await McpMoveSpecUseCase().execute(
@@ -251,6 +258,7 @@ async def test_move_spec_refreshes_inside_transaction_before_commit() -> None:
             uow=failing,
         )
     assert failing.events == ["synchronize", "reload"]
+    assert calls == ["begin_write", "get_spec"]
 
 
 def test_api_contract_f9_f10_canonical_no_pydantic_url():

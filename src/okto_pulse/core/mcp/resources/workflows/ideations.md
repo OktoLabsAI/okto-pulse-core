@@ -1,5 +1,5 @@
 ---
-version: "1.0"
+version: "1.1"
 ---
 
 Knowledge Base placement and promotion are governed by
@@ -55,13 +55,19 @@ Ideations are the starting point for solution definition. Stories may exist befo
 2. **Q&A to clarify**: Use `okto_pulse_ask` (`target_type="ideation"`) or `okto_pulse_ask_ideation_choice_question` to get clarification before proceeding
 3. **Status flow**: draft → review → approved → evaluating → done
    - **Draft**: Editable — write and iterate freely
-   - **Review**: Read-only — awaits approval from reviewer (human or agent)
+   - **Review**: Content is read-only; existing Q&A can be answered before approval by a human or agent.
    - **Approved**: Read-only — handoff signal; the evaluator can now proceed to evaluate
    - **Evaluating**: Read-only — scope assessment and complexity evaluation must happen here
    - **Done**: Frozen — immutable snapshot created, can only go back to draft (new lifecycle edition)
    - **Cancelled**: Terminal — accessible from any status except done
 4. **Evaluation only in "evaluating"**: `okto_pulse_evaluate_ideation` only works when status is `evaluating`
 5. **Editing only in "draft"**: `okto_pulse_update_ideation` only works when status is `draft`
+
+Pending Q&A may enter Review but blocks approval, evaluation, completion and
+derivation. Use the existing context's `qa_readiness` and `answered_at` fields;
+selected choices do not require answer text. Historical incompleteness requires
+a new edition, preserving the old snapshot. Bounded diagnostics and propagation
+rules: `okto-pulse://reference/tool-docs/qa`.
 6. **Derivations only from "done"**: Specs and refinements can only be created from a `done` ideation (immutable snapshot)
 7. **Triage pending derivations**: the canonical surface to find done ideations that still lack a derived child is `okto_pulse_list_by_board(entity_type="ideation", filters={"derivation_pending": true})` — see `okto-pulse://reference/list_tools`
 
@@ -90,10 +96,12 @@ Use this sequence:
    the scope evaluation's 1–5 ambiguity dimension.
    Pinpoint each issue with a stable field, structured-child, Q&A, or
    whole-artifact anchor; never use an array position.
-4. Proposed questions are immutable evidence in the result; they never create
-   or update Q&A. If a question requires clarification or semantic edits,
-   return the Ideation to `draft`, resolve it there, and begin the new edition's
-   validation cycle.
+4. Proposed questions remain immutable evidence in the result and are also
+   materialized as Q&A items by the same write. Unanswered items block
+   completion and derivation; resolve them through the native Q&A workflow.
+   Omit `proposed_questions` when existing Q&A already represents the decision.
+   If clarification requires semantic edits, use the registered transitions
+   to return the Ideation to `draft` and begin the new edition's validation cycle.
 5. Multiple attempts in one edition remain auditable; the latest accepted one
    is Current and earlier attempts are Previous. Immediately before `done`,
    read Current again and compare its score with the board's configured

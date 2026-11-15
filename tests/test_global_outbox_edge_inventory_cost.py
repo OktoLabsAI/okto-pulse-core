@@ -71,7 +71,7 @@ def _fixture(monkeypatch, size):
     return processor, sources, rows, observed
 
 
-@pytest.mark.parametrize("size", [256, 1024])
+@pytest.mark.parametrize("size", [256, 1024, 1025])
 @pytest.mark.asyncio
 async def test_reconcile_and_fresh_verification_traverse_edge_rows_linearly(monkeypatch, size):
     processor, sources, _rows, observed = _fixture(monkeypatch, size)
@@ -120,3 +120,108 @@ def test_inbound_links_from_another_board_still_refuse_ack(monkeypatch):
         processor._verify_reconciled_digest_layers(
             None, BOARD, {oid: ("canonical", kind) for oid, kind in sources.items()},
         )
+
+
+def _read_inbound(rows, identities):
+    return GlobalOutboxProcessor._read_digest_inbound_edge_counts(
+        SimpleNamespace(execute=lambda *_: SimpleNamespace(rows=rows)), BOARD, identities,
+    )
+
+
+@pytest.mark.parametrize("size", [0, 1, 1024, 1025, 2500])
+def test_inbound_inventory_keeps_every_identity_and_multiplicity(size):
+    identities = tuple(f"digest-{i}" for i in range(size))
+    # Independent fixture oracle includes parallel and cross-owner edges. The
+    # reader receives grouped scalar rows, not a collection of digest identities.
+    edges = [(BOARD, identity) for identity in identities[1:]]
+    if size > 1:
+        edges += [(BOARD, identities[1]), ("foreign-board", identities[1])]
+    expected = {identity: sum(target == identity for _, target in edges)
+                for identity in identities}
+    rows = tuple(reversed(tuple(expected.items())))
+    assert _read_inbound(rows, identities) == {key: value for key, value in expected.items() if value}
+
+
+@pytest.mark.parametrize("rows,reason", [
+    ([], "population_changed"),
+    ([("other", 1)], "population_changed"),
+    ([("digest", 1), ("other", 0)], "population_changed"),
+    ([("digest", 1), ("digest", 2)], "duplicate_row"),
+    ([("digest",)], "malformed_row"),
+    ([("digest", 1, 2)], "malformed_row"),
+    ([(None, 1)], "malformed_row"),
+    ([("", 1)], "malformed_row"),
+    ([(1, 1)], "malformed_row"),
+    ([("digest", None)], "malformed_row"),
+    ([("digest", "1")], "malformed_row"),
+    ([("digest", 1.0)], "malformed_row"),
+    ([("digest", True)], "malformed_row"),
+    ([("digest", -1)], "malformed_row"),
+])
+def test_inbound_inventory_refuses_partial_or_malformed_observations(rows, reason):
+    with pytest.raises(RuntimeError, match=reason):
+        _read_inbound(rows, ("digest",))
+
+
+@pytest.mark.parametrize("identities,reason", [
+    (("digest", "digest"), "duplicate_identity"),
+    (("",), "invalid_identity"),
+    ((None,), "invalid_identity"),
+    ((1,), "invalid_identity"),
+])
+def test_inbound_inventory_refuses_invalid_source_population(identities, reason):
+    with pytest.raises(RuntimeError, match=reason):
+        _read_inbound([], identities)
+
+
+def test_inbound_inventory_never_reuses_a_previous_observation():
+    observations = iter([[('digest', 1)], [('digest', 3)], [('digest', 0)]])
+    runtime = SimpleNamespace(execute=lambda *_: SimpleNamespace(rows=next(observations)))
+    read = GlobalOutboxProcessor._read_digest_inbound_edge_counts
+    assert read(runtime, BOARD, ('digest',)) == {'digest': 1}
+    assert read(runtime, BOARD, ('digest',)) == {'digest': 3}
+    assert read(runtime, BOARD, ('digest',)) == {}
+
+
+def test_inbound_inventory_refuses_silent_truncation_at_native_collection_boundary():
+    identities = tuple(f'digest-{i}' for i in range(1025))
+    with pytest.raises(RuntimeError, match='population_changed'):
+        _read_inbound([(identity, 1) for identity in identities[:1024]], identities)
+
+
+def test_inbound_inventory_propagates_late_iteration_failure():
+    def rows():
+        yield ('digest', 1)
+        raise RuntimeError('native read interrupted')
+
+    with pytest.raises(RuntimeError, match='native read interrupted'):
+        _read_inbound(rows(), ('digest',))
+
+
+@pytest.mark.parametrize('change,reason', [
+    ({'node_type': 'Learning'}, 'node_type=Learning'),
+    ({'current_layer': 'working'}, 'layer=working'),
+    ({'source_revoked': True}, 'unexpected_source_revoked'),
+    ({'digest_id': 'wrong'}, 'unstable_digest_id'),
+    ({'original_node_id': ''}, 'missing_original_node_id_rows=1'),
+    ({'original_node_id': 'foreign'}, 'unexpected_global_identity'),
+])
+def test_inbound_optimization_preserves_full_post_effect_identity_checks(monkeypatch, change, reason):
+    processor, sources, _, _ = _fixture(monkeypatch, 1)
+    processor._read_global_digest_rows(None, BOARD)[0].update(change)
+    with pytest.raises(RuntimeError, match=reason):
+        processor._verify_reconciled_digest_layers(
+            None, BOARD, {oid: ('canonical', kind) for oid, kind in sources.items()},
+        )
+
+
+def test_revoked_digest_without_inbound_edges_is_allowed_but_a_new_live_identity_is_not(monkeypatch):
+    processor, sources, _, _ = _fixture(monkeypatch, 1)
+    retired = dict(digest_id='retired', original_node_id='retired-source',
+                   node_type='Alternative', current_layer='canonical', source_revoked=True)
+    processor._read_global_digest_rows(None, BOARD).append(retired)
+    expected = {oid: ('canonical', kind) for oid, kind in sources.items()}
+    processor._verify_reconciled_digest_layers(None, BOARD, expected)
+    retired['source_revoked'] = False
+    with pytest.raises(RuntimeError, match='unexpected_global_identity'):
+        processor._verify_reconciled_digest_layers(None, BOARD, expected)

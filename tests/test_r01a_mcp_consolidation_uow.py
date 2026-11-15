@@ -204,6 +204,13 @@ class _RecordingUow:
         self.commits = 0
         self.rollbacks = 0
         self.fail_commit = False
+        self.stages = 0
+        self.services = SimpleNamespace(kg=SimpleNamespace(stage_deferred_consolidation=self._stage))
+
+    async def _stage(self, session_id: str, *, agent_id: str) -> None:
+        assert session_id and agent_id == "agent-mcp-commit"
+        assert "durability" in self.events and "commit" not in self.events
+        self.stages += 1
 
     async def commit(self) -> None:
         self.events.append("commit")
@@ -324,6 +331,7 @@ async def test_mcp_commit_consolidation_commits_uow_once_after_execute(
     assert await tool(session_id="session-success") == '{"committed":true}'
     assert uow.commits == 1
     assert uow.rollbacks == 0
+    assert uow.stages == 1
     assert events == [
         "enter",
         "execute",

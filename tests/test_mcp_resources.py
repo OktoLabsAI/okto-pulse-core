@@ -122,7 +122,7 @@ def test_resource_file_has_frontmatter(rel_path: str) -> None:
 def test_cards_workflow_defers_to_typed_transition_read_model() -> None:
     content = (RESOURCES_DIR / "workflows" / "cards.md").read_text(encoding="utf-8")
 
-    assert "A normal card follows `not_started → started → in_progress`" in content
+    assert "Cards start with `not_started → in_progress`" in content
     assert "only when the transition tool advertises that edge" in content
     assert '`okto_pulse_move_card(status="in_progress")` → begin work' not in content
 
@@ -618,8 +618,14 @@ def test_initial_footprint_under_budget() -> None:
     )
 
     # The reviewed 282-tool baseline gains the decision-review read/write pair
-    # and the unified Spec validation-cycle read.
-    assert len(_srv.mcp.iter_tools()) == 285, "MCP tool-count ratchet changed"
+    # and the unified Spec validation-cycle read, followed by three Delivery
+    # Readiness operations and the Bug allocation repair preview/apply pair.
+    # These already shipped in the 0.4.3 catalog.
+    assert len(_srv.mcp.iter_tools()) == 290, "MCP tool-count ratchet changed"
+    assert {"okto_pulse_get_delivery_readiness_summary", "okto_pulse_get_persisted_delivery_readiness",
+            "okto_pulse_requeue_persisted_delivery_readiness",
+            "okto_pulse_preview_bug_allocation_repair",
+            "okto_pulse_apply_bug_allocation_repair"} <= {tool.name for tool in _srv.mcp.iter_tools()}
 
 
 # ---------------------------------------------------------------------------

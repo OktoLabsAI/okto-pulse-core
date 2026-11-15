@@ -75,6 +75,13 @@ async def _card_in_progress(db_factory, *, mode: object = None):
             ),
         )
         card.status = CardStatus.IN_PROGRESS
+        # Exercise report admission with an actual assigned requirement. The
+        # native start/report gate also applies to legacy InProgress fixtures.
+        specs[0].functional_requirements = [
+            *(specs[0].functional_requirements or []),
+            {"id": "fr-" + card.id, "text": "Deliver the declared impact",
+             "linked_task_ids": [card.id]},
+        ]
         await db.commit()
         return card.id
 
@@ -277,9 +284,9 @@ async def test_require_exemptions_inherited_from_report_target(db_factory, monke
     from okto_pulse.core.domain.enums import CardType
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
-    from okto_pulse.core.domain.delivery_evidence import (
-        DeliveryBinding, DeliveryObligation, DeliveryEvidenceSnapshot, DeliveryScope, ImplementationDeliveryFact, DeliveryContribution, ImplementationExecutionProof,
-    )
+    from dataclasses import replace
+    from okto_pulse.core.domain.delivery_evidence import DeliveryScope
+    from test_delivery_obligation_assessment import snapshot as verified_snapshot
     from okto_pulse.core.services import delivery_evidence as delivery_service
 
     await _seed_board(db_factory)
@@ -333,52 +340,34 @@ async def test_require_exemptions_inherited_from_report_target(db_factory, monke
             ),
         )
         exec_card.status = CardStatus.IN_PROGRESS
+        specs[0].functional_requirements = [
+            *(specs[0].functional_requirements or []),
+            {"id": "fr-" + exec_card.id, "text": "Deliver the reviewed change",
+             "linked_task_ids": [exec_card.id]},
+        ]
         # This Core fixture has no delivery ledger. Supply explicit domain facts
         # through its public seam, keeping the real completion gate active in
         # both cases. Real receipt/storage admission is covered in Community.
         scope = DeliveryScope(BOARD_ID, specs[0].id, specs[0].edition)
-        obligations = (DeliveryObligation(DeliveryBinding(f"card:{exec_card.id}", "a" * 64), exec_card.title),)
-        proof = ImplementationDeliveryFact(
-            id="impact-test-proof", scope=scope, card_id=exec_card.id,
-            card_type=CardType.NORMAL, card_status=CardStatus.IN_PROGRESS,
-            bindings=tuple(row.binding for row in obligations),
-            explanation="Test adapter accepted proof",
-            executions=(ImplementationExecutionProof("execution-receipt", "target", 1, "impact-test-source", "a" * 40, "src/x.py", True),),
-            actor_id=USER_ID,
-            contributions=tuple(DeliveryContribution(row.binding, "complete", ("execution-receipt",)) for row in obligations),
-        )
-        from okto_pulse.core.domain.effective_delivery_coverage import (
-            EffectiveDeliveryContext, ScopedImplementationFact, DeliveryScopeAttestation,
-        )
-        from okto_pulse.core.domain.effective_delivery_inventory import (
-            EffectiveDeliveryInventory, EffectiveDeliveryObligation,
-        )
-        from okto_pulse.core.domain.implementation_responsibility import (
-            RequirementContribution, ImplementationResponsibilityPlan,
-        )
-
-        planned = RequirementContribution(
-            exec_card.id, "direct", "whole", (), None, (), "b" * 64,
-        )
-        inventory = EffectiveDeliveryInventory(
-            tuple(EffectiveDeliveryObligation(
-                row.binding, row.binding.obligation_ref.split(":")[0], (planned,), (),
-            ) for row in obligations),
-            ImplementationResponsibilityPlan((), True, ()), True, (),
-        )
-        scoped = ScopedImplementationFact(
-            proof, tuple(DeliveryScopeAttestation(row.binding, planned.scope_sha256) for row in obligations),
-        )
-        snapshot = DeliveryEvidenceSnapshot(
-            scope=scope, obligations=obligations,
-            implementations=(proof,) if delivery_ready else (),
-            complete=True,
-            effective_context=EffectiveDeliveryContext(
-                inventory, (scoped,) if delivery_ready else (), (), frozenset({"automated_test"}),
-            ),
-        )
-        store = SimpleNamespace(load_card_snapshot=AsyncMock(return_value=snapshot))
-        monkeypatch.setattr(delivery_service, "card_delivery_store", lambda _: store)
+        snapshot = verified_snapshot()
+        context = snapshot.effective_context
+        def owner(card_id):
+            return exec_card.id if card_id == 'ui' else card_id
+        inventory = replace(context.inventory, rows=tuple(replace(row,
+            contributions=tuple(replace(item, card_id=owner(item.card_id))
+                for item in row.contributions)) for row in context.inventory.rows))
+        implementations = tuple(replace(item, fact=replace(item.fact,
+            scope=scope, card_id=owner(item.fact.card_id)))
+            for item in context.implementations) if delivery_ready else ()
+        tests = tuple(replace(item, fact=replace(item.fact, scope=scope)) for item in context.tests)
+        snapshot = replace(snapshot, scope=scope,
+            implementations=tuple(item.fact for item in implementations),
+            tests=tuple(item.fact for item in tests), effective_context=replace(context,
+                inventory=inventory, implementations=implementations, tests=tests,
+                native_verification=replace(context.native_verification,
+                    runs=tuple(replace(run, scope=scope) for run in context.native_verification.runs))))
+        store = SimpleNamespace(load_snapshot=AsyncMock(return_value=snapshot))
+        monkeypatch.setattr(delivery_service, "delivery_store", lambda _: store)
         await db.commit()
         test_card_id, exec_card_id = test_card.id, exec_card.id
 

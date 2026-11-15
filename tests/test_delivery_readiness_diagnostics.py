@@ -208,7 +208,7 @@ def test_waiver_exposes_caveat_without_suggesting_another_waiver():
     graph = build_diagnostic_graph(SCOPE, (row,))
     assert len(graph.causes) == 1
     assert graph.actions == ()
-    assert 'cobertura' in graph.causes[0].message
+    assert 'does not grant coverage' in graph.causes[0].message
 
 
 def test_actual_shared_assessment_reuses_existing_result_without_changing_scores():

@@ -34,6 +34,12 @@ You MUST `resources/read` the matching URI below before operating on that entity
 
 **Single sources of truth:** Session/card pre-flight sequence → `okto-pulse://workflows/preflight`; `get_*_context` before every move → `okto-pulse://workflows/preflight` § "Entity context pre-flight"; KG query/consolidation timing + cognitive closeout → `okto-pulse://workflows/kg`; error messages → `okto-pulse://reference/errors`.
 
+Task requirement choices (Required/Optional/Waived) are authenticated human
+decisions in the application; agents may inspect and prepare, never sign them.
+Use the existing Delivery projection when already available; a human decision
+does not create proof or change lifecycle. Exact scope, restoration and the
+central/contextual Help contract are documented in `okto-pulse://workflows/cards`.
+
 ## Resource Fetching Protocol — MANDATORY
 
 Before a Spec leaves Draft, author Project Structure or justify `Project Structure: not applicable` in its `context` for the reviewed edition/scope. This mandatory agent protocol is not a server gate; see the reference above.
@@ -83,6 +89,13 @@ Use `okto_pulse_list_by_board`, `okto_pulse_list_qa`, `okto_pulse_list_knowledge
 
 Schemas: MCP `tools/list`. Catalog and exact args/results/examples: `okto-pulse://reference/tools_catalog`.
 
+Use the matching tool-docs' schema-checked JSON examples before constructing a
+new payload. Replace example IDs and concurrency fences with current values;
+an example is never proof or permission. Keep score scales distinct: ambiguity
+is 0–5, finding confidence is 0–1, and Task Validation confidence is 0–100.
+For choice Q&A, persist `recommended: true` and a tradeoff on the selected
+recommendation; a recommendation never answers the question automatically.
+
 Before Spec Done, inspect `okto_pulse_get_delivery_evidence` and record applicable proof through `okto_pulse_record_delivery_evidence`. Follow each obligation's implementation/verification plan; Decisions use selected obligations and/or inspection. Do not invent a Task or Test Card solely to cover a Decision. No implicit exemption. Protocol: `okto-pulse://reference/code-traceability`.
 Use `view="readiness"` for independent implementation/verification metrics and minimal next actions. Proof is separate from lifecycle: 100/100 does not authorize Done. N/A, unknown and human exceptions are distinct; never translate deprecated `delivery_completeness` stages into the new metrics. Follow paginated detail before claiming a complete diagnosis, and reuse valid existing proof when only association is missing.
 
@@ -123,7 +136,7 @@ Do not stop processes, replace storage or bypass a fence without authority.
 3. **Card execution pre-flight before implementation or rework**. For exploration and planning use the matching route in `okto-pulse://workflows/preflight`.
 4. **Never move an entity without its full `get_*_context`** before the status change.
 5. **Query the KG at every planning stage** (ideation/refinement/spec) and **consolidate on every mandatory trigger** — `okto-pulse://workflows/kg`.
-6. **Comment as you work** — communicate start, key decisions, obstacles and completion. Reference recorded Delivery evidence rather than duplicating every receipt in prose. Use `@Name` to direct items (they become unseen mentions).
+6. **Record meaningful work events** — save Delivery progress when the work materially changes, a blocker changes, or a handoff/closeout needs new information. No timed heartbeat, per-tool/per-commit checkpoint, or comment duplicating an accepted record. Use a comment only for a decision/question not represented in the native record or an explicitly requested message. Follow `okto-pulse://workflows/cards` for the compact progress and delivery route.
 7. **Respect dependencies** — resolve blockers before moving blocked cards.
 8. **One card does one thing** — create sub-tasks instead of over-scoping.
 9. **Keep `objective` current** via `okto_pulse_update_my_profile`.

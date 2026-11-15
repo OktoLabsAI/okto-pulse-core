@@ -129,7 +129,7 @@ async def test_progress_uses_report_authority_and_single_commit(monkeypatch):
     monkeypatch.setattr(module, "require_authorization", authorize)
     monkeypatch.setattr(module, "commit", commit)
     store = SimpleNamespace(record_card=AsyncMock(return_value={"id": "saved"}))
-    uow = SimpleNamespace(services=SimpleNamespace(delivery_evidence=store))
+    uow = SimpleNamespace(services=SimpleNamespace(delivery_evidence=store), begin_write=AsyncMock())
     actor = SimpleNamespace(actor_id="author", actor_kind="agent")
     await RecordCardDeliveryEvidenceUseCase().execute(command(), actor=actor, uow=uow)
     assert authorize.await_args.args[1].operation == "card.conclusion.write"
@@ -175,7 +175,7 @@ async def test_other_authorities_do_not_grant_progress_write(permissions):
     )
 
     store = SimpleNamespace(record_card=AsyncMock())
-    uow = SimpleNamespace(services=SimpleNamespace(delivery_evidence=store))
+    uow = SimpleNamespace(services=SimpleNamespace(delivery_evidence=store), begin_write=AsyncMock())
     actor = ActorContext(
         actor_id="author",
         source="mcp",

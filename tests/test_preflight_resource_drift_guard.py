@@ -42,7 +42,7 @@ VERBATIM_STEP = (
     "include_qa=true, include_comments=true)"
 )
 ARTIFACT_ATTACHMENT_POINTER = (
-    "Card-Level Artifact Attachment path in §2.8 of "
+    "Card-Level Artifact Review path in §2.8 of "
     "okto-pulse://workflows/cards"
 )
 

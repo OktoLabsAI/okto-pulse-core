@@ -6,6 +6,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ---
 
+## [0.4.3] - Unreleased
+
+### Added
+
+- Canonical planning validation verdict for the current Spec edition, preserving
+  native gates, unreadable components and explicit exceptions.
+- Delivery summary contracts and a pure classifier for Delivered, In progress
+  and Pending, with separate task exceptions, exact global obligation counts
+  and population-bound pagination. Historical Done does not create current proof.
+- Human task requirement decisions with optional notes, immutable scoped history
+  and explicit restoration. Optional/Waived never creates proof or completion.
+- Explicit ownership of the sorted-JSON dependency used by delivery population
+  fingerprints and Community persisted readiness, across source, manifest, lock
+  and wheel audit surfaces.
+
+### Changed
+
+- Agent guidance uses meaningful progress events and the existing atomic
+  execution/binding/report path. Accepted report state confirms the original
+  operation, while current readiness and subsequent gates remain separate.
+- Core 0.4.3 pairs with Community 0.4.3. Runtime storage admission remains strict;
+  Community provides an explicit verified copy from the exact 0.4.2 format.
+
 ## [0.4.2] - 2026-10-21
 
 ### Fixed

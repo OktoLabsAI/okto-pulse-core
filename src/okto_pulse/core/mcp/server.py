@@ -953,6 +953,7 @@ _TOOL_DOCS_FAMILY_RULES = [
 _CODE_TRACEABILITY_TOOL_NAMES = frozenset(
     {
         "okto_pulse_get_delivery_evidence",
+        "okto_pulse_get_delivery_readiness_summary",
         "okto_pulse_get_persisted_delivery_readiness",
         "okto_pulse_requeue_persisted_delivery_readiness",
         "okto_pulse_get_decision_reviews",
@@ -983,6 +984,8 @@ _CODE_TRACEABILITY_TOOL_NAMES = frozenset(
 
 def tool_docs_family(tool_name: str) -> str:
     """Deterministic tool-docs family for a tool name (R1.1 / api_fd7c5878)."""
+    if tool_name in {"okto_pulse_preview_bug_allocation_repair", "okto_pulse_apply_bug_allocation_repair"}:
+        return "spec"
     if tool_name == "okto_pulse_get_requirement_verification":
         return "spec"
     if tool_name == "okto_pulse_admit_test_verification_report":
@@ -3267,7 +3270,7 @@ async def _mcp_derive_spec_with_knowledge(
         except ArchitectureDesignSelectionError as error:
             return json.dumps(error.to_error_dict())
         except ValueError as error:
-            return json.dumps({"error": str(error)})
+            return MCPAdapterContract.error(error)
     else:  # pragma: no cover
         raise RuntimeError("knowledge_creation_retry_exhausted")
 
@@ -3564,6 +3567,7 @@ async def okto_pulse_resolve_bug_regression_scenarios(
     Provide ``affected_task_ids`` when the incident spans additional tasks.
     Provide ``candidate_scenario_ids`` to classify a proposed set, including
     unrelated or cross-spec candidates. Both inputs require a native array of strings.
+    Omit candidate_scenario_ids for eligible discovery; [] explicitly selects none.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -3575,7 +3579,10 @@ async def okto_pulse_resolve_bug_regression_scenarios(
 
     try:
         affected_ids = validate_string_list(affected_task_ids)
-        candidate_ids = validate_string_list(candidate_scenario_ids)
+        candidate_ids = (
+            None if candidate_scenario_ids is None
+            else validate_string_list(candidate_scenario_ids)
+        )
     except ValueError as exc:
         return json.dumps(
             {
@@ -6989,9 +6996,11 @@ async def okto_pulse_get_ideation(board_id: str, ideation_id: str) -> str:
                         "selected": q.selected,
                         "asked_by": q.asked_by,
                         "answered_by": q.answered_by,
+                        "answered_at": q.answered_at,
                     }
                     for q in ideation.qa_items
                 ],
+                "qa_readiness": getattr(ideation, "qa_readiness", None),
             },
             default=str,
         )
@@ -7109,9 +7118,11 @@ async def okto_pulse_get_ideation_context(
                     "selected": q.selected,
                     "asked_by": q.asked_by,
                     "answered_by": q.answered_by,
+                    "answered_at": q.answered_at,
                 }
                 for q in ideation.qa_items
             ]
+            result["qa_readiness"] = getattr(ideation, "qa_readiness", None)
 
         if (
             _inc_mockups
@@ -8145,7 +8156,7 @@ async def okto_pulse_create_refinement(
     except ArchitectureDesignSelectionError as e:
         return json.dumps(e.to_error_dict())
     except ValueError as e:
-        return json.dumps({"error": str(e)})
+        return MCPAdapterContract.error(e)
 
 
 @mcp.tool()
@@ -8225,9 +8236,11 @@ async def okto_pulse_get_refinement(board_id: str, refinement_id: str) -> str:
                         "selected": q.selected,
                         "asked_by": q.asked_by,
                         "answered_by": q.answered_by,
+                        "answered_at": q.answered_at,
                     }
                     for q in refinement.qa_items
                 ],
+                "qa_readiness": getattr(refinement, "qa_readiness", None),
             },
             default=str,
         )
@@ -8339,9 +8352,11 @@ async def okto_pulse_get_refinement_context(
                     "selected": q.selected,
                     "asked_by": q.asked_by,
                     "answered_by": q.answered_by,
+                    "answered_at": q.answered_at,
                 }
                 for q in refinement.qa_items
             ]
+            result["qa_readiness"] = getattr(refinement, "qa_readiness", None)
 
         if (
             _inc_mockups
@@ -11536,6 +11551,7 @@ async def okto_pulse_execute_test_scenario_evidence(
         ExecuteTestScenarioEvidenceUseCase,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.test_evidence import TestEvidenceLedgerBusyError
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
@@ -11555,6 +11571,8 @@ async def okto_pulse_execute_test_scenario_evidence(
         return json.dumps(
             {"error": "not_found", "entity": exc.entity_type, "message": str(exc)}
         )
+    except TestEvidenceLedgerBusyError as exc:
+        return json.dumps(exc.execution_failure())
     except ValueError as exc:
         return json.dumps({"error": "evidence_execution_failed", "message": str(exc)})
     return json.dumps(
@@ -11727,6 +11745,9 @@ async def okto_pulse_update_test_scenario_status(
             "evidence_provided": result["evidence_provided"],
             "evidence_gate_skipped": result["evidence_gate_skipped"],
             "evidence_verification_status": result["evidence_verification_status"],
+            **{key: result[key] for key in (
+                "accepted_result_id", "verification_current", "replayed", "operational_summary_updated"
+            ) if key in result},
         }
     )
 
@@ -18502,6 +18523,52 @@ async def okto_pulse_get_board_design_system(board_id: str) -> str:
         return _perm_error(str(exc))
 
 
+async def _bug_allocation_repair_command(board_id, spec_id, bug_id, **kwargs):
+    from okto_pulse.core.application.use_cases.bug_allocation_repair import (
+        BugAllocationRepairCommand, BugAllocationRepairUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError, PermissionDeniedError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.services.bug_allocation_repair import BugAllocationRepairError
+
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await BugAllocationRepairUseCase().execute(
+                BugAllocationRepairCommand(board_id, spec_id, bug_id, **kwargs),
+                actor=actor, uow=uow, apply=bool(kwargs),
+            )
+        return json.dumps(result, default=str)
+    except BugAllocationRepairError as exc:
+        return json.dumps(exc.to_dict())
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
+    except EntityNotFoundError:
+        return json.dumps({"error": "repair_subject_not_found"})
+
+
+@mcp.tool()
+async def okto_pulse_preview_bug_allocation_repair(board_id: str, spec_id: str, bug_id: str) -> str:
+    """Read-only exact preview of proven legacy automatic Bug allocations. Read `okto-pulse://reference/tool-docs/spec` before use."""
+    return await _bug_allocation_repair_command(board_id, spec_id, bug_id)
+
+
+@mcp.tool()
+async def okto_pulse_apply_bug_allocation_repair(
+    board_id: str, spec_id: str, bug_id: str, expected_spec_version: int,
+    expected_scope_digest: str, selected_link_ids: list[str], idempotency_key: str,
+) -> str:
+    """Apply selected eligible links from an unchanged repair preview; preserve explicit scope and frozen evidence. Read `okto-pulse://reference/tool-docs/spec` before use."""
+    return await _bug_allocation_repair_command(
+        board_id, spec_id, bug_id, expected_spec_version=expected_spec_version,
+        expected_scope_digest=expected_scope_digest, selected_link_ids=tuple(selected_link_ids),
+        idempotency_key=idempotency_key,
+    )
+
+
 @mcp.tool()
 async def okto_pulse_list_task_validations(board_id: str, card_id: str) -> str:
     """
@@ -20347,9 +20414,9 @@ _LAZY_COMPACT_DESCRIPTION_OVERRIDES.update(
  'okto_pulse_move_refinement': 'Move Refinement through allowed states. Cancellation needs a '
                                'reason; reopening creates a new version and clears cancellation. '
                                'Read `okto-pulse://reference/tool-docs/refinement` before use.',
- 'okto_pulse_record_delivery_evidence': 'Record progress or accepted proof; claims never prove '
-                                        'completion/recovery. Atomic batch/report retains every '
-                                        'admission and lifecycle gate. Retry the exact '
+ 'okto_pulse_record_delivery_evidence': 'Record material progress events or accepted proof; no heartbeat '
+                                        'or duplicate comment. Prefer atomic batch/report; every '
+                                        'admission and lifecycle gate remains. Retry the exact '
                                         'envelope/key. Read '
                                         '`okto-pulse://reference/tool-docs/code-traceability` '
                                         'before use.',

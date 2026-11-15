@@ -148,7 +148,7 @@ async def test_all_subactions_are_authorized_before_any_store_call():
     )
     store = SimpleNamespace(record_card=AsyncMock())
     uow = SimpleNamespace(
-        services=SimpleNamespace(delivery_evidence=store), commit=AsyncMock()
+        services=SimpleNamespace(delivery_evidence=store), begin_write=AsyncMock(), commit=AsyncMock()
     )
     command = batch(
         entries=[
@@ -181,7 +181,7 @@ async def test_authorized_batch_commits_once_and_replay_rechecks_authority(monke
         )
     )
     uow = SimpleNamespace(
-        services=SimpleNamespace(delivery_evidence=store), commit=AsyncMock()
+        services=SimpleNamespace(delivery_evidence=store), begin_write=AsyncMock(), commit=AsyncMock()
     )
     actor = ActorContext(
         actor_id="agent",

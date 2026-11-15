@@ -705,14 +705,24 @@ class ListAllowedTransitionsUseCase:
             entity,
             transition.to_status,
         )
-        blocked_reason = await self._blocked_reason(
-            services,
-            entity_type,
-            entity,
-            transition,
-            dependency_readiness=dependency_readiness,
+        from okto_pulse.core.domain.pending_qa import (
+            PendingQuestionsError, planning_qa_readiness, planning_qa_transition_requires_answers,
         )
+        qa_readiness = (
+            planning_qa_readiness(entity, subject_type=entity_type)
+            if planning_qa_transition_requires_answers(entity_type, transition.to_status)
+            else None
+        )
+        if qa_readiness and qa_readiness["pending_count"]:
+            blocked_reason = self._exception_reason(PendingQuestionsError(qa_readiness))
+        else:
+            blocked_reason = await self._blocked_reason(
+                services, entity_type, entity, transition,
+                dependency_readiness=dependency_readiness,
+            )
         blocked_facts = None
+        if qa_readiness and qa_readiness["pending_count"]:
+            blocked_facts = qa_readiness
         if str(blocked_reason or "").startswith("current_rejection_cause_missing:"):
             blocked_facts = {
                 "card_id": str(entity.id),

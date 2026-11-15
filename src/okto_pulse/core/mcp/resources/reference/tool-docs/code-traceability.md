@@ -1,8 +1,27 @@
 ---
-version: "1.4"
+version: "1.5"
 ---
 
 # Tool docs — Code Traceability
+
+## `okto_pulse_get_delivery_readiness_summary`
+
+Supply `board_id` and `spec_id` to read the authorized Spec/Card summary from one
+published generation. Requires `code_traceability.evidence.read`; current
+subject/board access is rechecked. The response includes freshness. An initial
+pending generation has no metrics; stale, pending or unavailable data cannot
+authorize a delivery report or Done transition. Use the persisted detail read
+below when individual units are needed.
+
+## `okto_pulse_requeue_persisted_delivery_readiness`
+
+Administrative retry of a terminal derived readiness job. Requires
+`readiness.requeue`, `board_id`, `spec_id`, `edition` (positive integer), the
+observed `expected_target_revision` (nonnegative), an `idempotency_key` (1–128
+characters) and a meaningful `reason` (1–500 characters). Read the current
+projection first. The same key replays one audited result; a conflicting target
+revision returns a conflict. This requeues computation only: it does not alter
+proof, grant completion, clear unrelated queues or rebuild a graph.
 
 ## `okto_pulse_get_persisted_delivery_readiness`
 
@@ -136,6 +155,98 @@ does not wait for Done; its lifecycle assessment still reports open Cards/gates.
 
 ## `okto_pulse_record_delivery_evidence`
 
+### Minimal composed handoff
+
+At session start or resumption, read this Card with
+`okto_pulse_get_delivery_evidence(board_id, spec_id, card_id, view="resume")`.
+Use the returned edition, Card version, delivery revision, obligations and
+accepted proof references. Fetch ledger/progress pages only for omitted facts
+that the next action needs. The resume's truncation flags and totals are part of
+the contract; a bounded page is not the entire audit history. Read current native
+transition gates before a lifecycle action, as required by the Card workflow.
+
+After work, prefer one supported composed request for the facts available at
+that moment. An accepted investigation receipt can be admitted as a Target
+execution, associated with obligations and included in the existing execution
+report by the same transaction. No separate execution-submit call or duplicate
+comment is required for that path. This **template** has symbolic values that
+must be replaced with current native IDs, fences and the actual work:
+
+```json
+{
+  "board_id": "<board-id>",
+  "card_id": "<card-id>",
+  "spec_id": "<spec-id>",
+  "evidence": {
+    "contract_version": "card-delivery-report/v1",
+    "expected_card_status": "in_progress",
+    "batch": {
+      "contract_version": "card-delivery-batch/v1",
+      "expected_card_version": 7,
+      "expected_spec_edition": 2,
+      "expected_delivery_revision": 3,
+      "idempotency_key": "<stable-key-for-this-exact-handoff>",
+      "entries": [{
+        "client_ref": "implemented",
+        "kind": "implementation",
+        "justification": "<what this committed execution implements>",
+        "bindings": [{"obligation_ref": "<native-obligation-ref>", "contribution": "complete"}],
+        "execution_submission": {
+          "target_id": "<native-target-id>",
+          "result_investigation_receipt_id": "<accepted-current-committed-receipt-id>",
+          "disposition": "touched",
+          "actual_relative_path": "src/parser.py"
+        }
+      }]
+    },
+    "existing_record_ids": [],
+    "report": {
+      "status": "validation",
+      "conclusion": "<implemented result submitted for review>",
+      "completeness": 100,
+      "completeness_justification": "<actual assigned implementation coverage>",
+      "drift": 0,
+      "drift_justification": "<actual scope comparison>"
+    }
+  }
+}
+```
+
+The example's percentages are executor claims, never test verification or gate
+approval. `touched` requires an existing Target/file; use the truthful native
+disposition for creation/deletion/replacement. Existing records are optional
+explicit selections, not an instruction to select every historical record.
+The report selects all newly accepted batch entries automatically. For a
+checkpoint without a lifecycle action, send `card-delivery-batch/v1` directly;
+do not fabricate a report or a final progress note to fill an envelope.
+
+For multiple Targets, put each execution admission in an earlier implementation
+entry, then use their `client_ref` values in the integrated binding's
+`execution_refs`. Declare partial versus complete honestly. Each binding's
+execution set must share one observed source and immutable revision. Split
+repository ownership into separate tasks during planning when required; a
+paired test run can observe both repositories without merging their execution
+bases. The existing single-execution and granular paths remain supported.
+
+On success, retain the returned IDs and report acceptance receipt. New
+acceptance confirms the submitted operation; no immediate full Spec/Card/ledger
+readback or duplicate comment is needed just to repeat it. On an uncertain
+timeout, retry the identical envelope/key. A replay confirms the original
+operation, not the current state. On a CAS/edition/revision conflict, preserve
+the draft, read one current Card resume, reconcile the actual difference and
+submit a new intent with current fences and a new key. Do not blind-retry stale
+fences. Investigate a bounded error or omitted page only when it affects that
+reconciliation. A rejected report leaves no partial batch, execution or outbox
+commit; independent earlier checkpoints remain history.
+
+Progress is event-driven: record a meaningful result, changed scope, blocker,
+handoff or deliberate pause when it helps another actor resume. Do not issue
+heartbeats per command, commit, time interval or tool response. Work may be
+dirty or not yet committed; a progress note needs no execution receipt and
+grants no delivery credit. `material_change="none"` means no source/Target
+change, not "unimportant work". A genuine source/Target change must declare the
+affected scope and receive fresh proof; batching never relaxes traceability.
+
 To atomically save the last batch and submit the existing Card execution report,
 use `contract_version: "card-delivery-report/v1"` with `expected_card_status`
 (`in_progress`), `batch` (the unchanged card-delivery-batch/v1 body),
@@ -156,8 +267,22 @@ after rework. This receipt describes the historical submission, not the current
 Card status. Do not retry with changed fields under the same key. Ordinary
 checkpoints remain independent and never move the Card.
 
+v0.4.3 adds `report.accepted_state` (`delivery-operation-state/v1`) to the
+successful composed report. It contains the scoped Card/version/status and Spec
+edition accepted by that operation, selected-record count and transition effect.
+On a new acceptance (`replayed=false`), this is sufficient confirmation of the
+submitted handoff: do not reread a full Card/Spec/ledger just to copy those same
+facts into a comment. Exact replay returns the same original acceptance state,
+even after rework; inspect current state before claiming that it still holds.
+`readiness_evaluated=false` explicitly preserves the distinction: this is not
+approval, current readiness or permission for the next transition. Follow the
+bounded `next_query` when evaluating the next lifecycle action. The mandatory
+full gate read before that action remains required. A legacy response lacking
+this contract still requires the prescribed targeted confirmation read.
+
 Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
 
+<!-- model-example: CardDeliveryEvidenceInput -->
 ```json
 {
   "expected_spec_edition": 1,
@@ -170,6 +295,45 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   ],
   "execution_id": "accepted-target-execution-id",
   "justification": "The committed parser implements these input/output obligations."
+}
+```
+
+Copy obligation references from the current Delivery read, including their
+type prefix (for example `fr:fr_42`). An implementation uses `bindings`;
+`obligation_refs` alone cannot declare an implementation contribution.
+Human submissions use the application's submission flow: the application
+creates the receipt and audit association. A human never needs to author,
+copy or sign an agent receipt in the UI. Agent source/execution and test
+proof remain required under their own contracts.
+
+A meaningful source change can be recorded without creating an execution
+receipt. Replace every example ID and fence; reuse this key only for the
+same exact request. Keep the returned acceptance instead of adding a duplicate
+comment or reading the same record back solely to confirm acceptance.
+
+<!-- contract-example: okto_pulse_record_delivery_evidence -->
+```json
+{
+  "board_id": "board-example",
+  "card_id": "card-example",
+  "spec_id": "spec-example",
+  "evidence": {
+    "expected_spec_edition": 1,
+    "expected_card_version": 7,
+    "idempotency_key": "parser-milestone-1",
+    "kind": "progress",
+    "justification": "The parser now reports requirement-specific failures.",
+    "progress": {
+      "contract_version": "delivery-progress/v2",
+      "material_change": "source",
+      "source_state": {
+        "source_ref": "source_example",
+        "workspace_state": "dirty",
+        "recoverability": "external_workspace"
+      },
+      "remaining": "Run the failure-path and installed UI scenarios."
+    }
+  }
 }
 ```
 
@@ -208,7 +372,9 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   `source_state: {"workspace_state":"dirty","recoverability":"external_workspace"}`
   (or both values `unknown`). No execution/test receipt or commit is required;
   omit their fields. Optional `target_ids` must belong to this Card; a supplied
-  opaque `source_ref` must be known to this board. `impact_delta` uses the existing
+  opaque `progress.source_state.source_ref` must be known to this board.
+  Never put `source_ref` beside `progress` or directly inside it.
+  `impact_delta` uses the existing
   closed ImpactEvidence contract and is a claim. Progress never counts as
   implementation/test proof, approval or completion. It does not start rework.
   When a delta has a known base, also provide `impact_base_revision` (full
@@ -228,7 +394,7 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   Validation/rejected/done/on_hold/not_started cards cannot accept a new checkpoint.
   Record significant results or a deliberate pause; no fixed time/command cadence.
   `none` is a context note without a material delta. `targets` requires exact
-  affected `target_ids`; `source` requires `source_ref` and no Target list.
+  affected `target_ids`; `source` requires `source_state.source_ref` and no Target list.
   `unknown` narrows by declared Targets/source when available, otherwise this
   Card's work is uncertain. Target/source combinations must agree. An affected
   execution stops proving the current result until its accepted receipt observes
@@ -262,7 +428,8 @@ Every card write requires Spec edition/card version and a nonempty explanation. 
 1,000 refs/implementation IDs, 20,000 explanation characters; unknown fields and
 duplicate refs fail validation. Same actor/key/payload replays `{id,replayed:true}`;
 changing that payload yields `delivery_idempotency_conflict`. Normal acceptance
-returns `{id,replayed:false}`. Refresh after acceptance; read `allowed` separately.
+returns `{id,replayed:false}`. Retain that acceptance; read current `allowed`
+separately when the next action requires it. Acceptance is not gate approval.
 Progress has a 128 KiB aggregate request limit, at most 200 obligation refs,
 100 Target IDs and 8,000 remaining-work characters. Reuse the same key/content
 after uncertain failure; do not create another key simply because of a timeout.
@@ -320,7 +487,7 @@ An implementation entry may replace `execution_id` with `execution_submission`:
 {
   "client_ref": "parser-proof",
   "kind": "implementation",
-  "obligation_refs": ["fr:parser"],
+  "bindings": [{"obligation_ref": "fr:parser", "contribution": "complete"}],
   "justification": "Implemented the parser and observed the committed result.",
   "execution_submission": {
     "target_id": "target-parser",
@@ -432,6 +599,25 @@ Use an `idempotency_key` again only for an exact retry of the same payload.
 Entity version, source head/workspace identity, selector, Target revision, or
 dependency drift can invalidate reuse and require a new preflight.
 
+### Refinement status compatibility and completed history
+
+Forward Draft → Review → Approved → Done moves record a server-owned
+`refinement-source-compatibility/v1` proof only when canonical source-context
+digests match across adjacent persisted versions. `refinement_source_compatibility`
+lists the admitted versions and their history IDs. Reuse this native decision;
+do not manufacture a new receipt merely because the status changed. Missing,
+ambiguous or changed-content history has no compatibility. Receipt expiry,
+revocation, source-head identity, trust and all other admission checks still apply.
+This exception applies to Refinement source context, never Card execution proof.
+
+A completed Refinement exposes its sealed `source_context` with
+`source_context_snapshot.kind="historical_snapshot"`, snapshot identity/version
+and manifest digest. `current_source_context` and `gate_readiness` remain separate
+current evaluations. The historical assessment survives receipt expiry and later
+source changes without becoming current execution authority. Legacy N/N+1
+completion is read only when the exact Approved → Done history proves it; no
+snapshot or old receipt is rewritten. Derived Specs keep their pinned manifest.
+
 ## `okto_pulse_start_code_investigation`
 
 Start a bounded request for the exact current subject/version. It returns the
@@ -446,6 +632,35 @@ Args:
     idempotency_key: Caller-stable key for an exact retry.
     source_ref: Optional opaque identity only when already known. Never pass a
         path, URL, checkout directory, or credential.
+
+Omitting `source_ref` allocates a new opaque source; it does not find or reuse
+the previous source for that repository. Retain the returned identity and
+supply it for subsequent investigations of the same source. Use separate
+source identities for separate Git repositories so each immutable execution
+revision names a real commit. A string combining two repository hashes is
+not a committed Delivery revision.
+
+| Change | Required next step |
+|---|---|
+| Target created or revised | New Card preflight, accepted receipt, then Target resolution against the new selector scope. |
+| Source head/workspace or subject version changed | Read current context and renew the observation; an older receipt does not become current by rebinding it. |
+| Receipt expired or revoked | Obtain new authorized evidence; do not reuse it for execution. |
+| Accepted request timed out at the client | Retry the exact payload/key to recover acceptance; use a new key only for a reconciled new intent. |
+
+Historical source context remains history. It is not a current execution
+observation and must not be relabeled to satisfy a delivery gate.
+
+<!-- contract-example: okto_pulse_start_code_investigation -->
+```json
+{
+  "board_id": "board-example",
+  "subject_type": "card",
+  "subject_id": "card-example",
+  "expected_subject_version": 7,
+  "source_ref": "source_example",
+  "idempotency_key": "parser-result-preflight-1"
+}
+```
 
 ## `okto_pulse_submit_code_investigation_receipt`
 
@@ -700,6 +915,28 @@ tooling identity, agent observation time, and a new idempotency key. Do not
 inflate confidence to force an executable state. The receipt must come from a
 preflight started after the current Target ID/revision entered the Card
 selector scope; never reuse the initial pre-Target receipt.
+
+Example shape for a file resolved by actual investigation. The example
+confidence is justified only when the current selector identifies that file
+unambiguously. Replace the receipt, Target, observation time and tooling with
+the actual values; publishing this example grants no execution authority.
+
+<!-- contract-example: okto_pulse_submit_implementation_target_resolution -->
+```json
+{
+  "board_id": "board-example",
+  "card_id": "card-example",
+  "target_id": "implementation_target_example",
+  "investigation_receipt_id": "code_receipt_example",
+  "state": "resolved",
+  "resolved_relative_path": "src/parser.py",
+  "resolved_language": "python",
+  "confidence": 0.99,
+  "tooling": {"tool_id": "source-inspector", "tool_version": "1", "method_id": "file-and-symbol-inspection-v1"},
+  "agent_observed_at": "2026-11-04T12:00:00Z",
+  "idempotency_key": "parser-target-resolution-1"
+}
+```
 
 ## `okto_pulse_get_implementation_overlaps`
 

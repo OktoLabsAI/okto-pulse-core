@@ -323,6 +323,11 @@ Returns:
 Submit a fenced, idempotent task validation for a Normal or Bug card in
 `validation`.
 
+The returned `subject_version` is the persisted policy version after the
+decision, not an assumed increment. Status-only validation can preserve that
+version. Exact idempotent replay returns the originally persisted result;
+never add one to a returned version when preparing the next command.
+
 Evaluates the implementation quality of a completed task against three
 dimensions: confidence, completeness, and drift. The system applies
 threshold checks (resolved from Spec overrides and Board defaults) and

@@ -78,13 +78,14 @@ class ProposeReconciliationUseCase:
 
 
 class CommitConsolidationCommand:
-    __slots__ = ("req", "board_id")
+    __slots__ = ("req", "board_id", "defer_relational_staging")
 
-    def __init__(self, req: Any, *, board_id: str) -> None:
+    def __init__(self, req: Any, *, board_id: str, defer_relational_staging: bool = False) -> None:
         self.req = req
         # Resolved by the adapter via _require_open_session (ownership pre-check),
         # used to key the per-board commit lock.
         self.board_id = board_id
+        self.defer_relational_staging = defer_relational_staging
 
 
 class CommitConsolidationResult:
@@ -107,5 +108,6 @@ class CommitConsolidationUseCase:
             board_id=command.board_id,
             agent_id=actor.actor_id,
             defer_session_finalization=True,
+            **({"defer_relational_staging": True} if command.defer_relational_staging else {}),
         )
         return CommitConsolidationResult(resp)

@@ -116,6 +116,9 @@ class RuntimeWorkerSpec:
     stop: WorkerStopper
     required: bool = True
     stop_priority: int = 0
+    # Observe already-stopping owned work after its deadline failed. This
+    # callback must neither restart production nor issue another cancellation.
+    observe_stopped: WorkerStopper | None = None
 
 
 @dataclass(frozen=True)
@@ -281,6 +284,23 @@ class RuntimeWorkerRegistry:
                 if self._active.get(family) is handle:
                     self._active.pop(family, None)
         return tuple(failures)
+
+    async def observe_stopped(self, families: Iterable[str]) -> None:
+        """Retain ownership until edition callbacks prove producer quiescence.
+
+        This is not a retry of bounded stop and does not change its failed
+        outcome. An unsupported observation fails closed with the handle kept.
+        """
+        for family in families:
+            handle = self._active.get(family)
+            if handle is None:
+                continue
+            observer = self._specs[family].observe_stopped
+            if observer is None:
+                raise RuntimeError(f"worker_shutdown_observer_unavailable:{family}")
+            await _maybe_await(observer(handle))
+            if self._active.get(family) is handle:
+                self._active.pop(family, None)
 
     async def stop_all(self) -> tuple[RuntimeWorkerStopFailure, ...]:
         active = tuple(self._active)

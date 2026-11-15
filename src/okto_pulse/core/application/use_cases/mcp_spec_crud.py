@@ -97,6 +97,8 @@ class McpMoveSpecUseCase:
     async def execute(
         self, command: McpMoveSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpMoveSpecResult:
+        # Delivery gates pin caller-owned snapshots; reserve write intent first.
+        await uow.begin_write()
         service = uow.services.specs
         existing = await _require_actor_board_spec(
             service,
@@ -328,6 +330,7 @@ class McpCreateSpecUseCase:
             ResourcePropagationError,
         )
         from okto_pulse.core.services.main import SpecLineagePreflightError
+        from okto_pulse.core.domain.pending_qa import PendingQuestionsError
 
         resolved_lineage = None
         ideation_id = getattr(command.spec_data, "ideation_id", None)
@@ -350,7 +353,7 @@ class McpCreateSpecUseCase:
                 command.spec_data,
                 skip_ownership_check=True,
             )
-        except SpecLineagePreflightError as exc:
+        except (SpecLineagePreflightError, PendingQuestionsError) as exc:
             return McpCreateSpecResult(None, lineage_error=exc)
         if not spec:
             return McpCreateSpecResult(None)

@@ -37,6 +37,19 @@ class EffectiveDeliveryObligation:
     blockers: tuple[str, ...]
     declared_card_ids: tuple[str, ...] = ()
     decision_plan: DecisionVerificationPlan | None = None
+    requirement_allocation: object | None = None
+
+    @property
+    def required_contributions(self):
+        if self.requirement_allocation is None:
+            return self.contributions
+        return tuple(fact for fact in self.contributions
+                     if fact.card_id in self.requirement_allocation.required_card_ids)
+
+    @property
+    def not_required(self):
+        return (self.requirement_allocation is not None and bool(self.contributions)
+                and not self.blockers and not self.required_contributions)
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +83,12 @@ class EffectiveDeliveryInventory:
                         ),
                         "blockers": row.blockers,
                         "declared_card_ids": row.declared_card_ids,
+                        **({'requirement_allocation': {
+                            'required': row.requirement_allocation.required_card_ids,
+                            'optional': row.requirement_allocation.optional_card_ids,
+                            'waived': row.requirement_allocation.waived_card_ids,
+                            'decisions': row.requirement_allocation.decision_ids,
+                        }} if row.requirement_allocation is not None else {}),
                     }
                     for row in self.rows
                 ],
@@ -95,6 +114,12 @@ class EffectiveDeliveryInventory:
             for card_id in set(row.declared_card_ids) | {fact.card_id for fact in row.contributions}:
                 result.setdefault(card_id, []).append(row)
         return {card_id: tuple(rows) for card_id, rows in result.items()}
+
+    def task_requirement_scope(self, *, board_id, spec_id, edition, card, scenario_digests=None):
+        """Bind a human task decision to this complete native allocation."""
+        from okto_pulse.core.domain.task_requirement_decision import task_requirement_scope
+        return task_requirement_scope(inventory=self, board_id=board_id, spec_id=spec_id,
+            edition=edition, card=card, scenario_digests=scenario_digests)
 
 
 def resolve_effective_delivery_inventory(*, spec, cards, qualification):

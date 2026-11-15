@@ -4,6 +4,7 @@ The comparison is diagnostic, not a new coverage resolver or projection writer.
 No checkpoint is manufactured from a matching set of nodes or relations.
 """
 from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
+from okto_pulse.core.kg.source_maturity import TERMINAL_CANCELLED_STATUSES
 from okto_pulse.core.ports.spec_coverage_query import (
     MAX_SPEC_COVERAGE_ITEMS, MAX_SPEC_COVERAGE_FACTS, SpecCoverageGraphScope,
 )
@@ -21,10 +22,14 @@ def build_spec_coverage_graph_scope(snapshot):
     relations = tuple(sorted({(*nodes[edge.from_candidate_id], edge.edge_type,
         *nodes[edge.to_candidate_id], edge.rule_id, edge.layer, edge.created_by)
         for edge in projected.edges if edge.from_candidate_id in nodes and edge.to_candidate_id in nodes}))
-    # Cards are authorized by the relational inventory. Their observed supports
-    # links remain observations; this scope does not reconstruct Card writers.
+    # Cards are authorized by the relational inventory. Terminal cancelled
+    # sources have no active graph projection, even when retained for audit.
+    # Their relational delivery facts remain independent of this graph scope.
+    # Observed supports links do not reconstruct Card writers.
     identities += tuple(sorted(('Bug' if str(getattr(card.card_type, 'value', card.card_type)) == 'bug' else 'Entity',
-        f'card:{card.id}') for card in snapshot.cards if not card.archived))
+        f'card:{card.id}') for card in snapshot.cards
+        if not card.archived and str(getattr(card.status, 'value', card.status)).strip().lower()
+        not in TERMINAL_CANCELLED_STATUSES))
     if len(identities) > 2 * MAX_SPEC_COVERAGE_ITEMS + 1 or len(relations) > MAX_SPEC_COVERAGE_FACTS:
         raise ValueError('spec_coverage_graph_scope_bound')
     return SpecCoverageGraphScope(tuple(sorted(identities)), relations)

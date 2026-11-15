@@ -1,7 +1,9 @@
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
+from okto_pulse.core.domain.enums import CardStatus
 from okto_pulse.core.ports.spec_coverage_query import SpecCoverageGraphFacts
 from okto_pulse.core.services.spec_coverage_graph import build_spec_coverage_graph_scope
 from okto_pulse.core.services.spec_coverage_query import project_spec_coverage
@@ -98,3 +100,51 @@ def test_graph_unavailable_preserves_relational_result_without_fake_zero():
     assert result['structure']['graph']['observed_nodes'] is None
     assert result['projection_freshness']['state'] == 'unavailable'
     assert result['delivery']['counts']['verification_proven'] == 1
+
+
+@pytest.mark.parametrize('card_type', ['normal', 'test', 'bug'])
+@pytest.mark.parametrize('status,archived', [
+    ('cancelled', False), (CardStatus.CANCELLED, False),
+    ('archived', False), ('done', True),
+])
+def test_terminal_cards_do_not_create_false_missing_graph_nodes(card_type, status, archived):
+    snapshot = source()
+    cancelled = SimpleNamespace(**{**vars(snapshot.cards[0]), 'id': 'cancelled-probe',
+        'card_type': card_type, 'status': status, 'archived': archived})
+    baseline = build_spec_coverage_graph_scope(snapshot)
+    snapshot = replace(snapshot, cards=(*snapshot.cards, cancelled))
+    scope = build_spec_coverage_graph_scope(snapshot)
+    assert scope == baseline
+    result = project_spec_coverage(QUERY, replace(snapshot, graph_scope=scope,
+        graph=SpecCoverageGraphFacts(scope.nodes, scope.relations, generation='one')))
+    assert result['structure']['graph']['missing_nodes'] == 0
+    assert not any(row.get('subject_ref') == 'card:cancelled-probe' for row in result['items'])
+    assert result['delivery'] == project_spec_coverage(QUERY, observed())['delivery']
+    assert snapshot.cards[-1] is cancelled  # Historical inventory is untouched.
+
+
+def test_restored_card_returns_to_expected_scope_and_missing_projection_is_visible():
+    snapshot = source()
+    probe = SimpleNamespace(**{**vars(snapshot.cards[0]), 'id': 'probe', 'status': 'cancelled'})
+    snapshot = replace(snapshot, cards=(*snapshot.cards, probe))
+    old_scope = build_spec_coverage_graph_scope(snapshot)
+    graph = SpecCoverageGraphFacts(old_scope.nodes, old_scope.relations, generation='one')
+    probe.status = CardStatus.IN_PROGRESS
+    with pytest.raises(ValueError, match='scope_mismatch'):
+        project_spec_coverage(QUERY, replace(snapshot, graph_scope=old_scope, graph=graph))
+    scope = build_spec_coverage_graph_scope(snapshot)
+    result = project_spec_coverage(QUERY, replace(snapshot, graph_scope=scope, graph=graph))
+    assert result['structure']['graph']['missing_nodes'] == 1
+    assert {'kind': 'structure_node', 'node_type': 'Entity', 'subject_ref': 'card:probe',
+        'observation': 'not_found_in_projection'} in result['items']
+
+
+def test_excluding_cancelled_graph_node_does_not_create_delivery_proof():
+    snapshot = source(native_delivery_snapshot(implementations=(), tests=()))
+    snapshot.cards[0].status = 'cancelled'
+    scope = build_spec_coverage_graph_scope(snapshot)
+    result = project_spec_coverage(QUERY, replace(snapshot, graph_scope=scope,
+        graph=SpecCoverageGraphFacts(scope.nodes, scope.relations, generation='one')))
+    assert result['structure']['graph']['missing_nodes'] == 0
+    assert result['delivery']['counts']['implementation_proven'] == 0
+    assert result['delivery']['counts']['verification_proven'] == 0

@@ -132,6 +132,10 @@ class _Uow:
         self.commits = 0
         self.synchronizes = 0
         self.reloads = 0
+        self.write_admissions = 0
+
+    async def begin_write(self) -> None:
+        self.write_admissions += 1
 
     async def commit(self) -> None:
         self.commits += 1
@@ -314,6 +318,7 @@ async def test_transition_denies_before_writer_with_exact_requirement(
 
     assert uow.services.calls[writer] == 0
     assert uow.commits == 0
+    assert uow.write_admissions == (1 if case_name == "mcp_spec" else 0)
     assert len(captured) == 1
     requirement, kwargs = captured[0]
     assert requirement.operation == expected_operation

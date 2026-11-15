@@ -8,6 +8,8 @@ from typing import Any
 
 from okto_pulse.core.domain.amendment_eligibility import (
     COVERAGE_CONFIRMATION_KEY,
+    COVERAGE_CONFIRMATIONS_KEY,
+    coverage_confirmation_records,
     AmendmentEligibility,
     AmendmentLineageState,
     AmendmentRevisionStatus,
@@ -100,12 +102,13 @@ class AmendmentRevisionService:
         validation_metadata: dict | None = None,
     ) -> AmendmentRevisionRecord:
         safe_metadata = dict(validation_metadata) if validation_metadata else None
-        if safe_metadata and COVERAGE_CONFIRMATION_KEY in safe_metadata:
-            safe_metadata.pop(COVERAGE_CONFIRMATION_KEY, None)
-            logger.warning(
-                "amendment_revision.create.stripped_reserved_key key=%s",
-                COVERAGE_CONFIRMATION_KEY,
-            )
+        for reserved_key in (COVERAGE_CONFIRMATION_KEY, COVERAGE_CONFIRMATIONS_KEY):
+            if safe_metadata and reserved_key in safe_metadata:
+                safe_metadata.pop(reserved_key, None)
+                logger.warning(
+                    "amendment_revision.create.stripped_reserved_key key=%s",
+                    reserved_key,
+                )
         record = AmendmentRevisionRecord(
             board_id=board_id,
             original_spec_id=original_spec_id,
@@ -216,7 +219,10 @@ class AmendmentRevisionService:
         amendment = await self._require(amendment_id)
         _require_mutable(amendment, mutation="set_coverage_confirmation")
         metadata = dict(amendment.validation_metadata or {})
+        retained = coverage_confirmation_records(metadata)
         metadata[COVERAGE_CONFIRMATION_KEY] = dict(confirmation)
+        metadata[COVERAGE_CONFIRMATIONS_KEY] = list(retained)
+        metadata[COVERAGE_CONFIRMATIONS_KEY] = list(coverage_confirmation_records(metadata))
         amendment.validation_metadata = metadata
         amendment.updated_at = datetime.now(timezone.utc)
         return await self._save(

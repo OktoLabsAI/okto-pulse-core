@@ -50,11 +50,11 @@ def test_visibility_failure_propagates_and_retry_converges_without_rewriting():
         GlobalOutboxProcessor._set_board_digest_source_visibility(
             runtime, 'board', active_source_ids=source_ids, revoked_source_ids=set(),
         )
-    assert len(state) == 512
+    assert len(state) == DIGEST_VISIBILITY_BATCH_SIZE
     fail = False
     assert GlobalOutboxProcessor._set_board_digest_source_visibility(
         runtime, 'board', active_source_ids=source_ids, revoked_source_ids=set(),
-    ) == 513
+    ) == len(source_ids) - DIGEST_VISIBILITY_BATCH_SIZE
     assert state == dict.fromkeys(source_ids, False)
     assert GlobalOutboxProcessor._set_board_digest_source_visibility(
         runtime, 'board', active_source_ids=source_ids, revoked_source_ids=set(),

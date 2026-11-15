@@ -18,6 +18,7 @@ from okto_pulse.core.application.use_cases.spec_crud import (
 from okto_pulse.core.domain.enums import SpecStatus
 from okto_pulse.core.domain.permissions import PermissionSet
 from okto_pulse.core.ports.test_evidence import (
+    TestEvidenceLedgerBusyError as LedgerBusyError,
     TestEvidenceExecutionResult as EvidenceExecutionResult,
     TestEvidenceWriteVerification as EvidenceWriteVerification,
     register_test_evidence_execution_issuer,
@@ -52,6 +53,62 @@ class _Issuer:
     async def execute(self, request):
         self.calls.append(request)
         return EvidenceExecutionResult(self.evidence)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["publication", "verification", "mixed_failure"])
+async def test_mcp_busy_diagnosis_never_reexecutes_or_mutates_scenario(monkeypatch, phase):
+    from okto_pulse.core.mcp.outcome import coerce_mcp_tool_outcome
+
+    class Issuer(_Issuer):
+        async def execute(self, request):
+            result = await super().execute(request)
+            if phase == "publication":
+                raise LedgerBusyError()
+            return result
+
+    issuer = Issuer({"execution_receipt": "existing-receipt"})
+    register_test_evidence_execution_issuer(issuer)
+    codes = (LedgerBusyError.code,)
+    if phase == "mixed_failure":
+        codes += ("evidence_v2.receipt_signature_invalid",)
+    register_test_evidence_write_verifier(_Verifier(EvidenceWriteVerification(False, codes)))
+    specs = _SpecService()
+    uow = SimpleNamespace(services=SimpleNamespace(specs=specs))
+
+    class Context:
+        async def __aenter__(self):
+            return uow
+
+        async def __aexit__(self, *args):
+            pass
+
+    async def actor(board):
+        return SimpleNamespace(agent_id="agent", agent_name="Agent", realm_id=None,
+                               permissions=_evidence_execute_permissions())
+
+    monkeypatch.setattr(mcp_server, "_get_agent_ctx", actor)
+    monkeypatch.setattr(mcp_server, "get_unit_of_work_factory_for_mcp", lambda: lambda **kw: Context())
+    raw = await mcp_server.okto_pulse_execute_test_scenario_evidence.fn(
+        board_id="board-1", spec_id="spec-1", scenario_id="scenario-1",
+        status="passed", manifest_ref="about.json")
+    payload = json.loads(raw)
+    outcome = coerce_mcp_tool_outcome(raw, tool_name="okto_pulse_execute_test_scenario_evidence")
+    assert len(issuer.calls) == 1
+    assert specs.calls == []
+    assert specs.spec.test_scenarios[0]["status"] == "ready"
+    assert outcome.retryable is False
+    if phase == "mixed_failure":
+        assert payload["error"] == "evidence_execution_failed"
+    else:
+        assert payload["error"] == LedgerBusyError.code
+        assert outcome.code == LedgerBusyError.code
+        assert payload["ledger_observation_retryable"] is True
+        assert payload["execution_state"] == "unknown"
+        assert payload["receipt_state"] == "unconfirmed"
+        assert payload["scenario_persisted"] is False
+        assert outcome.next_action["automatic_retry"] is False
+        assert outcome.next_action["action"] == "inspect_existing_evidence"
 
 
 class _Verifier:

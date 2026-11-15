@@ -1,5 +1,5 @@
 ---
-version: "1.0"
+version: "1.1"
 ---
 
 # Tool docs — `card`
@@ -124,6 +124,9 @@ Bug regression decision rule:
     spec_mutation_required, and next_action. Only eligible scenarios may satisfy
     require_test_task_for_bug.
 
+    Omit candidate_scenario_ids to discover eligible scenarios. Send [] only to
+    classify an explicitly empty selection; it never means automatic discovery.
+
     Path B is amendment-revision lineage remediation. Same-spec membership by
     itself, title similarity, cross-spec scenarios, scenario_not_found, or an
     unrelated scenario do not satisfy the bug gate. Escalate with
@@ -234,7 +237,9 @@ The server stores a `card-delivery-selection/v2` manifest beside the conclusion,
 with hashes of the actual immutable records, obligation scope and presented
 impact. Do not send client hashes or validity flags. A frozen Card's delivery
 read uses the selected records while still applying all relevant revocations,
-material progress, source/Target heads and latest authenticated test results.
+material progress, source/Target heads and current accepted test results for
+each exact delivered basis. The scenario's latest-result summary is not the
+sole verification authority.
 Selection cannot hide a known failure or authorize completion. Authorized rework
 reads the current ledger again and preserves the old report. Selection is
 optional in the native report contract: when omitted, the delivery read evaluates
@@ -259,6 +264,85 @@ posture independently of the Delivery Evidence gate. The Delivery read exposes
 `report_impact` separately, without rewriting the historical report. Manual v1
 reports remain supported. Buffered-observation applicability and recording
 reconciliation corrections remain separate pending work.
+
+### Exact-result Test associations
+
+Use `okto_pulse_record_delivery_evidence` on the Test Card for the scenarios and
+implementations actually verified. `accepted_result_id` is optional and legal
+only on `kind="test"`, in either a single entry or an atomic batch. Take it from
+native accepted facts (for example a current Test candidate in Delivery Evidence),
+never from a run ID, scenario ID, receipt string or invented client value.
+If omitted, the server resolves exactly one applicable current accepted result.
+An explicit ID does not waive exact sources, currentness, chronology, criterion,
+method, actor or Board/Spec/edition checks. Required implementations may use a
+subset of a run's full basis; competing companion-source bases remain ambiguous.
+
+#### Minimal exact-result association batch
+
+This example binds two independently verified deliveries in **one Test Card**.
+Replace illustrative IDs and revision numbers with the current native values
+already obtained for this scope. The implementation IDs are existing persisted
+associations, not local batch aliases. Omit an entry's `accepted_result_id` only
+when unique automatic resolution is intended. Do not add receipt/hash/verified
+fields or combine different Cards under one envelope.
+
+```json
+{
+  "board_id": "<board-id>",
+  "spec_id": "<spec-id>",
+  "card_id": "<test-card-id>",
+  "evidence": {
+    "contract_version": "card-delivery-batch/v1",
+    "expected_card_version": 3,
+    "expected_spec_edition": 2,
+    "expected_delivery_revision": 7,
+    "idempotency_key": "<stable-operation-key>",
+    "entries": [
+      {
+        "client_ref": "verified-a",
+        "kind": "test",
+        "scenario_id": "<shared-scenario-id>",
+        "accepted_result_id": "<current-accepted-result-a>",
+        "implementation_ids": ["<implementation-association-a>"],
+        "obligation_refs": ["fr:fr_delivery_a"],
+        "justification": "Associate the accepted result for the exact implementation of requirement A."
+      },
+      {
+        "client_ref": "verified-b",
+        "kind": "test",
+        "scenario_id": "<shared-scenario-id>",
+        "accepted_result_id": "<current-accepted-result-b>",
+        "implementation_ids": ["<implementation-association-b>"],
+        "obligation_refs": ["fr:fr_delivery_b"],
+        "justification": "Associate the independent accepted result for requirement B."
+      }
+    ]
+  }
+}
+```
+
+The unchanged limits are 1–50 entries, 128 KiB and 200 reference uses; each
+`accepted_result_id` counts as one reference. The whole batch rolls back if any
+entry fails. Retain the returned associations and any revisions actually returned;
+do not infer a revision increment or current readiness from `{id,replayed}`.
+When all handoff facts are ready, these entries can use the existing composed
+report route instead of a separate association/report cycle. Completion still
+requires its native gates and the current full gate context.
+
+| Native rejection | Minimal next action |
+|---|---|
+| `delivery_verification_result_ambiguous` | Inspect applicable native results and explicitly select the exact intended basis; do not rerun unchanged valid work merely to make it newest. |
+| `delivery_accepted_result_not_current` | Refresh affected current facts. After failure/reset/semantic change, obtain valid current verification; an older success cannot be restored. |
+| `delivery_current_verified_test_and_implementation_required` | Inspect the selected implementations and result's sources, scope, chronology and criteria; correct the association or verify the changed work. |
+| `delivery_verification_assessment_unavailable` | Restore the missing authority/access or resolve the stated capacity limit; do not infer an empty or successful result. |
+| Card/edition/ledger conflict | Refresh only the changed scope, review the intended batch and submit under a new operation key. |
+
+After an uncertain response, inspect/retry the original operation with the same
+key and exact payload before changing intent. A replay describes that original
+operation. It neither refreshes verification nor reauthorizes a later transition.
+Do not reset/toggle scenario status, poll every subtab or repeat full context to
+make sequential gates pass. Human submissions generate audit records internally
+and expose no technical receipt selector.
 
 ### `impact_evidence` (optional, schema_version=1)
 

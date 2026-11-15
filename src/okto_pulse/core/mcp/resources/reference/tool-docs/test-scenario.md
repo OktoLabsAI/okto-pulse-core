@@ -1,5 +1,5 @@
 ---
-version: "2.0"
+version: "2.1"
 ---
 
 # Tool docs — `test-scenario`
@@ -54,7 +54,35 @@ have a current authenticated `passed` receipt, and be explicitly associated with
 the implementation it tested via `okto_pulse_record_delivery_evidence` with
 `evidence.kind="test"`.
 `automated`, task completion and self-reported result text do not qualify. A new
-failed run invalidates old coverage. See `okto-pulse://reference/code-traceability`.
+failed run invalidates old coverage for the same full source basis. A run for
+another independently delivered basis does not replace that basis's valid
+result. See `okto-pulse://reference/code-traceability`.
+
+### Reuse current verification without repeating execution
+
+The scenario status/evidence shown in its ordinary summary is the latest
+operational result. Delivery uses current accepted results per exact full source
+basis; do not toggle that summary between old evidence to close tasks in turn.
+The native authority reserves and authenticates execution context before a run
+and accepts its result under the current semantic/reset scope. A receipt's
+existence alone does not establish acceptance or current delivery credit.
+
+If the exact implementation already has an applicable current accepted result,
+associate it instead of rerunning it. Test Delivery accepts optional native
+`accepted_result_id`; omission selects a uniquely applicable current result.
+Resolve competing full bases explicitly, including companion sources. Never
+select the newest passing history. The batch example and error recovery are in
+**Exact-result Test associations**, `okto-pulse://reference/tool-docs/card`.
+
+A later failure on the same basis removes its earlier passing credit immediately.
+An explicit reset or semantic change invalidates affected current results across
+their bases; restoring previous evidence does not undo invalidation. Obtain new
+verification for the changed scope, then associate the accepted result. Historical
+Done/reports stay immutable; progress notes, approval of an amendment and another
+Spec's successful run do not transfer proof. Failed, unknown and unavailable stay
+distinct. Reuse returned IDs/fences only within their confirmed scope, refresh
+on relevant conflicts and retain mandatory gate reads; no per-subtab polling or
+duplicate runner call is needed merely because another basis executed.
 
 Card-type and test-governance rules:
 `okto-pulse://reference/card_types`.
@@ -94,7 +122,12 @@ Profiles are host authority and are not automatically restored with evidence.
 This runner supports explicit Python `unittest.TestCase` methods using the
 Pulse Python environment; it is not a general CI report importer or arbitrary
 shell runner. Repeat `--test` for multiple methods; default timeout is 60s,
-configurable locally up to 120s. Only register trusted code: the temporary
+configurable locally up to 120s. A host operator can explicitly authorize a
+larger bounded suite with `--allow-long-running --timeout N` (maximum
+3600s). This registration-only option does not change application deadlines or
+let an MCP request extend a profile's timeout. Retain individual test deadlines
+and reject skipped/incomplete results inside aggregate test entry points.
+Only register trusted code: the temporary
 workspace is a reproducibility boundary, not an OS security sandbox.
 
 Call `okto_pulse_execute_test_scenario_evidence` with the usual identifiers,
@@ -186,6 +219,8 @@ Args:
         defense-in-depth application envelope for a direct handler/use-case
         invocation that bypasses FastMCP validation; it is not the normal
         FastMCP transport response.
+    verification_method: automated_test | static_analysis | inspection | demonstration.
+        Omission leaves the method unspecified; scenario_type does not infer it.
     linked_criteria: Multi-value (formats: okto-pulse://reference/multivalue)
         references to the acceptance criteria this scenario validates. Each
         token may be a 0-based index, a structured ``ac_id`` (e.g. ``ac_1a2b``),
@@ -202,6 +237,21 @@ Returns:
     JSON with the created scenario; ``linked_criteria`` is always a list of
     canonical ac_id strings (never a dict). Invalid FastMCP arguments do not
     enter this return contract; the host returns ``validation_failed``.
+
+<!-- contract-example: okto_pulse_add_test_scenario -->
+```json
+{
+  "board_id": "board-example",
+  "spec_id": "spec-example",
+  "title": "Invalid input identifies the affected requirement",
+  "given": "A task has one unmet required validation condition",
+  "when": "The user opens Delivery",
+  "then": "The matrix names the requirement, failed check and next action",
+  "scenario_type": "e2e",
+  "verification_method": "demonstration",
+  "linked_criteria": ["ac_example"]
+}
+```
 
 ## `okto_pulse_delete_test_scenario`
 
@@ -241,7 +291,7 @@ Returns:
 ## `okto_pulse_update_test_scenario`
 
 Edit the BODY of a test scenario (title/given/when/then/scenario_type/
-    linked_criteria/notes). Does NOT accept status — status stays exclusive to
+    linked_criteria/verification_method/notes). Does NOT accept status — status stays exclusive to
     okto_pulse_update_test_scenario_status so no second NC-9 bypass is created.
 
     Omitted params mean "leave unchanged". In particular, omit
@@ -249,11 +299,11 @@ Edit the BODY of a test scenario (title/given/when/then/scenario_type/
     of the closed enum and is rejected by FastMCP as ``validation_failed``
     before agent context, permissions, or UoW resolution. To
     intentionally CLEAR a field, list it in `clear` (native string array); only
-    `notes` and `linked_criteria` are clearable. `linked_criteria` is a
+    `notes`, `linked_criteria`, and `verification_method` are clearable. `linked_criteria` is a
     native string array of AC references, resolved to AC ids (fail-closed on
     unresolved tokens).
 
-    Editing a SEMANTIC field (given/when/then/scenario_type/linked_criteria) of a
+    Editing a SEMANTIC field (given/when/then/scenario_type/linked_criteria/verification_method) of a
     scenario that holds evidence invalidates it: status resets to `ready` and the
     evidence is dropped. Cosmetic edits (title/notes) preserve status + evidence.
     Respects the spec content-lock.
@@ -269,7 +319,21 @@ Edit the BODY of a test scenario (title/given/when/then/scenario_type/
             the closed FastMCP schema as ``validation_failed`` before context or
             UoW resolution, never normalized.
         linked_criteria: Native string array of AC index/id/text (resolved to AC ids).
-        clear: Native string array of field names to empty (notes, linked_criteria).
+        verification_method: Optional replacement from the method enum above.
+        expected_spec_version: Optional optimistic fence from the current Spec context.
+            Supply it for a version-fenced edit; it does not bypass content locks.
+        clear: Native string array of field names to empty (notes, linked_criteria, verification_method).
+
+<!-- contract-example: okto_pulse_update_test_scenario -->
+```json
+{
+  "board_id": "board-example",
+  "spec_id": "spec-example",
+  "scenario_id": "ts_example",
+  "expected_spec_version": 3,
+  "verification_method": "automated_test"
+}
+```
 
     Returns:
         JSON {success, scenario_id, updated_fields, evidence_invalidated} or
@@ -279,6 +343,16 @@ Edit the BODY of a test scenario (title/given/when/then/scenario_type/
         invalid FastMCP input returns ``validation_failed`` before this handler.
 
 ## `okto_pulse_execute_test_scenario_evidence`
+
+`evidence_v2.receipt_ledger_busy` means the bounded ledger observation could not
+confirm publication/integrity. The response distinguishes
+`ledger_observation_retryable=true` from the enclosing execution's
+`retryable=false`: the test may already have run. Inspect existing run/receipt
+evidence before deciding on a new execution. Never automatically replay the
+test to retry a ledger read. `execution_state=unknown` and
+`receipt_state=unconfirmed` do not mean success, a failed test, or an absent
+receipt; scenario state is unchanged. REST returns the same diagnosis with 503,
+without a retry-after instruction. No publication-resume API is implied.
 
 Execute an installation-owned replay without mutating the scenario. Exactly
 one replay source is required:
@@ -370,7 +444,7 @@ structured evidence:
     (evidence.output_snippet OR evidence.test_run_id) AND
     evidence.expected_output_snapshot AND
     evidence.non_replayable_justification
-  - `draft`/`ready`: evidence opcional (intent declarado)
+  - `draft`/`ready`: optional evidence (declared intent)
 
 When `skip_test_evidence_global=True`, the gate is bypassed — every
 status update is accepted without evidence, but a structured audit log

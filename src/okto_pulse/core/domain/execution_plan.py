@@ -16,6 +16,7 @@ from okto_pulse.core.domain.effective_delivery_inventory import (
 class SpecExecutionPlan:
     qualification: dict
     inventory: EffectiveDeliveryInventory
+    task_requirements: tuple = ()
 
     @property
     def complete(self):

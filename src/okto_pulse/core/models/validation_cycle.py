@@ -72,6 +72,8 @@ def project_validation_cycle(value: ValidationCycleSummary) -> dict[str, Any]:
     )
     if value.planning_readiness is not None:
         payload["planning_readiness"] = value.planning_readiness.to_dict()
+    if value.validation_summary is not None:
+        payload["validation_summary"] = value.validation_summary.to_dict()
     if primary_result_type in value.visible_sections:
         # Guaranteed by the domain visibility invariant.
         assert value.cycle_state is not None

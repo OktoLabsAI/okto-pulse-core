@@ -11,7 +11,8 @@ async def query_spec_coverage(board_id, query, *, context, uow_factory):
     try:
         query = SpecCoverageRequest.model_validate(query)
         actor = MCPAdapterContract.actor(context, board_id=board_id)
-        command = SpecCoverageCommand(board_id, query.subject_ref[5:], query.limit, query.cursor, query.timeout_ms)
+        command = SpecCoverageCommand(board_id, query.subject_ref[5:], query.limit,
+            query.cursor, query.timeout_ms, query.graph_mode)
         async with uow_factory(actor=actor) as uow:
             result = await SpecCoverageUseCase().execute(command, actor=actor, uow=uow)
         return SpecCoverageResponse.model_validate(result).model_dump_json()

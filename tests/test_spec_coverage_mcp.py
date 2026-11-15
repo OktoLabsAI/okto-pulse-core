@@ -48,6 +48,19 @@ async def test_closed_coverage_variant_uses_domain_ref_and_shared_resolver(facad
     assert result['delivery']['counts']['obligations'] == 3
     assert result['next_cursor']
     facade.legacy.assert_not_called()
+    assert facade.operation.call_args.args[0].graph_mode == 'summary'
+
+
+@pytest.mark.asyncio
+async def test_detail_mode_is_forwarded_and_cannot_reuse_summary_cursor(facade):
+    first = await call(query=SpecCoverageRequest(view='coverage', subject_ref='spec:spec', limit=1))
+    result = await call(query=SpecCoverageRequest(view='coverage', subject_ref='spec:spec',
+        limit=1, graph_mode='detail', cursor=first['next_cursor']))
+    assert result['code'] == 'spec_coverage_cursor_stale'
+    assert facade.operation.call_args.args[0].graph_mode == 'detail'
+    fresh = await call(query=SpecCoverageRequest(view='coverage', subject_ref='spec:spec',
+        limit=1, graph_mode='detail'))
+    SpecCoverageResponse.model_validate(fresh)
 
 
 @pytest.mark.asyncio
@@ -84,7 +97,8 @@ async def test_coverage_cannot_mix_with_legacy_scope(facade, extra):
 
 
 @pytest.mark.parametrize('fields', [{'subject_ref': 'card:card'}, {'subject_ref': 'spec:s:fr:x'},
-    {'subject_ref': 'spec:s', 'read_delivery': True}, {'subject_ref': 'spec:s', 'limit': 1001}])
+    {'subject_ref': 'spec:s', 'read_delivery': True}, {'subject_ref': 'spec:s', 'limit': 1001},
+    {'subject_ref': 'spec:s', 'graph_mode': 'everything'}])
 def test_request_cannot_choose_authority_or_ambiguous_scope(fields):
     with pytest.raises(ValidationError):
         SpecCoverageRequest.model_validate({'view': 'coverage', **fields})

@@ -197,3 +197,70 @@ async def test_empty_removal_cannot_bypass_an_existing_prepared_operation(
             journaled_prepared=["already-prepared"],
             journaled_receipts=[],
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("claim_current", [True, False])
+async def test_complete_empty_projection_fences_audit_without_native_receipt(
+    monkeypatch: pytest.MonkeyPatch, claim_current: bool,
+) -> None:
+    events = []
+    response = object()
+    output = {"session_id": "session-empty", "progress_kind": "complete",
+              "graph_write_records": [], "node_refs": [], "cognitive_source_records": [],
+              "nodes_added": 0, "nodes_updated": 0, "nodes_superseded": 0, "edges_added": 0}
+
+    class Store:
+        async def rollback(self, _db):
+            events.append("end_read_snapshot")
+
+        async def prepare_projection_operation(self, *args, **kwargs):
+            raise AssertionError("An explicitly rolled-back projection has no prepared graph operation")
+
+    class Lease:
+        def complete_without_graph_change(self):
+            events.append("graph_unchanged")
+
+    async def commit(_req, **kwargs):
+        events.append("native_rollback")
+        await kwargs["projection_precommit"]({"graph_after": "baseline", "output": output,
+                                               "graph_unchanged": True})
+        return response
+
+    async def fence(_db, _entry, **kwargs):
+        assert kwargs.get("reserve_writer", True) is True
+        events.append("claim_fence")
+        return claim_current
+
+    async def stage(_db, *, operation_id, output):
+        assert operation_id and output["session_id"] == "session-empty"
+        events.append("sql_audit")
+
+    async def unexpected_barrier(**kwargs):
+        raise AssertionError("An explicitly rolled-back projection requires no graph durability IO")
+
+    monkeypatch.setattr(consolidation, "get_consolidation_persistence_port", Store)
+    monkeypatch.setattr(consolidation, "commit_consolidation", commit)
+    monkeypatch.setattr(consolidation, "_queue_claim_is_current_and_unfenced", fence)
+    monkeypatch.setattr(consolidation, "stage_recovered_projection_output", stage)
+    monkeypatch.setattr(consolidation, "_ensure_board_graph_durable", unexpected_barrier)
+    entry = SimpleNamespace(id="entry", board_id="board", artifact_type="card", artifact_id="card",
+                            claim_token="claim", source="state_transition")
+    prepared, receipts = [], []
+
+    async def execute():
+        return await consolidation._commit_consolidation_with_board_graph_lifecycle(
+            entry=entry, session_id="session-empty", summary_text="Empty cancelled projection",
+            db=object(), enter_graph_write=lambda _: Lease(),
+            journaled_prepared=prepared, journaled_receipts=receipts,
+        )
+
+    if claim_current:
+        assert await execute() is response
+    else:
+        with pytest.raises(consolidation._QueueClaimLostOrFenced, match="projection_noop_claim_lost"):
+            await execute()
+    assert events == ["native_rollback", "graph_unchanged", "end_read_snapshot", "claim_fence"] + (
+        ["sql_audit"] if claim_current else []
+    )
+    assert prepared == receipts == []

@@ -12,7 +12,11 @@ and authenticated passed TEST-card results for the implementation records actual
 tested. Decisions reuse the current proofs of their selected obligations and/or
 require their declared direct inspection; they need no artificial task or Test Card.
 Both verification paths, when declared, must pass. No executable structured obligations produces one explicit Spec-scope obligation, not
-vacuous 100% coverage. Waivers are human-authorized, exact-scope and phase-specific.
+vacuous 100% coverage. Legacy evidence waivers are human-authorized, exact-scope and phase-specific.
+Human task requirement decisions are separate: a current Optional/Waived decision
+removes only that task's current contributions from required delivery, without
+proof credit or lifecycle changes. Shared required owners and independent gates
+remain required; a Test Card decision does not remove required Spec scenarios.
 Skip Code Evidence/Test Coverage/Test Evidence, advisory posture and greenfield do
 not bypass delivery. Existing done status is preserved, with missing proof exposed
 read-only for repair. See `okto-pulse://reference/code-traceability` and
@@ -20,7 +24,7 @@ read-only for repair. See `okto-pulse://reference/code-traceability` and
 
 ## Spec Status Transitions
 
-Transitions table: see `okto-pulse://reference/transitions` (single source). The `in_progress` → `done` gate requires linked non-bug, non-archived cards to be `done` or `cancelled`, together with the applicable verification and Delivery Evidence gates.
+Transitions table: see `okto-pulse://reference/transitions` (single source). The `in_progress` → `done` gate requires required linked non-bug, non-archived cards to be `done` or `cancelled`, together with the applicable verification and Delivery Evidence gates. Only an exact current human task requirement decision removes a task from that completion requirement; a historical or stale choice grants no exception.
 
 ### Spec edition versus technical revision
 

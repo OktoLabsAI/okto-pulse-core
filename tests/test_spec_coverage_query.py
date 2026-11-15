@@ -214,6 +214,19 @@ def test_mutation_without_spec_version_change_invalidates_cursor():
         project_spec_coverage(replace(request, cursor=cursor), facts)
 
 
+def test_graph_mode_is_part_of_cursor_identity_even_without_graph_permission():
+    request = replace(QUERY, limit=1, graph_mode='summary')
+    cursor = project_spec_coverage(request, paged())['next_cursor']
+    with pytest.raises(ValueError, match='cursor_stale'):
+        project_spec_coverage(replace(request, graph_mode='detail', cursor=cursor), paged())
+
+
+@pytest.mark.parametrize('mode', ['', 'all', None, False, 1])
+def test_invalid_graph_modes_are_refused_by_the_domain_query(mode):
+    with pytest.raises(ValueError, match='graph_mode_invalid'):
+        replace(QUERY, graph_mode=mode)
+
+
 @pytest.mark.parametrize('cursor', ['bad', 'spec-coverage-v1:' + 'a' * 64 + ':0', 'x' * 257])
 def test_malformed_cursor_is_rejected(cursor):
     with pytest.raises(ValueError, match='cursor_invalid'):

@@ -350,6 +350,28 @@ class DeliveryRecordRejection:
 
 
 @dataclass(frozen=True, slots=True)
+class AmendmentDeliveryAttribution:
+    """Native, explicit Bug obligation attribution; never a foreign ledger row.
+
+    The adapter authenticates the reserved confirmation and freezes the exact
+    original obligation, revision inventory and immutable proof identities.
+    The evaluator still evaluates the source proof under its original scope.
+    """
+    amendment_id: str
+    origin_scope: DeliveryScope
+    bug_id: str
+    binding: DeliveryBinding
+    bug_status: CardStatus
+    revision_scope: DeliveryScope
+    inventory_sha256: str
+    implementation_ids: tuple[str, ...]
+    test_ids: tuple[str, ...]
+    source_snapshot: DeliveryEvidenceSnapshot
+    origin_current: bool
+    coverage_current: bool
+
+
+@dataclass(frozen=True, slots=True)
 class DeliveryEvidenceSnapshot:
     scope: DeliveryScope
     obligations: tuple[DeliveryObligation, ...]
@@ -363,6 +385,7 @@ class DeliveryEvidenceSnapshot:
     # Legacy complete also includes planning. New assessments distinguish a
     # fully read ledger from an unresolved verification plan/allocation.
     facts_complete: bool | None = None
+    amendment_attributions: tuple[AmendmentDeliveryAttribution, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

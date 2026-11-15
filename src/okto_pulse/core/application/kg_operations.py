@@ -348,6 +348,7 @@ class CoreKnowledgeGraphOperations:
         board_id: str,
         agent_id: str,
         defer_session_finalization: bool = False,
+        defer_relational_staging: bool = False,
     ):  # noqa: ANN201
         from okto_pulse.core.services.application_kg import (
             commit_consolidation,
@@ -361,8 +362,14 @@ class CoreKnowledgeGraphOperations:
                 agent_id=agent_id,
                 db=self.__relational_context,
                 defer_session_finalization=defer_session_finalization,
+                **({"defer_relational_staging": True} if defer_relational_staging else {}),
             ),
         )
+
+    async def stage_deferred_consolidation(self, session_id: str, *, agent_id: str) -> None:
+        from okto_pulse.core.kg.primitives import stage_deferred_consolidation
+
+        await stage_deferred_consolidation(session_id, agent_id=agent_id, db=self.__relational_context)
 
     async def health(
         self, board_id: str, *, scheduler_control: object | None = None

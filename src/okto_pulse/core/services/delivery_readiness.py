@@ -21,6 +21,7 @@ from okto_pulse.core.models.delivery_readiness import (
     DeliveryReadiness, DeliveryReadinessContext, DeliveryReadinessBoardSummary, DeliveryReadinessDetail, ReadinessCursorBinding,
     ReadinessDetailCounts, ReadinessDetailEntry, ReadinessPage, ReadinessReadQuery, ReadinessRelation,
 )
+from okto_pulse.core.models.delivery_summary import DeliverySummaryQuery
 from okto_pulse.core.ports.delivery_readiness import (
     DeliveryReadinessCursorPort, DeliveryReadinessReadPort, ReadinessActor, ReadinessAccessDenied, ReadinessReadError,
     ReadinessNativeLifecycle,
@@ -38,6 +39,31 @@ class DeliveryReadinessService:
     """Compose a fresh authorized read; never reuse it as mutation authority."""
     def __init__(self, reader: DeliveryReadinessReadPort, cursor: DeliveryReadinessCursorPort):
         self.reader, self.cursor = reader, cursor
+
+    async def delivery_summary(self, query: DeliverySummaryQuery, *, actor: ReadinessActor) -> dict:
+        """Bounded human view over one freshly authorized population."""
+        from okto_pulse.core.models.delivery_summary import DeliverySummaryCursorBinding
+        from .delivery_summary import page_delivery_summary
+
+        load = getattr(self.reader, 'load_delivery_summary', None)
+        if load is None:
+            raise ReadinessReadError('readiness_assessment_unavailable',
+                native_code='readiness_projection_adapter_unavailable')
+        # Never use IDs from a cursor to select a scope or bypass authorization.
+        population = await load(board_id=query.board_id, spec_id=query.spec_id, actor=actor)
+        if (population.scope.board_id, population.scope.spec_id) != (query.board_id, query.spec_id):
+            raise ReadinessReadError('readiness_scope_mismatch')
+
+        def binding(group):
+            return DeliverySummaryCursorBinding(actor_id=actor.actor_id, actor_kind=actor.actor_kind,
+                realm_id=actor.realm_id, board_id=query.board_id, spec_id=query.spec_id,
+                spec_edition=population.scope.spec_edition, population_id=population.population_id,
+                group=group, limit=query.limit)
+
+        offset = self.cursor.decode_summary(query.cursor, binding(query.group)) if query.cursor else 0
+        result = page_delivery_summary(population, group=query.group, offset=offset, limit=query.limit,
+            encode_cursor=lambda group, start: self.cursor.encode_summary(binding(group), start))
+        return result.model_dump(mode='json', exclude_none=False)
 
     async def requeue_terminal(self, *, board_id: str, spec_id: str,
                                actor: ReadinessActor, edition: int,
@@ -86,6 +112,7 @@ class DeliveryReadinessService:
                 'error_code': value.error_code if value else None,
             },
             'summaries': list(value.summaries) if value else [],
+            'task_delivery': getattr(value, 'task_delivery', None),
             'units': list(value.units) if value else [],
             'page': page,
             'mutation_reauthorization_required': True,
@@ -286,17 +313,17 @@ class EvaluatedDeliveryReadiness:
         if qualification.proof_complete is True and check == 'blocked' and not qualification.historical_divergence:
             message_code = 'lifecycle_gate_pending'
         messages = {
-            'unknown': 'Não foi possível avaliar a entrega com os fatos atuais.',
-            'implementation_pending': 'Há contribuições de implementação pendentes.',
-            'verification_pending': 'A implementação está comprovada; falta verificação aplicável.',
-            'verification_failed': 'Há falha ou conflito na verificação atual.',
-            'ready': 'Provas completas; confira os gates na transição nativa para concluir.',
-            'delivered': 'Entrega concluída com qualificação atual.',
-            'ready_with_exceptions': 'O gate de entrega admite ressalvas; confira os demais gates na transição nativa.',
-            'delivered_with_exceptions': 'Entrega concluída com ressalvas efetivas.',
-            'not_applicable': 'O escopo conhecido não possui fase de entrega aplicável.',
-            'historical_completion_diverged': 'O status Done foi preservado, mas a qualificação atual da entrega diverge.',
-            'lifecycle_gate_pending': 'Provas completas; um gate nativo ainda impede o encerramento.',
+            'unknown': 'Delivery could not be assessed using the current facts.',
+            'implementation_pending': 'Implementation contributions are still pending.',
+            'verification_pending': 'Implementation is supported by evidence. Applicable verification is still pending.',
+            'verification_failed': 'Current verification has a failure or conflict.',
+            'ready': 'Evidence is complete. Check the remaining completion conditions before closing.',
+            'delivered': 'Delivery is complete with current supporting evidence.',
+            'ready_with_exceptions': 'The delivery check allows exceptions. Check the remaining completion conditions.',
+            'delivered_with_exceptions': 'Delivery is complete with effective exceptions.',
+            'not_applicable': 'The known scope has no applicable delivery phase.',
+            'historical_completion_diverged': 'Done status is preserved, but current delivery evidence no longer supports it.',
+            'lifecycle_gate_pending': 'Evidence is complete; a required completion check is still pending.',
         }
         scope = assessment.scope
         return DeliveryReadinessContext(
@@ -523,11 +550,35 @@ class PreparedDeliveryReadiness:
             if related.intersection(self.actions[key].issue_ids))[:3]
         def construct(size):
             issues = tuple(rendered[:size])
+            if preview_limit < 10:
+                # Evidence is a preview here, not the paged source of truth.
+                # An otherwise valid single cause can exceed the summary byte
+                # budget even with each array limited to ten entries. Keep its
+                # identity, impacts and counts; the unchanged detail query
+                # still pages every complete fact from self.diagnostics.
+                compacted = []
+                for issue in issues:
+                    changes = {}
+                    for field, count in (('expected', 'expected_count'),
+                            ('observed', 'observed_count'), ('evidence_refs', 'evidence_count'),
+                            ('pinpoints', 'pinpoint_count')):
+                        values = getattr(issue, field)[:preview_limit]
+                        changes[field] = values
+                        changes[field + '_truncated'] = len(values) < getattr(issue, count)
+                    compacted.append(issue.model_copy(update=changes))
+                issues = tuple(compacted)
             truncated = any(value for issue in issues for key, value in issue.model_dump().items() if key.endswith('_truncated'))
             return DeliveryReadiness(**self.context.model_dump(), issues=issues, next_actions=actions,
                 page=self._page(binding, total=len(causes), offset=offset, returned=size, truncated=truncated))
-        return self._fit(total=len(causes), offset=offset, limit=query.limit, maximum=SUMMARY_MAX_BYTES,
-            construct=construct, identity=causes[offset].id if offset < len(causes) else self.context.scope.spec_id)
+        # Preserve normal previews whenever ordinary issue paging fits. Only
+        # reduce embedded evidence after even the minimum page is too large.
+        for preview_limit in (10, 5, 2, 1, 0):
+            try:
+                return self._fit(total=len(causes), offset=offset, limit=query.limit, maximum=SUMMARY_MAX_BYTES,
+                    construct=construct, identity=causes[offset].id if offset < len(causes) else self.context.scope.spec_id)
+            except ReadinessReadError as exc:
+                if exc.native_code != 'readiness_response_limit' or not rendered or preview_limit == 0:
+                    raise
 
     def _detail_entries(self, issue_id):
         if issue_id in self._entries:

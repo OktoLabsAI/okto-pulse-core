@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 
 from okto_pulse.core.domain.test_scenarios import ADMITTED_VERIFICATION_METHODS
-
+from okto_pulse.core.domain.verification_currentness import VerificationContext
 from okto_pulse.core.runtime_context import (
     register_runtime_value,
     reset_runtime_values,
@@ -55,6 +56,8 @@ class TestEvidenceExecutionRequest:
     actor_id: str
     scenario_sha256: str
     inline_replay: object | None = None
+    # Native reservation, never populated from client-authored evidence fields.
+    verification_context: VerificationContext | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +65,36 @@ class TestEvidenceExecutionResult:
     """Canonical evidence emitted only after the runtime replay completed."""
 
     evidence: Mapping[str, Any]
+
+
+class TestEvidenceLedgerBusyError(ValueError):
+    """A bounded ledger observation could not establish receipt integrity.
+
+    Only the read observation is retryable. The enclosing execution might
+    already have run, so repeating it is never an automatic recovery action.
+    """
+
+    code = "evidence_v2.receipt_ledger_busy"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+    def execution_failure(self) -> dict[str, Any]:
+        return {
+            "error": self.code,
+            "error_code": self.code,
+            "message": "Evidence publication could not be confirmed. The test may already have executed.",
+            "retryable": False,
+            "ledger_observation_retryable": True,
+            "execution_state": "unknown",
+            "receipt_state": "unconfirmed",
+            "scenario_persisted": False,
+            "next_action": {
+                "action": "inspect_existing_evidence",
+                "automatic_retry": False,
+                "instruction": "Inspect the existing run and receipt before deciding whether a new test execution is needed. Do not automatically replay this execution request.",
+            },
+        }
 
 
 class TestEvidenceExecutionIssuer(Protocol):
@@ -79,6 +112,7 @@ class TestVerificationReportRequest:
     scenario_sha256: str
     actor_id: str
     report: Mapping[str, Any]
+    verification_context: VerificationContext | None = None
 
 
 class TestVerificationReportIssuer(Protocol):
@@ -152,22 +186,22 @@ def reset_test_evidence_execution_issuer_for_tests() -> None:
 
 
 __all__ = [
-    "TestVerificationReportRequest",
-    "TestVerificationReportIssuer",
-    "register_test_verification_report_issuer",
-    "resolve_test_verification_report_issuer",
-    "reset_test_verification_report_issuer_for_tests",
-    "TestEvidenceWriteVerification",
-    "TestEvidenceWriteVerifier",
     "TestEvidenceExecutionIssuer",
     "TestEvidenceExecutionRequest",
     "TestEvidenceExecutionResult",
+    "TestEvidenceWriteVerification",
+    "TestEvidenceWriteVerifier",
+    "TestVerificationReportIssuer",
+    "TestVerificationReportRequest",
     "register_test_evidence_execution_issuer",
     "register_test_evidence_write_verifier",
+    "register_test_verification_report_issuer",
+    "require_supported_test_verification_method",
     "reset_test_evidence_execution_issuer_for_tests",
     "reset_test_evidence_write_verifier_for_tests",
+    "reset_test_verification_report_issuer_for_tests",
     "resolve_test_evidence_execution_issuer",
     "resolve_test_evidence_write_verifier",
+    "resolve_test_verification_report_issuer",
     "supported_test_verification_methods",
-    "require_supported_test_verification_method",
 ]

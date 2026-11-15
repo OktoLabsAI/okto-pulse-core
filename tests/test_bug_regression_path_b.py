@@ -33,6 +33,85 @@ from okto_pulse.core.services.bug_regression_scenarios import (
 FOREIGN = "ts-foreign"  # a scenario that lives on another spec (cross-spec)
 
 
+@pytest.mark.asyncio
+async def test_three_scenario_confirmations_survive_reconfirmation_and_reject_stale(monkeypatch):
+    from dataclasses import asdict, replace
+    from okto_pulse.core.services import amendment_revision as revisions
+    from okto_pulse.core.services import amendment_coverage as coverage
+
+    class Store:
+        async def save(self, context, record, **kwargs):
+            self.record = deepcopy(record)
+            return deepcopy(record)
+
+        async def get(self, context, *, amendment_id):
+            return deepcopy(self.record)
+
+    store = Store()
+    monkeypatch.setattr(revisions, "get_amendment_revision_store", lambda: store)
+    service = revisions.AmendmentRevisionService(None)
+    scenarios = [FOREIGN, "ts-second", "ts-third"]
+    row = await service.create(board_id="board-1", original_spec_id="spec-1",
+        origin_bug_id="bug-1", author="agent", origin_task_ids=["origin-1"],
+        regression_test_task_ids=["tc-1"], regression_scenario_ids=scenarios)
+    await service.set_status(row.id, "approved", "agent")
+    await service.set_lineage_state(row.id, "complete", "agent")
+    bases = {scenario: _basis() for scenario in scenarios}
+
+    async def current_basis(context, *, scenario_id, **kwargs):
+        return bases[scenario_id]
+
+    monkeypatch.setattr(coverage, "current_coverage_basis", current_basis)
+
+    async def confirm(scenario):
+        confirmation = asdict(_confirmation(amendment_revision_id=row.id,
+            regression_scenario_id=scenario, basis=bases[scenario]))
+        await service.set_coverage_confirmation(row.id, confirmation=confirmation, actor="validator")
+
+    async def gate():
+        facts = await coverage.current_amendment_facts(None, [await service.get(row.id)])
+        return BugRegressionGateValidator().validate_linked_test_tasks(
+            bug_card=_card("bug-1", card_type=CardType.BUG), spec=_spec(),
+            origin_task=_card("origin-1", test_scenario_ids=[]),
+            linked_test_tasks=[_card("tc-1", spec_id="other-spec", card_type=CardType.TEST,
+                                    test_scenario_ids=scenarios)],
+            candidate_spec_ids_by_scenario_id={scenario: "other-spec" for scenario in scenarios},
+            amendment_facts=facts)
+
+    for scenario in scenarios:
+        await confirm(scenario)
+        if scenario == FOREIGN:
+            # A legacy row with only the singular record must migrate without
+            # losing that original artifact when the next one is confirmed.
+            store.record.validation_metadata.pop("coverage_confirmations", None)
+    assert (await gate()).allowed
+    bases[FOREIGN] = replace(bases[FOREIGN], evidence_sha256="d" * 64)
+    blocked = await gate()
+    assert not blocked.allowed
+    assert blocked.eligibility.coverage_pending_scenarios == (FOREIGN,)
+    await confirm(FOREIGN)
+    assert (await gate()).allowed
+    metadata = (await service.get(row.id)).validation_metadata
+    assert len(metadata["coverage_confirmations"]) == 3
+    assert metadata["coverage_confirmation"]["regression_scenario_id"] == FOREIGN
+
+
+@pytest.mark.asyncio
+async def test_create_cannot_inject_plural_coverage_confirmations(monkeypatch):
+    from okto_pulse.core.services import amendment_revision as revisions
+
+    class Store:
+        async def save(self, context, record, **kwargs):
+            return record
+
+    monkeypatch.setattr(revisions, "get_amendment_revision_store", lambda: Store())
+    row = await revisions.AmendmentRevisionService(None).create(
+        board_id="board", original_spec_id="spec", origin_bug_id="bug", author="agent",
+        validation_metadata={"coverage_confirmation": {"validator_id": "forged"},
+            "coverage_confirmations": [{"validator_id": "forged"}], "keep": "ok"})
+    assert row.validation_metadata == {"keep": "ok"}
+
+
 def _spec() -> Spec:
     return Spec(
         id="spec-1",
