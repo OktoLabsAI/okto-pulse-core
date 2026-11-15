@@ -42,15 +42,16 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "0b090b3dd3988ecd65ec842656d9f460ee818ba95e845b38d8eee2130ec831bb",
+  "manifest_sha256": "3e6851cc8e2273865dbea79d1a75f65c11e9f22e6f69584f6847ff2505edbc0d",
   "manifest_version": "agent-resources/v2",
   "resource_count": 22,
   "resources": [
     {
-      "content_sha256": "1df0c8f0e4535060c36b5f31eb5823e10da58e0ea1c1cd12c0c611b6471fd381",
+      "content_sha256": "a0e0b45e69015627e84490b6bc82fa818164b7d349e061962b104a07653eee1d",
       "cross_links": [
         "okto-pulse://reference/errors",
         "okto-pulse://reference/projection-profiles",
+        "okto-pulse://reference/tool-docs/card",
         "okto-pulse://reference/tool-docs/code-traceability",
         "okto-pulse://reference/transitions",
         "okto-pulse://workflows/cards"
@@ -326,12 +327,13 @@
       "uri": "okto-pulse://reference/tool-docs/spec"
     },
     {
-      "content_sha256": "b7fa82b3a3f175e149891d23bd49182d957a3fe295533a8b0644882daa84219c",
+      "content_sha256": "e66da2197c1213948cc14de88284f52e8d3978425af2925b76b10c345ea2df12",
       "cross_links": [
         "okto-pulse://reference/card_types",
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/multivalue",
-        "okto-pulse://reference/policy-compliance"
+        "okto-pulse://reference/policy-compliance",
+        "okto-pulse://reference/tool-docs/card"
       ],
       "required_cross_links": [
         "okto-pulse://reference/card_types"
@@ -413,7 +415,7 @@
       "uri": "okto-pulse://reference/transitions"
     },
     {
-      "content_sha256": "966ce64ce8fb1b3637812f20463c5c185d6c9d62f7ccec332c4d05a7e9c34f67",
+      "content_sha256": "4a5d963eb6169c5de68da38d68819e2c25e61ef9cd16084bd84d4e032181f704",
       "cross_links": [
         "okto-pulse://reference/card_types",
         "okto-pulse://reference/code-traceability",
@@ -421,6 +423,7 @@
         "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/quality-assessments",
         "okto-pulse://reference/tool-docs/architecture",
+        "okto-pulse://reference/tool-docs/card",
         "okto-pulse://reference/tool-docs/code-traceability"
       ],
       "required_cross_links": [

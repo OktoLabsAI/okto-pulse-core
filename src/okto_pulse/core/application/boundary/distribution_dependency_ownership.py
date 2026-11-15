@@ -169,8 +169,9 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
         ),
         _entry(
             "orjson", core, "core", ("orjson",), "direct",
-            ("src/okto_pulse/core/services/delivery_summary.py",),
-            rationale="The pure delivery summary fingerprints its authorized population with deterministic sorted JSON.",
+            ("src/okto_pulse/core/services/delivery_summary.py",
+             "src/okto_pulse/core/services/persisted_delivery_readiness.py"),
+            rationale="Core fingerprints authorized delivery populations and persisted-readiness manifests with deterministic sorted JSON.",
             removal_criterion="Replace population serialization while preserving the versioned digest and cursor binding contract.",
         ),
         _entry(
@@ -178,6 +179,12 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
             ("src/okto_pulse/community/adapters/sqlalchemy_persisted_readiness.py",),
             rationale="The persisted readiness adapter encodes bounded snapshot rows and restores their exact serialized facts.",
             removal_criterion="Replace snapshot serialization with an equivalent measured implementation and preserve exact generation manifests.",
+        ),
+        _entry(
+            "pydantic-core", community, "community", ("pydantic_core",), "direct",
+            ("src/okto_pulse/community/adapters/mcp_host.py",),
+            rationale="The MCP host classifies Pydantic validation error codes using the canonical ErrorType contract.",
+            removal_criterion="Pydantic exposes ErrorType through its public package or the host no longer classifies validation codes.",
         ),
         _entry(
             CORE_DISTRIBUTION, community, "community", ("okto_pulse",), "distribution",
