@@ -31,6 +31,8 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset()
 BASELINE_SINGLETONS_WITHOUT_RUNTIME_LEDGER: frozenset[str] = frozenset()
 SAFE_CONTEXT_LOCAL_STATE: frozenset[str] = frozenset(
     {
+        # Fresh diagnostics per outbox batch, reset in process_once's finally.
+        "okto_pulse/core/application/processors/global_outbox.py::_observation_context",
         "okto_pulse/core/composition.py::_active_runtime_composition",
         "okto_pulse/core/kg/guarded_write.py::_active_board_write_leases",
         "okto_pulse/core/kg/global_discovery_writer.py::_active_lease",
