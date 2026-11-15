@@ -76,3 +76,98 @@ class SpecPlanningReadiness:
             "blocked_actions": [] if self.state == "ready" else ["promote_to_validated"],
             "components": [item.to_dict() for item in self.components],
         }
+
+
+ValidationVerdict = Literal[
+    "validated", "validated_with_exception", "ready_to_conclude",
+    "not_validated", "unavailable", "not_required",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class SpecValidationSummary:
+    """Read-only presentation of native judgments; never transition authority.
+
+    Null counts mean the source could not establish that population. The caller
+    owns the authorized, consistent snapshot, including effective exceptions.
+    Technical receipts and individual assessments stay in the detailed view.
+    """
+
+    edition: int
+    verdict: ValidationVerdict
+    planning_state: PlanningState
+    reason_code: str
+    blockers_count: int | None
+    exception_count: int | None
+    next_action: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "contract_version": "validation-summary/v1",
+            "edition": self.edition,
+            "verdict": self.verdict,
+            "planning_state": self.planning_state,
+            "reason_code": self.reason_code,
+            "blockers_count": self.blockers_count,
+            "exception_count": self.exception_count,
+            "next_action": self.next_action,
+        }
+
+
+def build_spec_validation_summary(
+    *, planning: SpecPlanningReadiness, edition: int, subject_status: str,
+    current_validation_edition: int | None,
+    current_validation_outcome: Literal["success", "failed"] | None,
+    exception_count: int | None, can_conclude: bool = False,
+) -> SpecValidationSummary:
+    """Summarize the complete planning census without recomputing any gate.
+
+    A successful quality result alone cannot produce a positive verdict. A
+    completed lifecycle also needs current, readable planning facts. This pure
+    projection neither clears a historical result nor reopens a completed Spec.
+    ``can_conclude`` must come from the caller's native authorization decision.
+    """
+    if type(edition) is not int or edition < 1:
+        raise ValueError("validation_summary_edition_invalid")
+    if current_validation_edition is not None and (
+        type(current_validation_edition) is not int or current_validation_edition < 1
+    ):
+        raise ValueError("validation_summary_result_edition_invalid")
+    if current_validation_outcome not in {None, "success", "failed"}:
+        raise ValueError("validation_summary_outcome_invalid")
+    if exception_count is not None and (type(exception_count) is not int or exception_count < 0):
+        raise ValueError("validation_summary_exception_count_invalid")
+    if type(can_conclude) is not bool:
+        raise ValueError("validation_summary_authority_invalid")
+    if subject_status not in {"draft", "review", "approved", "validated", "in_progress", "done", "cancelled"}:
+        raise ValueError("validation_summary_status_invalid")
+
+    state = planning.state
+    blockers = tuple(item for item in planning.components if item.state == "blocked")
+
+    def result(verdict: ValidationVerdict, reason: str, action: str | None = None):
+        return SpecValidationSummary(
+            edition, verdict, state, reason,
+            None if state == "unavailable" else len(blockers), exception_count, action,
+        )
+
+    if state == "unavailable":
+        return result("unavailable", "planning_unavailable")
+    if subject_status in {"draft", "review", "cancelled"}:
+        return result("not_validated", "validation_stage_not_reached")
+    if blockers:
+        first = blockers[0]
+        return result("not_validated", next(iter(first.reason_codes), "planning_blocked"), first.next_action)
+    quality = planning.components[0]
+    if quality.mode == "off":
+        return result("not_required", "validation_not_required")
+    if current_validation_edition != edition or current_validation_outcome != "success":
+        return result("not_validated", "current_validation_required")
+    if subject_status == "approved":
+        return result("ready_to_conclude", "planning_ready", "submit_spec_validation" if can_conclude else None)
+    if exception_count is None:
+        return result("unavailable", "validation_exceptions_unavailable")
+    return result(
+        "validated_with_exception" if exception_count else "validated",
+        "validation_completed_with_exception" if exception_count else "validation_completed",
+    )

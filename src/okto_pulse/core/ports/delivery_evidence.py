@@ -6,8 +6,13 @@ from typing import Protocol
 from collections.abc import Mapping
 from okto_pulse.core.models.delivery_selection import DeliverySelectionInput
 from okto_pulse.core.models.delivery_report import CardDeliveryReportCommand
+from okto_pulse.core.models.human_task_submission import HumanTaskSubmissionCommand
+from okto_pulse.core.models.schemas import CardMove
 from okto_pulse.core.models.decision_review import DecisionReviewCommand, DecisionReviewQuery
 from okto_pulse.core.models.code_traceability import ImplementationTargetExecutionSubmission
+from okto_pulse.core.models.task_requirement_decision import (
+    TaskRequirementOptionsQuery, TaskRequirementDecisionCommand, TaskRequirementHistoryQuery,
+)
 
 
 from okto_pulse.core.models.delivery_evidence import (
@@ -39,7 +44,22 @@ class DeliveryReportSubmitter(Protocol):
         ...
 
 
+class HumanDeliveryReportSubmitter(Protocol):
+    async def __call__(self, report: CardMove) -> None:
+        """Run native Card gates for a server-resolved report; never commit."""
+        ...
+
+
 class DeliveryEvidenceReadPort(Protocol):
+    async def amendment_delivery_attribution(self, amendment: object, confirmation: dict) -> dict | None:
+        """Freeze exact native proof under an authorized coverage confirmation.
+
+        Return no attribution for partial/ambiguous/unallocated revision proof.
+        Never transfer ledger scope or infer a link from similar requirements.
+        Caller persists the result only through the reserved confirmation writer.
+        """
+        ...
+
     async def record_card_report(self, command: CardDeliveryReportCommand, *, actor_id: str, actor_kind: str,
                                  report_submitter: DeliveryReportSubmitter,
                                  execution_submitter: DeliveryExecutionSubmitter | None = None) -> dict:
@@ -75,6 +95,50 @@ class DeliveryEvidenceReadPort(Protocol):
 
 
 class DeliveryEvidenceStore(DeliveryEvidenceReadPort, Protocol):
+    async def record_human_submission(self, command: HumanTaskSubmissionCommand, *,
+                                      actor_id: str, actor_kind: str,
+                                      report_submitter: HumanDeliveryReportSubmitter | None = None) -> dict:
+        """Append a human declaration and its server receipt in this UoW.
+
+        Under the Card/Spec fence, check authorized exact replay before new CAS;
+        bind uniqueness to Board/Card/actor/key and digest to the entire intent.
+        New submissions require an in-progress normal/bug/test Card linked to
+        this Spec. Supersession is append-only and restricted to the same scope
+        and author. Content, receipt, link, result, event and optional transition
+        commit together or all roll back. Never synthesize material_change,
+        implementation/test credit, quality percentages or an impact declaration.
+
+        A report resolves qualified unambiguous existing technical proof and
+        authoritative assessment inputs, then calls report_submitter. Missing
+        input blocks with a next owner/action; it never asks humans for receipts
+        or silently saves progress instead. Return the immutable accepted result
+        plus replay flag, with a current or explicitly updating summary. Never
+        commits; replay reauthorization belongs to the application use case.
+        """
+        ...
+
+    async def task_requirement_history(self, query: TaskRequirementHistoryQuery, *, actor_id: str) -> dict:
+        """Read one authorized task's bounded historical page or full note."""
+        ...
+
+    async def task_requirement_options(self, query: TaskRequirementOptionsQuery, *,
+                                       actor_id: str, allowed_decisions: tuple[str, ...]) -> dict:
+        """Read exact current task scopes and a human review basis; never write."""
+        ...
+
+    async def record_task_requirement_decision(self, command: TaskRequirementDecisionCommand, *,
+                                              actor_id: str, actor_kind: str) -> dict:
+        """Append human decisions, activity and invalidation atomically.
+
+        Recheck scope under the completion fence, bind replay to actor and full
+        payload, and preserve lifecycle and proof. The application owns commit.
+        """
+        ...
+
+    async def task_requirement_states(self, board_id: str, spec_id: str) -> dict:
+        """Resolve exact current scopes for completion; stale history is required."""
+        ...
+
     async def decision_reviews(self, query: DecisionReviewQuery, *, actor_id: str) -> dict:
         """Read bounded current bases/history; never authenticate arbitrary sources."""
         ...

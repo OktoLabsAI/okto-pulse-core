@@ -184,6 +184,7 @@ class CardDeliveryEvidenceFields(BaseModel):
     execution_client_ref: ClientReference | None = None
     progress_refs: list[DeliveryProgressReference] = Field(default_factory=list, max_length=100)
     scenario_id: Identity | None = None
+    accepted_result_id: Identity | None = None
     implementation_ids: list[Identity] = Field(default_factory=list, max_length=1000)
     record_id: Identity | None = None
     justification: str = Field(min_length=1, max_length=20000, pattern=r"\S")
@@ -214,12 +215,12 @@ class CardDeliveryEvidenceFields(BaseModel):
             raise ValueError("delivery_duplicate_implementation")
         supplied = {
             name
-            for name in ("execution_id", "execution_submission", "execution_client_ref", "scenario_id", "record_id")
+            for name in ("execution_id", "execution_submission", "execution_client_ref", "scenario_id", "accepted_result_id", "record_id")
             if getattr(self, name) is not None
         }
         required = {
             "implementation": set() if self.composite_execution else {"execution_client_ref"} if self.execution_client_ref is not None else {"execution_submission"} if self.execution_submission is not None else {"execution_id"},
-            "test": {"scenario_id"},
+            "test": {"scenario_id", "accepted_result_id"} if self.accepted_result_id is not None else {"scenario_id"},
             "revoke": {"record_id"},
             "progress": set(),
         }[self.kind]
@@ -251,8 +252,11 @@ class CardDeliveryEvidenceFields(BaseModel):
             raise ValueError("delivery_payload_limit")
         if self.progress_refs and (
             len(refs) + len(self.progress_refs) + len(self.implementation_ids)
+            + bool(self.accepted_result_id)
             + len(self.progress.target_ids if self.progress else ()) > 200
         ):
+            raise ValueError("delivery_payload_limit")
+        if self.kind == "test" and len(refs) + len(self.implementation_ids) + bool(self.accepted_result_id) > 200:
             raise ValueError("delivery_payload_limit")
         if len(self.model_dump_json().encode("utf-8")) > 128 * 1024:
             raise ValueError("delivery_payload_limit")
@@ -332,6 +336,7 @@ class CardDeliveryEvidenceBatchInput(BaseModel):
             + len(entry.binding_execution_refs)
             + len(entry.progress_refs) + bool(entry.execution_client_ref)
             + len(entry.implementation_ids)
+            + bool(entry.accepted_result_id)
             + len(entry.progress.target_ids if entry.progress else ())
             + (2 + bool(entry.execution_submission.replacement_target_id) if entry.execution_submission else 0)
             for entry in self.entries

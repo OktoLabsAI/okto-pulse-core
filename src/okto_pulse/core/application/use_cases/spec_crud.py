@@ -1125,7 +1125,16 @@ class SetTestScenarioStatusUseCase:
         if scenario is None:
             raise ValueError(f"scenario_not_found: {command.scenario_id}")
         current_status = str(scenario.get("status") or "draft")
+        result_publication = command.evidence is not None
+        if result_publication:
+            # Publication remains bound to the actual scenario state, while
+            # execute/update authority belongs to the Spec permission family.
+            await require_authorization(actor,
+                PermissionRequirement(f"test_scenario.interact_in.{current_status}"),
+                uow=uow, board_id=spec.board_id)
         requirement = (
+            PermissionRequirement("spec.tests.execute")
+            if result_publication else
             PermissionRequirement(
                 "spec.tests.execute",
                 entity="spec",
@@ -1150,6 +1159,7 @@ class SetTestScenarioStatusUseCase:
             command.scenario_id,
             command.status,
             command.evidence,
+            actor_kind=actor.actor_kind,
         )
         return SetTestScenarioStatusResult(result)
 
@@ -1202,6 +1212,7 @@ class ExecuteTestScenarioEvidenceUseCase:
     ) -> ExecuteTestScenarioEvidenceResult:
         from okto_pulse.core.ports.test_evidence import (
             TestEvidenceExecutionRequest,
+            TestEvidenceLedgerBusyError,
             resolve_test_evidence_execution_issuer,
             resolve_test_evidence_write_verifier,
         )
@@ -1267,6 +1278,8 @@ class ExecuteTestScenarioEvidenceUseCase:
         require_supported_test_verification_method(scenario.get("verification_method"))
         if issuer is None or verifier is None:
             raise ValueError("evidence_v2.trusted_runtime_not_configured")
+        reserved = await _reserve_verification_context(
+            spec=spec, scenario=scenario, scenario_sha256=scenario_sha256, actor=actor)
         issued = await issuer.execute(
             TestEvidenceExecutionRequest(
                 board_id=spec.board_id,
@@ -1277,6 +1290,7 @@ class ExecuteTestScenarioEvidenceUseCase:
                 actor_id=actor.actor_id,
                 scenario_sha256=scenario_sha256,
                 inline_replay=inline_replay,
+                verification_context=reserved,
             )
         )
         evidence = dict(issued.evidence)
@@ -1290,10 +1304,77 @@ class ExecuteTestScenarioEvidenceUseCase:
             evidence=evidence,
         )
         if not verification.verified:
+            if verification.reason_codes == (TestEvidenceLedgerBusyError.code,):
+                raise TestEvidenceLedgerBusyError()
             raise ValueError(
                 "evidence_unverified: " + ", ".join(verification.reason_codes)
             )
+        _require_issued_verification_context(evidence, reserved)
         return ExecuteTestScenarioEvidenceResult(evidence)
+
+
+async def _reserve_verification_context(*, spec, scenario, scenario_sha256, actor):
+    """Reserve only after native authorization and before any external execution.
+
+    The edition releases its reservation transaction before returning. No caller
+    metadata can supply identity, order or currentness; a missing provider fails
+    closed instead of issuing new legacy evidence.
+    """
+    from okto_pulse.core.domain.verification_currentness import (
+        VerificationCurrentnessError,
+        VerificationReservation,
+        VerificationScope,
+        canonical_scenario_sha256,
+    )
+    from okto_pulse.core.ports.verification_currentness import (
+        VerificationReservationRequest,
+        resolve_verification_reservation_port,
+    )
+
+    port = resolve_verification_reservation_port()
+    if port is None:
+        raise VerificationCurrentnessError("verification_currentness_unavailable")
+    scope = VerificationScope(
+        board_id=spec.board_id, spec_id=spec.id,
+        spec_edition=spec.edition, scenario_id=scenario["id"],
+    )
+    digest = canonical_scenario_sha256(scenario_sha256)
+    method = scenario.get("verification_method") or "automated_test"
+    reserved = await port.reserve(VerificationReservationRequest(
+        scope=scope, scenario_sha256=digest, verification_method=method,
+        actor_id=actor.actor_id, actor_kind=actor.actor_kind,
+        expected_spec_version=spec.version,
+    ))
+    if (
+        not isinstance(reserved, VerificationReservation)
+        or reserved.context.scope != scope
+        or reserved.context.scenario_sha256 != digest
+        or reserved.context.verification_method != method
+        or reserved.actor_id != actor.actor_id
+        or reserved.actor_kind != actor.actor_kind
+    ):
+        raise VerificationCurrentnessError("verification_reservation_invalid")
+    return reserved.context
+
+
+def _require_issued_verification_context(evidence, reserved):
+    """An authenticated envelope must retain the exact server reservation.
+
+    A trusted issuer that silently ignores the new request field is not a
+    compatible provider. Do not return its legacy or differently scoped receipt
+    as a successful new execution.
+    """
+    from okto_pulse.core.domain.verification_currentness import (
+        VerificationContext,
+        VerificationCurrentnessError,
+    )
+
+    try:
+        issued = VerificationContext.model_validate(evidence.get("verification_context"))
+    except (TypeError, ValueError) as exc:
+        raise VerificationCurrentnessError("verification_reservation_invalid") from exc
+    if issued != reserved:
+        raise VerificationCurrentnessError("verification_reservation_invalid")
 
 
 class AdmitTestVerificationReportCommand:
@@ -1344,15 +1425,19 @@ class AdmitTestVerificationReportUseCase:
             raise ValueError("verification_report_trusted_issuer_not_configured")
         digest = compute_test_scenario_semantic_sha256(board_id=spec.board_id, spec_id=command.spec_id,
                                                       scenario=scenario, acceptance_criteria=criteria)
+        reserved = await _reserve_verification_context(
+            spec=spec, scenario=scenario, scenario_sha256=digest, actor=actor)
         issued = await issuer.admit(TestVerificationReportRequest(
             board_id=spec.board_id, spec_id=command.spec_id, scenario_id=command.scenario_id,
-            scenario_sha256=digest, actor_id=actor.actor_id, report=report.model_dump(mode="json")))
+            scenario_sha256=digest, actor_id=actor.actor_id, report=report.model_dump(mode="json"),
+            verification_context=reserved))
         evidence = dict(issued.evidence)
         verification = verifier.verify(board_id=spec.board_id, spec_id=command.spec_id,
             scenario_id=command.scenario_id, scenario_sha256=digest, status=report_status,
             actor_id=actor.actor_id, evidence=evidence)
         if not verification.verified:
             raise ValueError("evidence_unverified: " + ", ".join(verification.reason_codes))
+        _require_issued_verification_context(evidence, reserved)
         return ExecuteTestScenarioEvidenceResult(evidence)
 
 

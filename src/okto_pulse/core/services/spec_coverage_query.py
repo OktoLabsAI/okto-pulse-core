@@ -3,7 +3,7 @@
 This is a projection of the existing two resolvers, never a third gate. The
 caller authorizes the source scope before collecting the internal snapshot.
 """
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
 import re
@@ -31,7 +31,23 @@ def _proof_status(satisfied, records, waivers, *, complete):
     return 'partial' if records or waivers else 'missing'
 
 
-def project_spec_coverage(query: SpecCoverageQuery, snapshot: SpecCoverageSnapshot) -> dict:
+@dataclass(frozen=True)
+class _PreparedSpecCoverage:
+    """Relational projection owned by exactly one request and its source snapshot."""
+    query: SpecCoverageQuery
+    snapshot: SpecCoverageSnapshot
+    checked: str
+    structure: dict | None
+    rows: tuple[dict, ...]
+    delivery: dict
+
+
+def _prepare_spec_coverage(query: SpecCoverageQuery, snapshot: SpecCoverageSnapshot) -> _PreparedSpecCoverage:
+    """Evaluate mandatory planning and proof before spending time on optional graph I/O.
+
+    Cursor validation belongs to final composition: its identity includes the
+    eventual graph observation, which is not known at this boundary.
+    """
     scope = snapshot.scope
     spec = snapshot.spec
     if ((scope.board_id, scope.spec_id, snapshot.actor_scope_ref)
@@ -126,22 +142,33 @@ def project_spec_coverage(query: SpecCoverageQuery, snapshot: SpecCoverageSnapsh
         'decisions_verified': sum(row['decision_verification_status'] == 'verified' for row in rows) if proof_complete else None,
         'observed_obligations': len(rows) if snapshot.delivery is not None else None,
     }
+    return _PreparedSpecCoverage(query, snapshot, checked, structure, tuple(rows), {
+        'state': snapshot.delivery_state, 'authority': 'evaluate_delivery_coverage',
+        'complete_for_scope': proof_complete, 'counts': counts, 'blockers': blockers,
+        'rejected_record_refs': rejected,
+        'interpretation': 'admitted_proof_and_authorized_waivers_do_not_approve_other_gates',
+    })
+
+
+def _compose_spec_coverage(prepared: _PreparedSpecCoverage, *, graph, graph_scope) -> dict:
+    """Attach an observation to the prepared source, then bind and page the full view."""
+    query = prepared.query
+    snapshot = replace(prepared.snapshot, graph=graph, graph_scope=graph_scope)
+    scope = snapshot.scope
+    rows = list(prepared.rows)
     graph_summary, graph_rows, graph_state, generation = project_spec_coverage_graph(query, snapshot)
     rows += graph_rows
     response = {
         'view': 'coverage', 'subject_ref': f'spec:{query.spec_id}', 'authority': 'informational',
         'data_source': 'composed' if snapshot.graph is not None and snapshot.graph.state == 'observed' else 'relational', 'edition': scope.edition,
         'projection_freshness': {'state': graph_state, 'graph_generation': generation,
-            'source_checkpoint': snapshot.source_revision, 'projection_checkpoint': None, 'checked_at': checked},
+            'source_checkpoint': snapshot.source_revision, 'projection_checkpoint': None, 'checked_at': prepared.checked},
         'completeness': {'complete_for_scope': False,
             'truncated': not snapshot.source_complete or bool(snapshot.graph and snapshot.graph.truncated),
             'limitations': ['full_projection_checkpoint_unavailable'] + ([] if snapshot.source_complete else ['source_inventory_incomplete'])},
         'structure': {'authority': 'spec_coverage_summary', 'interpretation': 'planning_links_not_delivery_proof',
-            'complete_for_scope': snapshot.source_complete, 'summary': structure, 'graph': graph_summary},
-        'delivery': {'state': snapshot.delivery_state, 'authority': 'evaluate_delivery_coverage',
-            'complete_for_scope': proof_complete, 'counts': counts, 'blockers': blockers,
-            'rejected_record_refs': rejected,
-            'interpretation': 'admitted_proof_and_authorized_waivers_do_not_approve_other_gates'},
+            'complete_for_scope': snapshot.source_complete, 'summary': prepared.structure, 'graph': graph_summary},
+        'delivery': prepared.delivery,
         'items': [], 'next_cursor': None,
     }
     # Bind the cursor to the actor, full source revision and all computed rows,
@@ -174,3 +201,9 @@ def project_spec_coverage(query: SpecCoverageQuery, snapshot: SpecCoverageSnapsh
             response['next_cursor'] = f'spec-coverage-v1:{digest}:{end - 1}'
             break
     return response
+
+
+def project_spec_coverage(query: SpecCoverageQuery, snapshot: SpecCoverageSnapshot) -> dict:
+    """Project a complete snapshot with the same preparation and final cursor rules."""
+    return _compose_spec_coverage(_prepare_spec_coverage(query, snapshot),
+        graph=snapshot.graph, graph_scope=snapshot.graph_scope)

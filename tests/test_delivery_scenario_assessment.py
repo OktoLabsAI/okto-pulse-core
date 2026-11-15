@@ -6,6 +6,7 @@ import pytest
 
 from okto_pulse.core.domain.delivery_assessment import assess_test_delivery, aggregate_delivery_metrics
 from okto_pulse.core.domain.delivery_evidence import DeliveryPhase, DeliveryWaiverFact
+from okto_pulse.core.domain.delivery_verification import NativeVerificationScenario
 from okto_pulse.core.domain.effective_delivery_coverage import evaluate_effective_facts
 from test_delivery_obligation_assessment import snapshot, with_facts
 
@@ -118,6 +119,73 @@ def test_missing_native_subject_is_unknown_without_fabricated_digest(scenario_id
     assert metrics.verification.status == 'unknown'
     assert metrics.verification.percent is metrics.verification.total is None
     assert all(row.scenario_id != 'missing' for row in result.scenarios)
+
+
+def unexecuted_scenarios():
+    value = with_facts(snapshot(), tests=())
+    native = value.effective_context.native_verification
+    subjects = tuple(NativeVerificationScenario(run.scope, run.scenario_id,
+        run.scenario_sha256, run.method) for run in native.runs)
+    return replace(value, effective_context=replace(value.effective_context,
+        native_verification=replace(native, runs=(), scenarios=subjects)))
+
+
+def test_readable_native_scenarios_without_runs_have_known_missing_verification():
+    value = unexecuted_scenarios()
+    result = assess(value)
+    metrics = aggregate_delivery_metrics(result)
+    assert result.completeness.population_known and result.completeness.scope_resolved
+    assert metrics.verification.status == 'known'
+    assert metrics.verification.total == 2 and metrics.verification.percent == 0
+    assert {row.verification.state for row in result.scenarios} == {'missing'}
+    assert {reason.code for row in result.scenarios for reason in row.verification.reasons} == {
+        'verification_not_run'}
+    assert value.effective_context.native_verification.runs == ()
+
+
+@pytest.mark.parametrize('with_current_proof', [False, True])
+def test_historical_runs_cannot_replace_or_obscure_current_scenario_identity(with_current_proof):
+    value = snapshot()
+    native = value.effective_context.native_verification
+    subjects = tuple(NativeVerificationScenario(run.scope, run.scenario_id,
+        run.scenario_sha256, run.method) for run in native.runs)
+    history = tuple(replace(run, current=False, scenario_sha256='sha256:' + 'b' * 64)
+        for run in native.runs)
+    native = replace(native, scenarios=subjects,
+        runs=(*native.runs, *history) if with_current_proof else history)
+    value = replace(value, effective_context=replace(value.effective_context, native_verification=native))
+    result = assess(value)
+    metrics = aggregate_delivery_metrics(result).verification
+    assert metrics.status == 'known' and metrics.total == 2
+    assert metrics.percent == (100 if with_current_proof else 0)
+    assert {row.semantic_sha256 for row in result.scenarios} == {subject.scenario_sha256 for subject in subjects}
+    if not with_current_proof:
+        assert {reason.code for row in result.scenarios for reason in row.verification.reasons} == {
+            'verification_not_run'}
+
+
+@pytest.mark.parametrize('damage', ['unavailable', 'missing', 'duplicate', 'digest', 'foreign', 'current_run'])
+def test_unreadable_or_inconsistent_subjects_never_become_known_zero(damage):
+    value = unexecuted_scenarios()
+    native = value.effective_context.native_verification
+    first, second = native.scenarios
+    if damage == 'unavailable':
+        native = replace(native, complete=False, native_reason_codes=('verification_currentness_unavailable',))
+    elif damage == 'missing':
+        native = replace(native, scenarios=(second,))
+    elif damage == 'duplicate':
+        native = replace(native, scenarios=(first, first, second))
+    elif damage == 'digest':
+        native = replace(native, scenarios=(replace(first, scenario_sha256=''), second))
+    elif damage == 'foreign':
+        native = replace(native, scenarios=(replace(first, scope=replace(first.scope, board_id='foreign')), second))
+    else:
+        native = replace(native, runs=(replace(snapshot().effective_context.native_verification.runs[0],
+            scenario_sha256='sha256:' + 'b' * 64),))
+    result = assess(replace(value, effective_context=replace(value.effective_context, native_verification=native)))
+    metrics = aggregate_delivery_metrics(result)
+    assert metrics.verification.status == 'unknown' and metrics.verification.percent is None
+    assert not result.completeness.population_known
 
 
 def test_duplicate_assignments_count_once_and_only_requested_scenarios_are_counted():

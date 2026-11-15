@@ -181,9 +181,18 @@ async def test_quality_mcp_inventory_remains_seven_tools() -> None:
     # recording and retains four bounded read surfaces (list, get, current and
     # findings).  Those reads are part of the public projection/pagination
     # contract; Code Traceability adds 20 reviewed, typed commands.
-    # Native Decision read/review pair plus the unified validation-cycle read.
-    assert len(tools) == 285  # No compatibility aliases.
+    # Native Decision read/review pair, unified validation-cycle read, three
+    # Delivery Readiness operations and the Bug allocation repair preview/apply
+    # pair. Quality itself retains exactly seven commands.
+    assert len(tools) == 290  # No compatibility aliases.
     assert "okto_pulse_get_spec_validation_cycle" in tools
+    assert {
+        "okto_pulse_get_delivery_readiness_summary",
+        "okto_pulse_get_persisted_delivery_readiness",
+        "okto_pulse_requeue_persisted_delivery_readiness",
+        "okto_pulse_preview_bug_allocation_repair",
+        "okto_pulse_apply_bug_allocation_repair",
+    } <= tools.keys()
     assert {
         "okto_pulse_list_semantic_guideline_assessments",
         "okto_pulse_get_semantic_guideline_assessment",

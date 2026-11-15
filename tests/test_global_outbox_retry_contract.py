@@ -35,7 +35,7 @@ async def test_invalid_claim_refuses_whole_batch_before_graph_or_save(monkeypatc
     processor._apply_event = AsyncMock(side_effect=AssertionError("invalid batch reached graph"))
     monkeypatch.setattr(worker_module, "get_global_outbox_store", lambda: store)
     with pytest.raises(ValueError, match="global_outbox_retry_count_invalid"):
-        await processor._process_once_under_writer()
+        await processor.process_once()
     processor._apply_event.assert_not_called()
     store.save_events.assert_not_called()
     store.commit.assert_not_called()
@@ -82,7 +82,7 @@ async def test_claim_read_checkout_is_released_before_graph_work(monkeypatch):
     processor._verify_processed_batch = lambda _processed: ({}, None)
     monkeypatch.setattr(worker_module, "get_global_outbox_store", lambda: store)
 
-    assert await processor._process_once_under_writer() == 1
+    assert await processor.process_once() == 1
     assert order == ["release_read_checkout", "graph_apply", "save", "commit"]
 
 
@@ -117,5 +117,5 @@ async def test_sqlite_claim_transaction_ends_before_graph_work(db_factory, monke
     processor._verify_processed_batch = lambda _processed: ({}, None)
     monkeypatch.setattr(worker_module, "get_global_outbox_store", lambda: store)
 
-    assert await processor._process_once_under_writer() == 1
+    assert await processor.process_once() == 1
     store.commit.assert_awaited_once()

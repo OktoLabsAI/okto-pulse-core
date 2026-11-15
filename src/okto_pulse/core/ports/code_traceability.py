@@ -42,6 +42,9 @@ from okto_pulse.core.domain.code_traceability import (
     TargetOverlap,
     TargetOverlapAcknowledgement,
 )
+from okto_pulse.core.domain.refinement_source_compatibility import (
+    RefinementSourceCompatibility,
+)
 
 
 class CodeTraceabilityPersistenceError(RuntimeError):
@@ -700,6 +703,17 @@ class CodeTraceabilityStore(Protocol):
 @runtime_checkable
 class CodeTraceabilityReadPort(Protocol):
     """Bounded aggregate projections; summary/gate never expose excerpts."""
+
+    async def refinement_source_compatibility(
+        self, *, board_id: str, refinement_id: str,
+    ) -> RefinementSourceCompatibility | None:
+        """Read the same bounded native history proof used by context/freeze.
+
+        Select at most MAX_HISTORY_ROWS + 1 rows as an exhaustion sentinel;
+        only immutable Quality identity metadata may classify neutral audits.
+        This does not grant source-head, receipt freshness or execution credit.
+        """
+        ...
 
     async def refinement_context(
         self,

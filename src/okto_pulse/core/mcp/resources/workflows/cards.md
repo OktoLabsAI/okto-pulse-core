@@ -1,5 +1,5 @@
 ---
-version: "1.3"
+version: "1.4"
 ---
 
 # Cards Workflow — Implementation, Bug & Test Execution
@@ -315,9 +315,138 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 2. **MANDATORY for rework** — a failed admitted completion is status `rejected`. Read `current_rejection_summary` plus the referenced validation's `threshold_violations`, `confidence_justification`, `completeness_justification`, `drift_justification`, and `general_justification`. Editing implementation while Rejected is forbidden because it would erase the human handoff boundary. In blocking Code Traceability mode, the rejection's version bump can make an existing Target resolution outdated: investigation preflight and Target resolution renewal are the only allowed technical writes while Rejected; Target create/update, execution receipts, evidence dispositions, and implementation content remain frozen.
 3. Start execution — query `okto_pulse_get_allowed_transitions`; from `not_started`, move to `in_progress` after all gates pass. A Rejected card has exactly one exit: move it to `in_progress` before changing implementation. That clears only the Current pointer; causal history remains append-only.
 4. Implement the task.
-5. Link artifacts — attach knowledge bases, mockups, or comments as work progresses.
-6. Move to validation — `okto_pulse_move_card(status="validation", conclusion=..., completeness=..., completeness_justification=..., drift=..., drift_justification=...)`.
+5. Record material work events using Delivery progress; link relevant artifacts once. Follow the compact route below rather than repeating accepted evidence in comments.
+6. Submit the final evidence batch and execution report atomically with `okto_pulse_record_delivery_evidence` and `card-delivery-report/v1` when both are ready. The existing `move_card` route remains available when there is no new evidence batch.
 7. The card is ready for validation only after the move succeeds. `okto_pulse_submit_task_validation` requires status `validation` and fails closed otherwise — never request or hand off validation while the card is still `in_progress`.
+
+### Human task requirement decisions
+
+The application offers **Change task requirement** in a task's Delivery view:
+select task(s), choose **Required**, **Optional** or **Waived**, and optionally
+add a note. Only an authorized authenticated human can save. Agents may inspect
+the decision and prepare a request; never impersonate a human or use a legacy
+proof/waiver writer to change task responsibility.
+
+When the existing Delivery projection is already needed, reuse its `per_card`
+`requirement` facts (`decision`, `current`, `edition`, `decision_id`) rather than
+adding a confirmation call. Unknown or absent facts do not imply an exception.
+Optional/waived choices excuse only current contributions of the selected tasks
+in that Spec edition. They do not mean delivered, change lifecycle or dependencies,
+create proof, clear policy findings, or remove other tasks' required scenarios.
+Changed contributions or a new edition need a new human decision. Restoring
+Required appends a successor; history is immutable. A stale human draft must be
+reviewed against current facts before another command.
+
+Central Help **Task requirements** and the contextual **Task requirement rules**
+link explain these rules to the user. Agent resources complement that Help.
+
+### Compact progress and delivery route
+
+### Human submission and agent proof are separate
+
+The Task **Delivery** UI consumes the Core `task-delivery-summary/v1` verdict:
+one state, reason, latest update and next permitted action. Details is lazy and
+Card-scoped. A stale/unknown assessment is never delivered; historical Done and
+optional/waived are not current proof. This read does not authorize a transition.
+
+`needs_attention` identifies a settled responsibility conflict; use its
+requirement-specific diagnosis to resolve allocation. It is not an in-flight
+assessment and must not trigger a polling loop. `updating_or_unknown` with
+`assessment_incomplete` means information is insufficient; only projection
+freshness `pending_initial`/`updating` or an active read represents Checking.
+The UI keeps implementation and verification percentages independent and
+labels the last recorded update as historical. Use current assessment and
+matrix facts for remaining work, never an older narrative alone. Refresh is
+owned by the task modal; Details reveals diagnostics and history on demand.
+
+For authenticated humans, the application accepts `human-task-submission/v1`
+through its single REST command and generates a typed, immutable
+`human-submission-receipt/v1` atomically with content, audit and any admitted
+report/transition. Humans provide content and optional remaining work, not
+receipt IDs, execution selectors, impact claims or quality percentages. Exact
+authorized retries reuse the original key; corrections append a linked record.
+Do not ask a person to orchestrate receipt creation or select technical proof.
+
+This receipt has authority `human_declaration` only. It is never an agent
+execution receipt, implementation binding, verified run, passing test, or an
+implicit `material_change=none`. The human endpoint rejects agent principals,
+including agents using REST. Agents must use the technical batch/report route
+below and retain real source observations, target resolutions and execution
+proof. Human report submission reuses only eligible existing assessments and
+proof; missing or ambiguous facts require the technical owner to supply them.
+
+Keep calls economical: one material-event checkpoint, reuse accepted IDs and
+full operation confirmations, and compose related evidence/report writes when
+their facts are ready. Do not add heartbeat calls, per-tool checkpoints,
+duplicate comments, broad Spec-ledger reads per UI section, or a confirmation
+read after an authoritative accepted state. Required preflight, reauthorization,
+freshness checks and independent review remain mandatory. Lost responses use
+the original intent; a changed basis requires review and a new key.
+
+User-facing rules must remain in central Help and the exact contextual Help
+destination beside Delivery and its forms, including Test Cards, failures,
+historical status, immutable correction and uncertain retry.
+
+Use the Card ledger as the work record. Record a checkpoint when implementation
+or targets materially change, when a blocker is introduced/resolved, or when new
+remaining work must be preserved for a handoff or closeout. A status change already
+records its lifecycle event; it does not require a duplicate "started" comment.
+There is no fixed heartbeat and no checkpoint for every tool, read or commit.
+Do not send a comment that repeats an accepted checkpoint, proof or report.
+Keep a distinct architectural decision or question in its native artifact.
+
+1. Reuse unchanged instructions and already inspected artifact bodies. Get the
+   required current gate slice before a gated action; follow bounded detail only
+   for the implementation/review facts still needed. Do not reload full Spec,
+   Card, ledger and readiness merely to narrate progress.
+2. Save one `delivery-progress/v2` checkpoint for the meaningful event. State the
+   work done and what remains; declare `material_change` truthfully. Source or
+   Target changes still invalidate affected proof. A progress record proves
+   neither completion nor tests, and never establishes recovery by another actor.
+3. At handoff, prefer one `card-delivery-report/v1` request: existing
+   `card-delivery-batch/v1` entries plus the normal execution report and transition
+   to Validation/Done. Use `execution_submission`, local `client_ref` references
+   and selected current records to avoid separate receipt/association/report
+   calls. This retains every source, actor, scope and lifecycle admission gate.
+4. Reuse an accepted proof when only association is missing. Observe a new
+   committed result when actual source/currentness requires it. Do not rerun a
+   test or re-register a receipt solely to replace its text with a shorter one.
+   A scenario can have independent accepted results for different exact source
+   bases. Another base's execution does not require rerunning this base. Test
+   entries may name the native `accepted_result_id`; omitting it resolves one
+   uniquely applicable current result. Ambiguity requires selection, never a
+   newest-passing fallback. Batch ready associations for the same Test Card
+   once; do not toggle the scenario's global status to close tasks sequentially.
+5. Retain accepted record IDs and revisions. A bare `{id,replayed}` response does
+   not confirm current Card status, current readiness or permission to conclude;
+   perform the prescribed targeted read when those facts are needed. Historical
+   replay describes the original operation, not a new lifecycle transition.
+   A composed report's `report.accepted_state` with
+   `contract_version="delivery-operation-state/v1"` and `replayed=false` confirms
+   the scoped version/status/edition accepted at handoff without a duplicate
+   confirmation read. Its `readiness_evaluated=false` never replaces the next
+   action's full gate context. Replay remains an original-operation receipt;
+   use the supplied targeted `next_query` when current lifecycle facts are needed.
+
+Limits remain **1–50 entries**, **128 KiB** per composed request and **200
+reference uses**. A failure rolls back the batch, inline execution receipts,
+report and transition together. After a timeout, inspect the operation by its
+original key/receipt before repeating the exact envelope. After a CAS conflict,
+read the changed base and review it before using a new key. Missing or conflicting
+facts require a targeted read; never assume success to save a call. Mandatory gate
+reads and independent-review rules remain in force.
+
+See `okto-pulse://reference/tool-docs/code-traceability` for the closed schemas.
+See **Exact-result Test associations** in `okto-pulse://reference/tool-docs/card`
+for the bounded batch example and targeted error recovery. Reuse returned fences
+only for the scope and state they actually confirm; a result containing only
+`id` and `replayed` supplies no new revision. Refresh the affected scope after
+a relevant conflict, and keep mandatory full gate reads before gated moves.
+Do not poll each Delivery subtab or reload all resource bodies between entries.
+Same-base failure removes old success immediately; reset or semantic changes
+invalidate affected results. Neither a progress note nor a successful refresh
+restores their credit. Keep Technical IDs in Details and let the application
+generate human submission receipts; the human UI is not the agent evidence path.
 
 ### Validator Workflow
 

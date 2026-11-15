@@ -98,6 +98,7 @@ from okto_pulse.core.domain.human_validation_cycle import (
     next_lifecycle_edition,
     require_draft_mutation,
 )
+from okto_pulse.core.domain.pending_qa import planning_qa_transition_requires_answers
 from okto_pulse.core.domain.spec_validation import (
     RequirementLintRequired,
     SpecValidationEditionConflict,
@@ -1348,6 +1349,24 @@ async def resolve_user_permissions(db, user_id: str, board_id: str):
         presets=presets,
         board_overrides=board_overrides,
     )
+
+
+async def _require_planning_qa_resolved(db: Any, subject: Any, *, subject_type: str) -> None:
+    """Read the native timestamp predicate without loading unbounded Q&A bodies."""
+    from okto_pulse.core.domain.pending_qa import (
+        PENDING_QA_LIMIT, PendingQuestionsError, pending_qa_projection,
+    )
+    entity = f"{subject_type}_qa_item"
+    filters = (_apf(f"{subject_type}_id", "eq", subject.id), _apf("answered_at", "is_none"))
+    total = await _application_count(db, entity, filters=filters)
+    if not total:
+        return
+    rows = await _application_list(db, entity, filters=filters, order_by=(("id", False),),
+                                   limit=PENDING_QA_LIMIT, select_fields=("id",))
+    raise PendingQuestionsError(pending_qa_projection(
+        subject_type=subject_type, subject_id=subject.id, status=subject.status,
+        pending_ids=[row.id for row in rows], total=total,
+    ))
 
 
 async def _attach_open_qa_counts(
@@ -3676,13 +3695,6 @@ class CardService:
             targets=traceability_targets,
         )
 
-        if card_type_val == "bug":
-            await self._inherit_bug_origin_traceability(
-                bug_card=card,
-                origin_task_id=origin_task_id,
-                spec=spec,
-            )
-
         await SpecResourcePropagationService(self.db).propagate_for_card(
             board_id=board_id,
             spec_id=card.spec_id,
@@ -3730,67 +3742,10 @@ class CardService:
                 "status": data.status.value,
                 "priority": data.priority.value,
                 "traceability": traceability.to_dict(),
+                "lineage_policy": "explicit_scope_v1",
             },
         )
         return card
-
-    async def _inherit_bug_origin_traceability(
-        self,
-        *,
-        bug_card: ApplicationRecord,
-        origin_task_id: str | None,
-        spec: ApplicationRecord | None = None,
-    ) -> None:
-        """Attach a new bug to the same spec traceability items as its origin task."""
-        if not origin_task_id or not bug_card.spec_id:
-            return
-
-        if spec is None:
-            spec = await _application_get(self.db, "spec", bug_card.spec_id)
-        if spec is None:
-            return
-
-        inherited_scenario_ids: list[str] = []
-
-        def inherit_linked_task_ids(
-            field_name: str, *, collect_scenarios: bool = False
-        ) -> None:
-            items = getattr(spec, field_name, None) or []
-            changed = False
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                linked_task_ids = list(item.get("linked_task_ids") or [])
-                origin_is_linked = origin_task_id in linked_task_ids
-                if origin_is_linked and bug_card.id not in linked_task_ids:
-                    linked_task_ids.append(bug_card.id)
-                    item["linked_task_ids"] = linked_task_ids
-                    changed = True
-                if collect_scenarios and origin_is_linked:
-                    scenario_id = item.get("id")
-                    if scenario_id and scenario_id not in inherited_scenario_ids:
-                        inherited_scenario_ids.append(scenario_id)
-            if changed:
-                spec.mark_dirty(field_name)
-
-        inherit_linked_task_ids("test_scenarios", collect_scenarios=True)
-        inherit_linked_task_ids("business_rules")
-        inherit_linked_task_ids("api_contracts")
-        inherit_linked_task_ids("integration_requirements")
-        inherit_linked_task_ids("observability_requirements")
-        inherit_linked_task_ids("technical_requirements")
-        inherit_linked_task_ids("decisions")
-
-        if inherited_scenario_ids:
-            current_scenarios = list(bug_card.test_scenario_ids or [])
-            merged = current_scenarios + [
-                scenario_id
-                for scenario_id in inherited_scenario_ids
-                if scenario_id not in current_scenarios
-            ]
-            if merged != current_scenarios:
-                bug_card.test_scenario_ids = merged
-                bug_card.mark_dirty("test_scenario_ids")
 
     async def get_card(self, card_id: str) -> ApplicationRecord | None:
         """Get a card by ID with all relationships."""
@@ -5234,32 +5189,10 @@ class CardService:
                 setattr(card, field_name, None)
                 card.mark_dirty(field_name)
 
-        response = project_task_validation_public(
-            {
-                **validation,
-                "card_status": target_status.value,
-                "resolved_thresholds": config,
-                "validation_outcome": decision.validation_outcome.value,
-                "completion_outcome": decision.completion_outcome.value,
-                "completion_gate_failures": validation["completion_gate_failures"],
-                "rejection_cause": (
-                    rejection_cause.as_dict() if rejection_cause is not None else None
-                ),
-                "subject_version": expected_subject_version + 1,
-                "replayed": False,
-            }
-        )
-        # Persist the exact business response as part of the same append-only
-        # ledger value before the resequencer's single flush.  Adding it after
-        # that flush would leave only an in-memory nested JSON mutation and
-        # break replay after Done/Rejected in a new transaction.
-        validation["response"] = dict(response)
-        card.validations = validations
-        card.mark_dirty("validations")
-
-        # The Core resequencer owns both status mutation and dense target/source
-        # positioning.  Keeping this in the same UoW prevents a visible card
-        # from occupying two lifecycle lanes after a rejection.
+        # The Core resequencer stages status and dense lane positions in this
+        # same transaction. Read back the adapter-owned policy version before
+        # sealing the response: operational status/receipt writes need not bump
+        # that version, so predicting expected + 1 creates a false CAS token.
         await self.resequence_columns(
             card.board_id,
             [
@@ -5273,6 +5206,31 @@ class CardService:
             extra_columns=(old_status, target_status),
             records={card.id: card},
         )
+        card = await _application_refresh(self.db, card)
+
+        response = project_task_validation_public(
+            {
+                **validation,
+                "card_status": card.status.value,
+                "resolved_thresholds": config,
+                "validation_outcome": decision.validation_outcome.value,
+                "completion_outcome": decision.completion_outcome.value,
+                "completion_gate_failures": validation["completion_gate_failures"],
+                "rejection_cause": (
+                    rejection_cause.as_dict() if rejection_cause is not None else None
+                ),
+                "subject_version": self._card_subject_version(card),
+                "replayed": False,
+            }
+        )
+        # Reassign and mark the JSON ledger explicitly after the readback. The
+        # second flush remains inside the caller-owned transaction, preserving
+        # atomic decision/response/resequence rollback and exact future replay.
+        validation["response"] = dict(response)
+        card.validations = validations
+        card.mark_dirty("validations")
+
+        await _application_flush(self.db)
 
         if learning_record is not None and target_status == CardStatus.DONE:
             from okto_pulse.core.domain.learning_closeout import (
@@ -5552,6 +5510,13 @@ class CardService:
             "evidence_ref": evidence_ref,
             "confirmed_at": datetime.now(timezone.utc).isoformat(),
         }
+        from okto_pulse.core.services.delivery_evidence import delivery_store
+
+        attribution_writer = getattr(delivery_store(self.db), 'amendment_delivery_attribution', None)
+        if callable(attribution_writer):
+            attribution = await attribution_writer(amendment, confirmation)
+            if attribution is not None:
+                confirmation['delivery_attribution'] = attribution
         await svc.set_coverage_confirmation(
             amendment_id, confirmation=confirmation, actor=reviewer_id
         )
@@ -8814,6 +8779,16 @@ def _spec_source_context_manifest_matches(
 class SpecService:
     """Service for spec operations."""
 
+    async def preview_bug_allocation_repair(self, **kwargs):
+        from okto_pulse.core.services.bug_allocation_repair import BugAllocationRepairService
+
+        return await BugAllocationRepairService(self.db).preview(**kwargs)
+
+    async def apply_bug_allocation_repair(self, **kwargs):
+        from okto_pulse.core.services.bug_allocation_repair import BugAllocationRepairService
+
+        return await BugAllocationRepairService(self.db).apply(**kwargs)
+
     def __init__(
         self,
         db: Any,
@@ -9067,6 +9042,10 @@ class SpecService:
                     ),
                 },
             )
+
+        for subject_type, parent in (("ideation", ideation), ("refinement", refinement)):
+            if parent is not None:
+                await _require_planning_qa_resolved(self.db, parent, subject_type=subject_type)
 
         complexity = (
             getattr(ideation.complexity, "value", ideation.complexity)
@@ -9988,6 +9967,8 @@ class SpecService:
         scenario_id: str,
         status: str,
         evidence: dict | None = None,
+        *,
+        actor_kind: str = "unknown",
     ) -> dict:
         """Scoped operational status mutation for ONE test scenario (spec
         6f1e75bf, FR4/FR6) â€” the single helper shared by the MCP status tool and
@@ -10001,9 +9982,9 @@ class SpecService:
           linked to an executable test card.
         - Applies the NC-9 evidence gate (validate_test_scenario_evidence) unless
           ``skip_test_evidence_global`` is set (then allows + emits a forensic log).
-        - Mutates ONLY the target scenario (status + inline evidence) and persists
-          narrow â€” it does NOT go through update_spec, does NOT bump version and
-          does NOT replace the full list, so every other scenario is preserved.
+        - Atomically publishes authenticated per-basis authority, the operational
+          summary and actual actor audit. Community owns version/invalidation
+          fences; every other scenario is preserved.
 
         Returns ``{scenario_id, old_status, new_status, evidence_provided,
         evidence_gate_skipped}``. Raises :class:`StatusNotMutableError` and
@@ -10029,7 +10010,7 @@ class SpecService:
         if target_scenario is None:
             raise ValueError(f"scenario_not_found: {scenario_id}")
         existing_status = str(target_scenario.get("status") or "draft")
-        require_test_scenario_status_transition(existing_status, status)
+        has_context = isinstance(evidence, dict) and evidence.get("verification_context") is not None
         scenario_sha256 = compute_test_scenario_semantic_sha256(
             board_id=spec.board_id,
             spec_id=spec_id,
@@ -10051,6 +10032,14 @@ class SpecService:
                 evidence=evidence,
                 verification_method=target_scenario.get("verification_method"),
             )
+
+        # A verified outcome is an execution publication, not a manual lifecycle
+        # move. Requiring Passed -> Ready here would invalidate every other
+        # code basis before a newer failure could be accepted. Ordinary manual
+        # transitions still use the canonical registry; result publication must
+        # additionally pass native reservation/receipt/version checks below.
+        if evidence is None:
+            require_test_scenario_status_transition(existing_status, status)
 
         # Guard by STATUS (NOT the content-lock): blocks validated/done, allows
         # in_progress â€” the execution phase where scenarios become passed.
@@ -10087,13 +10076,11 @@ class SpecService:
             if status in GATED_STATUSES:
                 evidence_verification_status = "verified"
 
-        # Exact operational replay is a semantic no-op.  Avoid marking the
-        # JSON column dirty so the internal test-scenario policy epoch remains
-        # stable and existing evidence is not needlessly rewritten.
         existing_evidence = target_scenario.get("evidence")
-        if existing_status == status and (
+        operational_replay = existing_status == status and (
             evidence is None or existing_evidence == evidence
-        ):
+        )
+        if operational_replay and evidence is None:
             return {
                 "scenario_id": scenario_id,
                 "old_status": existing_status,
@@ -10103,52 +10090,62 @@ class SpecService:
                 "evidence_verification_status": (evidence_verification_status),
             }
 
-        await GuidelineService(self.db).enforce_policy_transition(
-            board_id=spec.board_id,
-            entity_type="test_scenario",
-            subject_id=scenario_id,
-            from_status=existing_status,
-            to_status=status,
-        )
+        publication = None
+        old_status = existing_status
+        operational_summary_updated = False
+        try:
+            if not operational_replay and (has_context or evidence is None):
+                await GuidelineService(self.db).enforce_policy_transition(
+                    board_id=spec.board_id, entity_type="test_scenario", subject_id=scenario_id,
+                    from_status=existing_status, to_status=status)
+            if evidence is not None:
+                from okto_pulse.core.domain.verification_currentness import (
+                    VerificationScope, result_from_authenticated_evidence,
+                )
+                from okto_pulse.core.ports.verification_currentness import require_verification_currentness_store
 
-        old_status = None
-        found = False
-        for s in scenarios:
-            if s.get("id") == scenario_id:
-                old_status = s.get("status")
-                s["status"] = status
+                store = require_verification_currentness_store(self.db)
+                if has_context:
+                    authenticated = result_from_authenticated_evidence(evidence, actor_id=user_id, actor_kind=actor_kind)
+                    publication = await store.publish(authenticated, evidence=evidence,
+                        evidence_status=status, expected_spec_version=spec.version)
+                else:
+                    publication = await store.replay_legacy(scope=VerificationScope(board_id=spec.board_id,
+                        spec_id=spec.id, spec_edition=spec.edition, scenario_id=scenario_id),
+                        evidence=evidence, evidence_status=status, actor_id=user_id, expected_spec_version=spec.version)
+                if publication.replayed:
+                    # Release the fence and incidental policy bookkeeping.
+                    # An exact replay changes no authority or audit.
+                    await get_application_persistence_port().rollback(self.db)
+                    return {"scenario_id": scenario_id, "old_status": existing_status, "new_status": existing_status,
+                        "evidence_provided": True, "evidence_gate_skipped": skip,
+                        "evidence_verification_status": evidence_verification_status,
+                        "accepted_result_id": publication.acceptance.accepted_result_id,
+                        "verification_current": publication.acceptance.current, "replayed": True,
+                        "operational_summary_updated": False}
+            operational_summary_updated = publication is None or publication.replace_operational_summary
+            if operational_summary_updated:
+                target_scenario["status"] = status
                 if evidence is not None:
-                    s["evidence"] = evidence
-                found = True
-                break
-        if not found:  # defensive: target_scenario was resolved above
-            raise ValueError(f"scenario_not_found: {scenario_id}")
-
-        # Narrow persist: write only the test_scenarios column, no version bump,
-        # no content-lock. The other scenarios in the list are untouched.
-        spec.test_scenarios = scenarios
-        spec.mark_dirty("test_scenarios")
-        await _application_add(
-            self.db,
-            _new_application_record(
-                "activity_log",
-                board_id=spec.board_id,
-                action="test_scenario_status_changed",
-                actor_type="agent",
-                actor_id=user_id,
-                actor_name=user_id,
-                details={
-                    "spec_id": spec_id,
-                    "scenario_id": scenario_id,
-                    "from_status": old_status,
-                    "to_status": status,
-                    "evidence_provided": evidence is not None,
-                    "evidence_gate_skipped": skip,
-                    "evidence_verification_status": evidence_verification_status,
-                },
-            ),
-        )
-        await _application_commit(self.db)
+                    target_scenario["evidence"] = evidence
+                spec.test_scenarios = scenarios
+                spec.mark_dirty("test_scenarios")
+            details = {"spec_id": spec_id, "scenario_id": scenario_id,
+                "from_status": old_status, "to_status": status if operational_summary_updated else old_status,
+                "observed_status": status, "actor_kind": actor_kind,
+                "evidence_provided": evidence is not None, "evidence_gate_skipped": skip,
+                "evidence_verification_status": evidence_verification_status}
+            if publication:
+                details.update(accepted_result_id=publication.acceptance.accepted_result_id,
+                    basis_digest=publication.acceptance.result.basis.digest,
+                    operational_summary_updated=operational_summary_updated)
+            await _application_add(self.db, _new_application_record("activity_log", board_id=spec.board_id,
+                action="test_scenario_result_accepted" if publication else "test_scenario_status_changed",
+                actor_type=actor_kind, actor_id=user_id, actor_name=user_id, details=details))
+            await _application_commit(self.db)
+        except BaseException:
+            await get_application_persistence_port().rollback(self.db)
+            raise
 
         logger = logging.getLogger("okto_pulse.spec.test_scenario")
         logger.info(
@@ -10193,10 +10190,13 @@ class SpecService:
         return {
             "scenario_id": scenario_id,
             "old_status": old_status,
-            "new_status": status,
+            "new_status": status if operational_summary_updated else old_status,
             "evidence_provided": evidence is not None,
             "evidence_gate_skipped": skip,
             "evidence_verification_status": evidence_verification_status,
+            **({"accepted_result_id": publication.acceptance.accepted_result_id,
+                "verification_current": publication.acceptance.current, "replayed": False,
+                "operational_summary_updated": operational_summary_updated} if publication else {}),
         }
 
     async def _has_executable_test_card_for_scenario(
@@ -10932,6 +10932,11 @@ class SpecService:
                             "create it as draft/ready, then use "
                             "set_test_scenario_status."
                         )
+                    elif "status" not in scenario:
+                        # Nested exclude_unset omits the transport default.
+                        # A new scenario still needs an authoritative initial
+                        # state; response-only defaults cannot admit its plan.
+                        scenario["status"] = "draft"
             await self._validate_test_scenario_subject_identities(
                 board_id=spec.board_id,
                 scenarios=update_data["test_scenarios"],
@@ -11635,6 +11640,11 @@ class SpecService:
                 ),
             ),
         )
+        if pending_tasks:
+            from okto_pulse.core.services.delivery_evidence import task_requirements_for_spec
+            requirements = await task_requirements_for_spec(self.db, spec)
+            pending_tasks = [task for task in pending_tasks
+                if requirements.get(task.id, {}).get('decision', 'required') == 'required']
         if pending_tasks:
             task_list = "; ".join(
                 f"'{t.title}' ({t.status.value})" for t in pending_tasks[:5]
@@ -14672,6 +14682,8 @@ class IdeationService:
             ),
         )
         if ideation:
+            from okto_pulse.core.domain.pending_qa import planning_qa_readiness
+            ideation.attach("qa_readiness", planning_qa_readiness(ideation, subject_type="ideation"))
             stories: list[ApplicationRecord] = []
             for link in ideation.story_links or []:
                 story = getattr(link, "story", None)
@@ -14990,6 +15002,9 @@ class IdeationService:
                 f"Allowed transitions: {allowed_str}."
             )
 
+        if planning_qa_transition_requires_answers("ideation", data.status):
+            await _require_planning_qa_resolved(self.db, ideation, subject_type="ideation")
+
         resolved_name = actor_name or await resolve_actor_name(
             self.db, user_id, ideation.board_id
         )
@@ -15040,6 +15055,8 @@ class IdeationService:
         ):
             raise LifecycleTransitionConflictError("ideation", ideation.id)
 
+        if planning_qa_transition_requires_answers("ideation", data.status):
+            await _require_planning_qa_resolved(self.db, ideation, subject_type="ideation")
         if data.status == IdeationStatus.DONE:
             if old_status == IdeationStatus.EVALUATING:
                 await self._enforce_ambiguity_gate(ideation)
@@ -15197,6 +15214,7 @@ class IdeationService:
                     "selected": qa.selected,
                     "asked_by": qa.asked_by,
                     "answered_by": qa.answered_by,
+                    "answered_at": qa.answered_at.isoformat() if qa.answered_at else None,
                 }
             )
 
@@ -15641,7 +15659,8 @@ class IdeationQAService:
         ideation = await _application_get(self.db, "ideation", qa.ideation_id)
         if ideation is None:
             raise RuntimeError("quality_clarification_subject_missing")
-        require_draft_mutation(ideation, subject_type="ideation")
+        from okto_pulse.core.domain.pending_qa import require_planning_qa_answer
+        require_planning_qa_answer(ideation, subject_type="ideation")
         board = await _application_get(self.db, "board", ideation.board_id)
         await _authorize_qa_answer_or_raise(
             self.db,
@@ -15915,6 +15934,7 @@ class RefinementService:
             if not await _application_run(self.db, board_query):
                 return None
 
+        await _require_planning_qa_resolved(self.db, ideation, subject_type="ideation")
         description = data.description.strip() if data.description else None
         parent_context = compile_ideation_parent_context(ideation)
         if parent_context:
@@ -16090,6 +16110,8 @@ class RefinementService:
             ),
         )
         if refinement:
+            from okto_pulse.core.domain.pending_qa import planning_qa_readiness
+            refinement.attach("qa_readiness", planning_qa_readiness(refinement, subject_type="refinement"))
             await _attach_active_spec_counts(self.db, [refinement])
         return refinement
 
@@ -16366,6 +16388,10 @@ class RefinementService:
         old_status = refinement.status
         old_version = int(refinement.version)
         old_edition = int(getattr(refinement, "edition", 1) or 1)
+        from okto_pulse.core.domain.refinement_source_compatibility import (
+            compatibility_change, refinement_source_digest,
+        )
+        before_source_digest = refinement_source_digest(refinement)
         allowed = self._REFINEMENT_TRANSITIONS.get(old_status, [])
         if data.status not in allowed:
             allowed_str = ", ".join(s.value for s in allowed) if allowed else "none"
@@ -16373,6 +16399,9 @@ class RefinementService:
                 f"Cannot move refinement from '{old_status.value}' to '{data.status.value}'. "
                 f"Allowed transitions: {allowed_str}."
             )
+
+        if planning_qa_transition_requires_answers("refinement", data.status):
+            await _require_planning_qa_resolved(self.db, refinement, subject_type="refinement")
 
         advancing = (
             data.status is not RefinementStatus.CANCELLED
@@ -16464,6 +16493,8 @@ class RefinementService:
         ):
             raise LifecycleTransitionConflictError("refinement", refinement.id)
 
+        if planning_qa_transition_requires_answers("refinement", data.status):
+            await _require_planning_qa_resolved(self.db, refinement, subject_type="refinement")
         if data.status == RefinementStatus.DONE:
             # The scalar CAS above acquires the relational write fence. Re-run
             # Code Traceability inside that fenced transaction immediately
@@ -16485,6 +16516,20 @@ class RefinementService:
             actor_name=resolved_name,
             actor_type="user",
         )
+
+        prior_source_versions = (old_version,)
+        if data.status == RefinementStatus.DONE:
+            from okto_pulse.core.ports.relational_application import (
+                require_relational_application_adapter,
+            )
+            prior_source = await (
+                require_relational_application_adapter().code_traceability_read(self.db)
+                .refinement_source_compatibility(
+                    board_id=refinement.board_id, refinement_id=refinement.id,
+                )
+            )
+            if prior_source is not None:
+                prior_source_versions = prior_source.compatible_versions
 
         # Reopening a terminal refinement starts a fresh editable iteration.
         if data.status == RefinementStatus.DRAFT and old_status in (
@@ -16515,10 +16560,6 @@ class RefinementService:
         )
 
         refinement.status = data.status
-        if data.status == RefinementStatus.DONE or opened_new_edition:
-            await _application_flush(self.db)
-        if data.status == RefinementStatus.DONE:
-            await self._create_snapshot(refinement, user_id)
         lifecycle_action = (
             "cancel"
             if data.status == RefinementStatus.CANCELLED
@@ -16551,6 +16592,18 @@ class RefinementService:
                 before_edition=old_edition,
                 after_edition=int(refinement.edition),
             )
+        # Assessment admission above refers to the assessed content version.
+        # Now persist the operational status and read its actual SQL version
+        # before recording compatibility or freezing a completed snapshot.
+        await _application_flush(self.db)
+        refinement = await self.get_refinement(refinement.id)
+        source_compatibility = compatibility_change(
+            subject=refinement, before_version=old_version,
+            before_status=old_status, before_digest=before_source_digest,
+        )
+        if data.status == RefinementStatus.DONE:
+            await self._create_snapshot(refinement, user_id,
+                compatible_receipt_versions=prior_source_versions if source_compatibility else ())
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import (
             RefinementMoved,
@@ -16607,6 +16660,7 @@ class RefinementService:
             actor_name=resolved_name,
             changes=[
                 {"field": "status", "old": old_status.value, "new": data.status.value},
+                *([source_compatibility] if source_compatibility else []),
                 *(
                     [
                         {
@@ -16625,7 +16679,8 @@ class RefinementService:
         return refinement
 
     async def _create_snapshot(
-        self, refinement: "Refinement", user_id: str
+        self, refinement: "Refinement", user_id: str,
+        *, compatible_receipt_versions: tuple[int, ...] = (),
     ) -> "RefinementSnapshot":
         """Create an immutable snapshot of the refinement's current state."""
         qa_snapshot = []
@@ -16639,6 +16694,7 @@ class RefinementService:
                     "selected": qa.selected,
                     "asked_by": qa.asked_by,
                     "answered_by": qa.answered_by,
+                    "answered_at": qa.answered_at.isoformat() if qa.answered_at else None,
                 }
             )
 
@@ -16714,7 +16770,7 @@ class RefinementService:
                     )
                 )
                 for receipt in receipt_page.items:
-                    if receipt.subject_version != refinement.version:
+                    if receipt.subject_version not in (refinement.version, *compatible_receipt_versions):
                         continue
                     head = await investigation_store.get_current_head(
                         board_id=refinement.board_id,
@@ -16907,16 +16963,8 @@ class RefinementService:
                 # history proof without loading unbounded history.
                 limit=2,
             )
-            change_set = list(getattr(rows[0], "changes", None) or ()) if rows else []
-            status_only_done = (
-                len(rows) == 1
-                and len(change_set) == 1
-                and isinstance(change_set[0], dict)
-                and change_set[0].get("field") == "status"
-                and str(change_set[0].get("old")) == RefinementStatus.APPROVED.value
-                and str(change_set[0].get("new")) == RefinementStatus.DONE.value
-            )
-            if status_only_done:
+            from okto_pulse.core.domain.refinement_source_compatibility import is_legacy_approved_to_done_history
+            if is_legacy_approved_to_done_history(rows):
                 return previous
         raise SpecLineagePreflightError(
             "spec_refinement_snapshot_required",
@@ -17222,7 +17270,8 @@ class RefinementQAService:
         refinement = await _application_get(self.db, "refinement", qa.refinement_id)
         if refinement is None:
             raise RuntimeError("quality_clarification_subject_missing")
-        require_draft_mutation(refinement, subject_type="refinement")
+        from okto_pulse.core.domain.pending_qa import require_planning_qa_answer
+        require_planning_qa_answer(refinement, subject_type="refinement")
         board = await _application_get(self.db, "board", refinement.board_id)
         await _authorize_qa_answer_or_raise(
             self.db,

@@ -60,6 +60,33 @@ from okto_pulse.core.domain.human_validation_cycle import (
 _DIGEST = "a" * 64
 
 
+def test_validation_summary_is_bound_to_the_same_edition_and_planning_snapshot():
+    from okto_pulse.core.domain.spec_planning_readiness import (
+        PLANNING_COMPONENTS, SpecPlanningComponent, SpecPlanningReadiness,
+        build_spec_validation_summary,
+    )
+    planning = SpecPlanningReadiness(tuple(
+        SpecPlanningComponent(key, 'ready', 'blocking', True) for key in PLANNING_COMPONENTS
+    ))
+    summary = build_spec_validation_summary(
+        planning=planning, edition=3, subject_status='validated',
+        current_validation_edition=3, current_validation_outcome='success', exception_count=0,
+    )
+    cycle = ValidationCycleSummary(
+        subject_type=AssessmentSubjectType.SPEC, subject_id='spec-1', edition=3,
+        status='validated', cycle_state=ValidationCycleState.COMPLETED,
+        current_result=None, previous_result_count=0, submission_fence=_fence(),
+        checks=_checks(), visible_sections=_spec_sections(),
+        planning_readiness=planning, validation_summary=summary,
+    )
+    assert project_validation_cycle(cycle)['validation_summary'] == summary.to_dict()
+    for changes in ({'planning_readiness': None},
+                    {'validation_summary': replace(summary, edition=4)},
+                    {'validation_summary': replace(summary, planning_state='blocked')}):
+        with pytest.raises(ValidationCycleContractError, match='validation_cycle_summary_invalid'):
+            replace(cycle, **changes)
+
+
 def _planning_manifest(**overrides):
     return SpecPlanningManifest.model_validate({
         "board_id": "board-1", "spec_id": "spec-1", "edition": 3, "spec_version": 17,

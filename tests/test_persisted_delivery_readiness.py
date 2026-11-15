@@ -48,6 +48,52 @@ def test_generation_matches_canonical_spec_and_each_card():
     assert projected.manifest_sha256 != build_readiness_generation(source, captured_revision=8).manifest_sha256
 
 
+def test_generation_captures_default_task_requirement_without_changing_canonical_assessment():
+    generation = build_readiness_generation(_source(), captured_revision=7)
+    by_card = {row.card_id: row for row in generation.summaries}
+    assert generation.evaluator_version == 'delivery-readiness-evaluator/v13'
+    assert by_card[None].requirement is None
+    for identity in ('ui', 'authorization'):
+        requirement = by_card[identity].requirement
+        assert requirement.decision == 'required' and requirement.current
+        assert requirement.decision_id is None
+        assert by_card[identity].payload()['requirement'] == requirement.model_dump(mode='json')
+
+
+@pytest.mark.parametrize('decision', ['optional', 'waived'])
+def test_captured_test_requirement_survives_inconclusive_proof_without_granting_credit(decision, monkeypatch):
+    from okto_pulse.core.domain.task_requirement_decision import (
+        TaskRequirementScope, TaskRequirementDecisionRecord, resolve_task_requirement,
+    )
+    source = _source()
+    canonical_context = EvaluatedDeliveryReadiness.context
+    def inconclusive_test_proof(self, card_id=None):
+        context = canonical_context(self, card_id)
+        return (context.model_copy(update={'scope_complete': False, 'proof_complete': None})
+            if card_id == 'test-card-1' else context)
+    monkeypatch.setattr(EvaluatedDeliveryReadiness, 'context', inconclusive_test_proof)
+    original = build_readiness_generation(source, captured_revision=7)
+    previous = next(row for row in original.summaries if row.card_id == 'test-card-1')
+    assert previous.context['scope_complete'] is False
+    scope = source.facts.scope
+    responsibility = TaskRequirementScope(scope.board_id, scope.spec_id, scope.edition,
+        'test-card-1', 'test', (('scenario:scenario-ui', 'a' * 64, 'b' * 64),))
+    record = TaskRequirementDecisionRecord('decision-test', 'operation-test', responsibility,
+        1, decision, 'required', None, 'human-reviewer', source.evaluated_at)
+    resolution = resolve_task_requirement(responsibility, (record,))
+    facts = replace(source.facts, effective_context=replace(source.facts.effective_context,
+        task_requirements=((responsibility, resolution),)))
+    updated = replace(source, facts=facts)
+    generation = build_readiness_generation(updated, captured_revision=8)
+    row = next(item for item in generation.summaries if item.card_id == 'test-card-1')
+    assert row.requirement.decision == decision and row.requirement.current
+    assert row.requirement.decision_id == record.id
+    assert row.context == EvaluatedDeliveryReadiness(updated,
+        actor_id=source.access.actor_id).context('test-card-1').model_dump(mode='json')
+    assert row.context['scope_complete'] is False
+    assert row.context['proof_complete'] is not True
+
+
 def test_stored_canonical_rows_have_the_generation_manifest():
     generation = build_readiness_generation(_source(), captured_revision=7)
     def encoded(payload):
@@ -118,6 +164,36 @@ def test_incremental_generation_refuses_unverified_or_nonadjacent_predecessor():
         build_readiness_generation(next_source, captured_revision=8,
             predecessor=replace(predecessor, manifest_sha256='0' * 64),
             affected_card_ids=affected)
+
+
+@pytest.mark.parametrize('reuse', ['affected_cards', 'progress_span'])
+@pytest.mark.parametrize('legacy_version', ['v8', 'v9', 'v10', 'v11', 'v12'])
+def test_authority_upgrade_recomputes_instead_of_reusing_legacy_generations(monkeypatch, reuse, legacy_version):
+    source = _source()
+    with monkeypatch.context() as legacy:
+        legacy.setattr(projection, 'EVALUATOR_VERSION', 'delivery-readiness-evaluator/' + legacy_version)
+        predecessor = build_readiness_generation(source, captured_revision=7)
+    prior_manifest = predecessor.manifest_sha256
+    next_source = replace(source, snapshot_id='1' * 64,
+        evaluated_at=source.evaluated_at + timedelta(seconds=1))
+    captured_revision = 8 if reuse == 'affected_cards' else 9
+    reuse_args = ({'affected_card_ids': frozenset({None, *(card.id for card in source.cards)})}
+        if reuse == 'affected_cards' else {'progress_deltas': (
+            ReadinessSourceDelta(8, 'card_progress_insert', 'authorization'),
+            ReadinessSourceDelta(9, 'card_progress_insert', 'ui'))})
+    with pytest.raises(ValueError, match='readiness_incremental_predecessor_ineligible'):
+        build_readiness_generation(next_source, captured_revision=captured_revision,
+            predecessor=predecessor, **reuse_args)
+    current = build_readiness_generation(next_source, captured_revision=captured_revision)
+    assert current.evaluator_version == 'delivery-readiness-evaluator/v13'
+    assert current.manifest_sha256 != prior_manifest
+    assert predecessor.evaluator_version == 'delivery-readiness-evaluator/' + legacy_version
+    assert predecessor.manifest_sha256 == prior_manifest
+    # The new full evaluation still follows the authoritative current facts.
+    for old, new in zip(predecessor.summaries, current.summaries, strict=True):
+        assert old.card_id == new.card_id
+        assert old.implementation == new.implementation
+        assert old.verification == new.verification
 
 
 def test_incremental_generation_accepts_complete_progress_span_only():

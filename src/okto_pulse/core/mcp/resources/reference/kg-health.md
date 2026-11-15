@@ -27,6 +27,19 @@ uses your session context automatically:
 
 ## Recovery boundary
 
+The owning Global Discovery outbox worker emits bounded `outbox.operation`
+observations for lease acquisition/release, SQL claim, graph application and
+verification, SQL ACK, and final per-event outcome. Join them by `batch_id`,
+`board_id`, `event_id`, and `claim_row_id`; governed attempts also expose their
+native attempt number. `elapsed_ms` separates phase time from retry counts.
+The lease reference is a one-way digest, never the writer token. Raw payloads,
+queries, credentials and exception bodies are excluded from these observations.
+Only an ACK emitted after the relational commit says `committed`; cancellation
+or commit failure says `unconfirmed` and requires an authoritative state read.
+`retry_pending` and `terminal` are not delivery success. Logging does not retry,
+requeue or confer recovery authority. Do not continuously poll health to replace
+the worker's own observations.
+
 Public board rebuild preflight, confirmation and execution have been removed
 from MCP, REST and the installed CLI. There is no replacement maintenance tool.
 Health reports the component, reason and limitation. External support or release

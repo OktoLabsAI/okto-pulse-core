@@ -13,6 +13,7 @@ class SpecCoverageRequest(Closed):
     limit: int = Field(default=200, ge=1, le=1000)
     cursor: str | None = Field(default=None, max_length=256)
     timeout_ms: int | None = Field(default=None, ge=1, le=30000)
+    graph_mode: Literal['summary', 'detail'] = 'summary'
 
 
 class CoverageSummary(Closed):

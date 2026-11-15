@@ -10,6 +10,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, field_validator, model_validator
 from okto_pulse.core.domain.delivery_verification import verification_sources_issue
+from okto_pulse.core.domain.verification_currentness import VerificationContext
 
 
 Reference = Annotated[str, StringConstraints(strict=True, min_length=1, max_length=2048, pattern=r'\S')]
@@ -192,6 +193,9 @@ class VerificationReportEvidence(BaseModel):
     report_author_id: Reference
     scenario_sha256: Annotated[str, StringConstraints(strict=True, pattern=r'^sha256:[0-9a-f]{64}$')]
     execution_receipt: Annotated[str, StringConstraints(strict=True, pattern=r'^ev2r\.[0-9a-f]{32}\.[0-9a-f]{64}$')]
+    # Absence is readable for immutable legacy history; new native issuance
+    # requires a server reservation. The report input itself cannot supply it.
+    verification_context: VerificationContext | None = None
 
 
 def require_evidence_method_binding(method: object, evidence: object) -> None:

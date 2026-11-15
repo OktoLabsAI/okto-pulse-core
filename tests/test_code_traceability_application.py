@@ -2728,6 +2728,9 @@ class FakeUnitOfWork:
         )
         self.commit_count = 0
 
+    async def begin_write(self) -> None:
+        pass
+
     async def _publish_domain_event(self, event: object) -> None:
         if self.fail_event_publish:
             raise RuntimeError("event staging failed")
@@ -3488,6 +3491,66 @@ async def test_spec_evidence_rebase_preserves_or_normalizes_context_override(
     assert plan.delivery_context_delta.override_state_changed is (
         not expected_overridden
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("busy", [False, True])
+async def test_start_admits_writer_before_reads_and_stops_when_busy(busy, monkeypatch) -> None:
+    from unittest.mock import AsyncMock
+
+    investigations = FakeInvestigationStore()
+    traceability = FakeTraceabilityStore(investigations)
+    uow = FakeUnitOfWork(investigations, traceability)
+    order = []
+    refusal = RuntimeError("writer admission refused")
+
+    async def begin_write():
+        order.append("admit")
+        if busy:
+            raise refusal
+
+    get_board = uow.services.boards.get_board
+
+    async def read_board(*args, **kwargs):
+        assert order and order[0] == "admit"
+        order.append("read")
+        return await get_board(*args, **kwargs)
+
+    monkeypatch.setattr(uow, "begin_write", begin_write)
+    board_read = AsyncMock(side_effect=read_board)
+    monkeypatch.setattr(uow.services.boards, "get_board", board_read)
+    replay = AsyncMock(wraps=investigations.resolve_request_replay)
+    monkeypatch.setattr(investigations, "resolve_request_replay", replay)
+    service = CodeInvestigationService(
+        challenge_policy=challenge_policy(), clock=MutableClock(), id_factory=StableIds()
+    )
+    start = AsyncMock(wraps=service.start)
+    monkeypatch.setattr(service, "start", start)
+    actor = ActorContext("agent-1", "mcp", actor_kind="agent", board_id="board-1",
+                         permissions=("code_traceability.investigation.start",))
+    command = StartCodeInvestigationInput(
+        board_id="board-1", subject_type=CodeTraceabilitySubjectType.REFINEMENT,
+        subject_id="refinement-1", expected_subject_version=3,
+        idempotency_key="writer-admission-start",
+    )
+    use_case = StartCodeInvestigationUseCase(service)
+    if busy:
+        with pytest.raises(RuntimeError) as caught:
+            await use_case.execute(command, actor=actor, uow=uow)
+        assert caught.value is refusal
+        assert order == ["admit"]
+        board_read.assert_not_awaited()
+        replay.assert_not_awaited()
+        start.assert_not_awaited()
+        assert uow.commit_count == 0
+        assert uow.published_events == []
+    else:
+        result = await use_case.execute(command, actor=actor, uow=uow)
+        assert order[:2] == ["admit", "read"]
+        assert order.count("admit") == 1
+        start.assert_awaited_once()
+        assert result.challenge_token is not None
+        assert uow.commit_count == 1
 
 
 @pytest.mark.asyncio

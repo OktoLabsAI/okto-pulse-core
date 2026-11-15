@@ -18,6 +18,9 @@ class GraphHandle:
     status: str
     locked: bool
     quarantined: bool
+    # Opening a writer does not establish availability of independent readers.
+    # Older providers must explicitly opt in before activation can report ready.
+    readers_prepared: bool = False
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,21 @@ class RebuildReport:
     status: str  # "rebuilt" | "skipped" | "failed"
     steps: tuple[str, ...] = ()
     reason: str | None = None
+
+
+@runtime_checkable
+class PreparedGraphReaderObservation(Protocol):
+    """Optional non-mutating observation of an already prepared Board reader.
+
+    The provider pins one existing participant and revalidates its exact route.
+    It must never cold-open, initialize, checkpoint or repair storage. None
+    means no prepared participant exists; temporary admission contention raises
+    GraphLockContention or GraphQueryTimeout, never None. Other refusal/route
+    failures remain distinct and must not trigger an automatic retry. The
+    returned availability is an observation, not a reservation or write proof.
+    """
+
+    def observe_prepared_reader(self, board_id: str) -> GraphHandle | None: ...
 
 
 @dataclass(frozen=True)

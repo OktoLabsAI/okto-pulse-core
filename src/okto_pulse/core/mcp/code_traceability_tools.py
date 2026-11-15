@@ -297,7 +297,14 @@ def _closed_tool(mcp: object, fn: Callable[..., Any]) -> None:
         try:
             return await fn(*args, **kwargs)
         except Exception as error:
-            return _error_outcome(error)
+            try:
+                return _error_outcome(error)
+            except TypeError:
+                # Edition transports own infrastructure errors such as database
+                # contention. Re-raise outside this handler to avoid creating a
+                # cyclic exception context with the failed error projection.
+                pass
+            raise
 
     setattr(guarded, "__mcp_closed_schema__", True)
     getattr(mcp, "tool")()(guarded)
@@ -479,7 +486,8 @@ def register_code_traceability_tools(
             try:
                 return _error_outcome(exc)
             except TypeError:
-                raise exc
+                pass
+            raise
 
     def _services() -> tuple[CodeInvestigationService, CodeEvidenceService, ImplementationTargetService]:
         return (
@@ -972,6 +980,7 @@ def register_code_traceability_tools(
         """Record Card progress or bind accepted implementation/authenticated test proof.
         Read get_delivery_evidence first for obligations and CAS/edition/revision fences.
         Progress/impact are claims: no proof, completion or verified workspace recovery.
+        Record material events, not heartbeat or per-tool updates; no duplicate comment.
         Use the closed evidence schema for single, atomic batch or report composition;
         each entry retains its own permission, admission, currentness and lifecycle gates.
         Partial proofs never sum to complete. Never fabricate receipts or claim a task

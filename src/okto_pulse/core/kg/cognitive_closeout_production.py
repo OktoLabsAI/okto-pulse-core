@@ -419,6 +419,7 @@ class ConsolidationPipelinePersister:
             finalize_deferred_consolidation,
             propose_reconciliation,
             run_cancellation_atomic,
+            stage_deferred_consolidation,
         )
         from okto_pulse.core.ports.consolidation import (
             get_consolidation_persistence_port,
@@ -518,6 +519,7 @@ class ConsolidationPipelinePersister:
                                 agent_id=self._agent_id,
                                 db=db,
                                 defer_session_finalization=True,
+                                defer_relational_staging=True,
                                 **({'learning_capture': learning_capture} if learning_capture is not None else {}),
                             )
                             # The returned deferred snapshot belongs to this
@@ -542,6 +544,9 @@ class ConsolidationPipelinePersister:
                             nonlocal relational_commit_confirmed
                             write_lease.ensure_owned(
                                 failure_phase="before_relational_ack",
+                            )
+                            await stage_deferred_consolidation(
+                                begin.session_id, agent_id=self._agent_id, db=db,
                             )
                             if (learning_capture is not None
                                     and authored_node.source_artifact_ref == candidate.source_artifact_ref):

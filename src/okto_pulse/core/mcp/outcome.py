@@ -257,6 +257,20 @@ class McpToolOutcome:
 
 
 
+def _retryability(body: Mapping[str, Any], code: str, *, infer_suffix: bool = True) -> bool:
+    # The producer's explicit decision wins, including false. Non-booleans
+    # never acquire retry authority through Python truthiness.
+    if "retryable" in body:
+        return body["retryable"] is True
+    nested = body.get("error")
+    if isinstance(nested, Mapping) and "retryable" in nested:
+        return nested["retryable"] is True
+    return code in _RETRYABLE_CODES or (
+        infer_suffix
+        and bool(frozenset(code.split("_")) & {"conflict", "locked", "timeout", "unavailable", "busy"})
+    )
+
+
 def coerce_mcp_tool_outcome(raw: Any, *, tool_name: str | None = None) -> McpToolOutcome:
     """Classify handler results for the canonical MCP response."""
 
@@ -286,7 +300,7 @@ def coerce_mcp_tool_outcome(raw: Any, *, tool_name: str | None = None) -> McpToo
             code=code,
             message=message or code,
             payload=body.get("data", body),
-            retryable=bool(body.get("retryable", code in _RETRYABLE_CODES)),
+            retryable=_retryability(body, code, infer_suffix=False),
             next_action=_next_action(body, tool_name=tool_name, code=code),
             details=body.get("details") if isinstance(body.get("details"), Mapping) else None,
         )
@@ -333,17 +347,7 @@ def coerce_mcp_tool_outcome(raw: Any, *, tool_name: str | None = None) -> McpToo
     if not failure_signal:
         return McpToolOutcome.success(body)
 
-    if "retryable" in body:
-        # An explicit producer decision is authoritative.  In particular,
-        # Knowledge revision conflicts require a fresh read/reformulation and
-        # deliberately publish retryable=false; the generic ``conflict`` suffix
-        # must not silently rewrite that contract to true.
-        retryable = body.get("retryable") is True
-    else:
-        code_parts = frozenset(code.split("_"))
-        retryable = code in _RETRYABLE_CODES or bool(
-            code_parts & {"conflict", "locked", "timeout", "unavailable", "busy"}
-        )
+    retryable = _retryability(body, code)
     return McpToolOutcome.error(
         code=code,
         message=message or code,

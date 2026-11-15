@@ -269,6 +269,9 @@ class CodeTraceabilityProjection:
             "source_refinement_snapshot_id": (context.source_refinement_snapshot_id),
             "source_refinement_version": context.source_refinement_version,
             "source_context": _public_value(context.source_context),
+            "source_context_snapshot": _public_value(context.source_context_snapshot),
+            "current_source_context": _public_value(context.current_source_context),
+            "refinement_source_compatibility": _public_value(context.refinement_source_compatibility),
             "source_context_items": [
                 _source_context_item(
                     item,
@@ -1457,7 +1460,11 @@ class CodeTraceabilityGateEvaluator:
             receipt.board_id != context.board_id
             or receipt.subject_type is not subject_type
             or receipt.subject_id != subject_id
-            or receipt.subject_version != subject_version
+            or (receipt.subject_version != subject_version and not (
+                subject_type is CodeTraceabilitySubjectType.REFINEMENT
+                and context.refinement_source_compatibility is not None
+                and receipt.subject_version in context.refinement_source_compatibility.compatible_versions
+            ))
             or receipt.source_ref != source_ref
         ):
             return "subject_mismatch", "code_evidence_receipt_mismatch"
@@ -1581,6 +1588,10 @@ class CodeTraceabilityGateEvaluator:
         referenced_evidence_ids: tuple[str, ...],
     ) -> list[CodeTraceabilityGateBlocker]:
         enforce = settings.evidence_attestation == "required"
+        compatible_versions = (
+            context.refinement_source_compatibility.compatible_versions
+            if context.refinement_source_compatibility is not None else (context.subject_version,)
+        )
         active_evidence_ids = {
             item.id
             for item in context.evidence
@@ -1608,7 +1619,7 @@ class CodeTraceabilityGateEvaluator:
             if item.lifecycle_status is CodeTraceabilityLifecycleStatus.ACTIVE
             and item.parent_type is CodeTraceabilitySubjectType.REFINEMENT
             and item.parent_id == context.subject_id
-            and item.parent_version == context.subject_version
+            and item.parent_version in compatible_versions
         )
         receipt_by_id = {item.id: item for item in context.receipts}
         exact_receipts = tuple(
@@ -1617,7 +1628,7 @@ class CodeTraceabilityGateEvaluator:
             if item.board_id == context.board_id
             and item.subject_type is CodeTraceabilitySubjectType.REFINEMENT
             and item.subject_id == context.subject_id
-            and item.subject_version == context.subject_version
+            and item.subject_version in compatible_versions
         )
         policy_by_receipt_id: dict[str, tuple[str, str | None]] = {}
         for receipt in exact_receipts:

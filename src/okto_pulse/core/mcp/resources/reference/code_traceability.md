@@ -1,5 +1,5 @@
 ---
-version: "1.3"
+version: "1.4"
 ---
 
 # Agent-mediated Code Traceability
@@ -18,7 +18,24 @@ retains normal version invalidation. Adding explanations or headings is a prose
 change, not a citation-only edit. This exemption does not unlock editing outside
 Draft or relax receipt/subject version matching.
 
+Forward lifecycle moves have a separate server-owned compatibility proof.
+`refinement_source_compatibility` admits only the listed adjacent versions with
+equal canonical source-context digests and an unambiguous status history. Reuse
+that native decision for Refinement source assessment; source-head, expiry,
+revocation and trust checks still apply. No agent rewrites or rebinds a receipt.
+
+For a completed Refinement, `source_context_snapshot` labels `source_context`
+as historical and identifies its immutable snapshot/version. Read
+`current_source_context` and `gate_readiness` for current conditions. Historical
+context never authorizes new Card execution. Missing or ambiguous legacy history
+cannot establish compatibility. Exact rules are in the Code Traceability tool
+reference under **Refinement status compatibility and completed history**.
+
 ## Delivery evidence
+
+For the default low-call execution route, follow **Compact progress and delivery
+route** in `okto-pulse://workflows/cards`: event-based progress and composed
+batch/report, with current native proof and no duplicate narrative writes.
 
 ### Current delivery readiness
 
@@ -68,10 +85,12 @@ Minimal action flow:
 4. Re-read affected Card/Spec readiness. Every mutation reauthorizes and rechecks
    native gates; a read action or 100/100 does not grant transition authority.
 
-The UI shows separate implementation and verification bars, both on the Card and
-in Delivery. "What is missing?" opens scoped causes, expected/observed facts and
-native links. Receipt links require the exact current scenario evidence pointer;
-an unavailable old receipt never opens a replacement result. Inspection links
+The Task Delivery UI shows the canonical state, reason, latest update and next
+action. Its closed-by-default Details opens scoped causes, implementation and
+verification facts, and native links. Spec rollups retain their phase metrics.
+Receipt links must identify the exact referenced authenticated result;
+an unavailable old receipt never opens a replacement result. Link availability
+does not establish current delivery credit. Inspection links
 retain the full review batch. Exceptions open the Spec's Coverage > Implementation.
 
 The older `delivery_completeness` field is deprecated and retained unchanged for
@@ -118,6 +137,32 @@ retrospectively without editing locked requirements. Association is an authentic
 claim about what was tested, not independent source-code verification by Pulse.
 
 See `okto-pulse://reference/tool-docs/code-traceability` for exact inputs and errors.
+
+### Verification belongs to an exact delivered basis
+
+The current authority is the accepted result for a scenario's full source basis,
+not its global latest-result summary. A basis includes every verified source and
+exact revision, including companion sources. Distinct bases remain independent:
+failed B does not invalidate passed A. A newer failed result for the same basis
+invalidates its earlier success before any new Delivery association. Reset or a
+semantic scenario change invalidates the affected current results; restoring old
+evidence does not revive them. Frozen report/Done records remain history.
+
+A `test` association can supply native `accepted_result_id` or omit it to resolve
+one uniquely applicable current result. Exact required implementation sources,
+chronology, criterion observations, method, authorization and same Board/Spec/
+edition still apply. Companion-source ambiguity is not permission to merge
+results, infer Git ancestry or select the newest passing history. The responsible
+agent resolves it from native accepted facts; humans never enter these IDs.
+
+When only association is missing, reuse current proof and batch ready entries
+for that Test Card; do not execute again solely because a different basis ran.
+After a real implementation/semantic change or reset, verify the changed scope
+and associate its applicable current result. Read one scoped readiness page for
+diagnosis, then only the requested evidence/history page; partial or unavailable
+facts are not zero or passing proof. Preserve the 5000-scenario/20000-expanded-
+fact limits and follow bounded pagination rather than scanning full history.
+See **Exact-result Test associations** in `okto-pulse://reference/tool-docs/card`.
 
 Code Traceability records bounded observations made by an authenticated
 external agent. Pulse Core validates policy and immutable contracts; an
@@ -801,6 +846,20 @@ current executable schemas. The sections above define the workflow and proof
 semantics, not a second parameter reference.
 
 ### Reading older progress checkpoints
+
+Human submissions appear in Card history as `kind="human_submission"`, with
+authority `human_declaration`. Their application-generated receipt records
+identity, UTC time, scope, content hash and immutable correction links. It does
+not qualify a Target, prove implementation, verify a run or infer no material
+change. In Community storage this is an additive typed payload in the existing
+progress ledger; historical technical rows are not rewritten. Readers must
+branch on the payload kind before interpreting a technical progress declaration.
+
+The human UI uses one scoped `task-delivery-summary/v1` from the persisted
+readiness projection and loads diagnostic/history pages only from Details.
+Its automatic receipt endpoint rejects agents: continue using the composed
+technical operations in `okto-pulse://workflows/cards`. Do not generate a
+second receipt call for a human save, nor ask a human for technical selectors.
 
 `okto_pulse_get_delivery_evidence(board_id, spec_id, card_id=...)` reads the
 current edition's progress history without loading the entire Spec rollup.

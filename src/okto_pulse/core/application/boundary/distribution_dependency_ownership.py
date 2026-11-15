@@ -19,7 +19,7 @@ from typing import Literal
 
 CORE_DISTRIBUTION = "okto-pulse-core"
 COMMUNITY_DISTRIBUTION = "okto-pulse"
-LEDGER_VERSION = "F14.1"
+LEDGER_VERSION = "F14.2"
 CORE_FORBIDDEN_DISTRIBUTION_IMPORT_PREFIXES: tuple[str, ...] = (
     "okto_pulse.community",
 )
@@ -114,7 +114,7 @@ def _entry(
 
 
 def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]:
-    """Return the terminal F14 direct-dependency ownership ledger."""
+    """Return the versioned F14 direct-dependency ownership ledger."""
 
     core = CORE_DISTRIBUTION
     community = COMMUNITY_DISTRIBUTION
@@ -169,9 +169,22 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
         ),
         _entry(
             "orjson", core, "core", ("orjson",), "direct",
-            ("src/okto_pulse/core/services/persisted_delivery_readiness.py",),
-            rationale="Core hashes canonical persisted-readiness manifests with stable JSON bytes.",
-            removal_criterion="Replace the canonical encoder while preserving digest compatibility.",
+            ("src/okto_pulse/core/services/delivery_summary.py",
+             "src/okto_pulse/core/services/persisted_delivery_readiness.py"),
+            rationale="Core fingerprints authorized delivery populations and persisted-readiness manifests with deterministic sorted JSON.",
+            removal_criterion="Replace population serialization while preserving the versioned digest and cursor binding contract.",
+        ),
+        _entry(
+            "orjson", community, "community", ("orjson",), "direct",
+            ("src/okto_pulse/community/adapters/sqlalchemy_persisted_readiness.py",),
+            rationale="The persisted readiness adapter encodes bounded snapshot rows and restores their exact serialized facts.",
+            removal_criterion="Replace snapshot serialization with an equivalent measured implementation and preserve exact generation manifests.",
+        ),
+        _entry(
+            "pydantic-core", community, "community", ("pydantic_core",), "direct",
+            ("src/okto_pulse/community/adapters/mcp_host.py",),
+            rationale="The MCP host classifies Pydantic validation error codes using the canonical ErrorType contract.",
+            removal_criterion="Pydantic exposes ErrorType through its public package or the host no longer classifies validation codes.",
         ),
         _entry(
             CORE_DISTRIBUTION, community, "community", ("okto_pulse",), "distribution",
@@ -214,12 +227,6 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
             ("src/okto_pulse/community/adapters/coordination.py",), extras=("asyncio",),
             rationale="Community owns the local relational UoW and repository adapters.",
             removal_criterion="Replace all Community relational adapters with another stack.",
-        ),
-        _entry(
-            "orjson", community, "community", ("orjson",), "direct",
-            ("src/okto_pulse/community/adapters/sqlalchemy_persisted_readiness.py",),
-            rationale="Community encodes and decodes persisted-readiness rows in the SQLite adapter.",
-            removal_criterion="Replace the adapter encoder while preserving stored row compatibility.",
         ),
         _entry(
             "aiosqlite", community, "community", ("aiosqlite",), "dynamic",

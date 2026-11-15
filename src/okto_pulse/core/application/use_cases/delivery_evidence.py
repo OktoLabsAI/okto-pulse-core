@@ -80,6 +80,18 @@ class GetPersistedDeliveryReadinessUseCase:
             cursor=command.cursor)
 
 
+class GetDeliverySummaryUseCase:
+    """Human presentation; each page reauthorizes and performs no mutation."""
+
+    async def execute(self, command, *, actor, uow: PulseUnitOfWork):
+        from okto_pulse.core.ports.delivery_readiness import ReadinessActor
+
+        await require_authorization(actor, PermissionRequirement('code_traceability.evidence.read'),
+            uow=uow, board_id=command.board_id)
+        return await uow.services.delivery_readiness.delivery_summary(command,
+            actor=ReadinessActor(actor.actor_id, actor.actor_kind, actor.realm_id, actor.board_id))
+
+
 class RequeuePersistedReadinessUseCase:
     """Authorized, audited retry of a terminal derived job."""
 
@@ -141,6 +153,9 @@ class RecordCardDeliveryEvidenceUseCase:
     async def execute(
         self, command: CardDeliveryEvidenceWriteCommand | CardDeliveryReportCommand, *, actor, uow: PulseUnitOfWork
     ):
+        # Establish the edition's write transaction before permission/scope
+        # reads. Semantic versions and delivery CAS are still checked below.
+        await uow.begin_write()
         if isinstance(command, CardDeliveryReportCommand):
             return await self.submit_report(command, actor=actor, uow=uow)
         options = await self.authorize_in_transaction(command, actor=actor, uow=uow)

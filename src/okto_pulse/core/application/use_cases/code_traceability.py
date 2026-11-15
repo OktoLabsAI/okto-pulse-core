@@ -22,6 +22,7 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.domain.enums import TestScenarioStatus
 from okto_pulse.core.domain.code_traceability import (
     CodeDeliveryContextRequired,
     CodeEvidence,
@@ -720,6 +721,20 @@ def _require_spec_entity(
         if getattr(spec, "id", None) != entity_id:
             raise CodeEvidenceLinkInvalid(details={"reason": "spec_entity_not_found"})
         return
+    if entity_type is SpecEntityType.TEST_SCENARIO:
+        # Scenarios are native objects, not a list of IDs or active/inactive
+        # requirements. Their execution state does not remove ownership by the
+        # Spec; even a failed or draft scenario can be an implementation target.
+        for scenario in getattr(spec, "test_scenarios", None) or ():
+            if _entity_id(scenario) != entity_id:
+                continue
+            status = scenario.get("status") if isinstance(scenario, dict) else getattr(scenario, "status", None)
+            try:
+                TestScenarioStatus(status)
+            except (ValueError, TypeError):
+                break
+            return
+        raise CodeEvidenceLinkInvalid(details={"reason": "spec_entity_not_found"})
     collection_by_type = {
         SpecEntityType.FUNCTIONAL_REQUIREMENT: "functional_requirements",
         SpecEntityType.TECHNICAL_REQUIREMENT: "technical_requirements",
@@ -729,7 +744,6 @@ def _require_spec_entity(
         SpecEntityType.INTEGRATION_REQUIREMENT: "integration_requirements",
         SpecEntityType.OBSERVABILITY_REQUIREMENT: "observability_requirements",
         SpecEntityType.DECISION: "decisions",
-        SpecEntityType.TEST_SCENARIO: "test_scenario_ids",
     }
     collection = getattr(spec, collection_by_type[entity_type], None) or ()
     if not any(
@@ -837,6 +851,8 @@ class StartCodeInvestigationUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> StartCodeInvestigationResult:
+        # Acquire writer admission before policy/subject reads and request CAS.
+        await uow.begin_write()
         policy = await _load_policy(board_id=command.board_id, uow=uow)
         await _authorize(
             actor,
@@ -930,6 +946,9 @@ class SubmitCodeInvestigationReceiptUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> SubmittedCodeInvestigationReceiptResult:
+        # Admit this write before policy/request reads so a concurrent writer
+        # cannot take ownership between validation and the receipt/head CAS.
+        await uow.begin_write()
         policy = await _load_policy(board_id=command.board_id, uow=uow)
         await _authorize(
             actor,

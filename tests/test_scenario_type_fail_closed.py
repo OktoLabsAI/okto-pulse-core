@@ -266,7 +266,7 @@ async def test_update_spec_omitted_type_preserves_existing_and_defaults_new(
                 {
                     "test_scenarios": [
                         {"id": "ts_keep", "title": "renamed", "status": "draft"},
-                        {"id": "ts_new", "title": "new", "status": "draft"},
+                        {"id": "ts_new", "title": "new"},
                     ]
                 }
             ),
@@ -278,6 +278,8 @@ async def test_update_spec_omitted_type_preserves_existing_and_defaults_new(
         for scenario in await _stored(db_factory, spec_id)
     }
     assert stored == {"ts_keep": "unit", "ts_new": "integration"}
+    new_scenario = next(s for s in await _stored(db_factory, spec_id) if s["id"] == "ts_new")
+    assert new_scenario["status"] == "draft"
 
 
 async def test_update_spec_omitted_type_refuses_unknown_stored_value(db_factory):

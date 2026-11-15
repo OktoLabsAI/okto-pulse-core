@@ -96,8 +96,8 @@ async def _seed_board_spec_card(db_factory, board_id: str, spec_id: str, *, deli
             "owner-valdone",
             CardCreate(
                 title="Impl card promovido por validation gate",
-                status=CardStatus.STARTED,
                 spec_id=spec_id,
+                functional_requirement_ids=["fr_valdone"],
             ),
         )
         card.status = CardStatus.IN_PROGRESS
@@ -248,6 +248,11 @@ async def test_validation_gate_promotes_card_to_canonical(db_factory, delivery_m
     """ts_2d919388 (parte 2): após o evento, o enqueuer cria ConsolidationQueue(card)
     e, drenada a fila, card:<id> aparece em canonical-only (graph_layer=canonical)."""
     configure_real_graph_test_kg_registry()
+    # The real parent projection now reads architecture classifications. Use
+    # the production SQL reader instead of the retired partial test double.
+    from okto_pulse.community.adapters.sqlalchemy_structured_spec import CommunitySqlAlchemyStructuredSpecStore
+    from okto_pulse.core.ports.structured_spec import register_structured_spec_store
+    register_structured_spec_store(CommunitySqlAlchemyStructuredSpecStore())
     board_id = f"valdone-{uuid.uuid4().hex[:10]}"
     spec_id = f"spec-{uuid.uuid4().hex[:8]}"
     await run_blocking_graph_io(

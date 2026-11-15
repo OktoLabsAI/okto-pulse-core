@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from okto_pulse.core.domain.pending_qa import planning_qa_readiness, qa_is_pending
+
 from okto_pulse.core.services.knowledge_governance_projection import (
     serialize_knowledge_base as _serialize_kb,
 )
@@ -37,15 +39,6 @@ def _source_meta(
         "source_title": source_title,
         "reference_type": reference_type,
     }
-
-
-def _qa_answered(qa: Any) -> bool:
-    answer = getattr(qa, "answer", None)
-    selected = getattr(qa, "selected", None)
-    if isinstance(qa, dict):
-        answer = qa.get("answer")
-        selected = qa.get("selected")
-    return bool(answer) or bool(selected)
 
 
 def _serialize_qa_item(qa: Any) -> dict[str, Any]:
@@ -108,8 +101,8 @@ def serialize_parent_ideation_context(
         payload["qa_items"] = [
             _serialize_qa_item(qa)
             for qa in (getattr(ideation, "qa_items", None) or [])
-            if _qa_answered(qa)
         ]
+        payload["qa_readiness"] = planning_qa_readiness(ideation, subject_type="ideation")
     return payload
 
 
@@ -150,16 +143,18 @@ def compile_ideation_parent_context(
             f"- Complexity: {complexity}"
         )
 
-    answered_qa = [
-        qa for qa in (getattr(ideation, "qa_items", None) or []) if _qa_answered(qa)
-    ]
-    if answered_qa:
+    all_qa = list(getattr(ideation, "qa_items", None) or [])
+    if all_qa:
         qa_lines = []
-        for qa in answered_qa:
+        for qa in all_qa:
             serialized = _serialize_qa_item(qa)
             answer = serialized.get("answer")
             selected = serialized.get("selected")
             rendered_answer = answer if answer else ", ".join(selected or [])
+            if qa_is_pending(qa):
+                rendered_answer = "Pending — no recorded answer." + (
+                    f" Unconfirmed content: {rendered_answer}" if rendered_answer else ""
+                )
             qa_lines.append(
                 f"**Q:** {serialized.get('question')}\n**A:** {rendered_answer}"
             )

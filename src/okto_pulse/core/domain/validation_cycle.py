@@ -9,7 +9,7 @@ technical versions are available only through the result-scoped audit read.
 from __future__ import annotations
 
 from okto_pulse.core.domain.spec_planning import SpecPlanningManifest
-from okto_pulse.core.domain.spec_planning_readiness import SpecPlanningReadiness
+from okto_pulse.core.domain.spec_planning_readiness import SpecPlanningReadiness, SpecValidationSummary
 
 import math
 import re
@@ -382,8 +382,17 @@ class ValidationCycleSummary:
     remaining_actions: tuple[str, ...] = ()
     planning_manifest: SpecPlanningManifest | None = None
     planning_readiness: SpecPlanningReadiness | None = None
+    validation_summary: SpecValidationSummary | None = None
 
     def __post_init__(self) -> None:
+        if self.validation_summary is not None and (
+            self.subject_type is not AssessmentSubjectType.SPEC
+            or not isinstance(self.validation_summary, SpecValidationSummary)
+            or self.validation_summary.edition != self.edition
+            or self.planning_readiness is None
+            or self.validation_summary.planning_state != self.planning_readiness.state
+        ):
+            raise ValidationCycleContractError("validation_cycle_summary_invalid")
         if self.planning_readiness is not None and (
             self.subject_type is not AssessmentSubjectType.SPEC
             or not isinstance(self.planning_readiness, SpecPlanningReadiness)

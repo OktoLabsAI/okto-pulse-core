@@ -21,6 +21,10 @@ from types import MappingProxyType
 from typing import Any, Generic, TypeVar
 import unicodedata
 
+from okto_pulse.core.domain.refinement_source_compatibility import (
+    RefinementSourceCompatibility, RefinementSourceSnapshotBasis,
+)
+
 
 CODE_TRACEABILITY_CONTRACT_VERSION = "pulse-code-traceability/v1"
 CODE_INVESTIGATION_CANONICALIZATION_PROFILE = "pulse-code-receipt-c14n-v1"
@@ -4528,8 +4532,25 @@ class CodeTraceabilityContext:
     source_refinement_version: int | None = None
     source_context: SourceContextSummaryV2 | None = None
     source_context_items: tuple[SourceContextEvidenceItemV2, ...] = ()
+    refinement_source_compatibility: RefinementSourceCompatibility | None = None
+    source_context_snapshot: RefinementSourceSnapshotBasis | None = None
+    current_source_context: SourceContextSummaryV2 | None = None
 
     def __post_init__(self) -> None:
+        if self.refinement_source_compatibility is not None and (
+            not isinstance(self.refinement_source_compatibility, RefinementSourceCompatibility)
+            or self.subject_type != CodeTraceabilitySubjectType.REFINEMENT
+            or self.refinement_source_compatibility.current_version != self.subject_version
+        ):
+            raise CodeTraceabilityContractError("refinement_source_compatibility_scope_invalid")
+        if self.source_context_snapshot is not None and (
+            not isinstance(self.source_context_snapshot, RefinementSourceSnapshotBasis)
+            or self.subject_type != CodeTraceabilitySubjectType.REFINEMENT
+            or self.source_context_snapshot.snapshot_version > self.subject_version
+        ):
+            raise CodeTraceabilityContractError("refinement_source_snapshot_scope_invalid")
+        if self.current_source_context is not None and not isinstance(self.current_source_context, SourceContextSummaryV2):
+            raise CodeTraceabilityContractError("current_source_context_invalid")
         object.__setattr__(
             self,
             "board_id",
@@ -4675,7 +4696,10 @@ class CodeTraceabilityContext:
                     )
                 if (
                     provenance.source_refinement_id != self.subject_id
-                    or provenance.source_refinement_version != self.subject_version
+                    or provenance.source_refinement_version != (
+                        self.source_context_snapshot.snapshot_version
+                        if self.source_context_snapshot is not None else self.subject_version
+                    )
                 ):
                     raise CodeTraceabilityContractError(
                         "code_traceability_context_source_context_provenance_invalid",

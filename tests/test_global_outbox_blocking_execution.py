@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from contextlib import asynccontextmanager, contextmanager
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +14,113 @@ from okto_pulse.core.application.processors.global_outbox import (
     GLOBAL_OUTBOX_WRITER_TTL_SECONDS,
     GlobalOutboxProcessor,
 )
+from okto_pulse.core.kg.global_discovery_writer import (
+    GlobalDiscoveryWriterFenceLost,
+    GlobalDiscoveryWriterLease,
+)
+from okto_pulse.core.ports.delivery_ledger import DeliveryAttemptEnvelope
+
+
+@pytest.mark.parametrize("loss_at", ["before_save", "after_save", "after_ledger", None])
+@pytest.mark.asyncio
+async def test_acknowledgement_refuses_lost_owner_before_sql_commit(monkeypatch, loss_at):
+    lease = GlobalDiscoveryWriterLease.acquire(operation="test_ack_fence")
+    writes = []
+    committed = []
+    rollbacks = []
+
+    async def rollback():
+        rollbacks.append(tuple(writes))
+        writes.clear()
+
+    async def save(_db, _events):
+        writes.append("outbox")
+        if loss_at == "after_save":
+            lease.release()
+
+    async def ledger(_db, _outcomes):
+        writes.append("ledger")
+        if loss_at == "after_ledger":
+            lease.release()
+
+    async def commit(_db):
+        committed.extend(writes)
+
+    monkeypatch.setattr(worker_module, "get_global_outbox_store", lambda: SimpleNamespace(
+        save_events=save, commit=commit,
+    ))
+    processor = GlobalOutboxProcessor(
+        lambda: None, delivery_ledger=SimpleNamespace(apply_attempt_outcomes=ledger),
+    )
+    envelope = DeliveryAttemptEnvelope(
+        board_id="board-ack", artifact_type="card", artifact_id="card-ack",
+        generation=1, delete_event_id="delete-ack", attempt=0,
+    )
+    event = SimpleNamespace(id="row-ack", processed_at=datetime.now(timezone.utc))
+
+    async def persist():
+        with lease.guard():
+            if loss_at == "before_save":
+                lease.release()
+            await processor._persist_batch_outcomes(
+                SimpleNamespace(rollback=rollback), [event], {event.id: envelope},
+            )
+
+    try:
+        if loss_at is None:
+            await persist()
+            assert committed == ["outbox", "ledger"] and not rollbacks
+        else:
+            with pytest.raises(GlobalDiscoveryWriterFenceLost):
+                await persist()
+            assert not committed and not writes
+            assert len(rollbacks) == 1
+            assert rollbacks[0] == (() if loss_at == "before_save" else ("outbox", "ledger"))
+    finally:
+        lease.release()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_acknowledgement_drains_rollback_despite_repeated_cancellation(monkeypatch):
+    lease = GlobalDiscoveryWriterLease.acquire(operation="test_ack_cancel")
+    rollback_started = asyncio.Event()
+    release_rollback = asyncio.Event()
+    rollback_finished = asyncio.Event()
+    committed = []
+
+    async def rollback():
+        rollback_started.set()
+        await release_rollback.wait()
+        rollback_finished.set()
+
+    async def save(_db, _events):
+        raise asyncio.CancelledError()
+
+    async def commit(_db):
+        committed.append(True)
+
+    monkeypatch.setattr(worker_module, "get_global_outbox_store", lambda: SimpleNamespace(
+        save_events=save, commit=commit,
+    ))
+    processor = GlobalOutboxProcessor(lambda: None)
+    try:
+        with lease.guard():
+            task = asyncio.create_task(processor._persist_batch_outcomes(
+                SimpleNamespace(rollback=rollback), [], {},
+            ))
+            await asyncio.wait_for(rollback_started.wait(), timeout=5)
+            task.cancel()
+            await asyncio.sleep(0)
+            task.cancel()
+            await asyncio.sleep(0)
+            assert not task.done() and not rollback_finished.is_set()
+            release_rollback.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert rollback_finished.is_set() and not committed
+    finally:
+        release_rollback.set()
+        lease.release()
 
 
 @pytest.mark.asyncio

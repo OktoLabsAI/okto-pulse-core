@@ -426,3 +426,15 @@ async def test_mcp_preview_tool_matches_rest_shape(db_factory, bug_preview_seed)
     assert payload["next_action"] == "create_regression_test_card"
     assert payload["remediation"]["remediation_path"] == "path_a_reuse_existing_scenario"
     assert payload["remediation"]["actions"][0]["action_id"] == "create_regression_test_card"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("omitted", [True, False])
+async def test_mcp_preview_preserves_omitted_and_empty_selection(db_factory, bug_preview_seed, omitted):
+    register_mcp_test_runtime(db_factory)
+    selection = {} if omitted else {"candidate_scenario_ids": []}
+    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())), patch.object(mcp_server, "check_permission", return_value=None):
+        tool = await mcp_server.mcp.get_tool("okto_pulse_resolve_bug_regression_scenarios")
+        payload = json.loads(await tool.fn(board_id=bug_preview_seed["board_id"], bug_id=bug_preview_seed["bug_id"], affected_task_ids=[bug_preview_seed["affected_id"]], **selection))
+    assert bool(payload["eligible_scenarios"]) is omitted
+    assert payload["rejected_scenarios"] == []

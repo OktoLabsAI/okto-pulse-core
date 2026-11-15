@@ -87,6 +87,8 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
     ("Code Traceability", "code-traceability",
      r"^okto_pulse_(get|record)_(delivery_evidence|decision_reviews)$"),
     ("Code Traceability", "code-traceability",
+     r"^okto_pulse_(get_delivery_readiness_summary|get_persisted_delivery_readiness|requeue_persisted_delivery_readiness)$"),
+    ("Code Traceability", "code-traceability",
      r"^okto_pulse_(?:.*code_(?:evidence|investigation|traceability)|"
      r".*implementation_(?:target|overlap)|acknowledge_implementation_overlap)"),
     # --- SDLC entities ------------------------------------------------------
@@ -103,6 +105,8 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"refinement|research_decision"),
     ("Specs — dependencies", "spec",
      r"^okto_pulse_(add|list|remove)_spec_dependenc(?:y|ies)$"),
+    ("Specs — lifecycle & gates", "spec",
+     r"^okto_pulse_(preview|apply)_bug_allocation_repair$"),
     ("Specs — lifecycle & gates", "spec",
      r"^okto_pulse_(create_spec|update_spec$|delete_spec$|move_spec|get_spec$|"
      r"get_spec_context|get_spec_history|get_requirement_verification|derive_spec_from_ideation|"

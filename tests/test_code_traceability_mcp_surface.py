@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import json
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from okto_pulse.core.domain.mcp_permission_registry import (
 from okto_pulse.core.mcp.catalog import CoreMcpCatalog
 from okto_pulse.core.mcp.code_traceability_tools import (
     _closed_input,
+    _closed_tool,
     register_code_traceability_tools,
 )
 from okto_pulse.core.mcp import server
@@ -29,6 +31,8 @@ from okto_pulse.core.models.code_traceability import ImplementationTargetUpdateI
 EXPECTED_TOOLS = {
     "okto_pulse_get_delivery_evidence": "code_traceability.evidence.read",
     "okto_pulse_get_persisted_delivery_readiness": "code_traceability.evidence.read",
+    "okto_pulse_get_delivery_readiness_summary": "code_traceability.evidence.read",
+    "okto_pulse_requeue_persisted_delivery_readiness": "readiness.requeue",
     "okto_pulse_get_decision_reviews": "code_traceability.evidence.read",
     "okto_pulse_record_decision_reviews": "spec.validation.submit",
     "okto_pulse_record_delivery_evidence": "board.read",
@@ -52,6 +56,22 @@ EXPECTED_TOOLS = {
     "okto_pulse_unlink_code_evidence": "code_traceability.spec_link.delete",
     "okto_pulse_update_implementation_target": "code_traceability.target.edit",
 }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('error', [RuntimeError('adapter failure'), KeyError('adapter key'), asyncio.CancelledError()])
+async def test_closed_tool_preserves_unrecognized_failure_for_edition_transport(error):
+    catalog = CoreMcpCatalog(name='failure-test', version='1')
+
+    async def probe():
+        raise error
+
+    _closed_tool(catalog, probe)
+    tool = await catalog.get_tool('probe')
+    with pytest.raises(type(error)) as raised:
+        await tool.fn()
+    assert raised.value is error
+    assert error.__context__ is None
 
 
 def test_code_traceability_registers_exact_reviewed_inventory() -> None:

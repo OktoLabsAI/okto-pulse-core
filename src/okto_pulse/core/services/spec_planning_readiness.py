@@ -24,6 +24,38 @@ PLANNING_COVERAGE_CHECKS = (
     ("code_evidence", "check_code_evidence_coverage", "skip_code_evidence_coverage", None),
 )
 
+
+def count_effective_planning_exceptions(*, spec, board, planning, policy_counts,
+                                        can_read_waivers: bool) -> int | None:
+    """Count effective decisions, not historical events or disabled policies.
+
+    Policy counts must come from the current edition's native policy projection.
+    A skip shared by multiple coverage checks counts once. Board configuration
+    that disables a gate is distinct from a per-Spec human exception.
+    """
+    if planning.state == "unavailable":
+        return None
+    components = {item.key: item for item in planning.components}
+    skips = {
+        skip for key, _method, skip, _field in PLANNING_COVERAGE_CHECKS
+        if skip and getattr(spec, skip, False) is True
+        and components[key].mode == "off"
+    }
+    if (getattr(spec, "skip_qualitative_validation", False) is True
+            and components["decomposition"].mode == "off"
+            and not ((getattr(board, "settings", None) or {}).get("auto_validate", False))):
+        skips.add("skip_qualitative_validation")
+    if components["policy_compliance"].applicable is False:
+        return len(skips)
+    if not can_read_waivers or policy_counts is None:
+        return None
+    values = [policy_counts.get(key) for key in ("skipped", "waived_metrics")]
+    if any(type(value) is not int or value < 0 for value in values):
+        return None
+    if any(policy_counts.get(key, 0) for key in ("inconsistent", "scope_inconsistent")):
+        return None
+    return len(skips) + sum(values)
+
 _COVERAGE_READ_PERMISSIONS = {
     "acceptance_coverage": ("spec.tests.read",),
     "test_card_coverage": ("spec.tests.read", "card.entity.read"),

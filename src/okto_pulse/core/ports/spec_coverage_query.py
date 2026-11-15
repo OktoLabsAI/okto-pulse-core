@@ -53,12 +53,15 @@ class SpecCoverageQuery:
     cursor: str | None = None
     read_delivery: bool = True
     read_graph: bool = False
+    graph_mode: Literal['summary', 'detail'] = 'summary'
 
     def __post_init__(self):
         for value in (self.board_id, self.spec_id, self.actor_scope_ref):
             if type(value) is not str or not value.strip() or len(value) > 4096:
                 raise ValueError('spec_coverage_scope_invalid')
         object.__setattr__(self, 'limit', query_row_limit(self.limit))
+        if self.graph_mode not in ('summary', 'detail'):
+            raise ValueError('spec_coverage_graph_mode_invalid')
         if type(self.read_delivery) is not bool or type(self.read_graph) is not bool:
             raise ValueError('spec_coverage_delivery_authority_invalid')
         if self.cursor is not None and (type(self.cursor) is not str or len(self.cursor) > 256):
@@ -88,11 +91,27 @@ class SpecCoverageSnapshot:
 
 
 class SpecCoverageReadPort(Protocol):
-    async def read(self, query: SpecCoverageQuery, *, timeout_ms: int) -> SpecCoverageSnapshot:
+    async def read(self, query: SpecCoverageQuery, *, timeout_ms: int,
+                   deadline: float | None = None) -> SpecCoverageSnapshot:
         """Read only: no graph repair, proof execution, waiver or source mutation."""
         ...
 
     async def read_graph(self, query: SpecCoverageQuery, scope: SpecCoverageGraphScope,
-                         source_revision: str, *, timeout_ms: int) -> SpecCoverageGraphFacts:
-        """Observe graph and recheck relational revision without reading proof again."""
+                         source_revision: str, *, timeout_ms: int,
+                         deadline: float | None = None) -> SpecCoverageGraphFacts:
+        """Optional existing-only graph observation under a clipped phase deadline.
+
+        This phase cannot perform a mandatory source fence: its timeout may
+        degrade to unavailable. No cold open or maintenance belongs to it.
+        """
+        ...
+
+    async def verify_source(self, query: SpecCoverageQuery, source_revision: str, *,
+                            timeout_ms: int, deadline: float | None = None) -> None:
+        """Mandatory final revision fence, using the remaining whole deadline.
+
+        Changed source raises spec_coverage_source_changed; expiry raises
+        GraphQueryTimeout. Neither may become optional-graph unavailable.
+        All deadlines are absolute monotonic instants and may only narrow.
+        """
         ...
